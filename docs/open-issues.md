@@ -104,10 +104,14 @@ second folder. All three sites (`winact`, `ctlact`, `menuact`) now ask
 whether the request reached the machine at all: armed OR already fired.
 Re-measured: **8/8 actuated, 8/8 replied ok.**
 
-**What this obliges.** The menu no-hijack number was taken against a
-plane that could not act; the guard was therefore never really under
-test. It has to be re-earned now that the plane works — see the parity
-ledger for the re-run.
+**And the guard was re-tested, because it had never really been.** The
+menu no-hijack case was re-run on the same boot that had just driven
+File/New Folder 8/8: **0/17 hijacks, 17/17 clean chain-through, 3
+dropped** (a dropped trial is one whose QMP stimulus missed, measuring
+nothing). That is the number comparable to upstream's 0/19. The earlier
+0/20 is not, and is marked void in the ledger: it was taken when the
+plane could not fire in that process at all, so a guard that held and a
+plane that could do nothing looked identical.
 
 ## The diagnosis, kept: the act plane arms in a foreign app and its click is never taken (2026-08-02)
 

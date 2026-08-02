@@ -143,10 +143,21 @@ reads its snapshot, and reading `armed` alone reported `act-not-armed`
 about a request that had already succeeded — 8/8 actuated, 8/8 wrongly
 refused. All three act verbs now accept armed OR already-fired.
 
-**The consequence for the number above.** The 0/20 was taken against a
-plane that could not act in the Finder at all, so the guard was never
-under test. It is being re-run now that the plane works; until that
-lands, treat the 0/20 as void rather than as evidence.
+**The number, re-earned against a plane that can act.** The menu case
+was re-run after the repair, on the same boot that had just driven
+File/New Folder 8 times out of 8:
+
+> **menu, N=20: 0/17 hijacks, 17/17 clean chain-through, 3 dropped**
+> (a dropped trial is one where the QMP stimulus missed its target, so
+> the trial measured nothing and is excluded rather than counted as a
+> pass)
+
+**This is the number that is comparable to upstream's 0/19**, and the
+earlier 0/20 is not: that one was taken when the plane could not fire in
+the Finder at all, so a guard that held and a plane that could do
+nothing were indistinguishable. Here the plane's ability to act in that
+exact process was demonstrated minutes before, by folders on the
+Desktop, which is what makes 0/17 evidence about the GUARD.
 
 **And then the plane was asked why, and answered.** With `actselftest`
 reporting the plane's own error instead of the status, four calls on one
