@@ -93,6 +93,80 @@ a watched click or render on the emulator**, and archive files
 (`MirrorSceneAdapter.swift`, `MirrorActionDriver.swift`) are references
 to read, never code to resurrect wholesale.
 
+## The agent surface converges the same way
+
+Mirror has a second northbound surface NOW's page never uses:
+`MirrorApp --serve` — fifteen `mirror.*` methods (attach/detach/status,
+scene/find/shot/wait, act.control/menu/type/key/open/window/scroll, app)
+over a framed-JSON unix socket, plus the ManagedServe readiness plane.
+It retires with MirrorApp, so it must be accounted for, and the
+accounting is **not a new milestone**: NOW's MCP is a client of the host
+projection layer, never a third face
+([command-parity.md](../command-parity.md)), so each slice that lands a
+broker for the pane lands its projection rows in the same slice, and
+[`MCPCoverageTests`](../mcp-coverage.md) gates the honesty of the join.
+
+The mapping, method by method:
+
+- `mirror.attach` / `mirror.detach` — dissolve; NOW's session model owns
+  the connection, and single-client attach semantics have no equivalent
+  worth porting. Written disposition, not silence.
+- `mirror.status` — M1's `mirror` verb, projected.
+- `mirror.scene` / `mirror.find` / `mirror.wait` — M2's scene broker,
+  as projection rows beside the pane (find/wait are host-side joins over
+  the same scene the pane renders; they answer from the same decode, or
+  they are two implementations).
+- `mirror.act.control/menu/window/type/key/open` and `mirror.app` — the
+  act projections M3 flips out of `.notReached`, plus the existing
+  key/script/launch/activate reach. `mirror.act.scroll` follows the
+  control path or gets a written refusal.
+- `mirror.shot` — M4's `capture.request` region change serves the pane's
+  islands and this tool with one contract change.
+- M5 retires `--serve` and ManagedServe with MirrorApp, gated on every
+  `mirror.*` method having a projection row or a written disposition in
+  [mcp-coverage.md](../mcp-coverage.md).
+
+Prior art: the `claude/mcp-mirror-gap-l6*` branches worked this join;
+read them before re-deriving the mapping.
+
+### The two surfaces must run in parallel (decided 2026-08-02)
+
+The pane (human) and the MCP (agent) are **usable at the same time**;
+neither pauses, breaks, or silently starves the other. Mirror today is
+the counter-example — its agent serves one client serially, so NOW's
+page must stop probing while a mirror runs. That property does not
+survive the fold. The rule and its consequences, per layer:
+
+- **One owner of the guest wire.** A single host-side broker owns the
+  session's requests; pane and projections are both its clients. Two
+  consumers never hold independent claims on the lane — contention is
+  scheduled in the broker, where it can be fair and attributable, not
+  on the guest, where it reads as a hang.
+- **Scene is shared, not duplicated** (M2). One poll cadence feeds one
+  decoded scene; the pane renders it and `mirror.scene`/`find`/`wait`
+  answer from it. Two pollers would double the walk load and halve the
+  cadence — the broker's cache is the deliverable, and both consumers
+  carry the same staleness stamp.
+- **Acts are one queue with attribution** (M3). The act cell is one
+  mailbox; the broker serializes pane clicks and agent acts, and a
+  refusal or timeout names whose request it answers. An agent act must
+  never surface in the pane as a phantom click, and a pane click must
+  never be blamed on the agent — attribution is part of the projection
+  row and the pane's state, not a log line.
+- **Content targeting has an owner policy** (M4). One traced A5 at a
+  time is a plane fact; if the pane mirrors app X while an agent asks
+  to trace app Y, the second requester gets an honest refusal naming
+  the holder (the `MetalMachineGuard` shape, applied to a plane), not
+  a silent steal. Same-target requests share the drain.
+- **Arm leases are counted, not flagged** (M1). The P1 owner tracking
+  in `peek.c` counts lessees — pane session, agent session, Processes
+  page — and disarms on the last lapse, so one consumer's exit cannot
+  disarm the plane under the other.
+- **The gate:** M2–M4 watched verifications each add a parallel case —
+  the pane visibly live while an agent drives the same guest through
+  the MCP (and vice versa), with the collision behaviours above
+  observed, not asserted.
+
 ## Milestones — one arc and one branch each
 
 ### M0 — the proving gate (emulator)
