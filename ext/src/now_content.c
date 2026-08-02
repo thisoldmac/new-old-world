@@ -111,6 +111,21 @@ static NowPeekU32 gLastRepairTicks = 0;
 
 /* ---- recording ------------------------------------------------------ */
 
+/* LMGetTicks(), not TickCount(): this runs at draw time inside another
+   process's context, and the low-memory global is the read this plane's
+   other resident code already relies on (content_capture_enabled below
+   calls LMGetCurrentA5() the same way) - no trap dispatch, no allocation.
+
+   Called on EVERY top-level hook entry, record mode or count mode alike.
+   It used to run only on the count-mode branch, which left `ticks`
+   holding whatever it was at arm time for the whole life of a Record
+   session: now_content_ring_put stamps each record from this field
+   (content_table.h's "TickCount at capture"), so a caller that does not
+   refresh it before a record is committed hands every record the SAME
+   stale stamp - measured on a real drain: 19 records, ticks all 1735,
+   equal to the block's own liveness field and unchanged across a second
+   armed cycle. SceneIslands orders redraws by this field, so a frozen
+   stamp cannot tell two later blits apart. */
 static void content_stamp(void)
 {
     if (gBlock != NULL) {
@@ -364,10 +379,9 @@ static pascal void content_text(short byteCount, const void *textBuf,
     if (!gInCapture && content_capture_enabled()) {
         gInCapture = 1;
         gBlock->counters.text++;
+        content_stamp();
         if (gArmedMode == kNowContentModeRecord) {
             content_record_text(byteCount, textBuf);
-        } else {
-            content_stamp();
         }
         InvokeQDTextUPP(byteCount, textBuf, numer, denom, gStd.textProc);
         gInCapture = 0;
@@ -381,10 +395,9 @@ static pascal void content_line(Point newPt)
     if (!gInCapture && content_capture_enabled()) {
         gInCapture = 1;
         gBlock->counters.line++;
+        content_stamp();
         if (gArmedMode == kNowContentModeRecord) {
             content_record_line(newPt);
-        } else {
-            content_stamp();
         }
         InvokeQDLineUPP(newPt, gStd.lineProc);
         gInCapture = 0;
@@ -398,10 +411,9 @@ static pascal void content_rect(GrafVerb verb, const Rect *r)
     if (!gInCapture && content_capture_enabled()) {
         gInCapture = 1;
         gBlock->counters.rect++;
+        content_stamp();
         if (gArmedMode == kNowContentModeRecord) {
             content_record_rectlike(kNowContentOpRect, verb, r, 0, 0);
-        } else {
-            content_stamp();
         }
         InvokeQDRectUPP(verb, r, gStd.rectProc);
         gInCapture = 0;
@@ -416,11 +428,10 @@ static pascal void content_rrect(GrafVerb verb, const Rect *r,
     if (!gInCapture && content_capture_enabled()) {
         gInCapture = 1;
         gBlock->counters.rrect++;
+        content_stamp();
         if (gArmedMode == kNowContentModeRecord) {
             content_record_rectlike(kNowContentOpRRect, verb, r,
                                     ovalWidth, ovalHeight);
-        } else {
-            content_stamp();
         }
         InvokeQDRRectUPP(verb, r, ovalWidth, ovalHeight, gStd.rRectProc);
         gInCapture = 0;
@@ -434,10 +445,9 @@ static pascal void content_oval(GrafVerb verb, const Rect *r)
     if (!gInCapture && content_capture_enabled()) {
         gInCapture = 1;
         gBlock->counters.oval++;
+        content_stamp();
         if (gArmedMode == kNowContentModeRecord) {
             content_record_rectlike(kNowContentOpOval, verb, r, 0, 0);
-        } else {
-            content_stamp();
         }
         InvokeQDOvalUPP(verb, r, gStd.ovalProc);
         gInCapture = 0;
@@ -452,11 +462,10 @@ static pascal void content_arc(GrafVerb verb, const Rect *r,
     if (!gInCapture && content_capture_enabled()) {
         gInCapture = 1;
         gBlock->counters.arc++;
+        content_stamp();
         if (gArmedMode == kNowContentModeRecord) {
             content_record_rectlike(kNowContentOpArc, verb, r,
                                     startAngle, arcAngle);
-        } else {
-            content_stamp();
         }
         InvokeQDArcUPP(verb, r, startAngle, arcAngle, gStd.arcProc);
         gInCapture = 0;
@@ -470,12 +479,11 @@ static pascal void content_poly(GrafVerb verb, PolyHandle poly)
     if (!gInCapture && content_capture_enabled()) {
         gInCapture = 1;
         gBlock->counters.poly++;
+        content_stamp();
         if (gArmedMode == kNowContentModeRecord && poly != NULL
             && *poly != NULL) {
             content_record_rectlike(kNowContentOpPoly, verb,
                                     &((**poly).polyBBox), 0, 0);
-        } else {
-            content_stamp();
         }
         InvokeQDPolyUPP(verb, poly, gStd.polyProc);
         gInCapture = 0;
@@ -489,12 +497,11 @@ static pascal void content_rgn(GrafVerb verb, RgnHandle rgn)
     if (!gInCapture && content_capture_enabled()) {
         gInCapture = 1;
         gBlock->counters.rgn++;
+        content_stamp();
         if (gArmedMode == kNowContentModeRecord && rgn != NULL
             && *rgn != NULL) {
             content_record_rectlike(kNowContentOpRgn, verb,
                                     &((**rgn).rgnBBox), 0, 0);
-        } else {
-            content_stamp();
         }
         InvokeQDRgnUPP(verb, rgn, gStd.rgnProc);
         gInCapture = 0;
@@ -510,10 +517,9 @@ static pascal void content_bits(const BitMap *srcBits, const Rect *srcRect,
     if (!gInCapture && content_capture_enabled()) {
         gInCapture = 1;
         gBlock->counters.bits++;
+        content_stamp();
         if (gArmedMode == kNowContentModeRecord) {
             content_record_bits(srcBits, srcRect, dstRect, mode);
-        } else {
-            content_stamp();
         }
         InvokeQDBitsUPP(srcBits, srcRect, dstRect, mode, maskRgn,
                         gStd.bitsProc);

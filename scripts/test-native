@@ -138,6 +138,13 @@ run_c now-guest-shared now_act_guard_test.c \
 # every instrument on our side agrees with it. That failure cannot be
 # executed here and must not be left to a comment.
 run_py now-guest-shared act_patch_abi_source_test.py
+# The content hooks' stamp order, read out of the C. The archived port
+# measured the regression this pins: content_stamp() on the count-mode
+# branch only froze every Record stamp at arm time (19 records, ticks
+# all 1735), and nothing crashed or refused - the drain was unordered
+# while looking ordered. Draw-time resident code; no gate here can run
+# it, so the order is pinned as text.
+run_py now-guest-shared content_stamp_order_source_test.py
 
 echo "== now-guest-ppc (PowerPC Carbon) =="
 run_c now-guest-ppc census_decode_test.c     ""  src/census/census_decode.c
