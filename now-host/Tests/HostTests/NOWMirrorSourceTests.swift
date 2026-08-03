@@ -212,4 +212,47 @@ final class NOWMirrorIconParsingTests: XCTestCase {
         XCTAssertTrue(NOWMirrorSource.parseIcons("\"\"").isEmpty)
         XCTAssertTrue(NOWMirrorSource.parseIcons("").isEmpty)
     }
+
+    /// The two passes are two scripts now, and their results are joined.
+    /// Each arrives in SOURCE form carrying its OWN quotes, so joining
+    /// them raw would leave a `""` inside a line and eat the rows on
+    /// either side of it.
+    func testTwoSourceFormBlobsJoinWithoutEatingARow() {
+        let items = "\"I\tSystem Folder\t10\t20\tfolder\r"
+            + "I\tRead Me\t10\t60\tdocument\r\""
+        let art = "\"F\tRead Me\tTEXT\tttxt\t\r\""
+        let joined = NOWMirrorSource.unquote(items) + "\r"
+            + NOWMirrorSource.unquote(art)
+        let parsed = NOWMirrorSource.parseIcons(joined)
+
+        XCTAssertEqual(parsed.map(\.name), ["System Folder", "Read Me"],
+                       "the row at the seam was eaten by a stray quote")
+        XCTAssertEqual(parsed.last?.type, "TEXT",
+                       "the second blob's types must still reach the items")
+    }
+
+    /// Why they were split at all: `file type of` a folder or a disk is
+    /// an error, and AppleScript fails a script WHOLE. Fused, that error
+    /// took the names and positions down with it and the window rendered
+    /// as an empty box — watched on 2026-08-03, Macintosh HD empty for a
+    /// whole drive while Control Panels beside it drew 33 items. Losing
+    /// the art is a blemish; losing the contents is not a mirror.
+    func testItemsSurviveWhenTheArtPassAnsweredNothing() {
+        let items = "\"I\tSystem Folder\t10\t20\tfolder\r"
+            + "I\tApplications\t10\t60\tfolder\r\""
+        let parsed = NOWMirrorSource.parseIcons(
+            NOWMirrorSource.unquote(items) + "\r" + NOWMirrorSource.unquote(""))
+
+        XCTAssertEqual(parsed.map(\.name), ["System Folder", "Applications"])
+        XCTAssertTrue(parsed.allSatisfy { $0.type == nil },
+                      "no art is absence, not a guess")
+    }
+
+    func testUnquoteRemovesTheWrapperExactlyOnce() {
+        XCTAssertEqual(NOWMirrorSource.unquote("\"a\rb\""), "a\rb")
+        XCTAssertEqual(NOWMirrorSource.unquote("\"\"\"x\"\"\""), "\"\"x\"\"")
+        XCTAssertEqual(NOWMirrorSource.unquote("bare"), "bare")
+        XCTAssertEqual(NOWMirrorSource.unquote("\""), "\"",
+                       "a lone quote is not a wrapper")
+    }
 }

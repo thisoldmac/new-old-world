@@ -241,15 +241,20 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
            Files only, deliberately: `file type of` a folder or a disk is
            an error that fails the whole script, and their kind already
-           chooses the right art. */
-        let source = """
+           chooses the right art.
+
+           The two passes are two SCRIPTS, not one, because AppleScript
+           fails a script whole. Fused, any error in the type pass took
+           the names and positions down with it and the window rendered
+           as an empty box - which is what Macintosh HD did for an entire
+           drive while Control Panels beside it drew 33 items. Losing the
+           right icon art is a blemish; losing the contents is not a
+           mirror. */
+        let items = """
         tell application "Finder"
         set ns to name of every item of \(container)
         set ps to position of every item of \(container)
         set ks to kind of every item of \(container)
-        set fn to name of every file of \(container)
-        set ft to file type of every file of \(container)
-        set fc to creator type of every file of \(container)
         end tell
         set out to ""
         repeat with i from 1 to (count ns)
@@ -257,17 +262,47 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         set out to out & "I" & tab & (item i of ns) & tab & (item 1 of p) & \
         tab & (item 2 of p) & tab & (item i of ks) & return
         end repeat
+        return out
+        """
+        let read = await readingOutput("script", ["source": .text(items)])
+        guard let text = read.value else {
+            note("could not read the items of \(container)"
+                 + " - \(read.error ?? "no reason given")")
+            return nil
+        }
+
+        let types = """
+        tell application "Finder"
+        set fn to name of every file of \(container)
+        set ft to file type of every file of \(container)
+        set fc to creator type of every file of \(container)
+        end tell
+        set out to ""
         repeat with i from 1 to (count fn)
         set out to out & "F" & tab & (item i of fn) & tab & (item i of ft) & \
         tab & (item i of fc) & tab & "" & return
         end repeat
         return out
         """
-        guard let text = await runReadingOutput(
-            "script", ["source": .text(source)]) else {
-            return nil
+        let art = await readingOutput("script", ["source": .text(types)])
+        if art.value == nil {
+            note("\(container): items read, but not their icon art"
+                 + " - \(art.error ?? "no reason given")")
         }
-        return Self.parseIcons(text)
+        /* Unquote BEFORE joining. Each script answers in SOURCE form, so
+           each blob carries its own surrounding quotes; concatenating
+           them raw would leave a `""` inside one line and eat the row on
+           either side of it. */
+        return Self.parseIcons(Self.unquote(text) + "\r"
+                               + Self.unquote(art.value ?? ""))
+    }
+
+    /// OSADoScript's SOURCE-form wrapper, removed once.
+    static func unquote(_ raw: String) -> String {
+        guard raw.hasPrefix("\""), raw.hasSuffix("\""), raw.count >= 2 else {
+            return raw
+        }
+        return String(raw.dropFirst().dropLast())
     }
 
     /// OSADoScript renders its result in SOURCE form, so a text result
@@ -276,10 +311,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// used to build it (that identifier does not exist in OS 9's
     /// AppleScript and fails the whole script with osaErr -1753).
     static func parseIcons(_ raw: String) -> [MirrorKit.Scene.DesktopItem] {
-        var text = raw
-        if text.hasPrefix("\""), text.hasSuffix("\""), text.count >= 2 {
-            text = String(text.dropFirst().dropLast())
-        }
+        let text = unquote(raw)
         var items: [MirrorKit.Scene.DesktopItem] = []
         var types: [String: (String, String)] = [:]
 
@@ -499,16 +531,31 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private func runReadingOutput(_ verb: String,
                                   _ args: [String: CommandArg],
                                   row: String = "output") async -> String? {
+        await readingOutput(verb, args, row: row).value
+    }
+
+    /// The same call, keeping the guest's refusal instead of discarding
+    /// it. `runReadingOutput` answering `nil` cost a whole drive: the
+    /// Macintosh HD window rendered as an empty box for an hour and the
+    /// mirror had nothing to say about why, because "the script failed"
+    /// and "nobody asked" were the same value.
+    private func readingOutput(_ verb: String,
+                               _ args: [String: CommandArg],
+                               row: String = "output")
+        async -> (value: String?, error: String?) {
         await withCheckedContinuation { continuation in
             listener.runCommand(verb, typed: args) { result in
                 guard result.ok else {
-                    return continuation.resume(returning: nil)
+                    let e = result.error
+                    return continuation.resume(returning: (
+                        nil,
+                        "\(e?.code ?? "error"): \(e?.message ?? "no reason")"))
                 }
                 var value: String?
                 for cells in result.output?[verb] ?? [] where cells.first == row {
                     value = cells.count > 1 ? cells.last : ""
                 }
-                continuation.resume(returning: value)
+                continuation.resume(returning: (value, nil))
             }
         }
     }
