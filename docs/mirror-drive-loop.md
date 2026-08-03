@@ -56,6 +56,19 @@ functional, accurate mirror of the guest** — one a person can operate.
    all the controls and fields doesnt mean its passing". Every rung
    carries a `fidelity` row, judged on the whole frame against the
    machine's, and it is scored even when everything else passed.
+2e. **A null reading needs a positive control before you blame the
+   instrument.** An empty log, a blank capture, a silent act: each has at
+   least two causes — the instrument is wrong, or the thing never
+   happened. On 2026-08-03 I added act logging, drove a drag, got an
+   empty log, and immediately patched the logging on the assumption it
+   was wired to the wrong path. I never checked whether the drag had
+   moved the window. It had not — a later drag missed the title bar the
+   same way and logged nothing for the correct reason. Michelle: "you
+   got a silent result and jumped to patching the logging without sanity
+   checking against whether or not the known good drag action actually
+   completed". So: do the thing, confirm the EFFECT on the machine, and
+   only then read the instrument. An instrument that reports nothing
+   about an event that did not occur is working.
 3. **If the mirror cannot do it, that IS the finding.** Record it. Do
    not reach past it to keep the run going.
 4. **Record, don't fix, during a sweep.** No edits, no builds, no
