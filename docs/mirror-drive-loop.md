@@ -1,7 +1,8 @@
 # The Mirror drive loop
 
-**Read this file at the start of every run, before touching anything.**
-It is short on purpose. It exists because the work kept failing the same
+**Read this file at the start of every CYCLE, before touching anything** —
+not once per session. It is short on purpose so that re-reading it costs
+nothing. It exists because the work kept failing the same
 way: drilling into the first defect found, fixing it mid-drive, then
 reporting a fix nobody had watched work.
 
@@ -37,6 +38,7 @@ Collapsing Sweep into Patch is the failure this structure prevents.
 
 | phase | what happens | hard limit |
 |---|---|---|
+| **Refresh** | re-read THIS file, then the last drive's notes | first action of every cycle, no exceptions |
 | **Sweep** | drive, observe, record findings with IDs (`D9.4`) | ~20 actions or one ladder pass, whichever comes first |
 | **Triage** | rank: **blocking** / **broken** / **cosmetic** | — |
 | **Patch** | fix the blockers, plus at most **two** others | gate green before restaging |
@@ -45,6 +47,19 @@ Collapsing Sweep into Patch is the failure this structure prevents.
 **Blocked mid-sweep**: keep sweeping whatever does not depend on the
 block, record it as blocking, then break out into a patch session and
 retry that rung. Do not abandon the rest of the sweep to chase it.
+
+**Why Refresh is a phase and not a preamble.** Drift happens INSIDE a
+session, not between them. A patch session fills the working context
+with header offsets, procIDs and build errors, and the rules quietly
+stop being the thing in mind — which is how a run ends up on the wire,
+or fixing mid-sweep, or reporting a fix nobody watched. Every one of
+those happened on 2026-08-03 within a single session that started by
+reading the rules once.
+
+So each cycle re-reads the file itself, from disk, rather than
+remembering it. The drive note for that cycle opens with `rules
+re-read` so it is auditable — if that line is missing, the cycle did not
+start properly and its findings are suspect.
 
 ---
 
@@ -115,7 +130,8 @@ and when it is used the note says so.
 ## 4. Recording
 
 Findings go to `docs/local/mirror-drive-notes.md`, one section per
-drive, each with an ID, what was seen, and what it is downstream of.
+drive. Each section opens with `rules re-read` and the cycle number,
+then the findings: an ID, what was seen, and what it is downstream of.
 Screendumps beside the mirror screenshot for anything visual.
 
 A finding is closed only by a later drive that watched it work, and the
