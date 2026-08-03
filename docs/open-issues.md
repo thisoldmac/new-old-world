@@ -14,6 +14,48 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## The mirror NOW draws itself: built, gated, not yet WATCHED (2026-08-02)
+
+**Unverified in the one way that counts.** "Open Mirror" on the Mirror
+page opens a NOW window running Mirror's `LiveMirrorView` over
+`NOWMirrorSource`, which polls `scene.request` and dispatches to the act
+lane. Every link is proven against a live emulated Mac, separately:
+
+| link | evidence |
+|---|---|
+| scene reaches the host | `NOWMirrorSource` is this host's FIRST caller of `requestScene` |
+| it decodes as IR v1 | `SceneIRDecodeTests`, against a captured fixture |
+| it draws | `SceneRenderTests`, and a person looked at the PNG |
+| a pixel finds the right element | `SceneHitTestTests` (round trip) |
+| the document agrees with the screen | `mirror-geometry-probe.py`, real QMP click |
+| the act moves the machine | `act-parts-probe.py`, 60→156→60 by part code |
+
+**Nobody has opened the window and clicked in it.** That is the gap, and
+it is deliberately the human's: this side cannot screenshot the host
+app's own window (mirror/CLAUDE.md), so the assembled product is judged
+by a person or not at all. Both build systems compile it, Debug and
+Release, which is a different and weaker claim.
+
+### Known gaps in what it can drive
+
+- **No positional click.** NOW's contract has no click-at-a-point verb
+  (`asyncapi.yaml:3294`, deliberate). So a click on bare desktop, on a
+  desktop icon, or in bare window content is a NAMED refusal rather than
+  an act. Controls, menus, windows and keys all work; the Finder's icons
+  do not, and that is the largest hole in "drive the Mac".
+- **Interiors are empty.** The content plane (P3) has still never
+  captured a drawing op, so windows render as chrome around blank space.
+  The renderer is ready for it (`MirrorKitUI.DisplayReplay`); the guest
+  side has never been armed in anger.
+- **A raise is missing.** `winact` serves move/resize/zoom/close but
+  nothing selects one window among an application's own, so a title-bar
+  click still falls back to a QMP press — emulator only. This is stated
+  in `MirrorAction.WindowAct` rather than invented.
+- **`role` is a guess.** Derived from `min != max`, so About This
+  Computer's memory bar graphs are reported as scrollbars and a click
+  there asks a bar graph to scroll. The honest derivation needs the
+  control's defProc, which the walk does not read.
+
 ## FIXED: the mirror could not have clicked, and no gate could see it (2026-08-02)
 
 **Fixed on the guest, gated on the host, TESTED — not metal-verified.**
