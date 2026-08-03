@@ -301,7 +301,6 @@ static void collect_self_menubar(NowScene *s, int row)
     Handle bar = GetMenuBar();
     NowMenuListHead *head;
     short offset;
-    int   index;
 
     if (bar == NULL || *bar == NULL) {
         return;
@@ -314,41 +313,12 @@ static void collect_self_menubar(NowScene *s, int row)
     for (offset = 6; offset <= head->last_offset; offset = (short)(offset + 6)) {
         NowMenuListEntry *entry =
             (NowMenuListEntry *)((char *)*bar + offset);
-        MenuHandle menu = entry->menu;
-        Str255 title;
-        char ctitle[64];
-        short count;
-        short i;
 
-        if (menu == NULL) {
-            continue;
-        }
-        title[0] = 0;
-        GetMenuTitle(menu, title);
-        pascal_to_c(title, ctitle, sizeof ctitle);
-        index = now_scene_add_menu(s, ctitle, GetMenuID(menu), entry->left);
-        if (index < 0) {
-            break;
-        }
-        count = (short)CountMenuItems(menu);
-        for (i = 1; i <= count; ++i) {
-            Str255 text;
-            char   ctext[64];
-            short  mark = 0;
-            short  cmd = 0;
-
-            text[0] = 0;
-            GetMenuItemText(menu, i, text);
-            pascal_to_c(text, ctext, sizeof ctext);
-            GetItemMark(menu, i, (short *)&mark);
-            GetItemCmd(menu, i, (short *)&cmd);
-            (void)now_scene_add_menu_item(
-                s, index, ctext, i,
-                (ctext[0] == '-') ? 1 : 0,
-                IsMenuItemEnabled(menu, i) ? 1 : 0,
-                (int)mark, (char)cmd);
-        }
+        add_one_menu(s, entry->menu, entry->left);
     }
+    /* And the ones the system put there, which the walk above cannot
+       reach. Without these the host synthesises a switcher of its own. */
+    collect_self_system_menus(s);
     DisposeHandle(bar);
 }
 
