@@ -79,7 +79,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// container is cheap (0.3s for 33 items, measured) but not cheap
     /// enough to spend on every frame of a mirror.
     private var icons: [String: [MirrorKit.Scene.DesktopItem]] = [:]
-    private var iconLayout: String = ""
+    private var iconLayout: String = "<none>"
     private var fetchingIcons = false
     private var actGeneration = 0
 
@@ -195,7 +195,14 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
     private func refreshIconsIfStale(_ scene: MirrorKit.Scene) {
         let folders = scene.windows.filter(FinderItems.isFolderWindow)
-        let key = folders.map(FinderItems.layoutKey).joined(separator: "|")
+        /* The leading "desktop" is not decoration. The key used to be just
+           the folder windows joined, so a machine with NO Finder window
+           open produced "" - which equals the initial value of iconLayout,
+           so the guard never fired and the DESKTOP's own icons were never
+           fetched at all. Watched: a mirror with a bare desktop drew no
+           icons, ever, while every folder window drew its own. */
+        let key = (["desktop"] + folders.map(FinderItems.layoutKey))
+            .joined(separator: "|")
         guard key != iconLayout, !fetchingIcons else { return }
         fetchingIcons = true
         Task { @MainActor [weak self] in

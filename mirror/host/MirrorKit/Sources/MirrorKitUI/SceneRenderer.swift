@@ -78,7 +78,13 @@ public struct SceneRenderer {
            menus.indices.contains(openMenu) {
             drawDropdown(ctx, menus[openMenu])
         }
-        drawShelf(ctx, bounds)
+        /* NO PROCESS SHELF. It painted a 92px band over the BOTTOM OF THE
+           GUEST'S OWN SCREEN - not beside it - so it covered the control
+           strip, the bottom row of desktop icons and anything a window had
+           down there, and it made the mirror unfaithful in the one way a
+           mirror must never be: it showed something the Mac was not
+           showing. What is running belongs on NOW's Processes page, which
+           exists and is not drawn on top of the machine. */
         if let dragOutline {
             drawDragOutline(ctx, dragOutline)
         }
@@ -884,65 +890,6 @@ public struct SceneRenderer {
         ctx.stroke(Path(thumb), with: .color(Platinum.g6), lineWidth: 1)
         bevel(ctx, thumb.insetBy(dx: 1, dy: 1),
               light: Platinum.g0, shadow: Platinum.g4)
-    }
-
-    // MARK: - Process shelf (observe plane)
-
-    private func drawShelf(_ ctx: GraphicsContext, _ bounds: CGRect) {
-        guard let procs = scene.processes, !procs.isEmpty else { return }
-        let shelf = CGRect(x: 0, y: bounds.height - 92,
-                           width: bounds.width, height: 92)
-        ctx.fill(Path(shelf), with: .color(Platinum.g1))
-        ctx.fill(Path(CGRect(x: 0, y: shelf.minY - 1,
-                             width: shelf.width, height: 1)),
-                 with: .color(Platinum.g6))
-        ctx.fill(Path(CGRect(x: 0, y: shelf.minY,
-                             width: shelf.width, height: 1)),
-                 with: .color(Platinum.g0))
-
-        let label = Text("LIVE PROCESSES · observe plane · \(procs.count) running")
-            .font(Platinum.systemFont(10)).foregroundColor(Platinum.g4)
-        ctx.draw(ctx.resolve(label),
-                 at: CGPoint(x: 16, y: shelf.minY + 9), anchor: .leading)
-
-        var x: CGFloat = 16
-        for proc in procs {
-            drawProc(ctx, proc, at: CGPoint(x: x, y: shelf.minY + 20))
-            x += 90
-            if x > bounds.width - 80 { break }
-        }
-    }
-
-    private func drawProc(_ ctx: GraphicsContext, _ proc: MirrorKit.Scene.ProcessRef,
-                          at origin: CGPoint) {
-        let glyphBox = CGRect(x: origin.x + 18, y: origin.y,
-                              width: 40, height: 40)
-        let path = Path(roundedRect: glyphBox, cornerRadius: 6)
-        if proc.front {
-            ctx.fill(path, with: .color(Platinum.selection))
-        } else {
-            ctx.fill(path, with: .color(Platinum.g2))
-        }
-        ctx.stroke(path, with: .color(Platinum.g6), lineWidth: 1)
-
-        let initials = Self.glyph(for: proc.name)
-        let glyphText = Text(initials).font(Platinum.systemFont(13).bold())
-            .foregroundColor(proc.front ? Platinum.g0 : Platinum.g5)
-        ctx.draw(ctx.resolve(glyphText),
-                 at: CGPoint(x: glyphBox.midX, y: glyphBox.midY),
-                 anchor: .center)
-
-        var clipped = ctx
-        clipped.clip(to: Path(CGRect(x: origin.x, y: origin.y + 42,
-                                     width: 76, height: 28)))
-        let w = CGFloat(FontBook.small?.width(proc.name) ?? 0)
-        appText(proc.name, clipped, x: origin.x + 38 - w / 2,
-                baselineY: origin.y + 54, color: Platinum.g6, small: true)
-    }
-
-    static func glyph(for name: String) -> String {
-        let cleaned = name.filter { $0.isLetter || $0.isNumber }
-        return cleaned.isEmpty ? "??" : String(cleaned.prefix(2)).uppercased()
     }
 
     // MARK: - Helpers
