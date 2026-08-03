@@ -103,10 +103,12 @@ final class IslandRenderTests: XCTestCase {
     /// placeholder keeps that missing-content fact visible and bounded.
     func testAnUnreportedWindowBodyIsNotRenderedAsEmptyWhiteContent() throws {
         let r = Rect(l: 100, t: 100, r: 500, b: 400)
-        let png = try RenderShot.png(scene: scene([
-            window(title: "Unreported", front: true, z: 0, rect: r,
-                   island: nil),
-        ]))
+        var w = window(title: "Unreported", front: true, z: 0, rect: r,
+                       island: nil)
+        w.controls = [.init(ref: "button", role: "button", title: "Do It",
+                            rect: Rect(l: 260, t: 200, r: 340, b: 220),
+                            enabled: true, visible: true)]
+        let png = try RenderShot.png(scene: scene([w]))
         let inside = try XCTUnwrap(pixel(png, x: r.l + 200, y: r.t + 150))
         XCTAssertFalse(inside.0 == 255 && inside.1 == 255 && inside.2 == 255,
                        "missing guest content needs a visible placeholder")

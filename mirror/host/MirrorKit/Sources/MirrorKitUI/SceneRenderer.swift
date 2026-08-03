@@ -649,9 +649,11 @@ public struct SceneRenderer {
            Mirror cannot currently express. Key Caps and NOW's own Workshop
            exposed why silently painting white is a fidelity defect even when
            their detailed drawing is outside the semantic core. */
+        /* Controls do not constitute the content plane. NOW's Workshop has
+           several real buttons over a large hand-drawn canvas; counting those
+           buttons made the rest of the body silently white again. */
         let hasReportedContent = win.display != nil
             || win.text != nil
-            || !win.controls.isEmpty
             || win.dialogItems != nil
             || win.items != nil
             || win.island != nil
