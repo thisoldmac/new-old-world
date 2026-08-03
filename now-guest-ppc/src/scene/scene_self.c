@@ -5,6 +5,7 @@
 #include "control_kind.h"
 #include "observe.h"
 #include <MacWindows.h>
+#include <Menus.h>
 
 #include <string.h>
 
@@ -188,6 +189,88 @@ static void find_controls_by_probe(NowScene *s, int index, WindowRef window,
     }
 }
 
+/* --- this application's own menu bar ------------------------------------
+
+   With NOW in front the scene carried NO menu bar at all: the collector
+   walks a foreign process's MenuList through a memory reader and self
+   never binds, so the mirror drew an empty, inert bar. That is not a
+   cosmetic gap - it is why the Application menu fell back to a
+   synthesised switcher listing only ourselves, and therefore why a
+   person could not switch to the Finder from the mirror.
+
+   `GetMenuBar` hands back THIS application's own MenuList. Its layout is
+   documented and the memory is ours: a count in bytes, then pairs of
+   {MenuHandle, left}. Reading it gives the exact positions the Menu
+   Manager itself uses - which a computed layout could not, and a click
+   that misses a title by four pixels opens the wrong menu. */
+
+typedef struct {
+    short         last_offset;     /* bytes; last entry is at this offset */
+    short         last_right;
+    short         mb_res_id;
+} NowMenuListHead;
+
+typedef struct {
+    MenuHandle menu;
+    short      left;
+} NowMenuListEntry;
+
+static void collect_self_menubar(NowScene *s, int row)
+{
+    Handle bar = GetMenuBar();
+    NowMenuListHead *head;
+    short offset;
+    int   index;
+
+    if (bar == NULL || *bar == NULL) {
+        return;
+    }
+    if (!now_scene_open_menubar(s, row)) {
+        DisposeHandle(bar);
+        return;
+    }
+    head = (NowMenuListHead *)*bar;
+    for (offset = 6; offset <= head->last_offset; offset = (short)(offset + 6)) {
+        NowMenuListEntry *entry =
+            (NowMenuListEntry *)((char *)*bar + offset);
+        MenuHandle menu = entry->menu;
+        Str255 title;
+        char ctitle[64];
+        short count;
+        short i;
+
+        if (menu == NULL) {
+            continue;
+        }
+        title[0] = 0;
+        GetMenuTitle(menu, title);
+        pascal_to_c(title, ctitle, sizeof ctitle);
+        index = now_scene_add_menu(s, ctitle, GetMenuID(menu), entry->left);
+        if (index < 0) {
+            break;
+        }
+        count = (short)CountMenuItems(menu);
+        for (i = 1; i <= count; ++i) {
+            Str255 text;
+            char   ctext[64];
+            short  mark = 0;
+            short  cmd = 0;
+
+            text[0] = 0;
+            GetMenuItemText(menu, i, text);
+            pascal_to_c(text, ctext, sizeof ctext);
+            GetItemMark(menu, i, (short *)&mark);
+            GetItemCmd(menu, i, (short *)&cmd);
+            (void)now_scene_add_menu_item(
+                s, index, ctext, i,
+                (ctext[0] == '-') ? 1 : 0,
+                IsMenuItemEnabled(menu, i) ? 1 : 0,
+                (int)mark, (char)cmd);
+        }
+    }
+    DisposeHandle(bar);
+}
+
 void now_scene_collect_self(NowScene *s, int row,
                             const ProcessSerialNumber *psn,
                             NowObsWalk *refs)
@@ -201,6 +284,18 @@ void now_scene_collect_self(NowScene *s, int row,
        this application's own window is the one always on screen. */
     if (refs != NULL && psn != NULL) {
         now_observe_walk_aim_self(refs, psn);
+    }
+    /* One menu bar per machine and it is the FRONT process's - the same
+       rule the foreign path follows. */
+    {
+        ProcessSerialNumber front;
+        Boolean             same = false;
+
+        if (GetFrontProcess(&front) == noErr && psn != NULL
+                && SameProcess(&front, (ProcessSerialNumber *)psn, &same)
+                       == noErr && same) {
+            collect_self_menubar(s, row);
+        }
     }
 
     for (; window != NULL && hops < kSelfMaxWindows;
