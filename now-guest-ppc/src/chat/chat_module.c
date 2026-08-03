@@ -11,15 +11,26 @@
 
 /* The Chat page: a transcript of pre-wrapped lines (the Console's
    shape - no variable-height rows anywhere in this application), a
-   model popup rebuilt from the host's catalog, and a hand-drawn prompt
-   well. The model runs on the OTHER Mac; this page sends one turn and
-   draws what streams back. All parsing lives in chat_model.c where the
-   host cc can test it; this file is controls, rects and pixels.
+   model popup rebuilt from the host's catalog, and a REAL edit-text
+   control for the prompt - the Control Manager owns its pixels, caret
+   and selection, so typing repaints nothing of ours. The model runs on
+   the OTHER Mac; this page sends one turn and draws what streams back.
+   All parsing lives in chat_model.c where the host cc can test it;
+   this file is controls, rects and pixels.
 
    Wire replies arrive through chat_note() from inside the pump, which
    may itself be running under a tracking loop - so the note only
    mutates state and invalidates. Drawing happens in chat_draw() on the
-   update event, from state alone. */
+   update event, from state alone - and the damage is per ROW: a chunk
+   that only lengthens the open tail line invalidates that one line's
+   rect, never the pane (metal, 2026-08-02: whole-pane damage per chunk
+   read as flicker at streaming cadence).
+
+   The console's first build had an edit-text field that never took a
+   keystroke; the missing half was routing, not the control. Keys reach
+   it through HandleControlKey under an explicit SetKeyboardFocus, the
+   same pair the Data Browser pages have proven on metal, and the caret
+   blinks from IdleControls on the idle path. */
 
 enum {
     kChatModelsMenuID = 136,
@@ -50,9 +61,7 @@ static int g_filtered_sel = -1;
 static int g_row_sel = -1;            /* index into g_models, -1 = none */
 static Boolean g_asked_catalog;
 
-static char g_input[kChatPromptMax + 1];
-static int g_input_len;
-static Boolean g_input_focus = true;
+static ControlRef g_prompt;           /* edit text; the manager draws it */
 
 static char g_status[128];            /* the transient chat.status line */
 static Boolean g_streaming;
@@ -68,8 +77,6 @@ static Boolean g_pinned = true;
 static int g_shown_lines = -1;
 static int g_shown_open_len = -1;
 static char g_shown_status[128];
-static Boolean g_shown_streaming;
-static int g_shown_input_len = -1;
 
 /* --- small helpers ------------------------------------------------------ */
 
@@ -109,6 +116,75 @@ static void sync_scrollbar(void)
     }
     SetControlMaximum(g_scroll, (short)max_top());
     SetControlValue(g_scroll, (short)g_top);
+}
+
+/* Damage for transcript lines [from, to) in transcript coordinates,
+   clipped to the rows the pane shows. The streaming path's whole point:
+   one lengthened tail line invalidates one row's rect. */
+static void inval_rows(int from, int to)
+{
+    int fit = visible_lines();
+    int first = from - g_top;
+    int last = to - g_top;
+    Rect r;
+
+    if (first < 0) {
+        first = 0;
+    }
+    if (last > fit) {
+        last = fit;
+    }
+    if (first >= last) {
+        return;
+    }
+    r.left = (short)(g_r.transcript.left + 1);
+    r.right = (short)(g_r.transcript.right - 1);
+    r.top = (short)(g_r.transcript.top + 4 + first * kChatLineHeight);
+    r.bottom = (short)(g_r.transcript.top + 4 + last * kChatLineHeight);
+    inval(&r);
+}
+
+/* --- the prompt control -------------------------------------------------- */
+
+static long prompt_size(void)
+{
+    Size len = 0;
+
+    if (g_prompt == NULL
+        || GetControlDataSize(g_prompt, kControlEditTextPart,
+                              kControlEditTextTextTag, &len) != noErr) {
+        return 0;
+    }
+    return (long)len;
+}
+
+static long prompt_text(char *out, long cap)
+{
+    Size got = 0;
+
+    if (g_prompt == NULL
+        || GetControlData(g_prompt, kControlEditTextPart,
+                          kControlEditTextTextTag, (Size)(cap - 1),
+                          (Ptr)out, &got) != noErr) {
+        got = 0;
+    }
+    if (got > (Size)(cap - 1)) {
+        got = (Size)(cap - 1);
+    }
+    out[got] = '\0';
+    return (long)got;
+}
+
+static void prompt_clear(void)
+{
+    if (g_prompt == NULL) {
+        return;
+    }
+    SetControlData(g_prompt, kControlEditTextPart, kControlEditTextTextTag,
+                   0, (Ptr)"");
+    if (g_visible) {
+        Draw1Control(g_prompt);
+    }
 }
 
 static void scroll_to(int top, Boolean from_person)
@@ -355,6 +431,48 @@ static void ask_catalog(void)
     g_asked_catalog = true;
 }
 
+static void send_prompt(void)
+{
+    char prompt[kChatPromptMax + 1];
+    char err[96];
+
+    if (prompt_size() == 0) {
+        return;
+    }
+    if (prompt_size() > kChatPromptMax) {
+        strcpy(g_status, "The prompt is longer than 512 characters");
+        inval(&g_r.status);
+        return;
+    }
+    if (g_row_sel < 0 || g_row_sel >= g_model_count
+        || strcmp(g_models[g_row_sel].state, "serving") != 0) {
+        strcpy(g_status, "Pick a serving model first");
+        inval(&g_r.status);
+        return;
+    }
+    prompt_text(prompt, sizeof prompt);
+    if (now_wire_chat_send(g_models[g_row_sel].model, prompt,
+                           err, sizeof err) != 0) {
+        snprintf(g_status, sizeof g_status, "%.120s", err);
+        inval(&g_r.status);
+        return;
+    }
+    chat_transcript_add(&g_transcript, "> ", prompt);
+    chat_transcript_begin_answer(&g_transcript);
+    prompt_clear();
+    g_streaming = true;
+    g_pinned = true;
+    g_top = max_top();
+    retitle_send();
+    sync_scrollbar();
+    /* Accepted-and-silent is the stretch that reads as a hang; say
+       who we are waiting for until the first delta clears it. */
+    snprintf(g_status, sizeof g_status, "Waiting for %.40s...",
+             g_models[g_row_sel].label);
+    inval(&g_r.status);
+    inval(&g_r.transcript);
+}
+
 static void send_or_stop(void)
 {
     char err[96];
@@ -366,32 +484,7 @@ static void send_or_stop(void)
         }
         return;
     }
-    if (g_input_len == 0) {
-        return;
-    }
-    if (g_row_sel < 0 || g_row_sel >= g_model_count
-        || strcmp(g_models[g_row_sel].state, "serving") != 0) {
-        strcpy(g_status, "Pick a serving model first");
-        inval(&g_r.status);
-        return;
-    }
-    if (now_wire_chat_send(g_models[g_row_sel].model, g_input,
-                           err, sizeof err) != 0) {
-        snprintf(g_status, sizeof g_status, "%.120s", err);
-        inval(&g_r.status);
-        return;
-    }
-    chat_transcript_add(&g_transcript, "> ", g_input);
-    chat_transcript_begin_answer(&g_transcript);
-    g_input[0] = '\0';
-    g_input_len = 0;
-    g_streaming = true;
-    g_pinned = true;
-    g_top = max_top();
-    retitle_send();
-    sync_scrollbar();
-    inval(&g_r.input);
-    inval(&g_r.transcript);
+    send_prompt();
 }
 
 static void new_chat(void)
@@ -481,9 +574,21 @@ static OSErr chat_create(WindowRef owner, const Rect *body)
     g_scroll_action_upp = NewControlActionUPP(scroll_action);
     g_scroll = NewControl(owner, &g_r.scrollbar, text, false, 0, 0, 0,
                           scrollBarProc, 0);
+    text[0] = 0;
+    g_prompt = NewControl(owner, &g_r.input, text, false, 0, 0, 0,
+                          kControlEditTextProc, 0);
+    if (g_prompt != NULL) {
+        ControlFontStyleRec style;
+
+        style.flags = kControlUseFontMask | kControlUseSizeMask;
+        style.font = g_font;
+        style.size = 9;
+        SetControlFontStyle(g_prompt, &style);
+    }
     if (g_provider_popup == NULL || g_model_popup == NULL
         || g_new_btn == NULL || g_send_btn == NULL
-        || g_scroll == NULL || g_scroll_action_upp == NULL) {
+        || g_scroll == NULL || g_prompt == NULL
+        || g_scroll_action_upp == NULL) {
         return memFullErr;
     }
     rebuild_popups();
@@ -505,6 +610,7 @@ static void chat_dispose(void)
     g_new_btn = NULL;
     g_send_btn = NULL;
     g_scroll = NULL;
+    g_prompt = NULL;
     g_owner = NULL;
 }
 
@@ -517,7 +623,10 @@ static void chat_show(Boolean visible)
         ShowControl(g_new_btn);
         ShowControl(g_send_btn);
         ShowControl(g_scroll);
-        g_input_focus = true;
+        ShowControl(g_prompt);
+        /* The routing the first edit-text field in this application
+           lacked: focus is asserted, never assumed. */
+        SetKeyboardFocus(g_owner, g_prompt, kControlEditTextPart);
         /* Every show, not once per connection: the host's providers
            change while this page is elsewhere (metal, 2026-08-02). */
         if (conn_phase() == kConnConnected) {
@@ -525,15 +634,15 @@ static void chat_show(Boolean visible)
         }
         /* Force the caches stale so the first draw is whole. */
         g_shown_lines = -1;
-        g_shown_input_len = -1;
         g_shown_status[0] = '\0';
     } else {
+        ClearKeyboardFocus(g_owner);  /* keys must not land in a hidden page */
         HideControl(g_provider_popup);
         HideControl(g_model_popup);
         HideControl(g_new_btn);
         HideControl(g_send_btn);
         HideControl(g_scroll);
-        g_input_focus = false;        /* keys must not land in a hidden page */
+        HideControl(g_prompt);
     }
 }
 
@@ -561,6 +670,10 @@ static void chat_layout_op(const Rect *body)
     SizeControl(g_scroll,
                 (short)(g_r.scrollbar.right - g_r.scrollbar.left),
                 (short)(g_r.scrollbar.bottom - g_r.scrollbar.top));
+    MoveControl(g_prompt, g_r.input.left, g_r.input.top);
+    SizeControl(g_prompt,
+                (short)(g_r.input.right - g_r.input.left),
+                (short)(g_r.input.bottom - g_r.input.top));
     if (g_pinned) {
         g_top = max_top();
     }
@@ -570,6 +683,8 @@ static void chat_layout_op(const Rect *body)
 static void draw_transcript(void)
 {
     Rect f = g_r.transcript;
+    Rect inner = f;
+    Rect band;
     RgnHandle saved = NewRgn();
     int fit = visible_lines();
     int lines = chat_transcript_count(&g_transcript);
@@ -577,22 +692,36 @@ static void draw_transcript(void)
     short x = (short)(f.left + 5);
     short y = (short)(f.top + 4 + (kChatLineHeight - 3));
 
-    EraseRect(&f);
+    /* Erase per ROW, never the pane in one go: BeginUpdate clips this
+       to the damaged region, and a row's blank moment is microseconds
+       where a whole-pane erase is a visible white flash at streaming
+       cadence. Every pixel is still reconstructed from state - the
+       bands above and below the rows included, for the reset case. */
     FrameRect(&f);
+    InsetRect(&inner, 1, 1);
     if (saved != NULL) {
         GetClip(saved);
-        ClipRect(&f);
+        ClipRect(&inner);
     }
+    band = inner;
+    band.bottom = (short)(f.top + 4);
+    EraseRect(&band);
+    band = inner;
+    band.top = (short)(f.top + 4 + fit * kChatLineHeight);
+    EraseRect(&band);
     TextFont(g_font);
     TextSize(9);
     TextFace(normal);
     for (i = 0; i < fit; ++i) {
         int line = g_top + i;
 
-        if (line >= lines) {
-            break;
+        band = inner;
+        band.top = (short)(f.top + 4 + i * kChatLineHeight);
+        band.bottom = (short)(band.top + kChatLineHeight);
+        EraseRect(&band);
+        if (line < lines) {
+            draw_at(x, y, chat_transcript_line(&g_transcript, line));
         }
-        draw_at(x, y, chat_transcript_line(&g_transcript, line));
         y = (short)(y + kChatLineHeight);
     }
     if (lines == 0) {
@@ -621,45 +750,15 @@ static void draw_status_line(void)
     TextFace(normal);
 }
 
-static void draw_input(void)
-{
-    Rect f = g_r.input;
-    char shown[kChatPromptMax + 2];
-    int width = f.right - f.left - 10;
-    const char *text = g_input;
-
-    EraseRect(&f);
-    FrameRect(&f);
-    TextFont(g_font);
-    TextSize(9);
-    /* Tail-scroll: when the text outgrows the well, show its end -
-       that is where the caret and the person's attention are. */
-    while (text[0] != '\0' && TextWidth(text, 0, (short)strlen(text))
-               > width - 6) {
-        ++text;
-    }
-    if (g_input_len == 0 && !g_streaming) {
-        TextFace(italic);
-        draw_at((short)(f.left + 5), (short)(f.bottom - 7),
-                "Type here, Return sends");
-        TextFace(normal);
-        return;
-    }
-    snprintf(shown, sizeof shown, "%s%s", text,
-             g_input_focus && !g_streaming ? "|" : "");
-    draw_at((short)(f.left + 5), (short)(f.bottom - 7), shown);
-}
-
 static void chat_draw(void)
 {
+    /* The prompt is the Control Manager's; this draws only the pane
+       and the status line. */
     draw_transcript();
     draw_status_line();
-    draw_input();
     g_shown_lines = chat_transcript_count(&g_transcript);
     g_shown_open_len = g_transcript.feed.open_len;
     strncpy(g_shown_status, g_status, sizeof g_shown_status - 1);
-    g_shown_streaming = g_streaming;
-    g_shown_input_len = g_input_len;
 }
 
 static Boolean chat_click(const EventRecord *event, Point local)
@@ -717,11 +816,11 @@ static Boolean chat_click(const EventRecord *event, Point local)
         }
         return true;
     }
-    if (PtInRect(local, &g_r.input)) {
-        if (!g_input_focus) {
-            g_input_focus = true;
-            inval(&g_r.input);
-        }
+    if (control == g_prompt && part != 0) {
+        /* Focus first, then let the CDEF place the caret and track a
+           selection drag itself. */
+        SetKeyboardFocus(g_owner, g_prompt, kControlEditTextPart);
+        HandleControlClick(g_prompt, local, event->modifiers, NULL);
         return true;
     }
     if (PtInRect(local, &g_r.transcript)) {
@@ -734,18 +833,20 @@ static Boolean chat_click(const EventRecord *event, Point local)
 static Boolean chat_key(const EventRecord *event)
 {
     char c = (char)(event->message & charCodeMask);
+    ControlRef focus = NULL;
 
-    if (!g_input_focus) {
+    if (!g_visible) {
         return false;
     }
-    if (c == '\r' || c == 3) {
-        send_or_stop();
-        return true;
+    if ((event->modifiers & cmdKey) != 0) {
+        return false;                 /* menu equivalents stay the app's */
     }
-    if (c == 0x08) {
-        if (g_input_len > 0) {
-            g_input[--g_input_len] = '\0';
-            inval(&g_r.input);
+    if (c == '\r' || c == 3) {
+        /* Return sends when idle; while an answer streams it does
+           nothing, so it can never cancel by accident - typing the
+           next prompt meanwhile is allowed. */
+        if (!g_streaming) {
+            send_prompt();
         }
         return true;
     }
@@ -754,12 +855,16 @@ static Boolean chat_key(const EventRecord *event)
                                      : -(visible_lines() - 1)), true);
         return true;
     }
-    if ((unsigned char)c >= 0x20 && (unsigned char)c < 0x7F) {
-        if (g_input_len < kChatPromptMax) {
-            g_input[g_input_len++] = c;
-            g_input[g_input_len] = '\0';
-            inval(&g_r.input);
+    if (GetKeyboardFocus(g_owner, &focus) == noErr && focus == g_prompt) {
+        /* The contract's cap, enforced at the door: printable keys at
+           the limit are dropped; editing keys always pass. */
+        if ((unsigned char)c >= 0x20
+            && prompt_size() >= kChatPromptMax) {
+            return true;
         }
+        HandleControlKey(g_prompt,
+                         (SInt16)((event->message & keyCodeMask) >> 8),
+                         (SInt16)c, event->modifiers);
         return true;
     }
     return false;
@@ -776,42 +881,56 @@ static void chat_activate(Boolean active)
         ActivateControl(g_new_btn);
         ActivateControl(g_send_btn);
         ActivateControl(g_scroll);
+        ActivateControl(g_prompt);
     } else {
         DeactivateControl(g_provider_popup);
         DeactivateControl(g_model_popup);
         DeactivateControl(g_new_btn);
         DeactivateControl(g_send_btn);
         DeactivateControl(g_scroll);
+        DeactivateControl(g_prompt);
     }
 }
 
 static void chat_idle(void)
 {
+    int count;
+
     /* Nearly free: compare the caches, invalidate only what moved. */
     if (!g_visible) {
         return;
     }
-    if (chat_transcript_count(&g_transcript) != g_shown_lines
+    count = chat_transcript_count(&g_transcript);
+    if (count != g_shown_lines
         || g_transcript.feed.open_len != g_shown_open_len) {
+        int old_top = g_top;
+
         if (g_pinned) {
             g_top = max_top();
-            sync_scrollbar();
         }
-        inval(&g_r.transcript);
-        g_shown_lines = chat_transcript_count(&g_transcript);
+        sync_scrollbar();
+        /* The smallest honest damage. Rows shift only when the view
+           scrolled or lost lines; otherwise a chunk touched the open
+           tail line and maybe closed a line above it - just those. */
+        if (g_shown_lines < 0 || g_top != old_top
+            || count < g_shown_lines) {
+            inval(&g_r.transcript);
+        } else if (count > g_shown_lines) {
+            inval_rows(g_shown_lines > 0 ? g_shown_lines - 1 : 0, count);
+        } else {
+            inval_rows(count > 0 ? count - 1 : 0, count);
+        }
+        g_shown_lines = count;
         g_shown_open_len = g_transcript.feed.open_len;
     }
     if (strcmp(g_status, g_shown_status) != 0) {
         inval(&g_r.status);
         strncpy(g_shown_status, g_status, sizeof g_shown_status - 1);
     }
-    if (g_streaming != g_shown_streaming) {
-        inval(&g_r.input);
-        g_shown_streaming = g_streaming;
-    }
-    if (g_input_len != g_shown_input_len) {
-        inval(&g_r.input);
-        g_shown_input_len = g_input_len;
+    /* The caret. IdleControls walks visible controls only, so this is
+       within the idle budget while the page is up. */
+    if (g_owner != NULL) {
+        IdleControls(g_owner);
     }
     /* The catalog is asked once per connection; a page shown before
        the wire came up asks as soon as it is there. */

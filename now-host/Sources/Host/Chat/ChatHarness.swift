@@ -40,7 +40,12 @@ actor ChatHarness {
         projections: HostProjectionRegistry = .hostFaces,
         makeClient: @escaping @Sendable (String?) -> AgentIntegrationClient,
         audit: any HostProjectionAuditSink,
-        maxToolTurns: Int = 12,
+        /* Real work is many rounds: finding an application means paging
+           the whole apps inventory, then launching by exact name — and
+           12 rounds cut exactly that off on metal (2026-08-02). Each
+           round is bounded by the tools themselves; the ceiling is a
+           runaway stop, not a budget. */
+        maxToolTurns: Int = 40,
         maxTokens: Int = 4096
     ) {
         self.registry = registry

@@ -98,6 +98,12 @@ enum ChatSystemPrompt {
         or a whole-volume software sweep costs it real time - do not \
         loop them; prefer now_machine_facts or the census for identity \
         questions.
+        - Launching software: now_launch_software takes the EXACT \
+        catalog name (or a reference it answered earlier). Do not guess \
+        names - page now_software_inventory (domain "apps") once and \
+        read the real name from an entry; later cursors reuse the \
+        cached sweep. An ambiguous launch answers with candidates you \
+        can launch by reference.
         - A refusal with a reason is an ANSWER. Relay it to the person; \
         do not retry the same call.
         - One thing at a time: the wire underneath runs one transfer at \
