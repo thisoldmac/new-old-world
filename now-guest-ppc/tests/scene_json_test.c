@@ -162,13 +162,21 @@ static void test_unproduced_planes_are_absent(void)
     /* The conditional planes, on a scene whose walk did not run: absent,
        not empty. `build_small` adds windows without walking any of
        them, which is exactly the state a process reached through
-       peek_read.c alone is in. */
-    check_absent(out, "controls");
+       peek_read.c alone is in.
+
+       TWO KEYS LEFT THIS LIST ON 2026-08-02, and the reason is worth
+       keeping: `controls` and `items` are REQUIRED by the IR this
+       producer names in its own envelope, and MirrorKit - the type that
+       IR belongs to - refuses a document without them. The absent-key
+       rule is right where this producer defines the shape; it is not
+       ours to apply to somebody else's contract, where an omission does
+       not read as "none" but as unparseable. They are now emitted
+       empty, and what the absence used to convey lives in meta's
+       truncation note. See SceneIRDecodeTests. */
     check_absent(out, "menubar");
     check_absent(out, "menus");
     check_absent(out, "\"text\"");
     check_absent(out, "\"kind\"");
-    check_absent(out, "\"items\"");
     /* meta.bytes is the encoded size, and the encode is what is
        happening; latencyMs is absent until something measures it. */
     check_absent(out, "\"bytes\"");
@@ -177,8 +185,11 @@ static void test_unproduced_planes_are_absent(void)
        as an empty string. `build_small` walks nothing, so no element in
        it was ever named. */
     check_absent(out, "\"ref\"");
-    /* And the two the walk still cannot say anything about at all. */
-    check_absent(out, "role");
+    /* `checked` the walk still cannot say anything about at all - it
+       reads a ControlRecord and not its defProc - and MirrorKit tolerates
+       its absence for exactly that reason. `role` LEFT this list: the IR
+       requires it, and a live range versus none is a distinction this
+       reader can make honestly. */
     check_absent(out, "checked");
     /* But meta.errors is EMITTED even when empty: it is a list of things
        that went wrong during a walk that did happen, not a plane this
@@ -231,17 +242,24 @@ static void test_conditional_planes(void)
     check(well_formed(out), "and is well formed");
 
     check_present(out, "\"menubar\":{\"app\":\"SimpleText\"");
-    check_present(out, "\"title\":\"File\",\"id\":129,\"left\":0");
+    /* `apple` now sits between the title and the id: the IR requires it
+       on every menu, and identifies the Apple menu by that flag rather
+       than by a title glyph. */
+    check_present(out, "\"title\":\"File\",\"apple\":false,"
+                  "\"id\":129,\"left\":0");
     check_present(out, "\"title\":\"New\",\"index\":1,\"separator\":false,"
                   "\"enabled\":true,\"mark\":false,\"cmd\":\"N\"");
-    /* An item with no command key carries no `cmd` at all - the key says
-       there is a shortcut, and an empty string would say there is one
-       spelled "". */
+    /* An item with no shortcut carries `cmd` as the EMPTY STRING, which
+       is the IR's own spelling for "none". This asserted the opposite
+       until 2026-08-02 - the key present meaning there is a shortcut -
+       which is the better rule for a shape this producer owns and the
+       wrong one for a contract it merely implements: MirrorKit refuses a
+       document missing the key. */
     check_present(out, "\"title\":\"-\",\"index\":2,\"separator\":true");
-    check_absent(out, "\"cmd\":\"\"");
-    /* `apple` is not emitted: nothing this walk reads says which menu is
-       the Apple menu, so the key stays absent rather than guessing. */
-    check_absent(out, "apple");
+    check_present(out, "\"cmd\":\"\"");
+    /* And the Apple menu is flagged, with an EMPTY title, because that
+       is how the IR names it. */
+    check_present(out, "\"apple\":false");
 
     w0 = strstr(out, "\"title\":\"Save As\"");
     w1 = strstr(out, "\"title\":\"Palette\"");
@@ -254,9 +272,12 @@ static void test_conditional_planes(void)
     /* Populated. The rect is the CONTROL's own, already global. */
     check(strstr(w0, "\"kind\":2") != NULL && strstr(w0, "\"kind\":2") < w1,
           "the walked dialog carries its kind");
-    check(strstr(w0, "\"controls\":[{\"title\":\"OK\",\"rect\":{\"l\":80,"
-                 "\"t\":50,\"r\":150,\"b\":70}") != NULL,
-          "and its controls, in global coordinates");
+    check(strstr(w0, "\"controls\":[{\"role\":") != NULL
+          && strstr(w0, "\"title\":\"OK\"") != NULL
+          && strstr(w0, "\"rect\":{\"l\":80,\"t\":50,\"r\":150,\"b\":70}")
+             != NULL,
+          "and its controls, in global coordinates, each with the role the "
+          "IR requires - control, or scrollbar when it carries a range");
     check(strstr(w0, "\"text\":{\"content\":\"Untitled\",\"active\":true}")
           != NULL, "and its dialog text");
 
@@ -268,9 +289,14 @@ static void test_conditional_planes(void)
     check(strstr(w1, "\"text\"") == NULL || strstr(w1, "\"text\"") > w2,
           "and carries no text key, because it has no TextEdit record");
 
-    /* Absent. Same scene, same encoder, no keys. */
-    check(strstr(w2, "controls") == NULL, "an unwalked window has no "
-          "controls key at all - not an empty one");
+    /* An UNWALKED window now also says `controls: []`, because the IR
+       requires the key on every window and has no state for "not
+       looked at". The distinction did not vanish - meta carries the
+       truncation note - but it no longer decides whether the document
+       parses. */
+    check(strstr(w2, "\"controls\":[]") != NULL,
+          "an unwalked window reports an empty control list rather than "
+          "omitting the key the IR requires");
     check(strstr(w2, "\"kind\"") == NULL, "and no kind");
     check(strstr(w2, "\"text\"") == NULL, "and no text");
 }
@@ -310,9 +336,14 @@ static void test_retractions_are_reported(void)
     check_present(out, "controls omitted");
     check_present(out, "menu items omitted");
     check_present(out, "window text omitted");
-    /* The retracted keys really are gone, not merely flagged. */
-    check_absent(out, "\"controls\":");
-    check_absent(out, "\"items\":");
+    /* The retraction is now carried by the NOTE, not by the missing key.
+       Both keys are required by the IR, so a retracted list encodes as
+       an empty array and meta says a list was dropped - which is the
+       fact a reader needs, and the one the absence used to imply. A
+       consumer that sees `controls: []` with no note is looking at a
+       window that genuinely has none. */
+    check_present(out, "\"controls\":[]");
+    check_present(out, "\"items\":[]");
     check(well_formed(out), "a scene full of retractions is still valid JSON");
 
     /* A menubar that was opened and then dropped says so too, and leaves
