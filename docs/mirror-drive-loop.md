@@ -44,9 +44,21 @@ Collapsing Sweep into Patch is the failure this structure prevents.
 | **Patch** | fix the blockers, plus at most **two** others | gate green before restaging |
 | **Verify** | next sweep RE-TESTS the claimed-fixed IDs first | before any new ground |
 
-**Blocked mid-sweep**: keep sweeping whatever does not depend on the
-block, record it as blocking, then break out into a patch session and
-retry that rung. Do not abandon the rest of the sweep to chase it.
+**Blocked mid-sweep — a blocker does NOT mean stop.** It means: write it
+down, step over it, and keep sweeping everything that does not depend on
+it, INCLUDING rungs above the blocked one. Patching begins only when the
+sweep budget is spent or the ladder pass is finished.
+
+One failed test is not a sweep. A sweep attempts **every item on the
+rung's checklist** and records each as pass / fail / blocked — and then
+carries on up the ladder testing whatever the block does not prevent.
+
+The temptation is always the same: the first failure is interesting, and
+diagnosing it feels like progress. It is not; it is the drilling this
+document exists to stop. Seen again on 2026-08-03 — one window drag
+failed and the sweep ended there, with close, zoom, resize, the menus,
+the desktop and the whole of rung 2 untested and a full patch session
+started on the strength of a single observation.
 
 **Why Refresh is a phase and not a preamble.** Drift happens INSIDE a
 session, not between them. A patch session fills the working context
