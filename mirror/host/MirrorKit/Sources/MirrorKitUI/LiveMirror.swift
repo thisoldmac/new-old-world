@@ -1,11 +1,47 @@
 import SwiftUI
 import MirrorKit
 
+/// **What the live view actually needs from whatever is driving it.**
+///
+/// DIVERGENCE FROM MIRROR ORIGIN, 2026-08-02, and the smallest one that
+/// does the job. `LiveMirrorView` is the only interactive mirror surface
+/// that exists - gesture routing, menu tracking, drag modes, double-click
+/// timing - and all of it was reachable only through
+/// `LiveMirrorController`, which polls Mirror's own line-JSON wire on
+/// port 1420 and dispatches through `ActionDispatcher`.
+///
+/// NOW carries the same scene over a different wire (binary-framed, the
+/// guest dials the host) and serves acts its own way, with verbs Mirror's
+/// vocabulary marks emulator-only - a scrollbar part is `ctlact`, a
+/// window move is `winact`, neither needs QMP. Re-implementing the
+/// gesture layer to reach them would fork the one piece of this codebase
+/// where a subtle behavioural difference is invisible in review and
+/// obvious to a person's hand.
+///
+/// So the view is generic over this instead. Four members, which is
+/// exactly what it referenced before: everything else the controller owns
+/// - the wire, the poller, the dispatcher, the compositing of stale
+/// windows - stays private to whoever conforms.
+public protocol MirrorSceneSource: ObservableObject {
+    /// The most recent scene, or nil before the first arrives. A failed
+    /// poll keeps the last one; the view never tears down on a gap.
+    var scene: MirrorKit.Scene? { get }
+    /// One line a person reads to know what just happened, including
+    /// refusals - silence after a click reads as a broken mirror.
+    var status: String { get }
+    /// Dispatch a gesture's actions in order, `label` naming the gesture
+    /// for the status line.
+    func perform(_ actions: [MirrorAction], label: String)
+    /// Say something happened that was not an action - "that cannot be
+    /// actioned" is a real answer and belongs on screen.
+    func note(_ message: String)
+}
+
 /// The live half of the mirror: owns the poll loop and the dispatcher on a
 /// wire-confined queue, publishes scenes to the view. All wire I/O stays off
 /// the main thread; a failed poll keeps the last scene and reports in the
 /// status line rather than tearing the window down.
-public final class LiveMirrorController: ObservableObject {
+public final class LiveMirrorController: MirrorSceneSource {
     @Published public private(set) var scene: MirrorKit.Scene?
     @Published public private(set) var status: String = "connecting…"
 
@@ -133,8 +169,8 @@ public final class LiveMirrorController: ObservableObject {
 /// The live window: SceneView pixels + input routed through the core
 /// (HitTester / ActionModel), Platinum-drawn menus, and a status footer.
 /// The drawn pixels are exactly RenderShot's.
-public struct LiveMirrorView: View {
-    @ObservedObject var controller: LiveMirrorController
+public struct LiveMirrorView<Source: MirrorSceneSource>: View {
+    @ObservedObject var controller: Source
     @State private var openMenu: Int?
     /// The row under the pointer in the open menu, 1-based. Menus are a
     /// selectable surface: this is what inverts, and what acts.
@@ -158,7 +194,7 @@ public struct LiveMirrorView: View {
     /// A live drag in progress, carrying the dragged window's original rect.
     private enum DragMode { case move(Rect), resize(Rect), thumb }
 
-    public init(controller: LiveMirrorController) {
+    public init(controller: Source) {
         self.controller = controller
     }
 
