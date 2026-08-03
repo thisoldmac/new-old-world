@@ -97,6 +97,10 @@ public enum InteractionPolicy {
         guard c.isEnabled else {
             return .nothing(why: "that control is disabled")
         }
+        guard c.isSemanticallyActionable else {
+            return .unsupported(why: "the guest did not provide complete, "
+                                + "authoritative semantics for that control")
+        }
         guard !c.ref.isEmpty else {
             return .unsupported(why: "that control reached the mirror with "
                                 + "no reference, so nothing can address it")
@@ -104,6 +108,12 @@ public enum InteractionPolicy {
 
         switch gesture {
         case .click(_, let mods, _):
+            guard c.semanticAction == "press" || c.semanticAction == "scroll"
+            else {
+                return .unsupported(why: "the guest advertises "
+                                    + "\(c.semanticAction ?? "no") semantics, "
+                                    + "but this driver has no matching act")
+            }
             /* THE POINT IS METADATA and this is where it earns its keep:
                the part was resolved with the object, so the press knows
                whether it was an arrow, a page gap or the thumb without

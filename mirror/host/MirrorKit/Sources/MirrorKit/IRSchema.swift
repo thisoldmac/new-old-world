@@ -241,18 +241,85 @@ public enum IRSchema {
         "Scene.Window.ref",
     ]
 
+    // MARK: - IR v2 semantic evidence
+
+    public static let v2Additions: Set<String> = [
+        "windows[].controls[].semantic",
+        "windows[].controls[].semantic.knowledge",
+        "windows[].controls[].semantic.kind",
+        "windows[].controls[].semantic.action",
+        "windows[].controls[].semantic.state",
+        "windows[].controls[].semantic.value",
+        "windows[].controls[].semantic.selection",
+        "windows[].controls[].semantic.selection.start",
+        "windows[].controls[].semantic.selection.end",
+        "windows[].controls[].semantic.focused",
+        "windows[].controls[].semantic.isDefault",
+        "windows[].controls[].semantic.provenance",
+        "windows[].controls[].semantic.completeness",
+        "windows[].dialogItems",
+        "windows[].dialogItems[].number",
+        "windows[].dialogItems[].title",
+        "windows[].dialogItems[].rect",
+        "windows[].dialogItems[].rect.l",
+        "windows[].dialogItems[].rect.t",
+        "windows[].dialogItems[].rect.r",
+        "windows[].dialogItems[].rect.b",
+        "windows[].dialogItems[].enabled",
+        "windows[].dialogItems[].visible",
+        "windows[].dialogItems[].ref",
+        "windows[].dialogItems[].semantic",
+        "windows[].dialogItems[].semantic.knowledge",
+        "windows[].dialogItems[].semantic.kind",
+        "windows[].dialogItems[].semantic.action",
+        "windows[].dialogItems[].semantic.state",
+        "windows[].dialogItems[].semantic.value",
+        "windows[].dialogItems[].semantic.selection",
+        "windows[].dialogItems[].semantic.selection.start",
+        "windows[].dialogItems[].semantic.selection.end",
+        "windows[].dialogItems[].semantic.focused",
+        "windows[].dialogItems[].semantic.isDefault",
+        "windows[].dialogItems[].semantic.provenance",
+        "windows[].dialogItems[].semantic.completeness",
+    ]
+
+    public static let v2AdditionalProperties: Set<String> = [
+        "Scene.Window.dialogItems",
+        "Scene.Control.semantic",
+        "Scene.DialogItem.number", "Scene.DialogItem.title",
+        "Scene.DialogItem.rect", "Scene.DialogItem.enabled",
+        "Scene.DialogItem.visible", "Scene.DialogItem.ref",
+        "Scene.DialogItem.semantic",
+        "Scene.Semantics.knowledge", "Scene.Semantics.kind",
+        "Scene.Semantics.action", "Scene.Semantics.state",
+        "Scene.Semantics.value", "Scene.Semantics.selection",
+        "Scene.Semantics.focused", "Scene.Semantics.isDefault",
+        "Scene.Semantics.provenance", "Scene.Semantics.completeness",
+        "Scene.Selection.start", "Scene.Selection.end",
+    ]
+
     // MARK: - What the gate compares against
 
     /// The wire shape this build promises for `major`, or nil if it makes no
     /// promise about that major (which is itself the answer a gate wants).
     public static func expectedWirePaths(major: Int) -> Set<String>? {
-        guard major == 1 else { return nil }
-        return v1Frozen.union(v1Additions)
+        switch major {
+        case 1: return v1Frozen.union(v1Additions)
+        case 2: return v1Frozen.union(v1Additions).union(v2Additions)
+        default: return nil
+        }
     }
 
     public static func expectedProperties(major: Int) -> Set<String>? {
-        guard major == 1 else { return nil }
-        return v1FrozenProperties.union(v1AdditionalProperties)
+        switch major {
+        case 1:
+            return v1FrozenProperties.union(v1AdditionalProperties)
+        case 2:
+            return v1FrozenProperties.union(v1AdditionalProperties)
+                .union(v2AdditionalProperties)
+        default:
+            return nil
+        }
     }
 
     // MARK: - Reading a shape off a value

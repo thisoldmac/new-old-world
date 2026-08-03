@@ -55,10 +55,16 @@ enum {
     kCtl1 = 0x00102100UL,
     kCtl2H = 0x00102400UL,
     kCtl2 = 0x00102500UL,
+    kCtl3H = 0x00102600UL,
+    kCtl3 = 0x00102700UL,
+    kCtl4H = 0x00102800UL,
+    kCtl4 = 0x00102900UL,
     kTeH = 0x00103000UL,
     kTe = 0x00103100UL,
     kTextH = 0x00103200UL,
     kText = 0x00103210UL,
+    kDitlH = 0x00103400UL,
+    kDitl = 0x00103500UL,
     kListH = 0x00104000UL,
     kList = 0x00104100UL,
     kMenuH0 = 0x00105000UL,
@@ -69,6 +75,33 @@ enum {
     /* Outside both arenas: the address a validated read must refuse. */
     kOutside = 0x00900000UL
 };
+
+static unsigned long put_ditem(AxFixture *f, unsigned long at,
+                               unsigned long handle, int type,
+                               int t, int l, int b, int r,
+                               const char *text)
+{
+    size_t n = strlen(text);
+    size_t i;
+    unsigned long total;
+
+    axfix_put32(f, at, handle);
+    axfix_put16(f, at + 4, t);
+    axfix_put16(f, at + 6, l);
+    axfix_put16(f, at + 8, b);
+    axfix_put16(f, at + 10, r);
+    axfix_put8(f, at + 12, (unsigned)type);
+    axfix_put8(f, at + 13, (unsigned)n);
+    for (i = 0; i < n; ++i) {
+        axfix_put8(f, at + 14 + (unsigned long)i, (unsigned char)text[i]);
+    }
+    total = 14 + (unsigned long)n;
+    if (total & 1UL) {
+        axfix_put8(f, at + total, 0);
+        ++total;
+    }
+    return at + total;
+}
 
 /* The WindowRecord fields this walk reads, at the classic offsets
    axwalk.c reads them from. portRect's origin plus the content region's
@@ -291,6 +324,101 @@ static void dialog_text(void)
     check(strcmp(s.texts[0].content, "Untitled") == 0, "the content");
     check(s.texts[0].active == 1, "and its active flag");
     check(s.texts[0].truncated == 0, "which fit, so nothing is claimed cut");
+}
+
+static void dialog_items_are_guest_semantics(void)
+{
+    AxFixture f;
+    NowAxMemory m;
+    NowScene s;
+    unsigned long at;
+
+    axfix_init(&f, &m);
+    build_window(&f, 2, kCtl1H, 0, 0, 40, 60, 300, 500);
+    build_control(&f, kCtl1H, kCtl1, kCtl2H, "Custom", 10, 20, 30, 160,
+                  0, 2);
+    build_control(&f, kCtl2H, kCtl2, kCtl3H, "Leading zero", 80, 20, 96,
+                  180, 0, 1);
+    build_control(&f, kCtl3H, kCtl3, kCtl4H, "Off", 105, 20, 121, 80,
+                  0, 1);
+    build_control(&f, kCtl4H, kCtl4, 0, "OK", 150, 300, 170, 380, 0, 0);
+
+    axfix_put32(&f, kWin + 156, kDitlH);
+    axfix_put_handle(&f, kDitlH, kDitl);
+    axfix_put16(&f, kDitl, 5);              /* six items, count minus one */
+    at = kDitl + 2;
+    at = put_ditem(&f, at, kCtl1H, 7, 10, 20, 30, 160, "");
+    at = put_ditem(&f, at, 0, 16, 40, 20, 60, 80, "9");
+    at = put_ditem(&f, at, 0, 8, 40, 90, 60, 150, "Prefix:");
+    at = put_ditem(&f, at, kCtl2H, 5, 80, 20, 96, 180,
+                   "Leading zero");
+    at = put_ditem(&f, at, kCtl3H, 6, 105, 20, 121, 80, "Off");
+    (void)put_ditem(&f, at, kCtl4H, 4, 150, 300, 170, 380, "OK");
+    axfix_put16(&f, kWin + 164, 1);          /* item 2 focused, zero-based */
+    axfix_put16(&f, kWin + 168, 6);          /* item 6 is default */
+
+    axfix_put32(&f, kWin + 160, kTeH);
+    axfix_put_handle(&f, kTeH, kTe);
+    axfix_put16(&f, kTe + 32, 0);
+    axfix_put16(&f, kTe + 34, 1);
+    axfix_put16(&f, kTe + 36, 1);
+    axfix_put16(&f, kTe + 60, 1);
+    axfix_put32(&f, kTe + 62, kTextH);
+    axfix_put_handle(&f, kTextH, kText);
+    axfix_put8(&f, kText, '9');
+
+    one_window(&s, kNowSceneAnchorOk);
+    now_scene_walk_window(&s, 0, &m, kWin, NULL);
+
+    check(s.windows[0].dialog_items_present,
+          "a validated live DITL opens the dialog-item plane");
+    check(s.windows[0].dialog_item_count == 6,
+          "every dialog item is preserved, including non-controls");
+    check(s.dialog_items[0].kind == kNowSceneSemanticPopupMenu
+          && strcmp(s.dialog_items[0].value, "Custom") == 0,
+          "a resource control is a popup with the live control value");
+    check(s.dialog_items[1].kind == kNowSceneSemanticEditText
+          && s.dialog_items[1].focused
+          && s.dialog_items[1].selection_start == 0
+          && s.dialog_items[1].selection_end == 1,
+          "edit text carries focus, value and validated selection");
+    check(s.dialog_items[2].kind == kNowSceneSemanticStaticText
+          && strcmp(s.dialog_items[2].value, "Prefix:") == 0,
+          "static text remains a dialog item rather than a fake control");
+    check(s.dialog_items[3].kind == kNowSceneSemanticCheckBox
+          && s.dialog_items[3].state_known && s.dialog_items[3].state_on,
+          "checkbox state comes from its matched live ControlRecord");
+    check(s.dialog_items[4].kind == kNowSceneSemanticRadioButton,
+          "radio and checkbox types stay distinct");
+    check(s.dialog_items[5].default_known
+          && s.dialog_items[5].is_default,
+          "the DialogRecord's default item reaches the exact button");
+    check(s.dialog_items[0].default_known
+          && !s.dialog_items[0].is_default,
+          "a proven default also proves the other items are not default");
+}
+
+static void malformed_ditl_retracts_the_plane(void)
+{
+    AxFixture f;
+    NowAxMemory m;
+    NowScene s;
+    unsigned long tail = AXFIX_TARGET_BASE + AXFIX_TARGET_SIZE - 4;
+
+    axfix_init(&f, &m);
+    build_window(&f, 2, 0, 0, 0, 40, 60, 200, 400);
+    axfix_put32(&f, kWin + 156, kDitlH);
+    axfix_put_handle(&f, kDitlH, tail);
+    axfix_put16(&f, tail, 0);                 /* one item, no room for it */
+    axfix_put16(&f, kWin + 164, -1);
+    axfix_put16(&f, kWin + 168, 0);
+
+    one_window(&s, kNowSceneAnchorOk);
+    now_scene_walk_window(&s, 0, &m, kWin, NULL);
+    check(!s.windows[0].dialog_items_present,
+          "a malformed DITL emits no plausible prefix");
+    check(s.dialog_item_count == 0 && s.dialog_items_truncated,
+          "the affected plane retracts and records the failure");
 }
 
 /* The gate is safety, not tidiness: offset 160 is past the end of a
@@ -632,6 +760,8 @@ int main(void)
     a_cycle_is_retracted();
     an_unreadable_record_claims_nothing();
     dialog_text();
+    dialog_items_are_guest_semantics();
+    malformed_ditl_retracts_the_plane();
     text_is_gated_on_the_kind();
     menubar_complete();
     a_null_menu_list_is_an_empty_answer();

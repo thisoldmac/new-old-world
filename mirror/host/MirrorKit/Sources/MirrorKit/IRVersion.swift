@@ -31,12 +31,12 @@ public enum IR {
 
     /// The current IR version. Single integer, so version == major: an
     /// additive change keeps this number, a removal or rename moves it.
-    public static let version = 1
+    public static let version = 2
 
     /// Majors this build can consume. A newer producer is refused, not
     /// best-efforted — a scene whose shape we cannot vouch for is worse than
     /// no scene, because the failure is silent and downstream.
-    public static let supportedMajors: Set<Int> = [1]
+    public static let supportedMajors: Set<Int> = [1, 2]
 
     public enum CompatError: Error, Equatable, CustomStringConvertible {
         /// No `irVersion` at all. A pre-freeze producer, or not a mirror reply.
@@ -98,13 +98,19 @@ public enum MirrorScene {
     /// Decode a `mirror.scene` result (`{scene: …, irVersion: n}`).
     /// Throws `IR.CompatError` before touching the payload.
     public static func decode(result: [String: Any]) throws -> Scene {
-        try IR.requireSupportedMajor(result["irVersion"])
+        let envelopeMajor = try IR.requireSupportedMajor(result["irVersion"])
         guard let body = result["scene"] else {
             throw IR.CompatError.malformedScene("no scene key")
         }
         do {
             let data = try JSONSerialization.data(withJSONObject: body)
-            return try JSONDecoder().decode(Scene.self, from: data)
+            let scene = try JSONDecoder().decode(Scene.self, from: data)
+            guard scene.version == envelopeMajor else {
+                throw IR.CompatError.malformedScene(
+                    "body version \(scene.version) does not match envelope "
+                    + "version \(envelopeMajor)")
+            }
+            return scene
         } catch let error as IR.CompatError {
             throw error
         } catch {

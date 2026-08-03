@@ -5,7 +5,7 @@
 
 #include "json.h"
 
-/* The IR v1 encoder.
+/* The IR v2 encoder.
 
    One pass, counting always and writing only while it fits, so a single
    walk yields both the bytes and the exact size a complete encode would
@@ -316,22 +316,6 @@ static void put_ref(Sink *k, const char *ref)
  *
  * Anything else says `control` and lets the host decide what to draw
  * from the title it now gets to keep. */
-static const char *guess_role(const NowSceneControl *c)
-{
-    short width = (short)(c->rect.r - c->rect.l);
-    short height = (short)(c->rect.b - c->rect.t);
-    short thin = width < height ? width : height;
-    short along = width < height ? height : width;
-
-    if (c->title[0] != '\0') {
-        return "control";
-    }
-    if (thin > 0 && thin <= kNowScrollBarThickness && along >= 3 * thin) {
-        return "scrollbar";
-    }
-    return "control";
-}
-
 /* A window's controls, and only for a window whose whole chain was
    walked. `checked` is absent throughout: the walk reads a
    ControlRecord, not its defProc, so it cannot say whether a control
@@ -370,7 +354,10 @@ static void put_controls(Sink *k, const NowScene *s, const NowSceneWindow *w)
          * better; an application asking the Control Manager about its own
          * control can, and scene_self.c does. */
         put(k, i > 0 ? ",{\"role\":" : "{\"role\":");
-        put_str(k, c->role[0] != '\0' ? c->role : guess_role(c));
+        /* IR v2 keeps the legacy role only so v1-era renderers can draw an
+           approximation. Unknown is explicit: geometry and a value range
+           never become an action-bearing type. */
+        put_str(k, c->role[0] != '\0' ? c->role : "unknown");
         put(k, ",\"title\":");
         put_str(k, c->title);
         snprintf(rect, sizeof rect, ",\"rect\":{\"l\":%d,\"t\":%d,\"r\":%d,"
@@ -388,7 +375,116 @@ static void put_controls(Sink *k, const NowScene *s, const NowSceneWindow *w)
         put(k, ",\"max\":");
         put_num(k, c->max);
         put_ref_required(k, c->ref);
+        put(k, ",\"semantic\":{\"knowledge\":");
+        if (c->role[0] == '\0') {
+            put_str(k, "unknown");
+        } else {
+            put_str(k, "known");
+            put(k, ",\"kind\":");
+            put_str(k, strcmp(c->role, "scrollbar") == 0
+                       ? "scrollBar" : "pushButton");
+            put(k, ",\"action\":");
+            put_str(k, strcmp(c->role, "scrollbar") == 0
+                       ? "scroll" : "press");
+        }
+        put(k, ",\"provenance\":\"guest-control-manager\","
+               "\"completeness\":\"complete\"}");
         put(k, "}");
+    }
+    put(k, "]");
+}
+
+static const char *dialog_kind(short kind)
+{
+    switch (kind) {
+    case kNowSceneSemanticPushButton: return "pushButton";
+    case kNowSceneSemanticCheckBox: return "checkBox";
+    case kNowSceneSemanticRadioButton: return "radioButton";
+    case kNowSceneSemanticPopupMenu: return "popupMenu";
+    case kNowSceneSemanticStaticText: return "staticText";
+    case kNowSceneSemanticEditText: return "editText";
+    case kNowSceneSemanticIcon: return "icon";
+    case kNowSceneSemanticPicture: return "picture";
+    case kNowSceneSemanticUserItem: return "userItem";
+    default: return "unknown";
+    }
+}
+
+static const char *dialog_action(short kind)
+{
+    switch (kind) {
+    case kNowSceneSemanticPushButton:
+    case kNowSceneSemanticCheckBox:
+    case kNowSceneSemanticRadioButton:
+        return "press";
+    case kNowSceneSemanticPopupMenu:
+        return "choose";
+    case kNowSceneSemanticEditText:
+        return "edit";
+    default:
+        return NULL;
+    }
+}
+
+static void put_dialog_items(Sink *k, const NowScene *s,
+                             const NowSceneWindow *w)
+{
+    short i;
+
+    if (!w->dialog_items_present) {
+        return;
+    }
+    put(k, ",\"dialogItems\":[");
+    for (i = 0; i < w->dialog_item_count; ++i) {
+        const NowSceneDialogItem *item =
+            &s->dialog_items[w->first_dialog_item + i];
+        const char *action = dialog_action(item->kind);
+        char buf[96];
+
+        put(k, i > 0 ? ",{\"number\":" : "{\"number\":");
+        put_num(k, item->number);
+        put(k, ",\"title\":");
+        put_str(k, item->title);
+        snprintf(buf, sizeof buf,
+                 ",\"rect\":{\"l\":%d,\"t\":%d,\"r\":%d,\"b\":%d}",
+                 (int)item->rect.l, (int)item->rect.t,
+                 (int)item->rect.r, (int)item->rect.b);
+        put(k, buf);
+        put(k, ",\"enabled\":");
+        put(k, item->enabled ? "true" : "false");
+        put(k, ",\"visible\":");
+        put(k, item->visible ? "true" : "false");
+        put_ref(k, item->ref);
+        put(k, ",\"semantic\":{\"knowledge\":\"known\",\"kind\":");
+        put_str(k, dialog_kind(item->kind));
+        if (action != NULL) {
+            put(k, ",\"action\":");
+            put_str(k, action);
+        }
+        if (item->state_known) {
+            put(k, ",\"state\":");
+            put_str(k, item->state_on ? "on" : "off");
+        }
+        if (item->value_known) {
+            put(k, ",\"value\":");
+            put_str(k, item->value);
+        }
+        if (item->selection_known) {
+            snprintf(buf, sizeof buf,
+                     ",\"selection\":{\"start\":%d,\"end\":%d}",
+                     (int)item->selection_start, (int)item->selection_end);
+            put(k, buf);
+        }
+        if (item->focus_known) {
+            put(k, ",\"focused\":");
+            put(k, item->focused ? "true" : "false");
+        }
+        if (item->default_known) {
+            put(k, ",\"isDefault\":");
+            put(k, item->is_default ? "true" : "false");
+        }
+        put(k, ",\"provenance\":\"guest-ditl\","
+               "\"completeness\":\"complete\"}}");
     }
     put(k, "]");
 }
@@ -447,6 +543,7 @@ static void put_windows(Sink *k, const NowScene *s)
             put_num(k, w->kind);
         }
         put_controls(k, s, w);
+        put_dialog_items(k, s, w);
         if (w->text >= 0 && w->text < s->text_count) {
             const NowSceneText *x = &s->texts[w->text];
 
@@ -525,6 +622,12 @@ static void put_meta(Sink *k, const NowScene *s)
         put_str(k, "controls omitted: a window's control list hit a bound "
                 "or failed validation, so that window reports no controls "
                 "rather than some of them");
+        first = 0;
+    }
+    if (s->dialog_items_truncated) {
+        put(k, first ? "" : ",");
+        put_str(k, "dialog items omitted: the live DITL hit a bound or "
+                "failed validation, so no partial item plane was emitted");
         first = 0;
     }
     if (s->menu_items_truncated) {

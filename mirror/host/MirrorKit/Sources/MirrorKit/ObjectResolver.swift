@@ -193,11 +193,16 @@ public enum ObjectResolver {
         guard let win = windowShape(windowID, part: .content, in: scene) else {
             return nil
         }
+        let semantics = ctl.semantic
+        let authorized = scene.version >= 2
+            && semantics?.authorizesAction == true
         return .control(.init(ref: ctl.ref, role: ctl.role, title: ctl.title,
                               rect: ctl.rect, value: ctl.value,
                               min: ctl.min, max: ctl.max,
                               isEnabled: ctl.enabled, window: win,
-                              part: part))
+                              part: part,
+                              isSemanticallyActionable: authorized,
+                              semanticAction: semantics?.action))
     }
 
     private static func menu(_ index: Int,

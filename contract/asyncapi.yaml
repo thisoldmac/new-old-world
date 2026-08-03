@@ -2252,7 +2252,7 @@ components:
           type: integer
           description: Guest-side time spent streaming the bulk chunks.
 
-    # THE SCENE FAMILY. A scene is Mirror's IR v1 — semantic structure, not
+    # THE SCENE FAMILY. A scene is Mirror's current IR — semantic structure, not
     # pixels — and it is a TRANSFER, not a control message, because it does
     # not fit a control frame: NOW's own producer encodes 1193 B for 4
     # processes / 3 windows and 9214 B for 24 / 32, against a 4096-byte cap
@@ -2302,12 +2302,12 @@ components:
           minimum: 1
           description: >
             The scene IR major version, the SAME number the document's own
-            `version` carries (mirror/docs/IR-V1.md, "one number, two
-            places"); the guest copies both from one constant. It is
+            `version` carries (mirror/docs/IR-V2.md, "Compatibility and the
+            gate"); the guest copies both from one constant. It is
             repeated HERE so a consumer can refuse an unknown major before
             it has spent a transfer decoding the body. That order — read
             the version, refuse an unknown major, then decode — is the
-            consumer duty IR-V1.md states, and the envelope is what makes
+            consumer duty IR-V2.md states, and the envelope is what makes
             it possible to obey.
         seq:
           type: integer
@@ -2321,7 +2321,7 @@ components:
           type: string
           maxLength: 16
           description: >
-            The plane the scene was walked from ("peek" for NOW). IR v1
+            The plane the scene was walked from ("peek" for NOW). The IR
             promoted it precisely so a consumer can tell "no windows" from
             "windows not visible from here".
         walkMs:

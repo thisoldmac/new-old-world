@@ -109,6 +109,42 @@ typedef struct {
     short         max;            /* contrlMax   @22 */
 } NowAxControl;
 
+enum {
+    kNowAxDialogUserItem = 0,
+    kNowAxDialogPushButton = 1,
+    kNowAxDialogCheckBox = 2,
+    kNowAxDialogRadioButton = 3,
+    kNowAxDialogPopupMenu = 4,
+    kNowAxDialogStaticText = 5,
+    kNowAxDialogEditText = 6,
+    kNowAxDialogIcon = 7,
+    kNowAxDialogPicture = 8
+};
+
+enum { kNowAxDialogMaxItems = 96 };
+
+/* A validated cursor over a live Dialog Manager item list. Dialog items are
+   not controls: edit/static text have no ControlHandle and resource controls
+   use a different act path. The cursor keeps that distinction intact. */
+typedef struct {
+    unsigned long next;
+    short remaining;
+    short index;
+    short default_item;       /* 1-based, <=0 means not proven */
+    short edit_item;          /* 1-based, <=0 means no focused edit item */
+} NowAxDialogCursor;
+
+typedef struct {
+    short number;
+    short kind;
+    unsigned long handle;
+    short top, left, bottom, right; /* content-relative */
+    unsigned char enabled;
+    unsigned char visible;
+    unsigned char title_len;
+    char title[kNowAxTitleMax + 1];
+} NowAxDialogItem;
+
 /* Validated primitives, exposed because the menu and text parsers are
    built on exactly these and on nothing else. */
 int now_ax_read_bytes(const NowAxMemory *memory, unsigned long address,
@@ -120,5 +156,10 @@ int now_ax_read_window(const NowAxMemory *memory, unsigned long address,
                        NowAxWindow *out);
 int now_ax_read_control(const NowAxMemory *memory, const NowAxWindow *window,
                         unsigned long handle, NowAxControl *out);
+int now_ax_open_dialog_items(const NowAxMemory *memory,
+                             unsigned long window,
+                             NowAxDialogCursor *cursor);
+int now_ax_dialog_next(const NowAxMemory *memory, NowAxDialogCursor *cursor,
+                       NowAxDialogItem *item);
 
 #endif /* NOW_AXWALK_H */

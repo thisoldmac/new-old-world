@@ -106,4 +106,67 @@ final class SceneIRDecodeTests: XCTestCase {
                       "the fixture has no FOREIGN window - it would pass "
                       + "while describing a machine NOW could not see")
     }
+
+    func testV1IsApproximateReadOnlyAndCannotAuthorizeItsRole() throws {
+        let scene = try JSONDecoder().decode(MirrorKit.Scene.self,
+                                             from: try fixture())
+        XCTAssertTrue(scene.isApproximateReadOnly)
+        let window = try XCTUnwrap(scene.windows.first(where: {
+            !$0.controls.isEmpty
+        }))
+        let control = try XCTUnwrap(window.controls.first)
+        let object = try XCTUnwrap(ObjectResolver.resolve(
+            .control(windowID: window.id, control: control), in: scene))
+        let plan = InteractionPolicy.plan(for: .init(
+            object: object,
+            gesture: .click(count: 1, mods: 0, at: .init(x: 0, y: 0))))
+        guard case .unsupported(let reason) = plan else {
+            return XCTFail("a v1 guessed role authorized an action: \(plan)")
+        }
+        XCTAssertTrue(reason.contains("authoritative semantics"))
+    }
+
+    func testV2DecodesOnlyAfterTheMajorGateAndCarriesDialogTruth() throws {
+        var body = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try fixture())
+                as? [String: Any])
+        body["version"] = 2
+        var windows = try XCTUnwrap(body["windows"] as? [[String: Any]])
+        var window = try XCTUnwrap(windows.first)
+        window["dialogItems"] = [[
+            "number": 1,
+            "title": "Region:",
+            "rect": ["l": 20, "t": 10, "r": 180, "b": 30],
+            "enabled": true,
+            "visible": true,
+            "ref": "now-element-popup",
+            "semantic": [
+                "knowledge": "known",
+                "kind": "popupMenu",
+                "action": "choose",
+                "value": "Custom",
+                "provenance": "guest-ditl",
+                "completeness": "complete",
+            ],
+        ]]
+        windows[0] = window
+        body["windows"] = windows
+
+        let scene = try MirrorScene.decode(result: [
+            "irVersion": 2,
+            "scene": body,
+        ])
+        XCTAssertFalse(scene.isApproximateReadOnly)
+        let item = try XCTUnwrap(scene.windows.first?.dialogItems?.first)
+        XCTAssertEqual(item.semantic.kind, "popupMenu")
+        XCTAssertEqual(item.semantic.value, "Custom")
+        XCTAssertTrue(item.semantic.authorizesAction)
+
+        XCTAssertThrowsError(try MirrorScene.decode(result: [
+            "irVersion": 3,
+            "scene": ["this": "must not be decoded"],
+        ])) {
+            XCTAssertEqual($0 as? IR.CompatError, .unknownMajor(3))
+        }
+    }
 }

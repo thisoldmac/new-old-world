@@ -56,12 +56,12 @@
 
    EVERYTHING ELSE IS AN ABSENT KEY, NOT AN EMPTY ONE.
    `windows[].display[]`, `windows[].items[]`, `desktopItems[]`,
-   `controls[].{role,checked}`, `menus[].apple` and `meta.bytes` are
-   omitted, because an empty array asserts "this window has no controls"
-   and absence says "this producer does not report controls". Those are
-   different claims and the difference is the point (AGENTS.md: record
-   unknowns as absent keys, never guesses; IR-V1.md's additive
-   discipline expects exactly this of a partial producer).
+   `controls[].checked`, `menus[].apple` and `meta.bytes` are omitted,
+   because an empty array asserts "this window has no controls" and
+   absence says "this producer does not report controls". IR v2 keeps a
+   structurally required legacy `role` on every Control row, but records
+   an unproven kind as `unknown` and denies it an action in `semantic`.
+   Those are different claims and the difference is the point.
 
    A TRUNCATION THAT CANNOT BE ATTRIBUTED IS RETRACTED, NOT REPORTED
    SHORT. `meta.errors` carries one line per truncation, which is enough
@@ -91,7 +91,7 @@
 
 #include "scene_anchor.h"
 
-#define NOW_SCENE_IR_VERSION 1
+#define NOW_SCENE_IR_VERSION 2
 
 enum {
     kNowSceneMaxProcs = 40,       /* process rows carried per scene */
@@ -102,12 +102,9 @@ enum {
     kNowScenePlaneMax = 64,
     kNowSceneIdMax = kNowSceneNameMax + kNowSceneTitleMax + 16,
 
-    /* A Platinum scroll bar's thickness, and the only number that
-       separates one from a push button by shape alone: a scroll bar is
-       16 across its short side, a standard push button 20. Used by the
-       role guess in scene_json.c, which has to tell them apart with no
-       kind field to read. The old threshold was 20 and so called every
-       button a scroll bar. */
+    /* Kept as layout vocabulary for code that measures Platinum chrome.
+       It is deliberately NOT enough to infer a control kind: a custom
+       control can have the same thickness. */
     kNowScrollBarThickness = 16,
 
     /* THE TITLE BAR THE IR'S TWO RECTANGLES ARE RELATED BY.
@@ -150,6 +147,7 @@ enum {
     kNowSceneMaxMenus = 16,       /* menus in the one menu bar */
     kNowSceneMaxMenuItems = 96,   /* menu items, pooled across menus */
     kNowSceneMaxControls = 96,    /* controls, pooled across windows */
+    kNowSceneMaxDialogItems = 96, /* Dialog Manager items, separately */
     kNowSceneMaxTexts = 4,        /* windows carrying TextEdit content */
     kNowSceneMenuTitleMax = 32,
     kNowSceneItemTitleMax = 40,
@@ -218,11 +216,12 @@ typedef struct {
     short value, min, max;
     char ref[kNowSceneRefMax];    /* "" = not minted, key stays absent */
     /* What KIND of control this is, when something could actually say.
-       Empty means nobody could, and the emitter falls back to the range
-       guess it has always made. A walk of a foreign ControlRecord still
-       cannot tell button from checkbox; an application asking the
-       Control Manager about its OWN control can, and does. */
+       Empty means nobody could, and the emitter reports unknown with no
+       action. A walk of a foreign ControlRecord still cannot tell button
+       from checkbox; an application asking the Control Manager about its
+       OWN control can, and does. */
     char role[16];
+    unsigned long handle;         /* internal join to a DITL item */
 } NowSceneControl;
 
 /* A window's TextEdit content. `truncated` is true when the TERec's own
@@ -232,7 +231,43 @@ typedef struct {
     char content[kNowSceneTextMax];
     int active;
     int truncated;
+    short selection_start;
+    short selection_end;
 } NowSceneText;
+
+enum {
+    kNowSceneSemanticUnknown = 0,
+    kNowSceneSemanticPushButton = 1,
+    kNowSceneSemanticCheckBox = 2,
+    kNowSceneSemanticRadioButton = 3,
+    kNowSceneSemanticPopupMenu = 4,
+    kNowSceneSemanticStaticText = 5,
+    kNowSceneSemanticEditText = 6,
+    kNowSceneSemanticIcon = 7,
+    kNowSceneSemanticPicture = 8,
+    kNowSceneSemanticUserItem = 9
+};
+
+typedef struct {
+    short number;
+    short kind;
+    char title[kNowSceneCtlTitleMax];
+    NowSceneRect rect;
+    int enabled;
+    int visible;
+    char ref[kNowSceneRefMax];
+    int state_known;
+    int state_on;
+    int value_known;
+    char value[kNowSceneTextMax];
+    int selection_known;
+    short selection_start;
+    short selection_end;
+    int focus_known;
+    int focused;
+    int default_known;
+    int is_default;
+} NowSceneDialogItem;
 
 typedef struct {
     char id[kNowSceneIdMax];      /* "<psn>/<title>#<idx>", upstream's form */
@@ -256,6 +291,10 @@ typedef struct {
     int controls_present;
     short first_control;          /* index into NowScene.controls */
     short control_count;
+
+    int dialog_items_present;
+    short first_dialog_item;
+    short dialog_item_count;
 
     short text;                   /* index into NowScene.texts; -1 = absent */
 
@@ -333,6 +372,10 @@ typedef struct {
     NowSceneControl controls[kNowSceneMaxControls];
     short control_count;
     int controls_truncated;       /* a window's controls were dropped */
+
+    NowSceneDialogItem dialog_items[kNowSceneMaxDialogItems];
+    short dialog_item_count;
+    int dialog_items_truncated;
 
     NowSceneText texts[kNowSceneMaxTexts];
     short text_count;
@@ -444,6 +487,8 @@ void now_scene_set_control_role(NowScene *s, int window, int index,
 
 void now_scene_set_control_ref(NowScene *s, int window, int index,
                                const char *ref);
+void now_scene_set_control_handle(NowScene *s, int window, int index,
+                                  unsigned long handle);
 
 /* Drops a window's control plane entirely, returning its entries to the
    pool. This is the retraction rule: a chain that hit a bound or failed
@@ -458,6 +503,13 @@ void now_scene_set_control_ref(NowScene *s, int window, int index,
    (a bound, or a refusal) is not worth a second flag, and the notice
    says both. No-op unless the window's block is the tail of the pool. */
 void now_scene_retract_controls(NowScene *s, int window);
+
+int now_scene_open_dialog_items(NowScene *s, int window);
+int now_scene_add_dialog_item(NowScene *s, int window, short number,
+                              short kind, const char *title,
+                              short t, short l, short b, short r,
+                              int enabled, int visible);
+void now_scene_retract_dialog_items(NowScene *s, int window);
 
 /* A window's TextEdit content. `truncated` says the TERec was longer
    than what is carried. No-op for an out-of-range row; sets

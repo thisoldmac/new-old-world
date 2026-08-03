@@ -1,4 +1,4 @@
-/* Native test for the IR v1 encoder (src/scene/scene_json.c).
+/* Native test for the scene IR encoder (src/scene/scene_json.c).
  *
  * Two things are being pinned here and they pull in opposite directions.
  *
@@ -134,7 +134,7 @@ static void test_produced_fields(void)
           "the small scene encodes");
     check(well_formed(out), "and is well formed");
 
-    check_present(out, "\"version\":1");
+    check_present(out, "\"version\":2");
     check_present(out, "\"seq\":3");
     check_present(out, "\"capturedAt\":1000000000.0");
     check_present(out, "\"source\":\"peek\"");
@@ -764,11 +764,10 @@ static void test_a_control_without_a_reference_still_carries_the_key(void)
  * and a click on one sent a page-scroll part instead of a button press:
  * the mirror could not dismiss the alert, and the alert held the
  * machine. This test exists so that never silently returns. */
-static void test_a_button_is_never_called_a_scroll_bar(void)
+static void test_unproven_controls_are_unknown_and_unactionable(void)
 {
     NowScene s;
     char out[8192];
-    const char *yes, *no, *setup, *bar, *wide;
     int p;
 
     now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
@@ -796,44 +795,109 @@ static void test_a_button_is_never_called_a_scroll_bar(void)
     check(now_scene_encode(&s, out, sizeof out, NULL) == kNowSceneEncodeOk,
           "the alert encodes");
 
-    yes = strstr(out, "\"title\":\"Yes\"");
-    no = strstr(out, "\"title\":\"No\"");
-    setup = strstr(out, "\"title\":\"Set Up Now\"");
-    check(yes != NULL && no != NULL && setup != NULL,
+    check(strstr(out, "\"title\":\"Yes\"") != NULL
+          && strstr(out, "\"title\":\"No\"") != NULL
+          && strstr(out, "\"title\":\"Set Up Now\"") != NULL,
           "the buttons keep the titles the walk read from +40");
-    check(strstr(out, "{\"role\":\"control\",\"title\":\"Yes\"") != NULL
-          && strstr(out, "{\"role\":\"control\",\"title\":\"No\"") != NULL
-          && strstr(out, "{\"role\":\"control\",\"title\":\"Set Up Now\"")
+    check(strstr(out, "{\"role\":\"unknown\",\"title\":\"Yes\"") != NULL
+          && strstr(out, "{\"role\":\"unknown\",\"title\":\"\","
+                    "\"rect\":{\"l\":380,\"t\":20,\"r\":396,\"b\":180}")
              != NULL,
-          "a TITLED control is never a scroll bar, whatever its range - "
-          "a scroll bar carries no title");
-    check(strstr(out, "{\"role\":\"control\",\"title\":\"Cancel\"") != NULL,
-          "and that holds even when the title sits on a scroll-bar SHAPE: "
-          "16 high and 120 wide is a short wide button, not a track");
+          "neither a title, range nor shape fabricates a control kind");
+    check_present(out, "\"semantic\":{\"knowledge\":\"unknown\"");
+    check_absent(out, "\"action\":\"press\"");
+    check_absent(out, "\"action\":\"scroll\"");
+}
 
-    bar = strstr(out, "\"rect\":{\"l\":380,\"t\":20,\"r\":396,\"b\":180}");
-    check(bar != NULL, "the scroll bar encodes");
-    if (bar != NULL) {
-        check(bar - strlen("{\"role\":\"scrollbar\",\"title\":\"\",")
-              >= out
-              && strstr(out, "{\"role\":\"scrollbar\",\"title\":\"\","
-                        "\"rect\":{\"l\":380,\"t\":20,\"r\":396,\"b\":180}")
-                 != NULL,
-              "an untitled control 16 across and long IS a scroll bar");
+static void test_dialog_items_carry_v2_semantics(void)
+{
+    NowScene s;
+    char out[16384];
+    int p;
+    NowSceneDialogItem *item;
+
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    p = now_scene_add_process(&s, 0, 9, "Date & Time", 0, 1,
+                              kNowSceneAnchorOk, 0);
+    (void)now_scene_add_window(&s, p, "Date Formats", 40, 60, 300, 500, 1);
+    now_scene_set_window_kind(&s, 0, 2);
+
+    (void)now_scene_add_dialog_item(&s, 0, 1,
+                                    kNowSceneSemanticPopupMenu, "Region:",
+                                    10, 20, 30, 180, 1, 1);
+    item = &s.dialog_items[0];
+    item->value_known = 1;
+    strcpy(item->value, "Custom");
+    strcpy(item->ref, "now-element-popup");
+
+    (void)now_scene_add_dialog_item(&s, 0, 2,
+                                    kNowSceneSemanticEditText, "",
+                                    40, 20, 60, 80, 1, 1);
+    item = &s.dialog_items[1];
+    item->value_known = 1;
+    strcpy(item->value, "9");
+    item->focus_known = 1;
+    item->focused = 1;
+    item->selection_known = 1;
+    item->selection_start = 0;
+    item->selection_end = 1;
+
+    (void)now_scene_add_dialog_item(&s, 0, 3,
+                                    kNowSceneSemanticStaticText, "Prefix:",
+                                    40, 90, 60, 150, 1, 1);
+    item = &s.dialog_items[2];
+    item->value_known = 1;
+    strcpy(item->value, "Prefix:");
+
+    (void)now_scene_add_dialog_item(&s, 0, 4,
+                                    kNowSceneSemanticCheckBox,
+                                    "Leading zero", 80, 20, 96, 180, 1, 1);
+    item = &s.dialog_items[3];
+    item->state_known = 1;
+    item->state_on = 1;
+
+    (void)now_scene_add_dialog_item(&s, 0, 5,
+                                    kNowSceneSemanticRadioButton, "Off",
+                                    105, 20, 121, 80, 1, 1);
+    (void)now_scene_add_dialog_item(&s, 0, 6,
+                                    kNowSceneSemanticPushButton, "OK",
+                                    150, 300, 170, 380, 1, 1);
+    item = &s.dialog_items[5];
+    item->default_known = 1;
+    item->is_default = 1;
+
+    check(now_scene_encode(&s, out, sizeof out, NULL) == kNowSceneEncodeOk,
+          "the v2 dialog encodes");
+    check_present(out, "\"version\":2");
+    check_present(out, "\"kind\":\"popupMenu\",\"action\":\"choose\"");
+    check_present(out, "\"value\":\"Custom\"");
+    check_present(out, "\"kind\":\"editText\",\"action\":\"edit\"");
+    check_present(out, "\"selection\":{\"start\":0,\"end\":1}");
+    check_present(out, "\"focused\":true");
+    check_present(out, "\"kind\":\"staticText\"");
+    check_present(out, "\"kind\":\"checkBox\",\"action\":\"press\","
+                       "\"state\":\"on\"");
+    check_present(out, "\"kind\":\"radioButton\"");
+    check_present(out, "\"isDefault\":true");
+    check_present(out, "\"provenance\":\"guest-ditl\"");
+
+    /* Only the push button had a validated aDefItem match. Unknown is
+       absence, not false: a renderer must not erase an unobserved default
+       by treating every other item as explicitly non-default. */
+    {
+        const char *items = strstr(out, "\"dialogItems\":[");
+        const char *default_key = strstr(items, "\"isDefault\"");
+
+        check(items != NULL && default_key != NULL
+              && strstr(default_key + 1, "\"isDefault\"") == NULL,
+              "isDefault is emitted once; unobserved defaults stay absent");
     }
-
-    wide = strstr(out, "\"rect\":{\"l\":70,\"t\":120,\"r\":300,\"b\":140}");
-    check(wide != NULL
-          && strstr(out, "{\"role\":\"control\",\"title\":\"\","
-                    "\"rect\":{\"l\":70,\"t\":120,\"r\":300,\"b\":140}")
-             != NULL,
-          "an untitled control 20 across is a control, not a scroll bar - "
-          "20 was the old threshold and is a push button's height");
 }
 
 int main(void)
 {
-    test_a_button_is_never_called_a_scroll_bar();
+    test_unproven_controls_are_unknown_and_unactionable();
+    test_dialog_items_carry_v2_semantics();
     test_a_control_without_a_reference_still_carries_the_key();
     test_produced_fields();
     test_unproduced_planes_are_absent();

@@ -40,6 +40,74 @@ public struct Scene: Codable, Equatable, Sendable {
     public var desktopItems: [DesktopItem]?
     public var meta: Meta
 
+    /// V1 required producers to spell a role even when they could not
+    /// observe one. It remains decodable for fixtures and differential
+    /// comparison, but no action may be authorized from that approximation.
+    public var isApproximateReadOnly: Bool { version == 1 }
+
+    public enum Knowledge: String, Codable, Equatable, Sendable {
+        case known
+        case unknown
+        case truncated
+        case stale
+    }
+
+    public enum Completeness: String, Codable, Equatable, Sendable {
+        case complete
+        case partial
+    }
+
+    public struct Selection: Codable, Equatable, Sendable {
+        public var start: Int
+        public var end: Int
+        public init(start: Int, end: Int) {
+            self.start = start
+            self.end = end
+        }
+    }
+
+    /// Evidence carried by IR v2. Every semantic field is independently
+    /// optional; absence never means false. `knowledge` describes the whole
+    /// observation, while `completeness` prevents a bounded prefix from
+    /// becoming actionable.
+    public struct Semantics: Codable, Equatable, Sendable {
+        public var knowledge: Knowledge
+        public var kind: String?
+        public var action: String?
+        public var state: String?
+        public var value: String?
+        public var selection: Selection?
+        public var focused: Bool?
+        public var isDefault: Bool?
+        public var provenance: String?
+        public var completeness: Completeness?
+
+        public init(knowledge: Knowledge, kind: String? = nil,
+                    action: String? = nil, state: String? = nil,
+                    value: String? = nil, selection: Selection? = nil,
+                    focused: Bool? = nil, isDefault: Bool? = nil,
+                    provenance: String? = nil,
+                    completeness: Completeness? = nil) {
+            self.knowledge = knowledge
+            self.kind = kind
+            self.action = action
+            self.state = state
+            self.value = value
+            self.selection = selection
+            self.focused = focused
+            self.isDefault = isDefault
+            self.provenance = provenance
+            self.completeness = completeness
+        }
+
+        public var authorizesAction: Bool {
+            knowledge == .known
+                && completeness == .complete
+                && action != nil
+                && provenance != "presentation-inference"
+        }
+    }
+
     public struct ScreenSize: Codable, Equatable, Sendable {
         public var w: Int
         public var h: Int
@@ -110,6 +178,10 @@ public struct Scene: Codable, Equatable, Sendable {
         /// and action models decide what to do with an invisible window.
         public var visible: Bool
         public var controls: [Control]
+        /// Live Dialog Manager items, distinct from the structural Control
+        /// Manager chain because edit/static items do not share its identity
+        /// or actuation path. nil means not reported; [] means proven empty.
+        public var dialogItems: [DialogItem]? = nil
         /// The act-plane reference this window actuates through - the same
         /// symmetry invariant `Control.ref` carries, one level up.
         ///
@@ -180,7 +252,7 @@ public struct Scene: Codable, Equatable, Sendable {
         /// pass the freeze gate.
         enum CodingKeys: String, CodingKey {
             case id, app, psn, title, kind, rect, front, z, visible
-            case controls, text, display
+            case controls, dialogItems, text, display
             case items          // additive in v1 — see the declaration
             case ref            // additive in v1 — see the declaration
             case addr           // additive in v1 — see the declaration
@@ -217,6 +289,9 @@ public struct Scene: Codable, Equatable, Sendable {
         /// what false already meant for every control that is not a
         /// checkbox. A producer that CAN determine it still sends it.
         public var checked: Bool = false
+        /// IR v2 evidence. nil on v1 is approximate presentation only and
+        /// cannot authorize an action.
+        public var semantic: Semantics? = nil
 
         /* Declaring an initialiser suppresses the compiler's memberwise
            one, and SceneBuilder builds these by hand - so it is restored
@@ -225,7 +300,7 @@ public struct Scene: Codable, Equatable, Sendable {
         public init(ref: String, role: String, title: String,
                     rect: Rect? = nil, enabled: Bool, visible: Bool,
                     value: Int? = nil, min: Int? = nil, max: Int? = nil,
-                    checked: Bool = false) {
+                    checked: Bool = false, semantic: Semantics? = nil) {
             self.ref = ref
             self.role = role
             self.title = title
@@ -236,6 +311,7 @@ public struct Scene: Codable, Equatable, Sendable {
             self.min = min
             self.max = max
             self.checked = checked
+            self.semantic = semantic
         }
 
         /* Swift's synthesised Decodable demands every non-optional key
@@ -254,6 +330,29 @@ public struct Scene: Codable, Equatable, Sendable {
             min = try c.decodeIfPresent(Int.self, forKey: .min)
             max = try c.decodeIfPresent(Int.self, forKey: .max)
             checked = try c.decodeIfPresent(Bool.self, forKey: .checked) ?? false
+            semantic = try c.decodeIfPresent(Semantics.self, forKey: .semantic)
+        }
+    }
+
+    public struct DialogItem: Codable, Equatable, Sendable {
+        public var number: Int
+        public var title: String
+        public var rect: Rect
+        public var enabled: Bool
+        public var visible: Bool
+        public var ref: String?
+        public var semantic: Semantics
+
+        public init(number: Int, title: String, rect: Rect, enabled: Bool,
+                    visible: Bool, ref: String? = nil,
+                    semantic: Semantics) {
+            self.number = number
+            self.title = title
+            self.rect = rect
+            self.enabled = enabled
+            self.visible = visible
+            self.ref = ref
+            self.semantic = semantic
         }
     }
 

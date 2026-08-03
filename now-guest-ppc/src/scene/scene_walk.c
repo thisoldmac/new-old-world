@@ -138,7 +138,120 @@ static void walk_controls(NowScene *s, int window, const NowAxMemory *memory,
            the wrong index would name a sibling, and both rows would look
            complete. */
         name_control(s, window, hops, refs, win->address, handle);
+        now_scene_set_control_handle(s, window, hops, handle);
         handle = control.next_control;
+    }
+}
+
+static short scene_dialog_kind(short kind)
+{
+    switch (kind) {
+    case kNowAxDialogPushButton: return kNowSceneSemanticPushButton;
+    case kNowAxDialogCheckBox: return kNowSceneSemanticCheckBox;
+    case kNowAxDialogRadioButton: return kNowSceneSemanticRadioButton;
+    case kNowAxDialogPopupMenu: return kNowSceneSemanticPopupMenu;
+    case kNowAxDialogStaticText: return kNowSceneSemanticStaticText;
+    case kNowAxDialogEditText: return kNowSceneSemanticEditText;
+    case kNowAxDialogIcon: return kNowSceneSemanticIcon;
+    case kNowAxDialogPicture: return kNowSceneSemanticPicture;
+    default: return kNowSceneSemanticUserItem;
+    }
+}
+
+static NowSceneControl *control_for_handle(NowScene *s, int window,
+                                           unsigned long handle)
+{
+    NowSceneWindow *w = &s->windows[window];
+    short i;
+
+    if (handle == 0 || !w->controls_present) {
+        return NULL;
+    }
+    for (i = 0; i < w->control_count; ++i) {
+        NowSceneControl *c = &s->controls[w->first_control + i];
+
+        if (c->handle == handle) {
+            return c;
+        }
+    }
+    return NULL;
+}
+
+static void walk_dialog_items(NowScene *s, int window,
+                              const NowAxMemory *memory,
+                              unsigned long address,
+                              const NowAxText *text)
+{
+    NowAxDialogCursor cursor;
+
+    if (now_ax_open_dialog_items(memory, address, &cursor) != kNowAxOk
+        || !now_scene_open_dialog_items(s, window)) {
+        s->dialog_items_truncated = 1;
+        return;
+    }
+    for (;;) {
+        NowAxDialogItem source;
+        NowSceneDialogItem *item;
+        NowSceneControl *control;
+        int rc = now_ax_dialog_next(memory, &cursor, &source);
+
+        if (rc == kNowAxNotFound) {
+            return;
+        }
+        if (rc != kNowAxOk
+            || !now_scene_add_dialog_item(
+                s, window, source.number, scene_dialog_kind(source.kind),
+                source.title, source.top, source.left,
+                source.bottom, source.right, source.enabled,
+                source.visible)) {
+            now_scene_retract_dialog_items(s, window);
+            return;
+        }
+        item = &s->dialog_items[s->dialog_item_count - 1];
+        control = control_for_handle(s, window, source.handle);
+        if (control != NULL) {
+            if (control->ref[0] != '\0') {
+                strcpy(item->ref, control->ref);
+            }
+            if (control->title[0] != '\0'
+                && (item->kind == kNowSceneSemanticPopupMenu
+                    || item->title[0] == '\0')) {
+                strncpy(item->title, control->title,
+                        sizeof item->title - 1);
+                item->title[sizeof item->title - 1] = '\0';
+            }
+            if (item->kind == kNowSceneSemanticCheckBox
+                || item->kind == kNowSceneSemanticRadioButton) {
+                item->state_known = 1;
+                item->state_on = control->value != 0;
+            }
+            if (item->kind == kNowSceneSemanticPopupMenu) {
+                item->value_known = 1;
+                strncpy(item->value, control->title,
+                        sizeof item->value - 1);
+                item->value[sizeof item->value - 1] = '\0';
+            }
+        }
+        if (cursor.default_item > 0) {
+            item->default_known = 1;
+            item->is_default = source.number == cursor.default_item;
+        }
+        if (item->kind == kNowSceneSemanticEditText) {
+            item->focus_known = 1;
+            item->focused = source.number == cursor.edit_item;
+            if (item->focused && text != NULL) {
+                item->value_known = 1;
+                strncpy(item->value, text->text, sizeof item->value - 1);
+                item->value[sizeof item->value - 1] = '\0';
+                item->selection_known = 1;
+                item->selection_start = (short)text->selection_start;
+                item->selection_end = (short)text->selection_end;
+            }
+        } else if (item->kind == kNowSceneSemanticStaticText) {
+            item->value_known = 1;
+            strncpy(item->value, source.title, sizeof item->value - 1);
+            item->value[sizeof item->value - 1] = '\0';
+        }
     }
 }
 
@@ -168,11 +281,21 @@ void now_scene_walk_window(NowScene *s, int window,
     if (win.kind != kNowSceneDialogKind) {
         return;
     }
-    if (now_ax_read_dialog_text(memory, address, &text) != kNowAxOk) {
-        return;                       /* no TextEdit record: an answer */
+    if (now_ax_read_dialog_text(memory, address, &text) == kNowAxOk) {
+        now_scene_set_window_text(s, window, text.text, text.active,
+                                  text.truncated);
+        if (s->windows[window].text >= 0) {
+            NowSceneText *scene_text =
+                &s->texts[s->windows[window].text];
+
+            scene_text->selection_start = (short)text.selection_start;
+            scene_text->selection_end = (short)text.selection_end;
+        }
+        walk_dialog_items(s, window, memory, address, &text);
+    } else {
+        /* A dialog may have no editable text and still has a DITL. */
+        walk_dialog_items(s, window, memory, address, NULL);
     }
-    now_scene_set_window_text(s, window, text.text, text.active,
-                              text.truncated);
 }
 
 static void walk_items(NowScene *s, int menu_row, const NowAxMemory *memory,

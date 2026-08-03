@@ -281,3 +281,152 @@ int now_ax_read_control(const NowAxMemory *memory, const NowAxWindow *window,
     out->title[length] = '\0';
     return kNowAxOk;
 }
+
+/* DialogRecord, after its 156-byte WindowRecord base. These are the fields in
+   Dialogs.h's public DialogRecord: items, textH, editField, editOpen,
+   aDefItem. Read as bytes because a PPC struct would not preserve the 68K
+   packing whose memory we are observing. */
+enum {
+    kNowAxDialogRecordBytes = 170,
+    kNowAxDialogItems = 156,
+    kNowAxDialogEditField = 164,
+    kNowAxDialogDefaultItem = 168,
+    kNowAxDialogItemFixed = 14,
+    kNowAxDITLCtrlItem = 4,
+    kNowAxDITLStatText = 8,
+    kNowAxDITLEditText = 16,
+    kNowAxDITLIconItem = 32,
+    kNowAxDITLPicItem = 64,
+    kNowAxDITLItemDisable = 128
+};
+
+int now_ax_open_dialog_items(const NowAxMemory *memory,
+                             unsigned long window,
+                             NowAxDialogCursor *cursor)
+{
+    unsigned char record[kNowAxDialogRecordBytes];
+    unsigned char count_raw[2];
+    unsigned long items_handle;
+    unsigned long items;
+    short count_minus_one;
+    int rc;
+
+    if (cursor == NULL) {
+        return kNowAxInvalid;
+    }
+    memset(cursor, 0, sizeof(*cursor));
+    rc = now_ax_read_bytes(memory, window, record, sizeof(record));
+    if (rc != kNowAxOk) {
+        return rc;
+    }
+    items_handle = be32(record + kNowAxDialogItems);
+    rc = now_ax_read_handle(memory, items_handle, &items);
+    if (rc != kNowAxOk) {
+        return rc;
+    }
+    rc = now_ax_read_bytes(memory, items, count_raw, sizeof(count_raw));
+    if (rc != kNowAxOk) {
+        return rc;
+    }
+    count_minus_one = bes16(count_raw);
+    if (count_minus_one < -1
+        || count_minus_one + 1 > kNowAxDialogMaxItems) {
+        return kNowAxTruncated;
+    }
+    cursor->next = items + 2;
+    cursor->remaining = (short)(count_minus_one + 1);
+    cursor->index = 0;
+    cursor->default_item = bes16(record + kNowAxDialogDefaultItem);
+    /* DialogRecord.editField is zero-based and -1 means none. */
+    cursor->edit_item = (short)(bes16(record + kNowAxDialogEditField) + 1);
+    if (cursor->default_item > cursor->remaining) {
+        return kNowAxInvalid;
+    }
+    if (cursor->edit_item > cursor->remaining) {
+        return kNowAxInvalid;
+    }
+    return kNowAxOk;
+}
+
+int now_ax_dialog_next(const NowAxMemory *memory, NowAxDialogCursor *cursor,
+                       NowAxDialogItem *item)
+{
+    unsigned char fixed[kNowAxDialogItemFixed];
+    unsigned char raw_type;
+    unsigned char type;
+    unsigned char len;
+    unsigned long total;
+    int rc;
+
+    if (cursor == NULL || item == NULL) {
+        return kNowAxInvalid;
+    }
+    if (cursor->remaining == 0) {
+        return kNowAxNotFound;
+    }
+    rc = now_ax_read_bytes(memory, cursor->next, fixed, sizeof(fixed));
+    if (rc != kNowAxOk) {
+        return rc;
+    }
+    memset(item, 0, sizeof(*item));
+    item->number = (short)(cursor->index + 1);
+    item->handle = be32(fixed);
+    item->top = bes16(fixed + 4);
+    item->left = bes16(fixed + 6);
+    item->bottom = bes16(fixed + 8);
+    item->right = bes16(fixed + 10);
+    raw_type = fixed[12];
+    type = (unsigned char)(raw_type & ~kNowAxDITLItemDisable);
+    len = fixed[13];
+    item->enabled = (raw_type & kNowAxDITLItemDisable) == 0;
+    item->visible = 1;
+
+    if ((type & ~3U) == kNowAxDITLCtrlItem) {
+        switch (type & 3U) {
+        case 0: item->kind = kNowAxDialogPushButton; break;
+        case 1: item->kind = kNowAxDialogCheckBox; break;
+        case 2: item->kind = kNowAxDialogRadioButton; break;
+        default: item->kind = kNowAxDialogPopupMenu; break;
+        }
+    } else if (type == kNowAxDITLStatText) {
+        item->kind = kNowAxDialogStaticText;
+    } else if (type == kNowAxDITLEditText) {
+        item->kind = kNowAxDialogEditText;
+    } else if (type == kNowAxDITLIconItem) {
+        item->kind = kNowAxDialogIcon;
+    } else if (type == kNowAxDITLPicItem) {
+        item->kind = kNowAxDialogPicture;
+    } else {
+        item->kind = kNowAxDialogUserItem;
+    }
+
+    if (len != 0) {
+        rc = now_ax_read_bytes(memory,
+                               cursor->next + kNowAxDialogItemFixed,
+                               item->title, len);
+        if (rc != kNowAxOk) {
+            return rc;
+        }
+    }
+    item->title[len] = '\0';
+    item->title_len = len;
+
+    /* Item records are word-aligned. Validate the complete variable record
+       before committing the cursor so a malformed tail never leaves a
+       plausible prefix behind. */
+    total = (unsigned long)kNowAxDialogItemFixed + (unsigned long)len;
+    if (total & 1UL) {
+        ++total;
+    }
+    if (total < kNowAxDialogItemFixed
+        || now_ax_read_bytes(memory, cursor->next, fixed, 1) != kNowAxOk
+        || (total > 1
+            && now_ax_read_bytes(memory, cursor->next + total - 1,
+                                 fixed, 1) != kNowAxOk)) {
+        return kNowAxInvalid;
+    }
+    cursor->next += total;
+    ++cursor->index;
+    --cursor->remaining;
+    return kNowAxOk;
+}

@@ -39,12 +39,27 @@ final class IRFreezeTests: XCTestCase {
         let control = Scene.Control(
             ref: "r", role: "scrollbar", title: "t", rect: rect,
             enabled: true, visible: true, value: 1, min: 0, max: 2,
-            checked: false)
+            checked: false,
+            semantic: .init(
+                knowledge: .known, kind: "scrollBar", action: "scroll",
+                state: "on", value: "1",
+                selection: .init(start: 0, end: 1), focused: true,
+                isDefault: false, provenance: "guest-control-manager",
+                completeness: .complete))
+        let dialogItem = Scene.DialogItem(
+            number: 1, title: "OK", rect: rect, enabled: true,
+            visible: true, ref: "r",
+            semantic: .init(
+                knowledge: .known, kind: "pushButton", action: "press",
+                state: "off", value: "OK",
+                selection: .init(start: 0, end: 2), focused: false,
+                isDefault: true, provenance: "guest-ditl",
+                completeness: .complete))
 
         let window = Scene.Window(
             id: "0.1/W#0", app: "A", psn: "0.1", title: "W", kind: 2,
             rect: rect, front: true, z: 0, visible: true,
-            controls: [control],
+            controls: [control], dialogItems: [dialogItem],
             ref: "now-window-probe",
             addr: 0x1EA2D3E0,
             text: .init(content: "c", active: true),
@@ -121,7 +136,8 @@ final class IRFreezeTests: XCTestCase {
                       + "it from drift")
         XCTAssertFalse(IRSchema.v1Frozen.contains("windows[].items"),
                        "v1Frozen is final — additions live in v1Additions")
-        XCTAssertEqual(IR.version, 1, "additive: the major does not move")
+        XCTAssertEqual(IR.version, 2,
+                       "v2 moved for semantic truth, not for Finder items")
     }
 
     /// The probe is only as good as its coverage: if it stops filling an
@@ -147,7 +163,7 @@ final class IRFreezeTests: XCTestCase {
             [:], seq: 0, screen: .init(w: 0, h: 0), capturedAt: 0)
         XCTAssertEqual(axtree.version, IR.version)
         XCTAssertEqual(observe.version, IR.version)
-        XCTAssertEqual(IR.version, 1, "v1 freeze")
+        XCTAssertEqual(IR.version, 2, "v2 semantic evidence")
         XCTAssertTrue(IR.supportedMajors.contains(IR.version),
                       "we must be able to consume what we produce")
     }
@@ -165,8 +181,9 @@ final class IRFreezeTests: XCTestCase {
     }
 
     func testConsumerAcceptsTheCurrentMajor() throws {
-        let decoded = try MirrorScene.decode(result: try result(irVersion: 1))
-        XCTAssertEqual(decoded.version, 1)
+        let decoded = try MirrorScene.decode(
+            result: try result(irVersion: IR.version))
+        XCTAssertEqual(decoded.version, IR.version)
         XCTAssertEqual(decoded.windows.first?.title, "W")
         // The excluded shelf does not survive the wire, by design.
         XCTAssertNil(decoded.windows.first?.island)
@@ -175,7 +192,7 @@ final class IRFreezeTests: XCTestCase {
     }
 
     func testConsumerRefusesAnUnknownMajor() throws {
-        for future in [2, 3, 99] {
+        for future in [3, 99] {
             XCTAssertThrowsError(
                 try MirrorScene.decode(result: try result(irVersion: future)),
                 "major \(future) must be refused, not best-efforted"
@@ -217,9 +234,9 @@ final class IRFreezeTests: XCTestCase {
 
     func testAttachGateIsTheSameGate() throws {
         XCTAssertEqual(try MirrorScene.acceptAttach(
-            result: ["session": "s", "irVersion": 1]), 1)
+            result: ["session": "s", "irVersion": IR.version]), IR.version)
         XCTAssertThrowsError(try MirrorScene.acceptAttach(
-            result: ["session": "s", "irVersion": 2]))
+            result: ["session": "s", "irVersion": 3]))
         XCTAssertThrowsError(try MirrorScene.acceptAttach(
             result: ["session": "s"]))
     }
@@ -235,10 +252,10 @@ final class IRFreezeTests: XCTestCase {
         let removed = expected.subtracting(produced).sorted()
         if !added.isEmpty {
             XCTFail("""
-                \(added.count) new \(what)(s) are not in the v1 freeze:
+                \(added.count) new \(what)(s) are not in the v2 manifest:
                   \(added.joined(separator: "\n  "))
-                Additive? record them in IRSchema.v1Additions (IR.version stays \
-                1). Otherwise move IR.version.
+                Additive? record them in the current major's additions. \
+                Otherwise move IR.version.
                 """, file: file, line: line)
         }
         if !removed.isEmpty {

@@ -374,6 +374,18 @@ void now_scene_set_control_ref(NowScene *s, int window, int index,
              (long)sizeof s->controls[0].ref, ref);
 }
 
+void now_scene_set_control_handle(NowScene *s, int window, int index,
+                                  unsigned long handle)
+{
+    NowSceneWindow *w = window_at(s, window);
+
+    if (w == NULL || !w->controls_present
+        || index < 0 || index >= (int)w->control_count) {
+        return;
+    }
+    s->controls[w->first_control + index].handle = handle;
+}
+
 void now_scene_retract_controls(NowScene *s, int window)
 {
     NowSceneWindow *w = window_at(s, window);
@@ -389,6 +401,74 @@ void now_scene_retract_controls(NowScene *s, int window)
     w->control_count = 0;
     w->first_control = 0;
     s->controls_truncated = 1;        /* never a silent drop */
+}
+
+int now_scene_open_dialog_items(NowScene *s, int window)
+{
+    NowSceneWindow *w = window_at(s, window);
+
+    if (w == NULL) {
+        return 0;
+    }
+    if (!w->dialog_items_present) {
+        w->dialog_items_present = 1;
+        w->first_dialog_item = s->dialog_item_count;
+        w->dialog_item_count = 0;
+    }
+    return 1;
+}
+
+int now_scene_add_dialog_item(NowScene *s, int window, short number,
+                              short kind, const char *title,
+                              short t, short l, short b, short r,
+                              int enabled, int visible)
+{
+    NowSceneWindow *w = window_at(s, window);
+    NowSceneDialogItem *item;
+
+    if (w == NULL || !now_scene_open_dialog_items(s, window)) {
+        return 0;
+    }
+    if (!block_is_tail(w->first_dialog_item, w->dialog_item_count,
+                       s->dialog_item_count)) {
+        return 0;
+    }
+    if (s->dialog_item_count >= kNowSceneMaxDialogItems) {
+        s->dialog_items_truncated = 1;
+        return 0;
+    }
+    item = &s->dialog_items[s->dialog_item_count];
+    memset(item, 0, sizeof *item);
+    item->number = number;
+    item->kind = kind;
+    copy_bounded(item->title, (long)sizeof item->title, title);
+    item->rect.t = t;
+    item->rect.l = l;
+    item->rect.b = b;
+    item->rect.r = r;
+    item->enabled = enabled ? 1 : 0;
+    item->visible = visible ? 1 : 0;
+    ++w->dialog_item_count;
+    ++s->dialog_item_count;
+    return 1;
+}
+
+void now_scene_retract_dialog_items(NowScene *s, int window)
+{
+    NowSceneWindow *w = window_at(s, window);
+
+    if (w == NULL || !w->dialog_items_present) {
+        return;
+    }
+    if (!block_is_tail(w->first_dialog_item, w->dialog_item_count,
+                       s->dialog_item_count)) {
+        return;
+    }
+    s->dialog_item_count = w->first_dialog_item;
+    w->dialog_items_present = 0;
+    w->dialog_item_count = 0;
+    w->first_dialog_item = 0;
+    s->dialog_items_truncated = 1;
 }
 
 void now_scene_set_window_text(NowScene *s, int window, const char *content,

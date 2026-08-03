@@ -1,5 +1,10 @@
 # The scene IR, frozen at v1
 
+> Compatibility status: v1 is still decodable, but it is approximate read-only
+> input. Its required `controls[].role` forced partial producers to guess, so no
+> v1 role may authorize an action. New producers emit v2; see
+> [IR-V2.md](IR-V2.md).
+
 **Date:** 2026-07-31. **Status:** landed on `lane/h1-ir-freeze`.
 **Code of record:** `host/MirrorKit/Sources/MirrorKit/IRVersion.swift`,
 `IRSchema.swift`, `Scene.swift`; gate in

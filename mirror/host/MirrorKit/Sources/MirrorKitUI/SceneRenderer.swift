@@ -672,10 +672,14 @@ public struct SceneRenderer {
         if let text = win.text {
             drawWindowText(contentCtx, text, in: content)
         }
-        let defaultRef = defaultButtonRef(win, isDialog: isDialog)
-        for control in win.controls where control.visible {
+        let dialogRefs = Set((win.dialogItems ?? []).compactMap(\.ref))
+        for control in win.controls where control.visible
+                && !dialogRefs.contains(control.ref) {
             drawControl(contentCtx, control, contentOrigin: content.origin,
-                        isDefault: control.ref == defaultRef && defaultRef != nil)
+                        isDefault: control.semantic?.isDefault == true)
+        }
+        for item in win.dialogItems ?? [] where item.visible {
+            drawDialogItem(contentCtx, item, contentOrigin: content.origin)
         }
         // Finder icon-view items, in window-local content coords — the
         // Finder's own live positions, so what is drawn is where the guest
@@ -700,21 +704,6 @@ public struct SceneRenderer {
         if !isDialog {
             drawGrowBox(ctx, win)
         }
-    }
-
-    /// The dialog's default button, approximated by title: the wire doesn't
-    /// carry defaultness, but Save/OK/Open/Yes/Restart are the classic
-    /// default verbs and the guest draws the ring on exactly one of them.
-    private static let defaultVerbs: Set<String> =
-        ["save", "ok", "open", "yes", "restart", "quit"]
-
-    private func defaultButtonRef(_ win: MirrorKit.Scene.Window,
-                                  isDialog: Bool) -> String? {
-        guard isDialog else { return nil }
-        return win.controls.first {
-            $0.enabled && Self.looksLikeButton($0)
-                && Self.defaultVerbs.contains($0.title.lowercased())
-        }?.ref
     }
 
     private func drawTitlebar(_ ctx: GraphicsContext, _ win: MirrorKit.Scene.Window,
@@ -816,7 +805,9 @@ public struct SceneRenderer {
     /// AXPeek reads titles as raw MacRoman and custom controls can carry
     /// garbage (U+FFFD after repair-decode) that must not be promoted.
     static func looksLikeButton(_ ctl: MirrorKit.Scene.Control) -> Bool {
-        if ctl.role == "button" { return true }
+        if ctl.semantic?.kind == "pushButton" || ctl.role == "button" {
+            return true
+        }
         guard !ctl.title.isEmpty,
               !ctl.title.unicodeScalars.contains(where: {
                   $0.value < 32 || $0.value == 127 || $0.value == 0xFFFD
@@ -833,7 +824,8 @@ public struct SceneRenderer {
         guard frame.width > 0, frame.height > 0 else { return }
 
         // Ranged control: recessed track + thumb positioned from value.
-        if ctl.role == "scrollbar", let max = ctl.max, let min = ctl.min,
+        if (ctl.semantic?.kind == "scrollBar" || ctl.role == "scrollbar"),
+           let max = ctl.max, let min = ctl.min,
            max > min {
             drawScrollbar(ctx, frame, value: ctl.value ?? min,
                           min: min, max: max, enabled: ctl.enabled)
@@ -853,6 +845,71 @@ public struct SceneRenderer {
             drawButton(ctx, ctl, frame, isDefault: isDefault)
         } else {
             drawGeneric(ctx, ctl, frame)
+        }
+    }
+
+    private func drawDialogItem(_ ctx: GraphicsContext,
+                                _ item: MirrorKit.Scene.DialogItem,
+                                contentOrigin: CGPoint) {
+        let frame = rect(item.rect).offsetBy(dx: contentOrigin.x,
+                                             dy: contentOrigin.y)
+        guard frame.width > 0, frame.height > 0 else { return }
+        switch item.semantic.kind {
+        case "staticText":
+            appText(item.semantic.value ?? item.title, ctx, x: frame.minX,
+                    baselineY: frame.minY
+                        + CGFloat(FontBook.app?.ascent ?? 10),
+                    color: item.enabled ? Platinum.g6 : Platinum.g3)
+        case "editText":
+            ctx.fill(Path(frame), with: .color(Platinum.g0))
+            ctx.stroke(Path(frame), with: .color(Platinum.g6), lineWidth: 1)
+            appText(item.semantic.value ?? item.title, ctx,
+                    x: frame.minX + 3, baselineY: frame.midY + 4,
+                    color: item.enabled ? Platinum.g6 : Platinum.g3)
+            if item.semantic.focused == true {
+                ctx.stroke(Path(frame.insetBy(dx: -2, dy: -2)),
+                           with: .color(Platinum.g6), lineWidth: 1)
+            }
+        case "checkBox", "radioButton":
+            let markBox = CGRect(x: frame.minX, y: frame.midY - 6,
+                                 width: 12, height: 12)
+            let shape = item.semantic.kind == "radioButton"
+                ? Path(ellipseIn: markBox) : Path(markBox)
+            ctx.fill(shape, with: .color(Platinum.g0))
+            ctx.stroke(shape, with: .color(Platinum.g6), lineWidth: 1)
+            if item.semantic.state == "on" {
+                let dot = markBox.insetBy(dx: 3, dy: 3)
+                ctx.fill(item.semantic.kind == "radioButton"
+                         ? Path(ellipseIn: dot) : Path(dot),
+                         with: .color(Platinum.g6))
+            }
+            appText(item.title, ctx, x: frame.minX + 16,
+                    baselineY: frame.midY + 4,
+                    color: item.enabled ? Platinum.g6 : Platinum.g3)
+        case "popupMenu":
+            ctx.fill(Path(frame), with: .color(Platinum.g1))
+            ctx.stroke(Path(frame), with: .color(Platinum.g6), lineWidth: 1)
+            appText(item.semantic.value ?? item.title, ctx,
+                    x: frame.minX + 4, baselineY: frame.midY + 4,
+                    color: item.enabled ? Platinum.g6 : Platinum.g3)
+            sysCentered("▼", ctx, centerX: frame.maxX - 10,
+                        centerY: frame.midY, color: Platinum.g6)
+        case "pushButton":
+            let ctl = MirrorKit.Scene.Control(
+                ref: item.ref ?? "", role: "button", title: item.title,
+                rect: item.rect, enabled: item.enabled, visible: item.visible,
+                checked: item.semantic.state == "on",
+                semantic: item.semantic)
+            drawButton(ctx, ctl, frame,
+                       isDefault: item.semantic.isDefault == true)
+        default:
+            ctx.stroke(Path(frame), with: .color(Platinum.g3),
+                       style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
+            if !item.title.isEmpty {
+                appText(item.title, ctx, x: frame.minX + 2,
+                        baselineY: frame.midY + 4, color: Platinum.g4,
+                        small: true)
+            }
         }
     }
 

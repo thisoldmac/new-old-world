@@ -122,14 +122,23 @@ public enum MirrorObject: Equatable, Sendable {
         /// For a live scroll bar, the region the point landed in. nil for
         /// anything that is not one — a button has no parts.
         public var part: Scrollbar.Part?
+        /// True only when the scene carried complete, guest-observed v2
+        /// evidence for an action. The default keeps direct policy unit
+        /// fixtures concise; ObjectResolver always supplies the wire verdict.
+        public var isSemanticallyActionable: Bool
+        public var semanticAction: String?
 
         public init(ref: String, role: String, title: String, rect: Rect?,
                     value: Int?, min: Int?, max: Int?, isEnabled: Bool,
-                    window: Window, part: Scrollbar.Part?) {
+                    window: Window, part: Scrollbar.Part?,
+                    isSemanticallyActionable: Bool = true,
+                    semanticAction: String? = "press") {
             self.ref = ref; self.role = role; self.title = title
             self.rect = rect; self.value = value; self.min = min
             self.max = max; self.isEnabled = isEnabled
             self.window = window; self.part = part
+            self.isSemanticallyActionable = isSemanticallyActionable
+            self.semanticAction = semanticAction
         }
     }
 
