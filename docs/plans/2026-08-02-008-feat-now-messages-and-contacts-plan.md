@@ -36,13 +36,37 @@ call. It needs the Automation TCC grant plus
 for Photos and Contacts on 2026-08-02; that trap is documented and
 this plan inherits the fix).
 
-**Receiving has no door at all.** There is no public API for inbound
-messages. The workable route, and what every third-party tool does,
-is reading `~/Library/Messages/chat.db` — SQLite, polled by a `ROWID`
-watermark. That needs **Full Disk Access**, which has no entitlement
-and cannot be requested programmatically: the person grants it in
-System Settings or the feature does not run. Two consequences the
-design must take seriously rather than paper over:
+**Receiving has no door at all — checked, not assumed (2026-08-02).**
+The claim was challenged as odd, so it was verified rather than
+repeated. What the check found:
+
+- **Apple states there is no API.** A DTS engineer, on the developer
+  forums: *"macOS doesn't have an API for accessing the user's SMS
+  messages"*, adding that scripting Messages is *"quite limited"* and
+  pointing at an enhancement request for anything more.
+- **The AppleScript event route — which would have been better than
+  chat.db in every way — is GONE.** Older macOS let a script in
+  `~/Library/Application Scripts/com.apple.iChat` implement
+  `on message received`, selected in Messages' preferences: push, not
+  polling, and no Full Disk Access. On this machine (macOS 27.0) that
+  folder does not exist and `sdef /System/Applications/Messages.app`
+  reports **zero events** and exactly three commands — `login`,
+  `logout`, `send`. The receive half of that mechanism has been
+  removed; the send half is what Slice 2 depends on and it is
+  confirmed present.
+- **A user-picked file does not get around it.** `~/Library/Messages`
+  is disallowed to sandboxed apps even when the person selects it in
+  an open panel, and sandbox and Full Disk Access do not combine.
+  (NOW is not sandboxed, so FDA is the applicable route — but the
+  shortcut of "just have them pick the file" does not exist.)
+- **Verified on this Mac:** `~/Library/Messages/chat.db` is present
+  (~209 MB) and reading even its first bytes from an ungranted
+  context is refused by TCC.
+
+So chat.db plus **Full Disk Access** — which has no entitlement and
+cannot be requested programmatically; the person grants it in System
+Settings or the feature does not run — is the only route, and the
+design must take two consequences seriously rather than paper over:
 
 - the reader must degrade to an honest `no-access` with a sentence
   that says *where to go*, the way the Photos row already does;
@@ -117,6 +141,12 @@ contract is written around it.
 A throwaway spike under `spikes/messages-read/`: open `chat.db`
 read-only, read the last few rows, decode one `attributedBody`, and
 send one message to the developer's own number via Apple Events.
+**Two of its questions are already answered** (2026-08-02, above):
+Messages still exposes `send`, and the AppleScript receive handler is
+gone on macOS 27, so chat.db is the route rather than one option of
+two. What remains for the probe is the part that decides the
+schedule: whether real `attributedBody` blobs decode without private
+frameworks.
 Deliverables are **findings, not code**: does the schema look as
 documented on *this* macOS, does the typedstream decoder handle real
 blobs, does the send need any prompt beyond the first grant. Nothing
