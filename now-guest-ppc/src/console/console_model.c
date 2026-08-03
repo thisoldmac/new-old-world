@@ -306,7 +306,14 @@ static void run_screenshot_local(short depth_flag, short bands_flag,
 
 enum { kChatVerbHardCapTicks = 60 * 300 };  /* five minutes, absolute */
 
-static char g_chat_model_key[48];     /* --model choice, this console's */
+/* The chosen model, held as ref + label: the REF is what a send
+   carries and is never printed; the label is what every listing and
+   confirmation shows. `--model <n>` picks n from the last listing. */
+static char g_chat_model_ref[kChatRefMax + 1];
+static char g_chat_model_label[32];
+static ChatModelRow g_chat_listed[kChatMaxModels];
+static int g_chat_listed_count;
+static char g_chat_listed_provider[25];
 static ChatLineFeed g_chat_verb_feed;
 static Boolean g_chat_verb_done;
 
@@ -324,9 +331,9 @@ static void chat_verb_note(int kind, const char *reply)
     char line[kMaxCols];
 
     switch (kind) {
-    case kChatAnswerCatalog: {
-        ChatModelRow rows[kChatMaxModels];
-        int n = chat_parse_catalog(reply, rows, kChatMaxModels);
+    case kChatAnswerProviders: {
+        ChatProviderRow rows[kChatMaxProviders];
+        int n = chat_parse_providers(reply, rows, kChatMaxProviders);
         int i;
 
         if (n < 0) {
@@ -337,11 +344,11 @@ static void chat_verb_note(int kind, const char *reply)
         }
         for (i = 0; i < n; ++i) {
             if (strcmp(rows[i].state, "serving") == 0) {
-                snprintf(line, sizeof line, "  %-28.27s %.40s",
-                         rows[i].model, rows[i].label);
+                snprintf(line, sizeof line, "  %-12.12s %.40s",
+                         rows[i].provider, rows[i].label);
             } else {
-                snprintf(line, sizeof line, "  %-28.27s %.20s (%.14s)",
-                         rows[i].model, rows[i].label, rows[i].state);
+                snprintf(line, sizeof line, "  %-12.12s %.20s (%.14s)",
+                         rows[i].provider, rows[i].label, rows[i].state);
             }
             console_model_append(line);
             if (rows[i].detail[0] != '\0'
@@ -349,6 +356,48 @@ static void chat_verb_note(int kind, const char *reply)
                 snprintf(line, sizeof line, "    %.70s", rows[i].detail);
                 console_model_append(line);
             }
+        }
+        if (n > 0) {
+            console_model_append(
+                "  chat --models <provider> lists its models");
+        }
+        g_chat_verb_done = true;
+        return;
+    }
+    case kChatAnswerModels: {
+        ChatModelRow page[kChatPageRows];
+        char from[25];
+        int more = 0;
+        int n = chat_parse_models(reply, page, kChatPageRows, &more,
+                                  from, sizeof from);
+        int i;
+
+        if (n < 0 || strcmp(from, g_chat_listed_provider) != 0) {
+            g_chat_verb_done = true;
+            return;
+        }
+        for (i = 0; i < n && g_chat_listed_count < kChatMaxModels; ++i) {
+            g_chat_listed[g_chat_listed_count] = page[i];
+            snprintf(line, sizeof line, "  %2d. %.40s",
+                     g_chat_listed_count + 1, page[i].label);
+            console_model_append(line);
+            ++g_chat_listed_count;
+        }
+        if (more && g_chat_listed_count < kChatMaxModels) {
+            char err[64];
+
+            /* Auto-pagination: the person asked for the listing, not
+               for its pages. */
+            if (now_wire_chat_model_page(g_chat_listed_provider,
+                                         (long)g_chat_listed_count,
+                                         err, sizeof err) == 0) {
+                return;               /* the wait continues */
+            }
+        }
+        if (g_chat_listed_count == 0) {
+            console_model_append("  (nothing to list)");
+        } else {
+            console_model_append("  chat --model <n> picks one");
         }
         g_chat_verb_done = true;
         return;
@@ -451,32 +500,65 @@ static void run_chat_verb(const char *raw_args)
         while (*raw_args == ' ') {
             ++raw_args;
         }
-    } else if (strcmp(raw_args, "--models") == 0) {
+    } else if (strncmp(raw_args, "--models", 8) == 0
+               && (raw_args[8] == ' ' || raw_args[8] == '\0')) {
+        rest = next_token(raw_args + 8, tok, sizeof tok);
+        (void)rest;
         previous = conn_set_chat_note(chat_verb_note);
         g_chat_verb_done = false;
-        if (now_wire_chat_models(err, sizeof err) != 0) {
-            snprintf(line, sizeof line, "chat: %.80s", err);
-            console_model_append(line);
+        if (tok[0] == '\0') {
+            /* Step one: the providers. */
+            if (now_wire_chat_providers(err, sizeof err) != 0) {
+                snprintf(line, sizeof line, "chat: %.80s", err);
+                console_model_append(line);
+            } else {
+                chat_verb_wait();
+            }
         } else {
-            chat_verb_wait();
+            /* Step two, lazy: the named provider's models, every page. */
+            g_chat_listed_count = 0;
+            strncpy(g_chat_listed_provider, tok,
+                    sizeof g_chat_listed_provider - 1);
+            g_chat_listed_provider[sizeof g_chat_listed_provider - 1]
+                = '\0';
+            if (now_wire_chat_model_page(g_chat_listed_provider, 0,
+                                         err, sizeof err) != 0) {
+                snprintf(line, sizeof line, "chat: %.80s", err);
+                console_model_append(line);
+            } else {
+                chat_verb_wait();
+            }
         }
         conn_set_chat_note(previous);
         return;
     } else if (strncmp(raw_args, "--model", 7) == 0
                && (raw_args[7] == ' ' || raw_args[7] == '\0')) {
+        long n;
+
         rest = next_token(raw_args + 7, tok, sizeof tok);
         (void)rest;
         if (tok[0] == '\0') {
-            snprintf(line, sizeof line, "chat: model is %.40s",
-                     g_chat_model_key[0] != '\0' ? g_chat_model_key
-                                                 : "(not chosen)");
+            snprintf(line, sizeof line, "chat: model is %.31s",
+                     g_chat_model_label[0] != '\0' ? g_chat_model_label
+                                                   : "(not chosen)");
             console_model_append(line);
             return;
         }
-        strncpy(g_chat_model_key, tok, sizeof g_chat_model_key - 1);
-        g_chat_model_key[sizeof g_chat_model_key - 1] = '\0';
-        snprintf(line, sizeof line, "chat: model is %.40s",
-                 g_chat_model_key);
+        /* A NUMBER from the last listing - the ref underneath is the
+           host's business, never typed and never shown. */
+        n = strtol(tok, NULL, 10);
+        if (n < 1 || n > g_chat_listed_count) {
+            console_model_append(
+                "chat: pick from a listing - chat --models <provider>, "
+                "then chat --model <n>");
+            return;
+        }
+        strcpy(g_chat_model_ref, g_chat_listed[n - 1].ref);
+        strncpy(g_chat_model_label, g_chat_listed[n - 1].label,
+                sizeof g_chat_model_label - 1);
+        g_chat_model_label[sizeof g_chat_model_label - 1] = '\0';
+        snprintf(line, sizeof line, "chat: model is %.31s",
+                 g_chat_model_label);
         console_model_append(line);
         return;
     } else if (strcmp(raw_args, "--new") == 0) {
@@ -506,15 +588,16 @@ static void run_chat_verb(const char *raw_args)
             "chat: chat <text> - see \"help chat\" for the flags");
         return;
     }
-    if (g_chat_model_key[0] == '\0') {
+    if (g_chat_model_ref[0] == '\0') {
         console_model_append(
-            "chat: pick a model first - chat --models, then chat --model <key>");
+            "chat: pick a model first - chat --models <provider>, "
+            "then chat --model <n>");
         return;
     }
     previous = conn_set_chat_note(chat_verb_note);
     g_chat_verb_done = false;
     chat_feed_reset(&g_chat_verb_feed, chat_verb_emit_line, NULL);
-    if (now_wire_chat_send(g_chat_model_key, raw_args,
+    if (now_wire_chat_send(g_chat_model_ref, raw_args,
                            err, sizeof err) != 0) {
         snprintf(line, sizeof line, "chat: %.80s", err);
         console_model_append(line);

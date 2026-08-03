@@ -2411,7 +2411,7 @@ Boolean now_wire_chat_turn_active(void)
     return g_chat.pending;
 }
 
-int now_wire_chat_models(char *err, long cap)
+int now_wire_chat_providers(char *err, long cap)
 {
     char json[96];
 
@@ -2423,12 +2423,37 @@ int now_wire_chat_models(char *err, long cap)
     }
     g_chatask.pending = true;
     g_chatask.id = g.offer_seq;
-    g_chatask.kind = kChatAnswerCatalog;
+    g_chatask.kind = kChatAnswerProviders;
     g_chatask.deadline = TickCount() + kChatAskTimeoutTicks;
     return 0;
 }
 
-int now_wire_chat_send(const char *model, const char *prompt,
+int now_wire_chat_model_page(const char *provider, long cursor,
+                             char *err, long cap)
+{
+    char json[160];
+    char esc_provider[64];
+
+    now_json_escape(provider, esc_provider, sizeof esc_provider);
+    ++g.offer_seq;
+    /* cursor always written: 0 and absent mean the same start here,
+       and one shape keeps this a single snprintf for the conformance
+       reader. */
+    snprintf(json, sizeof json,
+             "{\"type\":\"chat.models\",\"id\":%ld,\"provider\":\"%s\","
+             "\"cursor\":%ld}",
+             g.offer_seq, esc_provider, cursor);
+    if (cloud_send(json, err, cap) != 0) {
+        return -1;
+    }
+    g_chatask.pending = true;
+    g_chatask.id = g.offer_seq;
+    g_chatask.kind = kChatAnswerModels;
+    g_chatask.deadline = TickCount() + kChatAskTimeoutTicks;
+    return 0;
+}
+
+int now_wire_chat_send(const char *ref, const char *prompt,
                        char *err, long cap)
 {
     /* 512 raw escapes to at most 3072 plus envelope — the exec chunk
@@ -2436,7 +2461,7 @@ int now_wire_chat_send(const char *model, const char *prompt,
        cap's one statement is the contract's (ChatSend.prompt); refusing
        locally here costs nothing and saves the round trip. */
     char json[kNowMaxControl];
-    char esc_model[96];
+    char esc_ref[64];
     char esc_prompt[512 * 6 + 1];
 
     if (g_chat.pending) {
@@ -2448,13 +2473,13 @@ int now_wire_chat_send(const char *model, const char *prompt,
         snprintf(err, (size_t)cap, "prompt is over 512 bytes");
         return -1;
     }
-    now_json_escape(model, esc_model, sizeof esc_model);
+    now_json_escape(ref, esc_ref, sizeof esc_ref);
     now_json_escape(prompt, esc_prompt, sizeof esc_prompt);
     ++g.offer_seq;
     snprintf(json, sizeof json,
-             "{\"type\":\"chat.send\",\"id\":%ld,\"model\":\"%s\","
+             "{\"type\":\"chat.send\",\"id\":%ld,\"ref\":\"%s\","
              "\"prompt\":\"%s\"}",
-             g.offer_seq, esc_model, esc_prompt);
+             g.offer_seq, esc_ref, esc_prompt);
     if (cloud_send(json, err, cap) != 0) {
         return -1;
     }
@@ -2506,12 +2531,20 @@ int now_wire_chat_reset(char *err, long cap)
 
 static void chat_catalog_answer(const char *reply)
 {
-    if (!g_chatask.pending || g_chatask.kind != kChatAnswerCatalog
+    int kind;
+
+    /* Which shape arrived is decided by what WE asked - the ask's kind
+       rode along in the pending, so a providers listing and a models
+       page cannot be mistaken for one another. */
+    if (!g_chatask.pending
+        || (g_chatask.kind != kChatAnswerProviders
+            && g_chatask.kind != kChatAnswerModels)
         || now_json_find_int(reply, "id", -1) != g_chatask.id) {
         return;
     }
+    kind = g_chatask.kind;
     g_chatask.pending = false;
-    chat_note(kChatAnswerCatalog, reply);
+    chat_note(kind, reply);
 }
 
 static void chat_delta_answer(const char *reply)

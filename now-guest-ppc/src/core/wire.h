@@ -252,7 +252,8 @@ int now_wire_cloud_get(const char *service, const char *item,
    frame. The setter RETURNS the previous hook: the console verb borrows
    the stream for one turn and restores it, the exec-sink discipline. */
 typedef enum {
-    kChatAnswerCatalog = 0,           /* reply = the chat.catalog frame */
+    kChatAnswerProviders = 0,         /* reply = the providers catalog */
+    kChatAnswerModels,                /* reply = one models page */
     kChatAnswerDelta,                 /* reply = the chat.delta frame */
     kChatAnswerStatus,                /* reply = the chat.status frame */
     kChatAnswerResult,                /* reply = the chat.result frame */
@@ -265,9 +266,17 @@ ConnChatNote conn_set_chat_note(ConnChatNote fn);
 /* Each returns 0 once the question is on the wire; -1 with a reason in
    err — including the local refusals that save a round trip: a send
    while a turn streams, or a prompt past the contract's 512-byte cap
-   (chat_model.h mirrors it as kChatPromptMax). */
-int now_wire_chat_models(char *err, long cap);
-int now_wire_chat_send(const char *model, const char *prompt,
+   (chat_model.h mirrors it as kChatPromptMax).
+
+   Discovery is two-step and LAZY (the contract's own words): providers
+   first, then one selected provider's models a page at a time — the
+   asker follows `more` with the next cursor. A send carries a model's
+   REF from those pages, never its name: refs are host-minted and
+   bounded, names are not (metal, 2026-08-02). */
+int now_wire_chat_providers(char *err, long cap);
+int now_wire_chat_model_page(const char *provider, long cursor,
+                             char *err, long cap);
+int now_wire_chat_send(const char *ref, const char *prompt,
                        char *err, long cap);
 int now_wire_chat_cancel(char *err, long cap);
 int now_wire_chat_reset(char *err, long cap);

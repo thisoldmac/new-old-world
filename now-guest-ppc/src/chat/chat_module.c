@@ -55,17 +55,18 @@ static ControlActionUPP g_scroll_action_upp;
 static short g_font;
 
 static ChatTranscript g_transcript;
-static ChatModelRow g_models[kChatMaxModels];
-static int g_model_count;
-/* The two popups' view of the rows: distinct providers, and the rows
-   of the chosen one. g_row_sel is the CATALOG index the Send uses. */
-static char g_providers[kChatMaxModels][24];
+/* Two-step, lazy: the provider popup holds the providers answer; the
+   model popup holds ONLY the selected provider's models, asked when it
+   is selected and accumulated page by page (the wire follows `more`
+   from here). What a send carries is the selected row's REF. */
+static ChatProviderRow g_providers[kChatMaxProviders];
 static int g_provider_count;
 static int g_provider_sel;
-static int g_filtered[kChatMaxModels];
-static int g_filtered_count;
-static int g_filtered_sel = -1;
-static int g_row_sel = -1;            /* index into g_models, -1 = none */
+static ChatModelRow g_models[kChatMaxModels];
+static int g_model_count;
+static int g_model_sel = -1;
+static char g_models_provider[25];    /* whose models are loading/loaded */
+static Boolean g_models_loading;
 static Boolean g_asked_catalog;
 
 static TEHandle g_te;                 /* the prompt; TE draws it */
@@ -254,59 +255,23 @@ static void fill_menu_item(MenuRef menu, short item, const char *text,
     }
 }
 
-/* Both popups from the catalog: distinct providers, then the chosen
-   provider's rows. The model the Send uses is g_row_sel, a CATALOG
-   index; the filtered list maps popup items back to it. */
-static void rebuild_popups(void)
+static void rebuild_provider_popup(void)
 {
-    MenuRef provider_menu = popup_menu(g_provider_popup,
-                                       kChatProvidersMenuID);
-    MenuRef model_menu = popup_menu(g_model_popup, kChatModelsMenuID);
+    MenuRef menu = popup_menu(g_provider_popup, kChatProvidersMenuID);
     int i;
 
-    if (provider_menu == NULL || model_menu == NULL) {
-        strcpy(g_status, "A popup menu resource is missing (136/137)");
+    if (menu == NULL) {
+        strcpy(g_status, "A popup menu resource is missing (137)");
         return;
     }
-    g_provider_count = chat_catalog_providers(
-        g_models, g_model_count, g_providers, kChatMaxModels);
     if (g_provider_sel >= g_provider_count) {
         g_provider_sel = 0;
     }
-
-    while (CountMenuItems(provider_menu) > 0) {
-        DeleteMenuItem(provider_menu, 1);
+    while (CountMenuItems(menu) > 0) {
+        DeleteMenuItem(menu, 1);
     }
     for (i = 0; i < g_provider_count; ++i) {
-        fill_menu_item(provider_menu, (short)(i + 1), g_providers[i],
-                       true);
-    }
-    if (g_provider_count == 0) {
-        fill_menu_item(provider_menu, 1, "(none)", true);
-    }
-
-    /* The chosen provider's rows, serving first choice. */
-    g_filtered_count = 0;
-    g_filtered_sel = -1;
-    for (i = 0; i < g_model_count; ++i) {
-        if (g_provider_count == 0
-            || strcmp(g_models[i].provider,
-                      g_providers[g_provider_sel]) == 0) {
-            g_filtered[g_filtered_count] = i;
-            if (g_filtered_sel < 0
-                && strcmp(g_models[i].state, "serving") == 0) {
-                g_filtered_sel = g_filtered_count;
-            }
-            ++g_filtered_count;
-        }
-    }
-    g_row_sel = g_filtered_sel >= 0 ? g_filtered[g_filtered_sel] : -1;
-
-    while (CountMenuItems(model_menu) > 0) {
-        DeleteMenuItem(model_menu, 1);
-    }
-    for (i = 0; i < g_filtered_count; ++i) {
-        const ChatModelRow *row = &g_models[g_filtered[i]];
+        const ChatProviderRow *row = &g_providers[i];
         char text[64];
 
         if (strcmp(row->state, "serving") == 0) {
@@ -315,30 +280,84 @@ static void rebuild_popups(void)
             snprintf(text, sizeof text, "%.30s (%.14s)",
                      row->label, row->state);
         }
-        fill_menu_item(model_menu, (short)(i + 1), text,
+        fill_menu_item(menu, (short)(i + 1), text,
                        strcmp(row->state, "serving") == 0);
     }
-    if (g_filtered_count == 0) {
-        fill_menu_item(model_menu, 1, "(ask the other Mac)", true);
+    if (g_provider_count == 0) {
+        fill_menu_item(menu, 1, "(none)", true);
     }
-
     if (g_provider_popup != NULL) {
-        SetControlMaximum(g_provider_popup,
-                          CountMenuItems(provider_menu));
+        SetControlMaximum(g_provider_popup, CountMenuItems(menu));
         SetControlValue(g_provider_popup, (short)(g_provider_sel + 1));
         if (g_visible) {
             Draw1Control(g_provider_popup);
         }
     }
+}
+
+static void rebuild_model_popup(void)
+{
+    MenuRef menu = popup_menu(g_model_popup, kChatModelsMenuID);
+    int i;
+
+    if (menu == NULL) {
+        strcpy(g_status, "A popup menu resource is missing (136)");
+        return;
+    }
+    if (g_model_sel >= g_model_count) {
+        g_model_sel = g_model_count > 0 ? 0 : -1;
+    }
+    if (g_model_sel < 0 && g_model_count > 0) {
+        g_model_sel = 0;
+    }
+    while (CountMenuItems(menu) > 0) {
+        DeleteMenuItem(menu, 1);
+    }
+    for (i = 0; i < g_model_count; ++i) {
+        fill_menu_item(menu, (short)(i + 1), g_models[i].label, true);
+    }
+    if (g_model_count == 0) {
+        fill_menu_item(menu, 1,
+                       g_models_loading ? "(asking...)"
+                                        : "(pick a provider)",
+                       false);
+    }
     if (g_model_popup != NULL) {
-        SetControlMaximum(g_model_popup, CountMenuItems(model_menu));
+        SetControlMaximum(g_model_popup, CountMenuItems(menu));
         SetControlValue(g_model_popup,
-                        (short)(g_filtered_sel >= 0
-                                    ? g_filtered_sel + 1 : 1));
+                        (short)(g_model_sel >= 0 ? g_model_sel + 1 : 1));
         if (g_visible) {
             Draw1Control(g_model_popup);
         }
     }
+}
+
+/* Ask for the selected provider's models, from the top. Lazy by
+   design: nothing is listed until somebody selects it. */
+static void ask_models(void)
+{
+    char err[96];
+
+    g_model_count = 0;
+    g_model_sel = -1;
+    g_models_loading = false;
+    g_models_provider[0] = '\0';
+    if (g_provider_sel < 0 || g_provider_sel >= g_provider_count
+        || strcmp(g_providers[g_provider_sel].state, "serving") != 0) {
+        rebuild_model_popup();
+        return;
+    }
+    strncpy(g_models_provider, g_providers[g_provider_sel].provider,
+            sizeof g_models_provider - 1);
+    g_models_provider[sizeof g_models_provider - 1] = '\0';
+    if (now_wire_chat_model_page(g_models_provider, 0,
+                                 err, sizeof err) != 0) {
+        snprintf(g_status, sizeof g_status, "%.120s", err);
+        inval(&g_r.status);
+        return;
+    }
+    g_models_loading = true;
+    rebuild_model_popup();
 }
 
 /* --- wire notes --------------------------------------------------------- */
@@ -357,14 +376,77 @@ static void retitle_send(void)
 static void chat_note(int kind, const char *reply)
 {
     switch (kind) {
-    case kChatAnswerCatalog:
-        g_model_count = chat_parse_catalog(reply, g_models, kChatMaxModels);
-        if (g_model_count < 0) {
-            g_model_count = 0;
+    case kChatAnswerProviders: {
+        char kept[25];
+
+        /* Keep the person's provider choice across a re-ask when it
+           still exists; otherwise fall to the first serving one. */
+        kept[0] = '\0';
+        if (g_provider_sel >= 0 && g_provider_sel < g_provider_count) {
+            strcpy(kept, g_providers[g_provider_sel].provider);
         }
-        rebuild_popups();
+        g_provider_count = chat_parse_providers(reply, g_providers,
+                                                kChatMaxProviders);
+        if (g_provider_count < 0) {
+            g_provider_count = 0;
+        }
+        g_provider_sel = -1;
+        {
+            int i;
+
+            for (i = 0; i < g_provider_count; ++i) {
+                if (kept[0] != '\0'
+                    && strcmp(g_providers[i].provider, kept) == 0) {
+                    g_provider_sel = i;
+                    break;
+                }
+            }
+            for (i = 0; g_provider_sel < 0 && i < g_provider_count; ++i) {
+                if (strcmp(g_providers[i].state, "serving") == 0) {
+                    g_provider_sel = i;
+                }
+            }
+        }
+        if (g_provider_sel < 0) {
+            g_provider_sel = 0;
+        }
+        rebuild_provider_popup();
+        ask_models();                 /* lazy step two, for the selection */
         g_status[0] = '\0';
         break;
+    }
+    case kChatAnswerModels: {
+        ChatModelRow page[kChatPageRows];
+        char from[25];
+        int more = 0;
+        int n = chat_parse_models(reply, page, kChatPageRows, &more,
+                                  from, sizeof from);
+        int i;
+
+        /* A page for a provider the person has switched away from is
+           stale, not content. */
+        if (n < 0 || strcmp(from, g_models_provider) != 0) {
+            break;
+        }
+        for (i = 0; i < n && g_model_count < kChatMaxModels; ++i) {
+            g_models[g_model_count++] = page[i];
+        }
+        if (more && g_model_count < kChatMaxModels) {
+            char err[96];
+
+            /* The pagination loop, invisible to the person: keep
+               asking until the host says done. */
+            if (now_wire_chat_model_page(g_models_provider,
+                                         (long)g_model_count,
+                                         err, sizeof err) != 0) {
+                g_models_loading = false;
+            }
+        } else {
+            g_models_loading = false;
+        }
+        rebuild_model_popup();
+        break;
+    }
     case kChatAnswerDelta: {
         char text[kNowMaxControl];
 
@@ -435,7 +517,7 @@ static void ask_catalog(void)
 {
     char err[96];
 
-    if (now_wire_chat_models(err, sizeof err) != 0) {
+    if (now_wire_chat_providers(err, sizeof err) != 0) {
         snprintf(g_status, sizeof g_status, "%.120s", err);
         inval(&g_r.status);
         return;
@@ -456,14 +538,13 @@ static void send_prompt(void)
         inval(&g_r.status);
         return;
     }
-    if (g_row_sel < 0 || g_row_sel >= g_model_count
-        || strcmp(g_models[g_row_sel].state, "serving") != 0) {
+    if (g_model_sel < 0 || g_model_sel >= g_model_count) {
         strcpy(g_status, "Pick a serving model first");
         inval(&g_r.status);
         return;
     }
     prompt_text(prompt, sizeof prompt);
-    if (now_wire_chat_send(g_models[g_row_sel].model, prompt,
+    if (now_wire_chat_send(g_models[g_model_sel].ref, prompt,
                            err, sizeof err) != 0) {
         snprintf(g_status, sizeof g_status, "%.120s", err);
         inval(&g_r.status);
@@ -480,7 +561,7 @@ static void send_prompt(void)
     /* Accepted-and-silent is the stretch that reads as a hang; say
        who we are waiting for until the first delta clears it. */
     snprintf(g_status, sizeof g_status, "Waiting for %.40s...",
-             g_models[g_row_sel].label);
+             g_models[g_model_sel].label);
     inval(&g_r.status);
     inval(&g_r.transcript);
 }
@@ -609,7 +690,8 @@ static OSErr chat_create(WindowRef owner, const Rect *body)
         || g_scroll_action_upp == NULL) {
         return memFullErr;
     }
-    rebuild_popups();
+    rebuild_provider_popup();
+    rebuild_model_popup();
     conn_set_chat_note(chat_note);
     return noErr;
 }
@@ -862,7 +944,7 @@ static Boolean chat_click(const EventRecord *event, Point local)
             if (picked >= 0 && picked < g_provider_count
                 && picked != g_provider_sel) {
                 g_provider_sel = picked;
-                rebuild_popups();     /* the model list follows */
+                ask_models();         /* lazy: listed on selection */
             }
         }
         return true;
@@ -872,9 +954,8 @@ static Boolean chat_click(const EventRecord *event, Point local)
                          (ControlActionUPP)-1L) != 0) {
             int picked = GetControlValue(g_model_popup) - 1;
 
-            if (picked >= 0 && picked < g_filtered_count) {
-                g_filtered_sel = picked;
-                g_row_sel = g_filtered[picked];
+            if (picked >= 0 && picked < g_model_count) {
+                g_model_sel = picked;
             }
         }
         return true;
@@ -1049,16 +1130,22 @@ static void chat_status_text(char *out, long cap)
         return;
     }
     if (g_model_count > 0) {
-        int serving = 0;
-        int i;
-
-        for (i = 0; i < g_model_count; ++i) {
-            if (strcmp(g_models[i].state, "serving") == 0) {
-                ++serving;
-            }
-        }
-        snprintf(out, (size_t)cap, "%d model%s from the other Mac",
-                 serving, serving == 1 ? "" : "s");
+        /* Every listed row answers a send - the host lists only what
+           it can serve; the loading tail keeps the count honest. */
+        snprintf(out, (size_t)cap, "%d model%s from %.24s%s",
+                 g_model_count, g_model_count == 1 ? "" : "s",
+                 g_models_provider,
+                 g_models_loading ? " (more coming)" : "");
+        return;
+    }
+    if (g_models_loading) {
+        snprintf(out, (size_t)cap, "Asking %.24s for its models...",
+                 g_models_provider);
+        return;
+    }
+    if (g_provider_count > 0) {
+        snprintf(out, (size_t)cap, "%d provider%s on the other Mac",
+                 g_provider_count, g_provider_count == 1 ? "" : "s");
         return;
     }
     snprintf(out, (size_t)cap,

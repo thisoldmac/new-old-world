@@ -70,7 +70,10 @@ enum ChatDeltaChunking {
 final class ChatWireService {
     private let harness: ChatHarness
     /// Asked fresh per chat.models — a guest never reads a page cache.
-    private let catalog: () async -> [ChatCatalogEntry]
+    private let providers: () async -> [ChatCatalogProvider]
+    /// The named provider's full list; the paging and the refs happen
+    /// here, so the page never learns about frames.
+    private let models: (String) async -> [ChatModel]?
 
     private var conversations: [GuestKey: [ChatTurn]] = [:]
     private struct ActiveTurn {
@@ -81,32 +84,39 @@ final class ChatWireService {
     }
     private var active: [GuestKey: ActiveTurn] = [:]
 
+    /* The ref table: what chat.send's opaque refs mean, per
+       connection. Minted fresh for every models page ("m1", "m2", ...,
+       one counter per connection so refs never collide across
+       providers or re-asks), resolved at send, gone with the session.
+       A provider's model NAME never crosses the wire: names are
+       unbounded out in the world and a classic buffer is not (metal,
+       2026-08-02 - a 48-byte name lost its last byte and every send
+       of it answered not-found). */
+    private var refs: [GuestKey: [String: String]] = [:]
+    private var minted: [GuestKey: Int] = [:]
+
     /// The guest's own arithmetic: 512 raw bytes escape to at most
     /// 3072 on the wire plus envelope, inside the 4 KB cap. Stated in
     /// the contract on ChatSend.prompt; this mirrors it.
     static let promptCap = 512
+    /// Rows per chat.catalog models page — the contract's frame bound;
+    /// `more` carries the rest.
+    static let pageRows = 16
 
     init(
         harness: ChatHarness,
-        catalog: @escaping () async -> [ChatCatalogEntry]
+        providers: @escaping () async -> [ChatCatalogProvider],
+        models: @escaping (String) async -> [ChatModel]?
     ) {
         self.harness = harness
-        self.catalog = catalog
+        self.providers = providers
+        self.models = models
     }
 
     func serve(_ ask: GuestListener.ChatAsk, on asker: Session) {
         switch ask {
         case .models(let request):
-            Task { [weak self, weak asker] in
-                guard let self else { return }
-                var entries = await self.catalog()
-                // maxItems 16, by trimming — the contract says so.
-                if entries.count > 16 { entries = Array(entries.prefix(16)) }
-                await MainActor.run {
-                    asker?.send(.chatCatalog(ChatCatalog(
-                        id: request.id, models: entries)))
-                }
-            }
+            serveModels(request, on: asker)
         case .send(let request):
             serveSend(request, on: asker)
         case .cancel(let request):
@@ -116,9 +126,57 @@ final class ChatWireService {
         }
     }
 
+    private func serveModels(_ request: ChatModels, on asker: Session) {
+        guard let key = asker.guestKey else { return }
+        guard let providerID = request.provider else {
+            Task { [weak self, weak asker] in
+                guard let self else { return }
+                let rows = Array(await self.providers().prefix(8))
+                await MainActor.run {
+                    asker?.send(.chatCatalog(ChatCatalog(
+                        id: request.id, providers: rows)))
+                }
+            }
+            return
+        }
+        Task { [weak self, weak asker] in
+            guard let self else { return }
+            let list = await self.models(providerID) ?? []
+            await MainActor.run {
+                guard let asker else { return }
+                self.sendModelsPage(
+                    request, providerID: providerID, list: list,
+                    key: key, on: asker)
+            }
+        }
+    }
+
+    private func sendModelsPage(
+        _ request: ChatModels, providerID: String, list: [ChatModel],
+        key: GuestKey, on asker: Session
+    ) {
+        let start = min(max(0, request.cursor ?? 0), list.count)
+        let page = list[start..<min(start + Self.pageRows, list.count)]
+        let rows = page.map { model -> ChatCatalogModel in
+            let count = (minted[key] ?? 0) + 1
+            minted[key] = count
+            let ref = "m\(count)"
+            refs[key, default: [:]][ref] = model.wireID
+            return ChatCatalogModel(
+                ref: ref,
+                label: ChatWireText.label(model.displayName),
+                detail: nil)
+        }
+        asker.send(.chatCatalog(ChatCatalog(
+            id: request.id, provider: providerID, models: rows,
+            more: start + page.count < list.count)))
+    }
+
     func sessionClosed(key: GuestKey?) {
         guard let key else { return }
         conversations[key] = nil
+        refs[key] = nil
+        minted[key] = nil
         if active[key] != nil {
             active[key] = nil
             Task { [harness] in
@@ -143,6 +201,13 @@ final class ChatWireService {
                 key: key, on: asker, clearActive: false)
             return
         }
+        guard let wireModelID = refs[key]?[request.ref] else {
+            result(
+                ChatResult(id: request.id, ok: false, code: "unknown-model",
+                           message: "No model with that ref on this connection"),
+                key: key, on: asker, clearActive: false)
+            return
+        }
         var conversation = conversations[key] ?? []
         conversation.append(.user(request.prompt))
         conversations[key] = conversation
@@ -152,7 +217,7 @@ final class ChatWireService {
         Task { [weak self, weak asker, harness] in
             let started = await harness.run(
                 conversation: key.text,
-                wireModelID: request.model,
+                wireModelID: wireModelID,
                 transcript: turns,
                 addressing: key.text,
                 origin: .guestWire

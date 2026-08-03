@@ -8,7 +8,8 @@
    writes into caller storage; a malformed frame reads as failure and
    leaves the outputs unclaimed. */
 
-int chat_parse_catalog(const char *reply, ChatModelRow *rows, int max)
+int chat_parse_providers(const char *reply, ChatProviderRow *rows,
+                         int max)
 {
     const char *p;
     char object[512];
@@ -17,43 +18,72 @@ int chat_parse_catalog(const char *reply, ChatModelRow *rows, int max)
     if (reply == NULL || rows == NULL || max <= 0) {
         return -1;
     }
+    p = now_json_array(reply, "providers");
+    if (p == NULL) {
+        return -1;
+    }
+    while (count < max
+           && (p = now_json_next_object(p, object, sizeof object)) != NULL) {
+        ChatProviderRow *row = &rows[count];
+
+        memset(row, 0, sizeof *row);
+        if (!now_json_find_text(object, "provider", row->provider,
+                                sizeof row->provider)) {
+            continue;                 /* a row without its selector is no row */
+        }
+        if (!now_json_find_text(object, "label", row->label,
+                                sizeof row->label)) {
+            strncpy(row->label, row->provider, sizeof row->label - 1);
+        }
+        if (!now_json_find_string(object, "state", row->state,
+                                  sizeof row->state)) {
+            strcpy(row->state, "serving");
+        }
+        now_json_find_text(object, "detail", row->detail,
+                           sizeof row->detail);
+        ++count;
+    }
+    return count;
+}
+
+int chat_parse_models(const char *reply, ChatModelRow *rows, int max,
+                      int *more, char *provider_out, long provider_cap)
+{
+    const char *p;
+    char object[512];
+    int count = 0;
+
+    if (more != NULL) {
+        *more = 0;
+    }
+    if (provider_out != NULL && provider_cap > 0) {
+        provider_out[0] = '\0';
+    }
+    if (reply == NULL || rows == NULL || max <= 0) {
+        return -1;
+    }
     p = now_json_array(reply, "models");
     if (p == NULL) {
         return -1;
+    }
+    if (more != NULL) {
+        *more = now_json_find_bool(reply, "more", 0) == 1;
+    }
+    if (provider_out != NULL && provider_cap > 0) {
+        now_json_find_text(reply, "provider", provider_out, provider_cap);
     }
     while (count < max
            && (p = now_json_next_object(p, object, sizeof object)) != NULL) {
         ChatModelRow *row = &rows[count];
 
         memset(row, 0, sizeof *row);
-        /* find_text, not find_string: a host may escape "/" in a key
-           ("anthropic\\/claude-opus-5" on metal), and the key goes BACK
-           over the wire verbatim - it must be stored decoded. */
-        if (!now_json_find_text(object, "model", row->model,
-                                sizeof row->model)) {
-            continue;                 /* a row without its key is no row */
-        }
-        if (!now_json_find_text(object, "provider", row->provider,
-                                sizeof row->provider)) {
-            /* An older host: group by the key's own prefix. */
-            const char *slash = strchr(row->model, '/');
-            size_t n = slash != NULL
-                ? (size_t)(slash - row->model)
-                : strlen(row->model);
-
-            if (n >= sizeof row->provider) {
-                n = sizeof row->provider - 1;
-            }
-            memcpy(row->provider, row->model, n);
-            row->provider[n] = '\0';
+        if (!now_json_find_string(object, "ref", row->ref,
+                                  sizeof row->ref)) {
+            continue;                 /* a row without its ref is no row */
         }
         if (!now_json_find_text(object, "label", row->label,
                                 sizeof row->label)) {
-            strncpy(row->label, row->model, sizeof row->label - 1);
-        }
-        if (!now_json_find_string(object, "state", row->state,
-                                  sizeof row->state)) {
-            strcpy(row->state, "serving");
+            strncpy(row->label, row->ref, sizeof row->label - 1);
         }
         now_json_find_text(object, "detail", row->detail,
                            sizeof row->detail);
@@ -108,30 +138,6 @@ int chat_parse_result(const char *reply, int *ok,
     return 1;
 }
 
-int chat_catalog_providers(const ChatModelRow *rows, int count,
-                           char out[][24], int max)
-{
-    int found = 0;
-    int i;
-    int j;
-
-    for (i = 0; i < count && found < max; ++i) {
-        int seen = 0;
-
-        for (j = 0; j < found; ++j) {
-            if (strcmp(out[j], rows[i].provider) == 0) {
-                seen = 1;
-                break;
-            }
-        }
-        if (!seen) {
-            strncpy(out[found], rows[i].provider, 23);
-            out[found][23] = '\0';
-            ++found;
-        }
-    }
-    return found;
-}
 
 /* --- the line feed ------------------------------------------------------ */
 

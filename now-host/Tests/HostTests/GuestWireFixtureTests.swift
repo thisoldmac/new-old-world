@@ -42,7 +42,7 @@ final class GuestWireFixtureTests: XCTestCase {
     /// writes them.
     func testChatSendEscapingAsTheGuestWritesIt() throws {
         let json = """
-        {"type":"chat.send","id":41,"model":"anthropic/claude-opus-5",\
+        {"type":"chat.send","id":41,"ref":"m3",\
         "prompt":"say \\"hi\\" \\\\ twice \\u00A5 done"}
         """
         let message = try decode(json)
@@ -50,8 +50,24 @@ final class GuestWireFixtureTests: XCTestCase {
             return XCTFail("decoded as \(message)")
         }
         XCTAssertEqual(send.id, 41)
-        XCTAssertEqual(send.model, "anthropic/claude-opus-5")
+        XCTAssertEqual(send.ref, "m3")
         XCTAssertEqual(send.prompt, "say \"hi\" \\ twice \u{00A5} done")
+    }
+
+    /// now_wire_chat_model_page() in now-guest-ppc/src/core/wire.c: the
+    /// per-provider ask, cursor included — the guest's half of the
+    /// pagination loop, pinned so the field names cannot drift.
+    func testChatModelsPageAskAsTheGuestWritesIt() throws {
+        let json = """
+        {"type":"chat.models","id":6,"provider":"omlx","cursor":16}
+        """
+        let message = try decode(json)
+        guard case .chatModels(let ask) = message else {
+            return XCTFail("decoded as \(message)")
+        }
+        XCTAssertEqual(ask.id, 6)
+        XCTAssertEqual(ask.provider, "omlx")
+        XCTAssertEqual(ask.cursor, 16)
     }
 
     /// run_help() in now-guest-ppc/src/commands/commands.c, listing what that Mac serves.

@@ -714,6 +714,17 @@ operations:
       silence past its own deadline means a host that predates the
       family. That is a status line, not an error.
 
+      DISCOVERY IS TWO-STEP AND LAZY. chat.models without a provider
+      lists providers; with one it lists THAT provider's models, one
+      bounded page at a time (cursor/more, the cloud.list shape), and
+      a guest asks only for the provider somebody selected. Model rows
+      carry a HOST-MINTED ref, not the provider's model name: names
+      are unbounded out in the world and a fixed classic buffer is
+      not, which cost a metal evening (a 48-byte name silently lost
+      its last byte and every send of it came back unknown). The ref
+      is opaque, connection-scoped, and never shown to a person — the
+      label is the human-facing name everywhere.
+
       THE CONVERSATION LIVES ON THE HOST, per connection. chat.send
       carries one turn — the text just typed — and never history; the
       host appends it to the conversation it keeps for this connection
@@ -1282,45 +1293,53 @@ components:
       properties:
         type: { const: chat.models }
         id: { type: integer }
+        provider:
+          type: string
+          maxLength: 24
+          description: >
+            Absent: list the PROVIDERS. Present: list this provider's
+            models, one page at a time. The guest asks per provider,
+            on selection — so a provider's models are listed only when
+            somebody is looking at them, and one provider's long
+            catalog never costs another's visibility.
+        cursor:
+          type: integer
+          description: >
+            With provider only: continue that provider's listing from
+            this row index (the cloud.list shape). Absent means the
+            start.
     ChatCatalog:
       type: object
-      required: [type, id, models]
+      required: [type, id]
       additionalProperties: false
+      description: >
+        Two answer shapes, matching the ask's: WITHOUT provider the
+        answer carries `providers`; WITH one it carries `provider`,
+        `models` and `more`. Exactly one shape per frame.
       properties:
         type: { const: chat.catalog }
         id: { type: integer }
-        models:
+        providers:
           type: array
-          maxItems: 16
+          maxItems: 8
           description: >
-            Everything the host's harness KNOWS about, whatever its
-            state — the cloud.report rule: a model whose provider has
-            no key is still reported, so the guest's popup can say why
-            a thing is missing instead of not showing it. An empty
-            array is an honest answer (the host serves chat and has
-            nothing configured), not a refusal. No pagination: a host
-            with more than 16 configured models trims to the 16 it
-            would soonest recommend.
+            Every provider the host's harness KNOWS about, whatever
+            its state — the cloud.report rule: a provider with no key
+            is still reported, so the guest's popup can say why a
+            thing is missing instead of not showing it. An empty array
+            is an honest answer (the host serves chat and has nothing
+            configured), not a refusal.
           items:
             type: object
-            required: [model, label, state]
+            required: [provider, label, state]
             additionalProperties: false
             properties:
-              model:
-                type: string
-                maxLength: 48
-                description: >
-                  Opaque key chat.send takes back. Not promised stable
-                  beyond the connection — a guest re-asks after a
-                  reconnect rather than persisting one.
               provider:
                 type: string
                 maxLength: 24
                 description: >
-                  Display grouping — which of the host's providers
-                  serves this model, so a guest can offer a provider
-                  popup beside the model popup. Optional and additive;
-                  a guest that predates it renders a flat list.
+                  The selector chat.models takes back. Host registry
+                  id, short by construction.
               label:
                 type: string
                 description: >
@@ -1329,21 +1348,66 @@ components:
               state:
                 enum: [serving, off, no-access, unavailable]
                 description: >
-                  The cloud.report vocabulary. serving answers
-                  chat.send. off is the host person's choice.
-                  no-access means credentials exist but no longer work
-                  (the fix is at the host's screen). unavailable means
-                  the provider cannot be reached at all (no key, no
-                  local runtime answering).
+                  The cloud.report vocabulary. serving lists models
+                  and answers chat.send. off is the host person's
+                  choice. no-access means credentials exist but no
+                  longer work (the fix is at the host's screen).
+                  unavailable means the provider cannot be reached at
+                  all (no key, no local runtime answering).
               detail:
                 type: string
                 description: >
                   One converted sentence of state ("Signed in",
                   "Nothing answering at localhost:11434"). Display
                   only.
+        provider:
+          type: string
+          maxLength: 24
+          description: With models — whose page this is, echoed.
+        models:
+          type: array
+          maxItems: 16
+          description: >
+            One page of the named provider's models. 16 rows is the
+            FRAME bound, not the catalog's: `more` continues the
+            listing. An empty page with more:false is an honest
+            "nothing (left) to list".
+          items:
+            type: object
+            required: [ref, label]
+            additionalProperties: false
+            properties:
+              ref:
+                type: string
+                maxLength: 8
+                description: >
+                  HOST-MINTED reference chat.send takes back — never
+                  the provider's own model name, which can outgrow any
+                  classic buffer (metal, 2026-08-02: a 48-byte name
+                  lost its last byte in a fixed buffer and the send
+                  came back not-found). Opaque, valid for this
+                  connection, refreshed by every page; a display never
+                  shows it to a person.
+              label:
+                type: string
+                description: >
+                  The model's name FOR HUMANS, converted by the host
+                  (MacRoman-expressible, <= 31 bytes). What every
+                  popup and console listing shows; the ref never
+                  surfaces.
+              detail:
+                type: string
+                description: One converted display-only sentence.
+        more:
+          type: boolean
+          description: >
+            With models: true means another page follows at cursor +
+            the rows received so far, and the guest keeps asking until
+            false — the pagination loop is the guest's, invisible to
+            the person at the screen.
     ChatSend:
       type: object
-      required: [type, id, model, prompt]
+      required: [type, id, ref, prompt]
       additionalProperties: false
       properties:
         type: { const: chat.send }
@@ -1354,14 +1418,14 @@ components:
             chat.result, and IS the turn's identity for chat.cancel.
             No separate session field — the exec.request reason: a
             second identifier is a second thing to get wrong.
-        model:
+        ref:
           type: string
-          maxLength: 48
+          maxLength: 8
           description: >
-            A model key from the most recent chat.catalog. Unknown or
-            stale keys are answered chat.result ok:false unknown-model
-            — a well-formed refusal, never a protocol error, which is
-            what keeps the catalog additive.
+            A model's host-minted ref from this connection's catalog
+            pages. Unknown or stale refs are answered chat.result
+            ok:false unknown-model — a well-formed refusal, never a
+            protocol error, which is what keeps the catalog additive.
         prompt:
           type: string
           maxLength: 512

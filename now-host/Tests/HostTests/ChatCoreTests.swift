@@ -125,3 +125,11 @@ final class ChatProviderRegistryTests: XCTestCase {
         XCTAssertEqual(model.wireID, "anthropic/claude-opus-5")
     }
 }
+
+final class ChatWireTextTests: XCTestCase {
+    func testLabelsLeaveConvertedAndBounded() {
+        XCTAssertEqual(ChatWireText.label("Claude Opus 5"), "Claude Opus 5")
+        XCTAssertLessThanOrEqual(
+            ChatWireText.label(String(repeating: "x", count: 60)).count, 31)
+    }
+}

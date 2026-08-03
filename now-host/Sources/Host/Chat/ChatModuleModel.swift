@@ -188,55 +188,42 @@ final class ChatModuleModel: ObservableObject {
     }
 
     /// The chat.* family's server, sharing this page's harness so what
-    /// a guest reaches is exactly what the test pane proved.
+    /// a guest reaches is exactly what the test pane proved. The
+    /// service pages and mints refs; this page only answers what the
+    /// registry knows, when asked.
     private(set) lazy var wireService = ChatWireService(
         harness: harness,
-        catalog: { [weak self] in
-            await self?.wireCatalog() ?? []
+        providers: { [weak self] in
+            await self?.wireProviders() ?? []
+        },
+        models: { [weak self] providerID in
+            await self?.wireModels(provider: providerID)
         })
 
-    /// The catalog as the contract describes it: a serving provider
-    /// contributes its models; one that cannot serve still contributes
-    /// one row carrying its state and reason, so the guest's popup can
-    /// say WHY a thing is missing instead of not showing it. Labels
-    /// leave converted and bounded (<= 31 bytes, the cloud rule).
-    private func wireCatalog() async -> [ChatCatalogEntry] {
-        var entries: [ChatCatalogEntry] = []
+    /// Every provider, whatever its state — the cloud.report rule: one
+    /// that cannot serve is still a row saying WHY. Labels leave
+    /// converted and bounded (<= 31 bytes, the cloud rule).
+    private func wireProviders() async -> [ChatCatalogProvider] {
+        var rows: [ChatCatalogProvider] = []
         for provider in registry.all() {
             let entry = await provider.entry()
-            guard entry.state == "serving" else {
-                entries.append(ChatCatalogEntry(
-                    model: provider.id,
-                    provider: provider.id,
-                    label: Self.wireLabel(entry.label),
-                    state: entry.state,
-                    detail: CloudText.displayable(entry.detail)))
-                continue
-            }
-            guard let models = try? await provider.listModels(),
-                !models.isEmpty else {
-                entries.append(ChatCatalogEntry(
-                    model: provider.id,
-                    provider: provider.id,
-                    label: Self.wireLabel(entry.label),
-                    state: "unavailable",
-                    detail: "No models to list"))
-                continue
-            }
-            entries.append(contentsOf: models.map { model in
-                ChatCatalogEntry(
-                    model: model.wireID,
-                    provider: provider.id,
-                    label: Self.wireLabel(model.displayName),
-                    state: "serving",
-                    detail: CloudText.displayable(entry.label))
-            })
+            rows.append(ChatCatalogProvider(
+                provider: provider.id,
+                label: ChatWireText.label(entry.label),
+                state: entry.state,
+                detail: CloudText.displayable(entry.detail)))
         }
-        return entries
+        return rows
     }
 
-    private static func wireLabel(_ text: String) -> String {
-        String(CloudText.displayable(text).prefix(31))
+    /// The named provider's FULL list, fetched when somebody selects
+    /// it — never sooner. nil (unknown provider, or one that cannot
+    /// list right now) reads as an empty page at the service, the
+    /// contract's honest "nothing to list".
+    private func wireModels(provider id: String) async -> [ChatModel]? {
+        guard let provider = registry.all().first(where: { $0.id == id })
+        else { return nil }
+        return try? await provider.listModels()
     }
 
     func providerEntries() async -> [ChatProviderEntry] {

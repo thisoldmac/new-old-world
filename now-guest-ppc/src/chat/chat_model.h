@@ -17,7 +17,10 @@ typedef unsigned char Boolean;
 #endif
 
 enum {
-    kChatMaxModels = 16,              /* the catalog's maxItems */
+    kChatMaxProviders = 8,            /* the providers answer's maxItems */
+    kChatPageRows = 16,               /* one models page, the frame bound */
+    kChatMaxModels = 64,              /* accumulated across pages */
+    kChatRefMax = 8,                  /* ChatSend.ref maxLength */
     kChatMaxLines = 300,              /* transcript ring */
     kChatCols = 96,                   /* stored bytes per line */
     kChatWrapCols = 88,               /* wrap width for streamed text */
@@ -28,23 +31,32 @@ enum {
     kChatPromptMax = 512
 };
 
+/* Buffers hold the contract's maxLength PLUS the terminator - a
+   48-byte model name in a char[48] lost its last byte on metal
+   (2026-08-02), which is the whole reason sends now carry a bounded
+   REF instead of a name. */
 typedef struct {
-    char model[48];                   /* opaque key, sent back verbatim */
-    char provider[24];                /* display grouping for the popup */
+    char provider[25];                /* selector, sent back verbatim */
     char label[32];                   /* MacRoman, drawn in the popup */
     char state[16];                   /* serving | off | no-access | ... */
     char detail[96];                  /* MacRoman, display only */
+} ChatProviderRow;
+
+typedef struct {
+    char ref[kChatRefMax + 1];        /* host-minted; never displayed */
+    char label[32];                   /* the model's name for humans */
+    char detail[96];
 } ChatModelRow;
 
 /* Parsers. A malformed frame reads as failure (-1 / 0), never a crash;
-   the wire has already matched type and id. A row without a provider
-   field (an older host) gets the model key's prefix, so the provider
-   popup degrades to whatever grouping the keys carry. */
-int chat_parse_catalog(const char *reply, ChatModelRow *rows, int max);
-
-/* Distinct providers, first-appearance order. Returns the count. */
-int chat_catalog_providers(const ChatModelRow *rows, int count,
-                           char out[][24], int max);
+   the wire has already matched type, id and which shape was asked. */
+int chat_parse_providers(const char *reply, ChatProviderRow *rows,
+                         int max);
+/* One models page: returns the row count, sets *more when another page
+   follows, and copies the echoed provider so a page that arrives after
+   the person switched popups reads as stale, not as content. */
+int chat_parse_models(const char *reply, ChatModelRow *rows, int max,
+                      int *more, char *provider_out, long provider_cap);
 int chat_parse_delta(const char *reply, char *out, long cap, long *seq);
 int chat_parse_status(const char *reply, char *out, long cap);
 int chat_parse_result(const char *reply, int *ok,

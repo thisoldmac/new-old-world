@@ -182,15 +182,15 @@ struct CloudRefuse: Codable, Equatable, Sendable {
 
 struct ChatModels: Codable, Equatable, Sendable {
     var id: Int
+    /// Absent: list providers. Present: list this provider's models.
+    var provider: String? = nil
+    /// With provider: continue from this row (cloud.list's shape).
+    var cursor: Int? = nil
 }
 
-struct ChatCatalogEntry: Codable, Equatable, Sendable, Identifiable {
-    /// Opaque key chat.send takes back — not promised stable beyond
-    /// the connection.
-    var model: String
-    /// Display grouping: which provider serves it, for the guest's
-    /// provider popup. Optional and additive.
-    var provider: String?
+struct ChatCatalogProvider: Codable, Equatable, Sendable, Identifiable {
+    /// The selector chat.models takes back — host registry id.
+    var provider: String
     /// Converted; what the popup shows (<= 31 bytes).
     var label: String
     /// serving | off | no-access | unavailable — cloud.report's
@@ -199,17 +199,35 @@ struct ChatCatalogEntry: Codable, Equatable, Sendable, Identifiable {
     var state: String
     var detail: String?
 
-    var id: String { model }
+    var id: String { provider }
 }
 
+struct ChatCatalogModel: Codable, Equatable, Sendable, Identifiable {
+    /// HOST-MINTED, opaque, connection-scoped — never the provider's
+    /// own model name, which can outgrow a classic buffer (metal,
+    /// 2026-08-02), and never shown to a person.
+    var ref: String
+    /// The model's name for humans, converted (<= 31 bytes).
+    var label: String
+    var detail: String?
+
+    var id: String { ref }
+}
+
+/// Two shapes by the ask's: providers, or one provider's models page.
 struct ChatCatalog: Codable, Equatable, Sendable {
     var id: Int
-    var models: [ChatCatalogEntry]
+    var providers: [ChatCatalogProvider]? = nil
+    var provider: String? = nil
+    var models: [ChatCatalogModel]? = nil
+    /// With models: another page follows at cursor + rows received.
+    var more: Bool? = nil
 }
 
 struct ChatSend: Codable, Equatable, Sendable {
     var id: Int
-    var model: String
+    /// A host-minted ref from this connection's catalog pages.
+    var ref: String
     /// One turn, as typed; the contract's 512-byte cap is the SENDER's
     /// to honour and this side answers too-long rather than truncating.
     var prompt: String

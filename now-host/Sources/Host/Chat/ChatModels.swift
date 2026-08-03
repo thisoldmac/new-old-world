@@ -113,3 +113,11 @@ struct ChatCompletionRequest: Sendable {
     let tools: [ChatToolDescriptor]
     let maxTokens: Int
 }
+
+/// Wire-bound display text: converted, and inside the contract's
+/// 31-byte label cap. One statement, used by every row that leaves.
+enum ChatWireText {
+    static func label(_ text: String) -> String {
+        String(CloudText.displayable(text).prefix(31))
+    }
+}

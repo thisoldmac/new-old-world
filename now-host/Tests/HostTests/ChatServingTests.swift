@@ -36,7 +36,15 @@ final class ChatServingTests: XCTestCase {
 
     private func installChat(
         script: [[ChatStreamEvent]], hangsWhenDry: Bool = false,
-        catalog: [ChatCatalogEntry] = []
+        providers: [ChatCatalogProvider] = [
+            ChatCatalogProvider(
+                provider: "fake", label: "Fake", state: "serving",
+                detail: nil)
+        ],
+        models: [String: [ChatModel]] = [
+            "fake": [ChatModel(providerID: "fake", modelID: "m",
+                               displayName: "m")]
+        ]
     ) {
         let scripted = WireScriptedProvider(script)
         scripted.hangsWhenDry = hangsWhenDry
@@ -48,7 +56,9 @@ final class ChatServingTests: XCTestCase {
             makeClient: { _ in NoHostChatClient() },
             audit: NoOpAuditSink())
         chatService = ChatWireService(
-            harness: harness, catalog: { catalog })
+            harness: harness,
+            providers: { providers },
+            models: { models[$0] })
         listener.chatService = chatService
     }
 
@@ -80,6 +90,42 @@ final class ChatServingTests: XCTestCase {
         return guest
     }
 
+    /// One models page for `provider`, as a guest would ask it.
+    private func modelsPage(
+        on guest: FakeGuest, provider: String = "fake",
+        cursor: Int? = nil, id: Int
+    ) async throws -> ChatCatalog {
+        try guest.send(.chatModels(ChatModels(
+            id: id, provider: provider, cursor: cursor)))
+        try await waitUntil("models page #\(id)") {
+            guest.received.contains {
+                if case .chatCatalog(let c) = $0 { return c.id == id }
+                return false
+            }
+        }
+        guard case .chatCatalog(let page)? = guest.received.last(where: {
+            if case .chatCatalog(let c) = $0 { return c.id == id }
+            return false
+        }) else {
+            XCTFail("no models page")
+            throw WaitTimeout(what: "models page")
+        }
+        return page
+    }
+
+    /// The full ask-then-send dance: mint a ref the way a guest earns
+    /// one, because a send without a catalog ask is not a flow the
+    /// wire has.
+    private func mintedRef(on guest: FakeGuest, id: Int = 1000)
+        async throws -> String {
+        let page = try await modelsPage(on: guest, id: id)
+        guard let ref = page.models?.first?.ref else {
+            XCTFail("no model rows to send with")
+            throw WaitTimeout(what: "a ref")
+        }
+        return ref
+    }
+
     private func result(on guest: FakeGuest, id: Int) async throws
         -> ChatResult {
         try await waitUntil("chat.result #\(id)") {
@@ -96,27 +142,84 @@ final class ChatServingTests: XCTestCase {
 
     // MARK: - Discovery
 
-    func testTheCatalogAnswersAndTrimsToSixteen() async throws {
-        let entries = (0..<20).map {
-            ChatCatalogEntry(
-                model: "fake/m\($0)", label: "Model \($0)",
-                state: "serving", detail: nil)
-        }
-        installChat(script: [], catalog: entries)
+    func testProvidersAnswerWithStatesNotModels() async throws {
+        installChat(
+            script: [],
+            providers: [
+                ChatCatalogProvider(
+                    provider: "fake", label: "Fake", state: "serving",
+                    detail: nil),
+                ChatCatalogProvider(
+                    provider: "omlx", label: "oMLX", state: "unavailable",
+                    detail: "Nothing answering at localhost:8000"),
+            ])
         let guest = try await connectedGuest()
         try guest.send(.chatModels(ChatModels(id: 7)))
-        try await waitUntil("chat.catalog") {
+        try await waitUntil("providers catalog") {
             guest.received.contains {
-                if case .chatCatalog = $0 { return true }
+                if case .chatCatalog(let c) = $0 { return c.id == 7 }
                 return false
             }
         }
         guard case .chatCatalog(let catalog)? = guest.received.last(where: {
-            if case .chatCatalog = $0 { return true }
+            if case .chatCatalog(let c) = $0 { return c.id == 7 }
             return false
         }) else { return XCTFail("no catalog") }
-        XCTAssertEqual(catalog.id, 7)
-        XCTAssertEqual(catalog.models.count, 16, "maxItems 16, by trimming")
+        XCTAssertEqual(catalog.providers?.map(\.provider),
+                       ["fake", "omlx"])
+        XCTAssertEqual(catalog.providers?.last?.state, "unavailable")
+        XCTAssertNil(catalog.models, "the providers shape carries no models")
+    }
+
+    func testModelPagesMintRefsAndTheNameNeverCrosses() async throws {
+        // The metal shape: model names longer than any classic buffer.
+        let longNames = (0..<20).map {
+            "Qwen3.5-122B-A10B-Heretic-v2-MLX-mixed-6bit-variant-\($0)"
+        }
+        installChat(
+            script: [],
+            models: ["fake": longNames.map {
+                ChatModel(providerID: "fake", modelID: $0, displayName: $0)
+            }])
+        let guest = try await connectedGuest()
+
+        let first = try await modelsPage(on: guest, id: 20)
+        XCTAssertEqual(first.provider, "fake")
+        XCTAssertEqual(first.models?.count, 16, "the frame bound")
+        XCTAssertEqual(first.more, true)
+        let second = try await modelsPage(on: guest, cursor: 16, id: 21)
+        XCTAssertEqual(second.models?.count, 4)
+        XCTAssertEqual(second.more, false)
+
+        let rows = (first.models ?? []) + (second.models ?? [])
+        XCTAssertEqual(Set(rows.map(\.ref)).count, rows.count,
+                       "refs never collide")
+        for row in rows {
+            XCTAssertLessThanOrEqual(row.ref.utf8.count, 8,
+                                     "a ref fits any classic buffer")
+            XCTAssertLessThanOrEqual(row.label.utf8.count, 31)
+        }
+        // The provider's own name is nowhere in any served frame.
+        for frame in guest.received {
+            guard case .chatCatalog = frame else { continue }
+            let encoded = try ControlMessageCodec.encode(frame)
+            XCTAssertFalse(
+                String(decoding: encoded, as: UTF8.self)
+                    .contains("Heretic-v2-MLX-mixed-6bit-variant-0"))
+        }
+    }
+
+    func testARefRidesBackToTheRealModelID() async throws {
+        installChat(script: [[
+            .textDelta("hey"), .finished(.endTurn),
+        ]])
+        let guest = try await connectedGuest()
+        let ref = try await mintedRef(on: guest)
+        try guest.send(.chatSend(ChatSend(id: 30, ref: ref, prompt: "hi")))
+        let answer = try await result(on: guest, id: 30)
+        XCTAssertTrue(answer.ok)
+        XCTAssertEqual(provider.requests.first?.model, "m",
+                       "the send resolved the ref to the provider's own id")
     }
 
     func testNoServiceWiredMeansPreFamilySilence() async throws {
@@ -141,8 +244,8 @@ final class ChatServingTests: XCTestCase {
             .finished(.endTurn),
         ]])
         let guest = try await connectedGuest()
-        try guest.send(.chatSend(ChatSend(
-            id: 9, model: "fake/m", prompt: "hi")))
+        let ref = try await mintedRef(on: guest)
+        try guest.send(.chatSend(ChatSend(id: 9, ref: ref, prompt: "hi")))
         let result = try await result(on: guest, id: 9)
         XCTAssertTrue(result.ok)
         XCTAssertNil(result.code)
@@ -170,11 +273,12 @@ final class ChatServingTests: XCTestCase {
     func testSecondSendIsBusyAndCancelAnswersTheFirst() async throws {
         installChat(script: [], hangsWhenDry: true)
         let guest = try await connectedGuest()
-        try guest.send(.chatSend(ChatSend(id: 1, model: "fake/m", prompt: "a")))
+        let ref = try await mintedRef(on: guest)
+        try guest.send(.chatSend(ChatSend(id: 1, ref: ref, prompt: "a")))
         try await waitUntil("first turn streaming") {
             self.provider.requests.count == 1
         }
-        try guest.send(.chatSend(ChatSend(id: 2, model: "fake/m", prompt: "b")))
+        try guest.send(.chatSend(ChatSend(id: 2, ref: ref, prompt: "b")))
         let busy = try await result(on: guest, id: 2)
         XCTAssertEqual(busy.code, "busy")
 
@@ -196,7 +300,7 @@ final class ChatServingTests: XCTestCase {
         installChat(script: [])
         let guest = try await connectedGuest()
         let long = String(repeating: "x", count: 600)
-        try guest.send(.chatSend(ChatSend(id: 4, model: "fake/m", prompt: long)))
+        try guest.send(.chatSend(ChatSend(id: 4, ref: "m1", prompt: long)))
         let answer = try await result(on: guest, id: 4)
         XCTAssertEqual(answer.code, "too-long")
         XCTAssertTrue(provider.requests.isEmpty, "nothing reached a model")
@@ -205,8 +309,8 @@ final class ChatServingTests: XCTestCase {
     func testUnknownModelIsAWellFormedRefusal() async throws {
         installChat(script: [])
         let guest = try await connectedGuest()
-        try guest.send(.chatSend(ChatSend(
-            id: 5, model: "elsewhere/m", prompt: "hi")))
+        // Never minted on this connection - stale from a past life.
+        try guest.send(.chatSend(ChatSend(id: 5, ref: "m9", prompt: "hi")))
         let answer = try await result(on: guest, id: 5)
         XCTAssertEqual(answer.code, "unknown-model")
     }
@@ -217,12 +321,13 @@ final class ChatServingTests: XCTestCase {
             [.textDelta("two"), .finished(.endTurn)],
         ])
         let guest = try await connectedGuest()
-        try guest.send(.chatSend(ChatSend(id: 10, model: "fake/m", prompt: "a")))
+        let ref = try await mintedRef(on: guest)
+        try guest.send(.chatSend(ChatSend(id: 10, ref: ref, prompt: "a")))
         _ = try await result(on: guest, id: 10)
         try guest.send(.chatReset(ChatReset(id: 11)))
         let reset = try await result(on: guest, id: 11)
         XCTAssertTrue(reset.ok)
-        try guest.send(.chatSend(ChatSend(id: 12, model: "fake/m", prompt: "b")))
+        try guest.send(.chatSend(ChatSend(id: 12, ref: ref, prompt: "b")))
         _ = try await result(on: guest, id: 12)
         // The second turn started from a blank conversation: one user
         // turn, no history from before the reset.
@@ -256,14 +361,12 @@ final class ChatDeltaChunkingTests: XCTestCase {
         // KEY with its non-decoding reader then sends the backslash
         // back (metal, 2026-08-02: "anthropic\\/claude-opus-5").
         let encoded = try ControlMessageCodec.encode(.chatCatalog(
-            ChatCatalog(id: 1, models: [
-                ChatCatalogEntry(
-                    model: "anthropic/claude-opus-5",
-                    provider: "anthropic",
-                    label: "Claude Opus 5", state: "serving", detail: nil)
-            ])))
+            ChatCatalog(id: 1, provider: "omlx", models: [
+                ChatCatalogModel(
+                    ref: "m1", label: "qwen/qwen-3.5", detail: nil)
+            ], more: false)))
         let text = String(decoding: encoded, as: UTF8.self)
-        XCTAssertTrue(text.contains("anthropic/claude-opus-5"))
+        XCTAssertTrue(text.contains("qwen/qwen-3.5"))
         XCTAssertFalse(text.contains("\\/"))
     }
 

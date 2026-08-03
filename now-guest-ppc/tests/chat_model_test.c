@@ -14,62 +14,72 @@
 
 #include "chat_model.h"
 
-static void test_catalog_fills_rows_whatever_their_state(void)
+static void test_providers_fill_rows_whatever_their_state(void)
 {
-    ChatModelRow rows[kChatMaxModels];
+    ChatProviderRow rows[kChatMaxProviders];
     int n;
 
-    n = chat_parse_catalog(
-        "{\"type\":\"chat.catalog\",\"id\":4,\"models\":["
-        "{\"model\":\"anthropic/claude-opus-5\",\"provider\":\"anthropic\","
-        "\"label\":\"Claude Opus 5\",\"state\":\"serving\","
-        "\"detail\":\"Anthropic\"},"
-        "{\"model\":\"ollama\",\"label\":\"Ollama\","
+    n = chat_parse_providers(
+        "{\"type\":\"chat.catalog\",\"id\":4,\"providers\":["
+        "{\"provider\":\"anthropic\",\"label\":\"Anthropic\","
+        "\"state\":\"serving\",\"detail\":\"Signed in\"},"
+        "{\"provider\":\"ollama\",\"label\":\"Ollama\","
         "\"state\":\"unavailable\",\"detail\":\"Nothing at 11434\"},"
-        "{\"model\":\"omlx/qwen\",\"label\":\"qwen\",\"state\":\"serving\"},"
-        "{\"model\":\"omlx/llama\",\"provider\":\"omlx\","
-        "\"label\":\"llama\",\"state\":\"serving\"}]}",
-        rows, kChatMaxModels);
-    assert(n == 4);
-    assert(strcmp(rows[0].model, "anthropic/claude-opus-5") == 0);
+        "{\"provider\":\"omlx\",\"label\":\"oMLX\",\"state\":\"serving\"}]}",
+        rows, kChatMaxProviders);
+    assert(n == 3);
     assert(strcmp(rows[0].provider, "anthropic") == 0);
-    assert(strcmp(rows[0].label, "Claude Opus 5") == 0);
+    assert(strcmp(rows[0].label, "Anthropic") == 0);
     assert(strcmp(rows[1].state, "unavailable") == 0);
-    /* No provider field: grouped by the key's own prefix. */
-    assert(strcmp(rows[1].provider, "ollama") == 0);
-    assert(strcmp(rows[2].provider, "omlx") == 0);
+    assert(strcmp(rows[1].detail, "Nothing at 11434") == 0);
     assert(strcmp(rows[2].detail, "") == 0);
 
-    {
-        char providers[kChatMaxModels][24];
-        int pn = chat_catalog_providers(rows, n, providers,
-                                        kChatMaxModels);
+    /* Malformed: no providers array. */
+    assert(chat_parse_providers("{\"type\":\"chat.catalog\",\"id\":1}",
+                                rows, kChatMaxProviders) == -1);
+    /* Empty is an honest zero, not a failure. */
+    assert(chat_parse_providers(
+               "{\"type\":\"chat.catalog\",\"id\":1,\"providers\":[]}",
+               rows, kChatMaxProviders) == 0);
+}
 
-        assert(pn == 3);
-        assert(strcmp(providers[0], "anthropic") == 0);
-        assert(strcmp(providers[1], "ollama") == 0);
-        assert(strcmp(providers[2], "omlx") == 0);
-    }
+static void test_model_pages_carry_refs_and_more(void)
+{
+    ChatModelRow rows[kChatPageRows];
+    char from[25];
+    int more = -1;
+    int n;
 
-    /* A host that escapes "/" (Foundation's default) must not leave
-       the backslash in the key - it goes back over the wire verbatim.
-       Seen on metal 2026-08-02 as "anthropic\/claude-opus-5". */
-    n = chat_parse_catalog(
-        "{\"type\":\"chat.catalog\",\"id\":5,\"models\":["
-        "{\"model\":\"anthropic\\/claude-opus-5\","
-        "\"label\":\"Opus\",\"state\":\"serving\"}]}",
-        rows, kChatMaxModels);
-    assert(n == 1);
-    assert(strcmp(rows[0].model, "anthropic/claude-opus-5") == 0);
-    assert(strcmp(rows[0].provider, "anthropic") == 0);
+    n = chat_parse_models(
+        "{\"type\":\"chat.catalog\",\"id\":5,\"provider\":\"omlx\","
+        "\"models\":["
+        "{\"ref\":\"m1\",\"label\":\"Qwen3.5-122B-A10B-Heretic\"},"
+        "{\"ref\":\"m2\",\"label\":\"qwen3-coder\",\"detail\":\"local\"}],"
+        "\"more\":true}",
+        rows, kChatPageRows, &more, from, sizeof from);
+    assert(n == 2);
+    assert(more == 1);
+    assert(strcmp(from, "omlx") == 0);
+    assert(strcmp(rows[0].ref, "m1") == 0);
+    assert(strcmp(rows[0].label, "Qwen3.5-122B-A10B-Heretic") == 0);
+    assert(strcmp(rows[1].detail, "local") == 0);
+
+    /* The last page: more false (or absent) ends the loop. */
+    n = chat_parse_models(
+        "{\"type\":\"chat.catalog\",\"id\":6,\"provider\":\"omlx\","
+        "\"models\":[{\"ref\":\"m3\",\"label\":\"llama\"}],\"more\":false}",
+        rows, kChatPageRows, &more, from, sizeof from);
+    assert(n == 1 && more == 0);
+    n = chat_parse_models(
+        "{\"type\":\"chat.catalog\",\"id\":7,\"provider\":\"x\","
+        "\"models\":[]}",
+        rows, kChatPageRows, &more, from, sizeof from);
+    assert(n == 0 && more == 0 && strcmp(from, "x") == 0);
 
     /* Malformed: no models array. */
-    assert(chat_parse_catalog("{\"type\":\"chat.catalog\",\"id\":1}",
-                              rows, kChatMaxModels) == -1);
-    /* Empty catalog is an honest zero, not a failure. */
-    assert(chat_parse_catalog(
-               "{\"type\":\"chat.catalog\",\"id\":1,\"models\":[]}",
-               rows, kChatMaxModels) == 0);
+    assert(chat_parse_models("{\"type\":\"chat.catalog\",\"id\":1}",
+                             rows, kChatPageRows, &more, from,
+                             sizeof from) == -1);
 }
 
 static void test_delta_and_status_decode_their_text(void)
@@ -254,7 +264,8 @@ static void test_transcript_streams_and_rolls(void)
 
 int main(void)
 {
-    test_catalog_fills_rows_whatever_their_state();
+    test_providers_fill_rows_whatever_their_state();
+    test_model_pages_carry_refs_and_more();
     test_delta_and_status_decode_their_text();
     test_result_reads_ok_code_and_message();
     test_feed_is_chunk_safe_across_word_boundaries();
