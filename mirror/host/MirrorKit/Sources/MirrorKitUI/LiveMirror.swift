@@ -226,6 +226,11 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
     @State private var dragOutline: Rect?
     @State private var dragMode: DragMode?
     @State private var dragStart: (x: Int, y: Int) = (0, 0)
+    /// What the pointer is over, named for a person. A mirror is a
+    /// picture of another machine and a person cannot tell a live control
+    /// from a drawn one by looking; saying so is most of what makes it
+    /// feel driveable rather than watched.
+    @State private var hovered: String = ""
 
     /// A live drag in progress, carrying the dragged window's original rect.
     private enum DragMode { case move(Rect), resize(Rect), thumb }
@@ -241,6 +246,22 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
         GeometryReader { geo in
             ZStack(alignment: .bottom) {
                 if let scene = controller.scene {
+                    /* The keyboard, underneath everything and filling the
+                       whole surface. It draws nothing; it exists to be
+                       first responder, because a ⌘ combination has to be
+                       caught before the host's menu bar claims it. */
+                    KeyCaptureView(
+                        onKey: { code, char, mods in
+                            act(ObjectResolver.focus(in: scene),
+                                .key(code: code, char: char, mods: mods))
+                        },
+                        onText: { text in
+                            act(ObjectResolver.focus(in: scene), .type(text))
+                        },
+                        onReserved: { combo in
+                            controller.note("\(combo) is the host's; the "
+                                            + "guest did not get it")
+                        })
                     SceneView(scene: scene, openMenu: openMenu,
                               hoveredItem: hoveredItem,
                               selectedItem: selectedItem,
@@ -249,6 +270,22 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                               dragOutline: dragOutline)
                         .gesture(mouseGesture(scene: scene, size: geo.size))
                         .onContinuousHover { phase in
+                            /* Name what is under the pointer, and shape
+                               the cursor to it. A mirror is a picture of
+                               another machine, and a person cannot tell a
+                               live control from a drawn one by looking -
+                               saying so is most of what makes it feel
+                               driveable rather than watched. */
+                            if case .active(let pt) = phase,
+                               let object = ObjectResolver.object(
+                                   at: point(pt, scene, geo.size),
+                                   in: scene) {
+                                hovered = object.describedForAPerson
+                                Self.cursor(for: object).set()
+                            } else {
+                                hovered = ""
+                                NSCursor.arrow.set()
+                            }
                             if appMenuOpen {
                                 if case .active(let pt) = phase {
                                     let g = guestPoint(pt, scene: scene,
@@ -282,7 +319,8 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                     Text("waiting for the first scene…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                Text(controller.status)
+                Text(hovered.isEmpty ? controller.status
+                                     : "\(hovered) — \(controller.status)")
                     .font(.system(size: 11, design: .monospaced))
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -418,6 +456,30 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                         label: "scroll thumb \(start) → \(end)")
                 }
             }
+    }
+
+    private func point(_ p: CGPoint, _ scene: MirrorKit.Scene,
+                       _ size: CGSize) -> Point {
+        let g = guestPoint(p, scene: scene, size: size)
+        return Point(x: g.x, y: g.y)
+    }
+
+    /// The pointer says what a press would DO, which is the cheapest
+    /// honest feedback a mirror can give: a resize corner, a thing that
+    /// can be opened, a thing that is only a picture.
+    static func cursor(for object: MirrorObject) -> NSCursor {
+        switch object {
+        case .window(let w):
+            switch w.part {
+            case .growBox: return .resizeUpDown
+            case .titleBar: return .openHand
+            default: return .arrow
+            }
+        case .control, .menu, .menuItem, .app, .finderItem:
+            return .pointingHand
+        case .desktop:
+            return .arrow
+        }
     }
 
     /// Hand one interaction to the driver. Every gesture in this view

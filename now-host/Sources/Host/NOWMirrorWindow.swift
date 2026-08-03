@@ -20,6 +20,7 @@ import MirrorKitUI
 final class NOWMirrorWindow: NSObject, NSWindowDelegate {
 
     private var window: NSWindow?
+    private var didFit = false
     private let source: NOWMirrorSource
     private let screen: MirrorKit.Scene.ScreenSize
 
@@ -55,6 +56,39 @@ final class NOWMirrorWindow: NSObject, NSWindowDelegate {
         source.start()
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        fitToGuestScreen()
+    }
+
+    /// **Size to the guest's own screen, once it says what that is.**
+    ///
+    /// The window opens before the first scene arrives, so its initial
+    /// size is a guess. A mirror at the wrong aspect is not merely ugly:
+    /// FitTransform letterboxes to keep coordinates exact, so a guessed
+    /// 4:3 around a 832x624 desktop wastes a band a person keeps trying
+    /// to click in. This corrects it once, on the first scene, and then
+    /// leaves the window alone - it is the person's to size after that.
+    private func fitToGuestScreen() {
+        guard !didFit else { return }
+        Task { @MainActor [weak self] in
+            for _ in 0..<40 {                      // ~10s of first scenes
+                guard let self, let w = self.window else { return }
+                if let s = self.source.scene?.screen, s.w > 0, s.h > 0 {
+                    self.didFit = true
+                    let fits = min(1.0,
+                                   min((w.screen?.visibleFrame.width ?? 1200)
+                                       * 0.9 / CGFloat(s.w),
+                                       (w.screen?.visibleFrame.height ?? 800)
+                                       * 0.9 / CGFloat(s.h)))
+                    w.setContentSize(NSSize(width: CGFloat(s.w) * fits,
+                                            height: CGFloat(s.h) * fits))
+                    w.contentAspectRatio = NSSize(width: s.w, height: s.h)
+                    w.contentMinSize = NSSize(width: CGFloat(s.w) / 2,
+                                              height: CGFloat(s.h) / 2)
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 250_000_000)
+            }
+        }
     }
 
     func close() {
