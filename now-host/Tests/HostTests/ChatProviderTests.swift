@@ -115,6 +115,24 @@ final class AnthropicProviderTests: XCTestCase {
         XCTAssertEqual(calls[0].argumentsJSON, "{\"scope\":\"front\"}")
     }
 
+    func testAnthropicChunksWithoutBlankLinesStillStream() async throws {
+        // The same tolerance as the OpenAI dialect: a proxy or runtime
+        // that drops the blank-line dispatch must not silence a turn.
+        let transport = FakeChatTransport([
+            .init(lines: [
+                "event: content_block_delta",
+                "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hi.\"}}",
+                "event: message_delta",
+                "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}",
+            ])
+        ])
+        let (provider, _) = provider(transport)
+        let out = try await collect(provider.stream(ChatCompletionRequest(
+            model: "claude-opus-5", system: "", turns: [.user("hey")],
+            tools: [], maxTokens: 64)))
+        XCTAssertEqual(out.text, "Hi.")
+    }
+
     func testRequestBodyCarriesTheAnthropicDialect() throws {
         let schema = try JSONSerialization.data(withJSONObject: [
             "type": "object", "properties": ["x": ["type": "string"]],
@@ -422,6 +440,30 @@ final class OpenAICompatibleProviderTests: XCTestCase {
             // The refusal quotes what actually arrived.
             XCTAssertTrue(reason.contains("not json and not sse"),
                           "got: \(reason)")
+        }
+    }
+
+    func testChunksWithoutBlankLineSeparatorsStillStream() async throws {
+        // oMLX streams data lines with NO blank-line dispatch and
+        // interleaves keepalive chunks (metal, 2026-08-02 - copied
+        // from the error the raw-snippet diagnostics captured).
+        let transport = FakeChatTransport([
+            .init(lines: [
+                "data: {\"object\":\"chat.completion.chunk\",\"model\":\"keepalive\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\"},\"finish_reason\":null}]}",
+                "data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hel\"},\"finish_reason\":null}]}",
+                "data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"lo.\"},\"finish_reason\":null}]}",
+                "data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}",
+                "data: [DONE]",
+            ])
+        ])
+        let provider = OpenAICompatibleChatProvider.oMLX(
+            store: InMemoryChatCredentialStore(), transport: transport)
+        let out = try await collect(provider.stream(ChatCompletionRequest(
+            model: "qwen", system: "", turns: [.user("hi")],
+            tools: [], maxTokens: 64)))
+        XCTAssertEqual(out.text, "Hello.")
+        guard case .endTurn = out.finish else {
+            return XCTFail("expected endTurn")
         }
     }
 

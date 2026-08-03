@@ -91,6 +91,17 @@ actor ChatHarness {
         running[conversation] = nil
     }
 
+    /// One line per fact, in the person's log — the Logs page is where
+    /// a turn that "failed silently" stops being silent (metal,
+    /// 2026-08-02: a turn died with nothing anywhere a person looks).
+    private nonisolated func log(
+        _ level: HostLog.LogLevel, _ message: String
+    ) {
+        Task { @MainActor in
+            HostLog.shared.write(level, "chat", message)
+        }
+    }
+
     private func turn(
         wireModelID: String,
         transcript: [ChatTurn],
@@ -100,11 +111,14 @@ actor ChatHarness {
     ) async {
         guard let (provider, modelID) = registry.resolve(wireID: wireModelID)
         else {
+            log(.warn, "turn refused: no provider serves \(wireModelID)")
             events(.finished(ChatChatOutcome(
                 ok: false, code: "unknown-model",
                 message: "No provider serves \(wireModelID)", appended: [])))
             return
         }
+        log(.info, "turn begins: \(wireModelID), "
+            + "\(transcript.count) turn(s) of history")
         let client = makeClient(selector)
         let system = ChatSystemPrompt.compose(
             health: await client.sessionHealth(), origin: origin)
@@ -132,12 +146,14 @@ actor ChatHarness {
                     }
                 }
             } catch is CancellationError {
+                log(.info, "turn cancelled")
                 events(.finished(ChatChatOutcome(
                     ok: false, code: "cancelled", message: nil,
                     appended: appended)))
                 return
             } catch {
                 let (code, reason) = ChatFault.from(error)
+                log(.warn, "turn failed: \(code) - \(reason)")
                 events(.finished(ChatChatOutcome(
                     ok: false, code: code, message: reason,
                     appended: appended)))
@@ -166,6 +182,7 @@ actor ChatHarness {
                 var results: [ChatContent] = []
                 for call in calls {
                     if Task.isCancelled {
+                        log(.info, "turn cancelled between tools")
                         events(.finished(ChatChatOutcome(
                             ok: false, code: "cancelled", message: nil,
                             appended: appended)))
@@ -176,6 +193,8 @@ actor ChatHarness {
                         call, dispatch: dispatch, selector: selector,
                         through: client)
                     if case .toolResult(_, _, _, let isError) = result {
+                        log(.info,
+                            "tool \(call.name): \(isError ? "declined" : "answered")")
                         events(.toolFinished(name: call.name, ok: !isError))
                     }
                     results.append(result)
@@ -196,12 +215,14 @@ actor ChatHarness {
                         role: .assistant, content: [.text(text)])
                     appended.append(assistant)
                 }
+                log(.info, "turn done: \(text.count) chars of answer")
                 events(.finished(ChatChatOutcome(
                     ok: true, code: nil, message: nil, appended: appended)))
                 return
             }
         }
 
+        log(.warn, "turn stopped at the tool ceiling (\(maxToolTurns))")
         events(.finished(ChatChatOutcome(
             ok: false, code: "turn-limit",
             message: "The model kept asking for tools past the ceiling",

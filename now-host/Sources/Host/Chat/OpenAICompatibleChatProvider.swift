@@ -244,15 +244,12 @@ final class OpenAICompatibleChatProvider: ChatProvider, @unchecked Sendable {
                     ?? "\(label) answered \(response.statusCode)")
         }
 
-        var parser = ServerSentEventParser()
         var accumulator = OpenAIToolCallAccumulator()
         var finishReason: String?
         var yieldedText = false
         /* Some runtimes ignore stream:true and answer one JSON body.
-           Everything is kept (bounded) so a stream that produced no SSE
-           events can be re-read as that body — metal, 2026-08-02: oMLX
-           accepted a turn, spun the GPU, and nothing arrived, because
-           the whole answer was one line no SSE parser would touch. */
+           Everything is kept (bounded) so a stream that produced no
+           data lines can be re-read as that body. */
         var raw = ""
 
         for try await line in lines {
@@ -260,11 +257,15 @@ final class OpenAICompatibleChatProvider: ChatProvider, @unchecked Sendable {
                 raw += line
                 raw += "\n"
             }
-            guard let event = parser.feed(line) else { continue }
-            if event.data == "[DONE]" { break }
+            /* Per data LINE, not per SSE event: oMLX streams chunks
+               with no blank-line separators (metal, 2026-08-02), and a
+               parser holding out for the dispatch rule sees nothing. */
+            guard let payload = ServerSentEventLine.dataPayload(line)
+            else { continue }
+            if payload == "[DONE]" { break }
             guard
                 let object = try? JSONSerialization.jsonObject(
-                    with: Data(event.data.utf8)) as? [String: Any],
+                    with: Data(payload.utf8)) as? [String: Any],
                 let choices = object["choices"] as? [[String: Any]],
                 let choice = choices.first
             else { continue }

@@ -141,15 +141,18 @@ final class AnthropicChatProvider: ChatProvider, @unchecked Sendable {
             return
         }
 
-        var parser = ServerSentEventParser()
         var accumulator = ToolCallAccumulator()
         var stopReason: String?
 
         for try await line in lines {
-            guard let event = parser.feed(line) else { continue }
+            /* Per data line, the OpenAI dialect's reason: a runtime
+               that skips blank-line separators still speaks. The event
+               name is redundant here - the payload carries "type". */
+            guard let payload = ServerSentEventLine.dataPayload(line)
+            else { continue }
             guard
                 let object = try? JSONSerialization.jsonObject(
-                    with: Data(event.data.utf8)) as? [String: Any],
+                    with: Data(payload.utf8)) as? [String: Any],
                 let type = object["type"] as? String
             else { continue }
             switch type {

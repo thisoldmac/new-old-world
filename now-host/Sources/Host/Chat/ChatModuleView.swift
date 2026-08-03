@@ -1,35 +1,31 @@
+import AppKit
 import SwiftUI
 
-/* The Chat page, second pass after the first metal run: provider and
-   model pickers side by side (the model list follows the provider),
-   provider setup folded away until it is needed, a transcript that
-   reads as a conversation, and an input bar that says what it will do.
-   Native controls throughout - the page should feel like this Mac,
-   not like a web harness. */
+/* The Chat page, third pass. The shape every polished harness shares:
+   a quiet toolbar (provider and model, the model list following the
+   provider), a conversation that reads as one - the model's text plain
+   and full width, the person's in a trailing bubble, tool use as small
+   collapsed rows - and provider accounts in a settings sheet instead
+   of furniture above the transcript. Native controls; the page should
+   feel like this Mac. */
 
 struct ChatModuleView: View {
     @ObservedObject var model: ChatModuleModel
-    @State private var providersShown = false
-    @State private var anthropicKey = ""
-    @State private var openAIKey = ""
-    @State private var pastedCode = ""
+    @State private var settingsShown = false
     @State private var draft = ""
-    @State private var anthropicKeyEntry = false
 
     var body: some View {
         VStack(spacing: 0) {
             toolbar
             Divider()
-            if providersShown || model.models.isEmpty {
-                providers
-                    .transition(.opacity)
-                Divider()
-            }
             transcript
             Divider()
-            inputBar
+            composer
         }
         .onAppear { model.refresh() }
+        .sheet(isPresented: $settingsShown) {
+            ChatProvidersSheet(model: model)
+        }
     }
 
     // MARK: - Toolbar
@@ -50,161 +46,31 @@ struct ChatModuleView: View {
                     Text(served.displayName).tag(served.wireID)
                 }
             }
-            .frame(maxWidth: 320)
+            .frame(maxWidth: 300)
             .disabled(model.models(of: model.selectedProviderID).isEmpty)
-
-            if model.isStreaming {
-                ProgressView()
-                    .controlSize(.small)
-                    .padding(.leading, 2)
-            }
 
             Spacer()
 
-            Button("New Chat") { model.newChat() }
-                .disabled(model.isStreaming || model.transcript.isEmpty)
+            Button {
+                model.newChat()
+            } label: {
+                Label("New Chat", systemImage: "square.and.pencil")
+            }
+            .disabled(model.isStreaming || model.transcript.isEmpty)
+            .help("Start a fresh conversation")
 
             Button {
-                withAnimation(.easeInOut(duration: 0.15)) {
-                    providersShown.toggle()
-                }
                 model.refresh()
+                settingsShown = true
             } label: {
-                Label("Providers", systemImage: "slider.horizontal.3")
+                Image(systemName: "slider.horizontal.3")
             }
             .help("Provider accounts and local runtimes")
         }
         .pickerStyle(.menu)
+        .labelsHidden()
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-    }
-
-    // MARK: - Providers
-
-    private var providers: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(model.entries, id: \.id) { entry in
-                providerRow(entry)
-                    .padding(.vertical, 5)
-                if entry.id != model.entries.last?.id {
-                    Divider()
-                }
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 6)
-        .background(.quaternary.opacity(0.25))
-    }
-
-    @ViewBuilder
-    private func providerRow(_ entry: ChatProviderEntry) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Circle()
-                .fill(entry.state == "serving" ? Color.green : Color.secondary)
-                .frame(width: 7, height: 7)
-            Text(entry.label)
-                .fontWeight(.medium)
-                .frame(width: 84, alignment: .leading)
-            Text(entry.detail)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            Spacer()
-            providerControls(entry)
-        }
-    }
-
-    @ViewBuilder
-    private func providerControls(_ entry: ChatProviderEntry) -> some View {
-        switch entry.id {
-        case "anthropic":
-            anthropicControls
-        case "openai":
-            keyField(
-                text: $openAIKey,
-                hasKey: model.hasOpenAIKey,
-                save: { model.setOpenAIKey(openAIKey); openAIKey = "" },
-                clear: { model.setOpenAIKey("") })
-        default:
-            EmptyView()  // local runtimes configure themselves by running
-        }
-    }
-
-    /* Subscription first: Sign In is the primary control, and the API
-       key is a fallback behind a smaller affordance — a person who
-       signed in should never be asked for a key (metal, 2026-08-02). */
-    @ViewBuilder
-    private var anthropicControls: some View {
-        switch model.signIn {
-        case .awaitingPaste:
-            HStack(spacing: 6) {
-                TextField("Paste the code from the browser",
-                          text: $pastedCode)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 220)
-                Button("Finish") {
-                    model.completeAnthropicSignIn(pasted: pastedCode)
-                    pastedCode = ""
-                }
-                .keyboardShortcut(.defaultAction)
-                Button("Cancel") { model.cancelAnthropicSignIn() }
-            }
-        case .failed(let reason):
-            HStack(spacing: 6) {
-                Text(reason)
-                    .font(.callout)
-                    .foregroundStyle(.red)
-                    .lineLimit(1)
-                Button("Try Again") { model.beginAnthropicSignIn() }
-            }
-        case .idle:
-            if model.hasAnthropicOAuth {
-                Button("Sign Out") { model.signOutAnthropic() }
-            } else if anthropicKeyEntry || model.hasAnthropicKey {
-                HStack(spacing: 6) {
-                    keyField(
-                        text: $anthropicKey,
-                        hasKey: model.hasAnthropicKey,
-                        save: {
-                            model.setAnthropicKey(anthropicKey)
-                            anthropicKey = ""
-                            anthropicKeyEntry = false
-                        },
-                        clear: {
-                            model.setAnthropicKey("")
-                            anthropicKeyEntry = false
-                        })
-                    if !model.hasAnthropicKey {
-                        Button("Cancel") { anthropicKeyEntry = false }
-                    }
-                }
-            } else {
-                HStack(spacing: 6) {
-                    Button("Use API Key...") { anthropicKeyEntry = true }
-                        .buttonStyle(.link)
-                        .font(.callout)
-                    Button("Sign in with Claude") {
-                        model.beginAnthropicSignIn()
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func keyField(
-        text: Binding<String>, hasKey: Bool,
-        save: @escaping () -> Void, clear: @escaping () -> Void
-    ) -> some View {
-        if hasKey {
-            Button("Clear Key", action: clear)
-        } else {
-            SecureField("API key", text: text)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 180)
-            Button("Save", action: save)
-                .disabled(text.wrappedValue.isEmpty)
-        }
     }
 
     // MARK: - Transcript
@@ -212,41 +78,79 @@ struct ChatModuleView: View {
     private var transcript: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
+                LazyVStack(alignment: .leading, spacing: 14) {
                     if model.transcript.isEmpty {
                         emptyState
                     }
                     ForEach(model.transcript) { row in
                         rowView(row).id(row.id)
                     }
+                    if waitingForFirstText {
+                        waitingRow.id("waiting")
+                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(14)
+                .frame(maxWidth: 680)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
             }
             .background(Color(nsColor: .textBackgroundColor))
             .onChange(of: model.transcript.last?.text) { _ in
                 if let last = model.transcript.last {
-                    proxy.scrollTo(last.id, anchor: .bottom)
+                    withAnimation(.easeOut(duration: 0.1)) {
+                        proxy.scrollTo(last.id, anchor: .bottom)
+                    }
                 }
             }
         }
     }
 
+    /// The model accepted the turn and has said nothing yet — the
+    /// stretch that read as "fails silently" on metal.
+    private var waitingForFirstText: Bool {
+        guard model.isStreaming else { return false }
+        if case .model = model.transcript.last?.kind { return false }
+        return true
+    }
+
+    private var waitingRow: some View {
+        HStack(spacing: 6) {
+            ProgressView().controlSize(.small)
+            Text("Waiting for \(currentModelName)...")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var currentModelName: String {
+        model.models.first { $0.wireID == model.selectedWireModelID }?
+            .displayName ?? "the model"
+    }
+
     private var emptyState: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
             Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 30))
+                .font(.system(size: 34, weight: .light))
                 .foregroundStyle(.tertiary)
             Text("Talk to a model about the connected Mac")
+                .font(.title3.weight(.medium))
                 .foregroundStyle(.secondary)
             Text("It can look at the classic Mac's screen, files and "
                  + "processes - with the access its owner granted.")
                 .font(.callout)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
+                .frame(maxWidth: 380)
+            if model.models.isEmpty {
+                Button("Set Up a Provider...") {
+                    model.refresh()
+                    settingsShown = true
+                }
+                .padding(.top, 8)
+            }
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 60)
+        .padding(.top, 70)
     }
 
     @ViewBuilder
@@ -254,25 +158,22 @@ struct ChatModuleView: View {
         switch row.kind {
         case .person:
             HStack {
-                Spacer(minLength: 80)
+                Spacer(minLength: 60)
                 Text(row.text)
                     .textSelection(.enabled)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(Color.accentColor.opacity(0.9))
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 8)
+                    .background(Color.accentColor)
                     .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
             }
         case .model:
-            HStack {
-                Text(row.text)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(.quaternary.opacity(0.5))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                Spacer(minLength: 80)
-            }
+            // The model's words, plain and full width - the reading
+            // surface, not a bubble fighting for it.
+            Text(row.text)
+                .textSelection(.enabled)
+                .lineSpacing(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
         case .tool(let name, let ok):
             HStack(spacing: 5) {
                 switch ok {
@@ -285,39 +186,47 @@ struct ChatModuleView: View {
                     Image(systemName: "minus.circle.fill")
                         .foregroundStyle(.orange)
                 }
-                Text(name)
-                    .font(.caption.monospaced())
+                Text(toolTitle(name))
+                    .font(.caption)
             }
             .padding(.horizontal, 9)
             .padding(.vertical, 4)
-            .background(.quaternary.opacity(0.4))
+            .background(.quaternary.opacity(0.5))
             .clipShape(Capsule())
             .foregroundStyle(.secondary)
+            .help(name)
         case .note:
-            HStack {
-                Spacer()
-                Label(row.text, systemImage: "exclamationmark.triangle")
-                    .font(.callout)
-                    .foregroundStyle(.orange)
-                Spacer()
-            }
+            Label(row.text, systemImage: "exclamationmark.triangle")
+                .font(.callout)
+                .foregroundStyle(.orange)
+                .textSelection(.enabled)
         }
     }
 
-    // MARK: - Input
+    /// "now_capture_screen" reads as "Capture screen" in a capsule; the
+    /// raw name stays in the tooltip.
+    private func toolTitle(_ name: String) -> String {
+        let stripped = name.hasPrefix("now_")
+            ? String(name.dropFirst(4)) : name
+        let words = stripped.split(separator: "_").joined(separator: " ")
+        return words.prefix(1).uppercased() + words.dropFirst()
+    }
 
-    private var inputBar: some View {
+    // MARK: - Composer
+
+    private var composer: some View {
         HStack(spacing: 8) {
             TextField(
                 model.models.isEmpty
-                    ? "Configure a provider first"
+                    ? "Set up a provider to start"
                     : "Ask about the connected Mac...",
                 text: $draft)
                 .textFieldStyle(.plain)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
+                .font(.body)
+                .padding(.horizontal, 13)
+                .padding(.vertical, 8)
                 .background(.quaternary.opacity(0.4))
-                .clipShape(RoundedRectangle(cornerRadius: 15))
+                .clipShape(RoundedRectangle(cornerRadius: 17))
                 .onSubmit(submit)
                 .disabled(model.models.isEmpty)
             if model.isStreaming {
@@ -325,7 +234,7 @@ struct ChatModuleView: View {
                     model.cancel()
                 } label: {
                     Image(systemName: "stop.circle.fill")
-                        .font(.system(size: 22))
+                        .font(.system(size: 24))
                         .foregroundStyle(.red)
                 }
                 .buttonStyle(.plain)
@@ -333,7 +242,7 @@ struct ChatModuleView: View {
             } else {
                 Button(action: submit) {
                     Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 22))
+                        .font(.system(size: 24))
                         .foregroundStyle(
                             canSend ? Color.accentColor : Color.secondary)
                 }
@@ -343,7 +252,7 @@ struct ChatModuleView: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 9)
+        .padding(.vertical, 10)
     }
 
     private var canSend: Bool {
@@ -356,5 +265,236 @@ struct ChatModuleView: View {
         guard canSend else { return }
         model.send(draft)
         draft = ""
+    }
+}
+
+// MARK: - The providers sheet
+
+/// Provider accounts and local runtimes, as cards. Anthropic leads
+/// with the subscription sign-in — the flow the plan ships with — and
+/// the API key sits behind a disclosure for the machines that need it.
+struct ChatProvidersSheet: View {
+    @ObservedObject var model: ChatModuleModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var anthropicKey = ""
+    @State private var openAIKey = ""
+    @State private var pastedCode = ""
+    @State private var keyEntryShown = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Providers").font(.title3.weight(.semibold))
+                Spacer()
+                Button("Refresh") { model.refresh() }
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding()
+            Divider()
+            ScrollView {
+                VStack(spacing: 12) {
+                    anthropicCard
+                    openAICard
+                    localsCard
+                }
+                .padding()
+            }
+        }
+        .frame(width: 460, height: 480)
+    }
+
+    private func entry(_ id: String) -> ChatProviderEntry? {
+        model.entries.first { $0.id == id }
+    }
+
+    private func cardHeader(
+        _ title: String, _ entry: ChatProviderEntry?
+    ) -> some View {
+        HStack(spacing: 7) {
+            Circle()
+                .fill(entry?.state == "serving"
+                          ? Color.green : Color.secondary)
+                .frame(width: 8, height: 8)
+            Text(title).fontWeight(.semibold)
+            Spacer()
+            Text(entry?.detail ?? "")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+    }
+
+    // MARK: Anthropic
+
+    private var anthropicCard: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                cardHeader("Anthropic", entry("anthropic"))
+                switch model.signIn {
+                case .awaitingPaste:
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Approve in the browser, then paste the code "
+                             + "it shows you:")
+                            .font(.callout)
+                        HStack(spacing: 6) {
+                            TextField("code#state", text: $pastedCode)
+                                .textFieldStyle(.roundedBorder)
+                                .onAppear {
+                                    // The code is usually already on the
+                                    // clipboard - meet it there.
+                                    if let candidate = Self.clipboardCode() {
+                                        pastedCode = candidate
+                                    }
+                                }
+                            Button("Finish") {
+                                model.completeAnthropicSignIn(
+                                    pasted: pastedCode)
+                                pastedCode = ""
+                            }
+                            .disabled(pastedCode.isEmpty)
+                            Button("Cancel") { model.cancelAnthropicSignIn() }
+                        }
+                    }
+                case .failed(let reason):
+                    HStack(spacing: 6) {
+                        Text(reason)
+                            .font(.callout)
+                            .foregroundStyle(.red)
+                        Spacer()
+                        Button("Try Again") { model.beginAnthropicSignIn() }
+                    }
+                case .idle:
+                    if model.hasAnthropicOAuth {
+                        HStack {
+                            Label("Signed in - using your Claude subscription",
+                                  systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                                .font(.callout)
+                            Spacer()
+                            Button("Sign Out") { model.signOutAnthropic() }
+                        }
+                    } else {
+                        HStack {
+                            Button("Sign in with Claude") {
+                                model.beginAnthropicSignIn()
+                            }
+                            .controlSize(.large)
+                            Text("Uses your Claude Pro or Max plan")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                        }
+                        DisclosureGroup(
+                            "Use an API key instead",
+                            isExpanded: $keyEntryShown
+                        ) {
+                            keyRow(
+                                text: $anthropicKey,
+                                hasKey: model.hasAnthropicKey,
+                                save: {
+                                    model.setAnthropicKey(anthropicKey)
+                                    anthropicKey = ""
+                                },
+                                clear: { model.setAnthropicKey("") })
+                        }
+                        .font(.callout)
+                    }
+                }
+            }
+            .padding(6)
+        }
+    }
+
+    /// A pasted authorization code, when the clipboard already holds
+    /// one — the shape is distinctive enough to trust.
+    static func clipboardCode() -> String? {
+        guard let text = NSPasteboard.general
+            .string(forType: .string)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        else { return nil }
+        let parts = text.split(separator: "#")
+        guard parts.count == 2, text.count < 300,
+            parts.allSatisfy({ part in
+                part.allSatisfy {
+                    $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_"
+                }
+            })
+        else { return nil }
+        return text
+    }
+
+    // MARK: OpenAI
+
+    private var openAICard: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                cardHeader("OpenAI", entry("openai"))
+                keyRow(
+                    text: $openAIKey,
+                    hasKey: model.hasOpenAIKey,
+                    save: {
+                        model.setOpenAIKey(openAIKey)
+                        openAIKey = ""
+                    },
+                    clear: { model.setOpenAIKey("") })
+            }
+            .padding(6)
+        }
+    }
+
+    @ViewBuilder
+    private func keyRow(
+        text: Binding<String>, hasKey: Bool,
+        save: @escaping () -> Void, clear: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 6) {
+            if hasKey {
+                Label("Key saved in the Keychain",
+                      systemImage: "key.fill")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Clear Key", action: clear)
+            } else {
+                SecureField("API key", text: text)
+                    .textFieldStyle(.roundedBorder)
+                Button("Save", action: save)
+                    .disabled(text.wrappedValue.isEmpty)
+            }
+        }
+    }
+
+    // MARK: Local runtimes
+
+    private var localsCard: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Local Runtimes").fontWeight(.semibold)
+                    Spacer()
+                    Text("Found automatically when running")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(["ollama", "lmstudio", "omlx"], id: \.self) { id in
+                    if let local = entry(id) {
+                        HStack(spacing: 7) {
+                            Circle()
+                                .fill(local.state == "serving"
+                                          ? Color.green : Color.secondary)
+                                .frame(width: 7, height: 7)
+                            Text(local.label)
+                            Spacer()
+                            Text(local.detail)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+            }
+            .padding(6)
+        }
     }
 }

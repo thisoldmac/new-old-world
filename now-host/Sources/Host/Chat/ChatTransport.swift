@@ -65,6 +65,25 @@ struct ServerSentEvent: Equatable {
     var data: String
 }
 
+/// One `data:` payload off one line, or nil for anything else.
+///
+/// This is what the providers actually use, and it is deliberately
+/// LOOSER than the SSE grammar: a real runtime on this desk (oMLX,
+/// metal 2026-08-02) streams `data: {...}` chunks with NO blank-line
+/// separators, and a parser that waits for the dispatch rule waits
+/// forever. Every provider this harness speaks to carries one whole
+/// JSON object per data line, so the line IS the event.
+enum ServerSentEventLine {
+    static func dataPayload(_ rawLine: String) -> String? {
+        var line = Substring(rawLine)
+        if line.hasSuffix("\r") { line = line.dropLast() }
+        guard line.hasPrefix("data:") else { return nil }
+        var payload = line.dropFirst(5)
+        if payload.hasPrefix(" ") { payload = payload.dropFirst() }
+        return String(payload)
+    }
+}
+
 /// Pure SSE line accumulator: feed lines, collect events. Handles
 /// multi-line `data:`, comment/heartbeat lines, trailing CR, and the
 /// blank-line dispatch rule. Knows nothing about any provider —
