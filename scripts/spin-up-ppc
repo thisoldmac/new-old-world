@@ -151,6 +151,10 @@ echo "ports: anchor=$ANCHOR wire=$WIRE mirror-agent=$MIRROR_AGENT"
 DISPLAY_KIND=none
 [ "${NOW_SPIN_DISPLAY:-0}" = "1" ] \
     && DISPLAY_KIND="$(tbt_human_display 2>/dev/null || printf 'sdl')"
+[ "${NOW_DIRECT_INPUT_ONLY:-0}" != "1" ] || [ "$DISPLAY_KIND" != none ] || {
+    echo "NOW_DIRECT_INPUT_ONLY=1 requires NOW_SPIN_DISPLAY=1" >&2
+    exit 64
+}
 
 boot () {   # $1 = fresh | cold
     [ "$1" = fresh ] && tbt_clone_disk "$BASE" "$DISK"
@@ -158,13 +162,17 @@ boot () {   # $1 = fresh | cold
         "$HOSTFWD" "" "$QMP" "$RUN/qemu.pid" "$RUN/qemu.log"
 }
 
-# Poll the anchor with a real hello, pressing Return between tries: a clone
-# booted from a hard power-off always shows the Disk First Aid modal, and
-# nothing else will dismiss it on a headless run.
+# Poll the anchor with a real hello. The legacy headless path presses Return
+# through QMP between tries because a clone booted from a hard power-off shows
+# the Disk First Aid modal. UX verification must not use that path: set
+# NOW_DIRECT_INPUT_ONLY=1 with NOW_SPIN_DISPLAY=1 and dismiss the modal through
+# the visible emulator window with a real keyboard/mouse driver instead.
 wait_anchor () {
-    python3 - "$QMP" "$ANCHOR" "$LAB" <<'PY'
+    python3 - "$QMP" "$ANCHOR" "$LAB" "${NOW_DIRECT_INPUT_ONLY:-0}" <<'PY'
 import subprocess, sys, time
-qmp, anchor, lab = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+qmp, anchor, lab, direct_input_only = (
+    sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4] == "1"
+)
 sys.path.insert(0, f"{lab}/mcp-classic")
 from timbottu_mcp_classic.harness import Harness
 t0 = time.time()
@@ -175,8 +183,10 @@ while time.time() - t0 < 300:
             print(f"anchor ready ({int(time.time()-t0)}s)"); sys.exit(0)
     except Exception:
         pass
-    subprocess.run([f"{lab}/tools/qmp", qmp, "send-key",
-                    '{"keys":[{"type":"qcode","data":"ret"}]}'], capture_output=True)
+    if not direct_input_only:
+        subprocess.run([f"{lab}/tools/qmp", qmp, "send-key",
+                        '{"keys":[{"type":"qcode","data":"ret"}]}'],
+                       capture_output=True)
     time.sleep(6)
 sys.exit("anchor timeout")
 PY

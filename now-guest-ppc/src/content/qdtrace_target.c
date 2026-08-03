@@ -30,3 +30,9 @@ const char *now_qdtrace_target_route_name(NowQDTarget target)
     default:                 return "";
     }
 }
+
+int now_qdtrace_target_may_redraw(NowQDTarget target, int same_process)
+{
+    return same_process
+        && (target == kNowQDTargetSerial || target == kNowQDTargetFront);
+}

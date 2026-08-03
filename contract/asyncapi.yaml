@@ -3655,6 +3655,15 @@ components:
                 description: >
                   start only. Which selector actually resolved the target;
                   never inferred from other fields the caller also sent.
+              redrawWindows:
+                type: integer
+                minimum: 0
+                description: >
+                  start only. Number of windows invalidated to schedule a
+                  guest-authored repaint when the resolved target is the
+                  command-serving application itself. Zero for a foreign
+                  process: the command never walks or mutates another
+                  application's WindowList.
 
     # THE REFERENCE LAYER, declared 2026-07-31 with the guest that serves
     # it. These four are not a second act plane; they are the half that

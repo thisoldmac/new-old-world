@@ -108,8 +108,8 @@ final class NOWMirrorContentPlane {
                 self.armedAt = Date()
                 completion(.init(
                     scene: self.attachCached(to: scene),
-                    sentence: "content: armed \(front.app); waiting for its "
-                        + "next guest-authored draw"))
+                    sentence: "content: requested \(front.app)'s trace; "
+                        + "waiting for its event loop to arm and draw"))
             }
         }
     }

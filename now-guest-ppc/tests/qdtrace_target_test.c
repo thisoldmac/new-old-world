@@ -55,6 +55,15 @@ int main(void)
     check(now_qdtrace_pick_target(1, 0, 0, 1, 0), kNowQDTargetA5,
           "a5 remains reachable beside front false");
 
+    check(now_qdtrace_target_may_redraw(kNowQDTargetSerial, 1), 1,
+          "self selected by serial may redraw");
+    check(now_qdtrace_target_may_redraw(kNowQDTargetFront, 1), 1,
+          "self selected as front may redraw");
+    check(now_qdtrace_target_may_redraw(kNowQDTargetSerial, 0), 0,
+          "foreign serial never redraws");
+    check(now_qdtrace_target_may_redraw(kNowQDTargetA5, 1), 0,
+          "raw A5 never proves redraw ownership");
+
     if (failures != 0) {
         printf("%d failure(s)\n", failures);
         return 1;

@@ -282,6 +282,8 @@ static void run_start(const char *json, long id, char *out, long cap)
     char mode[16];
     long ttl;
     int verdict;
+    int redraw_windows = 0;
+    int redraw_target_is_self = 0;
 
     if (block == NULL) {
         now_qdtrace_error_json(id, "content-plane-absent",
@@ -346,6 +348,16 @@ static void run_start(const char *json, long id, char *out, long cap)
             now_qdtrace_error_json(id, fail_code, fail_message, out, cap);
             return;
         }
+        {
+            ProcessSerialNumber self;
+            Boolean same = false;
+
+            if (GetCurrentProcess(&self) == noErr) {
+                (void)SameProcess(&psn, &self, &same);
+            }
+            redraw_target_is_self = now_qdtrace_target_may_redraw(
+                target, same);
+        }
         break;
     }
     case kNowQDTargetA5:
@@ -391,16 +403,38 @@ static void run_start(const char *json, long id, char *out, long cap)
     now_peek_arm((unsigned long)kNowPeekTableCapContent);
     now_qdtrace_arm_commit(block, &plan);
 
+    /* The recorder is installed at the target's NEXT WaitNextEvent. NOW's
+       Workshop may already have completed its only full paint before this
+       request arrived, leaving a correctly armed ring empty forever. When
+       the target is this application, invalidating our own windows schedules
+       a normal update event: the extension installs as the app pumps, then
+       records the guest-authored repaint. Never walk a foreign WindowList. */
+    if (redraw_target_is_self) {
+        WindowRef window = FrontWindow();
+        int hops;
+
+        for (hops = 0; window != NULL && hops < 64;
+             window = GetNextWindow(window), ++hops) {
+            Rect bounds;
+
+            GetWindowPortBounds(window, &bounds);
+            InvalWindowRect(window, &bounds);
+            redraw_windows++;
+        }
+    }
+
     snprintf(out, (size_t)cap,
              "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
              "\"output\":{\"qdtrace\":{\"cmd\":\"start\",\"a5\":\"0x%08lx\","
              "\"resolvedVia\":\"%s\","
              "\"mode\":\"%s\",\"expiry\":%lu,\"now\":%lu,"
+             "\"redrawWindows\":%d,"
              "\"requested\":true,\"armed\":false}}}",
              id, (unsigned long)plan.a5, route,
              plan.mode == (NowContentU32)kNowContentModeRecord
                  ? "record" : "count",
-             (unsigned long)plan.expiry, (unsigned long)TickCount());
+             (unsigned long)plan.expiry, (unsigned long)TickCount(),
+             redraw_windows);
     /* `requested: true, armed: false` is not pessimism. Nothing is hooked
        until the extension's jGNE pass runs INSIDE the target process and
        agrees; this reply claims a request was written and never that it

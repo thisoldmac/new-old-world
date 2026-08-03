@@ -26,4 +26,8 @@ NowQDTarget now_qdtrace_pick_target(int has_a5,
 
 const char *now_qdtrace_target_route_name(NowQDTarget target);
 
+/* Redraw is a courtesy only for a Process Manager selector that resolved to
+   this command-serving application. Raw A5 never proves process identity. */
+int now_qdtrace_target_may_redraw(NowQDTarget target, int same_process);
+
 #endif /* NOW_QDTRACE_TARGET_H */
