@@ -29,6 +29,21 @@ functional, accurate mirror of the guest** — one a person can operate.
    rendering correctly, and one screendump would have said so
    immediately. `tools/mirror-gate row` refuses a pass or a fail without
    one, so this is not a thing to remember.
+2b. **Compare the WHOLE frame, not the thing you just fixed.** A pairing
+   is worthless if the comparison is not made. On 2026-08-03 I passed
+   `controls-render` because three buttons had come out right, while the
+   same dialog was missing its icon and both lines of its text, and
+   passed `window-renders` on a window whose title was absent. Michelle:
+   "buttons rendering doesnt mean its a pass". Judge the row against
+   everything the machine draws — every dialog item, the window title,
+   the static text, the icons — and score the row on the worst of it.
+2c. **Wait for the guest before calling a null result.** It is
+   cooperatively scheduled and an act can take tens of seconds to
+   appear; a five-second look reports "nothing happened" for something
+   that is happening. Three rows were failed wrongly this way in one
+   session — an icon open, a disk open, and the click that actually did
+   dismiss a modal alert. Wait for the scene to change, or for a
+   generous timeout, and take the paired screendump after that.
 3. **If the mirror cannot do it, that IS the finding.** Record it. Do
    not reach past it to keep the run going.
 4. **Record, don't fix, during a sweep.** No edits, no builds, no
