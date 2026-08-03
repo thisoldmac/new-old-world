@@ -153,9 +153,19 @@ public enum HitTester {
             || app.psn == desktop {
             offer(app)
         }
-        for proc in scene.processes ?? []
-        where proc.front || withWindows.contains(proc.psn)
-            || proc.psn == desktop {
+        /* EVERY process the scene knows, once the ones above are in.
+           The filter used to be "front, or has a window, or owns the
+           desktop", and on a machine where only the front application
+           has an anchor that resolves to exactly one entry - so the
+           switcher offered a single application and there was no way to
+           reach the Finder, or anything else, from the mirror at all.
+         *
+           Offering a background-only process is a smaller error than
+           offering none: choosing one sends `activate`, and a process
+           that cannot come forward simply does not. The scene's process
+           list is what the machine says is running, and a person is
+           better served by all of it than by a filtered nothing. */
+        for proc in scene.processes ?? [] {
             offer(.init(psn: proc.psn, name: proc.name, front: proc.front,
                         error: nil))
         }
