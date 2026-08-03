@@ -9,6 +9,7 @@
 #include "axwalk.h"
 #include "observe.h"
 #include "peek_read.h"
+#include "scene_self.h"
 #include "scene_walk.h"
 
 /* The one file that sees both the reader's verdict enum and the scene's
@@ -113,11 +114,16 @@ static void collect_process(NowScene *s, int row,
     bound = !is_self
         && now_ax_bind_process(psn, &ctx) == kNowPeekReadOk;
 
-    /* Self is never walked, and that is a stated limit rather than an
-       oversight: NOW is Carbon, so its own window and menu records do
-       not sit at the classic offsets the walk reads (axprocess.h says
-       the same). Its windows come from the Window Manager and carry no
-       record address; its sub-planes stay absent. */
+    /* SELF IS DESCRIBED, NOT WALKED. NOW is Carbon, so its own records
+       are not at the classic offsets the walk reads - but an application
+       does not need to walk memory to know its own interface, it asks
+       the Toolbox. Skipping self left the largest window on most screens
+       mirrored as an empty box with no close box and no content, which
+       is what a person sees first. See scene_self.c. */
+    if (is_self) {
+        now_scene_collect_self(s, row);
+        return;
+    }
     if (!bound && !now_scene_anchor_admits_windows(s->procs[row].anchor)) {
         return;
     }
@@ -283,6 +289,13 @@ void now_scene_collect(NowScene *out, long seq,
            so a process whose anchor is refused costs one lookup and the
            scene still learns WHY. */
         st = now_peek_window_count(&psn, &unused_count);
+        if (is_self) {
+            /* The reader's verdict is about a walk this row will not
+               take. Self answers from its own Toolbox, so the row is
+               admissible on its own authority - otherwise add_window
+               refuses it and the description never lands. */
+            st = (NowPeekReadStatus)kNowPeekReadOk;
+        }
         row = now_scene_add_process(out, psn.highLongOfPSN,
                                     (unsigned long)psn.lowLongOfPSN, cname,
                                     (unsigned long)info.processSignature,

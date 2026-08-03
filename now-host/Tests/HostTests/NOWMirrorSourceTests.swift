@@ -162,11 +162,15 @@ final class NOWMirrorSourceTests: XCTestCase {
 @MainActor
 final class NOWMirrorIconParsingTests: XCTestCase {
 
-    /// Verbatim from the guest, 2026-08-02, trimmed to four rows.
-    private let sample = "\"Trash\t716\t510\tfolder\r"
-        + "Browse the Internet\t716\t187\talias\r"
-        + "From Claude.txt\t608\t540\tdocument\r"
-        + "Macintosh HD\t736\t28\tdisk\r\""
+    /// Verbatim from the guest, trimmed. Two row kinds: `I` is an item
+    /// and where the Finder drew it, `F` carries a FILE's type and
+    /// creator — which is what picks the real icon out of the atlas.
+    /// Without them every document rendered as the same generic page.
+    private let sample = "\"I\tTrash\t716\t510\tfolder\r"
+        + "I\tBrowse the Internet\t716\t187\talias\r"
+        + "I\tFrom Claude.txt\t608\t540\tdocument\r"
+        + "I\tMacintosh HD\t736\t28\tdisk\r"
+        + "F\tFrom Claude.txt\tTEXT\tttxt\t\r\""
 
     func testItReadsWhatTheFinderReturned() {
         let items = NOWMirrorSource.parseIcons(sample)
@@ -182,19 +186,26 @@ final class NOWMirrorIconParsingTests: XCTestCase {
 
         XCTAssertTrue(items[1].alias, "an alias is drawn differently")
         XCTAssertEqual(items[3].kind, "disk")
-        XCTAssertEqual(items[3].name, "Macintosh HD",
-                       "the closing quote leaked into the last icon's kind "
-                       + "or name")
-        XCTAssertTrue(items.allSatisfy(\.placed),
-                      "the Finder gave a position for every one of these")
+        XCTAssertEqual(items[3].name, "Macintosh HD")
+        XCTAssertTrue(items.allSatisfy(\.placed))
+    }
+
+    /// The join that makes an icon look like itself.
+    func testAFilesTypeAndCreatorReachTheItem() {
+        let items = NOWMirrorSource.parseIcons(sample)
+        let doc = items.first { $0.name == "From Claude.txt" }
+        XCTAssertEqual(doc?.type, "TEXT")
+        XCTAssertEqual(doc?.creator, "ttxt")
+        // A folder is not a file and was never asked; absence is correct.
+        XCTAssertNil(items.first { $0.name == "Trash" }?.type)
     }
 
     /// A row the script could not complete is dropped, not guessed at.
     func testShortAndUnparseableRowsAreDropped() {
-        let ragged = "\"Good\t10\t20\tfolder\rBad\tnotanumber\t5\tfolder\r"
-            + "Short\t1\r\""
-        let items = NOWMirrorSource.parseIcons(ragged)
-        XCTAssertEqual(items.map(\.name), ["Good"])
+        let ragged = "\"I\tGood\t10\t20\tfolder\rI\tBad\tnope\t5\tfolder\r"
+            + "I\tShort\t1\r\""
+        XCTAssertEqual(NOWMirrorSource.parseIcons(ragged).map(\.name),
+                       ["Good"])
     }
 
     func testAnEmptyContainerIsNoIconsRatherThanACrash() {

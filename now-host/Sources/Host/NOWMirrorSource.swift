@@ -231,17 +231,35 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// difference between a third of a second and a stall a person sees.
     private func readIcons(container: String)
         async -> [MirrorKit.Scene.DesktopItem]? {
+        /* Two vectorised passes, not one per icon. The first names every
+           item and where the Finder drew it; the second asks the FILES
+           for their type and creator, which is what picks the real icon
+           out of the atlas - without them every document, application
+           and control panel renders as the same generic page, which is
+           what the mirror did until this was measured against a
+           screenshot of the machine.
+
+           Files only, deliberately: `file type of` a folder or a disk is
+           an error that fails the whole script, and their kind already
+           chooses the right art. */
         let source = """
         tell application "Finder"
         set ns to name of every item of \(container)
         set ps to position of every item of \(container)
         set ks to kind of every item of \(container)
+        set fn to name of every file of \(container)
+        set ft to file type of every file of \(container)
+        set fc to creator type of every file of \(container)
         end tell
         set out to ""
         repeat with i from 1 to (count ns)
         set p to item i of ps
-        set out to out & (item i of ns) & tab & (item 1 of p) & tab & \
-        (item 2 of p) & tab & (item i of ks) & return
+        set out to out & "I" & tab & (item i of ns) & tab & (item 1 of p) & \
+        tab & (item 2 of p) & tab & (item i of ks) & return
+        end repeat
+        repeat with i from 1 to (count fn)
+        set out to out & "F" & tab & (item i of fn) & tab & (item i of ft) & \
+        tab & (item i of fc) & tab & "" & return
         end repeat
         return out
         """
@@ -262,26 +280,42 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         if text.hasPrefix("\""), text.hasSuffix("\""), text.count >= 2 {
             text = String(text.dropFirst().dropLast())
         }
-        var out: [MirrorKit.Scene.DesktopItem] = []
+        var items: [MirrorKit.Scene.DesktopItem] = []
+        var types: [String: (String, String)] = [:]
+
         for line in text.components(separatedBy: CharacterSet.newlines)
         where !line.trimmingCharacters(in: .whitespaces).isEmpty {
             let f = line.components(separatedBy: "\t")
-            guard f.count >= 4, let x = Int(f[1]), let y = Int(f[2]) else {
+            guard f.count >= 5 else { continue }
+            switch f[0] {
+            case "I":
+                guard let x = Int(f[2]), let y = Int(f[3]) else { continue }
+                let kind = f[4].lowercased()
+                items.append(.init(
+                    name: f[1],
+                    kind: kind.contains("folder") ? "folder"
+                        : kind.contains("disk") ? "disk"
+                        : kind.contains("application") ? "application" : "file",
+                    type: nil, creator: nil,
+                    x: x, y: y, placed: true,
+                    alias: kind.contains("alias"), invisible: false))
+            case "F":
+                /* An OSType is four characters. The Finder answers with
+                   the type as text, and a file whose type is unset comes
+                   back empty rather than absent - which is a real
+                   answer, and the atlas treats it as one. */
+                types[f[1]] = (f[2], f[3])
+            default:
                 continue
             }
-            let kind = f[3].lowercased()
-            var item = MirrorKit.Scene.DesktopItem(
-                name: f[0],
-                kind: kind.contains("folder") ? "folder"
-                    : kind.contains("disk") ? "disk"
-                    : kind.contains("application") ? "application" : "file",
-                type: nil, creator: nil,
-                x: x, y: y, placed: true,
-                alias: kind.contains("alias"), invisible: false)
-            item.name = f[0]
-            out.append(item)
         }
-        return out
+        return items.map { item in
+            guard let pair = types[item.name] else { return item }
+            var out = item
+            out.type = pair.0.isEmpty ? nil : String(pair.0.prefix(4))
+            out.creator = pair.1.isEmpty ? nil : String(pair.1.prefix(4))
+            return out
+        }
     }
 
     // MARK: - The dispatch
