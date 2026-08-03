@@ -342,6 +342,12 @@ public struct SceneRenderer {
         // Titles sit at the wire's MenuList lefts — guest-true layout.
         let menus = scene.menubar?.menus ?? []
         for (i, menu) in menus.enumerated() {
+            /* The Application menu is in this list AND is drawn by the
+               right-hand block below, as the icon and name it actually
+               is. Drawing it here too put a second switcher beside the
+               first — its title is not text, so it came out as a stray
+               glyph next to the real one. One menu, one place. */
+            if menu.id == ObjectResolver.applicationMenuID { continue }
             if i == openMenu {
                 let next = i + 1 < menus.count ? menus[i + 1].left
                                                : menu.left + 60

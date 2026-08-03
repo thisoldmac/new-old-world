@@ -207,7 +207,7 @@ public enum HitTester {
     /// can only ever offer the applications, and those three rows are
     /// half of what the menu is for.
     public static func applicationMenuIndex(_ scene: Scene) -> Int? {
-        scene.menubar?.menus.firstIndex { $0.id == -16489 }
+        scene.menubar?.menus.firstIndex { $0.id == ObjectResolver.applicationMenuID }
     }
 
     public static func hitTest(_ scene: Scene, x: Int, y: Int) -> Target {

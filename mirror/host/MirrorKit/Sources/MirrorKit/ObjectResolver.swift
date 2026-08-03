@@ -120,12 +120,40 @@ public enum ObjectResolver {
     /// the scene. Resolved from the menu and the row a person is on.
     public static func menuItem(_ item: Scene.MenuItem,
                                 in menu: Scene.Menu,
-                                index: Int) -> MirrorObject {
-        .menuItem(.init(menu: shape(menu), index: index,
-                        title: item.title, cmd: item.cmd,
-                        isEnabled: item.enabled,
-                        isSeparator: item.separator))
+                                index: Int,
+                                apps: [Scene.AppRef] = []) -> MirrorObject {
+        /* The Application menu's lower half is not a list of commands.
+           Each row IS a running process, and choosing one means "bring
+           this application forward" - which the wire can say directly,
+           by process serial number.
+         *
+           Sent as a menu command it did nothing: watched twice on
+           2026-08-03, once as Hide Finder and once as choosing Finder
+           from the list, both reporting a tick the machine never
+           honoured. Whatever is wrong with commanding menu -16489, the
+           application does not need that route, and taking it was the
+           gesture-first mistake in miniature - addressing the ROW
+           instead of the thing the row names.
+
+           Matched by title, because that is what the menu shows and what
+           the person read. A row that names nothing running stays a menu
+           command; so do Hide / Hide Others / Show All, which name no
+           process and for which there is no verb yet. */
+        if menu.id == applicationMenuID, !item.separator,
+           let app = apps.first(where: { $0.name == item.title }) {
+            return .app(.init(psn: app.psn, name: app.name,
+                              isFront: app.front))
+        }
+        return .menuItem(.init(menu: shape(menu), index: index,
+                               title: item.title, cmd: item.cmd,
+                               isEnabled: item.enabled,
+                               isSeparator: item.separator))
     }
+
+    /// The system's Application menu. Named once, here and in
+    /// `HitTester`, because two spellings of a magic number is how the
+    /// menu bar and the hit test drift apart.
+    public static let applicationMenuID = -16489
 
     /// The process that owns the desktop backdrop, which is the Finder
     /// on every machine this has ever run on - found by asking which

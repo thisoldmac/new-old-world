@@ -214,6 +214,59 @@ final class InteractionPolicyTests: XCTestCase {
             + "which needs no modifier at all")
     }
 
+    /// The Application menu's lower half lists PROCESSES, and choosing
+    /// one means "bring this application forward" — which the wire says
+    /// by process serial number.
+    ///
+    /// Watched failing twice on 2026-08-03, both as menu commands that
+    /// reported a tick the machine never honoured: `Hide Finder`, and
+    /// choosing `Finder` from the list while Mail stayed frontmost. The
+    /// row was being addressed instead of the thing the row names.
+    func testAnApplicationRowIsTheApplication() {
+        let appMenu = Scene.Menu(title: "", apple: false, left: 600,
+                                 id: ObjectResolver.applicationMenuID,
+                                 items: [])
+        let apps = [Scene.AppRef(psn: "0.3", name: "Finder", front: false,
+                                 error: nil),
+                    Scene.AppRef(psn: "0.7", name: "Mail", front: true,
+                                 error: nil)]
+
+        let row = Scene.MenuItem(title: "Finder", index: 4, separator: false,
+                                 enabled: true, mark: false, cmd: "")
+        let object = ObjectResolver.menuItem(row, in: appMenu, index: 4,
+                                             apps: apps)
+        guard case .app(let a) = object else {
+            return XCTFail("a row naming a running process IS that process")
+        }
+        XCTAssertEqual(a.psn, "0.3")
+        XCTAssertEqual(plan(object, tap), .activateApp(psn: "0.3"),
+                       "and choosing it fronts that application by psn, "
+                       + "not by commanding menu -16489")
+
+        // Hide / Hide Others / Show All name no process, so they stay
+        // menu commands — still broken, but honestly so.
+        let hide = Scene.MenuItem(title: "Hide Others", index: 2, separator: false,
+                                  enabled: true, mark: false, cmd: "")
+        guard case .menuItem = ObjectResolver.menuItem(hide, in: appMenu,
+                                                       index: 2, apps: apps)
+        else {
+            return XCTFail("a row that names no process is not an app")
+        }
+
+        // And an ordinary menu is untouched by any of this.
+        let file = Scene.Menu(title: "File", apple: false, left: 38,
+                              id: 257, items: [])
+        let quit = Scene.MenuItem(title: "Finder", index: 1, separator: false,
+                                  enabled: true, mark: false, cmd: "")
+        guard case .menuItem = ObjectResolver.menuItem(quit, in: file,
+                                                       index: 1, apps: apps)
+        else {
+            return XCTFail("only the Application menu lists processes; a "
+                           + "File-menu row that happens to share a name "
+                           + "must stay a command")
+        }
+    }
+
     func testShortcutlessItemsAndSeparators() {
         let menu = MirrorObject.Menu(id: 257, title: "File", left: 38,
                                      isApple: false)
