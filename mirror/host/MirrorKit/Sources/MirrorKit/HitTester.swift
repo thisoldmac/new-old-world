@@ -122,9 +122,44 @@ public enum HitTester {
     /// menu does not show either. An app earns a row by having a window, or by
     /// being frontmost — which is the closest we get to "has a user interface"
     /// from what the scene carries.
+    /// **What the Application menu offers**, which must always include
+    /// the Finder.
+    ///
+    /// This used to be "front, or has a window", read from `apps` alone.
+    /// Watched 2026-08-03 with NOW in front: the switcher listed one
+    /// application and the Finder was not in it, so a person could not
+    /// reach the Finder from the mirror at all - and clicking the desktop
+    /// did not front it either, which is the other half of the same
+    /// stranding.
+    ///
+    /// The desktop's owner is now always offered, and the roster falls
+    /// back to `processes` for an application `apps` does not mention -
+    /// a process with a window is an application whatever list it
+    /// appears in.
     public static func switchableApps(_ scene: Scene) -> [Scene.AppRef] {
         let withWindows = Set(scene.windows.map(\.psn))
-        return scene.apps.filter { $0.front || withWindows.contains($0.psn) }
+        let desktop = scene.windows.first(where: isDesktopBackdrop)?.psn
+        var out: [Scene.AppRef] = []
+        var seen = Set<String>()
+
+        func offer(_ app: Scene.AppRef) {
+            guard !seen.contains(app.psn) else { return }
+            seen.insert(app.psn)
+            out.append(app)
+        }
+
+        for app in scene.apps
+        where app.front || withWindows.contains(app.psn)
+            || app.psn == desktop {
+            offer(app)
+        }
+        for proc in scene.processes ?? []
+        where proc.front || withWindows.contains(proc.psn)
+            || proc.psn == desktop {
+            offer(.init(psn: proc.psn, name: proc.name, front: proc.front,
+                        error: nil))
+        }
+        return out
     }
 
     /// Right-aligned Application menu: icon plus name, at the far right of the
@@ -152,9 +187,29 @@ public enum HitTester {
         return apps[row]
     }
 
+    /// The Application menu as the GUEST has it, when the scene carries
+    /// it. Its id is the system's (-16489) and its items are the real
+    /// ones: Hide <app>, Hide Others, Show All, a separator, then the
+    /// running applications.
+    ///
+    /// Preferring it over the mirror's own synthesised switcher is what
+    /// gets the hide/show commands at all - a list rebuilt from `apps`
+    /// can only ever offer the applications, and those three rows are
+    /// half of what the menu is for.
+    public static func applicationMenuIndex(_ scene: Scene) -> Int? {
+        scene.menubar?.menus.firstIndex { $0.id == -16489 }
+    }
+
     public static func hitTest(_ scene: Scene, x: Int, y: Int) -> Target {
         if y >= 0, y < menubarHeight,
            x >= scene.screen.w - appMenuWidth(scene) {
+            /* The guest's own Application menu if we have it, so a person
+               gets Hide / Hide Others / Show All beside the apps. The
+               synthesised switcher stays as the fallback for a scene
+               whose menu bar was not read. */
+            if let index = applicationMenuIndex(scene) {
+                return .menuTitle(index: index)
+            }
             return .appMenu
         }
         // The menubar strip resolves against the wire's MenuList lefts:

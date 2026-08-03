@@ -79,11 +79,12 @@ public enum ObjectResolver {
                                      point: Point(x: x, y: y)))
 
         case .desktop:
-            /* THE OBJECT THAT MAKES EMPTY SPACE ADDRESSABLE. A click here
-               used to become a coordinate and then a refusal; as an
-               object it is the Finder's desktop, which the Finder will
-               talk about by name. */
-            return .desktop
+            /* THE OBJECT THAT MAKES EMPTY SPACE ADDRESSABLE, and it
+               carries WHOSE desktop it is. The owner is the process
+               drawing the backdrop - the Finder - and naming it is what
+               lets a click there do what a click on a Mac's desktop
+               does: bring the Finder forward. */
+            return .desktop(desktopOwner(in: scene))
         }
     }
 
@@ -111,7 +112,7 @@ public enum ObjectResolver {
         if let app = scene.apps.first(where: { $0.front }) {
             return .app(.init(psn: app.psn, name: app.name, isFront: true))
         }
-        return .desktop
+        return .desktop(desktopOwner(in: scene))
     }
 
     /// The row of an open menu, which no hit test produces because a
@@ -124,6 +125,20 @@ public enum ObjectResolver {
                         title: item.title, cmd: item.cmd,
                         isEnabled: item.enabled,
                         isSeparator: item.separator))
+    }
+
+    /// The process that owns the desktop backdrop, which is the Finder
+    /// on every machine this has ever run on - found by asking which
+    /// process draws the backdrop rather than by matching its name.
+    static func desktopOwner(in scene: Scene) -> MirrorObject.App? {
+        let psn = scene.windows.first(where: HitTester.isDesktopBackdrop)?.psn
+        guard let psn,
+              let app = scene.apps.first(where: { $0.psn == psn })
+                  ?? scene.processes?.first(where: { $0.psn == psn })
+                      .map({ Scene.AppRef(psn: $0.psn, name: $0.name,
+                                          front: $0.front, error: nil) })
+        else { return nil }
+        return .init(psn: app.psn, name: app.name, isFront: app.front)
     }
 
     // MARK: - Lookups

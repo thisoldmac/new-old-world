@@ -65,11 +65,31 @@ final class InteractionPolicyTests: XCTestCase {
 
     /// Empty desktop is an OBJECT, so a click on it has somewhere to go.
     /// Gesture-first this was "click at 700,500" and then a refusal.
+    ///
+    /// And the object carries WHOSE desktop it is, because a click there
+    /// brings the Finder forward - which is what a Mac does, and what
+    /// this did not do. Watched 2026-08-03: with the app switcher
+    /// listing only applications that have windows, and the Finder's
+    /// only window being the backdrop, the mirror could not reach the
+    /// Finder at all.
+    func testClickingTheDesktopFrontsTheFinder() {
+        let finder = MirrorObject.App(psn: "0.3", name: "Finder",
+                                      isFront: false)
+        XCTAssertEqual(plan(.desktop(finder), tap),
+                       .activateApp(psn: "0.3"))
+
+        // Already front: nothing left to front, so it means the other
+        // half of what a desktop click means.
+        let front = MirrorObject.App(psn: "0.3", name: "Finder",
+                                     isFront: true)
+        XCTAssertEqual(plan(.desktop(front), tap), .finderDeselect)
+    }
+
     func testEmptyDesktopIsAnObjectAndClearsTheSelection() {
-        XCTAssertEqual(plan(.desktop, tap), .finderDeselect)
+        XCTAssertEqual(plan(.desktop(nil), tap), .finderDeselect)
         // And a double-click there really is nothing — said as nothing,
         // not as a failure.
-        guard case .nothing = plan(.desktop, doubleTap) else {
+        guard case .nothing = plan(.desktop(nil), doubleTap) else {
             return XCTFail("double-clicking bare desktop is a no-op, not a "
                            + "refusal")
         }
@@ -220,7 +240,7 @@ final class InteractionPolicyTests: XCTestCase {
     /// broken mirror to the person clicking it.
     func testEveryOutcomeSaysSomething() {
         let objects: [MirrorObject] = [
-            .desktop,
+            .desktop(nil),
             .window(win(part: .collapseBox)),
             .window(win(ref: nil)),
             .control(bar(part: .thumb)),

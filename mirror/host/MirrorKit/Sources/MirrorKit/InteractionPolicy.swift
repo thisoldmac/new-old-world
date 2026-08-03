@@ -80,7 +80,8 @@ public enum InteractionPolicy {
                                                 + "row is chosen")
         case .app(let a):       return app(a, interaction.gesture)
         case .finderItem(let f): return finderItem(f, interaction.gesture)
-        case .desktop:          return desktop(interaction.gesture)
+        case .desktop(let owner): return desktop(owner,
+                                                 interaction.gesture)
         }
     }
 
@@ -289,9 +290,18 @@ public enum InteractionPolicy {
         }
     }
 
-    private static func desktop(_ gesture: MirrorGesture) -> InteractionPlan {
+    private static func desktop(_ owner: MirrorObject.App?,
+                                _ gesture: MirrorGesture) -> InteractionPlan {
         switch gesture {
         case .click(let count, _, _):
+            /* CLICKING THE DESKTOP BRINGS THE FINDER FORWARD, which is
+               what it does on a Macintosh and what this did not do. With
+               the app switcher listing only applications that have
+               windows - and the Finder's only window being the backdrop -
+               that left the mirror unable to reach the Finder AT ALL. */
+            if let owner, !owner.isFront {
+                return .activateApp(psn: owner.psn)
+            }
             return count >= 2
                 ? .nothing(why: "double-clicking empty desktop does nothing")
                 : .finderDeselect

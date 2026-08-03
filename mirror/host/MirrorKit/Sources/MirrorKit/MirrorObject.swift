@@ -62,10 +62,14 @@ public enum MirrorObject: Equatable, Sendable {
     /// A running application, by PSN.
     case app(App)
 
-    /// **The Finder's desktop.** The object that makes a click on empty
-    /// space expressible. Without it, "click at 700,500" is a gesture
-    /// with no subject and a driver can only refuse.
-    case desktop
+    /// **The Finder's desktop**, and WHOSE it is. The object that makes a
+    /// click on empty space expressible; the owner is what makes that
+    /// click do what a Mac does, which is bring the Finder forward.
+    ///
+    /// Optional because a scene may not name the desktop's owner - then
+    /// a click can still clear the selection, which is the rest of what
+    /// the gesture means.
+    case desktop(App?)
 
     /// An icon, on the desktop or inside a Finder window. Identified by
     /// NAME in a container, which is how the Finder itself addresses it
