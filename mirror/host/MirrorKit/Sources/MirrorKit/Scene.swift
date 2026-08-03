@@ -266,6 +266,20 @@ public struct Scene: Codable, Equatable, Sendable {
         public var placed: Bool
         public var alias: Bool
         public var invisible: Bool
+
+        /// Public because a HOST may know icons the guest's own walk
+        /// cannot: NOW reads the Toolbox's windows, controls and menus,
+        /// and a Finder icon is none of those - it is a file the Finder
+        /// draws, and only the Finder knows where. Those arrive over
+        /// AppleScript and are merged into the scene on this side.
+        public init(name: String, kind: String, type: String?,
+                    creator: String?, x: Int, y: Int, placed: Bool,
+                    alias: Bool, invisible: Bool) {
+            self.name = name; self.kind = kind; self.type = type
+            self.creator = creator; self.x = x; self.y = y
+            self.placed = placed; self.alias = alias
+            self.invisible = invisible
+        }
     }
 
     public struct Meta: Codable, Equatable, Sendable {

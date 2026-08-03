@@ -53,6 +53,22 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private var running = false
     private var pending = false
 
+    /// Icons, per container, and the layout they were read for.
+    ///
+    /// **Why the host fetches these at all.** NOW's scene walk reads the
+    /// Toolbox's own structures - windows, controls, menus - and a Finder
+    /// icon is none of those. It is a file the Finder draws, and the
+    /// Finder is the only thing that knows where. So they come from the
+    /// Finder, by AppleScript, and are merged into the scene here.
+    ///
+    /// Cached against `FinderItems.layoutKey`, which changes when a
+    /// window moves, resizes or SCROLLS - three Apple events per
+    /// container is cheap (0.3s for 33 items, measured) but not cheap
+    /// enough to spend on every frame of a mirror.
+    private var icons: [String: [MirrorKit.Scene.DesktopItem]] = [:]
+    private var iconLayout: String = ""
+    private var fetchingIcons = false
+
     /// The IR major this host can read. Checked against the envelope
     /// BEFORE the body is parsed, which is the order `NOWSceneCodec`
     /// exists to enforce — a decoder that parses first has already
@@ -115,9 +131,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             return
         }
         do {
-            let decoded = try JSONDecoder().decode(
+            var decoded = try JSONDecoder().decode(
                 MirrorKit.Scene.self, from: delivery.document)
+            decoded = withIcons(decoded)
             scene = decoded
+            refreshIconsIfStale(decoded)
             status = "\(decoded.windows.count) windows · walk "
                 + "\(delivery.walkMs.map { "\($0)ms" } ?? "?") · transfer "
                 + "\(delivery.transferMs)ms"
@@ -138,6 +156,111 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 UInt64(self.interval * 1_000_000_000))
             self.poll()
         }
+    }
+
+    // MARK: - Icons
+
+    /// The scene as the guest described it, plus the icons the Finder
+    /// knows about. Absence stays absence: a container never fetched
+    /// carries no `items` key rather than an empty one, because "no
+    /// icons here" and "nobody looked" are different facts.
+    private func withIcons(_ scene: MirrorKit.Scene) -> MirrorKit.Scene {
+        var out = scene
+        if let desktop = icons[Self.desktopKey] { out.desktopItems = desktop }
+        out.windows = out.windows.map { win in
+            guard FinderItems.isFolderWindow(win),
+                  let items = icons[win.title] else { return win }
+            var w = win
+            w.items = items
+            return w
+        }
+        return out
+    }
+
+    private static let desktopKey = "\u{0}desktop"
+
+    private func refreshIconsIfStale(_ scene: MirrorKit.Scene) {
+        let folders = scene.windows.filter(FinderItems.isFolderWindow)
+        let key = folders.map(FinderItems.layoutKey).joined(separator: "|")
+        guard key != iconLayout, !fetchingIcons else { return }
+        fetchingIcons = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            var fresh: [String: [MirrorKit.Scene.DesktopItem]] = [:]
+            if let d = await self.readIcons(container: "desktop") {
+                fresh[Self.desktopKey] = d
+            }
+            for win in folders {
+                let quoted = win.title.replacingOccurrences(of: "\"",
+                                                            with: "\\\"")
+                if let items = await self.readIcons(
+                    container: "window \"\(quoted)\"") {
+                    fresh[win.title] = items
+                }
+            }
+            self.icons = fresh
+            self.iconLayout = key
+            self.fetchingIcons = false
+        }
+    }
+
+    /// Three vectorised Apple events, not three per icon. Asking for
+    /// `name of every item` costs one event; asking each item its name
+    /// costs one each, and on a cooperatively-scheduled Mac that is the
+    /// difference between a third of a second and a stall a person sees.
+    private func readIcons(container: String)
+        async -> [MirrorKit.Scene.DesktopItem]? {
+        let source = """
+        tell application "Finder"
+        set ns to name of every item of \(container)
+        set ps to position of every item of \(container)
+        set ks to kind of every item of \(container)
+        end tell
+        set out to ""
+        repeat with i from 1 to (count ns)
+        set p to item i of ps
+        set out to out & (item i of ns) & tab & (item 1 of p) & tab & \
+        (item 2 of p) & tab & (item i of ks) & return
+        end repeat
+        return out
+        """
+        guard let text = await runReadingOutput("script",
+                                                ["source": source]) else {
+            return nil
+        }
+        return Self.parseIcons(text)
+    }
+
+    /// OSADoScript renders its result in SOURCE form, so a text result
+    /// arrives wrapped in quotes and its lines are separated by CR -
+    /// classic AppleScript's terminator, and the reason `linefeed` is not
+    /// used to build it (that identifier does not exist in OS 9's
+    /// AppleScript and fails the whole script with osaErr -1753).
+    static func parseIcons(_ raw: String) -> [MirrorKit.Scene.DesktopItem] {
+        var text = raw
+        if text.hasPrefix("\""), text.hasSuffix("\""), text.count >= 2 {
+            text = String(text.dropFirst().dropLast())
+        }
+        var out: [MirrorKit.Scene.DesktopItem] = []
+        for line in text.components(separatedBy: CharacterSet.newlines)
+        where !line.trimmingCharacters(in: .whitespaces).isEmpty {
+            let f = line.components(separatedBy: "\t")
+            guard f.count >= 4, let x = Int(f[1]), let y = Int(f[2]) else {
+                continue
+            }
+            let kind = f[3].lowercased()
+            var item = MirrorKit.Scene.DesktopItem(
+                name: f[0],
+                kind: kind.contains("folder") ? "folder"
+                    : kind.contains("disk") ? "disk"
+                    : kind.contains("application") ? "application" : "file",
+                type: nil, creator: nil,
+                x: x, y: y, placed: true,
+                alias: kind.contains("alias"), invisible: false)
+            item.name = f[0]
+            out.append(item)
+        }
+        return out
     }
 
     // MARK: - The dispatch
@@ -297,6 +420,25 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         else { return "that process reference is not a PSN" }
         return await run("activate", ["serialHi": String(hi),
                                       "serialLo": String(lo)])
+    }
+
+    /// Runs a verb and returns one labelled row from its own reply, or
+    /// nil when the guest refused. Used for `script`, whose ANSWER is the
+    /// point rather than its dispatch.
+    private func runReadingOutput(_ verb: String, _ args: [String: String],
+                                  row: String = "output") async -> String? {
+        await withCheckedContinuation { continuation in
+            listener.runCommand(verb, args: args) { result in
+                guard result.ok else {
+                    return continuation.resume(returning: nil)
+                }
+                var value: String?
+                for cells in result.output?[verb] ?? [] where cells.first == row {
+                    value = cells.count > 1 ? cells.last : ""
+                }
+                continuation.resume(returning: value)
+            }
+        }
     }
 
     /// The verbs with no typed projection on this host yet. Reads the

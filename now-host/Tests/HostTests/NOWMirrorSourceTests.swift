@@ -147,3 +147,58 @@ final class NOWMirrorSourceTests: XCTestCase {
                       + "scripts/probes/capture-scene-fixture.py")
     }
 }
+
+/// The icon reader, pinned against what the machine actually returned.
+///
+/// Two format facts, both measured on OS 9.1 rather than remembered, and
+/// both of which would silently produce zero icons if wrong:
+///
+///  - `OSADoScript` renders its result in SOURCE form, so a text answer
+///    arrives WRAPPED IN QUOTES;
+///  - classic AppleScript's line terminator is CR, which is why the
+///    script builds its output with `return` and not `linefeed` — that
+///    identifier does not exist in OS 9's AppleScript and fails the whole
+///    script with osaErr -1753.
+@MainActor
+final class NOWMirrorIconParsingTests: XCTestCase {
+
+    /// Verbatim from the guest, 2026-08-02, trimmed to four rows.
+    private let sample = "\"Trash\t716\t510\tfolder\r"
+        + "Browse the Internet\t716\t187\talias\r"
+        + "From Claude.txt\t608\t540\tdocument\r"
+        + "Macintosh HD\t736\t28\tdisk\r\""
+
+    func testItReadsWhatTheFinderReturned() {
+        let items = NOWMirrorSource.parseIcons(sample)
+        XCTAssertEqual(items.count, 4, "CR-separated rows inside a quoted "
+                       + "result - both are load-bearing")
+
+        XCTAssertEqual(items[0].name, "Trash",
+                       "the opening quote of the SOURCE-form result leaked "
+                       + "into the first icon's name")
+        XCTAssertEqual(items[0].x, 716)
+        XCTAssertEqual(items[0].y, 510)
+        XCTAssertEqual(items[0].kind, "folder")
+
+        XCTAssertTrue(items[1].alias, "an alias is drawn differently")
+        XCTAssertEqual(items[3].kind, "disk")
+        XCTAssertEqual(items[3].name, "Macintosh HD",
+                       "the closing quote leaked into the last icon's kind "
+                       + "or name")
+        XCTAssertTrue(items.allSatisfy(\.placed),
+                      "the Finder gave a position for every one of these")
+    }
+
+    /// A row the script could not complete is dropped, not guessed at.
+    func testShortAndUnparseableRowsAreDropped() {
+        let ragged = "\"Good\t10\t20\tfolder\rBad\tnotanumber\t5\tfolder\r"
+            + "Short\t1\r\""
+        let items = NOWMirrorSource.parseIcons(ragged)
+        XCTAssertEqual(items.map(\.name), ["Good"])
+    }
+
+    func testAnEmptyContainerIsNoIconsRatherThanACrash() {
+        XCTAssertTrue(NOWMirrorSource.parseIcons("\"\"").isEmpty)
+        XCTAssertTrue(NOWMirrorSource.parseIcons("").isEmpty)
+    }
+}
