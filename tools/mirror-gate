@@ -60,6 +60,14 @@ MAX_FRUITLESS_BLOCKS = 5
 # docs/mirror-drive-loop.md section 3; change it there first.
 # --------------------------------------------------------------------------
 
+PREFLIGHT = [
+    ("p.workshop-fidelity", "visually compare NOW Workshop with the guest"),
+    ("p.workshop-resize", "resize NOW Workshop from the mirror"),
+    ("p.workshop-close", "close NOW Workshop from the mirror"),
+    ("p.hd-open", "double-click Macintosh HD from the mirror"),
+    ("p.finder-fidelity", "visually compare the Finder window with the guest"),
+]
+
 RUNGS = {
     1: ("Frontmost window ops", [
         ("r1.hide", "hide the front window"),
@@ -186,7 +194,8 @@ def save(state):
 
 
 def rows_for(rungs, app):
-    out = []
+    out = [{"id": rid, "rung": 0, "what": what,
+            "result": None, "note": ""} for rid, what in PREFLIGHT]
     for r in rungs:
         title, items = RUNGS[r]
         for rid, what in items:
@@ -291,6 +300,32 @@ def cmd_row(args):
     if result in ("blocked", "n/a") and not note:
         die("a %s row needs a note saying what blocked it or why it does "
             "not apply -- an unexplained skip reads as coverage" % result)
+    state = load()
+    cycle = open_cycle(state)
+    if not cycle:
+        die("no cycle is open. mirror-gate begin <n> first.")
+    target = next((r for r in cycle["rows"] if r["id"] == rid), None)
+    if target is None:
+        die("no row %r in cycle %s. Rows: %s"
+            % (rid, cycle["n"], ", ".join(x["id"] for x in cycle["rows"])))
+
+    preflight_ids = [row_id for row_id, _ in PREFLIGHT]
+    if rid in preflight_ids:
+        prior = preflight_ids[:preflight_ids.index(rid)]
+        unfinished = [row_id for row_id in prior
+                      if next((r for r in cycle["rows"]
+                               if r["id"] == row_id), {}).get("result") != "pass"]
+        if unfinished:
+            die("sanity preflight is ordered; pass first: %s"
+                % ", ".join(unfinished))
+    else:
+        preflight = [r for r in cycle["rows"] if r["id"] in preflight_ids]
+        not_green = [r for r in preflight if r.get("result") != "pass"]
+        if not_green:
+            die("sanity preflight must pass before slice testing: %s. "
+                "Close and patch the baseline if one failed."
+                % ", ".join(r["id"] for r in not_green))
+
     if result in ("pass", "fail"):
         if not evidence:
             die("a %s needs --evidence <manifest>. MCP-only success or a "
@@ -299,10 +334,6 @@ def cmd_row(args):
     else:
         manifest = None
 
-    state = load()
-    cycle = open_cycle(state)
-    if not cycle:
-        die("no cycle is open. mirror-gate begin <n> first.")
     for r in cycle["rows"]:
         if r["id"] == rid:
             r["result"], r["note"] = result, note
@@ -462,6 +493,18 @@ def cmd_close(args):
     if not cycle:
         die("no cycle is open.")
     missing = unpopulated(cycle)
+    preflight_ids = {row_id for row_id, _ in PREFLIGHT}
+    preflight_failed = any(
+        r["id"] in preflight_ids and r.get("result") in ("fail", "blocked")
+        for r in cycle["rows"])
+    if missing and preflight_failed:
+        for row in missing:
+            row["result"] = "blocked"
+            row["note"] = "not attempted: mandatory sanity preflight failed"
+            row["at"] = now_iso()
+            row["evidence"] = ""
+            row["shot"] = ""
+        missing = []
     if missing:
         die("%d row%s unfilled: %s" % (len(missing), "" if len(missing) == 1
                                        else "s",

@@ -108,6 +108,14 @@ functional, accurate mirror of the guest** — one a person can operate.
    root cause" was said twice before a drive proved it wrong.
 7. **No regressions.** A pass that adds one feature and breaks three is
    worse than no pass. Rungs already polished are re-swept every drive.
+8. **Every sweep begins with the same five-step sanity preflight, in
+   order.** First visually compare NOW's Workshop against the guest. Then
+   resize it. Then close it. Then double-click Macintosh HD. Then visually
+   compare the Finder window against the guest. Only after all five pass
+   may the sweep enter its current slice — Date & Time in the present
+   control-panel campaign. A failure closes the sweep at the baseline and
+   becomes the patch target; later rows do not turn green around it. The
+   gate emits these rows before every rung and refuses out-of-order scoring.
 
 ---
 
@@ -122,6 +130,13 @@ Collapsing Sweep into Patch is the failure this structure prevents.
 | **Triage** | rank: **blocking** / **broken** / **cosmetic** | — |
 | **Patch** | fix the blockers, plus at most **two** others | gate green before restaging |
 | **Verify** | next sweep RE-TESTS the claimed-fixed IDs first | before any new ground |
+
+The sanity preflight is deliberately smaller than rungs 1–2. It is a
+tripwire for the exact yo-yo regressions this work produced: Workshop
+content or menubar improves while window acts disappear, then acts return
+while Finder or Workshop rendering regresses. It does not replace the full
+rung sweep; it proves the known-good floor still exists before spending the
+cycle on new ground.
 
 **Blocked mid-sweep — a blocker does NOT mean stop.** It means: write it
 down, step over it, and keep sweeping everything that does not depend on

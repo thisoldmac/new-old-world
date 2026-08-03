@@ -172,6 +172,36 @@ class MirrorGateEvidenceTests(unittest.TestCase):
             mirror__capturedAt="2026-08-03T16:00:00"))
         self.assert_refused(result, "mirror.capturedAt must include a timezone")
 
+    def test_slice_rows_cannot_run_before_the_sanity_preflight(self):
+        value = json.loads(self.state.read_text())
+        value["cycles"][0]["rows"].insert(0, {
+            "id": "p.workshop-fidelity", "rung": 0,
+            "what": "compare Workshop", "result": None, "note": "",
+        })
+        self.state.write_text(json.dumps(value, indent=2))
+
+        result = self.run_gate("row", "r1.move", "blocked", "not yet")
+        self.assert_refused(result, "sanity preflight must pass")
+
+    def test_failed_preflight_closes_without_pretending_slice_coverage(self):
+        value = json.loads(self.state.read_text())
+        value["cycles"][0]["rows"] = [
+            {"id": "p.workshop-fidelity", "rung": 0,
+             "what": "compare Workshop", "result": None, "note": ""},
+            {"id": "r1.move", "rung": 1, "what": "move",
+             "result": None, "note": ""},
+        ]
+        self.state.write_text(json.dumps(value, indent=2))
+
+        blocked = self.run_gate(
+            "row", "p.workshop-fidelity", "blocked", "Workshop regressed")
+        self.assertEqual(blocked.returncode, 0, blocked.stderr)
+        closed = self.run_gate("close")
+        self.assertEqual(closed.returncode, 0, closed.stderr)
+        rows = json.loads(self.state.read_text())["cycles"][0]["rows"]
+        self.assertEqual(rows[1]["result"], "blocked")
+        self.assertIn("preflight failed", rows[1]["note"])
+
 
 if __name__ == "__main__":
     unittest.main()
