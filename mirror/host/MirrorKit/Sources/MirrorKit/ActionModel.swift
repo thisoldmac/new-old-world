@@ -36,6 +36,38 @@ public enum MirrorAction: Equatable {
     /// below is emulator-only. This is the path for a shortcut-less item; a ⌘
     /// item should still go as a keystroke, which needs no patch at all.
     case menuInvoke(menuID: Int, itemIndex: Int, titleLeft: Int)
+    /// **A Control Manager part on a resolved control.** The semantic form
+    /// of everything `qmpClick` does to a scroll bar: the arrow, the page
+    /// gap and the thumb are three different acts, and this says which one
+    /// without a mouse being involved.
+    ///
+    /// Metal-shaped, which is the whole reason it exists. `qmpClick` needs
+    /// the emulator's input plane, so on a real Macintosh a mirror built on
+    /// it cannot scroll anything - and a resident act plane can serve this
+    /// on either. A driver without one declares so and the gesture falls
+    /// back to the hardware press.
+    case controlPart(ref: String, part: Int, mods: Int = 0)
+    /// **A window act addressed by reference**: close it, zoom it, move it,
+    /// size it. The Window Manager's own operations, rather than a hardware
+    /// press inside a widget whose tracking loop then runs.
+    ///
+    /// Same argument as `controlPart`, and the same fallback. A title-bar
+    /// drag over QMP works only on an emulator; this works wherever the act
+    /// plane is resident.
+    case windowAct(ref: String, act: WindowAct)
+
+    /// What `windowAct` can ask for. Deliberately the four the Window
+    /// Manager exposes as operations - a RAISE is not here, because
+    /// selecting one window among an application's own is not something
+    /// any wire verb does today, and inventing a name for it would promise
+    /// a capability that does not exist.
+    public enum WindowAct: Equatable, Sendable {
+        case close
+        case zoom(out: Bool)
+        case move(left: Int, top: Int)
+        case resize(width: Int, height: Int)
+    }
+
     /// A scrollbar thumb drag. Distinct from `drag` because the DROP POSITION
     /// is the value: TrackControl live-tracks the thumb, so this needs the
     /// precise (unity-compensated) motion a menu drag needs — the 1.6x a
@@ -51,6 +83,60 @@ public enum ActionAvailability: Equatable {
     /// Requires the emulator's QMP input plane and this target has none
     /// (metal, or emu launched without --qmp).
     case emulatorOnly(reason: String)
+    /// The driver serves no verb for this act at all. Distinct from
+    /// `emulatorOnly`, which says "this machine, not this act" - here the
+    /// act is simply outside what the target's wire can express, and no
+    /// emulator makes it possible. A GUI greys both and says different
+    /// things.
+    case unsupported(reason: String)
+}
+
+
+/// **What a driver can actually serve.**
+///
+/// The same gesture is not the same action on every target, and that is a
+/// fact about the wire rather than a preference. A click on a scroll arrow
+/// is a positioned hardware press for a driver whose only input is a
+/// mouse, and a Control Manager part for one with a resident act plane -
+/// and only the second works on a Macintosh that is not an emulator.
+///
+/// This exists so that difference lives in ONE place. The alternative was
+/// a second action model beside this one, and a gesture layer forked per
+/// target is where a behavioural difference becomes invisible in review
+/// and obvious to a person's hand.
+public struct ActionPlanes: Equatable, Sendable {
+    /// Positioned hardware input (the emulator's QMP plane). Drives the
+    /// Toolbox tracking loops - DragWindow, GrowWindow, TrackControl -
+    /// that no wire verb can enter. Emulator only, always.
+    public var qmpInput: Bool
+    /// Acts addressed by an opaque reference the guest minted: a control
+    /// part, a window act, a menu item. Needs a resident act plane on the
+    /// guest; works on metal, which is the point.
+    public var semanticActs: Bool
+    /// A positional click verb on the wire - a click at a point, posted
+    /// into the front application's event queue. Metal-safe where it
+    /// exists, and it does not exist everywhere: NOW's contract has no
+    /// such verb and says so deliberately.
+    public var positionalClick: Bool
+
+    public init(qmpInput: Bool, semanticActs: Bool, positionalClick: Bool) {
+        self.qmpInput = qmpInput
+        self.semanticActs = semanticActs
+        self.positionalClick = positionalClick
+    }
+
+    /// Mirror's own agent: a positional click verb, QMP when the target is
+    /// an emulator, and no act plane. The default, so every existing
+    /// caller keeps the behaviour it was written against.
+    public static let agent = ActionPlanes(
+        qmpInput: true, semanticActs: false, positionalClick: true)
+
+    /// A guest with the resident act plane and no positional click - NOW.
+    /// Window and control acts go semantically and work on metal; a click
+    /// on bare desktop has nowhere to go and is refused by name rather
+    /// than silently dropped.
+    public static let residentActPlane = ActionPlanes(
+        qmpInput: false, semanticActs: true, positionalClick: false)
 }
 
 public enum ActionModel {
@@ -72,14 +158,49 @@ public enum ActionModel {
 
     public static func availability(_ action: MirrorAction,
                                     target: MirrorTarget) -> ActionAvailability {
+        availability(action, planes: ActionPlanes(
+            qmpInput: target.qmp != nil, semanticActs: false,
+            positionalClick: true))
+    }
+
+    /// The same question asked of a driver rather than of a wire address,
+    /// because NOW is not one: it is reached over its own wire and serves
+    /// acts a `MirrorTarget` has no way to describe.
+    public static func availability(_ action: MirrorAction,
+                                    planes: ActionPlanes)
+        -> ActionAvailability {
         switch action {
         case .drag, .qmpClick, .qmpDoubleClick, .menuDrag, .thumbDrag:
-            return target.qmp != nil
+            return planes.qmpInput
                 ? .available
                 : .emulatorOnly(reason: "needs the emulator QMP input plane; "
                                 + "this target has none")
+        case .controlPart, .windowAct:
+            return planes.semanticActs
+                ? .available
+                : .unsupported(reason: "needs a resident act plane; this "
+                               + "target addresses nothing by reference")
+        case .click:
+            return planes.positionalClick
+                ? .available
+                : .unsupported(reason: "this target has no positional click "
+                               + "verb - it can act on an element it "
+                               + "resolved, and not on a bare point")
         default:
             return .available
+        }
+    }
+
+    /// A scroll bar region as the Control Manager numbers it. The mapping
+    /// is the guest's, quoted: `ctlact` names 20 up, 21 down, 22 page-up,
+    /// 23 page-down, 129 the indicator, in its own refusal text.
+    public static func partCode(_ part: Scrollbar.Part) -> Int {
+        switch part {
+        case .lineUp:   return 20
+        case .lineDown: return 21
+        case .pageUp:   return 22
+        case .pageDown: return 23
+        case .thumb:    return 129
         }
     }
 
@@ -104,6 +225,63 @@ public enum ActionModel {
     /// [] when the element is inert (disabled control, desktop backdrop…).
     public static func click(on target: HitTester.Target,
                              count: Int = 1, mods: Int = 0) -> [MirrorAction] {
+        click(on: target, count: count, mods: mods, planes: .agent, in: nil)
+    }
+
+    /// The same gesture, resolved against what the driver can actually do.
+    ///
+    /// `scene` is needed only to find a window's act reference from the
+    /// `windowID` a hit carries, and only when `planes.semanticActs` - a
+    /// hit names a rendering key, and an act needs the guest's own token.
+    ///
+    /// **What it does NOT do is silently substitute.** An act this target
+    /// cannot serve is still returned, so `availability` refuses it by
+    /// name and a person is told which half is missing. Swapping in a
+    /// coordinate click that lands somewhere plausible is the shape the
+    /// papering-over would take, and it is how a mirror ends up clicking
+    /// the wrong thing while looking like it works.
+    public static func click(on target: HitTester.Target,
+                             count: Int = 1, mods: Int = 0,
+                             planes: ActionPlanes,
+                             in scene: Scene?) -> [MirrorAction] {
+        if planes.semanticActs {
+            switch target {
+            case .scrollbar(_, let ctl, let part, _, _):
+                // The thumb stays a drag: its DROP POSITION is the value,
+                // and a part code presses rather than positions.
+                if part != .thumb, !ctl.ref.isEmpty {
+                    return [.controlPart(ref: ctl.ref,
+                                         part: partCode(part), mods: mods)]
+                }
+            case .widget(let windowID, let kind, _, _):
+                if let ref = windowRef(windowID, in: scene) {
+                    switch kind {
+                    case .close: return [.windowAct(ref: ref, act: .close)]
+                    case .zoom:  return [.windowAct(ref: ref,
+                                                    act: .zoom(out: true))]
+                    // The Window Manager exposes no collapse operation, so
+                    // the hardware press on the box is the only route and
+                    // it stays emulator-only rather than being invented.
+                    case .collapse: break
+                    }
+                }
+            default:
+                break
+            }
+        }
+        return positionalClick(on: target, count: count, mods: mods)
+    }
+
+    /// A window's act reference, from the rendering key a hit carries.
+    static func windowRef(_ windowID: String, in scene: Scene?) -> String? {
+        guard let ref = scene?.windows.first(where: { $0.id == windowID })?.ref,
+              !ref.isEmpty else { return nil }
+        return ref
+    }
+
+    private static func positionalClick(on target: HitTester.Target,
+                                        count: Int,
+                                        mods: Int) -> [MirrorAction] {
         switch target {
         case .control(_, let ctl):
             guard ctl.enabled, !ctl.ref.isEmpty else { return [] }
@@ -175,6 +353,26 @@ public enum ActionModel {
         [.drag(x0: from.x, y0: from.y, x1: to.x, y1: to.y)]
     }
 
+    /// The same resize as a window act, when the driver can serve one.
+    ///
+    /// A drag is where the corner ENDED; a window act is how big the
+    /// window should be. The conversion is the window's own content
+    /// origin, which is why this needs the window and the bare drag
+    /// does not.
+    public static func growDrag(from: (x: Int, y: Int), to: (x: Int, y: Int),
+                                window: Scene.Window?,
+                                planes: ActionPlanes) -> [MirrorAction] {
+        if planes.semanticActs, let win = window, let ref = win.ref,
+           !ref.isEmpty {
+            let contentTop = win.rect.t + SceneBuilder.titleBarHeight
+            let width = max(1, to.x - win.rect.l)
+            let height = max(1, to.y - contentTop)
+            return [.windowAct(ref: ref,
+                               act: .resize(width: width, height: height))]
+        }
+        return growDrag(from: from, to: to)
+    }
+
     /// A scrollbar thumb drag → scroll (TrackControl live-tracks the thumb).
     /// Both points are GLOBAL; the caller maps the control's space through the
     /// window's content origin.
@@ -226,6 +424,24 @@ public enum ActionModel {
     public static func titlebarDrag(from: (x: Int, y: Int),
                                     to: (x: Int, y: Int)) -> [MirrorAction] {
         [.drag(x0: from.x, y0: from.y, x1: to.x, y1: to.y)]
+    }
+
+    /// The same move as a window act. The act names WHERE THE WINDOW GOES
+    /// - its content origin - and the gesture only knows how far the
+    /// pointer travelled, so the window's current position is what turns
+    /// one into the other.
+    public static func titlebarDrag(from: (x: Int, y: Int),
+                                    to: (x: Int, y: Int),
+                                    window: Scene.Window?,
+                                    planes: ActionPlanes) -> [MirrorAction] {
+        if planes.semanticActs, let win = window, let ref = win.ref,
+           !ref.isEmpty {
+            let contentTop = win.rect.t + SceneBuilder.titleBarHeight
+            return [.windowAct(ref: ref,
+                               act: .move(left: win.rect.l + (to.x - from.x),
+                                          top: contentTop + (to.y - from.y)))]
+        }
+        return titlebarDrag(from: from, to: to)
     }
 
     /// The keystroke path for a ⌘-shortcut menu item (both heads land here).

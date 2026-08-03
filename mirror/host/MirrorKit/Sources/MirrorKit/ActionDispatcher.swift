@@ -74,6 +74,16 @@ public final class ActionDispatcher {
             if count != 1 { args["count"] = count }
             if mods != 0 { args["mods"] = mods }
             return try wire.request("click", args).result
+        case .controlPart, .windowAct:
+            /* Unreachable through `perform`, which checks availability
+               first and this driver declares no act plane - but stated
+               rather than left to a default, because a default here would
+               silently swallow a semantic act if the guard ever moved.
+               Mirror's agent addresses a control by clicking it; NOW's
+               act lane is what serves these. */
+            throw DispatchError.notAvailable(.unsupported(
+                reason: "this dispatcher drives Mirror's agent, which has "
+                    + "no act plane; a semantic act needs one"))
         case .drag(let x0, let y0, let x1, let y1):
             return try drag(x0: x0, y0: y0, x1: x1, y1: y1)
         case .qmpClick(let x, let y):
