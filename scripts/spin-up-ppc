@@ -245,4 +245,8 @@ set -e
 echo
 echo "anchor=127.0.0.1:$ANCHOR  wire=127.0.0.1:$WIRE  qmp=$QMP"
 echo "stop:  $LAB/tools/qmp $QMP quit     # QMP quit, never pkill"
+echo "       ...and never by PORT. \`lsof -ti tcp:$WIRE\` matches QEMU:"
+echo "       under user-mode networking the GUEST's outbound connection"
+echo "       belongs to the qemu process, so killing what holds the wire"
+echo "       port kills the whole machine. Done by accident 2026-08-03."
 exit $rc
