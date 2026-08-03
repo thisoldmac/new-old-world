@@ -103,9 +103,30 @@ static void walk_controls(NowScene *s, int window, const NowAxMemory *memory,
             now_scene_retract_controls(s, window);
             return;
         }
-        if (!now_scene_add_control(s, window, control.title, control.top,
-                                   control.left, control.bottom,
-                                   control.right, control.enabled,
+        /* BACK TO CONTENT-RELATIVE, which is what the IR names.
+         *
+         * now_ax_read_control returns GLOBAL coordinates - it adds the
+         * window's content origin, and says so - because that is what
+         * the act plane wants: a click lands somewhere on a screen. The
+         * SCENE is a different consumer with a different contract. IR v1
+         * documents `Control.rect` as "content-relative", Mirror's own
+         * SceneBuilder subtracts the content origin to produce one, and
+         * MirrorKit's hit tester converts a click into that space before
+         * it compares. Handing it global numbers does not fail: it hit
+         * tests every control against a rect displaced by the window's
+         * own origin, so a person clicks one thing and actuates its
+         * neighbour - or nothing - while the render still looks right.
+         *
+         * That is the shape of the defect that made a rendered mirror
+         * "connected but unclickable", and no decode test can see it,
+         * because both conventions are four honest integers. */
+        if (!now_scene_add_control(s, window,
+                                   control.title,
+                                   (short)(control.top - win->origin_top),
+                                   (short)(control.left - win->origin_left),
+                                   (short)(control.bottom - win->origin_top),
+                                   (short)(control.right - win->origin_left),
+                                   control.enabled,
                                    control.visible, control.value,
                                    control.min, control.max)) {
             now_scene_retract_controls(s, window);

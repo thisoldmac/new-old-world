@@ -135,7 +135,19 @@ static void controls_complete(void)
     /* Content box at (40,60); portRect origin (0,0), so a control at
        local (10,20) is global (50,80). The translation is the walk's,
        and getting it wrong puts every button in the wrong place on a
-       consumer's screen. */
+       consumer's screen.
+
+       WHICH SPACE THE SCENE CARRIES is the whole question here, and this
+       test asserted the wrong answer until 2026-08-02. now_ax_read_control
+       returns GLOBAL, because the act plane clicks somewhere on a screen.
+       The scene is a different consumer: IR v1 documents Control.rect as
+       content-relative, Mirror's own SceneBuilder subtracts the content
+       origin to make one, and MirrorKit's hit tester subtracts it from
+       the click before comparing. Feed it global rects and nothing
+       errors - every control is simply tested against a box displaced by
+       its own window's origin, so a person clicks one control and
+       actuates a neighbour. Four honest integers either way, which is
+       why only an assertion naming the SPACE can hold it. */
     build_window(&f, 8, kCtl1H, 0, 0, 40, 60, 200, 400);
     build_control(&f, kCtl1H, kCtl1, kCtl2H, "OK", 10, 20, 30, 90, 0, 1);
     build_control(&f, kCtl2H, kCtl2, 0, "Cancel", 10, 100, 30, 170, 255, 0);
@@ -149,8 +161,9 @@ static void controls_complete(void)
     check(s.windows[0].control_count == 2, "both controls are carried");
     check(s.control_count == 2, "and both are in the pool");
     check(strcmp(s.controls[0].title, "OK") == 0, "the first control's title");
-    check(s.controls[0].rect.t == 50 && s.controls[0].rect.l == 80,
-          "a control's rect is translated to global coordinates");
+    check(s.controls[0].rect.t == 10 && s.controls[0].rect.l == 20,
+          "a control's rect reaches the scene content-relative, which is "
+          "the space IR v1 names (global would be 50,80)");
     check(s.controls[0].enabled == 1, "hilite 0 is enabled");
     check(s.controls[1].enabled == 0, "hilite 255 is disabled");
     check(s.controls[0].value == 1 && s.controls[0].max == 1,
