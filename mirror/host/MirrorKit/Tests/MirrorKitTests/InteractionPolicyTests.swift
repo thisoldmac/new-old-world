@@ -156,27 +156,55 @@ final class InteractionPolicyTests: XCTestCase {
 
     // MARK: - Menus
 
-    func testACommandItemGoesAsAKeystrokeAndOthersByIdentity() {
+    /// A ⌘ item takes the keystroke route only where a keystroke can
+    /// carry the ⌘ — which NOW's Carbon guest cannot.
+    ///
+    /// MEASURED 2026-08-02, and it refuses rather than lying: "an event's
+    /// modifiers live on the Event Manager's queue element, and the only
+    /// call that hands that element back, PPostEvent, is not in
+    /// CarbonLib… posting the keystroke without the modifier would type a
+    /// bare character and report success, so it is refused instead."
+    ///
+    /// The policy assumed keystrokes worked, which would have failed
+    /// every single shortcut on that guest while looking correct here.
+    func testACommandItemRoutesByWhatTheGuestCanPost() {
         let menu = MirrorObject.Menu(id: 257, title: "File", left: 38,
                                      isApple: false)
-        let withCmd = MirrorObject.menuItem(
-            .init(menu: menu, index: 4, title: "Close", cmd: "W",
-                  isEnabled: true, isSeparator: false))
-        guard case .keystroke(let code, _, let mods) = plan(withCmd, tap) else {
-            return XCTFail("a ⌘ item is a keystroke")
+        let withCmd = Interaction(
+            object: .menuItem(.init(menu: menu, index: 4, title: "Close",
+                                    cmd: "W", isEnabled: true,
+                                    isSeparator: false)),
+            gesture: tap)
+
+        // A guest that CAN post a modified key: the shortcut is the
+        // cheapest, most deterministic route.
+        guard case .keystroke(let code, _, let mods) =
+            InteractionPolicy.plan(for: withCmd, planes: .agent) else {
+            return XCTFail("a ⌘ item is a keystroke where ⌘ can be posted")
         }
         XCTAssertEqual(mods, ActionModel.cmdKey)
-        // The table is keyed lowercase; the CODE is what MenuEvent matches.
-        XCTAssertEqual(code, ActionModel.keycodes["w"])
+        XCTAssertEqual(code, ActionModel.keycodes["w"],
+                       "MenuEvent matches the CODE, not the character")
 
+        // NOW's guest: same command, by identity, through the act plane.
+        XCTAssertEqual(
+            InteractionPolicy.plan(for: withCmd, planes: .residentActPlane),
+            .menuCommand(menuID: 257, itemIndex: 4, titleLeft: 38),
+            "a guest that cannot post ⌘ must take the MenuSelect route, "
+            + "which needs no modifier at all")
+    }
+
+    func testShortcutlessItemsAndSeparators() {
+        let menu = MirrorObject.Menu(id: 257, title: "File", left: 38,
+                                     isApple: false)
         let plain = MirrorObject.menuItem(
             .init(menu: menu, index: 9, title: "Page Setup…", cmd: "",
                   isEnabled: true, isSeparator: false))
         XCTAssertEqual(plan(plain, tap),
                        .menuCommand(menuID: 257, itemIndex: 9, titleLeft: 38))
 
-        // Neither of those depends on where the row was DRAWN, which is
-        // what used to make selection miss below a separator.
+        // Neither route depends on where the row was DRAWN, which is what
+        // used to make selection miss below a separator.
         let separator = MirrorObject.menuItem(
             .init(menu: menu, index: 8, title: "-", cmd: "",
                   isEnabled: true, isSeparator: true))

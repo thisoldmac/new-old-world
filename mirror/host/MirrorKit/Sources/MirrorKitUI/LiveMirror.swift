@@ -319,8 +319,12 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                     Text("waiting for the first scene…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                Text(hovered.isEmpty ? controller.status
-                                     : "\(hovered) — \(controller.status)")
+                /* The hover names what a click WOULD do; the status says
+                   what one DID. The second is the answer to a question a
+                   person just asked, so it leads. */
+                Text(controller.status.isEmpty ? hovered
+                     : hovered.isEmpty ? controller.status
+                     : "\(controller.status)   ·   over \(hovered)")
                     .font(.system(size: 11, design: .monospaced))
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)

@@ -38,7 +38,20 @@ import NOWAgentIntegration
 final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
     @Published private(set) var scene: MirrorKit.Scene?
-    @Published private(set) var status: String = "not started"
+
+    /// **What the machine last DID, not what the poll last saw.**
+    ///
+    /// These were one string, and a poll every 0.75s overwrote the answer
+    /// to a click before a person could read it - so a refusal, which is
+    /// the most useful thing this surface produces, flashed and was gone.
+    /// The poll line is ambient; an act's answer is an event, and events
+    /// stay put.
+    @Published private(set) var lastAct: String = ""
+    @Published private(set) var ambient: String = "not started"
+
+    /// What the window shows: the act while it is still worth reading,
+    /// then the ambient line again.
+    var status: String { lastAct.isEmpty ? ambient : lastAct }
 
     /// NOW addresses elements by reference and has no positional click
     /// verb — `contract/asyncapi.yaml` states that omission deliberately.
@@ -68,6 +81,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private var icons: [String: [MirrorKit.Scene.DesktopItem]] = [:]
     private var iconLayout: String = ""
     private var fetchingIcons = false
+    private var actGeneration = 0
 
     /// The IR major this host can read. Checked against the envelope
     /// BEFORE the body is parsed, which is the order `NOWSceneCodec`
@@ -88,13 +102,13 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     func start() {
         guard !running else { return }
         running = true
-        status = "asking for a scene…"
+        ambient = "asking for a scene…"
         poll()
     }
 
     func stop() {
         running = false
-        status = "stopped"
+        ambient = "stopped"
     }
 
     private func poll() {
@@ -116,7 +130,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                    knowledge, not evidence the windows went away, and
                    blanking the mirror on one is how a momentary busy lane
                    looks like a crash. */
-                self.status = failure.refusedByGuest
+                self.ambient = failure.refusedByGuest
                     ? "the Mac declined: \(failure.message)"
                     : failure.message
             }
@@ -126,7 +140,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
     private func accept(_ delivery: GuestListener.SceneDelivery) {
         guard delivery.irVersion == Self.readableIRMajor else {
-            status = "this Mac speaks scene IR v\(delivery.irVersion); "
+            ambient = "this Mac speaks scene IR v\(delivery.irVersion); "
                 + "this build reads v\(Self.readableIRMajor)"
             return
         }
@@ -136,7 +150,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             decoded = withIcons(decoded)
             scene = decoded
             refreshIconsIfStale(decoded)
-            status = "\(decoded.windows.count) windows · walk "
+            ambient = "\(decoded.windows.count) windows · walk "
                 + "\(delivery.walkMs.map { "\($0)ms" } ?? "?") · transfer "
                 + "\(delivery.transferMs)ms"
         } catch {
@@ -144,7 +158,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                this project the most, and a mirror that silently keeps
                drawing a stale scene while the producer emits something
                unreadable is the failure wearing its best clothes. */
-            status = "the scene did not decode as IR v1: \(error)"
+            ambient = "the scene did not decode as IR v1: \(error)"
         }
     }
 
@@ -266,8 +280,22 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     // MARK: - The dispatch
 
     func note(_ message: String) {
+        report(message)
+    }
+
+    /// Say it, and keep saying it for long enough to be read. Four
+    /// seconds is about how long a person takes to look down after a
+    /// click that did not do what they expected.
+    private func report(_ message: String) {
         guard !message.isEmpty else { return }
-        status = message
+        lastAct = message
+        actGeneration += 1
+        let mine = actGeneration
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard let self, self.actGeneration == mine else { return }
+            self.lastAct = ""
+        }
     }
 
     /// **The object-first entry point.** A person acted on a THING; this
@@ -284,18 +312,18 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             /* Not a failure, and not silence either. A click on something
                inert still has to LOOK like it was seen, or a person
                concludes the mirror is dead. */
-            status = why
+            report(why)
         case .unsupported(let why):
-            status = "\(InteractionBridge.label(for: interaction)): \(why)"
+            report("\(InteractionBridge.label(for: interaction)): \(why)")
         default:
             let label = InteractionBridge.label(for: interaction)
-            status = label + "…"
+            report(label + "…")
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 if let complaint = await self.serve(plan) {
-                    self.status = "\(label) — \(complaint)"
+                    self.report("\(label) — \(complaint)")
                 } else {
-                    self.status = label
+                    self.report(label + " ✓")
                 }
                 self.poll()                  // show the effect now
             }
@@ -309,20 +337,20 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         for action in actions {
             let verdict = ActionModel.availability(action, planes: planes)
             guard verdict == .available else {
-                status = "\(label): \(sentence(for: verdict))"
+                report("\(label): \(sentence(for: verdict))")
                 return
             }
         }
-        status = label + "…"
+        report(label + "…")
         Task { @MainActor [weak self] in
             guard let self else { return }
             for action in actions {
                 if let outcome = await self.send(action) {
-                    self.status = "\(label) — \(outcome)"
+                    self.report("\(label) — \(outcome)")
                     return
                 }
             }
-            self.status = label
+            self.report(label + " ✓")
             self.poll()
         }
     }
