@@ -238,14 +238,35 @@ def cmd_begin(args):
 
 def cmd_row(args):
     if len(args) < 2:
-        die("usage: mirror-gate row <id> <%s> [note]" % "|".join(RESULTS))
+        die("usage: mirror-gate row <id> <%s> [--shot PATH] [note]"
+            % "|".join(RESULTS))
     rid, result = args[0], args[1]
-    note = " ".join(args[2:])
+    rest = list(args[2:])
+    shot = None
+    if "--shot" in rest:
+        i = rest.index("--shot")
+        if i + 1 >= len(rest):
+            die("--shot needs the path to the screendump")
+        shot = rest[i + 1]
+        del rest[i:i + 2]
+    note = " ".join(rest)
     if result not in RESULTS:
         die("result must be one of %s" % ", ".join(RESULTS))
     if result in ("blocked", "n/a") and not note:
         die("a %s row needs a note saying what blocked it or why it does "
             "not apply -- an unexplained skip reads as coverage" % result)
+    if result in ("pass", "fail"):
+        if not shot:
+            die("a %s needs its paired screendump: --shot <path>.\n"
+                "A mirror screenshot alone says what the mirror DREW, never "
+                "whether that is what the machine is showing, and the gap "
+                "between those two is the product. Take one at the same "
+                "moment:\n"
+                "  tools/qmp <run-dir>/qmp.sock screendump "
+                "'{\"filename\":\"/tmp/x.ppm\"}'" % result)
+        if not os.path.exists(shot):
+            die("no screendump at %r - take it at the same moment as the "
+                "mirror screenshot, not afterwards" % shot)
 
     state = load()
     cycle = open_cycle(state)
@@ -255,6 +276,7 @@ def cmd_row(args):
         if r["id"] == rid:
             r["result"], r["note"] = result, note
             r["at"] = now_iso()
+            r["shot"] = shot or ""
             break
     else:
         die("no row %r in cycle %s. Rows: %s"

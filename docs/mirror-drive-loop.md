@@ -19,6 +19,16 @@ functional, accurate mirror of the guest** — one a person can operate.
 2. **QMP `screendump` is for LOOKING, never for doing.** The A-B
    reference must not come through the app under test; a defect shared
    by both halves is invisible otherwise.
+2a. **Every assessment of the mirror is PAIRED with a screendump of the
+   same moment.** Not "for anything visual" — every pass and every fail.
+   A mirror screenshot on its own says what the mirror drew, never
+   whether that is what the machine is showing, and the gap between
+   those two is the entire product. Stated by Michelle on 2026-08-03,
+   after I reported NOW's own Workshop window as rendering correctly on
+   the strength of seeing seven buttons with titles in it. It was not
+   rendering correctly, and one screendump would have said so
+   immediately. `tools/mirror-gate row` refuses a pass or a fail without
+   one, so this is not a thing to remember.
 3. **If the mirror cannot do it, that IS the finding.** Record it. Do
    not reach past it to keep the run going.
 4. **Record, don't fix, during a sweep.** No edits, no builds, no
