@@ -569,7 +569,23 @@ public struct SceneRenderer {
         let frame = rect(win.rect)
         guard frame.width > 2, frame.height > 2 else { return }
         let active = win.front
-        let isDialog = win.kind == 2
+        /* `kind` says WHO OWNS the window, not what it looks like. Both a
+           modal alert and a titled assistant are windowKind 2, because
+           both came from the Dialog Manager - the LOOK is the WDEF
+           variant, which IR v1 does not carry.
+         *
+           Deciding chrome from kind alone drew Internet Setup Assistant
+           as a bare bordered rectangle: no title bar, no title, no close
+           or collapse box, while the machine gave it all four. Watched
+           2026-08-03, and it took the whole of rung 1 with it, because a
+           window with no title bar has nothing to drag, zoom or close.
+         *
+           Until the variant is carried, the title is the honest
+           discriminator and it is already in the IR: a modal alert has
+           no title, and anything the Window Manager gives a title bar
+           has one to put in it. Same shape as the control-role rule - a
+           titled thing is not the untitled kind. */
+        let isDialog = win.kind == 2 && win.title.isEmpty
 
         // Drop shadow, frame, face, raised bevel.
         ctx.fill(Path(frame.offsetBy(dx: 2, dy: 2)),

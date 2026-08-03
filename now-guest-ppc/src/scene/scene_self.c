@@ -215,6 +215,87 @@ typedef struct {
     short      left;
 } NowMenuListEntry;
 
+/* One menu and its items, from a MenuHandle we already hold.
+ *
+ * Pulled out of the menu-bar walk so the SYSTEM menus can go through
+ * exactly the same path; a second copy of the item loop is how the two
+ * would drift. */
+static void add_one_menu(NowScene *s, MenuHandle menu, short left)
+{
+    Str255 title;
+    char   ctitle[64];
+    short  count;
+    short  i;
+    int    index;
+
+    if (menu == NULL) {
+        return;
+    }
+    title[0] = 0;
+    GetMenuTitle(menu, title);
+    pascal_to_c(title, ctitle, sizeof ctitle);
+    index = now_scene_add_menu(s, ctitle, GetMenuID(menu), left);
+    if (index < 0) {
+        return;
+    }
+    count = (short)CountMenuItems(menu);
+    for (i = 1; i <= count; ++i) {
+        Str255 text;
+        char   ctext[64];
+        short  mark = 0;
+        short  cmd = 0;
+
+        text[0] = 0;
+        GetMenuItemText(menu, i, text);
+        pascal_to_c(text, ctext, sizeof ctext);
+        GetItemMark(menu, i, (short *)&mark);
+        GetItemCmd(menu, i, (short *)&cmd);
+        (void)now_scene_add_menu_item(s, index, ctext, i,
+                                      (ctext[0] == '-') ? 1 : 0,
+                                      IsMenuItemEnabled(menu, i) ? 1 : 0,
+                                      (int)mark, (char)cmd);
+    }
+}
+
+/* The menus the SYSTEM put in this application's bar, which the walk
+ * above cannot see.
+ *
+ * `GetMenuBar`'s menu list enumerates the LEFT-hand menus, terminated by
+ * its `lastMenu` offset. The right-hand ones - Help, and the Application
+ * menu that is the app switcher - live past that terminator in a region
+ * whose layout is not in the Universal Interfaces on this toolchain, so
+ * walking it would mean inventing an offset. Asking for them by id needs
+ * no layout at all.
+ *
+ * The ids are not in a header here either. They are a MEASUREMENT: on
+ * 2026-08-03 a scene from this machine carried a menu with id -16489
+ * whose items were Hide Mail / Hide Others / Show All / Finder / General
+ * Controls / Mail / New Old World, and MirrorKit's hit tester has keyed
+ * on that number since. -16490 is the Help menu beside it.
+ *
+ * WHY THIS MATTERS, and it is not cosmetic: the host draws Apple's own
+ * switcher when the scene carries -16489, and SYNTHESISES one from the
+ * process list when it does not. Synthesised, it can only ever offer the
+ * applications - so Hide, Hide Others and Show All are simply absent,
+ * and a person mirroring a machine on which NOW is frontmost gets a
+ * switcher that is not the Macintosh's. Michelle called that a
+ * regression twice before this was traced to its cause: NOW was not
+ * reporting the menu it actually has.
+ *
+ * A left of 0 is honest: these are right-aligned by the Menu Manager and
+ * their position is not ours to state. The host lays them out on the
+ * right and never uses the left for them. */
+enum {
+    kNowSelfApplicationMenuID = -16489,
+    kNowSelfHelpMenuID        = -16490
+};
+
+static void collect_self_system_menus(NowScene *s)
+{
+    add_one_menu(s, GetMenuHandle(kNowSelfHelpMenuID), 0);
+    add_one_menu(s, GetMenuHandle(kNowSelfApplicationMenuID), 0);
+}
+
 static void collect_self_menubar(NowScene *s, int row)
 {
     Handle bar = GetMenuBar();

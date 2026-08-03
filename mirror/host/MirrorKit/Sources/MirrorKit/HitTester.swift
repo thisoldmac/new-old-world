@@ -239,7 +239,13 @@ public enum HitTester {
         for win in scene.windows
         where win.visible && !isDesktopBackdrop(win) && contains(win.rect, x, y) {
             // Title bar strip (real windows only; dialogs draw none).
-            if win.kind != 2, y < win.rect.t + titlebar {
+            /* Same rule the renderer uses: `kind` says who OWNS the
+               window, not what it looks like, and a titled dialog has a
+               real title bar. Keeping these two in step matters more
+               than either being right on its own - when they disagreed,
+               a control drew 11 pixels above where it could be hit. */
+            if !(win.kind == 2 && win.title.isEmpty),
+               y < win.rect.t + titlebar {
                 if let target = widgetHit(win, x, y) {
                     return target
                 }
