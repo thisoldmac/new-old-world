@@ -202,8 +202,11 @@ static void put_menubar(Sink *k, const NowScene *s)
         put_num(k, m->id);
         put(k, ",\"left\":");
         put_num(k, m->left);
+        /* Same rule as controls: the IR declares `items` required, so a
+           menu nobody walked reports an empty list rather than omitting
+           the key and making the whole document unreadable. */
+        put(k, ",\"items\":[");
         if (m->items_present) {
-            put(k, ",\"items\":[");
             for (j = 0; j < m->item_count; ++j) {
                 const NowSceneMenuItem *it =
                     &s->menu_items[m->first_item + j];
@@ -238,8 +241,8 @@ static void put_menubar(Sink *k, const NowScene *s)
                 }
                 put(k, "}");
             }
-            put(k, "]");
         }
+        put(k, "]");
         put(k, "}");
     }
     put(k, "]}");
@@ -272,10 +275,18 @@ static void put_controls(Sink *k, const NowScene *s, const NowSceneWindow *w)
 {
     short i;
 
+    /* ALWAYS AN ARRAY, even when this window's controls were not walked.
+       The absent key used to mean "not looked at", which is a real
+       distinction and not one the IR has: it declares `controls`
+       required, so omitting it makes the document undecodable rather
+       than subtly informative. What was lost is recovered where it
+       belongs - meta carries the truncation note when a list was
+       dropped, and a window nobody could walk reports none. */
+    put(k, ",\"controls\":[");
     if (!w->controls_present) {
+        put(k, "]");
         return;
     }
-    put(k, ",\"controls\":[");
     for (i = 0; i < w->control_count; ++i) {
         const NowSceneControl *c = &s->controls[w->first_control + i];
         char rect[64];

@@ -175,7 +175,59 @@ public struct Scene: Codable, Equatable, Sendable {
         public var value: Int?
         public var min: Int?
         public var max: Int?
-        public var checked: Bool
+        /// Whether a checkbox-like control is on.
+        ///
+        /// **Decodes to false when absent**, and that tolerance is
+        /// deliberate rather than lax. A producer that reads a
+        /// ControlRecord without its defProc cannot say what KIND of
+        /// control it has, and `checked` is meaningless without that -
+        /// NOW's scene walk says exactly this and refuses to emit the
+        /// key rather than assert a fact it cannot know. Requiring it
+        /// made an otherwise complete and correct IR v1 document
+        /// undecodable over one field nobody could honestly fill.
+        ///
+        /// Absent therefore means "not known to be checked", which is
+        /// what false already meant for every control that is not a
+        /// checkbox. A producer that CAN determine it still sends it.
+        public var checked: Bool = false
+
+        /* Declaring an initialiser suppresses the compiler's memberwise
+           one, and SceneBuilder builds these by hand - so it is restored
+           verbatim rather than left to be discovered as a type-check
+           timeout in another file. */
+        public init(ref: String, role: String, title: String,
+                    rect: Rect? = nil, enabled: Bool, visible: Bool,
+                    value: Int? = nil, min: Int? = nil, max: Int? = nil,
+                    checked: Bool = false) {
+            self.ref = ref
+            self.role = role
+            self.title = title
+            self.rect = rect
+            self.enabled = enabled
+            self.visible = visible
+            self.value = value
+            self.min = min
+            self.max = max
+            self.checked = checked
+        }
+
+        /* Swift's synthesised Decodable demands every non-optional key
+           whether or not the property has a default, so the tolerance
+           above needs saying out loud. Everything else decodes exactly as
+           the synthesised initialiser would. */
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            ref = try c.decode(String.self, forKey: .ref)
+            role = try c.decode(String.self, forKey: .role)
+            title = try c.decode(String.self, forKey: .title)
+            rect = try c.decodeIfPresent(Rect.self, forKey: .rect)
+            enabled = try c.decode(Bool.self, forKey: .enabled)
+            visible = try c.decode(Bool.self, forKey: .visible)
+            value = try c.decodeIfPresent(Int.self, forKey: .value)
+            min = try c.decodeIfPresent(Int.self, forKey: .min)
+            max = try c.decodeIfPresent(Int.self, forKey: .max)
+            checked = try c.decodeIfPresent(Bool.self, forKey: .checked) ?? false
+        }
     }
 
     public struct TextContent: Codable, Equatable, Sendable {
