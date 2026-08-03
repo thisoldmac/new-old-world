@@ -24,6 +24,17 @@ let package = Package(
         // Mirror module here starts and stops one instance of it
         // (`MirrorControlModel`).
     ],
+    // Mirror is vendored WHOLE at now/mirror/ and keeps its own
+    // package. NOW takes MirrorKit as a dependency of its TESTS
+    // first, for one reason: NOW's scene calls itself Mirror's IR
+    // v1 - the envelope says irVersion 1 - and until 2026-08-02
+    // nothing had ever decoded one with the type that IR belongs
+    // to. Five required fields were missing, and every one was
+    // found by restaging an emulator, six minutes a cycle. A
+    // decode is a millisecond.
+    dependencies: [
+        .package(path: "../mirror/host/MirrorKit"),
+    ],
     targets: [
         .target(name: "NOWAgentIntegration",
                 path: "Sources/NOWAgentIntegration"),
@@ -34,8 +45,11 @@ let package = Package(
                           dependencies: ["NOWAgentIntegration"],
                           path: "Sources/NOWAgentCompanion"),
         .testTarget(name: "HostTests",
-                    dependencies: ["Host", "NOWAgentIntegration"],
-                    path: "Tests/HostTests"),
+                    dependencies: ["Host", "NOWAgentIntegration",
+                                   .product(name: "MirrorKit",
+                                            package: "MirrorKit")],
+                    path: "Tests/HostTests",
+                    resources: [.copy("Fixtures")]),
         .testTarget(name: "NOWAgentCompanionTests",
                     dependencies: ["NOWAgentCompanion",
                                    "NOWAgentIntegration"],
