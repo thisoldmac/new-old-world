@@ -61,8 +61,13 @@ final class NOWMirrorWindow: NSObject, NSWindowDelegate {
            nothing". */
         if let w = window { Self.ensureOnScreen(w) }
         source.start()
-        window?.makeKeyAndOrderFront(nil)
+        /* ACTIVATE FIRST. Activating an application re-orders its
+           windows, so ordering the mirror front and then activating put
+           the main window back on top of it - which looks exactly like
+           the window never opened, and cost two rounds of chasing an
+           off-screen frame that was not the problem. */
         NSApp.activate(ignoringOtherApps: true)
+        window?.makeKeyAndOrderFront(nil)
         fitToGuestScreen()
     }
 
