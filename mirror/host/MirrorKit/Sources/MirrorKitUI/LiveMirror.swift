@@ -500,7 +500,19 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                          from start: (x: Int, y: Int),
                          to end: (x: Int, y: Int)) {
         guard let object = ObjectResolver.object(
-            at: Point(x: start.x, y: start.y), in: scene) else { return }
+            at: Point(x: start.x, y: start.y), in: scene) else {
+            /* A SILENT RETURN HERE IS THE WORST KIND OF FAILURE, and it
+               was one until 2026-08-03: a drag whose start point resolved
+               to no object simply vanished - nothing sent, nothing said,
+               nothing logged. From a chair it is identical to a drag that
+               was sent and ignored, and a whole afternoon was spent
+               scoring window moves as broken on exactly that ambiguity.
+               One title-bar drag failed and an identical one 60px away
+               worked, which is what this line explains. */
+            controller.note("nothing at \(start.x),\(start.y) to drag - "
+                            + "the drag was not sent")
+            return
+        }
         act(object, .drag(from: Point(x: start.x, y: start.y),
                           to: Point(x: end.x, y: end.y), mods: 0))
     }

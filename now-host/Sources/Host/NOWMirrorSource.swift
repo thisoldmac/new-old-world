@@ -353,6 +353,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     // MARK: - The dispatch
 
     func note(_ message: String) {
+        /* Notes are the things that happened INSTEAD of an act, so they
+           belong in the act log beside the acts - a drag that was never
+           sent is exactly as important as one that was refused. */
+        ActLog.note(action: "(note)", outcome: message, ms: 0)
         report(message)
     }
 
@@ -385,15 +389,24 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             /* Not a failure, and not silence either. A click on something
                inert still has to LOOK like it was seen, or a person
                concludes the mirror is dead. */
+            ActLog.note(action: InteractionBridge.label(for: interaction),
+                        outcome: "NOT DISPATCHED (nothing): \(why)", ms: 0)
             report(why)
         case .unsupported(let why):
+            ActLog.note(action: InteractionBridge.label(for: interaction),
+                        outcome: "NOT DISPATCHED (unsupported): \(why)", ms: 0)
             report("\(InteractionBridge.label(for: interaction)): \(why)")
         default:
             let label = InteractionBridge.label(for: interaction)
             report(label + "…")
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                if let complaint = await self.serve(plan) {
+                let started = Date()
+                let complaint = await self.serve(plan)
+                ActLog.note(action: "\(label)  plan=\(plan)",
+                            outcome: complaint ?? "dispatched",
+                            ms: Int(Date().timeIntervalSince(started) * 1000))
+                if let complaint {
                     self.report("\(label) — \(complaint)")
                 } else {
                     self.report(label + " ✓")
@@ -576,7 +589,30 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
     /// Sends one act. Returns nil when it was dispatched, or a sentence
     /// for a person when it was not.
+    /// Every act, and what became of it, on one line in a file.
+    ///
+    /// Written because a whole day of driving could not tell DISPATCHED
+    /// from FAILED. A title-bar drag that did nothing, a popup that
+    /// "did not answer in time", a Hide that looked like it worked and
+    /// had not, a keystroke that vanished after Tab, and two window acts
+    /// that reported `outcome-unknown` while plainly working - each of
+    /// those was resolved by guessing or by a screendump, and several
+    /// wrong calls came straight out of the gap. The mirror's status
+    /// line shows one act and then scrolls away; this keeps them.
+    ///
+    /// It is a DIAGNOSTIC, not a test channel. Rule 1 still stands: the
+    /// mirror is driven and judged by driving it. This says what the
+    /// driving did, the way a screendump says what the machine drew.
     private func send(_ action: MirrorAction) async -> String? {
+        let started = Date()
+        let outcome = await dispatch(action)
+        ActLog.note(action: "\(action)",
+                    outcome: outcome ?? "dispatched",
+                    ms: Int(Date().timeIntervalSince(started) * 1000))
+        return outcome
+    }
+
+    private func dispatch(_ action: MirrorAction) async -> String? {
         switch action {
         case .controlPart(let ref, let part, _):
             return reading(await act.controlAct(
