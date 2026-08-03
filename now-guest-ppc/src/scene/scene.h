@@ -102,6 +102,29 @@ enum {
     kNowScenePlaneMax = 64,
     kNowSceneIdMax = kNowSceneNameMax + kNowSceneTitleMax + 16,
 
+    /* THE TITLE BAR THE IR'S TWO RECTANGLES ARE RELATED BY.
+     *
+     * IR v1's `windows[].rect` is a BOX: the content region grown upward
+     * by this much. Mirror's own producer constructs it that way, and its
+     * consumer takes it apart the same way - MirrorKit's hit tester finds
+     * the content origin at `rect.t + titleBarHeight` before it compares
+     * a click against a control's content-relative rect.
+     *
+     * So this is a CONVENTION shared with the consumer, not a measurement
+     * of any particular window's frame. Reporting the true structure
+     * region instead would be more honest about this Macintosh and would
+     * break the arithmetic on the other side, which is the wrong trade:
+     * the number's job is to let a consumer recover the content origin
+     * exactly.
+     *
+     * Measured on a live Finder, 2026-08-02, before this existed: NOW
+     * emitted the content region here, so a real hardware click at the
+     * point a renderer computes from the document landed twenty pixels
+     * below the scroll arrow and the machine did not move. Clicking
+     * twenty pixels higher moved it (-4 to 60). The document was wrong
+     * and both of its own gates agreed with it. */
+    kNowSceneIRTitleBarHeight = 20,
+
     /* The walk's caps. Each is a BOUND on a scene, not a belief about a
        machine, and each one reports itself when it bites (see the
        retraction rule above). The pools are shared across owners rather

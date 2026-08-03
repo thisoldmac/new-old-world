@@ -155,7 +155,19 @@ static void collect_process(NowScene *s, int row,
                 s->windows_truncated = 1;
                 break;
             }
-            if (now_scene_add_window(s, row, win.title, win.top, win.left,
+            /* THE BOX, not the content region. now_ax_read_window reads
+               the CONTENT region - that is what the controls are relative
+               to and what origin_top is taken from - but IR v1's
+               `windows[].rect` is that region grown up by a title bar,
+               and its consumer recovers the content origin by adding the
+               same constant back. Handing over the content region makes
+               every control in the window twenty pixels out on the
+               consumer's screen; see kNowSceneIRTitleBarHeight for the
+               measurement that caught it. */
+            if (now_scene_add_window(s, row, win.title,
+                                     (short)(win.top
+                                             - kNowSceneIRTitleBarHeight),
+                                     win.left,
                                      win.bottom, win.right,
                                      win.visible ? 1 : 0)) {
                 now_scene_walk_window(s, now_scene_last_window(s),

@@ -1,7 +1,7 @@
 {
  "version": 1,
- "seq": 2,
- "capturedAt": 1785703347.0,
+ "seq": 11,
+ "capturedAt": 1785706312.0,
  "source": "peek",
  "screen": {
   "w": 800,
@@ -12,12 +12,6 @@
    "psn": "0.29360131",
    "name": "New Old World",
    "front": false
-  },
-  {
-   "psn": "0.29425665",
-   "name": "Application Switcher",
-   "front": false,
-   "error": "ax_oracle_not_found"
   },
   {
    "psn": "0.29491201",
@@ -67,12 +61,6 @@
    "name": "New Old World",
    "front": false,
    "signature": "NOWo"
-  },
-  {
-   "psn": "0.29425665",
-   "name": "Application Switcher",
-   "front": false,
-   "signature": "apsw"
   },
   {
    "psn": "0.29491201",
@@ -282,7 +270,7 @@
       "title": "New Folder",
       "index": 1,
       "separator": false,
-      "enabled": false,
+      "enabled": true,
       "mark": false,
       "cmd": "N"
      },
@@ -290,7 +278,7 @@
       "title": "Open",
       "index": 2,
       "separator": false,
-      "enabled": false,
+      "enabled": true,
       "mark": false,
       "cmd": "O"
      },
@@ -330,7 +318,7 @@
       "title": "Get Info",
       "index": 7,
       "separator": false,
-      "enabled": false,
+      "enabled": true,
       "mark": true,
       "cmd": ""
      },
@@ -338,7 +326,7 @@
       "title": "Label",
       "index": 8,
       "separator": false,
-      "enabled": false,
+      "enabled": true,
       "mark": true,
       "cmd": ""
      },
@@ -354,7 +342,7 @@
       "title": "Make Alias",
       "index": 10,
       "separator": false,
-      "enabled": false,
+      "enabled": true,
       "mark": false,
       "cmd": "M"
      },
@@ -362,7 +350,7 @@
       "title": "Add To Favorites",
       "index": 11,
       "separator": false,
-      "enabled": false,
+      "enabled": true,
       "mark": false,
       "cmd": "T"
      },
@@ -370,7 +358,7 @@
       "title": "Put Away",
       "index": 12,
       "separator": false,
-      "enabled": false,
+      "enabled": true,
       "mark": false,
       "cmd": "Y"
      },
@@ -426,7 +414,7 @@
       "title": "Page Setup\u2026",
       "index": 19,
       "separator": false,
-      "enabled": false,
+      "enabled": true,
       "mark": false,
       "cmd": ""
      },
@@ -434,7 +422,7 @@
       "title": "Print Window\u2026",
       "index": 20,
       "separator": false,
-      "enabled": false,
+      "enabled": true,
       "mark": false,
       "cmd": ""
      }
@@ -538,15 +526,15 @@
       "title": "as Icons",
       "index": 1,
       "separator": false,
-      "enabled": false,
-      "mark": false,
+      "enabled": true,
+      "mark": true,
       "cmd": ""
      },
      {
       "title": "as Buttons",
       "index": 2,
       "separator": false,
-      "enabled": false,
+      "enabled": true,
       "mark": false,
       "cmd": ""
      },
@@ -554,7 +542,7 @@
       "title": "as List",
       "index": 3,
       "separator": false,
-      "enabled": false,
+      "enabled": true,
       "mark": false,
       "cmd": ""
      },
@@ -570,15 +558,15 @@
       "title": "as Window",
       "index": 5,
       "separator": false,
-      "enabled": false,
-      "mark": false,
+      "enabled": true,
+      "mark": true,
       "cmd": ""
      },
      {
       "title": "as Pop-up Window",
       "index": 6,
       "separator": false,
-      "enabled": false,
+      "enabled": true,
       "mark": false,
       "cmd": ""
      },
@@ -594,7 +582,7 @@
       "title": "Clean Up",
       "index": 8,
       "separator": false,
-      "enabled": false,
+      "enabled": true,
       "mark": false,
       "cmd": ""
      },
@@ -602,7 +590,7 @@
       "title": "Arrange",
       "index": 9,
       "separator": false,
-      "enabled": false,
+      "enabled": true,
       "mark": true,
       "cmd": ""
      },
@@ -626,7 +614,7 @@
       "title": "View Options\u2026",
       "index": 12,
       "separator": false,
-      "enabled": false,
+      "enabled": true,
       "mark": false,
       "cmd": "J"
      }
@@ -655,7 +643,7 @@
       "cmd": ""
      },
      {
-      "title": "About This Computer",
+      "title": "System Folder",
       "index": 3,
       "separator": false,
       "enabled": true,
@@ -698,7 +686,7 @@
       "title": "Erase Disk\u2026",
       "index": 4,
       "separator": false,
-      "enabled": false,
+      "enabled": true,
       "mark": false,
       "cmd": ""
      },
@@ -844,69 +832,69 @@
  },
  "windows": [
   {
-   "id": "0.29949953/About This Computer#0",
+   "id": "0.29949953/System Folder#0",
    "app": "Finder",
    "psn": "0.29949953",
-   "title": "About This Computer",
+   "title": "System Folder",
    "rect": {
-    "l": 167,
-    "t": 82,
-    "r": 633,
-    "b": 334
+    "l": 13,
+    "t": 27,
+    "r": 417,
+    "b": 265
    },
    "front": true,
    "z": 0,
    "visible": true,
-   "ref": "now-window-f2b2442d-1a58-dd20-ca38-d1d71e498fda",
+   "ref": "now-window-d93bb83d-ed37-775c-8e95-e89b84b62de2",
    "kind": 20,
    "controls": [
+    {
+     "role": "scrollbar",
+     "title": "",
+     "rect": {
+      "l": 389,
+      "t": 20,
+      "r": 405,
+      "b": 204
+     },
+     "enabled": true,
+     "visible": true,
+     "value": 60,
+     "min": -4,
+     "max": 508,
+     "ref": "now-element-ec5093cd-6432-a970-1660-8697fb719ea2"
+    },
     {
      "role": "control",
      "title": "",
      "rect": {
-      "l": 618,
-      "t": 249,
-      "r": 634,
-      "b": 320
+      "l": -1,
+      "t": 203,
+      "r": 390,
+      "b": 219
      },
      "enabled": true,
      "visible": true,
-     "value": 0,
-     "min": 0,
-     "max": 0,
-     "ref": "now-element-37dac8e5-bbcb-8384-1efc-1cb70630da2e"
+     "value": -46,
+     "min": -46,
+     "max": -46,
+     "ref": "now-element-9d45588a-180f-d167-9ec2-aa00fe6e189d"
     },
     {
      "role": "scrollbar",
      "title": "",
      "rect": {
-      "l": 424,
-      "t": 271,
-      "r": 458,
-      "b": 285
+      "l": 2,
+      "t": 2,
+      "r": 18,
+      "b": 18
      },
      "enabled": true,
-     "visible": true,
-     "value": 155,
-     "min": 0,
-     "max": 1000,
-     "ref": "now-element-5e31c12a-3bb1-b83f-b7fa-799cf4cd6ad1"
-    },
-    {
-     "role": "scrollbar",
-     "title": "",
-     "rect": {
-      "l": 172,
-      "t": 87,
-      "r": 628,
-      "b": 179
-     },
-     "enabled": true,
-     "visible": true,
+     "visible": false,
      "value": 0,
      "min": 0,
      "max": 1,
-     "ref": "now-element-c5efc33e-a1da-6b17-ad37-c148c8ce9979"
+     "ref": "now-element-23ca12ea-ef09-fac7-2a5a-0e587e91763d"
     }
    ]
   },
@@ -917,14 +905,14 @@
    "title": "Desktop",
    "rect": {
     "l": 0,
-    "t": 20,
+    "t": 0,
     "r": 800,
     "b": 600
    },
    "front": false,
    "z": 1,
    "visible": true,
-   "ref": "now-window-0278cf9a-d8cb-ceeb-f5ad-514475a1035d",
+   "ref": "now-window-ffa6c924-2cc5-19cd-f04d-80369feb887f",
    "kind": 20,
    "controls": []
   },
@@ -947,7 +935,6 @@
  ],
  "meta": {
   "errors": [
-   "Application Switcher: ax_oracle_not_found",
    "Control Strip Extension: ax_oracle_not_found",
    "DVD AutoLauncher: ax_oracle_not_found",
    "FBC Indexing Scheduler: ax_oracle_not_found",
