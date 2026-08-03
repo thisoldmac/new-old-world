@@ -529,6 +529,19 @@ static void test_serve_begin(void)
                "an unknown op is refused");
     check_long((long)cell.error, kNowPeekActErrBadOp, "and names why");
 
+    /* A Dialog Manager item needs no trap. The target-context hook must
+       validate the live DITL identity and queue the press itself. */
+    memset(&cell, 0, sizeof cell);
+    cell.op = kNowPeekActOpDialogItem;
+    cell.target_a5 = (NowPeekU32)kTargetA5;
+    cell.status = kNowPeekActStatusPending;
+    check_long(now_act_serve_begin(&cell, kTargetA5, 1UL),
+               kNowActServeDialogItem,
+               "a dialog item is handed to the target-context hook");
+    check(cell.armed == kNowPeekActArmReady,
+          "the dialog press is scoped until the hook validates it");
+    check(cell.fired == 0, "a dialog item is not claimed before it is queued");
+
     /* A failing commit must never leave a patch armed. */
     arm_menu(&cell, 52, 10);
     now_act_serve_commit(&cell, kNowPeekActErrNotOurWindow);

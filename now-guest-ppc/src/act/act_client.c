@@ -225,6 +225,9 @@ const char *now_act_error_code(unsigned long plane_error)
     case kNowPeekActErrTextKind:    return "bad-request";
     case kNowPeekActErrNotText:     return "not-text";
     case kNowPeekActErrPostFailed:  return "act-post-failed";
+    case kNowPeekActErrNotControlItem: return "not-a-control-item";
+    case kNowPeekActErrItemMismatch: return "element-mismatch";
+    case kNowPeekActErrItemDisabled: return "item-disabled";
     default:                        return "act-refused";
     }
 }
@@ -262,6 +265,14 @@ const char *now_act_error_message(unsigned long plane_error)
     case kNowPeekActErrPostFailed:
         return "the Event Manager refused to queue the press, so nothing "
                "was asked of the application at all";
+    case kNowPeekActErrNotControlItem:
+        return "that dialog item is not a push button, checkbox or radio "
+               "button";
+    case kNowPeekActErrItemMismatch:
+        return "the named dialog item no longer owns the control from the "
+               "observation, so the request is stale";
+    case kNowPeekActErrItemDisabled:
+        return "that dialog item is disabled or no longer visible";
     default:
         return "the target refused the request";
     }

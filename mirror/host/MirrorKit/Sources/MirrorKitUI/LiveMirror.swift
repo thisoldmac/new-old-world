@@ -479,7 +479,7 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
             case .titleBar: return .openHand
             default: return .arrow
             }
-        case .control, .menu, .menuItem, .app, .finderItem:
+        case .control, .dialogItem, .menu, .menuItem, .app, .finderItem:
             return .pointingHand
         case .desktop:
             return .arrow
@@ -590,6 +590,8 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
         switch target {
         case .control(_, let c):
             return "\(prefix)axdo \(c.title.isEmpty ? c.ref : c.title)"
+        case .dialogItem(_, let item):
+            return "\(prefix)dialog item \(item.number)"
         case .scrollbar(_, _, let part, _, _): return "scroll \(part.rawValue)"
         case .widget(_, let kind, _, _): return "\(kind) box"
         case .growBox: return "grow box"

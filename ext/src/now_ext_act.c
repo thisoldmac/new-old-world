@@ -407,6 +407,66 @@ static unsigned long act_serve_ditem(NowPeekActCell *cell, WindowPtr w,
     return kNowPeekActErrNone;
 }
 
+/* Prepare one Dialog Manager press in the process that owns the dialog.
+   The request names the item twice: its 1-based DITL number and the
+   observation-minted ControlHandle. Requiring GetDialogItem to return that
+   SAME handle is the identity guard; an item number alone can silently move
+   when a dialog rebuilds its list. */
+static unsigned long act_prepare_ditem_press(NowPeekActCell *cell)
+{
+    WindowPtr     w = (WindowPtr)(unsigned long)cell->text_window;
+    DialogPtr     d = (DialogPtr)w;
+    Handle        item_h = NULL;
+    ControlHandle control;
+    Rect          box;
+    Point         pt;
+    GrafPtr       save;
+    short         type = 0;
+    short         base;
+    short         item = (short)cell->text_item;
+
+    if (w == NULL
+        || !now_act_window_is_ours((unsigned long)LMGetWindowList(),
+                                   (unsigned long)w, act_next_window, NULL)) {
+        return kNowPeekActErrNotOurWindow;
+    }
+    if (((WindowPeek)w)->windowKind != dialogKind) {
+        return kNowPeekActErrNotDialog;
+    }
+    if (item < 1 || item > CountDITL(d)) {
+        return kNowPeekActErrNoItem;
+    }
+    GetDialogItem(d, item, &type, &item_h, &box);
+    cell->text_item_type = (NowPeekI32)type;
+    base = (short)(type & ~itemDisable);
+    if (base != ctrlItem + btnCtrl
+        && base != ctrlItem + chkCtrl
+        && base != ctrlItem + radCtrl) {
+        return kNowPeekActErrNotControlItem;
+    }
+    if (item_h == NULL
+        || (unsigned long)item_h != (unsigned long)cell->control_handle) {
+        return kNowPeekActErrItemMismatch;
+    }
+    control = (ControlHandle)item_h;
+    if ((type & itemDisable) != 0
+        || !((**control).contrlVis)
+        || (**control).contrlHilite == 255) {
+        return kNowPeekActErrItemDisabled;
+    }
+
+    /* DITL boxes are local to the dialog port; event `where` is global. */
+    pt.h = (short)((box.left + box.right) / 2);
+    pt.v = (short)((box.top + box.bottom) / 2);
+    GetPort(&save);
+    SetPort((GrafPtr)w);
+    LocalToGlobal(&pt);
+    SetPort(save);
+    cell->click_h = (NowPeekI32)pt.h;
+    cell->click_v = (NowPeekI32)pt.v;
+    return kNowPeekActErrNone;
+}
+
 static unsigned long act_serve_text(NowPeekActCell *cell, int is_set)
 {
     WindowPtr     w = (WindowPtr)(unsigned long)cell->text_window;
@@ -615,6 +675,19 @@ void now_ext_act_apply(NowPeekTable *table)
         break;
     case kNowActServeSelfTest:
         error = act_serve_selftest(cell);
+        break;
+    case kNowActServeDialogItem:
+        error = act_prepare_ditem_press(cell);
+        if (error == kNowPeekActErrNone) {
+            if (!act_post_click(cell)) {
+                error = kNowPeekActErrPostFailed;
+            } else {
+                /* No patched question follows: DialogSelect/ModalDialog
+                   consumes the queued mouseDown in the application. */
+                cell->fired = 1;
+                cell->armed = kNowPeekActArmNone;
+            }
+        }
         break;
     case kNowActServeArmed:
         /* Armed in the target's own context, which proves the target is

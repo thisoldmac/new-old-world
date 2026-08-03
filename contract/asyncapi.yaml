@@ -3143,6 +3143,42 @@ components:
         type: object
         properties:
           ctlact: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    ditemact:
+      description: >
+        Select ONE live Dialog Manager item through the owning
+        application's own dialog event path. The request names both the
+        observation-minted reference of the item's backing control and its
+        1-based DITL number. The resident plane revalidates that exact
+        reference, then requires the named item in the named dialog to
+        still own that same ControlHandle before it queues a press.
+
+        This is deliberately not ctlact. A DITL item can own a
+        ControlRecord, but the application's dialog handler decides what
+        selecting the item means; answering TrackControl alone is not the
+        same operation.
+
+        An ok reply means the press was queued into the target process.
+        The resulting dialog or state change is a separate observation.
+      args:
+        type: object
+        required: [element, item]
+        properties:
+          element:
+            type: string
+            description: >
+              The opaque reference, "now-element-" and a UUID, minted by
+              the observation that reported this dialog item.
+          item:
+            type: integer
+            minimum: 1
+            maximum: 96
+            description: The item's 1-based position in the live DITL.
+      x-line: >
+        NOT TYPEABLE. Both identity fields come from one live observation.
+      output:
+        type: object
+        properties:
+          ditemact: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
     menuact:
       description: >
         Perform ONE menu command, by answering the owning

@@ -25,6 +25,12 @@ public enum InteractionBridge {
                is what decides between them, not this. */
             return [.controlPart(ref: ref, part: part, mods: mods)]
 
+        case .dialogItem:
+            // The old action vocabulary has no Dialog Manager operation.
+            // NOW's direct driver serves this typed plan itself; legacy
+            // drivers must not collapse it into a generic coordinate click.
+            return []
+
         case .windowAct(let ref, let act):
             return [.windowAct(ref: ref, act: act)]
 

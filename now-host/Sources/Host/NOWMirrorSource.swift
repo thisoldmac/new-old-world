@@ -467,6 +467,13 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             return reading(await act.controlAct(.init(element: ref,
                                                       part: part)))
 
+        case .dialogItem(let ref, let item):
+            /* Direct human-input path first. The broker vocabulary keeps this
+               distinct from ctlact, and the guest revalidates the DITL item
+               against the observation-minted backing control. */
+            return await run("ditemact", ["element": .text(ref),
+                                          "item": .number(item)])
+
         case .windowAct(let ref, let what):
             return reading(await act.windowAct(Self.request(ref, what)))
 

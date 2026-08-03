@@ -1,19 +1,21 @@
 #ifndef NOW_ACT_CMDS_H
 #define NOW_ACT_CMDS_H
 
-/* The act plane's five commands, as the wire sees them.
+/* The act plane's six commands, as the wire sees them.
 
    Three are declared in contract/asyncapi.yaml already - winact,
    textget, textset - and the host publishes a row for each. The other
-   two complete the plane on this side:
+   three complete the plane on this side:
 
      ctlact     drive one control, by answering the application's own
                 TrackControl.
+     ditemact   select one live Dialog Manager item through the owning
+                application's dialog event path.
      menuact    perform one menu command, by answering the application's
                 own MenuSelect.
 
-   THE SIXTH WENT NEXT DOOR. `elements` - the observation that MINTS the
-   references the other five take - is now_observe_elements_command, in
+   THE SEVENTH WENT NEXT DOOR. `elements` - the observation that MINTS the
+   references the other six take - is now_observe_elements_command, in
    src/observe/. It was minting the same token shape as the reference
    layer from a second table, and two systems producing one token shape
    is a reference whose provenance a caller cannot tell. There is one
@@ -35,6 +37,8 @@ void now_act_run_textset(const char *request_json, long id,
                          char *out, long cap);
 void now_act_run_ctlact(const char *request_json, long id,
                         char *out, long cap);
+void now_act_run_ditemact(const char *request_json, long id,
+                          char *out, long cap);
 void now_act_run_menuact(const char *request_json, long id,
                          char *out, long cap);
 

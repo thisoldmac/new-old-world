@@ -27,6 +27,17 @@ final class InteractionPolicyTests: XCTestCase {
               window: win(), part: part)
     }
 
+    private func dialogItem(enabled: Bool = true,
+                            actionable: Bool = true,
+                            ref: String? = "now-element-dialog")
+        -> MirrorObject.DialogItem {
+        .init(number: 7, ref: ref, title: "Date Formats…",
+              rect: Rect(l: 10, t: 10, r: 110, b: 30),
+              isEnabled: enabled, window: win(), semanticKind: "pushButton",
+              semanticAction: actionable ? "press" : nil,
+              isSemanticallyActionable: actionable)
+    }
+
     private func plan(_ o: MirrorObject, _ g: MirrorGesture) -> InteractionPlan {
         InteractionPolicy.plan(for: .init(object: o, gesture: g))
     }
@@ -113,6 +124,26 @@ final class InteractionPolicyTests: XCTestCase {
         button.role = "control"
         XCTAssertEqual(plan(.control(button), tap),
                        .controlPart(ref: "now-element-bar", part: 10, mods: 0))
+    }
+
+    func testADialogButtonUsesTheDialogManagerPath() {
+        XCTAssertEqual(plan(.dialogItem(dialogItem()), tap),
+                       .dialogItem(ref: "now-element-dialog", item: 7))
+    }
+
+    func testDisabledAndUnknownDialogItemsDoNotBecomeGenericClicks() {
+        guard case .nothing = plan(.dialogItem(dialogItem(enabled: false)),
+                                   tap) else {
+            return XCTFail("a disabled DITL item is inert")
+        }
+        guard case .unsupported = plan(
+            .dialogItem(dialogItem(actionable: false)), tap) else {
+            return XCTFail("unknown DITL semantics must refuse")
+        }
+        guard case .unsupported = plan(
+            .dialogItem(dialogItem(ref: nil)), tap) else {
+            return XCTFail("an unaddressable DITL item must refuse")
+        }
     }
 
     func testTheWheelPagesRatherThanLines() {
@@ -297,6 +328,7 @@ final class InteractionPolicyTests: XCTestCase {
             .window(win(part: .collapseBox)),
             .window(win(ref: nil)),
             .control(bar(part: .thumb)),
+            .dialogItem(dialogItem(actionable: false)),
             .menu(.init(id: 256, title: "", left: 10, isApple: true)),
             .app(.init(psn: "0.9", name: "Finder", isFront: true)),
         ]

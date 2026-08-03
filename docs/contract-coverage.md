@@ -130,7 +130,7 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 
 PPC handles 37 inbound types; NOW-68K handles 23. **That count
 understates the difference** — see the next two sections, where two of
-these rows open into 35 command verbs and 14 hardware probes.
+these rows open into 36 command verbs and 14 hardware probes.
 
 (An earlier version of this file said 33 for the PowerPC guest and was
 wrong: the number had been hand-counted. It is derived now, and that is
@@ -150,8 +150,9 @@ hides most of what a machine can be asked — the hardware, network, RAM
 and ROM facts do not have message types of their own. They live behind
 `gestalt` and `census`, one row each above and a whole subsystem below.
 
-The registry is `x-commands` in the contract: **35 verbs.** Sixteen of
-them landed on 2026-07-31 and are grouped at the foot of the table: the
+The registry is `x-commands` in the contract: **36 verbs.** Sixteen of
+them landed on 2026-07-31 and are grouped at the foot of the table; the
+Dialog Manager act joined that group on 2026-08-03: the
 act plane, the reference layer that mints what it addresses, two verbs
 about the machine's own state, the input plane's three, and the content
 plane's reader.
@@ -186,6 +187,7 @@ plane's reader.
 | `textget` | read one addressed text element | ✅ | ❌ |
 | `textset` | replace one addressed text element's contents | ✅ | ❌ |
 | `ctlact` | act on one control | ✅ | ❌ |
+| `ditemact` | select one addressed Dialog Manager item | ✅ | ❌ |
 | `menuact` | perform one menu command | ✅ | ❌ |
 | `activate` | bring one process forward, by serial number | ✅ | ❌ |
 | `actselftest` | prove the act plane's trap ABI in one process | ✅ | ❌ |
@@ -195,13 +197,13 @@ plane's reader.
 | `qdtrace` | what is drawing, from the content plane's ring | ✅ | ❌ |
 | `mirror` | Mirror's three residents, its agent, and the port beside it | ✅ | ❌ |
 
-Ten of those sixteen — the act plane and the reference layer — are one
+Eleven of those seventeen — the act plane and the reference layer — are one
 mechanism and are served together or not at all. They are PowerPC-only
 today by derivation rather than by an ISA check: they read another
 process's window records through the anchor plane, and nothing on the
 host asks which guest answered. **Served is not proven** — this table's
 own rule — and no NOW machine has been watched performing one of the
-five acts.
+six acts.
 
 The six added at the foot on 2026-07-31 were **built, compiled, and
 dispatched by nothing** until that day: each porting agent left its
@@ -213,16 +215,16 @@ Macintosh**, so a `status` on any machine today answers
 `content-plane-absent`, correctly, and that is the whole of what it has
 been seen to do.
 
-**PPC serves 32 of 35.** `put` is console-only there and `cancel` is
+**PPC serves 33 of 36.** `put` is console-only there and `cancel` is
 not a verb at all, both deliberately: the host reaches those
 capabilities through the `file.*` families and that guest's own
 Workshop. `shotdiag` is the third, and the newest: it diagnoses a raw
 framebuffer walk the PowerPC guest does not have.
 
-**NOW-68K serves 13 of 35** — `help`, `ls`, `sw`, `census`, `put`,
+**NOW-68K serves 13 of 36** — `help`, `ls`, `sw`, `census`, `put`,
 `cancel`, `vprobe`, `screenshot`, `shotdiag`, `ps`, `launch`, `quit`,
-`front`. The twenty-two it does not: `gestalt`, `catsearch`, `tail`,
-`reveal`, `vers`, `putstat`, the ten of the act plane and the reference
+`front`. The twenty-three it does not: `gestalt`, `catsearch`, `tail`,
+`reveal`, `vers`, `putstat`, the eleven of the act plane and the reference
 layer, and the six registered on 2026-07-31 — `activate`,
 `actselftest`, `mouseloc`, `script`, `aesend`, `qdtrace`. The last six
 are not a 68K debt: four of them reach for OSA, Apple Events or a
@@ -525,6 +527,12 @@ that were built and dispatched by nothing took the registry from 29 to
 35 and the PowerPC guest from 26 to 32. The counts above are therefore
 owed a run of the commands at the top of this file before anyone quotes
 them as derived.
+
+Updated **2026-08-03** on `codex/recover-ptolemy-ux-loop`: `ditemact`
+took the registry from 35 to 36 and the PowerPC guest from 32 to 33. It
+keeps Dialog Manager selection distinct from `ctlact`; emulator
+verification is recorded by the UX loop rather than inferred from this
+served count.
 
 Last re-derived: **2026-07-31**, on `claude/tbt-parity-slice`, by running
 the commands above. Every count in this file still checked out as it

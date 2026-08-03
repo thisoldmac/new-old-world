@@ -1418,7 +1418,7 @@ void now_command_run(const char *name, const char *request_json, long id,
         run_vers(request_json, id, out, cap);
         return;
     }
-    /* The act plane (P4). Six commands, one mechanism: an element this
+    /* The act plane (P4). Seven commands, one mechanism: an element this
        Mac observed, revalidated here before anything is dispatched, and
        a reply that claims the event went and never that it worked. The
        handlers live in src/act/ rather than here because the plane is
@@ -1446,6 +1446,10 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "ctlact") == 0) {
         now_act_run_ctlact(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "ditemact") == 0) {
+        now_act_run_ditemact(request_json, id, out, cap);
         return;
     }
     if (strcmp(name, "menuact") == 0) {

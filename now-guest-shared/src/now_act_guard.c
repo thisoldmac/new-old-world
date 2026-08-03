@@ -186,6 +186,12 @@ int now_act_serve_begin(NowPeekActCell *cell, unsigned long current_a5,
         verdict = kNowActServeSelfTest;
         break;
 
+    case kNowPeekActOpDialogItem:
+        cell->fired = 0;
+        cell->armed = kNowPeekActArmReady;
+        verdict = kNowActServeDialogItem;
+        break;
+
     default:
         cell->error = kNowPeekActErrBadOp;
         verdict = kNowActServeRefused;

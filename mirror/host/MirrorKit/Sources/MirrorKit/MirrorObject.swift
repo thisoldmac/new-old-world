@@ -50,6 +50,12 @@ public enum MirrorObject: Equatable, Sendable {
     /// content-relative and means nothing without it.
     case control(Control)
 
+    /// One live Dialog Manager item, by its 1-based DITL number and the
+    /// observation-minted reference of its backing object. It is not a
+    /// Control Manager control even when the item owns a ControlHandle:
+    /// choosing it must travel through the application's dialog path.
+    case dialogItem(DialogItem)
+
     /// A menu in the menu bar. Opening one is mirror-local — no guest is
     /// involved until a row is chosen — so this exists mainly so a
     /// driver can be ASKED and answer "nothing to do", rather than the
@@ -142,6 +148,29 @@ public enum MirrorObject: Equatable, Sendable {
         }
     }
 
+    public struct DialogItem: Equatable, Sendable {
+        public var number: Int
+        public var ref: String?
+        public var title: String
+        public var rect: Rect
+        public var isEnabled: Bool
+        public var window: Window
+        public var semanticKind: String?
+        public var semanticAction: String?
+        public var isSemanticallyActionable: Bool
+
+        public init(number: Int, ref: String?, title: String, rect: Rect,
+                    isEnabled: Bool, window: Window, semanticKind: String?,
+                    semanticAction: String?,
+                    isSemanticallyActionable: Bool) {
+            self.number = number; self.ref = ref; self.title = title
+            self.rect = rect; self.isEnabled = isEnabled
+            self.window = window; self.semanticKind = semanticKind
+            self.semanticAction = semanticAction
+            self.isSemanticallyActionable = isSemanticallyActionable
+        }
+    }
+
     public struct Menu: Equatable, Sendable {
         public var id: Int
         public var title: String
@@ -213,6 +242,9 @@ public enum MirrorObject: Equatable, Sendable {
         case .control(let c):
             if let part = c.part { return "the \(part) of a scroll bar" }
             return c.title.isEmpty ? "a control" : "\"\(c.title)\""
+        case .dialogItem(let i):
+            return i.title.isEmpty ? "dialog item \(i.number)"
+                                   : "\"\(i.title)\""
         case .menu(let m):
             return m.isApple ? "the Apple menu" : "the \(m.title) menu"
         case .menuItem(let i):
@@ -232,6 +264,7 @@ public enum MirrorObject: Equatable, Sendable {
         switch self {
         case .window(let w): return w
         case .control(let c): return c.window
+        case .dialogItem(let i): return i.window
         case .finderItem(let f): return f.container
         case .menu, .menuItem, .app, .desktop: return nil
         }

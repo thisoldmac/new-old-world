@@ -806,6 +806,78 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
     reply_rows(out, cap, id, "ctlact", &rows);
 }
 
+/* ---- ditemact --------------------------------------------------------- */
+
+void now_act_run_ditemact(const char *request_json, long id,
+                          char *out, long cap)
+{
+    NowObsHandle    handle;
+    NowPeekActCell *cell;
+    ActRows         rows;
+    char            ref[kNowObsTokenMax];
+    NowActStatus    st;
+    long            item = 0;
+
+    if (arg_int_malformed(request_json, "item")) {
+        reply_error(out, cap, id, "bad-request",
+                    "ditemact's item is present but is not a JSON number");
+        return;
+    }
+    if (!arg_int(request_json, "item", &item)
+        || item < 1 || item > kNowAxDialogMaxItems) {
+        reply_error(out, cap, id, "bad-request",
+                    "ditemact requires item: a 1-based DITL number from 1 "
+                    "through 96");
+        return;
+    }
+    if (!resolve_for_act(request_json, id, out, cap, kNowObsKindElement,
+                         &handle, ref)) {
+        return;
+    }
+    if (handle.identity.control_handle == 0) {
+        reply_error(out, cap, id, "bad-request",
+                    "ditemact requires the observation-minted reference "
+                    "of a dialog control item");
+        return;
+    }
+    cell = now_act_cell();
+    if (cell == NULL) {
+        reply_status(out, cap, id, kNowActNoExtension);
+        return;
+    }
+
+    cell->op = kNowPeekActOpDialogItem;
+    cell->control_handle = (NowPeekU32)handle.identity.control_handle;
+    cell->text_window = (NowPeekU32)handle.identity.window_address;
+    cell->text_item = (NowPeekI32)item;
+    cell->text_item_type = 0;
+
+    st = now_act_submit(g_target.a5, &g_snap);
+    if (st == kNowActRefused) {
+        reply_plane_error(out, cap, id, &g_snap);
+        return;
+    }
+    if (st != kNowActOk) {
+        reply_status(out, cap, id, st);
+        return;
+    }
+    if (!g_snap.fired) {
+        reply_error(out, cap, id, "act-not-taken",
+                    "the resident plane did not queue the dialog press");
+        return;
+    }
+    now_act_withdraw();
+
+    rows_reset(&rows);
+    row_add(&rows, "Element", ref);
+    row_addf(&rows, "Item", "%ld", item);
+    row_add(&rows, "Dispatch", "dispatched");
+    row_add(&rows, "Mechanism", "the application's Dialog Manager path");
+    now_log(kLogInfo, "act", "#%ld ditemact item %ld dispatched", id,
+            item);
+    reply_rows(out, cap, id, "ditemact", &rows);
+}
+
 /* ---- menuact ---------------------------------------------------------- */
 
 void now_act_run_menuact(const char *request_json, long id, char *out, long cap)

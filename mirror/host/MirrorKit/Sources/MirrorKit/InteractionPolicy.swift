@@ -14,6 +14,10 @@ public enum InteractionPlan: Equatable, Sendable {
     /// Press a Control Manager part on a resolved control.
     case controlPart(ref: String, part: Int, mods: Int)
 
+    /// Ask the addressed dialog's own event path to select one 1-based
+    /// DITL item. Kept separate from Control Manager tracking on purpose.
+    case dialogItem(ref: String, item: Int)
+
     /// A Window Manager operation on a resolved window.
     case windowAct(ref: String, act: MirrorAction.WindowAct)
 
@@ -71,6 +75,8 @@ public enum InteractionPolicy {
         -> InteractionPlan {
         switch interaction.object {
         case .control(let c):   return control(c, interaction.gesture, planes)
+        case .dialogItem(let i): return dialogItem(i, interaction.gesture,
+                                                  planes)
         case .window(let w):    return window(w, interaction.gesture, planes)
         case .menuItem(let i):  return menuItem(i, interaction.gesture,
                                                 planes)
@@ -83,6 +89,36 @@ public enum InteractionPolicy {
         case .desktop(let owner): return desktop(owner,
                                                  interaction.gesture)
         }
+    }
+
+    // MARK: - Dialog Manager items
+
+    private static func dialogItem(_ item: MirrorObject.DialogItem,
+                                   _ gesture: MirrorGesture,
+                                   _ planes: ActionPlanes)
+        -> InteractionPlan {
+        guard case .click = gesture else {
+            return .nothing(why: "that dialog item answers to a click")
+        }
+        guard planes.semanticActs else {
+            return .unsupported(why: "this driver has no resident dialog "
+                                + "item act plane")
+        }
+        guard item.isEnabled else {
+            return .nothing(why: "that dialog item is disabled")
+        }
+        guard item.isSemanticallyActionable,
+              item.semanticAction == "press" else {
+            return .unsupported(why: "the guest did not provide complete, "
+                                + "authoritative press semantics for that "
+                                + "dialog item")
+        }
+        guard let ref = item.ref, !ref.isEmpty else {
+            return .unsupported(why: "that dialog item reached the mirror "
+                                + "with no reference, so nothing can address "
+                                + "it")
+        }
+        return .dialogItem(ref: ref, item: item.number)
     }
 
     // MARK: - Controls

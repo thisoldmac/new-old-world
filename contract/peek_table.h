@@ -199,7 +199,11 @@ enum {
        the application does nothing, because the value it read was never
        the value we wrote. A wrong ABI does not crash, it lies - so the
        mechanism has to be able to check itself. */
-    kNowPeekActOpSelfTest = 6
+    kNowPeekActOpSelfTest = 6,
+    /* Validate one observed DITL control item in the target context, then
+       queue its press. No trap: the application's Dialog Manager path
+       consumes the event itself. */
+    kNowPeekActOpDialogItem = 7
 };
 
 /* kNowPeekActOpWindow sub-ops.
@@ -298,7 +302,10 @@ enum {
     /* The plane posts its own click - see NowPeekActCell.click_h - and
        the event queue can refuse it. Distinct from "armed and never
        taken": nothing was ever asked of the application. */
-    kNowPeekActErrPostFailed = 12
+    kNowPeekActErrPostFailed = 12,
+    kNowPeekActErrNotControlItem = 13,
+    kNowPeekActErrItemMismatch = 14,
+    kNowPeekActErrItemDisabled = 15
 };
 
 /* How a text request names its object. Every kind requires text_window,

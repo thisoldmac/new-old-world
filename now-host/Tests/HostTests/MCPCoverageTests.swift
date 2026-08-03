@@ -498,7 +498,10 @@ final class MCPCoverageTests: XCTestCase {
         // the choice a writer is then left with is to mark a scheduled gap
         // "unnoticed", which empties the word that section exists to
         // protect. The demand is unchanged: a number, not a wish.
-        let planItem = try NSRegularExpression(pattern: #"\b[WM]\d"#)
+        /* Historic plans used W/M units; the recovered Mirror completion
+           roadmap uses U units. All three are numbered execution units, so
+           excluding U5 would make a real plan read as an unnumbered wish. */
+        let planItem = try NSRegularExpression(pattern: #"\b[WMU]\d"#)
         for row in try table(under: Self.gapSection) {
             let name = try backticked(row[0], row: row)
             let disposition = row[3].trimmingCharacters(in: .whitespaces)

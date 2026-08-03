@@ -303,6 +303,10 @@ public enum ActionModel {
         case .control(_, let ctl):
             guard ctl.enabled, !ctl.ref.isEmpty else { return [] }
             return [.axdo(ref: ctl.ref, count: count, mods: mods, text: nil)]
+        case .dialogItem:
+            // No legacy MirrorAction can express the Dialog Manager path.
+            // The object-first NOW driver serves this target directly.
+            return []
         case .scrollbar(_, _, let part, let x, let y):
             // A real press-release at the region: the Control Manager's
             // TrackControl is a tracking loop the wire can't drive (the same

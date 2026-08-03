@@ -37,6 +37,39 @@ final class HitActionTests: XCTestCase {
         XCTAssertEqual(hit.ref, save.ref)
     }
 
+    /// A DITL item and its ControlRecord legitimately occupy the same box.
+    /// The thing drawn on top is the Dialog Manager item, so that identity
+    /// must win the hit too. Date & Time exposed this: the visible Date
+    /// Formats button used to resolve as an unknown structural control.
+    func testDialogItemWinsOverItsOverlappingControlRecord() throws {
+        var scene = try fixtureScene("05-axtree-front-save-dialog")
+        scene.version = 2
+        let index = scene.windows.firstIndex { $0.kind == 2 }!
+        let save = scene.windows[index].controls.first { $0.title == "Save" }!
+        scene.windows[index].dialogItems = [
+            .init(number: 4, title: "Save", rect: save.rect!, enabled: true,
+                  visible: true, ref: save.ref,
+                  semantic: .init(
+                    knowledge: .known, kind: "pushButton", action: "press",
+                    provenance: "guest-ditl", completeness: .complete)),
+        ]
+        let p = center(scene.windows[index], save)
+
+        guard case .dialogItem(let windowID, let item) =
+            HitTester.hitTest(scene, x: p.x, y: p.y) else {
+            return XCTFail("the visible DITL item must win its shared box")
+        }
+        XCTAssertEqual(windowID, scene.windows[index].id)
+        XCTAssertEqual(item.number, 4)
+
+        guard case .dialogItem(let object) = ObjectResolver.object(
+            at: Point(x: p.x, y: p.y), in: scene) else {
+            return XCTFail("the hit must retain Dialog Manager identity")
+        }
+        XCTAssertEqual(object.ref, save.ref)
+        XCTAssertTrue(object.isSemanticallyActionable)
+    }
+
     func testDialogHasNoTitlebar() throws {
         let scene = try fixtureScene("05-axtree-front-save-dialog")
         let dialog = scene.windows.first { $0.kind == 2 }!

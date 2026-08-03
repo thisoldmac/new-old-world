@@ -51,6 +51,9 @@ public enum ObjectResolver {
         case .control(let id, let ctl):
             return control(ctl, in: id, part: nil, scene: scene)
 
+        case .dialogItem(let id, let item):
+            return dialogItem(item, in: id, scene: scene)
+
         case .scrollbar(let id, let ctl, let part, _, _):
             return control(ctl, in: id, part: part, scene: scene)
 
@@ -203,6 +206,20 @@ public enum ObjectResolver {
                               part: part,
                               isSemanticallyActionable: authorized,
                               semanticAction: semantics?.action))
+    }
+
+    private static func dialogItem(_ item: Scene.DialogItem,
+                                   in windowID: String,
+                                   scene: Scene) -> MirrorObject? {
+        guard let win = windowShape(windowID, part: .content, in: scene)
+        else { return nil }
+        return .dialogItem(.init(
+            number: item.number, ref: item.ref, title: item.title,
+            rect: item.rect, isEnabled: item.enabled, window: win,
+            semanticKind: item.semantic.kind,
+            semanticAction: item.semantic.action,
+            isSemanticallyActionable: scene.version >= 2
+                && item.semantic.authorizesAction))
     }
 
     private static func menu(_ index: Int,

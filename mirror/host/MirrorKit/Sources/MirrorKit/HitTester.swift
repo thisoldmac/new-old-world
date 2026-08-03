@@ -31,6 +31,10 @@ public enum HitTester {
         /// A control inside a window (visible controls only — invisible
         /// controls don't exist on the real screen).
         case control(windowID: String, control: Scene.Control)
+        /// A live Dialog Manager item. It stays distinct from the same
+        /// item's ControlRecord: a dialog press is routed through the
+        /// application's Dialog Manager path, not guessed into TrackControl.
+        case dialogItem(windowID: String, item: Scene.DialogItem)
         /// A live scrollbar, resolved to the region under the point — pressing
         /// an arrow, a page gap, or the thumb are three different guest
         /// actions, so the part is the target, not the control. Carries the
@@ -261,6 +265,15 @@ public enum HitTester {
             // window box's top-left pushed below the title bar.
             let cx = x - win.rect.l
             let cy = y - (win.rect.t + titlebar)
+            // DITL items are drawn over the structural ControlRecord chain,
+            // and later items are drawn over earlier ones. Hit in that same
+            // order. Date & Time's Date Formats button occupied the same box
+            // as a low-level record; testing controls first made the visible
+            // button resolve as an unknown control and every click refuse.
+            for item in (win.dialogItems ?? []).reversed()
+            where item.visible && contains(item.rect, cx, cy) {
+                return .dialogItem(windowID: win.id, item: item)
+            }
             for ctl in win.controls where ctl.visible {
                 if let r = ctl.rect, contains(r, cx, cy) {
                     // A live scrollbar resolves to the region pressed: the

@@ -128,7 +128,7 @@ static const char *const d_quit[] = {
 };
 
 /* --- the act plane (P4) ------------------------------------------------
-   Six commands, one mechanism, and one rule that shapes all of them:
+   Seven commands, one mechanism, and one rule that shapes all of them:
    every act names ONE element by an opaque reference this Mac minted,
    revalidated here against a live element before anything is
    dispatched, and none of them can express "whatever is frontmost".
@@ -141,7 +141,7 @@ static const char *const d_quit[] = {
    the application's own path. Never that the window moved or the text
    changed. Read it back to learn that. */
 static const char *const d_elements[] = {
-    "  Mints the references the other five take. Nothing else can:",
+    "  Mints the references the other six take. Nothing else can:",
     "  a reference is short-lived, opaque, and only ever one this Mac",
     "  made for something it saw.",
     "  Defaults to the frontmost application; serialHi/serialLo name",
@@ -178,6 +178,13 @@ static const char *const d_ctlact[] = {
     "  you name, so the application runs its real mouse-down handler.",
     "  Button parts are 10 and 11; a scroll bar's are 20 up, 21 down,",
     "  22 page-up, 23 page-down, and 129 is the indicator.",
+    NULL
+};
+static const char *const d_ditemact[] = {
+    "  Selects one 1-based DITL item through the application's own",
+    "  dialog event path. The item number and observation-minted",
+    "  control reference must still name the same backing object.",
+    "  This is not TrackControl: the Dialog Manager owns the action.",
     NULL
 };
 static const char *const d_menuact[] = {
@@ -466,6 +473,8 @@ const NowCommandDoc kNowCommandDocs[] = {
       "textset <element> <text>", d_textset },
     { "ctlact", 1, "act on one control",
       "ctlact <element> <part>", d_ctlact },
+    { "ditemact", 1, "select one Dialog Manager item",
+      "ditemact <element> <item>", d_ditemact },
     { "menuact", 1, "perform one menu command",
       "menuact <menu> <item> <titleLeft>", d_menuact },
     { "activate", 1, "bring one process forward, by serial number",

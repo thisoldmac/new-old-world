@@ -271,6 +271,7 @@ final class CommandParityTests: XCTestCase {
         "textget": "takes an opaque element reference",
         "textset": "takes an opaque element reference",
         "ctlact": "takes an opaque element reference and a part code",
+        "ditemact": "takes one observed control reference and DITL item",
         "menuact": "the identity check is a coordinate the scene supplies",
         "handle": "takes an opaque reference",
         "observe": "answers with references no person can read or retype",
