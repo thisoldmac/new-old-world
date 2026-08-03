@@ -266,6 +266,13 @@ public enum SceneBuilder {
                 z: z,
                 visible: boolValue(win["visible"]) ?? true,
                 controls: controls,
+                /* Carried, where it used to be discarded. The producer has
+                   always sent one; nothing on this side ever read it, so no
+                   window could be closed, moved or resized from a mirror -
+                   every act addressed by reference needs one, and the
+                   windowID beside it is a rendering key no guest can
+                   resolve. */
+                ref: stringValue(win["ref"]),
                 text: text,
                 items: nil,
                 display: nil))

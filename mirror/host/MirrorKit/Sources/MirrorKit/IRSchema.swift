@@ -204,6 +204,13 @@ public enum IRSchema {
         // the Finder's own live `position of` — measured by clicking a
         // computed point and being told the right file was selected. The
         // element shape is `DesktopItem`, already frozen for the desktop.
+        // 2026-08-02. `windows[].ref` was never held out on purpose - the
+        // producer emits it, the frozen list simply never named it, so the
+        // decoder dropped it silently and every window act was unreachable.
+        // Additive: a consumer that has not heard of it is where we already
+        // were.
+        "windows[].ref",
+
         "windows[].items",
         "windows[].items[].alias",
         "windows[].items[].creator",
@@ -217,7 +224,9 @@ public enum IRSchema {
     ]
 
     /// Declared properties added after the freeze (wire-bearing or not).
-    public static let v1AdditionalProperties: Set<String> = []
+    public static let v1AdditionalProperties: Set<String> = [
+        "Scene.Window.ref",
+    ]
 
     // MARK: - What the gate compares against
 

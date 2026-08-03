@@ -110,6 +110,20 @@ public struct Scene: Codable, Equatable, Sendable {
         /// and action models decide what to do with an invisible window.
         public var visible: Bool
         public var controls: [Control]
+        /// The act-plane reference this window actuates through - the same
+        /// symmetry invariant `Control.ref` carries, one level up.
+        ///
+        /// **The producer has always sent it and this model dropped it**,
+        /// which is why no window has ever been closable, movable or
+        /// resizable from a mirror: every act addressed by reference needs
+        /// one, and a windowID (`psn + title + occurrence`) is a rendering
+        /// key that nothing on a guest can resolve. The archived NOW port
+        /// recorded the same drop one layer further out and stopped there.
+        ///
+        /// Optional because a producer may honestly have none: NOW's own
+        /// Carbon window is not readable at the classic offsets, so it
+        /// reports no reference rather than a fabricated one.
+        public var ref: String? = nil
         /// Dialog TextEdit content (`kind==2` windows only today).
         public var text: TextContent?
         /// Icon-view items for a Finder window, in WINDOW-LOCAL content
@@ -157,6 +171,7 @@ public struct Scene: Codable, Equatable, Sendable {
             case id, app, psn, title, kind, rect, front, z, visible
             case controls, text, display
             case items          // additive in v1 — see the declaration
+            case ref            // additive in v1 — see the declaration
         }
     }
 
