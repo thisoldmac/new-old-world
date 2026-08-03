@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "axprocess.h"
+#include "axwalk.h"
 #include "observe.h"
 #include "peek_read.h"
 #include "scene_walk.h"
@@ -34,7 +35,11 @@ typedef char now_scene_anchor_pin[
 #define kMacToUnixEpochSeconds 2082844800.0
 
 enum {
-    kSceneCollectMaxPsns = kNowSceneMaxProcs
+    kSceneCollectMaxPsns = kNowSceneMaxProcs,
+    /* A window chain longer than this is cyclic or longer than a scene
+       carries; either way what stands is a prefix and the scene says so
+       rather than walking forever inside another process's heap. */
+    kSceneCollectMaxWindowHops = 64
 };
 
 static double captured_at_now(void)
@@ -86,16 +91,36 @@ static void collect_process(NowScene *s, int row,
     int bound;
     short i;
 
-    if (!now_scene_anchor_admits_windows(s->procs[row].anchor)) {
-        return;
-    }
+    /* THE BIND COMES FIRST, and it used to come after a gate that
+       returned before it.
+     *
+     * The gate was peek_read's verdict, taken in the enumeration loop by
+     * now_peek_window_count. When that answered NoWindows - which is not
+     * an error and so publishes no token - this function returned
+     * immediately: no bind, no windows, no controls, and nothing said.
+     *
+     * Measured 2026-08-02, Finder in front: `axsnap` reported the Finder
+     * bind=ok with hasWindows=true, `observe` returned its Desktop
+     * window with a minted ref, and the scene of the same machine at the
+     * same moment contained one window - NOW's own. Two readers in one
+     * binary disagreeing about one process, with the scene taking the
+     * answer from the reader that could not see it.
+     *
+     * So the bind is asked first, and a process that BINDS is walked
+     * from its own context regardless of what the other reader thought.
+     * peek_read's verdict stays - as a report, which is what it is good
+     * at - but it no longer decides whether the walk happens. */
+    bound = !is_self
+        && now_ax_bind_process(psn, &ctx) == kNowPeekReadOk;
+
     /* Self is never walked, and that is a stated limit rather than an
        oversight: NOW is Carbon, so its own window and menu records do
        not sit at the classic offsets the walk reads (axprocess.h says
        the same). Its windows come from the Window Manager and carry no
        record address; its sub-planes stay absent. */
-    bound = !is_self
-        && now_ax_bind_process(psn, &ctx) == kNowPeekReadOk;
+    if (!bound && !now_scene_anchor_admits_windows(s->procs[row].anchor)) {
+        return;
+    }
     if (bound) {
         /* The minting seam is aimed at THIS process before anything is
            read from it, because a reference names its own target: the
@@ -105,8 +130,43 @@ static void collect_process(NowScene *s, int row,
         now_observe_walk_aim(refs, psn, &ctx);
     }
 
-    memset(&list, 0, sizeof list);
-    if (now_peek_windows_for_psn(psn, &list) == kNowPeekReadOk) {
+    /* A BOUND PROCESS IS WALKED FROM ITS OWN CHAIN - the same source
+       `observe` reads, which is the one that could see the Finder when
+       the scene could not. The rect here is the CONTENT region's box,
+       where peek_read reported the STRUCTURE region's; axwalk.h states
+       that difference and it is two fields for two questions, not a
+       disagreement. A consumer drawing a frame wants the structure box,
+       and closing that is its own change - having the windows at all
+       comes first. */
+    if (bound && ctx.window_list != 0) {
+        unsigned long addr = ctx.window_list;
+        int hops;
+
+        now_scene_set_process_stamp(s, row, ctx.stamp_ticks);
+        for (hops = 0; addr != 0 && hops < kSceneCollectMaxWindowHops;
+             ++hops) {
+            NowAxWindow win;
+
+            if (!now_ax_read_window(&ctx.memory, addr, &win)) {
+                /* The chain left the readable zones or failed a check.
+                   What stands is a PREFIX, and saying so is the
+                   difference between a short list and a wrong one. */
+                s->windows_truncated = 1;
+                break;
+            }
+            if (now_scene_add_window(s, row, win.title, win.top, win.left,
+                                     win.bottom, win.right,
+                                     win.visible ? 1 : 0)) {
+                now_scene_walk_window(s, now_scene_last_window(s),
+                                      &ctx.memory, win.address, refs);
+            }
+            addr = win.next_window;
+        }
+        if (addr != 0) {
+            s->windows_truncated = 1;   /* longer than a scene carries */
+        }
+    } else if ((memset(&list, 0, sizeof list), 1)
+               && now_peek_windows_for_psn(psn, &list) == kNowPeekReadOk) {
         /* The stamp arrives WITH the walk, not before it - the reader
            reports when the anchor was captured alongside what it
            found - so the row's age is settled here rather than at add
@@ -125,11 +185,8 @@ static void collect_process(NowScene *s, int row,
                                       w->bottom, w->right, 1)) {
                 continue;
             }
-            if (bound && w->address != 0) {
-                now_scene_walk_window(s, now_scene_last_window(s),
-                                      &ctx.memory, w->address,
-                                      bound ? refs : NULL);
-            }
+            /* The fallback path is self (Carbon, no record address) or
+               an unbound process, so there is no chain to walk into. */
         }
         if (list.more) {
             s->windows_truncated = 1;
