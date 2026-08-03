@@ -5,8 +5,8 @@ import MirrorKit
 /// Port of `attic/web/mirror.js` + `platinum.css`; rendering rules mirror the
 /// guest's `ui_theme.c`: only the front window gets racing stripes and
 /// widgets; dialogs (kind==2) draw modal chrome (no title bar) over the gray
-/// face, and the enabled button with a default-verb title (Save/OK/…) gets
-/// the default ring (approximation — the wire doesn't carry defaultness yet).
+/// face, and only a button the guest explicitly identifies as default gets
+/// the default ring.
 /// Finder's full-screen backdrop window ("Desktop") is skipped: the real one
 /// IS the desktop, so painting it would white out the pattern.
 ///
@@ -643,6 +643,23 @@ public struct SceneRenderer {
         var contentCtx = ctx
         contentCtx.clip(to: Path(content))
 
+        /* Absence is visible. A window whose guest scene carries no text,
+           controls, dialog items, Finder items, display list, or declared
+           visual region is not an empty white application: it is content the
+           Mirror cannot currently express. Key Caps and NOW's own Workshop
+           exposed why silently painting white is a fidelity defect even when
+           their detailed drawing is outside the semantic core. */
+        let hasReportedContent = win.display != nil
+            || win.text != nil
+            || !win.controls.isEmpty
+            || win.dialogItems != nil
+            || win.items != nil
+            || win.island != nil
+        if !hasReportedContent {
+            drawUnavailableVisual(contentCtx, content,
+                                  "Guest content not reported")
+        }
+
         // M3 pixel island: when we hold the guest's real pixels for this
         // content, they ARE the content — the app composited it offscreen and
         // blitted it, so there are no ops to replay and no controls to place
@@ -903,14 +920,38 @@ public struct SceneRenderer {
             drawButton(ctx, ctl, frame,
                        isDefault: item.semantic.isDefault == true)
         default:
-            ctx.stroke(Path(frame), with: .color(Platinum.g3),
-                       style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
-            if !item.title.isEmpty {
-                appText(item.title, ctx, x: frame.minX + 2,
-                        baselineY: frame.midY + 4, color: Platinum.g4,
-                        small: true)
-            }
+            /* `resCtrl`, user items, pictures and other custom drawing are
+               bounded facts even when their pixels are not. A dashed empty
+               box still reads as missing UI; an explicit placeholder keeps
+               the omission honest without covering later semantic items. */
+            drawUnavailableVisual(ctx, frame,
+                                  item.title.isEmpty
+                                    ? "Visual unavailable" : item.title)
         }
+    }
+
+    private func drawUnavailableVisual(_ ctx: GraphicsContext,
+                                       _ frame: CGRect,
+                                       _ label: String) {
+        guard frame.width > 1, frame.height > 1 else { return }
+        var clipped = ctx
+        clipped.clip(to: Path(frame))
+        clipped.fill(Path(frame), with: .color(Platinum.g1))
+        var x = frame.minX - frame.height
+        while x < frame.maxX {
+            var hatch = Path()
+            hatch.move(to: CGPoint(x: x, y: frame.maxY))
+            hatch.addLine(to: CGPoint(x: x + frame.height,
+                                      y: frame.minY))
+            clipped.stroke(hatch, with: .color(Platinum.g2), lineWidth: 1)
+            x += 6
+        }
+        clipped.stroke(Path(frame), with: .color(Platinum.g3),
+                       style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
+        guard frame.width >= 60, frame.height >= 14 else { return }
+        let caption = label.isEmpty ? "Visual unavailable" : label
+        appText(caption, clipped, x: frame.minX + 4,
+                baselineY: frame.midY + 4, color: Platinum.g4, small: true)
     }
 
     private func drawButton(_ ctx: GraphicsContext, _ ctl: MirrorKit.Scene.Control,

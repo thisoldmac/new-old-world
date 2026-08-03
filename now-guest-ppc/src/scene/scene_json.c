@@ -455,8 +455,13 @@ static void put_dialog_items(Sink *k, const NowScene *s,
         put(k, ",\"visible\":");
         put(k, item->visible ? "true" : "false");
         put_ref(k, item->ref);
-        put(k, ",\"semantic\":{\"knowledge\":\"known\",\"kind\":");
-        put_str(k, dialog_kind(item->kind));
+        put(k, ",\"semantic\":{\"knowledge\":");
+        put_str(k, item->kind == kNowSceneSemanticUnknown
+                   ? "unknown" : "known");
+        if (item->kind != kNowSceneSemanticUnknown) {
+            put(k, ",\"kind\":");
+            put_str(k, dialog_kind(item->kind));
+        }
         if (action != NULL) {
             put(k, ",\"action\":");
             put_str(k, action);

@@ -870,6 +870,9 @@ static void test_dialog_items_carry_v2_semantics(void)
         &s, 0, 7, kNowSceneSemanticCheckBox,
         "Set Daylight-Saving Time Automatically", 125, 20, 141, 300,
         1, 1);
+    (void)now_scene_add_dialog_item(
+        &s, 0, 8, kNowSceneSemanticUnknown, "Custom display",
+        20, 20, 40, 180, 1, 1);
 
     check(now_scene_encode(&s, out, sizeof out, NULL) == kNowSceneEncodeOk,
           "the v2 dialog encodes");
@@ -887,6 +890,9 @@ static void test_dialog_items_carry_v2_semantics(void)
     check_present(out, "\"provenance\":\"guest-ditl\"");
     check_present(out,
                   "\"title\":\"Set Daylight-Saving Time Automatically\"");
+    check_present(out, "\"title\":\"Custom display\",\"rect\":");
+    check_present(out, "\"knowledge\":\"unknown\","
+                       "\"provenance\":\"guest-ditl\"");
 
     /* Only the push button had a validated aDefItem match. Unknown is
        absence, not false: a renderer must not erase an unobserved default

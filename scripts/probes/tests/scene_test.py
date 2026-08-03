@@ -254,7 +254,7 @@ def an_unknown_ir_major_is_refused_before_the_body_is_read():
     # The body here is deliberately UNPARSEABLE. If the refusal happens after
     # the decode, the exception's text is a parse error and the gate has moved
     # behind the parse it exists to guard.
-    r = drive(framed(b"\xff\xfe not a document", ir=2))
+    r = drive(framed(b"\xff\xfe not a document", ir=3))
     try:
         r.result()
         FAILURES.append("ir/unknown-major: did not raise")
@@ -263,6 +263,11 @@ def an_unknown_ir_major_is_refused_before_the_body_is_read():
         check("ir/unknown-major-not-parsed", "did not parse" in exc.message,
               False)
         check("ir/unknown-major-local", exc.refused_by_guest, False)
+
+
+def v2_is_a_supported_scene_major():
+    r = drive(framed(body_of(doc(version=2)), ir=2))
+    check("ir/v2-supported", r.result()["version"], 2)
 
 
 def the_two_places_that_carry_the_version_must_agree():

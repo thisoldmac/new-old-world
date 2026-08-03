@@ -1466,7 +1466,7 @@ static void shot_drop(void)
 }
 
 /* --- the scene plane ---------------------------------------------------
-   A scene is Mirror's IR v1 - semantic structure, not pixels - and it is
+   A scene is Mirror's current IR - semantic structure, not pixels - and it is
    a TRANSFER for a measured reason: this producer encodes 9214 bytes for
    24 processes and 32 windows against a 4096-byte control cap, before
    menus or controls exist at all. So it borrows capture's pair
@@ -1497,7 +1497,7 @@ static void scene_fail(long id, unsigned short xfer, const char *reason)
     send_control(json);
 }
 
-/* Walks the machine, encodes IR v1, announces scene.begin and arms the
+/* Walks the machine, encodes the current IR, announces scene.begin and arms the
    incremental sender. Returns immediately - the bytes go out from
    service_transfer, exactly as a capture's do. */
 static void serve_scene(const char *request)

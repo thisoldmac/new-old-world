@@ -497,7 +497,7 @@ class GuestLink:
               timeout: float = SCENE_BUDGET) -> tuple:
         """Ask for one walk of the machine and read it whole.
 
-        Returns `(document, envelope)`: the decoded IR v1 object and what
+        Returns `(document, envelope)`: the decoded supported IR object and what
         `scene.begin` said about the walk. Raises `scene.SceneUnavailable`
         when there is no document — including when the GUEST refused, which
         is a different fact and is flagged on the exception.

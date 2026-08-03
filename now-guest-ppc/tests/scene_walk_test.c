@@ -361,11 +361,6 @@ static void dialog_items_are_guest_semantics(void)
     axfix_put16(&f, kWin + 164, 1);          /* item 2 focused, zero-based */
     axfix_put16(&f, kWin + 168, 6);          /* item 6 is default */
 
-    axfix_put_handle(&f, kItemTextH, kItemText);
-    axfix_put_pstr(&f, kItemText, "9");
-    axfix_put_handle(&f, kStaticTextH, kStaticText);
-    axfix_put_pstr(&f, kStaticText, "Prefix:");
-
     axfix_put32(&f, kWin + 160, kTeH);
     axfix_put_handle(&f, kTeH, kTe);
     axfix_put16(&f, kTe + 32, 0);
@@ -383,9 +378,9 @@ static void dialog_items_are_guest_semantics(void)
           "a validated live DITL opens the dialog-item plane");
     check(s.windows[0].dialog_item_count == 6,
           "every dialog item is preserved, including non-controls");
-    check(s.dialog_items[0].kind == kNowSceneSemanticPopupMenu
-          && strcmp(s.dialog_items[0].value, "Custom") == 0,
-          "a resource control is a popup with the live control value");
+    check(s.dialog_items[0].kind == kNowSceneSemanticUnknown
+          && !s.dialog_items[0].value_known,
+          "a resource control stays unknown without a proven CDEF kind");
     check(s.dialog_items[1].kind == kNowSceneSemanticEditText
           && strcmp(s.dialog_items[1].value, "9") == 0
           && s.dialog_items[1].focused
@@ -393,8 +388,9 @@ static void dialog_items_are_guest_semantics(void)
           && s.dialog_items[1].selection_end == 1,
           "edit text carries focus, value and validated selection");
     check(s.dialog_items[2].kind == kNowSceneSemanticStaticText
-          && strcmp(s.dialog_items[2].value, "Prefix:") == 0,
-          "static text remains a dialog item rather than a fake control");
+          && strcmp(s.dialog_items[2].title, "Old:") == 0
+          && !s.dialog_items[2].value_known,
+          "static text keeps its DITL value without misreading its live handle");
     check(s.dialog_items[3].kind == kNowSceneSemanticCheckBox
           && s.dialog_items[3].state_known && s.dialog_items[3].state_on,
           "checkbox state comes from its matched live ControlRecord");
@@ -403,9 +399,8 @@ static void dialog_items_are_guest_semantics(void)
     check(s.dialog_items[5].default_known
           && s.dialog_items[5].is_default,
           "the DialogRecord's default item reaches the exact button");
-    check(s.dialog_items[0].default_known
-          && !s.dialog_items[0].is_default,
-          "a proven default also proves the other items are not default");
+    check(!s.dialog_items[0].default_known,
+          "defaultness applies to push buttons, not resource controls");
 }
 
 static void malformed_ditl_retracts_the_plane(void)

@@ -154,6 +154,7 @@ static short scene_dialog_kind(short kind)
     case kNowAxDialogEditText: return kNowSceneSemanticEditText;
     case kNowAxDialogIcon: return kNowSceneSemanticIcon;
     case kNowAxDialogPicture: return kNowSceneSemanticPicture;
+    case kNowAxDialogResourceControl: return kNowSceneSemanticUnknown;
     default: return kNowSceneSemanticUserItem;
     }
 }
@@ -210,6 +211,11 @@ static void walk_dialog_items(NowScene *s, int window,
         item = &s->dialog_items[s->dialog_item_count - 1];
         control = control_for_handle(s, window, source.handle);
         if (control != NULL) {
+            /* DITL's disable bit is the resource default. The live
+               ControlRecord is authoritative after creation. Date & Time
+               disables two checkboxes at runtime while their DITL rows stay
+               enabled. */
+            item->enabled = control->enabled;
             if (control->ref[0] != '\0') {
                 strcpy(item->ref, control->ref);
             }
@@ -232,19 +238,14 @@ static void walk_dialog_items(NowScene *s, int window,
                 item->value[sizeof item->value - 1] = '\0';
             }
         }
-        if (cursor.default_item > 0) {
+        if (cursor.default_item > 0
+            && item->kind == kNowSceneSemanticPushButton) {
             item->default_known = 1;
             item->is_default = source.number == cursor.default_item;
         }
         if (item->kind == kNowSceneSemanticEditText) {
             item->focus_known = 1;
             item->focused = source.number == cursor.edit_item;
-            if (source.text_known) {
-                item->value_known = 1;
-                strncpy(item->value, source.title,
-                        sizeof item->value - 1);
-                item->value[sizeof item->value - 1] = '\0';
-            }
             if (item->focused && text != NULL) {
                 item->value_known = 1;
                 strncpy(item->value, text->text, sizeof item->value - 1);
@@ -253,11 +254,6 @@ static void walk_dialog_items(NowScene *s, int window,
                 item->selection_start = (short)text->selection_start;
                 item->selection_end = (short)text->selection_end;
             }
-        } else if (item->kind == kNowSceneSemanticStaticText
-                   && source.text_known) {
-            item->value_known = 1;
-            strncpy(item->value, source.title, sizeof item->value - 1);
-            item->value[sizeof item->value - 1] = '\0';
         }
     }
 }

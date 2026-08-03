@@ -96,4 +96,19 @@ final class IslandRenderTests: XCTestCase {
         // still the clipped island rather than the window face beyond it.
         XCTAssertEqual(pixel(png, x: rect.r - 4, y: rect.b - 4)?.1, 200)
     }
+
+    /// A scene with no content plane is not evidence of a white application.
+    /// Key Caps and NOW's own Workshop both exposed this: their chrome and
+    /// menus arrived while the entire body silently rendered blank. The
+    /// placeholder keeps that missing-content fact visible and bounded.
+    func testAnUnreportedWindowBodyIsNotRenderedAsEmptyWhiteContent() throws {
+        let r = Rect(l: 100, t: 100, r: 500, b: 400)
+        let png = try RenderShot.png(scene: scene([
+            window(title: "Unreported", front: true, z: 0, rect: r,
+                   island: nil),
+        ]))
+        let inside = try XCTUnwrap(pixel(png, x: r.l + 200, y: r.t + 150))
+        XCTAssertFalse(inside.0 == 255 && inside.1 == 255 && inside.2 == 255,
+                       "missing guest content needs a visible placeholder")
+    }
 }

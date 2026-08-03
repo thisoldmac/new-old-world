@@ -118,7 +118,13 @@ enum {
     kNowAxDialogStaticText = 5,
     kNowAxDialogEditText = 6,
     kNowAxDialogIcon = 7,
-    kNowAxDialogPicture = 8
+    kNowAxDialogPicture = 8,
+    /* A `resCtrl` DITL row says only that its Handle names a ControlRecord
+       created from a CNTL resource. It does not say which CDEF owns it.
+       In particular, Date & Time uses these for group boxes and custom
+       date/time displays; treating every one as a popup made both drawing
+       and actuation confidently wrong. */
+    kNowAxDialogResourceControl = 9
 };
 
 enum { kNowAxDialogMaxItems = 96 };
@@ -143,7 +149,6 @@ typedef struct {
     unsigned char visible;
     unsigned char title_len;
     char title[kNowAxTitleMax + 1];
-    int text_known;              /* live text handle validated and read */
 } NowAxDialogItem;
 
 /* Validated primitives, exposed because the menu and text parsers are

@@ -98,7 +98,7 @@ import json
 # the same reason nowwire.py restates the frame constants: a probe is not part
 # of the build, and one that silently followed a changed constant would report
 # numbers from an IR it did not describe.
-SUPPORTED_IR_MAJOR = 1
+SUPPORTED_IR_MAJORS = frozenset((1, 2))
 
 # Plane states. Strings rather than an enum so they land in a run's JSON as
 # themselves.
@@ -214,7 +214,7 @@ class SceneReader:
     def result(self) -> dict:
         """The decoded IR document, or an exception saying why there is none.
 
-        The order here is the consumer duty IR-V1.md states and the contract
+        The order here is the consumer duty IR-V2.md states and the contract
         repeats: **read the version, refuse an unknown major, THEN decode.**
         It is written out step by step rather than tidied, because tidying it
         is precisely how a gate ends up behind the parse it was meant to
@@ -233,13 +233,14 @@ class SceneReader:
 
         # 1. the version, from the ENVELOPE.
         major = self.begin.get("irVersion")
-        if major != SUPPORTED_IR_MAJOR:
+        if major not in SUPPORTED_IR_MAJORS:
             # 2. refuse an unknown major, WITHOUT decoding the body. The whole
             # reason irVersion rides in scene.begin is so this decision can be
             # made before a transfer's bytes are interpreted.
             raise SceneUnavailable(
                 f"scene IR major {major!r}, this harness reads "
-                f"{SUPPORTED_IR_MAJOR}. Refusing before decoding: a document "
+                f"{', '.join(str(v) for v in sorted(SUPPORTED_IR_MAJORS))}. "
+                "Refusing before decoding: a document "
                 "from an IR this probe does not describe would produce "
                 "numbers attributed to a shape nobody checked")
 
@@ -266,7 +267,7 @@ class SceneReader:
         if not isinstance(doc, dict):
             raise SceneUnavailable("the scene document is not an object")
 
-        # "One number, two places" (IR-V1.md): the body carries the same major
+        # "One number, two places" (IR-V2.md): the body carries the same major
         # the envelope announced, and the guest copies both from one constant.
         # A disagreement is not a thing to pick a winner in.
         body_version = doc.get("version")
