@@ -641,7 +641,8 @@ const WorkshopModuleOps *network_module_ops(void)
         network_key,
         network_activate,
         network_idle,
-        network_status_text
+        network_status_text,
+        NULL
     };
 
     return &ops;

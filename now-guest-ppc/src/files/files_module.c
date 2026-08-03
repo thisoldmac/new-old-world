@@ -518,7 +518,8 @@ static const WorkshopModuleOps k_ops = {
     files_key,
     files_activate,
     files_idle,
-    files_status_text
+    files_status_text,
+    NULL
 };
 
 const WorkshopModuleOps *files_module_ops(void)

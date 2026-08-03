@@ -582,3 +582,66 @@ void workshop_resized(void)
     GetWindowPortBounds(g_window, &content);
     InvalWindowRect(g_window, &content);
 }
+
+void workshop_describe_scene(const WorkshopSceneWriter *writer)
+{
+    const WorkshopModuleOps *ops = selected_ops();
+    Rect text;
+    char line[120];
+    char peer[40];
+
+    if (g_window == NULL) {
+        return;
+    }
+
+    workshop_scene_add(writer, kWorkshopScenePlacard, "", &g_lay.header,
+                       g_active);
+    workshop_scene_add(writer, kWorkshopScenePlacard, "", &g_lay.status,
+                       g_active);
+    workshop_sidebar_describe_scene(writer);
+
+    SetRect(&text, (short)(g_lay.header.left + 12),
+            (short)(g_lay.header.top + 4),
+            (short)(g_lay.header.right - 12),
+            (short)(g_lay.header.top + 19));
+    workshop_scene_add(writer, kWorkshopSceneStaticText,
+                       k_module_info[g_selected].title, &text, true);
+    SetRect(&text, (short)(g_lay.header.left + 12),
+            (short)(g_lay.header.top + 19),
+            (short)(g_lay.header.right - 102),
+            (short)(g_lay.header.top + 35));
+    workshop_scene_add(writer, kWorkshopSceneStaticText,
+                       k_module_info[g_selected].blurb, &text, true);
+    if (conn_is_connected()) {
+        conn_peer_label(peer, sizeof peer);
+        SetRect(&text, (short)(g_lay.header.right - 132),
+                (short)(g_lay.header.top + 4),
+                (short)(g_lay.header.right - 12),
+                (short)(g_lay.header.top + 19));
+        workshop_scene_add(writer, kWorkshopSceneStaticText, peer, &text,
+                           true);
+    }
+
+    if (ops != NULL && g_created[g_selected]
+        && ops->describe_scene != NULL) {
+        ops->describe_scene(writer);
+    } else if (ops == NULL || !g_created[g_selected]) {
+        SetRect(&text, (short)(g_lay.body.left + 16),
+                (short)(g_lay.body.top + 16),
+                (short)(g_lay.body.right - 16),
+                (short)(g_lay.body.top + 34));
+        workshop_scene_add(writer, kWorkshopSceneStaticText,
+                           k_module_info[g_selected].pending, &text, true);
+    }
+
+    if (ops != NULL && g_created[g_selected] && ops->status_text != NULL) {
+        ops->status_text(line, sizeof line);
+    } else {
+        strcpy(line, "Nothing to report yet.");
+    }
+    SetRect(&text, (short)(g_lay.status.left + 10),
+            (short)(g_lay.status.top + 3),
+            (short)(g_lay.grow_safe.left - 4),
+            (short)(g_lay.status.top + 19));
+    workshop_scene_add(writer, kWorkshopSceneStaticText, line, &text, true);
+}

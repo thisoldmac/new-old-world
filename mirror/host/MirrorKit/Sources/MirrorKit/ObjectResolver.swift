@@ -60,10 +60,10 @@ public enum ObjectResolver {
         case .menuTitle(let index):
             return menu(index, in: scene).map(MirrorObject.menu)
 
-        case .appMenu:
+        case .appMenu, .menubarBackground:
             /* Opening the switcher is mirror-local UI: nothing is sent
-               to the guest until a row is chosen, and there is no
-               object on the guest that IS the switcher. */
+               to the guest until a row is chosen. Unreported menubar
+               chrome likewise has no guest object that may be invented. */
             return nil
 
         case .appMenuItem(let psn, let name):

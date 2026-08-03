@@ -1079,7 +1079,8 @@ static const WorkshopModuleOps k_ops = {
     census_key,
     census_activate,
     census_idle,
-    census_status_text
+    census_status_text,
+    NULL
 };
 
 const WorkshopModuleOps *census_module_ops(void)

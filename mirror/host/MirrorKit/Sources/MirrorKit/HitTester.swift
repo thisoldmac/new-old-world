@@ -19,6 +19,12 @@ public enum HitTester {
         /// The Application menu at the right of the bar — the app switcher.
         case appMenu
 
+        /// Menubar chrome for which the guest supplied no menu. This is
+        /// deliberately distinct from the desktop: an unreported Apple menu
+        /// must not turn into either a second Application menu or a Finder
+        /// click merely because both occupy the same global x coordinate.
+        case menubarBackground
+
         /// A row in the open Application menu: switching apps is `activate`,
         /// which names a process rather than a place on screen.
         case appMenuItem(psn: String, name: String)
@@ -230,13 +236,20 @@ public enum HitTester {
         // a title's span runs from its left to the next title's left.
         if y >= 0, y < menubarHeight, let menus = scene.menubar?.menus,
            !menus.isEmpty {
-            for (i, menu) in menus.enumerated() where x >= menu.left {
-                let next = i + 1 < menus.count
-                    ? menus[i + 1].left : menu.left + 60
+            for (i, menu) in menus.enumerated()
+            where menu.id != ObjectResolver.applicationMenuID
+                    && x >= menu.left {
+                let next = menus.dropFirst(i + 1)
+                    .filter { $0.id != ObjectResolver.applicationMenuID
+                        && $0.left > menu.left }
+                    .map(\.left).min() ?? (menu.left + 60)
                 if x < next {
                     return .menuTitle(index: i)
                 }
             }
+        }
+        if y >= 0, y < menubarHeight {
+            return .menubarBackground
         }
         // Windows front-to-back; the desktop backdrop and invisible windows
         // aren't on the screen the user sees.

@@ -313,7 +313,8 @@ static const WorkshopModuleOps k_ops = {
     NULL,                             /* no key handling: one control */
     mcp_activate,
     mcp_idle,
-    mcp_status_line
+    mcp_status_line,
+    NULL
 };
 
 const WorkshopModuleOps *mcp_module_ops(void)

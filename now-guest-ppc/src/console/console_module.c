@@ -552,7 +552,8 @@ static const WorkshopModuleOps k_ops = {
     console_key,
     console_activate,
     console_idle,
-    console_status_text
+    console_status_text,
+    NULL
 };
 
 const WorkshopModuleOps *console_module_ops(void)

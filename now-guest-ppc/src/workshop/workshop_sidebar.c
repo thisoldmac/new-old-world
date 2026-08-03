@@ -400,3 +400,55 @@ void workshop_sidebar_set_selection(WorkshopModuleID module)
     InvalWindowRect(g_owner, old_row);
     InvalWindowRect(g_owner, row_rect(module));
 }
+
+void workshop_sidebar_describe_scene(const WorkshopSceneWriter *writer)
+{
+    int i;
+
+    if (g_owner == NULL) {
+        return;
+    }
+    /* The rail's manually drawn structure is still structure.  Carry the
+       panel, selection and text as data; only the 16x16 resource art is an
+       explicit visual placeholder at this stage. */
+    workshop_scene_add(writer, kWorkshopScenePanel, "",
+                       &g_lay.rail_list, true);
+    workshop_scene_add(writer, kWorkshopSceneSeparator, "",
+                       &g_lay.conn_divider, true);
+    for (i = 1; i <= kWorkshopModuleCount; ++i) {
+        WorkshopModuleID module = (WorkshopModuleID)i;
+        const Rect *row = row_rect(module);
+        Rect icon;
+        Rect title;
+        Rect subtitle;
+        const char *detail = k_rows[module].subtitle;
+
+        if (module == g_selected) {
+            workshop_scene_add(writer, kWorkshopSceneSelectionBand, "",
+                               row, true);
+        }
+        SetRect(&icon, (short)(row->left + kIconInset),
+                (short)((row->top + row->bottom - kIconSize) / 2),
+                (short)(row->left + kIconInset + kIconSize),
+                (short)((row->top + row->bottom - kIconSize) / 2
+                        + kIconSize));
+        workshop_scene_add(writer, kWorkshopSceneIcon,
+                           k_rows[module].title, &icon, true);
+
+        SetRect(&title, (short)(icon.right + kTextGap),
+                (short)(row->top + 3), (short)(row->right - 4),
+                (short)(row->top + 16));
+        workshop_scene_add(writer, kWorkshopSceneStaticText,
+                           k_rows[module].title, &title, true);
+
+        if (module == kWorkshopConnection) {
+            detail = g_shown_detail[0] != '\0' ? g_shown_detail : "No link";
+        }
+        if (detail != NULL) {
+            SetRect(&subtitle, title.left, (short)(row->top + 15),
+                    title.right, (short)(row->top + 29));
+            workshop_scene_add(writer, kWorkshopSceneStaticText, detail,
+                               &subtitle, true);
+        }
+    }
+}

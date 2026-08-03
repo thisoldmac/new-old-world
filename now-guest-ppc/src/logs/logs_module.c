@@ -498,7 +498,8 @@ static const WorkshopModuleOps k_ops = {
     logs_key,
     logs_activate,
     logs_idle,
-    logs_status_text
+    logs_status_text,
+    NULL
 };
 
 const WorkshopModuleOps *logs_module_ops(void)

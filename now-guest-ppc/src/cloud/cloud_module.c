@@ -1204,7 +1204,8 @@ static const WorkshopModuleOps k_ops = {
     cloud_key,
     cloud_activate,
     cloud_idle,
-    cloud_status_text
+    cloud_status_text,
+    NULL
 };
 
 const WorkshopModuleOps *cloud_module_ops(void)

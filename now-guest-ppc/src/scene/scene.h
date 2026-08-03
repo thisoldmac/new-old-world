@@ -226,6 +226,8 @@ typedef struct {
        from checkbox; an application asking the Control Manager about its
        OWN control can, and does. */
     char role[16];
+    int semantic_value_known;
+    char semantic_value[kNowSceneTextMax];
     unsigned long handle;         /* internal join to a DITL item */
 } NowSceneControl;
 
@@ -250,7 +252,11 @@ enum {
     kNowSceneSemanticEditText = 6,
     kNowSceneSemanticIcon = 7,
     kNowSceneSemanticPicture = 8,
-    kNowSceneSemanticUserItem = 9
+    kNowSceneSemanticUserItem = 9,
+    kNowSceneSemanticPanel = 10,
+    kNowSceneSemanticPlacard = 11,
+    kNowSceneSemanticSelectionBand = 12,
+    kNowSceneSemanticSeparator = 13
 };
 
 typedef struct {
@@ -272,6 +278,7 @@ typedef struct {
     int focused;
     int default_known;
     int is_default;
+    char provenance[32];
 } NowSceneDialogItem;
 
 typedef struct {
@@ -489,6 +496,8 @@ int now_scene_last_control(const NowScene *s, int window);
 
 void now_scene_set_control_role(NowScene *s, int window, int index,
                                 const char *role);
+void now_scene_set_control_semantic_value(NowScene *s, int window, int index,
+                                          const char *value);
 
 void now_scene_set_control_ref(NowScene *s, int window, int index,
                                const char *ref);
@@ -514,6 +523,8 @@ int now_scene_add_dialog_item(NowScene *s, int window, short number,
                               short kind, const char *title,
                               short t, short l, short b, short r,
                               int enabled, int visible);
+void now_scene_set_dialog_item_provenance(NowScene *s, int window, int index,
+                                          const char *provenance);
 void now_scene_retract_dialog_items(NowScene *s, int window);
 
 /* A window's TextEdit content. `truncated` says the TERec was longer

@@ -1408,7 +1408,8 @@ static const WorkshopModuleOps k_ops = {
     procs_key,
     procs_activate,
     procs_idle,
-    procs_status_text
+    procs_status_text,
+    NULL
 };
 
 const WorkshopModuleOps *processes_module_ops(void)

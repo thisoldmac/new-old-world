@@ -50,14 +50,23 @@ reported value.
 
 Kinds are `pushButton`, `checkBox`, `radioButton`, `popupMenu`, `editText`,
 `staticText`, `scrollBar`, `groupBox`, `progressIndicator`,
-`disclosureTriangle`, `icon`, `picture`, `userItem`, and `unknown`.
+`disclosureTriangle`, `panel`, `placard`, `selectionBand`, `separator`,
+`icon`, `picture`, `userItem`, and `unknown`. The structural kinds let an
+application describe manually drawn layout as data: a renderer does not need
+the guest framebuffer merely to reproduce a sidebar, header, divider, or
+selection. `icon` and `picture` may carry geometry without bitmap content; the
+host then draws an explicit bounded placeholder rather than either inventing
+art or presenting an empty region as faithful.
 
 Actions are `press`, `choose`, `edit`, and `scroll`. Advertising a capability
 does not imply the host executor implements it; an unimplemented action is a
 named refusal, never a fallback button press.
 
-Initial provenance values are `guest-ditl`, `guest-control-manager`, and
-`presentation-inference`. New provenance strings are additive; consumers branch
+Initial provenance values are `guest-ditl`, `guest-control-manager`,
+`guest-workshop-model`, and `presentation-inference`.
+`guest-workshop-model` means the application that owns the custom-drawn surface
+reported its own semantic layout. It is guest state, not a host reconstruction
+and not captured pixels. New provenance strings are additive; consumers branch
 on evidence fields, not on a closed provenance list.
 
 ## Bounds and failure

@@ -676,7 +676,8 @@ static const WorkshopModuleOps k_ops = {
     conn_key,
     conn_activate,
     conn_idle,
-    conn_status_text
+    conn_status_text,
+    NULL
 };
 
 const WorkshopModuleOps *connection_module_ops(void)

@@ -25,5 +25,6 @@ Boolean workshop_sidebar_key(const EventRecord *event);
 void workshop_sidebar_activate(Boolean active);
 void workshop_sidebar_idle(void);
 void workshop_sidebar_set_selection(WorkshopModuleID module);
+void workshop_sidebar_describe_scene(const WorkshopSceneWriter *writer);
 
 #endif /* NOW_WORKSHOP_SIDEBAR_H */

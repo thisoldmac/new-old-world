@@ -645,7 +645,8 @@ static const WorkshopModuleOps k_ops = {
        it is asked, and the counters putstat reads are re-read on the same
        press - so the page costs the event loop nothing between clicks. */
     NULL,
-    diagnostics_status_text
+    diagnostics_status_text,
+    NULL
 };
 
 const WorkshopModuleOps *diagnostics_module_ops(void)

@@ -1653,7 +1653,8 @@ static const WorkshopModuleOps k_ops = {
     software_key,
     software_activate,
     software_idle,
-    software_status_text
+    software_status_text,
+    NULL
 };
 
 const WorkshopModuleOps *software_module_ops(void)

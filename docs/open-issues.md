@@ -14,6 +14,31 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## BUILT, NOT UX-VERIFIED: Workshop reports its manually drawn structure (2026-08-03)
+
+Cycle 19 paired the native Mirror with the authoritative guest and corrected an
+earlier, too-narrow assessment: proper Control Manager chrome did not make the
+Workshop render. Its entire 13-row sidebar, page header, explanatory text,
+status line, and screenshot-page labels were absent. The bounded missing-content
+placeholder was honest, but a nearly empty window is still red.
+
+The Workshop now describes those manually drawn regions through the same scene
+IR as controls: panels, placards, selection bands, separators, static text, and
+bounded icon/picture placeholders carry `guest-workshop-model` provenance. The
+host renders that structure from guest-authored data; it does not read or pipe
+guest pixels. The Screenshots page also reports its current dimensions, depth,
+streaming state, transport disclosure, and rate text. Actual icon and screenshot
+art remains deliberately out of scope and visibly placeholder-backed.
+
+The same patch fixes the application switcher's asymmetric geometry. The real
+guest menu title is correctly right-aligned even though Menu Manager reports its
+nominal `left` as zero; its dropdown must therefore be anchored to the right
+screen edge too. Ordinary menu hit spans now exclude that special menu, and a
+missing Apple menu is synthesized independently. Focused producer and renderer
+tests pass. None of these changes is green until a later cycle clicks the
+right-edge switcher and compares the whole native Mirror frame with a same-moment
+guest capture.
+
 ## BUILT, NOT UX-VERIFIED: proven control roles survive the scene (2026-08-03)
 
 The guest already derived exact roles for NOW-owned Control Manager controls,
@@ -32,6 +57,12 @@ white space. Guest-native tests, the PPC cross-build, and offscreen render
 tests pass. This is **not green** until a later drive clicks and types in the
 native Mirror and compares the whole same-moment frame with the guest capture,
 state, operation, and logs.
+
+Update 2026-08-03, cycle 19: paired native frames confirmed the checkbox is
+box-shaped, the disclosure triangle is visible, and the buttons retain button
+chrome. The Depth popup still omitted its `8-bit` value, and the missing
+Workshop structure made the whole-frame fidelity row fail. Those observations
+are inputs to the patch above, not a green result.
 
 ## BROKEN: the staging reboot dirtied its own fresh clone (2026-08-03)
 

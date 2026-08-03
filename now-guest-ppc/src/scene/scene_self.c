@@ -4,6 +4,7 @@
 
 #include "control_kind.h"
 #include "observe.h"
+#include "workshop_window.h"
 #include <MacWindows.h>
 #include <Menus.h>
 
@@ -60,6 +61,45 @@ static void pascal_to_c(ConstStr255Param src, char *dst, size_t cap)
     dst[len] = '\0';
 }
 
+typedef struct WorkshopWriterContext {
+    NowScene *scene;
+    int window;
+    short next_number;
+} WorkshopWriterContext;
+
+static short workshop_semantic_kind(WorkshopSceneKind kind)
+{
+    switch (kind) {
+    case kWorkshopScenePanel: return kNowSceneSemanticPanel;
+    case kWorkshopScenePlacard: return kNowSceneSemanticPlacard;
+    case kWorkshopSceneSelectionBand: return kNowSceneSemanticSelectionBand;
+    case kWorkshopSceneSeparator: return kNowSceneSemanticSeparator;
+    case kWorkshopSceneStaticText: return kNowSceneSemanticStaticText;
+    case kWorkshopSceneIcon: return kNowSceneSemanticIcon;
+    case kWorkshopScenePicture: return kNowSceneSemanticPicture;
+    default: return kNowSceneSemanticUnknown;
+    }
+}
+
+static void add_workshop_scene_item(void *opaque, WorkshopSceneKind kind,
+                                    const char *title, const Rect *rect,
+                                    Boolean enabled, Boolean visible)
+{
+    WorkshopWriterContext *context = (WorkshopWriterContext *)opaque;
+
+    if (!now_scene_add_dialog_item(
+            context->scene, context->window, context->next_number++,
+            workshop_semantic_kind(kind), title,
+            rect->top, rect->left, rect->bottom, rect->right,
+            enabled ? 1 : 0, visible ? 1 : 0)) {
+        return;
+    }
+    now_scene_set_dialog_item_provenance(
+        context->scene, context->window,
+        context->scene->windows[context->window].dialog_item_count - 1,
+        "guest-workshop-model");
+}
+
 /* One control and everything embedded in it. Depth-first, because that
    is the order they are DRAWN in and therefore the order a hit test
    wants: a control that embeds another is behind it. */
@@ -105,9 +145,27 @@ static void add_control_tree(NowScene *s, int window, ControlRef control,
         {
             int index = now_scene_last_control(s, window);
             char token[64];
+            const char *role = now_control_role(control);
 
-            now_scene_set_control_role(s, window, index,
-                                       now_control_role(control));
+            now_scene_set_control_role(s, window, index, role);
+            now_scene_set_control_handle(s, window, index,
+                                         (unsigned long)control);
+            if (role != NULL && strcmp(role, "popup") == 0) {
+                MenuHandle menu = GetMenuHandle(GetControlMinimum(control));
+                short item = GetControlValue(control);
+
+                if (menu != NULL && item > 0
+                    && item <= CountMenuItems(menu)) {
+                    Str255 value;
+                    char cvalue[64];
+
+                    value[0] = 0;
+                    GetMenuItemText(menu, item, value);
+                    pascal_to_c(value, cvalue, sizeof cvalue);
+                    now_scene_set_control_semantic_value(s, window, index,
+                                                         cvalue);
+                }
+            }
             if (refs != NULL
                     && now_obs_walk_self_control_ref(
                            refs, (unsigned long)owner,
@@ -441,5 +499,13 @@ void now_scene_collect_self(NowScene *s, int row,
              * costs less than the transfer that carries the answer. */
             find_controls_by_probe(s, index, window, &content, &budget,
                                    refs);
-        }    }
+        }
+        if (workshop_is(window)) {
+            WorkshopWriterContext context = { s, index, 1 };
+            WorkshopSceneWriter writer = { &context,
+                                           add_workshop_scene_item };
+
+            workshop_describe_scene(&writer);
+        }
+    }
 }

@@ -316,9 +316,9 @@ public enum ActionModel {
             // The thumb is a drag, not a click.
             guard part != .thumb else { return [] }
             return [.qmpClick(x: x, y: y)]
-        case .appMenu:
+        case .appMenu, .menubarBackground:
             // Opening the switcher is mirror-local UI: nothing is sent to the
-            // guest until a row is chosen.
+            // guest until a row is chosen. Missing menubar content is inert.
             return []
         case .appMenuItem(let psn, _):
             // Switching apps names a PROCESS, not a place on screen.

@@ -790,6 +790,9 @@ static void test_proven_control_roles_keep_their_semantics(void)
                                     1, 1, cases[i].value, 0, 100);
         index = now_scene_last_control(&s, 0);
         now_scene_set_control_role(&s, 0, index, cases[i].role);
+        if (strcmp(cases[i].role, "popup") == 0) {
+            now_scene_set_control_semantic_value(&s, 0, index, "8-bit");
+        }
         check(index >= 0, "the proven control was added");
     }
 
@@ -812,7 +815,7 @@ static void test_proven_control_roles_keep_their_semantics(void)
     check_present(out, "\"kind\":\"radioButton\",\"action\":\"press\","
                        "\"state\":\"off\"");
     check_present(out, "\"kind\":\"popupMenu\",\"action\":\"choose\","
-                       "\"value\":\"2\"");
+                       "\"value\":\"8-bit\"");
     check_present(out, "\"kind\":\"progressIndicator\","
                        "\"value\":\"35\"");
 }
@@ -939,6 +942,11 @@ static void test_dialog_items_carry_v2_semantics(void)
     (void)now_scene_add_dialog_item(
         &s, 0, 8, kNowSceneSemanticUnknown, "Custom display",
         20, 20, 40, 180, 1, 1);
+    (void)now_scene_add_dialog_item(
+        &s, 0, 9, kNowSceneSemanticPanel, "Workshop sidebar",
+        20, 10, 260, 160, 1, 1);
+    now_scene_set_dialog_item_provenance(&s, 0, 8,
+                                         "guest-workshop-model");
 
     check(now_scene_encode(&s, out, sizeof out, NULL) == kNowSceneEncodeOk,
           "the v2 dialog encodes");
@@ -959,6 +967,8 @@ static void test_dialog_items_carry_v2_semantics(void)
     check_present(out, "\"title\":\"Custom display\",\"rect\":");
     check_present(out, "\"knowledge\":\"unknown\","
                        "\"provenance\":\"guest-ditl\"");
+    check_present(out, "\"kind\":\"panel\"");
+    check_present(out, "\"provenance\":\"guest-workshop-model\"");
 
     /* Only the push button had a validated aDefItem match. Unknown is
        absence, not false: a renderer must not erase an unobserved default

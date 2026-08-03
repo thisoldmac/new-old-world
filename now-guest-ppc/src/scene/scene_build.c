@@ -373,6 +373,22 @@ void now_scene_set_control_role(NowScene *s, int window, int index,
     }
 }
 
+void now_scene_set_control_semantic_value(NowScene *s, int window, int index,
+                                          const char *value)
+{
+    NowSceneWindow *w = window_at(s, window);
+    NowSceneControl *c;
+
+    if (w == NULL || !w->controls_present
+        || index < 0 || index >= (int)w->control_count) {
+        return;
+    }
+    c = &s->controls[w->first_control + index];
+    c->semantic_value_known = value != NULL ? 1 : 0;
+    copy_bounded(c->semantic_value, (long)sizeof c->semantic_value,
+                 value != NULL ? value : "");
+}
+
 void now_scene_set_control_ref(NowScene *s, int window, int index,
                                const char *ref)
 {
@@ -462,9 +478,25 @@ int now_scene_add_dialog_item(NowScene *s, int window, short number,
     item->rect.r = r;
     item->enabled = enabled ? 1 : 0;
     item->visible = visible ? 1 : 0;
+    copy_bounded(item->provenance, (long)sizeof item->provenance,
+                 "guest-ditl");
     ++w->dialog_item_count;
     ++s->dialog_item_count;
     return 1;
+}
+
+void now_scene_set_dialog_item_provenance(NowScene *s, int window, int index,
+                                          const char *provenance)
+{
+    NowSceneWindow *w = window_at(s, window);
+
+    if (w == NULL || !w->dialog_items_present
+        || index < 0 || index >= (int)w->dialog_item_count) {
+        return;
+    }
+    copy_bounded(s->dialog_items[w->first_dialog_item + index].provenance,
+                 (long)sizeof s->dialog_items[0].provenance,
+                 provenance != NULL ? provenance : "");
 }
 
 void now_scene_retract_dialog_items(NowScene *s, int window)

@@ -23,5 +23,6 @@ void workshop_idle(void);
 void workshop_resized(void);
 
 void workshop_select_module(WorkshopModuleID module);
+void workshop_describe_scene(const WorkshopSceneWriter *writer);
 
 #endif /* NOW_WORKSHOP_WINDOW_H */

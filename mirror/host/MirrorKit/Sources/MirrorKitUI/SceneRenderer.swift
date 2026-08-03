@@ -52,6 +52,21 @@ public struct SceneRenderer {
             : Platinum.logicalSize
     }
 
+    static func shouldSynthesizeAppleMenu(_ menus: [MirrorKit.Scene.Menu])
+        -> Bool {
+        !menus.contains(where: \.apple)
+    }
+
+    private static func nextOrdinaryMenuLeft(
+        _ menus: [MirrorKit.Scene.Menu], after index: Int
+    ) -> Int {
+        let current = menus[index]
+        return menus.dropFirst(index + 1)
+            .filter { $0.id != ObjectResolver.applicationMenuID
+                && $0.left > current.left }
+            .map(\.left).min() ?? (current.left + 60)
+    }
+
     public func draw(in ctx: GraphicsContext, size: CGSize) {
         // Fit the logical surface into the drawable — the SAME transform the
         // input inverts (FitTransform), so drawn pixels and click targets
@@ -356,8 +371,7 @@ public struct SceneRenderer {
                be drawn from this loop, where left is the position. */
             if menu.id == ObjectResolver.applicationMenuID { continue }
             if i == openMenu {
-                let next = i + 1 < menus.count ? menus[i + 1].left
-                                               : menu.left + 60
+                let next = Self.nextOrdinaryMenuLeft(menus, after: i)
                 ctx.fill(Path(CGRect(x: CGFloat(menu.left) - 6, y: 0,
                                      width: CGFloat(next - menu.left), height: 19)),
                          with: .color(Platinum.selection))
@@ -366,7 +380,7 @@ public struct SceneRenderer {
                           apple: menu.apple, left: CGFloat(menu.left),
                           highlighted: i == openMenu)
         }
-        if menus.isEmpty {
+        if Self.shouldSynthesizeAppleMenu(menus) {
             drawMenuTitle(ctx, "\u{F8FF}", apple: true, left: 10,
                           highlighted: false)
         }
@@ -377,8 +391,12 @@ public struct SceneRenderer {
         let front = scene.apps.first(where: { $0.front })
         let appWidth = CGFloat(HitTester.appMenuWidth(scene))
         let appLeft = bounds.width - appWidth
+        let guestAppMenuOpen = openMenu.flatMap { index in
+            menus.indices.contains(index) ? menus[index].id : nil
+        } == ObjectResolver.applicationMenuID
+        let switcherOpen = appMenuOpen || guestAppMenuOpen
 
-        if appMenuOpen {
+        if switcherOpen {
             ctx.fill(Path(CGRect(x: appLeft, y: 0,
                                  width: appWidth, height: 19)),
                      with: .color(Platinum.selection))
@@ -392,7 +410,7 @@ public struct SceneRenderer {
                          with: .color(Platinum.g3))
             }
             appText(front.name, ctx, x: appLeft + 26, baselineY: 14,
-                    color: appMenuOpen ? Platinum.g0 : Platinum.g6)
+                    color: switcherOpen ? Platinum.g0 : Platinum.g6)
         }
         _ = drawRightAligned(ctx, Self.clockString(scene.capturedAt),
                              at: appLeft - 12)
@@ -476,7 +494,13 @@ public struct SceneRenderer {
         let maxLen = menu.items.map(\.title.count).max() ?? 8
         let width = CGFloat(min(max(120, maxLen * 8 + 56), 320))
         var x = CGFloat(menu.left) - 6
-        if screenWidth > 0, x + width > CGFloat(screenWidth) {
+        if menu.id == ObjectResolver.applicationMenuID, screenWidth > 0 {
+            /* The Menu Manager reports no useful left edge for the
+               right-aligned application menu. Its title geometry comes
+               from the screen edge, so its guest-provided dropdown must
+               use that same anchor rather than the nominal left == 0. */
+            x = Swift.max(0, CGFloat(screenWidth) - width)
+        } else if screenWidth > 0, x + width > CGFloat(screenWidth) {
             x = Swift.max(0, CGFloat(screenWidth) - width)
         }
         return CGRect(x: x,
@@ -933,17 +957,32 @@ public struct SceneRenderer {
     private func drawPopup(_ ctx: GraphicsContext,
                            _ ctl: MirrorKit.Scene.Control,
                            _ frame: CGRect) {
-        ctx.fill(Path(frame), with: .color(Platinum.g1))
-        ctx.stroke(Path(frame),
+        let value = ctl.semantic?.value
+        let labelWidth: CGFloat = if value != nil && !ctl.title.isEmpty {
+            min(frame.width * 0.45,
+                CGFloat(FontBook.app?.width(ctl.title) ?? 0) + 12)
+        } else {
+            0
+        }
+        if labelWidth > 0 {
+            appText(ctl.title, ctx, x: frame.minX,
+                    baselineY: frame.midY + 4,
+                    color: ctl.enabled ? Platinum.g6 : Platinum.g3)
+        }
+        let face = CGRect(x: frame.minX + labelWidth, y: frame.minY,
+                          width: frame.width - labelWidth,
+                          height: frame.height)
+        ctx.fill(Path(face), with: .color(Platinum.g1))
+        ctx.stroke(Path(face),
                    with: .color(ctl.enabled ? Platinum.g6 : Platinum.g3),
                    lineWidth: 1)
-        bevel(ctx, frame.insetBy(dx: 1, dy: 1),
+        bevel(ctx, face.insetBy(dx: 1, dy: 1),
               light: Platinum.g0, shadow: Platinum.g4)
-        appText(ctl.title, ctx, x: frame.minX + 4,
-                baselineY: frame.midY + 4,
+        appText(value ?? ctl.title, ctx, x: face.minX + 4,
+                baselineY: face.midY + 4,
                 color: ctl.enabled ? Platinum.g6 : Platinum.g3)
-        sysCentered("▼", ctx, centerX: frame.maxX - 9,
-                    centerY: frame.midY,
+        sysCentered("▼", ctx, centerX: face.maxX - 9,
+                    centerY: face.midY,
                     color: ctl.enabled ? Platinum.g6 : Platinum.g3)
     }
 
@@ -1011,6 +1050,16 @@ public struct SceneRenderer {
                                              dy: contentOrigin.y)
         guard frame.width > 0, frame.height > 0 else { return }
         switch item.semantic.kind {
+        case "panel":
+            ctx.fill(Path(frame), with: .color(Platinum.g0))
+            ctx.stroke(Path(frame), with: .color(Platinum.g5), lineWidth: 1)
+        case "placard":
+            ctx.fill(Path(frame), with: .color(Platinum.g2))
+            ctx.stroke(Path(frame), with: .color(Platinum.g4), lineWidth: 1)
+        case "selectionBand":
+            ctx.fill(Path(frame), with: .color(Platinum.g3))
+        case "separator":
+            ctx.fill(Path(frame), with: .color(Platinum.g4))
         case "staticText":
             appText(item.semantic.value ?? item.title, ctx, x: frame.minX,
                     baselineY: frame.minY

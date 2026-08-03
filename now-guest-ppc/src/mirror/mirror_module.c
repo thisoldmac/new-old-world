@@ -422,7 +422,8 @@ static const WorkshopModuleOps k_ops = {
     NULL,                             /* no keys: two buttons and text */
     mirror_activate,
     mirror_idle,
-    mirror_status_text
+    mirror_status_text,
+    NULL
 };
 
 const WorkshopModuleOps *mirror_module_ops(void)

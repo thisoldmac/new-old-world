@@ -2,6 +2,7 @@
 #define NOW_WORKSHOP_MODULE_H
 
 #include <Carbon.h>
+#include "workshop_scene.h"
 
 /* The contract between the Workshop window and the modules that live
    inside it. The Workshop owns the WindowRef, the placards, and event
@@ -46,6 +47,9 @@ typedef struct WorkshopModuleOps {
     /* One line for the bottom status placard. Optional; the Workshop
        falls back to a quiet default. */
     void (*status_text)(char *out, long cap);
+    /* Semantic content the module draws by hand. Optional; child controls
+       remain Control Manager facts and must not be repeated here. */
+    void (*describe_scene)(const WorkshopSceneWriter *writer);
 } WorkshopModuleOps;
 
 #endif /* NOW_WORKSHOP_MODULE_H */

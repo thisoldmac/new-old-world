@@ -202,6 +202,36 @@ final class HitActionTests: XCTestCase {
         XCTAssertEqual(index, fileIndex)
     }
 
+    func testRightAlignedApplicationMenuDoesNotCollapseHelpHitBox() throws {
+        var scene = try fixtureScene("04-axtree-front-simpletext-doc")
+        let appMenu = Scene.Menu(
+            title: "", apple: false, left: 0,
+            id: ObjectResolver.applicationMenuID, items: [])
+        scene.menubar?.menus.append(appMenu)
+        let menus = try XCTUnwrap(scene.menubar?.menus)
+        let helpIndex = try XCTUnwrap(
+            menus.lastIndex(where: { $0.title == "Help" }))
+
+        guard case .menuTitle(let index) = HitTester.hitTest(
+            scene, x: menus[helpIndex].left + 5, y: 8) else {
+            return XCTFail("the right-aligned switcher must not swallow Help")
+        }
+        XCTAssertEqual(index, helpIndex)
+    }
+
+    func testApplicationMenuLeftZeroDoesNotStealAppleSlot() throws {
+        var scene = try fixtureScene("04-axtree-front-simpletext-doc")
+        scene.menubar?.menus.removeAll(where: \.apple)
+        let appMenu = Scene.Menu(
+            title: "", apple: false, left: 0,
+            id: ObjectResolver.applicationMenuID, items: [])
+        scene.menubar?.menus.append(appMenu)
+
+        XCTAssertEqual(HitTester.hitTest(scene, x: 10, y: 8),
+                       .menubarBackground)
+        XCTAssertEqual(ActionModel.click(on: .menubarBackground), [])
+    }
+
     func testMenuSelectShortcutlessGoesThroughThePortal() {
         // CHANGED 2026-07-31, deliberately. A shortcut-less item used to fall
         // back to a QMP menu drag; it now goes through the Portal, which answers

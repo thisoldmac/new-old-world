@@ -11,6 +11,35 @@ import AppKit
 @MainActor
 final class IslandRenderTests: XCTestCase {
 
+    func testApplicationMenuDoesNotSuppressMissingAppleMenuFallback() {
+        let appMenu = Scene.Menu(
+            title: "", apple: false, left: 0,
+            id: ObjectResolver.applicationMenuID, items: [])
+        XCTAssertTrue(SceneRenderer.shouldSynthesizeAppleMenu([appMenu]))
+        XCTAssertFalse(SceneRenderer.shouldSynthesizeAppleMenu([
+            .init(title: "", apple: true, left: 10, id: 128, items: []),
+            appMenu,
+        ]))
+    }
+
+    func testGuestApplicationMenuDropdownIsRightAligned() {
+        let appMenu = Scene.Menu(
+            title: "", apple: false, left: 0,
+            id: ObjectResolver.applicationMenuID,
+            items: [
+                .init(title: "Hide New Old World", index: 1,
+                      separator: false, enabled: true, mark: false, cmd: ""),
+                .init(title: "Show All", index: 3,
+                      separator: false, enabled: true, mark: false, cmd: ""),
+            ])
+
+        let frame = SceneRenderer.dropdownFrame(appMenu, screenWidth: 800)
+
+        XCTAssertEqual(frame.maxX, 800)
+        XCTAssertGreaterThan(frame.minX, 0,
+                             "the switcher dropdown must not use left == 0")
+    }
+
     private func window(title: String, front: Bool, z: Int, rect: Rect,
                         island: PixelIsland?) -> Scene.Window {
         Scene.Window(id: "1.\(z)/\(title)#\(z)", app: title, psn: "1.\(z)",
@@ -188,9 +217,12 @@ final class IslandRenderTests: XCTestCase {
         let png = try RenderShot.png(scene: scene([w]))
         let contentX = r.l + 1
         let contentY = r.t + Int(Platinum.contentTop)
-        let squareCorner = try XCTUnwrap(pixel(
-            png, x: contentX + 20, y: contentY + 60))
-        XCTAssertLessThan(squareCorner.0, 200,
+        // The guest value gives this control a separate label at the left;
+        // sample the popup face's right corner, which remains square.
+        let squareCorner = [(178, 60), (179, 60), (178, 61), (179, 61)]
+            .compactMap { pixel(png, x: contentX + $0.0,
+                                y: contentY + $0.1)?.0 }
+        XCTAssertLessThan(try XCTUnwrap(squareCorner.min()), 200,
                           "a popup has a square dark frame, unlike a pill")
     }
 }

@@ -590,6 +590,44 @@ static void shots_status_text(char *out, long cap)
     }
 }
 
+static void shots_describe_scene(const WorkshopSceneWriter *writer)
+{
+    Rect text;
+    char line[96];
+    long ms;
+
+    workshop_scene_add(writer, kWorkshopScenePicture,
+                       "Screenshot preview unavailable", &g_r.well, true);
+    if (!g_have_shot) {
+        SetRect(&text, (short)(g_r.well.left + 16),
+                (short)((g_r.well.top + g_r.well.bottom) / 2 - 8),
+                (short)(g_r.well.right - 16),
+                (short)((g_r.well.top + g_r.well.bottom) / 2 + 8));
+        workshop_scene_add(writer, kWorkshopSceneStaticText,
+                           "No screenshot yet.", &text, true);
+    } else {
+        snprintf(line, sizeof line, "%d x %d, %d-bit", g_last.width,
+                 g_last.height, g_last.depth);
+        workshop_scene_add(writer, kWorkshopSceneStaticText, line,
+                           &g_r.caption, true);
+    }
+
+    workshop_scene_add(writer, kWorkshopSceneStaticText, "Streaming",
+                       &g_r.streaming_label, true);
+    workshop_scene_add(writer, kWorkshopSceneStaticText,
+                       "Advanced Transport", &g_r.tri_label, true);
+    ms = now_wire_stream_interval_ms();
+    if (ms < 0) {
+        snprintf(line, sizeof line, "Rate: Automatic");
+    } else if (ms == 0) {
+        snprintf(line, sizeof line, "Rate: as fast as the wire");
+    } else {
+        snprintf(line, sizeof line, "Rate: at most one per %ld ms", ms);
+    }
+    workshop_scene_add(writer, kWorkshopSceneStaticText, line,
+                       &g_r.rate_line, true);
+}
+
 static const WorkshopModuleOps k_ops = {
     shots_create,
     shots_dispose,
@@ -600,7 +638,8 @@ static const WorkshopModuleOps k_ops = {
     shots_key,
     shots_activate,
     shots_idle,
-    shots_status_text
+    shots_status_text,
+    shots_describe_scene
 };
 
 const WorkshopModuleOps *screenshots_module_ops(void)

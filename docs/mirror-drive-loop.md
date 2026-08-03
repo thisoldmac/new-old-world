@@ -89,6 +89,15 @@ functional, accurate mirror of the guest** — one a person can operate.
    qualified clean-shutdown route, record the setup as blocked and move
    on rather than turning image repair into the UX task. Setup validity is
    not a UX score, but an invalid setup cannot produce one.
+2h. **Identify one host before Computer Use can launch anything.** A disposable
+   verification bundle must have a unique signed `CFBundleIdentifier`, bundle
+   name, and display name before the first Computer Use state call. Target that
+   identifier, never the ambiguous `New Old World` display name, then prove one
+   matching host process owns the selected port. On 2026-08-03, three bundles
+   shared `dev.newoldworld.now`; asking Computer Use for app state auto-launched
+   a registered Desktop copy twice and contaminated port 5250. Do not call
+   `open` again merely because UI discovery found the wrong bundle. Stop only
+   the exact test-host PID, re-identify the survivor, and relaunch once.
 3. **If the mirror cannot do it, that IS the finding.** Record it. Do
    not reach past it to keep the run going.
 4. **Record, don't fix, during a sweep.** No edits, no builds, no

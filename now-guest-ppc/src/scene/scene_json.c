@@ -436,9 +436,13 @@ static void put_controls(Sink *k, const NowScene *s, const NowSceneWindow *w)
                 put_str(k, c->value != 0 ? "on" : "off");
             }
             if (control_has_value(c->role)) {
-                snprintf(value, sizeof value, "%d", (int)c->value);
                 put(k, ",\"value\":");
-                put_str(k, value);
+                if (c->semantic_value_known) {
+                    put_str(k, c->semantic_value);
+                } else {
+                    snprintf(value, sizeof value, "%d", (int)c->value);
+                    put_str(k, value);
+                }
             }
         }
         put(k, ",\"provenance\":\"guest-control-manager\","
@@ -460,6 +464,10 @@ static const char *dialog_kind(short kind)
     case kNowSceneSemanticIcon: return "icon";
     case kNowSceneSemanticPicture: return "picture";
     case kNowSceneSemanticUserItem: return "userItem";
+    case kNowSceneSemanticPanel: return "panel";
+    case kNowSceneSemanticPlacard: return "placard";
+    case kNowSceneSemanticSelectionBand: return "selectionBand";
+    case kNowSceneSemanticSeparator: return "separator";
     default: return "unknown";
     }
 }
@@ -542,8 +550,10 @@ static void put_dialog_items(Sink *k, const NowScene *s,
             put(k, ",\"isDefault\":");
             put(k, item->is_default ? "true" : "false");
         }
-        put(k, ",\"provenance\":\"guest-ditl\","
-               "\"completeness\":\"complete\"}}");
+        put(k, ",\"provenance\":");
+        put_str(k, item->provenance[0] != '\0'
+                   ? item->provenance : "guest-ditl");
+        put(k, ",\"completeness\":\"complete\"}}");
     }
     put(k, "]");
 }

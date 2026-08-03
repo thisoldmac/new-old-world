@@ -598,6 +598,7 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
         case .titlebar(_, let psn, _, _): return "raise \(psn)"
         case .content(_, _, _, let x, let y): return "\(prefix)click \(x),\(y)"
         case .appMenu: return "application menu"
+        case .menubarBackground: return "unreported menu bar"
         case .appMenuItem(_, let name): return "switch to \(name)"
         case .desktopItem(let name, _, _): return "\(prefix)select \(name)"
         case .windowItem(_, let name, _, _): return "\(prefix)select \(name)"
