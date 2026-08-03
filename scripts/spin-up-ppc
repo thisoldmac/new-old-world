@@ -65,7 +65,18 @@ cd "$LAB"                                  # lib.sh and tools/qmp are lab-relati
 
 QEMU="${TIMBOTTU_QEMU:-$LAB/qemu/build/qemu-system-ppc}"
 BASE="${NOW_SPIN_BASE:-$HOME/Lab/Assets/os91-qemu/os91-runner.qcow2}"
-RUN="${NOW_SPIN_RUN:-$NOW/run}"
+# A PER-VM RUN DIRECTORY, for the same reason rule 4 makes the ports
+# per-VM. It was one fixed directory, so a second spin-up in the same
+# checkout bound the same socket NAMES: the newer QEMU took them, every
+# `tools/qmp` afterwards reached the WRONG machine, and when the older
+# one exited it unlinked the files out from under the survivor - which
+# then had no control channel at all and could not even be told to quit.
+# Watched on 2026-08-03; it cost the A-B screendump channel mid-drive.
+#
+# The directory and not just the socket, because the lab's launcher
+# derives qmp-ui.sock from qmp.sock's DIRNAME with a fixed name, and the
+# lab is an instrument this repo does not get to edit.
+RUN="${NOW_SPIN_RUN:-$NOW/run/$$}"
 DISK="$RUN/session.qcow2"
 QMP="$RUN/qmp.sock"
 
