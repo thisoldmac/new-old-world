@@ -193,6 +193,7 @@ add_custom_target(generate_buildstamp ALL
             -DSRC_DIR=${CMAKE_CURRENT_SOURCE_DIR}/src
             -DOUT=${_buildstamp_header}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/buildstamp.cmake
+    BYPRODUCTS ${_buildstamp_header}
     VERBATIM)
 add_dependencies(now-guest-ppc generate_buildstamp)
 

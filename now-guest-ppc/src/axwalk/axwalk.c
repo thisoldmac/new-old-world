@@ -411,6 +411,22 @@ int now_ax_dialog_next(const NowAxMemory *memory, NowAxDialogCursor *cursor,
     item->title[len] = '\0';
     item->title_len = len;
 
+    /* Once a dialog is instantiated, edit/static item handles point at the
+       live text Handle. The bytes embedded in the DITL are only the resource
+       default; SetDialogItemText changes the Handle, not those old bytes.
+       Reading the default made Date & Time's current values arrive blank and
+       its dynamic labels stale while every pointer still looked plausible. */
+    if ((item->kind == kNowAxDialogEditText
+         || item->kind == kNowAxDialogStaticText)
+        && item->handle != 0) {
+        rc = read_pstr_handle(memory, item->handle, item->title,
+                              &item->title_len);
+        if (rc != kNowAxOk) {
+            return rc;
+        }
+        item->text_known = 1;
+    }
+
     /* Item records are word-aligned. Validate the complete variable record
        before committing the cursor so a malformed tail never leaves a
        plausible prefix behind. */

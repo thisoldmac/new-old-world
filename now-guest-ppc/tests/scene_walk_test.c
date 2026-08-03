@@ -65,6 +65,10 @@ enum {
     kText = 0x00103210UL,
     kDitlH = 0x00103400UL,
     kDitl = 0x00103500UL,
+    kItemTextH = 0x00103600UL,
+    kItemText = 0x00103620UL,
+    kStaticTextH = 0x00103700UL,
+    kStaticText = 0x00103720UL,
     kListH = 0x00104000UL,
     kList = 0x00104100UL,
     kMenuH0 = 0x00105000UL,
@@ -348,14 +352,19 @@ static void dialog_items_are_guest_semantics(void)
     axfix_put16(&f, kDitl, 5);              /* six items, count minus one */
     at = kDitl + 2;
     at = put_ditem(&f, at, kCtl1H, 7, 10, 20, 30, 160, "");
-    at = put_ditem(&f, at, 0, 16, 40, 20, 60, 80, "9");
-    at = put_ditem(&f, at, 0, 8, 40, 90, 60, 150, "Prefix:");
+    at = put_ditem(&f, at, kItemTextH, 16, 40, 20, 60, 80, "old");
+    at = put_ditem(&f, at, kStaticTextH, 8, 40, 90, 60, 150, "Old:");
     at = put_ditem(&f, at, kCtl2H, 5, 80, 20, 96, 180,
                    "Leading zero");
     at = put_ditem(&f, at, kCtl3H, 6, 105, 20, 121, 80, "Off");
     (void)put_ditem(&f, at, kCtl4H, 4, 150, 300, 170, 380, "OK");
     axfix_put16(&f, kWin + 164, 1);          /* item 2 focused, zero-based */
     axfix_put16(&f, kWin + 168, 6);          /* item 6 is default */
+
+    axfix_put_handle(&f, kItemTextH, kItemText);
+    axfix_put_pstr(&f, kItemText, "9");
+    axfix_put_handle(&f, kStaticTextH, kStaticText);
+    axfix_put_pstr(&f, kStaticText, "Prefix:");
 
     axfix_put32(&f, kWin + 160, kTeH);
     axfix_put_handle(&f, kTeH, kTe);
@@ -378,6 +387,7 @@ static void dialog_items_are_guest_semantics(void)
           && strcmp(s.dialog_items[0].value, "Custom") == 0,
           "a resource control is a popup with the live control value");
     check(s.dialog_items[1].kind == kNowSceneSemanticEditText
+          && strcmp(s.dialog_items[1].value, "9") == 0
           && s.dialog_items[1].focused
           && s.dialog_items[1].selection_start == 0
           && s.dialog_items[1].selection_end == 1,

@@ -50,14 +50,14 @@ static void begin(NowScene *s)
 /* The version is stamped from one constant, so the body's `version` and
    whatever a serving layer puts in the result's `irVersion` cannot
    diverge without editing source. Upstream's rule, restated at our end
-   (IR-V1.md, "One number, two places"). */
+   (IR-V2.md, "One number, two places"). */
 static void test_version_stamp(void)
 {
     NowScene s;
 
     begin(&s);
     check(s.version == NOW_SCENE_IR_VERSION, "version is the IR constant");
-    check(s.version == 1, "the IR major is 1");
+    check(s.version == 2, "the IR major is 2");
     check(s.latency_ms < 0, "latency is absent until measured");
 }
 
@@ -228,6 +228,24 @@ static void test_z_and_front(void)
           "and no window of a background app is ever front");
     check_str(s.windows[0].id, "0.1/Macintosh HD#0", "upstream's id form");
     check_str(s.windows[2].id, "0.2/untitled#0", "id is per-process indexed");
+}
+
+static void test_front_skips_invisible_windows(void)
+{
+    NowScene s;
+    int front;
+
+    begin(&s);
+    front = now_scene_add_process(&s, 0, 1, "Key Caps", 0, 1,
+                                  kNowSceneAnchorOk, 9999);
+    check(now_scene_add_window(&s, front, "hidden utility",
+                               0, 0, 10, 10, 0), "invisible window");
+    check(now_scene_add_window(&s, front, "Key Caps",
+                               40, 40, 220, 340, 1), "visible window");
+
+    check(!s.windows[0].front, "an invisible window is never front");
+    check(s.windows[1].front,
+          "the front process's first visible window owns active chrome");
 }
 
 /* More machine than the scene carries is a fact about the read, and it
@@ -428,6 +446,7 @@ int main(void)
     test_stale_is_reported_not_refused();
     test_plane_note();
     test_z_and_front();
+    test_front_skips_invisible_windows();
     test_truncation_is_recorded();
     test_bounds();
     test_long_strings();

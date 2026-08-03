@@ -866,6 +866,11 @@ static void test_dialog_items_carry_v2_semantics(void)
     item->default_known = 1;
     item->is_default = 1;
 
+    (void)now_scene_add_dialog_item(
+        &s, 0, 7, kNowSceneSemanticCheckBox,
+        "Set Daylight-Saving Time Automatically", 125, 20, 141, 300,
+        1, 1);
+
     check(now_scene_encode(&s, out, sizeof out, NULL) == kNowSceneEncodeOk,
           "the v2 dialog encodes");
     check_present(out, "\"version\":2");
@@ -880,6 +885,8 @@ static void test_dialog_items_carry_v2_semantics(void)
     check_present(out, "\"kind\":\"radioButton\"");
     check_present(out, "\"isDefault\":true");
     check_present(out, "\"provenance\":\"guest-ditl\"");
+    check_present(out,
+                  "\"title\":\"Set Daylight-Saving Time Automatically\"");
 
     /* Only the push button had a validated aDefItem match. Unknown is
        absence, not false: a renderer must not erase an unobserved default

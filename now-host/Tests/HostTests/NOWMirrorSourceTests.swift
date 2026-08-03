@@ -15,6 +15,50 @@ import NOWAgentIntegration
 @MainActor
 final class NOWMirrorSourceTests: XCTestCase {
 
+    // MARK: - The live window's IR gate
+
+    func testTheLiveMirrorReadsEveryMajorMirrorKitSupports() throws {
+        let fixture = try XCTUnwrap(
+            Bundle.module.url(forResource: "now-scene-ir-v1",
+                              withExtension: "json",
+                              subdirectory: "Fixtures"))
+        let v1 = try Data(contentsOf: fixture)
+        var v2Object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: v1) as? [String: Any])
+        v2Object["version"] = 2
+        let v2 = try JSONSerialization.data(withJSONObject: v2Object)
+
+        XCTAssertEqual(try NOWMirrorSceneDecoder.decode(
+            irVersion: 1, document: v1).version, 1)
+        XCTAssertEqual(try NOWMirrorSceneDecoder.decode(
+            irVersion: 2, document: v2).version, 2,
+            "the actual Mirror window must not retain its own v1-only gate")
+        XCTAssertEqual(NOWMirrorSceneDecoder.readableMajors, "v1, v2")
+    }
+
+    func testTheLiveMirrorGatesBeforeItParses() {
+        let garbage = Data("not a scene".utf8)
+
+        XCTAssertThrowsError(try NOWMirrorSceneDecoder.decode(
+            irVersion: 3, document: garbage)) { error in
+            XCTAssertEqual(error as? IR.CompatError, .unknownMajor(3))
+        }
+    }
+
+    func testTheLiveMirrorRejectsEnvelopeBodyDisagreement() throws {
+        let fixture = try XCTUnwrap(
+            Bundle.module.url(forResource: "now-scene-ir-v1",
+                              withExtension: "json",
+                              subdirectory: "Fixtures"))
+
+        XCTAssertThrowsError(try NOWMirrorSceneDecoder.decode(
+            irVersion: 2, document: Data(contentsOf: fixture))) { error in
+            guard case .malformedScene(let message) = error as? IR.CompatError
+            else { return XCTFail("expected version disagreement, got \(error)") }
+            XCTAssertTrue(message.contains("does not match envelope"))
+        }
+    }
+
     // MARK: - Window acts carry exactly their own geometry
 
     func testEachWindowActCarriesTheKeysItTakes() {

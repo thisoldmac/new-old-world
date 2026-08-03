@@ -181,9 +181,23 @@ int now_scene_add_window(NowScene *s, int proc, const char *title,
     w->rect.r = r;
     w->visible = visible ? 1 : 0;
     w->z = p->window_count;
-    /* Upstream's rule, unchanged: the front window is the frontmost
-       window of the front process, and nothing else is front. */
-    w->front = (p->front && w->z == 0) ? 1 : 0;
+    /* Front means the frontmost VISIBLE window of the front process. An
+       invisible utility window can precede the application's visible one in
+       WindowList; using z==0 made Key Caps own the menu bar while its only
+       visible window drew inactive chrome. */
+    w->front = 0;
+    if (p->front && w->visible) {
+        short i;
+        int visible_before = 0;
+
+        for (i = 0; i < s->window_count; ++i) {
+            if (s->windows[i].proc == proc && s->windows[i].visible) {
+                visible_before = 1;
+                break;
+            }
+        }
+        w->front = visible_before ? 0 : 1;
+    }
     /* "<psn>/<title>#<idx>" - upstream's own id form (SceneBuilder), so
        an id minted here means the same thing as one minted there.
        Formatted through a local: writing into w->id while reading

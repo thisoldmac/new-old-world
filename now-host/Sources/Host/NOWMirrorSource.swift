@@ -3,6 +3,29 @@ import MirrorKit
 import MirrorKitUI
 import NOWAgentIntegration
 
+/// The live NOW adapter uses MirrorKit's compatibility gate rather than
+/// maintaining a second version constant. The duplicate used to accept only
+/// v1 after MirrorKit and the guest had both moved to v2, leaving the real
+/// Mirror window blank while every package-level IR test passed.
+enum NOWMirrorSceneDecoder {
+    static func decode(irVersion: Int,
+                       document: Data) throws -> MirrorKit.Scene {
+        /* Gate BEFORE JSONSerialization. An unknown major paired with garbage
+           must still be an unsupported-major answer, not a parse failure. */
+        try IR.requireSupportedMajor(NSNumber(value: irVersion))
+        let body = try JSONSerialization.jsonObject(with: document)
+        return try MirrorScene.decode(result: [
+            "irVersion": irVersion,
+            "scene": body,
+        ])
+    }
+
+    static var readableMajors: String {
+        IR.supportedMajors.sorted().map { "v\($0)" }
+            .joined(separator: ", ")
+    }
+}
+
 /// **Mirror's live view, driven by NOW's own wire.**
 ///
 /// The one object that makes `LiveMirrorView` — Mirror's gesture routing,
@@ -83,12 +106,6 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private var fetchingIcons = false
     private var actGeneration = 0
 
-    /// The IR major this host can read. Checked against the envelope
-    /// BEFORE the body is parsed, which is the order `NOWSceneCodec`
-    /// exists to enforce — a decoder that parses first has already
-    /// trusted a document it has not agreed to.
-    private static let readableIRMajor = 1
-
     init(listener: GuestListener,
          act: AgentIntegrationActControl,
          interval: TimeInterval = 0.75) {
@@ -139,26 +156,25 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     }
 
     private func accept(_ delivery: GuestListener.SceneDelivery) {
-        guard delivery.irVersion == Self.readableIRMajor else {
-            ambient = "this Mac speaks scene IR v\(delivery.irVersion); "
-                + "this build reads v\(Self.readableIRMajor)"
-            return
-        }
         do {
-            var decoded = try JSONDecoder().decode(
-                MirrorKit.Scene.self, from: delivery.document)
+            var decoded = try NOWMirrorSceneDecoder.decode(
+                irVersion: delivery.irVersion, document: delivery.document)
             decoded = withIcons(decoded)
             scene = decoded
             refreshIconsIfStale(decoded)
             ambient = "\(decoded.windows.count) windows · walk "
                 + "\(delivery.walkMs.map { "\($0)ms" } ?? "?") · transfer "
                 + "\(delivery.transferMs)ms"
+        } catch IR.CompatError.unknownMajor {
+            ambient = "this Mac speaks scene IR v\(delivery.irVersion); "
+                + "this build reads \(NOWMirrorSceneDecoder.readableMajors)"
         } catch {
             /* Named rather than swallowed: this is the seam that has cost
                this project the most, and a mirror that silently keeps
                drawing a stale scene while the producer emits something
                unreadable is the failure wearing its best clothes. */
-            ambient = "the scene did not decode as IR v1: \(error)"
+            ambient = "the scene did not decode as IR "
+                + "v\(delivery.irVersion): \(error)"
         }
     }
 

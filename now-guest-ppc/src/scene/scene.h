@@ -152,6 +152,11 @@ enum {
     kNowSceneMenuTitleMax = 32,
     kNowSceneItemTitleMax = 40,
     kNowSceneCtlTitleMax = 32,
+    /* Dialog text is human-facing state, not a compact control label. The
+       previous 31-character payload cut "Set Daylight-Saving Time
+       Automatically" mid-word in the Mirror while the guest showed it in
+       full. This matches the encoder's existing longest-string bound. */
+    kNowSceneDialogTitleMax = 160,
     /* Deliberately short. It bounds the encoder's escape buffer (a
        MacRoman byte can become six of `\uXXXX`), which lives on the
        stack of a leaf function called from the event loop; a dialog's
@@ -251,7 +256,7 @@ enum {
 typedef struct {
     short number;
     short kind;
-    char title[kNowSceneCtlTitleMax];
+    char title[kNowSceneDialogTitleMax];
     NowSceneRect rect;
     int enabled;
     int visible;

@@ -239,6 +239,12 @@ static void walk_dialog_items(NowScene *s, int window,
         if (item->kind == kNowSceneSemanticEditText) {
             item->focus_known = 1;
             item->focused = source.number == cursor.edit_item;
+            if (source.text_known) {
+                item->value_known = 1;
+                strncpy(item->value, source.title,
+                        sizeof item->value - 1);
+                item->value[sizeof item->value - 1] = '\0';
+            }
             if (item->focused && text != NULL) {
                 item->value_known = 1;
                 strncpy(item->value, text->text, sizeof item->value - 1);
@@ -247,7 +253,8 @@ static void walk_dialog_items(NowScene *s, int window,
                 item->selection_start = (short)text->selection_start;
                 item->selection_end = (short)text->selection_end;
             }
-        } else if (item->kind == kNowSceneSemanticStaticText) {
+        } else if (item->kind == kNowSceneSemanticStaticText
+                   && source.text_known) {
             item->value_known = 1;
             strncpy(item->value, source.title, sizeof item->value - 1);
             item->value[sizeof item->value - 1] = '\0';

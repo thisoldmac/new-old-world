@@ -143,6 +143,7 @@ typedef struct {
     unsigned char visible;
     unsigned char title_len;
     char title[kNowAxTitleMax + 1];
+    int text_known;              /* live text handle validated and read */
 } NowAxDialogItem;
 
 /* Validated primitives, exposed because the menu and text parsers are
