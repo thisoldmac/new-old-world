@@ -84,11 +84,36 @@ final class NOWMirrorWindow: NSObject, NSWindowDelegate {
                     w.contentAspectRatio = NSSize(width: s.w, height: s.h)
                     w.contentMinSize = NSSize(width: CGFloat(s.w) / 2,
                                               height: CGFloat(s.h) / 2)
+                    Self.ensureOnScreen(w)
                     return
                 }
                 try? await Task.sleep(nanoseconds: 250_000_000)
             }
         }
+    }
+
+    /// **A window a person cannot see is a window that does not work.**
+    ///
+    /// `setFrameAutosaveName` restores where this was last left, and
+    /// resizing it to the guest's screen moves its corners - so a frame
+    /// that was fine at one size can end up past the edge of every
+    /// display. Seen once during this build: "Open Mirror" appeared to do
+    /// nothing at all, and the window was live, key, polling and drawing
+    /// somewhere nobody could look at.
+    ///
+    /// So after any programmatic resize, if the title bar is not
+    /// reachable on some screen, it comes back to the middle of one.
+    private static func ensureOnScreen(_ w: NSWindow) {
+        let frame = w.frame
+        /* The title bar specifically: a window whose body overlaps a
+           screen but whose bar does not cannot be moved by hand, which
+           is the same problem wearing a hat. */
+        let bar = NSRect(x: frame.minX, y: frame.maxY - 24,
+                         width: frame.width, height: 24)
+        let reachable = NSScreen.screens.contains {
+            $0.visibleFrame.intersects(bar)
+        }
+        if !reachable { w.center() }
     }
 
     func close() {
