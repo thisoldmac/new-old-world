@@ -187,6 +187,82 @@ static int usable(const NowObsWalk *walk, char *out, size_t cap)
            && out != NULL && cap >= kNowObsTokenMax;
 }
 
+/* --- minting for THIS application ---------------------------------------
+
+   The walk above is written for a foreign process: `usable` demands a
+   memory reader and `locate_window` reads a WindowRecord through it. A
+   self walk has neither, and correctly so - nothing on that path reads
+   memory, because the Toolbox answers directly.
+
+   So the refusal came before the work: every self window and every self
+   control was refused a reference, which is why NOW's own window could
+   not be moved, resized, zoomed or closed from the mirror, and why a
+   click on its own buttons did nothing. Watched 2026-08-03.
+
+   The identity these build is the same shape a foreign one has - psn,
+   process fingerprint, address - minus the occurrence bookkeeping, which
+   exists to disambiguate two windows a walk found by title. There is no
+   ambiguity here: a WindowRef IS the identity, and the resolver proves
+   it live by asking whether it is still in this application's window
+   list. */
+
+int now_obs_walk_self_window_ref(NowObsWalk *walk, unsigned long window,
+                                 char *out, size_t cap)
+{
+    NowObsIdentity id;
+
+    if (walk == NULL || walk->registry == NULL || out == NULL
+            || cap < kNowObsTokenMax || window == 0) {
+        if (walk != NULL) {
+            walk->refused++;
+        }
+        return 0;
+    }
+    out[0] = '\0';
+    identity_head(walk, &id);
+    id.window_address = window;
+    id.control_handle = 0;
+    id.node_fingerprint = now_ax_ref_fingerprint(id.psn_hi, id.psn_lo,
+                                                 window, 0UL);
+    id.ref.node_fingerprint = id.node_fingerprint;
+    if (!now_obs_intern(walk->registry, kNowObsKindWindow, &id, out, cap)) {
+        out[0] = '\0';
+        walk->refused++;
+        return 0;
+    }
+    walk->granted++;
+    return 1;
+}
+
+int now_obs_walk_self_control_ref(NowObsWalk *walk, unsigned long window,
+                                  unsigned long control, char *out,
+                                  size_t cap)
+{
+    NowObsIdentity id;
+
+    if (walk == NULL || walk->registry == NULL || out == NULL
+            || cap < kNowObsTokenMax || control == 0) {
+        if (walk != NULL) {
+            walk->refused++;
+        }
+        return 0;
+    }
+    out[0] = '\0';
+    identity_head(walk, &id);
+    id.window_address = window;
+    id.control_handle = control;
+    id.node_fingerprint = now_ax_ref_fingerprint(id.psn_hi, id.psn_lo,
+                                                 window, control);
+    id.ref.node_fingerprint = id.node_fingerprint;
+    if (!now_obs_intern(walk->registry, kNowObsKindElement, &id, out, cap)) {
+        out[0] = '\0';
+        walk->refused++;
+        return 0;
+    }
+    walk->granted++;
+    return 1;
+}
+
 int now_obs_walk_window_ref(NowObsWalk *walk, unsigned long window_address,
                             char *out, size_t cap)
 {

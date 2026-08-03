@@ -85,6 +85,15 @@ void now_obs_walk_end(NowObsWalk *walk);
    registry, no seam, an address not on this process's chain, a chain
    that failed validation or pointed back at itself, an element past the
    resolver's own bounds, or a registry with no slot left this walk. */
+/* Mint for a window or control of THIS application. The foreign path
+   below refuses without a memory reader and a self walk has none; see
+   obsmint.c for what that refusal cost. */
+int now_obs_walk_self_window_ref(NowObsWalk *walk, unsigned long window,
+                                 char *out, size_t cap);
+int now_obs_walk_self_control_ref(NowObsWalk *walk, unsigned long window,
+                                  unsigned long control, char *out,
+                                  size_t cap);
+
 int now_obs_walk_window_ref(NowObsWalk *walk, unsigned long window_address,
                             char *out, size_t cap);
 int now_obs_walk_control_ref(NowObsWalk *walk, unsigned long window_address,

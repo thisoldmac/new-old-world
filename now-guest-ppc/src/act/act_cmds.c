@@ -315,6 +315,58 @@ static int act_target_is_self(const ProcessSerialNumber *psn)
     return same ? 1 : 0;
 }
 
+/* A part press on one of THIS application's controls. Same argument as
+   the window acts above: the plane exists to reach a foreign process,
+   and the Control Manager is right here.
+ *
+ * `TrackControl` with no action proc is what a real click does when the
+ * mouse goes down and up without moving - it hilites the part, waits,
+ * and returns the part if the release was still inside. The application
+ * then does whatever it does with that part, in its own event handling,
+ * because we call its own action through the Control Manager rather
+ * than pretending a click happened somewhere. */
+static void self_control_act(ControlRef control, short part, long id,
+                             char *out, long cap)
+{
+    ActRows rows;
+    Rect    box;
+    Point   where;
+    short   hit;
+    char    number[32];
+
+    if (control == NULL) {
+        reply_error(out, cap, id, "bad-request",
+                    "that control is no longer this application's");
+        return;
+    }
+    GetControlBounds(control, &box);
+    where.h = (short)((box.left + box.right) / 2);
+    where.v = (short)((box.top + box.bottom) / 2);
+    /* A scroll bar part is pressed where that PART is, not at the
+       control's centre - the centre of a scroll bar is its track. */
+    switch (part) {
+    case kControlUpButtonPart:   where.v = (short)(box.top + 4); break;
+    case kControlDownButtonPart: where.v = (short)(box.bottom - 4); break;
+    case kControlPageUpPart:     where.v = (short)(box.top + 20); break;
+    case kControlPageDownPart:   where.v = (short)(box.bottom - 20); break;
+    default: break;
+    }
+
+    hit = TrackControl(control, where, NULL);
+
+    rows_reset(&rows);
+    snprintf(number, sizeof number, "%d", (int)part);
+    row_add(&rows, "Part", number);
+    snprintf(number, sizeof number, "%d", (int)hit);
+    row_add(&rows, "Tracked", number);
+    row_add(&rows, "Dispatch", hit != 0 ? "performed" : "not-taken");
+    row_add(&rows, "Mechanism",
+            "TrackControl, called directly in this process");
+    snprintf(number, sizeof number, "%d", (int)GetControlValue(control));
+    row_add(&rows, "Re-read value", number);
+    reply_rows(out, cap, id, "ctlact", &rows);
+}
+
 static void self_window_act(WindowRef window, const NowActWinArgs *args,
                             int zoom_dir, long id, char *out, long cap)
 {
@@ -713,6 +765,11 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
     if (handle.identity.control_handle == 0) {
         reply_error(out, cap, id, "bad-request",
                     "that reference names a text element, not a control");
+        return;
+    }
+    if (act_target_is_self(&handle.psn)) {
+        self_control_act((ControlRef)handle.identity.control_handle,
+                         (short)part, id, out, cap);
         return;
     }
     cell = now_act_cell();

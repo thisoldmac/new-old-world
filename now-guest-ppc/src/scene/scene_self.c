@@ -63,7 +63,8 @@ static void pascal_to_c(ConstStr255Param src, char *dst, size_t cap)
    is the order they are DRAWN in and therefore the order a hit test
    wants: a control that embeds another is behind it. */
 static void add_control_tree(NowScene *s, int window, ControlRef control,
-                             const Rect *content, int depth, int *budget)
+                             const Rect *content, int depth, int *budget,
+                             NowObsWalk *refs, WindowRef owner)
 {
     Rect box;
     Str255 title;
@@ -100,9 +101,19 @@ static void add_control_tree(NowScene *s, int window, ControlRef control,
                               GetControlValue(control),
                               GetControlMinimum(control),
                               GetControlMaximum(control))) {
-        now_scene_set_control_role(s, window,
-                                   now_scene_last_control(s, window),
-                                   now_control_role(control));
+        {
+            int index = now_scene_last_control(s, window);
+            char token[64];
+
+            now_scene_set_control_role(s, window, index,
+                                       now_control_role(control));
+            if (refs != NULL
+                    && now_obs_walk_self_control_ref(
+                           refs, (unsigned long)owner,
+                           (unsigned long)control, token, sizeof token)) {
+                now_scene_set_control_ref(s, window, index, token);
+            }
+        }
         --*budget;
     }
 
@@ -113,7 +124,8 @@ static void add_control_tree(NowScene *s, int window, ControlRef control,
         ControlRef child = NULL;
 
         if (GetIndexedSubControl(control, i, &child) == noErr) {
-            add_control_tree(s, window, child, content, depth + 1, budget);
+            add_control_tree(s, window, child, content, depth + 1,
+                             budget, refs, owner);
         }
     }
 }
@@ -126,7 +138,8 @@ static void add_control_tree(NowScene *s, int window, ControlRef control,
    deduplicated by ControlRef, which is the identity the Control Manager
    itself uses. */
 static void find_controls_by_probe(NowScene *s, int index, WindowRef window,
-                                   const Rect *content, int *budget)
+                                   const Rect *content, int *budget,
+                                   NowObsWalk *refs)
 {
     enum { kStep = 10, kSeenMax = 64 };
     ControlRef seen[kSeenMax];
@@ -165,7 +178,8 @@ static void find_controls_by_probe(NowScene *s, int index, WindowRef window,
             if (seen_count < kSeenMax) {
                 seen[seen_count++] = hit;
             }
-            add_control_tree(s, index, hit, content, kSelfMaxDepth, budget);
+            add_control_tree(s, index, hit, content, kSelfMaxDepth,
+                             budget, refs, window);
         }
     }
 
@@ -224,8 +238,8 @@ void now_scene_collect_self(NowScene *s, int row,
         if (refs != NULL) {
             char token[64];
 
-            if (now_obs_walk_window_ref(refs, (unsigned long)window,
-                                        token, sizeof token)) {
+            if (now_obs_walk_self_window_ref(refs, (unsigned long)window,
+                                             token, sizeof token)) {
                 now_scene_set_window_ref(s, index, token);
             }
         }
@@ -247,7 +261,7 @@ void now_scene_collect_self(NowScene *s, int row,
 
                     if (GetIndexedSubControl(root, i, &child) == noErr) {
                         add_control_tree(s, index, child, &content, 0,
-                                         &budget);
+                                         &budget, refs, window);
                     }
                 }
             }
@@ -274,6 +288,7 @@ void now_scene_collect_self(NowScene *s, int row,
              * it often enough to meet every control wider than the step.
              * It is O(points x controls) of rect tests on one window and
              * costs less than the transfer that carries the answer. */
-            find_controls_by_probe(s, index, window, &content, &budget);
+            find_controls_by_probe(s, index, window, &content, &budget,
+                                   refs);
         }    }
 }
