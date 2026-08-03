@@ -132,3 +132,39 @@ matches what the machine is actually showing. Pixels and islands are
 optional throughout; nothing may be load-bearing on them.
 
 Stop when that is true, not when the findings list is empty.
+
+---
+
+## 6. This is a loop, not a checklist
+
+The phases are a **cycle**. Finishing Verify means starting the next
+Sweep, immediately, in the same session. Every limit in this document
+bounds one PASS; none of them ends the work.
+
+**These are not stopping conditions.** Each has ended a session before,
+and each is wrong:
+
+- the sweep budget was reached — that ends the *sweep*, and triage
+  begins
+- the patch limit was reached — the rest of the findings wait for the
+  next cycle, which starts now
+- findings were recorded and written up — recording is not fixing
+- a rung went green — the next rung starts
+- an application was polished — the next application starts
+- `scripts/test-all` passed — a green gate is not a working mirror
+- the session has gone on a long time, or a lot was accomplished
+- there is a good report to give — **give it and keep going**
+
+**The only real stops** are: the §5 definition is met; something needs
+authorisation that only Michelle can give (metal, a destructive act,
+landing on `main`); or the tooling is broken in a way that cannot be
+fixed from here — and then say so plainly, with the evidence, rather
+than trailing off.
+
+**Whatever the reason for a pause, leave it working.** The VM up, the
+app running and connected, the mirror open, the tree clean and the gate
+green. A pause with a broken mirror is worse than no pause, and "one new
+feature and three new regressions" is the outcome this whole document
+exists to prevent.
+
+Report progress as often as is useful. Reporting is not stopping.
