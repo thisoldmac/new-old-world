@@ -25,8 +25,29 @@ bundle="$output_root/New Old World.app"
 binary="$scratch/debug/Host"
 
 swift build --package-path "$repo_root/now-host" --scratch-path "$scratch"
-mkdir -p "$bundle/Contents/MacOS"
+mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 cp "$binary" "$bundle/Contents/MacOS/Host"
+
+# SwiftPM puts each target's resources in its own .bundle BESIDE the
+# binary, and `Bundle.module` traps -- not returns nil, traps -- when it
+# cannot find its own. Copying only the executable therefore produced an
+# app that launched, connected, drew its settings page, and then died the
+# instant anything asked for a resource: on 2026-08-03 that was the first
+# desktop tile, so Open Mirror killed the app every time while every test
+# stayed green. Ship the bundles with it. Test bundles are not resources.
+found=0
+for res in "$scratch"/debug/*.bundle; do
+    [ -e "$res" ] || continue
+    case "$res" in *Tests.bundle) continue ;; esac
+    rm -rf "$bundle/Contents/Resources/$(basename "$res")"
+    cp -R "$res" "$bundle/Contents/Resources/"
+    found=$((found + 1))
+done
+if [ "$found" -eq 0 ]; then
+    echo "no resource bundles found beside the binary - refusing to stage" \
+         "an app that would trap on its first resource" >&2
+    exit 70
+fi
 
 sed \
     -e 's/@DISPLAY_NAME@/New Old World/g' \

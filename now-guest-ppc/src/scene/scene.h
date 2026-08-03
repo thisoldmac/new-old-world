@@ -102,6 +102,14 @@ enum {
     kNowScenePlaneMax = 64,
     kNowSceneIdMax = kNowSceneNameMax + kNowSceneTitleMax + 16,
 
+    /* A Platinum scroll bar's thickness, and the only number that
+       separates one from a push button by shape alone: a scroll bar is
+       16 across its short side, a standard push button 20. Used by the
+       role guess in scene_json.c, which has to tell them apart with no
+       kind field to read. The old threshold was 20 and so called every
+       button a scroll bar. */
+    kNowScrollBarThickness = 16,
+
     /* THE TITLE BAR THE IR'S TWO RECTANGLES ARE RELATED BY.
      *
      * IR v1's `windows[].rect` is a BOX: the content region grown upward

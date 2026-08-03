@@ -284,12 +284,59 @@ static void put_ref(Sink *k, const char *ref)
     put_str(k, ref);
 }
 
+/* What a walk of a foreign ControlRecord may honestly say about KIND.
+ *
+ * It may not say much: the record holds no kind field, and its defProc
+ * is a Handle whose resource identity we cannot ask for from outside the
+ * owning application. So this is a guess, and the job is to make it a
+ * guess that fails SAFELY - towards "some control", which draws as a
+ * plain control and actuates as a button press, rather than towards
+ * "scroll bar", which draws as a track and actuates as a page-scroll.
+ *
+ * The rule it replaces was `min != max ? scrollbar : control`, and it
+ * was measured wrong on 2026-08-03 by reading the guest's own memory
+ * through the emulator monitor. Mail's alert buttons - contrlTitle
+ * 'Yes', 'No', 'Set Up Now' at ControlRecord+40 - each carry min 0 and
+ * max 1, so every one of them was called a scroll bar. They drew as
+ * three tracks with no labels, and a click on them sent a page-scroll
+ * part, so the button never fired: the mirror could not dismiss the
+ * alert, and the alert held the whole machine. A control drawn as the
+ * wrong thing is a control that cannot be driven.
+ *
+ * What is left to reason from is the title and the shape:
+ *
+ *   - A titled control is not a scroll bar. Scroll bars carry no title,
+ *     and everything that does - buttons, checkboxes, radio buttons,
+ *     popups - wants its title drawn.
+ *   - An untitled control that is THIN and LONG is a scroll bar. Thin
+ *     means within a pixel or two of 16, which is the Platinum scroll
+ *     bar's thickness and has been since System 7; a push button is 20
+ *     high and wider than it is tall, which is exactly what the old
+ *     20-pixel threshold could not separate.
+ *
+ * Anything else says `control` and lets the host decide what to draw
+ * from the title it now gets to keep. */
+static const char *guess_role(const NowSceneControl *c)
+{
+    short width = (short)(c->rect.r - c->rect.l);
+    short height = (short)(c->rect.b - c->rect.t);
+    short thin = width < height ? width : height;
+    short along = width < height ? height : width;
+
+    if (c->title[0] != '\0') {
+        return "control";
+    }
+    if (thin > 0 && thin <= kNowScrollBarThickness && along >= 3 * thin) {
+        return "scrollbar";
+    }
+    return "control";
+}
+
 /* A window's controls, and only for a window whose whole chain was
-   walked. `role` and `checked` are absent throughout: the walk reads a
-   ControlRecord, not its defProc, so it cannot say what KIND of control
-   this is, and `checked` is meaningless without that. `ref` is present
-   for every control the reference layer could name and absent for the
-   rest. */
+   walked. `checked` is absent throughout: the walk reads a
+   ControlRecord, not its defProc, so it cannot say whether a control
+   that HAS a checked state is in it. `ref` is present for every control
+   the reference layer could name and absent for the rest. */
 static void put_controls(Sink *k, const NowScene *s, const NowSceneWindow *w)
 {
     short i;
@@ -323,9 +370,7 @@ static void put_controls(Sink *k, const NowScene *s, const NowSceneWindow *w)
          * better; an application asking the Control Manager about its own
          * control can, and scene_self.c does. */
         put(k, i > 0 ? ",{\"role\":" : "{\"role\":");
-        put_str(k, c->role[0] != '\0' ? c->role
-                                       : (c->min != c->max ? "scrollbar"
-                                                           : "control"));
+        put_str(k, c->role[0] != '\0' ? c->role : guess_role(c));
         put(k, ",\"title\":");
         put_str(k, c->title);
         snprintf(rect, sizeof rect, ",\"rect\":{\"l\":%d,\"t\":%d,\"r\":%d,"

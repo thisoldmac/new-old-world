@@ -751,8 +751,89 @@ static void test_a_control_without_a_reference_still_carries_the_key(void)
     check_present(out, "\"ref\":\"\"");
 }
 
+/* The role a walk may claim, pinned against a MEASUREMENT.
+ *
+ * These four controls are Mail's "Is your computer set up for Internet
+ * access?" alert, read out of the running guest's memory on 2026-08-03
+ * by walking WindowList through the emulator's monitor: three push
+ * buttons at ControlRecord+40 titled 'Yes', 'No' and 'Set Up Now', each
+ * 20 pixels high with min 0 and max 1, beside a real scroll bar.
+ *
+ * The rule they broke was `min != max means scrollbar`, so all three
+ * buttons were called scroll bars. They drew as tracks with no labels,
+ * and a click on one sent a page-scroll part instead of a button press:
+ * the mirror could not dismiss the alert, and the alert held the
+ * machine. This test exists so that never silently returns. */
+static void test_a_button_is_never_called_a_scroll_bar(void)
+{
+    NowScene s;
+    char out[8192];
+    const char *yes, *no, *setup, *bar, *wide;
+    int p;
+
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    p = now_scene_add_process(&s, 0, 9, "Mail", 0x6D6F7373UL, 1,
+                              kNowSceneAnchorOk, 0);
+    (void)now_scene_add_window(&s, p, "Alert", 30, 40, 200, 400, 1);
+
+    /* min 0 max 1 - the values that used to say "scroll bar". */
+    (void)now_scene_add_control(&s, 0, "Yes", 85, 70, 105, 152, 1, 1, 0, 0, 1);
+    (void)now_scene_add_control(&s, 0, "No", 85, 201, 105, 259, 1, 1, 0, 0, 1);
+    (void)now_scene_add_control(&s, 0, "Set Up Now", 85, 271, 105, 356,
+                                1, 1, 0, 0, 1);
+    /* A real vertical scroll bar: untitled, 16 across, long. */
+    (void)now_scene_add_control(&s, 0, "", 20, 380, 180, 396, 1, 1, 0, 0, 100);
+    /* Untitled, 20 high and long: NOT thin enough to be a scroll bar,
+       which is the case the old 20-pixel threshold swallowed. */
+    (void)now_scene_add_control(&s, 0, "", 120, 70, 140, 300, 1, 1, 0, 0, 1);
+    /* TITLED and scroll-bar-shaped: 16 high, 120 wide. Older applications
+       really do use short wide buttons, and shape alone would call this
+       one a scroll bar. Only the title rule saves it, which is why this
+       row is here - without it that rule is decoration. */
+    (void)now_scene_add_control(&s, 0, "Cancel", 150, 70, 166, 190,
+                                1, 1, 0, 0, 1);
+
+    check(now_scene_encode(&s, out, sizeof out, NULL) == kNowSceneEncodeOk,
+          "the alert encodes");
+
+    yes = strstr(out, "\"title\":\"Yes\"");
+    no = strstr(out, "\"title\":\"No\"");
+    setup = strstr(out, "\"title\":\"Set Up Now\"");
+    check(yes != NULL && no != NULL && setup != NULL,
+          "the buttons keep the titles the walk read from +40");
+    check(strstr(out, "{\"role\":\"control\",\"title\":\"Yes\"") != NULL
+          && strstr(out, "{\"role\":\"control\",\"title\":\"No\"") != NULL
+          && strstr(out, "{\"role\":\"control\",\"title\":\"Set Up Now\"")
+             != NULL,
+          "a TITLED control is never a scroll bar, whatever its range - "
+          "a scroll bar carries no title");
+    check(strstr(out, "{\"role\":\"control\",\"title\":\"Cancel\"") != NULL,
+          "and that holds even when the title sits on a scroll-bar SHAPE: "
+          "16 high and 120 wide is a short wide button, not a track");
+
+    bar = strstr(out, "\"rect\":{\"l\":380,\"t\":20,\"r\":396,\"b\":180}");
+    check(bar != NULL, "the scroll bar encodes");
+    if (bar != NULL) {
+        check(bar - strlen("{\"role\":\"scrollbar\",\"title\":\"\",")
+              >= out
+              && strstr(out, "{\"role\":\"scrollbar\",\"title\":\"\","
+                        "\"rect\":{\"l\":380,\"t\":20,\"r\":396,\"b\":180}")
+                 != NULL,
+              "an untitled control 16 across and long IS a scroll bar");
+    }
+
+    wide = strstr(out, "\"rect\":{\"l\":70,\"t\":120,\"r\":300,\"b\":140}");
+    check(wide != NULL
+          && strstr(out, "{\"role\":\"control\",\"title\":\"\","
+                    "\"rect\":{\"l\":70,\"t\":120,\"r\":300,\"b\":140}")
+             != NULL,
+          "an untitled control 20 across is a control, not a scroll bar - "
+          "20 was the old threshold and is a push button's height");
+}
+
 int main(void)
 {
+    test_a_button_is_never_called_a_scroll_bar();
     test_a_control_without_a_reference_still_carries_the_key();
     test_produced_fields();
     test_unproduced_planes_are_absent();
