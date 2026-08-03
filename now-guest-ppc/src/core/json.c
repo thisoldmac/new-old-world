@@ -412,3 +412,48 @@ void now_json_escape(const char *src, char *out, long cap)
     }
     out[n] = '\0';
 }
+
+/* **A number the caller actually sent, or a refusal.**
+ *
+ * `now_json_find_int` answers with a fallback, which makes "absent" and
+ * "unreadable" the same event to its caller. That was survivable while
+ * every caller sent bare numbers. It stopped being survivable when a
+ * host sent `"part": "21"` - a JSON STRING - and `strtol` stopped at the
+ * quote, returned 0, and the guest pressed part 0 and reported
+ * `dispatched`. Measured 2026-08-02 on a live scroll bar: the same
+ * request as an integer moved it one line, and as a string moved it
+ * somewhere else entirely and said the same word.
+ *
+ * So this one distinguishes three states and its caller must too:
+ * absent, present-and-unreadable, present-and-read. A quoted number is
+ * UNREADABLE rather than tolerated - the contract says `type: integer`,
+ * and a guest that guesses at the other side's encoding is how two
+ * halves agree in a test and disagree on a machine.
+ */
+int now_json_read_int(const char *json, const char *key, long *out)
+{
+    const char *p = now_json_value(json, key);
+    char *end = NULL;
+    long value;
+
+    if (p == NULL) {
+        return kNowJsonIntAbsent;
+    }
+    value = strtol(p, &end, 10);
+    if (end == p) {
+        return kNowJsonIntUnreadable;      /* a quote, a letter, nothing */
+    }
+    /* Whatever follows a number in a well-formed object: a separator, a
+       close, or space. A digit run that ends at a letter or a quote was
+       not a number the caller meant as one. */
+    while (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r') {
+        ++end;
+    }
+    if (*end != ',' && *end != '}' && *end != ']' && *end != '\0') {
+        return kNowJsonIntUnreadable;
+    }
+    if (out != NULL) {
+        *out = value;
+    }
+    return kNowJsonIntOk;
+}

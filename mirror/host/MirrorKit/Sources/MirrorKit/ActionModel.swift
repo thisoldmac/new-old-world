@@ -118,11 +118,27 @@ public struct ActionPlanes: Equatable, Sendable {
     /// exists, and it does not exist everywhere: NOW's contract has no
     /// such verb and says so deliberately.
     public var positionalClick: Bool
+    /// Can this guest post a keystroke that carries MODIFIERS?
+    ///
+    /// Measured on NOW's Carbon guest, 2026-08-02: no, and it refuses
+    /// rather than lying. An event's modifiers live on the Event
+    /// Manager's queue element, and `PPostEvent` - the only call that
+    /// hands that element back - is not in CarbonLib. Posting without
+    /// the modifier would type a bare character and report success,
+    /// which is the failure mode worth refusing over.
+    ///
+    /// It matters because a menu shortcut is the obvious way to send a
+    /// command and is unavailable here; the act plane's `menuact`
+    /// answers the application's own MenuSelect instead and needs no
+    /// modifier at all.
+    public var modifiedKeystrokes: Bool
 
-    public init(qmpInput: Bool, semanticActs: Bool, positionalClick: Bool) {
+    public init(qmpInput: Bool, semanticActs: Bool, positionalClick: Bool,
+                modifiedKeystrokes: Bool = true) {
         self.qmpInput = qmpInput
         self.semanticActs = semanticActs
         self.positionalClick = positionalClick
+        self.modifiedKeystrokes = modifiedKeystrokes
     }
 
     /// Mirror's own agent: a positional click verb, QMP when the target is
@@ -136,7 +152,8 @@ public struct ActionPlanes: Equatable, Sendable {
     /// on bare desktop has nowhere to go and is refused by name rather
     /// than silently dropped.
     public static let residentActPlane = ActionPlanes(
-        qmpInput: false, semanticActs: true, positionalClick: false)
+        qmpInput: false, semanticActs: true, positionalClick: false,
+        modifiedKeystrokes: false)
 }
 
 public enum ActionModel {

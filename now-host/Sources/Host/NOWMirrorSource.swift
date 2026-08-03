@@ -224,8 +224,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         end repeat
         return out
         """
-        guard let text = await runReadingOutput("script",
-                                                ["source": source]) else {
+        guard let text = await runReadingOutput(
+            "script", ["source": .text(source)]) else {
             return nil
         }
         return Self.parseIcons(text)
@@ -411,24 +411,27 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
     private func finder(_ phrase: String) async -> String? {
         let source = "tell application \"Finder\" to \(phrase)"
-        return await run("script", ["source": source])
+        return await run("script", ["source": .text(source)])
     }
 
     private func activate(_ psn: String) async -> String? {
         let parts = psn.split(separator: ".")
         guard parts.count == 2, let hi = Int(parts[0]), let lo = Int(parts[1])
         else { return "that process reference is not a PSN" }
-        return await run("activate", ["serialHi": String(hi),
-                                      "serialLo": String(lo)])
+        /* NUMBERS. As strings these crossed as "0"-parsing zeros and
+           `activate` fronted process 0.0 - see CommandArg. */
+        return await run("activate", ["serialHi": .number(hi),
+                                      "serialLo": .number(lo)])
     }
 
     /// Runs a verb and returns one labelled row from its own reply, or
     /// nil when the guest refused. Used for `script`, whose ANSWER is the
     /// point rather than its dispatch.
-    private func runReadingOutput(_ verb: String, _ args: [String: String],
+    private func runReadingOutput(_ verb: String,
+                                  _ args: [String: CommandArg],
                                   row: String = "output") async -> String? {
         await withCheckedContinuation { continuation in
-            listener.runCommand(verb, args: args) { result in
+            listener.runCommand(verb, typed: args) { result in
                 guard result.ok else {
                     return continuation.resume(returning: nil)
                 }
@@ -444,9 +447,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// The verbs with no typed projection on this host yet. Reads the
     /// guest's own reply rather than assuming a send is a success.
     private func run(_ verb: String,
-                     _ args: [String: String]) async -> String? {
+                     _ args: [String: CommandArg]) async -> String? {
         await withCheckedContinuation { continuation in
-            listener.runCommand(verb, args: args) { result in
+            listener.runCommand(verb, typed: args) { result in
                 if result.ok { return continuation.resume(returning: nil) }
                 let error = result.error
                 continuation.resume(returning:

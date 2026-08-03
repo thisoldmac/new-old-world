@@ -19,6 +19,17 @@ int now_json_find_string(const char *json, const char *key,
 
 /* Returns the integer value of "key", or fallback if the key is absent.
    A present but non-numeric value parses as 0 (strtol semantics). */
+enum {
+    kNowJsonIntOk = 0,
+    kNowJsonIntAbsent = 1,
+    /* Present and not a bare number - a quoted one, most often, which is
+       what a host sending [String: String] produces. See the note on
+       now_json_read_int: this used to read as zero and dispatch. */
+    kNowJsonIntUnreadable = 2
+};
+
+int now_json_read_int(const char *json, const char *key, long *out);
+
 long now_json_find_int(const char *json, const char *key, long fallback);
 
 /* Returns the boolean value of "key", or fallback if the key is absent.

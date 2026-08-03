@@ -87,6 +87,33 @@ public enum ObjectResolver {
         }
     }
 
+    /// **What a keystroke happens to.**
+    ///
+    /// Typing is an interaction like any other and therefore needs a
+    /// subject. On a Macintosh that subject is whatever the front
+    /// application will route a key event to, and from out here the
+    /// closest honest name for it is the front window - or, when the
+    /// front application has none, the application itself.
+    ///
+    /// It resolves to `.desktop` only when nothing is running that could
+    /// take a key, which on a live machine does not happen; the case
+    /// exists so this function has no failure mode a caller must handle.
+    public static func focus(in scene: Scene) -> MirrorObject {
+        if let front = scene.windows.first(where: {
+            $0.front && $0.visible && !HitTester.isDesktopBackdrop($0)
+        }) {
+            return .window(.init(id: front.id,
+                                 ref: front.ref.flatMap { $0.isEmpty ? nil : $0 },
+                                 psn: front.psn, title: front.title,
+                                 rect: front.rect, kind: front.kind,
+                                 isFront: true, part: .content))
+        }
+        if let app = scene.apps.first(where: { $0.front }) {
+            return .app(.init(psn: app.psn, name: app.name, isFront: true))
+        }
+        return .desktop
+    }
+
     /// The row of an open menu, which no hit test produces because a
     /// drawn menu is the mirror's own overlay rather than anything in
     /// the scene. Resolved from the menu and the row a person is on.

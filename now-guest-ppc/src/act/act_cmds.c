@@ -142,16 +142,22 @@ static void reply_plane_error(char *out, long cap, long id,
    fallbacks: agreeing means the key was really there, and that
    distinction is the whole point of the geometry rule - a `left` that
    defaulted to 0 and a `left` the caller sent are different requests. */
+/* Present AND readable. The two-fallback trick this replaced could tell
+   absent from present and could not tell either from UNREADABLE: a
+   quoted number stopped strtol at the quote, so both probes returned 0,
+   agreed, and the caller was handed a confident zero. A host whose args
+   are all strings therefore pressed part 0 and moved windows to (0,0)
+   while every reply said `dispatched`. See now_json_read_int. */
 static int arg_int(const char *json, const char *key, long *out)
 {
-    long a = now_json_find_int(json, key, -2147483647L);
-    long b = now_json_find_int(json, key, 2147483646L);
+    return now_json_read_int(json, key, out) == kNowJsonIntOk;
+}
 
-    if (a != b) {
-        return 0;
-    }
-    *out = a;
-    return 1;
+/* Present but unreadable, which is a CALLER's bug and deserves its own
+   sentence rather than "missing". */
+static int arg_int_malformed(const char *json, const char *key)
+{
+    return now_json_read_int(json, key, NULL) == kNowJsonIntUnreadable;
 }
 
 static int arg_str(const char *json, const char *key, char *out, long cap)
@@ -597,6 +603,17 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
     NowActStatus        st;
     long                part = 0;
 
+    if (arg_int_malformed(request_json, "part")) {
+        /* Named separately because it is a CALLER's encoding bug, not a
+           missing argument, and the two send someone looking in
+           different places. A host whose args are all strings sends
+           `"part": "21"`; this used to read as zero and press part 0. */
+        reply_error(out, cap, id, "bad-request",
+                    "ctlact's part is present but is not a number. Send a "
+                    "JSON integer, not a quoted one: \"part\": 21, never "
+                    "\"part\": \"21\"");
+        return;
+    }
     if (!arg_int(request_json, "part", &part) || part < 0 || part > 255) {
         reply_error(out, cap, id, "bad-request",
                     "ctlact requires part: a Control Manager part code. "

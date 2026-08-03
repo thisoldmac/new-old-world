@@ -108,16 +108,22 @@ static void reply_error(char *out, long cap, long id, const char *code,
  * agree. A serialLo that defaulted to 0 and a serialLo the caller sent
  * are different requests, and for this plane the difference is between
  * "no target" and "kNoProcess". */
+/* Present AND readable. The two-fallback trick this replaced could tell
+   absent from present and could not tell either from UNREADABLE: a
+   quoted number stopped strtol at the quote, so both probes returned 0,
+   agreed, and the caller was handed a confident zero. A host whose args
+   are all strings therefore pressed part 0 and moved windows to (0,0)
+   while every reply said `dispatched`. See now_json_read_int. */
 static int arg_int(const char *json, const char *key, long *out)
 {
-    long a = now_json_find_int(json, key, -2147483647L);
-    long b = now_json_find_int(json, key, 2147483646L);
+    return now_json_read_int(json, key, out) == kNowJsonIntOk;
+}
 
-    if (a != b) {
-        return 0;
-    }
-    *out = a;
-    return 1;
+/* Present but unreadable, which is a CALLER's bug and deserves its own
+   sentence rather than "missing". */
+static int arg_int_malformed(const char *json, const char *key)
+{
+    return now_json_read_int(json, key, NULL) == kNowJsonIntUnreadable;
 }
 
 /* ---- mouseloc ---------------------------------------------------------
@@ -220,8 +226,25 @@ void now_input_run_key(const char *request_json, long id,
     /* find_string and not find_text: a key name is a protocol token,
        ASCII by contract - the same reading aesend's `event` gets, and the
        opposite of its `path`. */
-    (void)now_json_find_string(request_json, "name", name,
+    /* `named`, NOT `name`. The scan is FLAT and first occurrence wins,
+       so `name` reads the envelope's own "name":"key" - which meant this
+       verb refused every wire request as an unknown key name and its
+       char/code path was unreachable. The console face never showed it:
+       it parses a line and calls the checker directly. */
+    (void)now_json_find_string(request_json, "named", name,
                                (long)sizeof name);
+    if (arg_int_malformed(request_json, "code")
+        || arg_int_malformed(request_json, "char")
+        || arg_int_malformed(request_json, "mods")) {
+        /* A caller's encoding bug rather than a missing argument. A host
+           whose args are all strings sends `"code": "45"`, which used to
+           read as zero and post the wrong key while answering ok. */
+        reply_error(out, cap, id, "bad-request",
+                    "key's code, char and mods are numbers. Send JSON "
+                    "integers, not quoted ones: \"code\": 45, never "
+                    "\"code\": \"45\"");
+        return;
+    }
     code_present = arg_int(request_json, "code", &code);
     char_present = arg_int(request_json, "char", &ch);
     mods_present = arg_int(request_json, "mods", &mods);

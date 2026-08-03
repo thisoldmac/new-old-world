@@ -208,11 +208,45 @@ struct ErrorMessage: Codable, Equatable, Sendable {
     var message: String
 }
 
+/// One command argument, in the shape the WIRE needs it.
+///
+/// **Every numeric argument this host ever sent arrived as zero.**
+/// `args` was `[String: String]`, so `part` went out as `"21"`; the
+/// classic guest reads a number with `strtol`, which stops at the
+/// opening quote, returns 0 — and its presence check could not tell that
+/// from a real zero. Measured on a live scroll bar 2026-08-02: the same
+/// request as an integer moved it one line and as a string moved it
+/// somewhere else, and BOTH replies said `dispatched`.
+///
+/// That is `two-halves-never-met-in-a-test` exactly: the contract says
+/// `type: integer`, both sides were self-consistent, and nothing on
+/// either side had ever watched the other's bytes.
+enum CommandArg: Codable, Equatable, Sendable, ExpressibleByStringLiteral {
+    case text(String)
+    case number(Int)
+
+    init(stringLiteral value: String) { self = .text(value) }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch self {
+        case .text(let v): try c.encode(v)
+        case .number(let v): try c.encode(v)
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if let v = try? c.decode(Int.self) { self = .number(v); return }
+        self = .text(try c.decode(String.self))
+    }
+}
+
 struct CommandRequest: Codable, Equatable, Sendable {
     var id: Int
     var name: String
     /// The typed form: what a caller that knows the command sends.
-    var args: [String: String]?
+    var args: [String: CommandArg]?
     /// The raw form: the text a human typed after the command name, for a
     /// console — which knows no command's grammar and must not, because the
     /// two guests do not serve the same commands. Presence is the signal, and

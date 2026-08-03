@@ -72,7 +72,8 @@ public enum InteractionPolicy {
         switch interaction.object {
         case .control(let c):   return control(c, interaction.gesture, planes)
         case .window(let w):    return window(w, interaction.gesture, planes)
-        case .menuItem(let i):  return menuItem(i, interaction.gesture)
+        case .menuItem(let i):  return menuItem(i, interaction.gesture,
+                                                planes)
         case .menu:             return .nothing(why: "opening a menu is the "
                                                 + "mirror's own drawing; "
                                                 + "nothing is sent until a "
@@ -217,7 +218,8 @@ public enum InteractionPolicy {
     // MARK: - Menus, apps, the Finder
 
     private static func menuItem(_ i: MirrorObject.MenuItem,
-                                 _ gesture: MirrorGesture) -> InteractionPlan {
+                                 _ gesture: MirrorGesture,
+                                 _ planes: ActionPlanes) -> InteractionPlan {
         guard case .click = gesture else {
             return .nothing(why: "a menu row answers to a click")
         }
@@ -225,17 +227,22 @@ public enum InteractionPolicy {
         guard i.isEnabled else {
             return .nothing(why: "\"\(i.title)\" is disabled")
         }
-        /* A ⌘ item goes as a KEYSTROKE: deterministic, metal-safe, and it
-           names the command rather than a place on screen. Everything
-           else goes through the act plane, which answers the
-           application's own MenuSelect - neither depends on where the
-           row happened to be drawn, which is what used to make selection
-           miss below a separator. */
+        /* A ⌘ item goes as a keystroke ONLY where a keystroke can carry
+           the ⌘. NOW's Carbon guest cannot post one - PPostEvent is not
+           in CarbonLib, and it refuses rather than typing a bare
+           character and reporting success - so on that guest a shortcut
+           item takes the same route as a shortcut-less one: the act
+           plane, answering the application's own MenuSelect, which needs
+           no modifier at all.
+
+           Neither route depends on where the row was DRAWN, which is
+           what used to make selection miss below a separator. */
         /* The table is keyed lowercase, and the CODE is the part that
            matters: a Mac's MenuEvent matches the virtual keycode, not the
            character - the finding that cost this project a day. The char
            travels as the glyph the menu displays. */
-        if let shown = i.cmd.unicodeScalars.first, !i.cmd.isEmpty,
+        if planes.modifiedKeystrokes,
+           let shown = i.cmd.unicodeScalars.first, !i.cmd.isEmpty,
            let code = ActionModel.keycodes[
                Character(String(shown).lowercased())] {
             return .keystroke(code: code, char: Int(shown.value),

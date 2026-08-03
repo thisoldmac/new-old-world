@@ -107,14 +107,18 @@ final class AgentIntegrationActControl {
                     + "current observation, one action, and exactly the "
                     + "geometry that action takes"))
         }
-        var args: [String: String] = [
-            "window": request.window,
-            "action": request.action.rawValue,
+        /* Numbers as NUMBERS. `String(left)` sent `"left": "40"`, and the
+           classic guest's strtol stops at the quote - so every window act
+           this host ever sent moved a window to (0,0) and was told
+           `dispatched`. See CommandArg. */
+        var args: [String: CommandArg] = [
+            "window": .text(request.window),
+            "action": .text(request.action.rawValue),
         ]
-        if let left = request.left { args["left"] = String(left) }
-        if let top = request.top { args["top"] = String(top) }
-        if let width = request.width { args["width"] = String(width) }
-        if let height = request.height { args["height"] = String(height) }
+        if let left = request.left { args["left"] = .number(left) }
+        if let top = request.top { args["top"] = .number(top) }
+        if let width = request.width { args["width"] = .number(width) }
+        if let height = request.height { args["height"] = .number(height) }
 
         return await dispatch(
             verb: "winact", args: args,
@@ -144,8 +148,11 @@ final class AgentIntegrationActControl {
         }
         return await dispatch(
             verb: "ctlact",
-            args: ["element": request.element,
-                   "part": String(request.part)],
+            /* The part is a NUMBER. As `String(request.part)` it crossed
+               as "21", the guest's strtol stopped at the quote, and it
+               pressed part 0 - measured, and it answered `dispatched`. */
+            args: ["element": .text(request.element),
+                   "part": .number(request.part)],
             describing: "ctlact part \(request.part) "
                 + "\(Self.sanitized(request.element))",
             invalidCode: "now-control-act-invalid",
@@ -169,14 +176,14 @@ final class AgentIntegrationActControl {
                 "A menu act names a menu id, a 1-based item and the "
                     + "titleLeft that is its identity check"))
         }
-        var args: [String: String] = [
-            "menu": String(request.menu),
-            "item": String(request.item),
-            "titleLeft": String(request.titleLeft),
+        var args: [String: CommandArg] = [
+            "menu": .number(request.menu),
+            "item": .number(request.item),
+            "titleLeft": .number(request.titleLeft),
         ]
         if let process = request.process {
-            args["serialHi"] = String(process.high)
-            args["serialLo"] = String(process.low)
+            args["serialHi"] = .number(process.high)
+            args["serialLo"] = .number(process.low)
         }
         return await dispatch(
             verb: "menuact", args: args,
@@ -228,10 +235,14 @@ final class AgentIntegrationActControl {
         guard let sessionID = currentSessionID() else {
             return .unavailable(.guest)
         }
-        var args: [String: String] = ["mods": String(request.mods)]
-        if let name = request.name, !name.isEmpty { args["name"] = name }
-        if let code = request.code { args["code"] = String(code) }
-        if let char = request.char { args["char"] = String(char) }
+        /* `named`, not `name`: the guest scans a request FLAT, so an
+           argument called `name` reads the envelope's own "name":"key".
+           Measured 2026-08-02 - the verb refused every wire call while
+           the console face worked perfectly. */
+        var args: [String: CommandArg] = ["mods": .number(request.mods)]
+        if let n = request.name, !n.isEmpty { args["named"] = .text(n) }
+        if let code = request.code { args["code"] = .number(code) }
+        if let char = request.char { args["char"] = .number(char) }
 
         let outcome = await run(verb: "key", args: args)
         guard currentSessionID() == sessionID else {
@@ -302,7 +313,7 @@ final class AgentIntegrationActControl {
             return .unavailable(.guest)
         }
         let outcome = await run(verb: "textget",
-                                args: ["element": element])
+                                args: ["element": .text(element)])
         guard currentSessionID() == sessionID else {
             return .unavailable(Self.failure(
                 "now-text-get-outcome-unknown",
@@ -368,7 +379,7 @@ final class AgentIntegrationActControl {
         let requested = text.unicodeScalars.count
         return await dispatch(
             verb: "textset",
-            args: ["element": element, "text": text],
+            args: ["element": .text(element), "text": .text(text)],
             describing: "textset \(Self.sanitized(element)) "
                 + "(\(requested) scalars)",
             invalidCode: "now-text-set-invalid",
@@ -406,7 +417,7 @@ final class AgentIntegrationActControl {
     /// be spelled, and only one of the two would be reading a machine.
     private func dispatch<Receipt: Codable & Equatable & Sendable>(
         verb: String,
-        args: [String: String],
+        args: [String: CommandArg],
         describing description: String,
         invalidCode: String,
         refusedCode: String,
@@ -474,12 +485,12 @@ final class AgentIntegrationActControl {
 
     // MARK: - The wire
 
-    private func run(verb: String, args: [String: String]) async
+    private func run(verb: String, args: [String: CommandArg]) async
         -> CommandOutcome {
         await withCheckedContinuation { continuation in
             var settled = false
             var timeoutTask: Task<Void, Never>?
-            listener.runCommand(verb, args: args) {
+            listener.runCommand(verb, typed: args) {
                 guard !settled else { return }
                 settled = true
                 timeoutTask?.cancel()

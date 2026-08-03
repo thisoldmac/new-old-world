@@ -547,7 +547,18 @@ final class GuestListener: ObservableObject {
     ///     presence is what tells the guest a human is asking (see
     ///     CommandRequest.line in the contract), so the console passes "" for
     ///     a bare command and never omits the field.
+    /// The stringly form, kept because most arguments ARE text and every
+    /// existing caller passes one. A value that must cross as a JSON
+    /// number uses `typed:` below — see `CommandArg` for what sending a
+    /// quoted number cost.
     func runCommand(_ name: String, args: [String: String]? = nil,
+                    line: String? = nil,
+                    completion: @escaping (CommandResult) -> Void) {
+        runCommand(name, typed: args?.mapValues(CommandArg.text),
+                   line: line, completion: completion)
+    }
+
+    func runCommand(_ name: String, typed args: [String: CommandArg]?,
                     line: String? = nil,
                     completion: @escaping (CommandResult) -> Void) {
         guard let session, case .connected = state else {

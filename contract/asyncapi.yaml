@@ -3337,7 +3337,7 @@ components:
       args:
         type: object
         properties:
-          name:
+          named:
             type: string
             enum: [return, enter, tab, space, delete, escape, help, home,
                    fwddelete, end, pageup, pagedown, left, right, down, up]
@@ -3346,6 +3346,16 @@ components:
               text-writing verb cannot express at all. `enter` is the
               keypad's key and is not `return`. Exact match; anything
               else is a character, so send char or code.
+
+              SPELLED `named`, NOT `name`, and that is the whole reason
+              this verb worked from the console and never once over the
+              wire. The classic guest scans a request FLAT and the first
+              occurrence wins, so an argument called `name` is read as
+              the envelope's own `"name": "key"` — which is not a key
+              this verb names, so every wire call was refused with that
+              message and the `char`/`code` path below was unreachable.
+              Measured 2026-08-02. It is the same shadowing defect the
+              preamble names and that `launch` shipped to metal.
           char:
             type: integer
             description: >
