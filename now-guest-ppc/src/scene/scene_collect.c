@@ -147,7 +147,8 @@ static void collect_process(NowScene *s, int row,
              ++hops) {
             NowAxWindow win;
 
-            if (!now_ax_read_window(&ctx.memory, addr, &win)) {
+            if (now_ax_read_window(&ctx.memory, addr, &win)
+                    != kNowAxOk) {
                 /* The chain left the readable zones or failed a check.
                    What stands is a PREFIX, and saying so is the
                    difference between a short list and a wrong one. */
