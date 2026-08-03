@@ -256,6 +256,25 @@ static void put_menubar(Sink *k, const NowScene *s)
    unactionable, which is a different claim from "this element was not
    minted". Both are honest sentences; only one of them is true of an
    element the walk could not name, and it is the one absence says. */
+/* A CONTROL's reference, which is always present because IR v1 freezes
+   it (`windows[].controls[].ref` in IRSchema.v1Frozen). The distinction
+   the note above draws - absent means "not minted", empty means "no
+   reference layer" - is real and is NOT EXPRESSIBLE in this contract, so
+   the producer emits the one the contract admits rather than the one it
+   would prefer.
+
+   Measured 2026-08-03: with self-described windows, whose controls the
+   Toolbox names and the reference layer does not, omitting the key made
+   the whole scene undecodable - `keyNotFound: Key 'ref'` - and the
+   mirror went blank with that sentence in its status line. The decode
+   gate could not have caught it: every control in the fixture HAS a
+   reference. */
+static void put_ref_required(Sink *k, const char *ref)
+{
+    put(k, ",\"ref\":");
+    put_str(k, (ref == NULL) ? "" : ref);
+}
+
 static void put_ref(Sink *k, const char *ref)
 {
     if (ref == NULL || ref[0] == '\0') {
@@ -315,7 +334,7 @@ static void put_controls(Sink *k, const NowScene *s, const NowSceneWindow *w)
         put_num(k, c->min);
         put(k, ",\"max\":");
         put_num(k, c->max);
-        put_ref(k, c->ref);
+        put_ref_required(k, c->ref);
         put(k, "}");
     }
     put(k, "]");

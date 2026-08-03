@@ -667,7 +667,13 @@ static void test_reference_plane(void)
     check(now_scene_encode(&s, out, sizeof out, NULL) == kNowSceneEncodeOk,
           "the referenced scene encodes");
     check(well_formed(out), "and is well formed");
-    check_absent(out, "\"ref\":\"\"");
+    /* A WINDOW may omit its ref - `windows[].ref` is additive in v1, so a
+       consumer that never heard of it is where every consumer already
+       was. A CONTROL may not: `windows[].controls[].ref` is frozen, and
+       omitting it makes the whole document undecodable. This assertion
+       used to forbid the empty string outright, which read as a stronger
+       version of the same rule and was in fact a different one. */
+    check_absent(out, "\"windows\":[{\"ref\":\"\"");
 
     check_present(out,
         "\"ref\":\"now-element-00000000-1111-2222-3333-444444444444\"");
@@ -684,9 +690,20 @@ static void test_reference_plane(void)
        drawn, and it is not actable, and the scene says both. */
     check(strstr(w0, "\"title\":\"Cancel\"") != NULL,
           "the unnamed control is still reported");
-    check(strstr(w1, "\"ref\"") == NULL,
-          "and a window the reference layer could not name carries no ref "
-          "key - not an empty one");
+    /* THE WINDOW'S OWN key, which is why this stops at the controls
+       array. `windows[].ref` is additive in v1 and may be absent;
+       `windows[].controls[].ref` is FROZEN and is always present, empty
+       when nothing minted one - so scanning the whole window object for
+       `"ref"` now finds a control's and says the window has one. */
+    {
+        const char *w1_controls = strstr(w1, "\"controls\"");
+        const char *w1_ref = strstr(w1, "\"ref\"");
+
+        check(w1_ref == NULL
+                  || (w1_controls != NULL && w1_ref > w1_controls),
+              "and a window the reference layer could not name carries no "
+              "ref key of its own - not an empty one");
+    }
 
     /* A reference longer than one can be is refused, not truncated: a
        shortened token is well formed to every shape check on both sides
@@ -701,8 +718,42 @@ static void test_reference_plane(void)
           "an over-long reference is dropped rather than clipped");
 }
 
+/* A CONTROL'S `ref` IS ALWAYS PRESENT, even when nothing minted one.
+ *
+ * IR v1 freezes `windows[].controls[].ref`, so a consumer decodes it as
+ * a required key. This producer used to OMIT it when the reference layer
+ * had not named the element - a defensible distinction (absent = "not
+ * minted", empty = "no reference layer") that the contract simply cannot
+ * express.
+ *
+ * It went unnoticed until self-described windows arrived, whose controls
+ * the Toolbox names and the reference layer does not: the whole scene
+ * then failed to decode with `keyNotFound: Key 'ref'` and the mirror
+ * went blank. The host's decode gate could not have caught it, because
+ * every control in its captured fixture HAS a reference - which is why
+ * the check lives here, on the producer, where an unminted control can
+ * be constructed on purpose. */
+static void test_a_control_without_a_reference_still_carries_the_key(void)
+{
+    NowScene s;
+    char out[8192];
+    int p;
+
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    p = now_scene_add_process(&s, 0, 9, "New Old World", 0x4E4F576FUL, 1,
+                              kNowSceneAnchorOk, 0);
+    (void)now_scene_add_window(&s, p, "Workshop", 40, 60, 400, 600, 1);
+    /* No now_scene_set_control_ref: this is the self-described case. */
+    (void)now_scene_add_control(&s, 0, "Take Screenshot",
+                                50, 80, 70, 220, 1, 1, 0, 0, 1);
+    check(now_scene_encode(&s, out, sizeof out, NULL) == kNowSceneEncodeOk,
+          "a self-described scene encodes");
+    check_present(out, "\"ref\":\"\"");
+}
+
 int main(void)
 {
+    test_a_control_without_a_reference_still_carries_the_key();
     test_produced_fields();
     test_unproduced_planes_are_absent();
     test_conditional_planes();

@@ -107,6 +107,62 @@ static void add_control_tree(NowScene *s, int window, ControlRef control,
     }
 }
 
+/* Every control the Control Manager will admit to, found by asking
+   where they are rather than by reading how they are stored.
+
+   The step is the smallest widget this can miss: a checkbox is 12pt
+   tall and a scroll arrow 16, so 6 finds both with room. Controls are
+   deduplicated by ControlRef, which is the identity the Control Manager
+   itself uses. */
+static void find_controls_by_probe(NowScene *s, int index, WindowRef window,
+                                   const Rect *content, int *budget)
+{
+    enum { kStep = 6, kSeenMax = 64 };
+    ControlRef seen[kSeenMax];
+    int seen_count = 0;
+    GrafPtr saved = NULL;
+    short x, y;
+    short w = (short)(content->right - content->left);
+    short h = (short)(content->bottom - content->top);
+
+    /* FindControl takes a point in the WINDOW'S local coordinates, so
+       the port has to be this window's while we ask. */
+    GetPort(&saved);
+    SetPortWindowPort(window);
+
+    for (y = 0; y < h && *budget > 0; y = (short)(y + kStep)) {
+        for (x = 0; x < w && *budget > 0; x = (short)(x + kStep)) {
+            Point pt;
+            ControlRef hit = NULL;
+            int i;
+            int already = 0;
+
+            pt.h = x;
+            pt.v = y;
+            if (FindControl(pt, window, &hit) == 0 || hit == NULL) {
+                continue;
+            }
+            for (i = 0; i < seen_count; ++i) {
+                if (seen[i] == hit) {
+                    already = 1;
+                    break;
+                }
+            }
+            if (already) {
+                continue;
+            }
+            if (seen_count < kSeenMax) {
+                seen[seen_count++] = hit;
+            }
+            add_control_tree(s, index, hit, content, kSelfMaxDepth, budget);
+        }
+    }
+
+    if (saved != NULL) {
+        SetPort(saved);
+    }
+}
+
 void now_scene_collect_self(NowScene *s, int row)
 {
     WindowRef window = GetWindowList();
@@ -166,6 +222,29 @@ void now_scene_collect_self(NowScene *s, int row)
                     }
                 }
             }
-        }
-    }
+        } else {
+            /* NO ROOT CONTROL, which is what actually happens here: the
+               embedding hierarchy exists only once something calls
+               CreateRootControl, and this application never does - it
+               makes its widgets with NewControl, which puts them in the
+               window's own control LIST. So GetRootControl fails, and
+               every window mirrored as an empty box with correct chrome,
+               which is a very convincing way to look broken.
+             *
+             * The list itself is unreachable: `ControlRecord` is behind
+             * OPAQUE_TOOLBOX_STRUCTS in a Carbon build, so `nextControl`
+             * does not exist to follow. Two ways out were rejected before
+             * this one. Calling CreateRootControl WOULD adopt the
+             * existing controls - and it reshapes the interface it is
+             * describing, which is not a read. Reading the record behind
+             * the opaque type is a guess at a layout this build
+             * deliberately hides.
+             *
+             * So: ASK. `FindControl` is the public question "what control
+             * is under this point", and a grid over the content area asks
+             * it often enough to meet every control wider than the step.
+             * It is O(points x controls) of rect tests on one window and
+             * costs less than the transfer that carries the answer. */
+            find_controls_by_probe(s, index, window, &content, &budget);
+        }    }
 }
