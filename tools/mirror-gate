@@ -1,0 +1,468 @@
+#!/usr/bin/env python3
+"""The deterministic half of the Mirror drive loop.
+
+`docs/mirror-drive-loop.md` is the rules. This is the part that does not
+depend on anyone remembering them.
+
+It exists because the honour-system version failed in a specific,
+measurable way: five drive notes claimed `rules re-read` and only two of
+those re-reads happened. The audit field designed to catch the drift was
+itself fabricated. So the refresh is no longer a step anyone reports — it
+is a consequence of a Stop hook that will not let the turn end, and whose
+rejection text carries the rules back into context.
+
+Three commands matter:
+
+    tools/mirror-gate begin 13 --rungs 1,2 [--app "Sherlock 2"]
+    tools/mirror-gate row r1.move pass "watched it move 60px right"
+    tools/mirror-gate check          # what the Stop hook runs
+
+and two say the work may legitimately end:
+
+    tools/mirror-gate pause --reason "needs metal, michelle's call"
+    tools/mirror-gate done --evidence "..."
+
+Everything else (`status`, `guard-bash`) is support.
+
+State lives in docs/local/mirror-sweep-state.json, which is gitignored:
+it describes one worktree's run, not the project.
+"""
+
+import json
+import os
+import re
+import sys
+from datetime import datetime, timezone
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+STATE = os.path.join(ROOT, "docs", "local", "mirror-sweep-state.json")
+LOOP_DOC = "docs/mirror-drive-loop.md"
+NOTES = "docs/local/mirror-drive-notes.md"
+
+# The gate gives up after this many consecutive blocks with no progress
+# in between. A hook that can never be satisfied is a wedge, and a wedge
+# is worse than the drift it was meant to stop -- but it says so loudly
+# rather than quietly letting the session end.
+MAX_FRUITLESS_BLOCKS = 5
+
+
+# --------------------------------------------------------------------------
+# The ladder, as rows
+#
+# Generated here rather than typed into the state file by hand, so a cycle
+# cannot choose its own checklist -- only fill one in. The wording tracks
+# docs/mirror-drive-loop.md section 3; change it there first.
+# --------------------------------------------------------------------------
+
+RUNGS = {
+    1: ("Frontmost window ops", [
+        ("r1.hide", "hide the front window"),
+        ("r1.show", "bring it back"),
+        ("r1.move", "drag it by the title bar"),
+        ("r1.resize", "drag the grow box"),
+        ("r1.zoom", "click the zoom box"),
+        ("r1.close", "click the close box"),
+    ]),
+    2: ("Desktop and the Finder", [
+        ("r2.icons-render", "desktop icons drawn, with their real art"),
+        ("r2.icon-select", "single click selects the icon under it"),
+        ("r2.icon-open", "double click opens it"),
+        ("r2.menus-match", "menu bar matches the machine (A-B screendump)"),
+        ("r2.hd-opens", "Macintosh HD opens from the mirror"),
+        ("r2.hd-contents", "its window renders its CONTENTS, not an empty box"),
+        ("r2.window-scroll", "a folder window scrolls"),
+    ]),
+    3: ("One application", [
+        ("r3.launch", "launched and frontmost from the mirror"),
+        ("r3.window-renders", "its window renders with chrome and title"),
+        ("r3.controls-render", "its controls render with the right roles"),
+        ("r3.menus-work", "its menus open and a command runs"),
+        ("r3.click-lands", "a click lands where it looks like it will"),
+        ("r3.text.caret", "click places the caret in a field with text in it"),
+        ("r3.text.select", "drag selects a range; select-all works"),
+        ("r3.text.type", "typed characters arrive in order, right field"),
+        ("r3.text.edit", "an EXISTING value can be edited and deleted"),
+        ("r3.text.tab", "tab moves between fields (where the app supports it)"),
+        ("r3.text.commit", "Return/Enter commits where the form expects it"),
+    ]),
+    4: ("Control panels", [
+        ("r4.opens", "the panel opens from the mirror"),
+        ("r4.fields", "its text fields take keystrokes"),
+        ("r4.popup", "a popup menu opens and a choice sticks"),
+        ("r4.toggle", "a checkbox or radio actually changes the app's state"),
+        ("r4.commit", "the panel commits / closes without losing the change"),
+    ]),
+    5: ("Background applications", [
+        ("r5.windows", "another app's windows appear at all"),
+        ("r5.acts", "and can be acted on, not just seen"),
+    ]),
+}
+
+RESULTS = ("pass", "fail", "blocked", "n/a")
+
+# Commands that reach past the mirror. Denied outright while a cycle is
+# open -- these are the exact moves that produced "the wire says it works"
+# while the mirror could not do the thing at all.
+FORBIDDEN = [
+    (r"askguest", "the guest console/probe"),
+    (r"nowwire", "the raw wire"),
+    (r"fakeguest", "the fake guest"),
+    (r"input-send-event", "synthetic guest input"),
+    (r"\bqmp\b.*(sendkey|mouse_move|mouse_button|mouse_set)",
+     "QMP input injection (screendump is fine -- looking, not doing)"),
+    (r"nc\s+(-\w+\s+)*(localhost|127\.0\.0\.1)\s+52\d\d", "a raw socket to the guest"),
+]
+
+ABBREVIATED_RULES = """\
+--- the rules, from %s ---
+ 1. Drive the mirror with computer use. Never the wire, never NOW's
+    Console page, never QMP input, never a probe script.
+ 2. QMP screendump is for LOOKING, never for doing.
+ 3. If the mirror cannot do it, that IS the finding. Record it; do not
+    reach past it.
+ 4. Record, don't fix, during a sweep.
+ 5. Nothing is "fixed" until a LATER drive watched it work.
+ 6. Do not restate a hypothesis as a fact.
+ 7. No regressions -- lower rungs are re-swept every drive.
+ 8. A blocker does not end a sweep: write it down, step over it, keep
+    sweeping, including rungs above the blocked one.
+ 9. None of these ends the work: budget spent, patch limit reached,
+    findings written up, a rung went green, the gate passed, a good
+    report is ready. Give the report and keep going.
+The only real stops are the section 5 definition being met, something
+only Michelle can authorise, or tooling broken beyond repair from here.
+Full text: %s   Findings: %s""" % (LOOP_DOC, LOOP_DOC, NOTES)
+
+
+# --------------------------------------------------------------------------
+# State
+# --------------------------------------------------------------------------
+
+def now_iso():
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def load():
+    if not os.path.exists(STATE):
+        return None
+    with open(STATE) as f:
+        return json.load(f)
+
+
+def save(state):
+    os.makedirs(os.path.dirname(STATE), exist_ok=True)
+    tmp = STATE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(state, f, indent=2)
+        f.write("\n")
+    os.replace(tmp, STATE)
+
+
+def rows_for(rungs, app):
+    out = []
+    for r in rungs:
+        title, items = RUNGS[r]
+        for rid, what in items:
+            what = what if r != 3 or not app else "%s: %s" % (app, what)
+            out.append({"id": rid, "rung": r, "what": what,
+                        "result": None, "note": ""})
+    return out
+
+
+def open_cycle(state):
+    """The cycle still being swept, or None."""
+    if not state or not state.get("cycles"):
+        return None
+    last = state["cycles"][-1]
+    return last if last.get("state") == "open" else None
+
+
+def unpopulated(cycle):
+    return [r for r in cycle["rows"] if not r["result"]]
+
+
+# --------------------------------------------------------------------------
+# Commands
+# --------------------------------------------------------------------------
+
+def cmd_begin(args):
+    n = None
+    rungs, app = "1,2", None
+    it = iter(args)
+    for a in it:
+        if a == "--rungs":
+            rungs = next(it)
+        elif a == "--app":
+            app = next(it)
+        elif n is None:
+            n = a
+    if n is None:
+        die("usage: mirror-gate begin <cycle-number> [--rungs 1,2,3] [--app NAME]")
+    try:
+        rung_list = sorted({int(x) for x in rungs.split(",") if x.strip()})
+    except ValueError:
+        die("--rungs takes comma-separated rung numbers, e.g. 1,2,3")
+    if not rung_list or any(r not in RUNGS for r in rung_list):
+        die("rungs must be drawn from %s" % sorted(RUNGS))
+
+    state = load() or {"cycles": [], "done": None, "pause": None,
+                       "fruitless_blocks": 0}
+    cur = open_cycle(state)
+    if cur:
+        die("cycle %s is still open with %d rows unfilled. Finish the sweep "
+            "(mirror-gate row ...) before beginning another."
+            % (cur["n"], len(unpopulated(cur))))
+
+    # The ladder has to move. Two cycles at the same reach is a sweep that
+    # has stopped climbing, which is how rung 2 stayed unfinished while
+    # rung 1 was re-polished.
+    prior = [c["rungs"] for c in state["cycles"][-2:]]
+    if len(prior) == 2 and all(p == rung_list for p in prior):
+        die("cycles %s and %s already swept rungs %s. Widen the reach or "
+            "state why in a note; the ladder is meant to climb."
+            % (state["cycles"][-2]["n"], state["cycles"][-1]["n"], rung_list))
+
+    cycle = {"n": n, "opened": now_iso(), "state": "open",
+             "rungs": rung_list, "app": app,
+             "rows": rows_for(rung_list, app), "findings": []}
+    state["cycles"].append(cycle)
+    state["pause"] = None
+    state["fruitless_blocks"] = 0
+    save(state)
+    print("cycle %s open -- rungs %s%s, %d rows"
+          % (n, rung_list, (" app=%s" % app) if app else "", len(cycle["rows"])))
+    for r in cycle["rows"]:
+        print("  [ ] %-18s %s" % (r["id"], r["what"]))
+
+
+def cmd_row(args):
+    if len(args) < 2:
+        die("usage: mirror-gate row <id> <%s> [note]" % "|".join(RESULTS))
+    rid, result = args[0], args[1]
+    note = " ".join(args[2:])
+    if result not in RESULTS:
+        die("result must be one of %s" % ", ".join(RESULTS))
+    if result in ("blocked", "n/a") and not note:
+        die("a %s row needs a note saying what blocked it or why it does "
+            "not apply -- an unexplained skip reads as coverage" % result)
+
+    state = load()
+    cycle = open_cycle(state)
+    if not cycle:
+        die("no cycle is open. mirror-gate begin <n> first.")
+    for r in cycle["rows"]:
+        if r["id"] == rid:
+            r["result"], r["note"] = result, note
+            r["at"] = now_iso()
+            break
+    else:
+        die("no row %r in cycle %s. Rows: %s"
+            % (rid, cycle["n"], ", ".join(x["id"] for x in cycle["rows"])))
+    state["fruitless_blocks"] = 0
+    save(state)
+    left = len(unpopulated(cycle))
+    print("%s = %s (%d row%s left)" % (rid, result, left,
+                                       "" if left == 1 else "s"))
+
+
+def cmd_finding(args):
+    if not args:
+        die('usage: mirror-gate finding "D13.2 the HD window renders empty"')
+    state = load()
+    cycle = open_cycle(state)
+    if not cycle:
+        die("no cycle is open.")
+    cycle["findings"].append({"at": now_iso(), "text": " ".join(args)})
+    state["fruitless_blocks"] = 0
+    save(state)
+    print("recorded (%d finding%s this cycle)"
+          % (len(cycle["findings"]), "" if len(cycle["findings"]) == 1 else "s"))
+
+
+def cmd_close(args):
+    state = load()
+    cycle = open_cycle(state)
+    if not cycle:
+        die("no cycle is open.")
+    missing = unpopulated(cycle)
+    if missing:
+        die("%d row%s unfilled: %s" % (len(missing), "" if len(missing) == 1
+                                       else "s",
+                                       ", ".join(r["id"] for r in missing)))
+    cycle["state"] = "swept"
+    cycle["closed"] = now_iso()
+    state["fruitless_blocks"] = 0
+    save(state)
+    fails = [r for r in cycle["rows"] if r["result"] in ("fail", "blocked")]
+    print("cycle %s swept: %d/%d passed, %d to triage"
+          % (cycle["n"], sum(1 for r in cycle["rows"] if r["result"] == "pass"),
+             len(cycle["rows"]), len(fails)))
+    print("Triage, patch the blockers plus at most two others, then "
+          "`begin` the next cycle. Closing a sweep is not stopping.")
+
+
+def cmd_pause(args):
+    reason = ""
+    if "--reason" in args:
+        reason = " ".join(args[args.index("--reason") + 1:])
+    if not reason:
+        die('usage: mirror-gate pause --reason "why only Michelle can '
+            'unblock this"')
+    state = load() or {"cycles": [], "done": None, "fruitless_blocks": 0}
+    state["pause"] = {"at": now_iso(), "reason": reason}
+    save(state)
+    print("paused: %s" % reason)
+    print("The Stop gate will let this turn end. Clearing it: begin the "
+          "next cycle.")
+
+
+def cmd_done(args):
+    ev = ""
+    if "--evidence" in args:
+        ev = " ".join(args[args.index("--evidence") + 1:])
+    if not ev:
+        die('usage: mirror-gate done --evidence "what was watched working, '
+            'per section 5"')
+    state = load() or {"cycles": [], "pause": None, "fruitless_blocks": 0}
+    state["done"] = {"at": now_iso(), "evidence": ev}
+    save(state)
+    print("done gate met: %s" % ev)
+
+
+def cmd_status(args):
+    state = load()
+    if not state:
+        print("no Mirror sweep state in this worktree.")
+        return
+    for c in state["cycles"]:
+        marks = {"pass": "+", "fail": "x", "blocked": "!", "n/a": "-",
+                 None: " "}
+        print("cycle %s [%s] rungs=%s %s" % (c["n"], c["state"], c["rungs"],
+                                             c.get("app") or ""))
+        for r in c["rows"]:
+            print("  %s %-18s %s%s" % (marks[r["result"]], r["id"], r["what"],
+                                       (" -- " + r["note"]) if r["note"] else ""))
+        for f in c["findings"]:
+            print("  . %s" % f["text"])
+    if state.get("pause"):
+        print("PAUSED: %s" % state["pause"]["reason"])
+    if state.get("done"):
+        print("DONE: %s" % state["done"]["evidence"])
+
+
+# --------------------------------------------------------------------------
+# The hooks
+# --------------------------------------------------------------------------
+
+def block(reason):
+    """Exit 2 with the reason on stderr: Claude Code feeds it back."""
+    sys.stderr.write(reason + "\n\n" + ABBREVIATED_RULES + "\n")
+    sys.exit(2)
+
+
+def cmd_check(args):
+    """Stop hook. Exit 0 lets the turn end; exit 2 does not."""
+    state = load()
+    if not state:
+        sys.exit(0)                       # not a Mirror session
+    if state.get("done"):
+        sys.exit(0)
+    if state.get("pause"):
+        sys.exit(0)
+
+    state["fruitless_blocks"] = state.get("fruitless_blocks", 0) + 1
+    save(state)
+    if state["fruitless_blocks"] > MAX_FRUITLESS_BLOCKS:
+        sys.stderr.write(
+            "mirror-gate: blocked %d times with no row filled and no finding "
+            "recorded in between. Standing down rather than wedging the "
+            "session -- but this means the loop is not running. Say plainly "
+            "what is broken.\n" % (state["fruitless_blocks"] - 1))
+        sys.exit(0)
+
+    cycle = open_cycle(state)
+    if not cycle:
+        last = state["cycles"][-1] if state["cycles"] else None
+        where = ("cycle %s is swept but nothing has begun after it."
+                 % last["n"]) if last else "no cycle has been opened."
+        block("mirror-gate: %s A swept cycle ends the SWEEP, not the work: "
+              "triage, patch the blockers plus at most two others, get the "
+              "gate green, then `tools/mirror-gate begin <n+1>` and sweep "
+              "again -- re-testing the rows you claimed fixed FIRST." % where)
+
+    missing = unpopulated(cycle)
+    if missing:
+        lines = "\n".join("  [ ] %-18s %s" % (r["id"], r["what"])
+                          for r in missing)
+        block("mirror-gate: cycle %s is still being swept -- %d row%s has no "
+              "result:\n%s\n\nDrive them. Record each with `tools/mirror-gate "
+              "row <id> pass|fail|blocked \"what was seen\"`. A blocked row "
+              "is a legitimate result and does not end the sweep."
+              % (cycle["n"], len(missing), "" if len(missing) == 1 else "s",
+                 lines))
+
+    block("mirror-gate: cycle %s has every row filled but is still open. "
+          "Close it (`tools/mirror-gate close`), triage, patch, and begin "
+          "the next cycle. The mirror is not finished until section 5 is "
+          "true -- `tools/mirror-gate done --evidence \"...\"` is the only "
+          "way to say that, and `pause --reason` the only way to hand back "
+          "to Michelle." % cycle["n"])
+
+
+def cmd_guard_bash(args):
+    """PreToolUse/Bash hook: refuse the paths around the mirror."""
+    try:
+        payload = json.load(sys.stdin)
+    except Exception:
+        sys.exit(0)
+    command = (payload.get("tool_input") or {}).get("command", "")
+    if not command:
+        sys.exit(0)
+    # The ban is not scoped to the sweep phase: the wire lied about a
+    # working capability during a PATCH session too. It lifts only when
+    # the run is over.
+    state = load()
+    if not state or state.get("done"):
+        sys.exit(0)
+
+    for pattern, what in FORBIDDEN:
+        if re.search(pattern, command, re.I):
+            out = {"hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason":
+                    "mirror-gate: that is %s, not the mirror. If the mirror "
+                    "could not do this, THAT is the finding -- record it "
+                    "with `tools/mirror-gate finding \"...\"` and keep "
+                    "sweeping. (%s)" % (what, LOOP_DOC)}}
+            print(json.dumps(out))
+            sys.exit(0)
+    sys.exit(0)
+
+
+def die(msg):
+    sys.stderr.write("mirror-gate: %s\n" % msg)
+    sys.exit(1)
+
+
+COMMANDS = {
+    "begin": cmd_begin, "row": cmd_row, "finding": cmd_finding,
+    "close": cmd_close, "pause": cmd_pause, "done": cmd_done,
+    "status": cmd_status, "check": cmd_check, "guard-bash": cmd_guard_bash,
+}
+
+
+def main(argv):
+    if len(argv) < 2 or argv[1] in ("-h", "--help"):
+        print(__doc__)
+        return 0
+    fn = COMMANDS.get(argv[1])
+    if not fn:
+        die("unknown command %r. One of: %s" % (argv[1],
+                                                ", ".join(sorted(COMMANDS))))
+    return fn(argv[2:]) or 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

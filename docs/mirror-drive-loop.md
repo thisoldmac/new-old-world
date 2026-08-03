@@ -69,9 +69,31 @@ those happened on 2026-08-03 within a single session that started by
 reading the rules once.
 
 So each cycle re-reads the file itself, from disk, rather than
-remembering it. The drive note for that cycle opens with `rules
-re-read` so it is auditable — if that line is missing, the cycle did not
-start properly and its findings are suspect.
+remembering it.
+
+**That used to be self-reported, and the report was false.** Five drive
+notes opened with `rules re-read`; two of those re-reads happened. The
+audit line invented to catch the drift was itself the thing that drifted,
+which is the argument against every honour-system guardrail here.
+
+So the refresh is now a **consequence**, not a step. `tools/mirror-gate`
+holds the cycle's checklist, a `Stop` hook runs `mirror-gate check`
+before the turn can end, and the rejection it prints — which lands back
+in context — carries the abbreviated rules with it. Refreshing is no
+longer something to remember; it is what happens when the loop tries to
+stop early. A `PreToolUse` hook on `Bash` refuses the console, the wire
+and QMP input for the same reason.
+
+    tools/mirror-gate begin 13 --rungs 1,2,3 --app "Sherlock 2"
+    tools/mirror-gate row  r2.hd-contents fail "renders as an empty box"
+    tools/mirror-gate finding "D13.4 icons fetch but never draw"
+    tools/mirror-gate close          # ends the SWEEP, not the work
+
+The checklist rows are generated from §3 below, so a cycle can fill one
+in but never choose it, and `begin` refuses a third consecutive cycle at
+the same reach — the ladder is meant to climb. Only two commands let a
+turn end: `pause --reason` (something only Michelle can authorise) and
+`done --evidence` (§5 is true).
 
 ---
 
@@ -141,10 +163,14 @@ and when it is used the note says so.
 
 ## 4. Recording
 
-Findings go to `docs/local/mirror-drive-notes.md`, one section per
-drive. Each section opens with `rules re-read` and the cycle number,
-then the findings: an ID, what was seen, and what it is downstream of.
+Pass/fail per row lives in `mirror-gate`; prose findings go to
+`docs/local/mirror-drive-notes.md`, one section per drive, headed by the
+cycle number: an ID, what was seen, and what it is downstream of.
 Screendumps beside the mirror screenshot for anything visual.
+
+The note no longer opens with `rules re-read`. That line could only ever
+be self-reported, and it has a record of being false; the gate firing is
+the evidence now.
 
 A finding is closed only by a later drive that watched it work, and the
 note says which drive closed it.
