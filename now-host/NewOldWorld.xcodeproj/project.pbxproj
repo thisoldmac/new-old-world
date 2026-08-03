@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		A1000220 /* NOWAgentIntegration in Frameworks */ = {isa = PBXBuildFile; productRef = A1000210 /* NOWAgentIntegration */; };
+		A1000222 /* MirrorKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1000212 /* MirrorKit */; };
+		A1000224 /* MirrorKitUI in Frameworks */ = {isa = PBXBuildFile; productRef = A1000214 /* MirrorKitUI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +30,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				A1000220 /* NOWAgentIntegration in Frameworks */,
+				A1000222 /* MirrorKit in Frameworks */,
+				A1000224 /* MirrorKitUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -71,6 +75,8 @@
 			name = "New Old World";
 			packageProductDependencies = (
 				A1000210 /* NOWAgentIntegration */,
+				A1000212 /* MirrorKit */,
+				A1000214 /* MirrorKitUI */,
 			);
 			productName = "New Old World";
 			productReference = A1000010 /* New Old World.app */;
@@ -96,6 +102,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				A1000200 /* XCLocalSwiftPackageReference "NewOldWorld" */,
+				A1000202 /* XCLocalSwiftPackageReference "MirrorKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A1000050 /* Products */;
@@ -248,12 +255,26 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = .;
 		};
+		A1000202 /* XCLocalSwiftPackageReference "MirrorKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../mirror/host/MirrorKit;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		A1000210 /* NOWAgentIntegration */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = NOWAgentIntegration;
+		};
+		A1000212 /* MirrorKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1000202 /* XCLocalSwiftPackageReference "MirrorKit" */;
+			productName = MirrorKit;
+		};
+		A1000214 /* MirrorKitUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1000202 /* XCLocalSwiftPackageReference "MirrorKit" */;
+			productName = MirrorKitUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
