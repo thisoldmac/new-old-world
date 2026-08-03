@@ -14,6 +14,73 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## WATCHED: a person drove the guest from NOW's mirror (2026-08-03)
+
+**Emulator-verified.** Open Mirror on the Mirror page opens a NOW window
+that renders the connected Mac and drives it. Watched, in the window, on
+a live Power Mac G4:
+
+| act | what happened |
+|---|---|
+| click a scroll arrow | the folder scrolled; status read "the lineDown of a scroll bar" |
+| double-click a folder | it opened, BY NAME, and its window appeared |
+| drag a title bar | the window moved to where it was dropped |
+| pull a menu, pick a row | View → as List; the window changed to list view |
+| press a key | "key e ✓" — the first keystroke ever to cross this wire |
+
+None of it uses QMP, so all of it is shaped for metal.
+
+### Objects first, which is what made the rest possible
+
+A gesture now resolves to an OBJECT with identity — window, control,
+menu row, app, Finder item, and the **desktop** — and the gesture rides
+along as metadata the object interprets. Two things fall out that a
+gesture-first model could not express:
+
+- **An icon is reached by name.** NOW's contract has no click-at-a-point
+  verb, so a desktop icon was previously unreachable by anything. As an
+  object it is a file the Finder knows, and `select item "X" of desktop`
+  works. Measured; so does `item "X" of window "T"`, while the
+  remembered `target of window "T"` fails with osaErr -1753.
+- **The point picks the part.** A press resolved as `.lineDown` of a
+  scroll bar carries that, so no driver re-derives it from coordinates.
+
+### Three defects the machine found that no gate could
+
+- **Every number this host sent arrived as ZERO.** `CommandRequest.args`
+  was `[String: String]`, so `part` crossed as `"21"`; the guest reads
+  numbers with `strtol`, which stops at the quote. Measured on a live
+  scroll bar: `21` moved it one line, `"21"` moved it somewhere else,
+  and both replies said `dispatched`. Fixed on both sides — `CommandArg`
+  carries a number as a number, and `now_json_read_int` distinguishes
+  absent from present-and-unreadable so a quoted one is now a refusal
+  that quotes the fix.
+- **`key` was unreachable over the wire, always.** It read an argument
+  called `name`; the guest scans a request FLAT, so it always got the
+  envelope's own `"name": "key"` and refused every call as an unknown
+  key name. The console face parses a typed line, so `key space` at the
+  machine worked the whole time. Now `named`, and
+  `arg_shadow_source_test.py` gates the whole class.
+- **This Carbon guest cannot post a MODIFIED keystroke** and says so:
+  `PPostEvent` is not in CarbonLib. So ⌘ menu items take the MenuSelect
+  route, and `ActionPlanes.modifiedKeystrokes` records the difference
+  rather than every shortcut failing quietly.
+
+### Still open
+
+- **Window interiors are empty.** The content plane (P3) has never
+  captured a drawing op, so a document window is chrome around blank
+  space. Finder windows are fine — their icons come from the Finder.
+- **A scroll thumb cannot be dragged.** It needs a verb that SETS a
+  control's value; `ctlact` presses a part at the control's own centre.
+  Named as unsupported rather than approximated by paging, which would
+  overshoot and read as a stutter.
+- **No window raise.** `winact` serves move/resize/zoom/close; nothing
+  selects one window among an application's own, so clicking a
+  background window fronts its APP and the rest is the Finder's choice.
+- **`role` is still a guess** (`min != max`), so About This Computer's
+  memory bars are reported as scroll bars.
+
 ## The mirror NOW draws itself: built, gated, not yet WATCHED (2026-08-02)
 
 **Unverified in the one way that counts.** "Open Mirror" on the Mirror
