@@ -1572,7 +1572,13 @@ static void serve_scene(const char *request)
      * next is not. That is the plane's settle window, not a defect, and
      * it is why this arms rather than arming-and-waiting: a walk that
      * blocked for a foreign process to pump would hold the wire. */
-    now_peek_arm((unsigned long)kNowPeekCapAnchors);
+    /* CLAIMED AND HELD, not armed-then-walked. An anchor is captured
+       when a process pumps its event loop, so arming immediately before
+       the walk can only ever catch the process doing the arming - us.
+       Held across requests, every application that pumps between two
+       scenes gets one, which is what makes a mirror show the machine
+       rather than this application. */
+    now_peek_claim(kNowPeekOwnerScene, (unsigned long)kNowPeekCapAnchors);
 
     now_scene_collect(scene, ++g_scene_seq, stale_ticks);
 

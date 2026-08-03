@@ -110,6 +110,43 @@ void now_peek_disarm(unsigned long caps)
     }
 }
 
+/* The claims, one word per owner. See peek.h for what one shared bit
+   cost. */
+static unsigned long g_claims[kNowPeekOwnerCount];
+
+static void publish_claims(void)
+{
+    NowPeekTable *table = (NowPeekTable *)now_peek_table();
+    unsigned long wanted = 0;
+    int i;
+
+    if (table == NULL) {
+        return;
+    }
+    for (i = 0; i < (int)kNowPeekOwnerCount; ++i) {
+        wanted |= g_claims[i];
+    }
+    table->arm_request = (NowPeekU32)wanted;
+}
+
+void now_peek_claim(NowPeekOwner owner, unsigned long caps)
+{
+    if ((int)owner < 0 || (int)owner >= (int)kNowPeekOwnerCount) {
+        return;
+    }
+    g_claims[owner] |= caps;
+    publish_claims();
+}
+
+void now_peek_release(NowPeekOwner owner, unsigned long caps)
+{
+    if ((int)owner < 0 || (int)owner >= (int)kNowPeekOwnerCount) {
+        return;
+    }
+    g_claims[owner] &= ~caps;
+    publish_claims();
+}
+
 NowPeekState now_peek_status(unsigned long *caps)
 {
     const NowPeekTable *table = now_peek_table();

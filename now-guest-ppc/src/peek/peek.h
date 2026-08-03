@@ -50,4 +50,29 @@ const NowPeekTable *now_peek_table(void);
 void now_peek_arm(unsigned long caps);
 void now_peek_disarm(unsigned long caps);
 
+/* **Who wants a plane armed.**
+ *
+ * `now_peek_arm`/`now_peek_disarm` write one shared bit, so the LAST
+ * caller decides for everybody. Two owners wanted the anchor plane and
+ * the loser was the mirror: `serve_scene` armed anchors and walked in
+ * the same pass, and the Processes page disarmed them whenever it was
+ * not the visible module - which is almost always. Only the process
+ * pumping in that sliver got an anchor captured, and that process is
+ * NOW itself, serving the request. Measured 2026-08-03: ten polls over
+ * fifteen seconds, one window every time, and it was always our own.
+ *
+ * So an owner claims and releases its OWN interest, and the bit is the
+ * union. A plane stays armed while anyone wants it and goes dark when
+ * the last one lets go. */
+typedef enum {
+    kNowPeekOwnerScene = 0,       /* scene.request, while mirroring */
+    kNowPeekOwnerProcesses,       /* the Processes page, while visible */
+    kNowPeekOwnerAct,
+    kNowPeekOwnerContent,
+    kNowPeekOwnerCount
+} NowPeekOwner;
+
+void now_peek_claim(NowPeekOwner owner, unsigned long caps);
+void now_peek_release(NowPeekOwner owner, unsigned long caps);
+
 #endif /* NOW_PEEK_H */

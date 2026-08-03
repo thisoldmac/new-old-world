@@ -820,7 +820,7 @@ static void procs_show(Boolean visible)
        Processes never runs the capture loop (the charter's rule). A
        no-op when the extension is absent. */
     if (visible) {
-        now_peek_arm(kNowPeekCapAnchors);
+        now_peek_claim(kNowPeekOwnerProcesses, kNowPeekCapAnchors);
         g_next_walk = 0;              /* a fresh page walks now */
         g_front_hilite = -1;
         g_quit_hilite = -1;
@@ -832,7 +832,7 @@ static void procs_show(Boolean visible)
         g_shown_freshness[0] = '\0';
         g_capture_hilite = -1;
     } else {
-        now_peek_disarm(kNowPeekCapAnchors);
+        now_peek_release(kNowPeekOwnerProcesses, kNowPeekCapAnchors);
     }
 }
 
