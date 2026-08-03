@@ -184,8 +184,20 @@ static void put_menubar(Sink *k, const NowScene *s)
     for (i = 0; i < s->menu_count; ++i) {
         const NowSceneMenu *m = &s->menus[i];
 
-        put(k, i > 0 ? ",{\"title\":" : "{\"title\":");
-        put_str(k, m->title);
+        /* THE IR DECLARES `apple`, and it is not optional there. The
+           Apple menu carries the Chicago apple byte (0x14) as its title
+           on this machine; the IR says the title is EMPTY for it and the
+           flag is what identifies it, so that is what goes on the wire.
+           A renderer draws the apple from the flag, not from a byte
+           whose glyph is font-dependent. */
+        {
+            int is_apple = (unsigned char)m->title[0] == 0x14;
+
+            put(k, i > 0 ? ",{\"title\":" : "{\"title\":");
+            put_str(k, is_apple ? "" : m->title);
+            put(k, ",\"apple\":");
+            put(k, is_apple ? "true" : "false");
+        }
         put(k, ",\"id\":");
         put_num(k, m->id);
         put(k, ",\"left\":");
@@ -206,15 +218,23 @@ static void put_menubar(Sink *k, const NowScene *s)
                 put(k, it->enabled ? "true" : "false");
                 put(k, ",\"mark\":");
                 put(k, it->mark ? "true" : "false");
-                /* `cmd` is absent when the item has no command key, not
-                   an empty string: the key says there is one. */
-                if (it->cmd != '\0') {
+                /* ALWAYS PRESENT, and this is the one place the
+                   absent-key rule yields. That rule is right when the
+                   producer is defining the shape: an absent key says
+                   "there is none" without a sentinel. Here the shape is
+                   the IR, which declares `cmd` as a required string whose
+                   EMPTY value means no shortcut - so omitting it does not
+                   say "no shortcut", it makes the document undecodable by
+                   the consumer this producer exists to feed. Measured
+                   2026-08-02: MirrorKit refused a NOW scene on exactly
+                   this key. */
+                {
                     char one[2];
 
                     one[0] = it->cmd;
                     one[1] = '\0';
                     put(k, ",\"cmd\":");
-                    put_str(k, one);
+                    put_str(k, it->cmd != '\0' ? one : "");
                 }
                 put(k, "}");
             }
@@ -260,7 +280,15 @@ static void put_controls(Sink *k, const NowScene *s, const NowSceneWindow *w)
         const NowSceneControl *c = &s->controls[w->first_control + i];
         char rect[64];
 
-        put(k, i > 0 ? ",{\"title\":" : "{\"title\":");
+        /* `role` is required by the IR and has exactly two values there:
+           "scrollbar" when the control carries a live range, "control"
+           otherwise. The walk reads a ControlRecord and not its defProc,
+           so it cannot say button-vs-checkbox - and the IR does not ask
+           it to. A range is the one distinction this reader can make
+           honestly, and it is the one the IR draws. */
+        put(k, i > 0 ? ",{\"role\":" : "{\"role\":");
+        put_str(k, c->min != c->max ? "scrollbar" : "control");
+        put(k, ",\"title\":");
         put_str(k, c->title);
         snprintf(rect, sizeof rect, ",\"rect\":{\"l\":%d,\"t\":%d,\"r\":%d,"
                  "\"b\":%d}", (int)c->rect.l, (int)c->rect.t, (int)c->rect.r,
