@@ -17,29 +17,21 @@ def body(signature: str) -> str:
 
 
 def main() -> None:
-    system = body("static void collect_self_system_menus(")
     collect = body("static void collect_self_menubar(")
     controls = body("static void add_control_tree(")
 
-    if "short help_left" not in system:
-        raise SystemExit("the self system-menu collector has no guest Help "
-                         "coordinate")
-    if "GetMenuHandle(kNowSelfHelpMenuID), help_left" not in system:
-        raise SystemExit("the Help menu is not emitted at the coordinate the "
-                         "guest supplied")
-    if "collect_self_system_menus(s, head->last_right)" not in collect:
-        raise SystemExit("Help must use MenuList.last_right; zero draws Help "
-                         "over the Apple menu in the Mirror")
-    if "GetMenuHandle(kNowSelfAppleMenuID), 10" not in system:
-        raise SystemExit("the self scene draws an Apple fallback but does not "
-                         "carry the guest's actionable Apple menu")
-    if "self_scene_has_menu(s, kNowSelfAppleMenuID)" not in system:
-        raise SystemExit("the explicit Apple menu must not duplicate one "
-                         "already found in the guest MenuList")
-    if "kNowSelfAppleMenuID       = 256" not in READ:
-        raise SystemExit("Mac OS 9's system Apple menu is id 256; id 128 is "
-                         "an application resource convention and returned "
-                         "no live menu")
+    if "LMGetMenuList()" not in collect:
+        raise SystemExit("the self scene must read the live MenuList that "
+                         "carries guest system-menu geometry")
+    if "GetMenuBar()" in collect:
+        raise SystemExit("GetMenuBar's copy omitted Apple, Help, and the "
+                         "Application menu on the live Mac OS 9 guest")
+    if "DisposeHandle(bar)" in collect:
+        raise SystemExit("the Menu Manager owns LMGetMenuList's handle")
+    for guessed in ("kNowSelfAppleMenuID", "head->last_right"):
+        if guessed in collect or guessed in READ:
+            raise SystemExit("system menus must come from the live MenuList, "
+                             f"not the guessed {guessed} fallback")
     if "kControlPopupButtonMenuHandleTag" not in controls:
         raise SystemExit("popup values must come from the control's owned "
                          "MenuRef, not only the process menu list")

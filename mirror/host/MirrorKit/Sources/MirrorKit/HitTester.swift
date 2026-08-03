@@ -169,6 +169,16 @@ public enum HitTester {
     /// Right-aligned Application menu: icon plus name, at the far right of the
     /// bar, with the clock to its left — the OS 9 order.
     public static func appMenuWidth(_ scene: Scene) -> Int {
+        /* The live MenuList carries this right-aligned menu's actual left
+           edge. Prefer it for both drawing and hit-testing: character-count
+           estimates moved the clock and switcher roughly 30 px right of the
+           authoritative guest when New Old World was frontmost. A zero left
+           remains the legacy/incomplete-scene fallback. */
+        if let left = scene.menubar?.menus.first(where: {
+            $0.id == ObjectResolver.applicationMenuID
+        })?.left, left > 0, left < scene.screen.w {
+            return scene.screen.w - left
+        }
         let name = scene.apps.first(where: { $0.front })?.name ?? ""
         return 24 + name.count * 6 + 10
     }

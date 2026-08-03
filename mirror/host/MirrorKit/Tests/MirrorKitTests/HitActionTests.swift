@@ -219,6 +219,29 @@ final class HitActionTests: XCTestCase {
         XCTAssertEqual(index, helpIndex)
     }
 
+    func testApplicationMenuUsesGuestLeftForDrawingAndHits() throws {
+        var scene = try fixtureScene("04-axtree-front-simpletext-doc")
+        /* SceneBuilder deliberately drops the old fixture's non-printable
+           Application-menu title. Reinsert the measured wire geometry; the
+           self collector now emits this same record with a usable title. */
+        scene.menubar?.menus.append(.init(
+            title: "", apple: false, left: 716,
+            id: ObjectResolver.applicationMenuID, items: []))
+        let menus = try XCTUnwrap(scene.menubar?.menus)
+        let appIndex = try XCTUnwrap(menus.firstIndex {
+            $0.id == ObjectResolver.applicationMenuID
+        })
+        XCTAssertEqual(menus[appIndex].left, 716,
+                       "fixture is the measured Mac OS 9 MenuList")
+        XCTAssertEqual(HitTester.appMenuWidth(scene), 84,
+                       "the guest's geometry must beat a host font estimate")
+        guard case .menuTitle(let hitIndex) = HitTester.hitTest(
+            scene, x: 720, y: 8) else {
+            return XCTFail("the guest-positioned Application menu must hit")
+        }
+        XCTAssertEqual(hitIndex, appIndex)
+    }
+
     func testApplicationMenuLeftZeroDoesNotStealAppleSlot() throws {
         var scene = try fixtureScene("04-axtree-front-simpletext-doc")
         scene.menubar?.menus.removeAll(where: \.apple)

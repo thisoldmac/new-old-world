@@ -275,11 +275,13 @@ static void find_controls_by_probe(NowScene *s, int index, WindowRef window,
    synthesised switcher listing only ourselves, and therefore why a
    person could not switch to the Finder from the mirror.
 
-   `GetMenuBar` hands back THIS application's own MenuList. Its layout is
-   documented and the memory is ours: a count in bytes, then pairs of
-   {MenuHandle, left}. Reading it gives the exact positions the Menu
-   Manager itself uses - which a computed layout could not, and a click
-   that misses a title by four pixels opens the wrong menu. */
+   `LMGetMenuList` hands back THIS application's live MenuList. Its layout
+   is measured by axmenu.c: a count in bytes, then pairs of {MenuHandle,
+   left}. Reading the live list gives the exact positions the Menu Manager
+   itself uses - including Apple, Help, and the right-aligned Application
+   menu. `GetMenuBar` is not equivalent here: its copy omitted those three
+   system-owned entries on Mac OS 9.1, which left Apple inert and moved both
+   ends of the bar in the mirror. */
 
 typedef struct {
     short         last_offset;     /* bytes; last entry is at this offset */
@@ -334,75 +336,12 @@ static void add_one_menu(NowScene *s, MenuHandle menu, short left)
     }
 }
 
-/* The menus the SYSTEM put in this application's bar, which the walk
- * above cannot see.
- *
- * `GetMenuBar`'s menu list enumerates the LEFT-hand menus, terminated by
- * its `lastMenu` offset. The right-hand ones - Help, and the Application
- * menu that is the app switcher - live past that terminator in a region
- * whose layout is not in the Universal Interfaces on this toolchain, so
- * walking it would mean inventing an offset. Asking for them by id needs
- * no layout at all.
- *
- * The ids are not in a header here either. They are MEASUREMENTS: the
- * preserved 2026-08-01 Mac OS 9 scene fixture carries the Apple menu as
- * id 256, and on 2026-08-03 a scene from this machine carried id -16489
- * whose items were Hide Mail / Hide Others / Show All / Finder / General
- * Controls / Mail / New Old World, and MirrorKit's hit tester has keyed
- * on that number since. -16490 is the Help menu beside it.
- *
- * WHY THIS MATTERS, and it is not cosmetic: the host draws Apple's own
- * switcher when the scene carries -16489, and SYNTHESISES one from the
- * process list when it does not. Synthesised, it can only ever offer the
- * applications - so Hide, Hide Others and Show All are simply absent,
- * and a person mirroring a machine on which NOW is frontmost gets a
- * switcher that is not the Macintosh's. Michelle called that a
- * regression twice before this was traced to its cause: NOW was not
- * reporting the menu it actually has.
- *
- * The application menu is right-aligned and therefore keeps a left of 0:
- * the host lays it out from the screen edge and never consumes that field.
- * Help is different. It is the first menu after the ordinary left-hand
- * list, and MenuList's `last_right` is the exact coordinate at which the
- * Menu Manager placed it. Reporting 0 for Help made the mirror draw the
- * word over the Apple menu and made the first title impossible to hit.
- * Use the guest's coordinate; do not reconstruct title widths on the host. */
-enum {
-    kNowSelfAppleMenuID       = 256,
-    kNowSelfApplicationMenuID = -16489,
-    kNowSelfHelpMenuID        = -16490
-};
-
-static int self_scene_has_menu(const NowScene *s, short id)
-{
-    short i;
-
-    for (i = 0; i < s->menu_count; ++i) {
-        if (s->menus[i].id == id) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-static void collect_self_system_menus(NowScene *s, short help_left)
-{
-    /* CarbonLib gives the Apple menu its conventional id but does not
-       include it in the ordinary MenuList span this collector can walk.
-       Reporting only a drawn fallback made the Apple visible and inert;
-       worse, the application menu's nominal left==0 then became the only
-       actionable record near that slot. Add the real menu, once, so drawing,
-       hit-testing and MenuSelect all name the same guest object. */
-    if (!self_scene_has_menu(s, kNowSelfAppleMenuID)) {
-        add_one_menu(s, GetMenuHandle(kNowSelfAppleMenuID), 10);
-    }
-    add_one_menu(s, GetMenuHandle(kNowSelfHelpMenuID), help_left);
-    add_one_menu(s, GetMenuHandle(kNowSelfApplicationMenuID), 0);
-}
-
 static void collect_self_menubar(NowScene *s, int row)
 {
-    Handle bar = GetMenuBar();
+    /* This is the same source AXPeek publishes for a foreign observer. The
+       handle is owned by the Menu Manager; unlike GetMenuBar's copy it must
+       not be disposed here. */
+    Handle bar = (Handle)LMGetMenuList();
     NowMenuListHead *head;
     short offset;
 
@@ -410,7 +349,6 @@ static void collect_self_menubar(NowScene *s, int row)
         return;
     }
     if (!now_scene_open_menubar(s, row)) {
-        DisposeHandle(bar);
         return;
     }
     head = (NowMenuListHead *)*bar;
@@ -420,10 +358,6 @@ static void collect_self_menubar(NowScene *s, int row)
 
         add_one_menu(s, entry->menu, entry->left);
     }
-    /* And the ones the system put there, which the walk above cannot
-       reach. Without these the host synthesises a switcher of its own. */
-    collect_self_system_menus(s, head->last_right);
-    DisposeHandle(bar);
 }
 
 void now_scene_collect_self(NowScene *s, int row,
