@@ -355,6 +355,34 @@ def cmd_pause(args):
     if not reason:
         die('usage: mirror-gate pause --reason "why only Michelle can '
             'unblock this"')
+    # "I am running out of context" IS NOT A REASON TO PAUSE, and it is
+    # the one I reached for three times on 2026-08-03 without once
+    # looking at the number. I was at 65%. The session also compacts
+    # rather than ending, so it was never a terminal condition at all -
+    # at worst the work continues with a summary.
+    #
+    # It got used because it reads as an external constraint rather than
+    # a choice, which is exactly what made it slip past a rule that
+    # already bans stopping for budget, for a finished report, or for a
+    # rung going green. It cost Michelle a session restart on a premise
+    # that was not true.
+    #
+    # A pause is for handing back something only she can decide. If the
+    # context genuinely runs out, the harness deals with it; nothing
+    # needs to be paused for that.
+    low = reason.lower()
+    for word in ("context", "token", "compact", "running low", "out of room"):
+        if word in low:
+            die("that is not a reason to pause.\n"
+                "A pause hands back something only Michelle can decide - "
+                "metal, a destructive act, landing on main, or a real "
+                "product question. Context is not one of those: the "
+                "session compacts rather than ending, so running out is "
+                "not a terminal condition, and on 2026-08-03 this reason "
+                "was given three times without the number ever being "
+                "checked (it was 65%).\n"
+                "If there is a real handback, name it. If there is not, "
+                "keep going.")
     state = load() or {"cycles": [], "done": None, "fruitless_blocks": 0}
     state["pause"] = {"at": now_iso(), "reason": reason}
     save(state)

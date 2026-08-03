@@ -313,6 +313,13 @@ and each is wrong:
 - `scripts/test-all` passed — a green gate is not a working mirror
 - the session has gone on a long time, or a lot was accomplished
 - there is a good report to give — **give it and keep going**
+- **"I am running out of context"** — checked on 2026-08-03 while it was
+  being claimed for the third time: 65%. The session also compacts
+  rather than ending, so running out is not a terminal condition; at
+  worst the work continues with a summary. This one slipped past the
+  list above because it reads as a constraint imposed from outside
+  rather than a choice, which is precisely why it is named here.
+  `mirror-gate pause` now refuses it.
 
 **The only real stops** are: the §5 definition is met; something needs
 authorisation that only Michelle can give (metal, a destructive act,
