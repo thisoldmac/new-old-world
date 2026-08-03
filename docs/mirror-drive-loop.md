@@ -69,6 +69,14 @@ functional, accurate mirror of the guest** — one a person can operate.
    completed". So: do the thing, confirm the EFFECT on the machine, and
    only then read the instrument. An instrument that reports nothing
    about an event that did not occur is working.
+2f. **Pictures are out of scope for now; CONTENT is a gate.** Michelle,
+   2026-08-03. A bitmap the application composited itself — Internet
+   Setup Assistant's globe, the ColorSync logo, a PICT in an about box —
+   is **noted and not scored against fidelity** at this stage. Text,
+   labels, field and popup VALUES, and an item drawn as the wrong kind
+   are all content, and content is a gate. So an alert whose icon is
+   absent is noted; an alert whose two lines of text are rendered as a
+   scroll bar and an empty field is a failure.
 3. **If the mirror cannot do it, that IS the finding.** Record it. Do
    not reach past it to keep the run going.
 4. **Record, don't fix, during a sweep.** No edits, no builds, no
