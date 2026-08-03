@@ -342,6 +342,19 @@ public struct SceneRenderer {
         // Titles sit at the wire's MenuList lefts — guest-true layout.
         let menus = scene.menubar?.menus ?? []
         for (i, menu) in menus.enumerated() {
+            /* The Application menu is drawn by the right-hand block
+               below, as the icon and name it actually is, and its
+               dropdown is the GUEST's - Hide, Hide Others, Show All and
+               the applications.
+             *
+               I made this skip once before while the guest was reporting
+               no such menu, so it removed Apple's and left ours: a
+               regression, and Michelle named it as one. It is right only
+               now that scene_self.c reports -16489. Its `left` is 0
+               because a right-aligned menu's position is the Menu
+               Manager's, not ours - which is precisely why it must not
+               be drawn from this loop, where left is the position. */
+            if menu.id == ObjectResolver.applicationMenuID { continue }
             if i == openMenu {
                 let next = i + 1 < menus.count ? menus[i + 1].left
                                                : menu.left + 60
