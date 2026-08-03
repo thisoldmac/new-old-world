@@ -294,6 +294,21 @@ typedef struct {
     short      left;
 } NowMenuListEntry;
 
+/* Universal Interfaces' LMGetMenuList accessor reads this low-memory
+   global, but deliberately hides the accessor from CarbonLib builds. NOW's
+   PPC guest runs only on classic Mac OS 8.6-9.2.2, where the low-memory
+   globals are real on metal as well as in an emulator. Read the one address
+   the platform header assigns to MenuList; this is not a QEMU interface.
+
+   Keep the address beside the only read. AXPeek publishes the same handle
+   for foreign observation, and axmenu.c bounds every later structure walk. */
+enum { kNowMenuListLowMemoryAddress = 0x0A1C };
+
+static Handle current_live_menu_list(void)
+{
+    return *(Handle *)kNowMenuListLowMemoryAddress;
+}
+
 /* One menu and its items, from a MenuHandle we already hold.
  *
  * Pulled out of the menu-bar walk so the SYSTEM menus can go through
@@ -341,7 +356,7 @@ static void collect_self_menubar(NowScene *s, int row)
     /* This is the same source AXPeek publishes for a foreign observer. The
        handle is owned by the Menu Manager; unlike GetMenuBar's copy it must
        not be disposed here. */
-    Handle bar = (Handle)LMGetMenuList();
+    Handle bar = current_live_menu_list();
     NowMenuListHead *head;
     short offset;
 

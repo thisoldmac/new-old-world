@@ -1,4 +1,5 @@
 import XCTest
+import AppKit
 import MirrorKit
 import MirrorKitUI
 
@@ -57,5 +58,46 @@ final class SceneRenderTests: XCTestCase {
         XCTAssertTrue(scene.windows.contains { $0.app != "New Old World" },
                       "no foreign window: the render would be of NOW's own "
                       + "application, which is not a mirror of anything")
+    }
+
+    /// The checked-in scene is the data half of the 2026-08-01
+    /// "almost perfect" visual baseline. Pin the guest's measured menu
+    /// identities and coordinates so a later self-scene shortcut cannot
+    /// silently replace them with guessed IDs or host text widths.
+    func testAlmostPerfectBaselineKeepsGuestMenubarGeometry() throws {
+        let scene = try scene()
+        let menus = try XCTUnwrap(scene.menubar?.menus)
+
+        XCTAssertEqual(menus.map { "\($0.id):\($0.left)" }, [
+            "256:10", "257:38", "258:73", "259:110",
+            "261:154", "260:218", "-16490:277", "-16489:716",
+        ])
+        XCTAssertTrue(menus[0].apple)
+        XCTAssertEqual(HitTester.appMenuWidth(scene), 84,
+                       "Application-menu width is guest geometry, not a "
+                       + "host font estimate")
+    }
+
+    /// Pin the draw path, not only its arithmetic. Opening the measured
+    /// Application menu must paint the selection starting at guest x=716.
+    /// With the regressed character-count width it began at x=730 and this
+    /// exact pixel stayed menubar gray.
+    func testAlmostPerfectBaselineRendersApplicationMenuAtGuestLeft() throws {
+        let scene = try scene()
+        let menus = try XCTUnwrap(scene.menubar?.menus)
+        let appIndex = try XCTUnwrap(menus.firstIndex {
+            $0.id == ObjectResolver.applicationMenuID
+        })
+        let png = try RenderShot.png(scene: scene, openMenu: appIndex)
+        let rep = try XCTUnwrap(NSBitmapImageRep(data: png))
+        let before = try XCTUnwrap(rep.colorAt(x: 715, y: 1))
+        let selected = try XCTUnwrap(rep.colorAt(x: 716, y: 1))
+
+        XCTAssertGreaterThan(before.redComponent, 0.8,
+                             "pixel before guest left should stay bar gray")
+        XCTAssertLessThan(selected.redComponent, 0.3)
+        XCTAssertLessThan(selected.greenComponent, 0.3)
+        XCTAssertGreaterThan(selected.blueComponent, 0.5,
+                             "guest-left pixel should be selection blue")
     }
 }

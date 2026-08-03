@@ -20,9 +20,15 @@ def main() -> None:
     collect = body("static void collect_self_menubar(")
     controls = body("static void add_control_tree(")
 
-    if "LMGetMenuList()" not in collect:
+    if "current_live_menu_list()" not in collect:
         raise SystemExit("the self scene must read the live MenuList that "
                          "carries guest system-menu geometry")
+    if "kNowMenuListLowMemoryAddress = 0x0A1C" not in READ:
+        raise SystemExit("the classic MenuList low-memory address must be "
+                         "explicit and reviewable")
+    if "return *(Handle *)kNowMenuListLowMemoryAddress" not in READ:
+        raise SystemExit("the live MenuList helper no longer reads the "
+                         "platform's measured low-memory global")
     if "GetMenuBar()" in collect:
         raise SystemExit("GetMenuBar's copy omitted Apple, Help, and the "
                          "Application menu on the live Mac OS 9 guest")
