@@ -35,6 +35,15 @@ public protocol MirrorSceneSource: ObservableObject {
     /// Say something happened that was not an action - "that cannot be
     /// actioned" is a real answer and belongs on screen.
     func note(_ message: String)
+    /// What this driver can serve. The gesture layer asks BEFORE it builds
+    /// an action, because the same click is a hardware press on one target
+    /// and a Control Manager part on another - see `ActionPlanes`.
+    var planes: ActionPlanes { get }
+}
+
+public extension MirrorSceneSource {
+    /// Mirror's agent, which is what every conformer was until 2026-08-02.
+    var planes: ActionPlanes { .agent }
 }
 
 /// The live half of the mirror: owns the poll loop and the dispatcher on a
@@ -368,15 +377,23 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                     }
                     let at = "@\(start.x),\(start.y)"
                     controller.perform(
-                        ActionModel.click(on: target, count: count),
+                        ActionModel.click(on: target, count: count,
+                                          planes: controller.planes,
+                                          in: controller.scene),
                         label: "\(label(for: target, count: count)) \(at)")
                 } else if case .move = mode {
                     controller.perform(
-                        ActionModel.titlebarDrag(from: start, to: end),
+                        ActionModel.titlebarDrag(
+                            from: start, to: end,
+                            window: draggedWindow(at: start),
+                            planes: controller.planes),
                         label: "move window \(start) → \(end)")
                 } else if case .resize = mode {
                     controller.perform(
-                        ActionModel.growDrag(from: start, to: end),
+                        ActionModel.growDrag(
+                            from: start, to: end,
+                            window: draggedWindow(at: start),
+                            planes: controller.planes),
                         label: "resize window \(start) → \(end)")
                 } else if case .thumb = mode {
                     controller.perform(
@@ -384,6 +401,21 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                         label: "scroll thumb \(start) → \(end)")
                 }
             }
+    }
+
+    /// The window a drag GRABBED, found from where the gesture began.
+    /// A window act names the window, and the pointer has moved by the
+    /// time the drag ends - so the lookup uses the start point, which is
+    /// the only one guaranteed to be inside it.
+    private func draggedWindow(at start: (x: Int, y: Int))
+        -> MirrorKit.Scene.Window? {
+        guard let scene = controller.scene else { return nil }
+        switch HitTester.hitTest(scene, x: start.x, y: start.y) {
+        case .titlebar(let id, _, _, _), .growBox(let id, _, _):
+            return scene.windows.first { $0.id == id }
+        default:
+            return nil
+        }
     }
 
     private func handleMenuClick(menu: MirrorKit.Scene.Menu,
