@@ -36,6 +36,10 @@ def main() -> None:
     if "self_scene_has_menu(s, kNowSelfAppleMenuID)" not in system:
         raise SystemExit("the explicit Apple menu must not duplicate one "
                          "already found in the guest MenuList")
+    if "kNowSelfAppleMenuID       = 256" not in READ:
+        raise SystemExit("Mac OS 9's system Apple menu is id 256; id 128 is "
+                         "an application resource convention and returned "
+                         "no live menu")
     if "kControlPopupButtonMenuHandleTag" not in controls:
         raise SystemExit("popup values must come from the control's owned "
                          "MenuRef, not only the process menu list")

@@ -44,8 +44,9 @@ and is not scored while bitmap/picture work is out of scope. The popup-value
 cause was in the guest producer: it looked only in the process menu list, while
 the Appearance popup CDEF owns its MenuRef as control data. The producer now
 asks `kControlPopupButtonMenuHandleTag` first and retains the old lookup as a
-fallback. That follow-up passes the guest-native and PPC cross-build gates, but
-is not yet watched in a later drive.
+fallback. Cycle 21 watched the corrected Mirror value `8-bit` beside the same
+guest value. Opening or choosing the popup remains red because the old resident
+act plane was still absent; correct presentation is not evidence of mutation.
 
 The same structural patch fixes the application switcher's asymmetric
 geometry. The real guest menu title is correctly right-aligned even though Menu
@@ -54,16 +55,21 @@ anchored to the right screen edge too. Ordinary menu hit spans now exclude that
 special menu, and a missing Apple menu is synthesized independently. Cycle 20
 watched the right switcher open at the right edge and switch Finder/New Old
 World. It also proved the left Apple glyph was only a drawn fallback: clicking
-it answered `nothing under the pointer`. The guest now adds the real menu id
-128 to its self scene (without duplicating one already found), so drawing,
-hit-testing, and MenuSelect share one guest object. That follow-up is not green
-until the next drive watches the Apple menu open.
+it answered `nothing under the pointer`. An initial follow-up guessed menu id
+128 from NOW's own resource convention. Cycle 21 disproved that guess live: the
+Apple glyph remained inert. The preserved Aug 1 scene that produced the earlier
+nearly faithful Mirror records Mac OS 9's system Apple menu as id 256. The self
+scene now uses that measured system id so drawing, hit-testing, and MenuSelect
+can share one guest object. It remains red until a later drive watches it open.
 
 Cycle 20 also found that the synthesized switcher lists background-only
 processes when Finder is frontmost. Choosing one refuses accurately as
 `activate-background-only`, but those rows should not be offered by an
-application switcher. This remains broken; the scene needs guest-provided
-foreground eligibility rather than a host signature allowlist.
+application switcher. The original switcher predicate already encoded the
+data-driven distinction available here: frontmost, owns a visible window, or
+owns the Finder desktop. The later unconditional process fallback caused this
+regression. It is removed without a host signature allowlist; this remains red
+until a later native drive watches the resulting roster.
 
 ## BUILT, NOT UX-VERIFIED: proven control roles survive the scene (2026-08-03)
 

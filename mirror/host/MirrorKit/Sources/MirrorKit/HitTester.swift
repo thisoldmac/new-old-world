@@ -125,13 +125,6 @@ public enum HitTester {
         return hit
     }
 
-    /// The apps the Application menu lists.
-    ///
-    /// Not every process: the guest runs faceless background things (the agent
-    /// itself, `tbt-worker`, Control Strip Extension) that the real Application
-    /// menu does not show either. An app earns a row by having a window, or by
-    /// being frontmost — which is the closest we get to "has a user interface"
-    /// from what the scene carries.
     /// **What the Application menu offers**, which must always include
     /// the Finder.
     ///
@@ -142,10 +135,11 @@ public enum HitTester {
     /// did not front it either, which is the other half of the same
     /// stranding.
     ///
-    /// The desktop's owner is now always offered, and the roster falls
-    /// back to `processes` for an application `apps` does not mention -
-    /// a process with a window is an application whatever list it
-    /// appears in.
+    /// The desktop's owner is always offered, and the roster falls back to
+    /// `processes` for a qualifying application `apps` does not mention. It
+    /// does not offer every process: the guest also runs faceless background
+    /// things (the agent, worker, and system schedulers) which the Macintosh's
+    /// Application menu does not show.
     public static func switchableApps(_ scene: Scene) -> [Scene.AppRef] {
         let withWindows = Set(scene.windows.map(\.psn))
         let desktop = scene.windows.first(where: isDesktopBackdrop)?.psn
@@ -163,19 +157,9 @@ public enum HitTester {
             || app.psn == desktop {
             offer(app)
         }
-        /* EVERY process the scene knows, once the ones above are in.
-           The filter used to be "front, or has a window, or owns the
-           desktop", and on a machine where only the front application
-           has an anchor that resolves to exactly one entry - so the
-           switcher offered a single application and there was no way to
-           reach the Finder, or anything else, from the mirror at all.
-         *
-           Offering a background-only process is a smaller error than
-           offering none: choosing one sends `activate`, and a process
-           that cannot come forward simply does not. The scene's process
-           list is what the machine says is running, and a person is
-           better served by all of it than by a filtered nothing. */
-        for proc in scene.processes ?? [] {
+        for proc in scene.processes ?? []
+        where proc.front || withWindows.contains(proc.psn)
+            || proc.psn == desktop {
             offer(.init(psn: proc.psn, name: proc.name, front: proc.front,
                         error: nil))
         }

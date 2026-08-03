@@ -24,9 +24,11 @@ final class AppListTests: XCTestCase {
     }
 
     private func scene(apps: [Scene.AppRef],
+                       processes: [Scene.ProcessRef]? = nil,
                        windows: [Scene.Window] = []) -> Scene {
         Scene(version: 0, seq: 1, source: "axtree", capturedAt: 0,
-              screen: .init(w: 800, h: 600), apps: apps, processes: nil,
+              screen: .init(w: 800, h: 600), apps: apps,
+              processes: processes,
               menubar: nil, windows: windows,
               desktopItems: nil,
               meta: Scene.Meta(latencyMs: nil, bytes: nil, errors: [],
@@ -120,6 +122,22 @@ final class AppListTests: XCTestCase {
         let rows = AppList.rows(s)
         XCTAssertEqual(rows.map(\.name), ["Apple System Profiler"])
         XCTAssertEqual(rows.first?.windows, 0)
+    }
+
+    func testProcessFallbackDoesNotOfferFacelessBackgroundProcesses() {
+        let s = scene(
+            apps: [app("0.2", "New Old World", front: true)],
+            processes: [
+                .init(psn: "0.1", name: "Finder", front: false,
+                      signature: "MACS"),
+                .init(psn: "0.3", name: "FBC Indexing Scheduler",
+                      front: false, signature: "FBCl"),
+            ],
+            windows: [win("0.1", "Desktop", app: "Finder"),
+                      win("0.2", "New Old World", app: "New Old World")])
+
+        XCTAssertEqual(HitTester.switchableApps(s).map(\.name),
+                       ["New Old World", "Finder"])
     }
 
     /// Stale beats guessed (AGENTS.md): an app whose AXPeek sample errored is

@@ -344,8 +344,9 @@ static void add_one_menu(NowScene *s, MenuHandle menu, short left)
  * walking it would mean inventing an offset. Asking for them by id needs
  * no layout at all.
  *
- * The ids are not in a header here either. They are a MEASUREMENT: on
- * 2026-08-03 a scene from this machine carried a menu with id -16489
+ * The ids are not in a header here either. They are MEASUREMENTS: the
+ * preserved 2026-08-01 Mac OS 9 scene fixture carries the Apple menu as
+ * id 256, and on 2026-08-03 a scene from this machine carried id -16489
  * whose items were Hide Mail / Hide Others / Show All / Finder / General
  * Controls / Mail / New Old World, and MirrorKit's hit tester has keyed
  * on that number since. -16490 is the Help menu beside it.
@@ -367,7 +368,7 @@ static void add_one_menu(NowScene *s, MenuHandle menu, short left)
  * word over the Apple menu and made the first title impossible to hit.
  * Use the guest's coordinate; do not reconstruct title widths on the host. */
 enum {
-    kNowSelfAppleMenuID       = 128,
+    kNowSelfAppleMenuID       = 256,
     kNowSelfApplicationMenuID = -16489,
     kNowSelfHelpMenuID        = -16490
 };
