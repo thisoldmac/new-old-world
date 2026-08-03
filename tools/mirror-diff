@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""Put the mirror's pixels beside the machine's, and measure the gap.
+
+    tools/mirror-diff --mirror shot.png --canvas 175,133,935,667 \\
+                      [--guest /tmp/mirror-shots/x.png] [--name r3-tcpip]
+
+WHAT THIS IS FOR, and it is worth being exact because the failure it
+exists to prevent is one I kept making by hand:
+
+The mirror can draw a window's buttons perfectly and leave everything
+else blank, and from the mirror side that looks like success. On
+2026-08-03 I passed `controls-render` on a dialog missing its icon and
+both lines of its text, and passed `window-renders` on a window whose
+title was absent. Michelle: "buttons rendering doesnt mean its a pass".
+A composite makes that impossible to miss, because the blank half is
+sitting next to the full one.
+
+WHAT IT IS NOT. It cannot pass anything. The number below is INK
+COVERAGE - of the pixels the machine drew that are not background, what
+fraction has something drawn in the mirror - and it is deliberately a
+crude measure, because a precise-looking score is exactly the thing that
+would start being quoted instead of looked at. It answers "is a chunk of
+this window simply missing", which is the question, and nothing else. It
+cannot tell right content from wrong content, it does not know Platinum
+from a grey rectangle, and a high number on a garbled window is entirely
+possible.
+
+    A structural or numeric check may VETO a pass. It may never grant
+    one. Only the machine's pixels, compared against the mirror's, with
+    a person looking at both, grant.
+
+That asymmetry is the whole design. `mirror-gate` enforces the same rule
+from the other end by refusing a pass or a fail without --shot.
+"""
+
+import argparse
+import os
+import sys
+
+try:
+    from PIL import Image
+    import numpy as np
+except ImportError:                                        # pragma: no cover
+    sys.stderr.write("mirror-diff needs Pillow and numpy\n")
+    sys.exit(70)
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+SHOTS = os.path.join(os.environ.get("TMPDIR", "/tmp"), "mirror-shots")
+
+
+def newest_guest_shot():
+    """The screendump `tools/shot` took most recently."""
+    if not os.path.isdir(SHOTS):
+        return None
+    pngs = [os.path.join(SHOTS, f) for f in os.listdir(SHOTS)
+            if f.endswith(".png")]
+    return max(pngs, key=os.path.getmtime) if pngs else None
+
+
+def ink_mask(a):
+    """Which pixels a person would call 'drawn on'.
+
+    The desktop pattern is busy, so 'not the background colour' is not
+    usable. What separates ink from backdrop on a Platinum screen is
+    LOCAL CONTRAST: text, frames, icons and controls all put a hard
+    edge somewhere, and a tiled desktop pattern or a flat window face
+    does not. A cheap gradient magnitude finds that without knowing
+    anything about the theme, which is the point - a rule that knew the
+    theme would agree with the renderer, and two things that agree are
+    one oracle.
+    """
+    g = a.astype(np.int16).mean(axis=2)
+    dx = np.abs(np.diff(g, axis=1, prepend=g[:, :1]))
+    dy = np.abs(np.diff(g, axis=0, prepend=g[:1, :]))
+    return (dx + dy) > 24
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(add_help=True)
+    ap.add_argument("--mirror", required=True,
+                    help="screenshot containing the mirror window")
+    ap.add_argument("--canvas", required=True,
+                    help="the guest canvas inside it: x,y,w,h")
+    ap.add_argument("--guest", default=None,
+                    help="the screendump (default: newest from tools/shot)")
+    ap.add_argument("--name", default="diff")
+    args = ap.parse_args(argv)
+
+    guest_path = args.guest or newest_guest_shot()
+    if not guest_path or not os.path.exists(guest_path):
+        sys.stderr.write("no screendump: pass --guest, or run tools/shot\n")
+        return 2
+    try:
+        x, y, w, h = (int(v) for v in args.canvas.split(","))
+    except ValueError:
+        sys.stderr.write("--canvas wants x,y,w,h\n")
+        return 2
+
+    mirror = Image.open(args.mirror).convert("RGB")
+    # A retina capture is twice the coordinate space clicks use, so the
+    # canvas rect - which is read off a screenshot in POINTS - has to be
+    # doubled to index it. Only widen, never narrow: an image already in
+    # pixel space (a screendump, a crop) is taken at face value rather
+    # than silently rescaled, because guessing wrong here moves the crop
+    # and every number after it is then about the wrong rectangle.
+    if mirror.width >= 2 * 1456 - 64:
+        x, y, w, h = (v * 2 for v in (x, y, w, h))
+    mirror = mirror.crop((x, y, x + w, y + h))
+
+    guest = Image.open(guest_path).convert("RGB")
+    mirror = mirror.resize(guest.size, Image.NEAREST)
+
+    gi = ink_mask(np.asarray(guest))
+    mi = ink_mask(np.asarray(mirror))
+
+    drawn = int(gi.sum())
+    covered = int((gi & mi).sum())
+    coverage = (100.0 * covered / drawn) if drawn else 0.0
+    # Ink the mirror invents where the machine has none: a garbled or
+    # over-drawn window scores badly here even when coverage is high.
+    invented = int((mi & ~gi).sum())
+    excess = (100.0 * invented / drawn) if drawn else 0.0
+
+    # Missing ink in red, invented ink in blue, over a dimmed machine.
+    comp = np.asarray(guest).astype(np.float32) * 0.35
+    comp[gi & ~mi] = (255, 40, 40)
+    comp[mi & ~gi] = (60, 120, 255)
+    strip = Image.new("RGB", (guest.width * 3 + 16, guest.height), (20, 20, 20))
+    strip.paste(guest, (0, 0))
+    strip.paste(mirror, (guest.width + 8, 0))
+    strip.paste(Image.fromarray(comp.astype(np.uint8)), (guest.width * 2 + 16, 0))
+    out = os.path.join(SHOTS, "%s-diff.png" % args.name)
+    strip.save(out)
+
+    print("machine | mirror | missing=red invented=blue")
+    print("  ink coverage : %5.1f%%  (%d of %d drawn pixels)"
+          % (coverage, covered, drawn))
+    print("  invented ink : %5.1f%%  (%d pixels the machine does not have)"
+          % (excess, invented))
+    print("  composite    : %s" % out)
+    print()
+    print("  This can VETO a pass. It cannot grant one. Look at the "
+          "composite before scoring the row.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
