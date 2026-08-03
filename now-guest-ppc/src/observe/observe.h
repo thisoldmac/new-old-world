@@ -131,6 +131,12 @@ void now_observe_resolve_element(const char *reference, long len,
    once. The epoch that protects a walk from evicting its own references
    is the whole scene's, because the scene is what gets rendered. */
 void now_observe_walk_begin(NowObsWalk *walk);
+/* Aim a walk at THIS process, for elements the Toolbox will answer about
+   directly. Same fingerprint tuple as the foreign path; no memory
+   reader, because nothing on this path reads memory. */
+void now_observe_walk_aim_self(NowObsWalk *walk,
+                               const ProcessSerialNumber *psn);
+
 void now_observe_walk_aim(NowObsWalk *walk, const ProcessSerialNumber *psn,
                           const NowAxContext *context);
 void now_observe_walk_end(NowObsWalk *walk);

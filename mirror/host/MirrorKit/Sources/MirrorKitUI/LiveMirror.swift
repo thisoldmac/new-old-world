@@ -523,7 +523,9 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
     private func handleMenuClick(menu: MirrorKit.Scene.Menu,
                                  at p: (x: Int, y: Int)) {
         defer { openMenu = nil; hoveredItem = nil }
-        if let item = SceneRenderer.dropdownItem(menu, x: p.x, y: p.y) {
+        let screenWidth = controller.scene?.screen.w ?? 0
+        if let item = SceneRenderer.dropdownItem(
+            menu, x: p.x, y: p.y, screenWidth: screenWidth) {
             // Dispatch by IDENTITY, and refuse rather than guess.
             //
             // A ⌘ item goes as a keystroke: deterministic, metal-safe, and it

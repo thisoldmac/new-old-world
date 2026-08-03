@@ -447,10 +447,26 @@ public struct SceneRenderer {
     /// hit-testing and this drawing can never disagree. Rows follow the
     /// guest's 16 px standard; the panel width is an estimate — long
     /// titles clip rather than shift the rows.
-    public static func dropdownFrame(_ menu: MirrorKit.Scene.Menu) -> CGRect {
+    /// A menu's dropdown, kept ON THE SCREEN.
+    ///
+    /// It used to drop straight down from the title with no bound, which
+    /// is right for every menu except the ones near the right edge — and
+    /// the Application menu is always there. At `left` 716 of an 800-wide
+    /// screen a 150pt dropdown ran off the edge entirely, so choosing
+    /// Hide / Hide Others / Show All was impossible: the menu opened
+    /// where nobody could see or click it. Watched 2026-08-03.
+    ///
+    /// A Mac right-aligns such a menu under its own title, which is what
+    /// the clamp reproduces.
+    public static func dropdownFrame(_ menu: MirrorKit.Scene.Menu,
+                                     screenWidth: Int = 0) -> CGRect {
         let maxLen = menu.items.map(\.title.count).max() ?? 8
         let width = CGFloat(min(max(120, maxLen * 8 + 56), 320))
-        return CGRect(x: CGFloat(menu.left) - 6,
+        var x = CGFloat(menu.left) - 6
+        if screenWidth > 0, x + width > CGFloat(screenWidth) {
+            x = Swift.max(0, CGFloat(screenWidth) - width)
+        }
+        return CGRect(x: x,
                       y: Platinum.menubarHeight + 1,
                       width: width,
                       height: CGFloat(menu.items.count * 16) + 4)
@@ -458,8 +474,10 @@ public struct SceneRenderer {
 
     /// The item under a guest point inside the dropdown, or nil.
     public static func dropdownItem(_ menu: MirrorKit.Scene.Menu,
-                                    x: Int, y: Int) -> MirrorKit.Scene.MenuItem? {
-        let frame = dropdownFrame(menu)
+                                    x: Int, y: Int,
+                                    screenWidth: Int = 0)
+        -> MirrorKit.Scene.MenuItem? {
+        let frame = dropdownFrame(menu, screenWidth: screenWidth)
         guard CGFloat(x) >= frame.minX, CGFloat(x) < frame.maxX,
               CGFloat(y) >= frame.minY + 2 else { return nil }
         let row = (y - Int(frame.minY) - 2) / 16
@@ -473,7 +491,7 @@ public struct SceneRenderer {
         // inverts, the way the Menu Manager draws a tracked item. Selection is
         // by item identity from here on — the row the human is looking at is the
         // row that acts, with no coordinate round-trip through the guest.
-        let frame = Self.dropdownFrame(menu)
+        let frame = Self.dropdownFrame(menu, screenWidth: scene.screen.w)
         ctx.fill(Path(frame.offsetBy(dx: 2, dy: 2)),
                  with: .color(.black.opacity(0.35)))
         ctx.fill(Path(frame), with: .color(Platinum.g0))

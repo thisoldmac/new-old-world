@@ -3,6 +3,7 @@
 #include <Controls.h>
 
 #include "control_kind.h"
+#include "observe.h"
 #include <MacWindows.h>
 
 #include <string.h>
@@ -173,10 +174,20 @@ static void find_controls_by_probe(NowScene *s, int index, WindowRef window,
     }
 }
 
-void now_scene_collect_self(NowScene *s, int row)
+void now_scene_collect_self(NowScene *s, int row,
+                            const ProcessSerialNumber *psn,
+                            NowObsWalk *refs)
 {
     WindowRef window = GetWindowList();
     int hops = 0;
+
+    /* AIMED AT OURSELVES, so these windows can be addressed. Without a
+       reference a window is a picture: close, move, resize and zoom are
+       all refused on it, which is what a person meets first because
+       this application's own window is the one always on screen. */
+    if (refs != NULL && psn != NULL) {
+        now_observe_walk_aim_self(refs, psn);
+    }
 
     for (; window != NULL && hops < kSelfMaxWindows;
          window = GetNextWindow(window), ++hops) {
@@ -210,6 +221,14 @@ void now_scene_collect_self(NowScene *s, int row)
         }
         index = now_scene_last_window(s);
         now_scene_set_window_kind(s, index, (short)GetWindowKind(window));
+        if (refs != NULL) {
+            char token[64];
+
+            if (now_obs_walk_window_ref(refs, (unsigned long)window,
+                                        token, sizeof token)) {
+                now_scene_set_window_ref(s, index, token);
+            }
+        }
 
         /* Declared even when the walk finds none: "this window has no
            controls" and "nobody looked" are different facts and the

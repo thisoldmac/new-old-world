@@ -121,7 +121,7 @@ static void collect_process(NowScene *s, int row,
        mirrored as an empty box with no close box and no content, which
        is what a person sees first. See scene_self.c. */
     if (is_self) {
-        now_scene_collect_self(s, row);
+        now_scene_collect_self(s, row, psn, refs);
         return;
     }
     if (!bound && !now_scene_anchor_admits_windows(s->procs[row].anchor)) {

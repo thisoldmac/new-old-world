@@ -283,6 +283,85 @@ static int resolve_for_act(const char *json, long id, char *out, long cap,
 
 /* ---- winact ----------------------------------------------------------- */
 
+
+/* --- acting on THIS application's own window ----------------------------
+
+   The act plane exists to reach into a FOREIGN process: it writes a cell,
+   the resident trap patches read it in that process's context, and the
+   application's own FindWindow answers. None of that is needed to move
+   our own window. We are the application; the Window Manager will do it
+   on the spot.
+
+   This is not a shortcut around the plane, it is the absence of a reason
+   to use it. Routing our own window through a trap patch would mean
+   arming a plane, submitting a cell and waiting for our own event loop
+   to answer a question we already know the answer to.
+
+   Watched 2026-08-03: NOW's own window was the only thing on the screen
+   and every act on it was refused, so a person could not move it out of
+   the way to see the desktop behind it. */
+
+static int act_target_is_self(const ProcessSerialNumber *psn)
+{
+    ProcessSerialNumber me;
+    Boolean             same = false;
+
+    if (psn == NULL || GetCurrentProcess(&me) != noErr) {
+        return 0;
+    }
+    if (SameProcess((ProcessSerialNumber *)psn, &me, &same) != noErr) {
+        return 0;
+    }
+    return same ? 1 : 0;
+}
+
+static void self_window_act(WindowRef window, const NowActWinArgs *args,
+                            int zoom_dir, long id, char *out, long cap)
+{
+    ActRows rows;
+    char    number[32];
+
+    rows_reset(&rows);
+    switch (args->action) {
+    case kNowActWinMove:
+        MoveWindow(window, (short)args->left, (short)args->top, false);
+        break;
+    case kNowActWinResize:
+        SizeWindow(window, (short)args->width, (short)args->height, true);
+        break;
+    case kNowActWinZoom:
+        ZoomWindow(window, (short)(zoom_dir == 1 ? inZoomOut : inZoomIn),
+                   false);
+        break;
+    case kNowActWinClose:
+        /* HIDDEN, not disposed. This surface does not know what closing
+           one of this application's windows MEANS - the application's own
+           close may save state, may quit, may put a dialog up - and
+           guessing would be the worst of the three. Hiding is the part
+           that is unambiguously reversible and unambiguously what a
+           person asked for when they wanted it out of the way. Said
+           plainly in the reply rather than reported as a close. */
+        HideWindow(window);
+        break;
+    default:
+        reply_error(out, cap, id, "bad-request",
+                    "winact on this application's own window serves move, "
+                    "resize, zoom and close");
+        return;
+    }
+    row_add(&rows, "Window", "this application's own");
+    snprintf(number, sizeof number, "0x%08lX", (unsigned long)window);
+    row_add(&rows, "Ref", number);
+    row_add(&rows, "Dispatch", "performed");
+    row_add(&rows, "Mechanism",
+                     args->action == kNowActWinClose
+                         ? "HideWindow, called directly - this surface does "
+                           "not know what this application means by close"
+                         : "the Window Manager, called directly in this "
+                           "process");
+    reply_rows(out, cap, id, "winact", &rows);
+}
+
 void now_act_run_winact(const char *request_json, long id, char *out, long cap)
 {
     NowObsHandle        handle;
@@ -339,6 +418,11 @@ void now_act_run_winact(const char *request_json, long id, char *out, long cap)
        it is the one whose addresses were just proved to be the ones this
        reference was minted against, and reading it again here would open
        a window between the proof and the aim. */
+    if (act_target_is_self(&handle.psn)) {
+        self_window_act((WindowRef)handle.detail.window.address, &args,
+                        zoom_dir, id, out, cap);
+        return;
+    }
     win = handle.detail.window;
     cell = now_act_cell();
     if (cell == NULL) {

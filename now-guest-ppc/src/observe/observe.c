@@ -149,6 +149,42 @@ void now_observe_walk_begin(NowObsWalk *walk)
     now_obs_walk_begin(walk, &g_registry);
 }
 
+/* Aim a walk at THIS process. Same fingerprint tuple as the foreign
+   path - a reference minted under one and re-proved under another is
+   refused as a recycled process - but no memory reader, because nothing
+   here reads memory. */
+void now_observe_walk_aim_self(NowObsWalk *walk,
+                               const ProcessSerialNumber *psn)
+{
+    ProcessInfoRec info;
+    Str31          name;
+    unsigned long  fingerprint = 0;
+
+    if (walk == NULL || psn == NULL) {
+        return;
+    }
+    memset(&info, 0, sizeof(info));
+    info.processInfoLength = sizeof(info);
+    info.processName = name;
+    info.processAppSpec = NULL;
+    name[0] = 0;
+    if (GetProcessInformation((ProcessSerialNumber *)psn, &info) == noErr) {
+        fingerprint = now_obs_process_fingerprint(
+            (unsigned long)psn->highLongOfPSN,
+            (unsigned long)psn->lowLongOfPSN,
+            (unsigned long)info.processSignature,
+            (unsigned long)info.processLaunchDate,
+            (unsigned long)info.processLocation,
+            (unsigned long)info.processSize, name);
+    }
+    /* NULL memory reader: nothing here reads memory. The window list is
+       our own, from the Window Manager. */
+    now_obs_walk_aim(walk, NULL, (unsigned long)GetWindowList(),
+                     (unsigned long)psn->highLongOfPSN,
+                     (unsigned long)psn->lowLongOfPSN, fingerprint,
+                     (unsigned long)TickCount());
+}
+
 void now_observe_walk_aim(NowObsWalk *walk, const ProcessSerialNumber *psn,
                           const NowAxContext *context)
 {
@@ -194,6 +230,93 @@ void now_observe_walk_end(NowObsWalk *walk)
 
 /* --- resolution, for the act plane ------------------------------------- */
 
+
+/* --- this application's own elements ------------------------------------
+
+   A reference minted against OUR OWN process cannot be resolved the way
+   every other one is. `bind_target` aims a foreign A5 world and the
+   walk reads a WindowRecord out of it; for self there is no foreign
+   world to aim and no reason to read memory at all - the Toolbox will
+   answer directly, in this process, about windows this application
+   made.
+
+   The validation is not weaker for that, it is stronger: a self
+   reference is live exactly when the WindowRef is still in this
+   application's own window list, which is the same question the
+   fingerprint check asks a foreign one and is answered here without a
+   guess. */
+
+static int psn_is_self(const ProcessSerialNumber *psn)
+{
+    ProcessSerialNumber me;
+    Boolean             same = false;
+
+    if (psn == NULL || GetCurrentProcess(&me) != noErr) {
+        return 0;
+    }
+    if (SameProcess((ProcessSerialNumber *)psn, &me, &same) != noErr) {
+        return 0;
+    }
+    return same ? 1 : 0;
+}
+
+static int window_is_ours(WindowRef window)
+{
+    WindowRef it = GetWindowList();
+    int       hops = 0;
+
+    if (window == NULL) {
+        return 0;
+    }
+    for (; it != NULL && hops < 64; it = GetNextWindow(it), ++hops) {
+        if (it == window) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void resolve_self(NowObsKind kind, const NowObsEntry *entry,
+                         NowObsHandle *out)
+{
+    WindowRef window = (WindowRef)entry->identity.window_address;
+    Rect      box;
+
+    if (kind == kNowObsKindElement) {
+        ControlRef control = (ControlRef)entry->identity.control_handle;
+
+        /* A control is live when the window that owns it still is. */
+        if (control == NULL
+                || !window_is_ours(GetControlOwner(control))) {
+            out->verdict = kNowObsNotFound;
+            out->why = kNowObsWhyElementGone;
+            return;
+        }
+        out->control = control;
+        out->window = GetControlOwner(control);
+        out->verdict = kNowObsOk;
+        out->identity = entry->identity;
+        return;
+    }
+
+    if (!window_is_ours(window)) {
+        out->verdict = kNowObsNotFound;
+        out->why = kNowObsWhyElementGone;
+        return;
+    }
+    out->window = window;
+    out->verdict = kNowObsOk;
+    out->identity = entry->identity;
+    if (GetWindowBounds(window, kWindowStructureRgn, &box) == noErr) {
+        out->detail.window.left = box.left;
+        out->detail.window.top = box.top;
+        out->detail.window.right = box.right;
+        out->detail.window.bottom = box.bottom;
+    }
+    out->detail.window.address = (unsigned long)window;
+    out->detail.window.visible = IsWindowVisible(window) ? 1 : 0;
+}
+
 static void resolve_kind(NowObsKind kind, const char *reference, long len,
                          NowObsHandle *out)
 {
@@ -227,6 +350,10 @@ static void resolve_kind(NowObsKind kind, const char *reference, long len,
     }
     out->psn.highLongOfPSN = (long)entry->identity.psn_hi;
     out->psn.lowLongOfPSN = (long)entry->identity.psn_lo;
+    if (psn_is_self(&out->psn)) {
+        resolve_self(kind, entry, out);
+        return;
+    }
     if (!bind_target(&out->psn, &target)) {
         out->verdict = kNowObsNotFound;
         out->why = kNowObsWhyNoProcess;
