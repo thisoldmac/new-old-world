@@ -147,12 +147,42 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         status = message
     }
 
+    /// **The object-first entry point.** A person acted on a THING; this
+    /// decides what that means and sends it.
+    ///
+    /// It overrides the protocol's default rather than using it, for one
+    /// reason: the default expresses a plan in the action vocabulary, and
+    /// no action case can name a file. `finderSelect` and `finderOpen`
+    /// are the whole argument for objects, and they are served here.
+    func perform(_ interaction: Interaction) {
+        let plan = InteractionPolicy.plan(for: interaction, planes: planes)
+        switch plan {
+        case .nothing(let why):
+            /* Not a failure, and not silence either. A click on something
+               inert still has to LOOK like it was seen, or a person
+               concludes the mirror is dead. */
+            status = why
+        case .unsupported(let why):
+            status = "\(InteractionBridge.label(for: interaction)): \(why)"
+        default:
+            let label = InteractionBridge.label(for: interaction)
+            status = label + "…"
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if let complaint = await self.serve(plan) {
+                    self.status = "\(label) — \(complaint)"
+                } else {
+                    self.status = label
+                }
+                self.poll()                  // show the effect now
+            }
+        }
+    }
+
+    /// Kept for the action vocabulary, which the agent-shaped half of
+    /// MirrorKit still speaks. Nothing in NOW's own path uses it.
     func perform(_ actions: [MirrorAction], label: String) {
         guard !actions.isEmpty else { return }
-        /* Availability is asked BEFORE anything is sent, and asked of the
-           vocabulary rather than re-derived here. A driver that carried
-           its own opinion would make the two disagree, and only one of
-           them is what a GUI greys out. */
         for action in actions {
             let verdict = ActionModel.availability(action, planes: planes)
             guard verdict == .available else {
@@ -164,14 +194,122 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         Task { @MainActor [weak self] in
             guard let self else { return }
             for action in actions {
-                let outcome = await self.send(action)
-                if let outcome {
+                if let outcome = await self.send(action) {
                     self.status = "\(label) — \(outcome)"
-                    return                       // stop at the first refusal
+                    return
                 }
             }
             self.status = label
-            self.poll()                          // show the effect now
+            self.poll()
+        }
+    }
+
+    // MARK: - Serving a plan
+
+    /// Returns nil when it went, or a sentence for a person when it did
+    /// not. Every branch answers one or the other; none stays quiet.
+    private func serve(_ plan: InteractionPlan) async -> String? {
+        switch plan {
+        case .controlPart(let ref, let part, _):
+            return reading(await act.controlAct(.init(element: ref,
+                                                      part: part)))
+
+        case .windowAct(let ref, let what):
+            return reading(await act.windowAct(Self.request(ref, what)))
+
+        case .menuCommand(let menuID, let index, let left):
+            return reading(await act.menuAct(
+                .init(menu: menuID, item: index,
+                      titleLeft: left, process: nil)))
+
+        case .keystroke(let code, let char, let mods):
+            return reading(await act.key(
+                .init(code: code, char: char, mods: mods)))
+
+        case .setText(let ref, let text):
+            return reading(await act.setElementText(element: ref, text: text))
+
+        case .typeText(let text):
+            /* NOW has no `type` verb: text reaches the guest as the
+               keystrokes it is made of, which is also what a real
+               keyboard would have sent. */
+            for ch in text.unicodeScalars {
+                let code = ActionModel.keycodes[
+                    Character(String(ch).lowercased())] ?? 0
+                if let complaint = reading(await act.key(
+                    .init(code: code, char: Int(ch.value), mods: 0))) {
+                    return complaint
+                }
+            }
+            return nil
+
+        case .activateApp(let psn):
+            return await activate(psn)
+
+        case .finderSelect(let item, let container):
+            return await finder(
+                "select \(reference(item, in: container))")
+        case .finderOpen(let item, let container):
+            return await finder(
+                "open \(reference(item, in: container))")
+        case .finderDeselect:
+            return await finder("select {}")
+
+        case .nothing, .unsupported:
+            return nil                       // handled before we get here
+        }
+    }
+
+    /// **How an icon is reached without a positional click.**
+    ///
+    /// The Finder addresses its own items by name, and NOW can carry an
+    /// AppleScript, so an object with a name is actionable on a guest
+    /// whose contract has no click-at-a-point verb at all. This is the
+    /// case the object model exists for.
+    private func reference(
+        _ item: String,
+        in container: InteractionPlan.FinderContainer) -> String {
+        let escaped = item.replacingOccurrences(of: "\"", with: "\\\"")
+        switch container {
+        case .desktop:
+            return "item \"\(escaped)\" of desktop"
+        case .window(let title):
+            let w = title.replacingOccurrences(of: "\"", with: "\\\"")
+            /* `item "X" of window "T"` and NOT `target of window "T"`.
+               Measured on OS 9.1's Finder, 2026-08-02: the target form
+               fails with osaErr -1753 on both `window` and `Finder
+               window`, while resolving the item inside the window
+               directly answers with its full path. Naming the WINDOW
+               rather than a path is also what stays true when the same
+               folder is open twice. */
+            return "item \"\(escaped)\" of window \"\(w)\""
+        }
+    }
+
+    private func finder(_ phrase: String) async -> String? {
+        let source = "tell application \"Finder\" to \(phrase)"
+        return await run("script", ["source": source])
+    }
+
+    private func activate(_ psn: String) async -> String? {
+        let parts = psn.split(separator: ".")
+        guard parts.count == 2, let hi = Int(parts[0]), let lo = Int(parts[1])
+        else { return "that process reference is not a PSN" }
+        return await run("activate", ["serialHi": String(hi),
+                                      "serialLo": String(lo)])
+    }
+
+    /// The verbs with no typed projection on this host yet. Reads the
+    /// guest's own reply rather than assuming a send is a success.
+    private func run(_ verb: String,
+                     _ args: [String: String]) async -> String? {
+        await withCheckedContinuation { continuation in
+            listener.runCommand(verb, args: args) { result in
+                if result.ok { return continuation.resume(returning: nil) }
+                let error = result.error
+                continuation.resume(returning:
+                    "\(error?.code ?? "error"): \(error?.message ?? "")")
+            }
         }
     }
 

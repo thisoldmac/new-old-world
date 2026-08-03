@@ -39,11 +39,38 @@ public protocol MirrorSceneSource: ObservableObject {
     /// an action, because the same click is a hardware press on one target
     /// and a Control Manager part on another - see `ActionPlanes`.
     var planes: ActionPlanes { get }
+
+    /// **The object-first entry point, and the one the view uses.**
+    ///
+    /// A person acted on a THING; what to send is the driver's business.
+    /// The default below plans it and expresses the plan in the older
+    /// action vocabulary, so a driver written before this still works. A
+    /// driver that can talk to the Finder by name overrides it and serves
+    /// the two cases no action case can name.
+    func perform(_ interaction: Interaction)
 }
 
 public extension MirrorSceneSource {
     /// Mirror's agent, which is what every conformer was until 2026-08-02.
     var planes: ActionPlanes { .agent }
+
+    func perform(_ interaction: Interaction) {
+        switch InteractionPolicy.plan(for: interaction, planes: planes) {
+        case .nothing(let why):
+            /* Not a failure and not silence. A person who clicked
+               something inert needs to know the mirror SAW the click. */
+            note(why)
+        case .unsupported(let why):
+            note(why)
+        case let plan:
+            let actions = InteractionBridge.actions(for: plan,
+                                                    interaction: interaction)
+            guard !actions.isEmpty else {
+                return note("nothing to send for that")
+            }
+            perform(actions, label: InteractionBridge.label(for: interaction))
+        }
+    }
 }
 
 /// The live half of the mirror: owns the poll loop and the dispatcher on a
@@ -347,11 +374,10 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                         defer { appMenuOpen = false; hoveredApp = nil }
                         if let app = HitTester.appMenuRow(scene, x: start.x,
                                                           y: start.y) {
-                            controller.perform(
-                                ActionModel.click(
-                                    on: .appMenuItem(psn: app.psn,
-                                                     name: app.name)),
-                                label: "switch to \(app.name)")
+                            act(.app(.init(psn: app.psn, name: app.name,
+                                           isFront: false)),
+                                .click(count: 1, mods: 0,
+                                       at: Point(x: start.x, y: start.y)))
                         }
                         return
                     }
@@ -375,32 +401,42 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                     } else if case .desktop = target {
                         selectedItem = nil      // clicking empty desktop clears
                     }
-                    let at = "@\(start.x),\(start.y)"
-                    controller.perform(
-                        ActionModel.click(on: target, count: count,
-                                          planes: controller.planes,
-                                          in: controller.scene),
-                        label: "\(label(for: target, count: count)) \(at)")
+                    guard let object = ObjectResolver.resolve(target,
+                                                              in: scene) else {
+                        controller.note("nothing under the pointer")
+                        return
+                    }
+                    act(object, .click(count: count, mods: 0,
+                                       at: Point(x: start.x, y: start.y)))
                 } else if case .move = mode {
-                    controller.perform(
-                        ActionModel.titlebarDrag(
-                            from: start, to: end,
-                            window: draggedWindow(at: start),
-                            planes: controller.planes),
-                        label: "move window \(start) → \(end)")
+                    dragged(scene, from: start, to: end)
                 } else if case .resize = mode {
-                    controller.perform(
-                        ActionModel.growDrag(
-                            from: start, to: end,
-                            window: draggedWindow(at: start),
-                            planes: controller.planes),
-                        label: "resize window \(start) → \(end)")
+                    dragged(scene, from: start, to: end)
                 } else if case .thumb = mode {
                     controller.perform(
                         ActionModel.thumbDrag(from: start, to: end),
                         label: "scroll thumb \(start) → \(end)")
                 }
             }
+    }
+
+    /// Hand one interaction to the driver. Every gesture in this view
+    /// funnels through here, which is what makes "the driver decides"
+    /// true rather than aspirational.
+    private func act(_ object: MirrorObject, _ gesture: MirrorGesture) {
+        controller.perform(Interaction(object: object, gesture: gesture))
+    }
+
+    /// A drag that grabbed window chrome. The object is resolved from
+    /// where the gesture BEGAN - by the time it ends the pointer has left
+    /// the title bar, and an act names the window, not the pointer.
+    private func dragged(_ scene: MirrorKit.Scene,
+                         from start: (x: Int, y: Int),
+                         to end: (x: Int, y: Int)) {
+        guard let object = ObjectResolver.object(
+            at: Point(x: start.x, y: start.y), in: scene) else { return }
+        act(object, .drag(from: Point(x: start.x, y: start.y),
+                          to: Point(x: end.x, y: end.y), mods: 0))
     }
 
     /// The window a drag GRABBED, found from where the gesture began.
@@ -439,14 +475,13 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
             // shortcut-less one through the Portal, which answers the app's own
             // MenuSelect. Neither depends on where a row happens to be drawn,
             // which is what used to make selection miss.
-            let actions = ActionModel.menuSelect(menu: menu, item: item)
-            guard !actions.isEmpty else {
-                if !item.separator {
-                    controller.note("\"\(item.title)\" cannot be actioned")
-                }
-                return
-            }
-            controller.perform(actions, label: "menu \(item.title)")
+            /* Object-first here too: the row is a THING with a menu id
+               and an index, and the driver decides whether that becomes a
+               keystroke or a MenuSelect the application answers. Either
+               way it does not depend on where the row was drawn, which is
+               what used to make selection miss below a separator. */
+            act(ObjectResolver.menuItem(item, in: menu, index: item.index),
+                .click(count: 1, mods: 0, at: Point(x: p.x, y: p.y)))
         }
         // Clicking a different title while open switches menus.
         if p.y < HitTester.menubarHeight,
