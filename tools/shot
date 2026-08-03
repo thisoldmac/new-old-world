@@ -1,0 +1,23 @@
+#!/bin/sh
+# The paired screendump, in one command, because rule 2a asks for one
+# beside EVERY mirror assessment and friction is what stops that
+# happening. Writes a PNG and prints its path.
+#
+#     tools/shot d15-r1-move
+set -eu
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+now=$(dirname "$here")
+lab="$now"
+while [ "$lab" != / ] && [ ! -f "$lab/tools/lib.sh" ]; do lab=$(dirname "$lab"); done
+[ -f "$lab/tools/lib.sh" ] || { echo "no lab checkout above $now" >&2; exit 1; }
+
+sock=$(ls -t "$now"/run/*/qmp.sock 2>/dev/null | head -1)
+[ -n "$sock" ] || { echo "no VM: no run/*/qmp.sock under $now" >&2; exit 1; }
+
+out="${NOW_SHOT_DIR:-${TMPDIR:-/tmp}}/mirror-shots"
+mkdir -p "$out"
+name="${1:-shot}"
+"$lab/tools/qmp" "$sock" screendump "{\"filename\":\"$out/$name.ppm\"}" >/dev/null
+sips -s format png "$out/$name.ppm" --out "$out/$name.png" >/dev/null
+rm -f "$out/$name.ppm"
+echo "$out/$name.png"
