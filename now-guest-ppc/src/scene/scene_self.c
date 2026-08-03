@@ -314,7 +314,8 @@ static Handle current_live_menu_list(void)
  * Pulled out of the menu-bar walk so the SYSTEM menus can go through
  * exactly the same path; a second copy of the item loop is how the two
  * would drift. */
-static void add_one_menu(NowScene *s, MenuHandle menu, short left)
+static void add_one_menu(NowScene *s, MenuHandle menu, MenuRef items,
+                         short left)
 {
     Str255 title;
     char   ctitle[64];
@@ -332,7 +333,7 @@ static void add_one_menu(NowScene *s, MenuHandle menu, short left)
     if (index < 0) {
         return;
     }
-    count = (short)CountMenuItems(menu);
+    count = (short)CountMenuItems(items);
     for (i = 1; i <= count; ++i) {
         Str255 text;
         char   ctext[64];
@@ -340,15 +341,43 @@ static void add_one_menu(NowScene *s, MenuHandle menu, short left)
         short  cmd = 0;
 
         text[0] = 0;
-        GetMenuItemText(menu, i, text);
+        GetMenuItemText(items, i, text);
         pascal_to_c(text, ctext, sizeof ctext);
-        GetItemMark(menu, i, (short *)&mark);
-        GetItemCmd(menu, i, (short *)&cmd);
+        GetItemMark(items, i, (short *)&mark);
+        GetItemCmd(items, i, (short *)&cmd);
         (void)now_scene_add_menu_item(s, index, ctext, i,
                                       (ctext[0] == '-') ? 1 : 0,
-                                      IsMenuItemEnabled(menu, i) ? 1 : 0,
+                                      IsMenuItemEnabled(items, i) ? 1 : 0,
                                       (int)mark, (char)cmd);
     }
+}
+
+/* Carbon's live low-memory MenuList has the authoritative identity and
+   geometry for every title, but on Mac OS 9 its Apple entry is a shell
+   with no items. The actual system-owned menu is attached to the
+   corresponding item in Carbon's root menu. Match the submenu by menu ID:
+   title text cannot identify the Apple glyph, and position is geometry,
+   not identity. */
+static MenuRef root_items_for(MenuRef root, MenuHandle entry)
+{
+    MenuItemIndex i;
+    ItemCount     count;
+    MenuID        wanted;
+
+    if (root == NULL || entry == NULL) {
+        return entry;
+    }
+    wanted = GetMenuID(entry);
+    count = CountMenuItems(root);
+    for (i = 1; i <= count; ++i) {
+        MenuRef child = NULL;
+
+        if (GetMenuItemHierarchicalMenu(root, i, &child) == noErr
+                && child != NULL && GetMenuID(child) == wanted) {
+            return child;
+        }
+    }
+    return entry;
 }
 
 static void collect_self_menubar(NowScene *s, int row)
@@ -357,6 +386,7 @@ static void collect_self_menubar(NowScene *s, int row)
        handle is owned by the Menu Manager; unlike GetMenuBar's copy it must
        not be disposed here. */
     Handle bar = current_live_menu_list();
+    MenuRef root;
     NowMenuListHead *head;
     short offset;
 
@@ -367,11 +397,19 @@ static void collect_self_menubar(NowScene *s, int row)
         return;
     }
     head = (NowMenuListHead *)*bar;
+    root = AcquireRootMenu();
     for (offset = 6; offset <= head->last_offset; offset = (short)(offset + 6)) {
         NowMenuListEntry *entry =
             (NowMenuListEntry *)((char *)*bar + offset);
+        MenuRef items = entry->menu;
 
-        add_one_menu(s, entry->menu, entry->left);
+        if (entry->menu != NULL && CountMenuItems(entry->menu) == 0) {
+            items = root_items_for(root, entry->menu);
+        }
+        add_one_menu(s, entry->menu, items, entry->left);
+    }
+    if (root != NULL) {
+        (void)ReleaseMenu(root);
     }
 }
 

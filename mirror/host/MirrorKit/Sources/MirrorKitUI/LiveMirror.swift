@@ -479,7 +479,8 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
             case .titleBar: return .openHand
             default: return .arrow
             }
-        case .control, .dialogItem, .menu, .menuItem, .app, .finderItem:
+        case .control, .dialogItem, .menu, .menuItem,
+             .applicationMenuAction, .app, .finderItem:
             return .pointingHand
         case .desktop:
             return .arrow

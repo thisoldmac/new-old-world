@@ -102,6 +102,30 @@ final class NOWMirrorSourceTests: XCTestCase {
         }
     }
 
+    // MARK: - System Application-menu visibility
+
+    func testApplicationVisibilityUsesClassicFinderSemantics() {
+        XCTAssertEqual(
+            NOWMirrorSource.applicationVisibilityScript(
+                .hide(name: "New Old World")),
+            "tell application \"Finder\" to set visible of application "
+                + "process \"New Old World\" to false")
+        XCTAssertEqual(
+            NOWMirrorSource.applicationVisibilityScript(.showAll),
+            "tell application \"Finder\" to set visible of every "
+                + "application process to true")
+
+        let others = NOWMirrorSource.applicationVisibilityScript(
+            .hideOthers(except: "New \"Old\" World"))
+        XCTAssertTrue(others.contains("repeat with candidate in every "
+                                      + "application process"), others)
+        XCTAssertTrue(others.contains(
+            "if name of candidate is not \"New \\\"Old\\\" World\" then"),
+            others)
+        XCTAssertTrue(others.contains("set visible of candidate to false"),
+                      others)
+    }
+
     /// The guest states the key rule and this asserts against THAT, not
     /// against a copy of it — a translation tested against its own
     /// assumptions tests one half twice.

@@ -140,12 +140,31 @@ public enum ObjectResolver {
 
            Matched by title, because that is what the menu shows and what
            the person read. A row that names nothing running stays a menu
-           command; so do Hide / Hide Others / Show All, which name no
-           process and for which there is no verb yet. */
+           command, except for the three system-owned visibility controls,
+           whose subject is the front process or the running set. */
         if menu.id == applicationMenuID, !item.separator,
            let app = apps.first(where: { $0.name == item.title }) {
             return .app(.init(psn: app.psn, name: app.name,
                               isFront: app.front))
+        }
+        if menu.id == applicationMenuID, !item.separator {
+            let front = apps.first(where: { $0.front }).map {
+                MirrorObject.App(psn: $0.psn, name: $0.name, isFront: true)
+            }
+            let kind: MirrorObject.ApplicationMenuAction.Kind?
+            if let front, item.title == "Hide \(front.name)" {
+                kind = .hide(front)
+            } else if let front, item.title == "Hide Others" {
+                kind = .hideOthers(except: front)
+            } else if item.title == "Show All" {
+                kind = .showAll
+            } else {
+                kind = nil
+            }
+            if let kind {
+                return .applicationMenuAction(.init(
+                    title: item.title, isEnabled: item.enabled, kind: kind))
+            }
         }
         return .menuItem(.init(menu: shape(menu), index: index,
                                title: item.title, cmd: item.cmd,
@@ -160,10 +179,16 @@ public enum ObjectResolver {
 
     /// The process that owns the desktop backdrop, which is the Finder
     /// on every machine this has ever run on - found by asking which
-    /// process draws the backdrop rather than by matching its name.
+    /// process draws the backdrop rather than by matching its name. A
+    /// self-scene does not carry the Finder's backdrop window, so its
+    /// Process Manager signature is the authoritative fallback.
     static func desktopOwner(in scene: Scene) -> MirrorObject.App? {
-        let psn = scene.windows.first(where: HitTester.isDesktopBackdrop)?.psn
-        guard let psn,
+        let backdropPSN = scene.windows
+            .first(where: HitTester.isDesktopBackdrop)?.psn
+        let finderProcess = scene.processes?.first(where: {
+            $0.signature == "MACS"
+        })
+        guard let psn = backdropPSN ?? finderProcess?.psn,
               let app = scene.apps.first(where: { $0.psn == psn })
                   ?? scene.processes?.first(where: { $0.psn == psn })
                       .map({ Scene.AppRef(psn: $0.psn, name: $0.name,

@@ -50,6 +50,13 @@ public enum InteractionBridge {
         case .activateApp(let psn):
             return [.activate(psn: psn)]
 
+        case .applicationVisibility:
+            /* The old action vocabulary has no system Application-menu
+               visibility operation. NOW's direct driver serves this typed
+               plan through the guest; emitting menuInvoke would restore the
+               route that reported success without changing the machine. */
+            return []
+
         case .finderSelect, .finderOpen, .finderDeselect:
             /* No action case names a file. A driver that speaks to the
                Finder by name serves these itself; one that does not falls

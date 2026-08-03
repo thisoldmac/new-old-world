@@ -37,6 +37,11 @@ public enum InteractionPlan: Equatable, Sendable {
     /// Bring an application forward, by PSN.
     case activateApp(psn: String)
 
+    /// Apply one system-owned visibility command from the Application
+    /// menu. Kept typed so it cannot fall back to commanding menu -16489,
+    /// the route that reported success without changing the machine.
+    case applicationVisibility(ApplicationVisibility)
+
     /// Ask the Finder to select or open an item BY NAME. This is the
     /// case the whole object-first shape exists for: an icon has no
     /// control reference and no window of its own, so a gesture-first
@@ -65,6 +70,12 @@ public enum InteractionPlan: Equatable, Sendable {
         /// scripting addresses it.
         case window(title: String)
     }
+
+    public enum ApplicationVisibility: Equatable, Sendable {
+        case hide(name: String)
+        case hideOthers(except: String)
+        case showAll
+    }
 }
 
 /// The rules. One function, one switch, no I/O.
@@ -80,6 +91,8 @@ public enum InteractionPolicy {
         case .window(let w):    return window(w, interaction.gesture, planes)
         case .menuItem(let i):  return menuItem(i, interaction.gesture,
                                                 planes)
+        case .applicationMenuAction(let a):
+            return applicationMenuAction(a, interaction.gesture)
         case .menu:             return .nothing(why: "opening a menu is the "
                                                 + "mirror's own drawing; "
                                                 + "nothing is sent until a "
@@ -312,6 +325,26 @@ public enum InteractionPolicy {
             return .typeText(text)
         default:
             return .nothing(why: "nothing to do there")
+        }
+    }
+
+    private static func applicationMenuAction(
+        _ action: MirrorObject.ApplicationMenuAction,
+        _ gesture: MirrorGesture
+    ) -> InteractionPlan {
+        guard case .click = gesture else {
+            return .nothing(why: "an Application-menu row answers to a click")
+        }
+        guard action.isEnabled else {
+            return .nothing(why: "\"\(action.title)\" is disabled")
+        }
+        switch action.kind {
+        case .hide(let app):
+            return .applicationVisibility(.hide(name: app.name))
+        case .hideOthers(let app):
+            return .applicationVisibility(.hideOthers(except: app.name))
+        case .showAll:
+            return .applicationVisibility(.showAll)
         }
     }
 

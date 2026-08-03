@@ -65,6 +65,12 @@ public enum MirrorObject: Equatable, Sendable {
     /// One row of an open menu. The command a person actually meant.
     case menuItem(MenuItem)
 
+    /// A system-owned command in the Application menu. These rows are
+    /// neither application MenuSelect commands nor application rows: they
+    /// mutate process visibility, and the guest's enabled state remains
+    /// authoritative.
+    case applicationMenuAction(ApplicationMenuAction)
+
     /// A running application, by PSN.
     case app(App)
 
@@ -208,6 +214,22 @@ public enum MirrorObject: Equatable, Sendable {
         }
     }
 
+    public struct ApplicationMenuAction: Equatable, Sendable {
+        public enum Kind: Equatable, Sendable {
+            case hide(App)
+            case hideOthers(except: App)
+            case showAll
+        }
+        public var title: String
+        public var isEnabled: Bool
+        public var kind: Kind
+        public init(title: String, isEnabled: Bool, kind: Kind) {
+            self.title = title
+            self.isEnabled = isEnabled
+            self.kind = kind
+        }
+    }
+
     public struct FinderItem: Equatable, Sendable {
         public var name: String
         /// nil means the desktop. A window means that folder's window,
@@ -249,6 +271,8 @@ public enum MirrorObject: Equatable, Sendable {
             return m.isApple ? "the Apple menu" : "the \(m.title) menu"
         case .menuItem(let i):
             return "\"\(i.title)\""
+        case .applicationMenuAction(let a):
+            return "\"\(a.title)\""
         case .app(let a):
             return a.name
         case .desktop:
@@ -266,7 +290,8 @@ public enum MirrorObject: Equatable, Sendable {
         case .control(let c): return c.window
         case .dialogItem(let i): return i.window
         case .finderItem(let f): return f.container
-        case .menu, .menuItem, .app, .desktop: return nil
+        case .menu, .menuItem, .applicationMenuAction, .app, .desktop:
+            return nil
         }
     }
 }

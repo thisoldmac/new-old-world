@@ -521,6 +521,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         case .activateApp(let psn):
             return await activate(psn)
 
+        case .applicationVisibility(let visibility):
+            return await run("script", [
+                "source": .text(Self.applicationVisibilityScript(visibility)),
+            ])
+
         case .finderSelect(let item, let container):
             return await finder(
                 "select \(reference(item, in: container))")
@@ -574,6 +579,35 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
            `activate` fronted process 0.0 - see CommandArg. */
         return await run("activate", ["serialHi": .number(hi),
                                       "serialLo": .number(lo)])
+    }
+
+    /// Classic Finder owns the Application menu's visibility semantics.
+    /// The names come from the same live process rows that populated the
+    /// menu; this uses the guest's portable script command and no QEMU-only
+    /// input or framebuffer route.
+    static func applicationVisibilityScript(
+        _ action: InteractionPlan.ApplicationVisibility
+    ) -> String {
+        func quoted(_ name: String) -> String {
+            name.replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+        }
+        switch action {
+        case .hide(let name):
+            return "tell application \"Finder\" to set visible of "
+                + "application process \"\(quoted(name))\" to false"
+        case .hideOthers(let except):
+            return """
+            tell application "Finder"
+            repeat with candidate in every application process
+            if name of candidate is not "\(quoted(except))" then set visible of candidate to false
+            end repeat
+            end tell
+            """
+        case .showAll:
+            return "tell application \"Finder\" to set visible of every "
+                + "application process to true"
+        }
     }
 
     /// Runs a verb and returns one labelled row from its own reply, or

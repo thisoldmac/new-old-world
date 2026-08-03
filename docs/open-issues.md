@@ -14,6 +14,49 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## CYCLE 24 RED BASELINE; FIX BUILT, NOT UX-VERIFIED (2026-08-03)
+
+Cycle 24 was driven through the uniquely identified native C24 Mirror and
+paired with QMP screendumps used only as the guest oracle. The restored
+menubar geometry held: Apple, File, View, Windows, Help, the clock, and the
+right-aligned Application menu matched the authoritative frame. The following
+remained broken, and none is green merely because the subsequent patch builds:
+
+- Apple opened a correctly placed but empty dropdown. The live low-memory
+  MenuList supplies the system menu's measured identity and left edge, but its
+  Apple MenuHandle carries no rows under CarbonLib. The patch now retains that
+  identity/geometry and reads the corresponding submenu's rows from
+  `AcquireRootMenu`; it needs a C25 native drive.
+- Clicking bare desktop did not bring Finder forward. A NOW self-scene carries
+  no Finder desktop-backdrop window, so desktop ownership resolved to nil. The
+  patch falls back to the live Process Manager row with Finder signature
+  `'MACS'`; it needs a C25 native drive.
+- Hide New Old World did nothing. Hide, Hide Others, and Show All were generic
+  menu commands even though menu -16489 is system-owned. They now resolve as
+  typed visibility operations, preserve the guest's enabled/disabled state,
+  and use the classic Finder on the guest. Each of the four switcher cases —
+  Hide, Hide Others, Show All, and selecting another app — remains red until
+  directly driven and compared in C25.
+- Clicking NOW Workshop's close box resolved to the correct named window, then
+  refused because the optional resident extension was absent. `winact` already
+  had a direct self-window implementation, but an unconditional
+  `now_act_ready()` check made it unreachable. The patch moves only self-window
+  Window Manager acts ahead of that optional-plane gate; foreign windows and
+  self controls still require their real application event path.
+- Finder-front rendering remained a stale, disabled NOW Workshop with
+  `content: no front window`. Workshop whole-frame fidelity also remains red.
+
+The repository gate passes (90 native tests plus the host Debug/Release gate),
+and an explicit Retro68 PowerPC Carbon cross-build passes. Mutation checks were
+watched fail against the pre-patch self-window route and pre-preflight gate.
+This is **tested, not emulator UX-verified and not metal-verified**.
+
+Every future cycle now begins with a gate-enforced five-step sanity preflight:
+compare Workshop, resize Workshop, close Workshop, double-click Macintosh HD,
+and compare Finder. Slice-specific work — currently Date & Time — cannot score
+until all five pass in order. A failed preflight closes the cycle with later
+rows explicitly blocked rather than implying they were exercised.
+
 ## WATCHED, FIDELITY STILL RED: Workshop reports its manually drawn structure (2026-08-03)
 
 Cycle 19 paired the native Mirror with the authoritative guest and corrected an

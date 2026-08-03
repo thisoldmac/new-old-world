@@ -274,14 +274,31 @@ final class InteractionPolicyTests: XCTestCase {
                        "and choosing it fronts that application by psn, "
                        + "not by commanding menu -16489")
 
-        // Hide / Hide Others / Show All name no process, so they stay
-        // menu commands — still broken, but honestly so.
-        let hide = Scene.MenuItem(title: "Hide Others", index: 2, separator: false,
-                                  enabled: true, mark: false, cmd: "")
-        guard case .menuItem = ObjectResolver.menuItem(hide, in: appMenu,
-                                                       index: 2, apps: apps)
-        else {
-            return XCTFail("a row that names no process is not an app")
+        let visibilityRows: [(Scene.MenuItem,
+                              InteractionPlan.ApplicationVisibility)] = [
+            (.init(title: "Hide Mail", index: 1, separator: false,
+                   enabled: true, mark: false, cmd: ""), .hide(name: "Mail")),
+            (.init(title: "Hide Others", index: 2, separator: false,
+                   enabled: true, mark: false, cmd: ""),
+             .hideOthers(except: "Mail")),
+            (.init(title: "Show All", index: 3, separator: false,
+                   enabled: true, mark: false, cmd: ""), .showAll),
+        ]
+        for (row, expected) in visibilityRows {
+            let resolved = ObjectResolver.menuItem(row, in: appMenu,
+                                                   index: row.index,
+                                                   apps: apps)
+            XCTAssertEqual(plan(resolved, tap),
+                           .applicationVisibility(expected), row.title)
+        }
+
+        let disabledShow = Scene.MenuItem(
+            title: "Show All", index: 3, separator: false, enabled: false,
+            mark: false, cmd: "")
+        let disabled = ObjectResolver.menuItem(disabledShow, in: appMenu,
+                                               index: 3, apps: apps)
+        guard case .nothing = plan(disabled, tap) else {
+            return XCTFail("the guest-disabled Show All row must be inert")
         }
 
         // And an ordinary menu is untouched by any of this.

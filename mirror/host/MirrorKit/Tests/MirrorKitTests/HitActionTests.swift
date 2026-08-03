@@ -117,6 +117,38 @@ final class HitActionTests: XCTestCase {
         }
     }
 
+    /// NOW's self scene contains its own Workshop window but not the
+    /// Finder's backdrop. The Process Manager signature still identifies
+    /// the desktop owner, so clicking bare desktop must not decay to a
+    /// deselect in the already-front application.
+    func testDesktopOwnerFallsBackToFinderSignatureWithoutBackdrop() throws {
+        var scene = try fixtureScene("06-axtree-all-graphcalc")
+        scene.windows.removeAll(where: HitTester.isDesktopBackdrop)
+        scene.apps = [
+            .init(psn: "0.7", name: "New Old World", front: true,
+                  error: nil),
+            .init(psn: "0.3", name: "Finder", front: false, error: nil),
+        ]
+        scene.processes = [
+            .init(psn: "0.7", name: "New Old World", front: true,
+                  signature: "NOW!"),
+            .init(psn: "0.3", name: "Finder", front: false,
+                  signature: "MACS"),
+        ]
+
+        guard case .desktop(let owner) = ObjectResolver.resolve(
+            .desktop(x: 700, y: 500),
+            in: scene)
+        else { return XCTFail("bare desktop must remain an object") }
+        XCTAssertEqual(owner?.psn, "0.3")
+        XCTAssertEqual(
+            InteractionPolicy.plan(for: .init(
+                object: .desktop(owner),
+                gesture: .click(count: 1, mods: 0,
+                                at: Point(x: 700, y: 500)))),
+            .activateApp(psn: "0.3"))
+    }
+
     // MARK: - Action model
 
     func testControlClickMapsToAxdo() throws {

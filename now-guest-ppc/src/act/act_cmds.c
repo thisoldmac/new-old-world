@@ -204,17 +204,14 @@ static const char *refusal_code(NowObsVerdict verdict)
 
    `ref_out` is the caller's own reference string, echoed back in the
    reply: a receipt names what was asked for. */
+static int act_target_is_self(const ProcessSerialNumber *psn);
+
 static int resolve_for_act(const char *json, long id, char *out, long cap,
                            NowObsKind kind, NowObsHandle *handle,
-                           char *ref_out)
+                           char *ref_out, int self_direct)
 {
     NowActStatus st;
 
-    st = now_act_ready();
-    if (st != kNowActOk) {
-        reply_status(out, cap, id, st);
-        return 0;
-    }
     if (!arg_str(json, kind == kNowObsKindWindow ? "window" : "element",
                  ref_out, (long)kNowObsTokenMax)) {
         reply_error(out, cap, id, "bad-request",
@@ -250,6 +247,20 @@ static int resolve_for_act(const char *json, long id, char *out, long cap,
         }
         reply_error(out, cap, id, refusal_code(handle->verdict),
                     now_obs_why_text(handle->why));
+        return 0;
+    }
+    /* A self window can be acted on with this application's own Window
+       Manager calls. Requiring the OPTIONAL resident plane before even
+       resolving it made the direct self path below unreachable: Close,
+       Move and Zoom all reported "extension not installed" despite
+       owning the WindowRef in this process. Other self acts still need
+       the plane because their APPLICATION event path owns the meaning. */
+    if (self_direct && act_target_is_self(&handle->psn)) {
+        return 1;
+    }
+    st = now_act_ready();
+    if (st != kNowActOk) {
+        reply_status(out, cap, id, st);
         return 0;
     }
     /* The process the reference was minted against, never "the front
@@ -411,7 +422,7 @@ void now_act_run_winact(const char *request_json, long id, char *out, long cap)
     }
 
     if (!resolve_for_act(request_json, id, out, cap, kNowObsKindWindow,
-                         &handle, ref)) {
+                         &handle, ref, 1)) {
         return;
     }
     /* The window record the RESOLVER read, not a second read of our own:
@@ -600,7 +611,7 @@ static void text_exchange(const char *request_json, long id, char *out,
         body_len = (long)strlen(body);
     }
     if (!resolve_for_act(request_json, id, out, cap, kNowObsKindElement,
-                         &handle, ref)) {
+                         &handle, ref, 0)) {
         return;
     }
     /* WHAT THE MINT KNEW, and not a fresh opinion about it. The route to
@@ -707,7 +718,7 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
         return;
     }
     if (!resolve_for_act(request_json, id, out, cap, kNowObsKindElement,
-                         &handle, ref)) {
+                         &handle, ref, 0)) {
         return;
     }
     if (handle.identity.control_handle == 0) {
@@ -831,7 +842,7 @@ void now_act_run_ditemact(const char *request_json, long id,
         return;
     }
     if (!resolve_for_act(request_json, id, out, cap, kNowObsKindElement,
-                         &handle, ref)) {
+                         &handle, ref, 0)) {
         return;
     }
     if (handle.identity.control_handle == 0) {

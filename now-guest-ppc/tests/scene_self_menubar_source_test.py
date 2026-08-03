@@ -34,6 +34,18 @@ def main() -> None:
                          "Application menu on the live Mac OS 9 guest")
     if "DisposeHandle(bar)" in collect:
         raise SystemExit("the Menu Manager owns LMGetMenuList's handle")
+    if "AcquireRootMenu()" not in collect or "ReleaseMenu(root)" not in collect:
+        raise SystemExit("the system-owned Apple rows must be acquired from "
+                         "and released with Carbon's live root menu")
+    if "root_items_for(root, entry->menu)" not in collect:
+        raise SystemExit("an empty MenuList shell must resolve its root-menu "
+                         "submenu by identity")
+    root_items = body("static MenuRef root_items_for(")
+    if "GetMenuItemHierarchicalMenu" not in root_items:
+        raise SystemExit("root-menu rows must come from the attached submenu")
+    if "GetMenuID(child) == wanted" not in root_items:
+        raise SystemExit("the root submenu must match the measured MenuList "
+                         "entry by menu ID, not by title or geometry")
     for guessed in ("kNowSelfAppleMenuID", "head->last_right"):
         if guessed in collect or guessed in READ:
             raise SystemExit("system menus must come from the live MenuList, "
