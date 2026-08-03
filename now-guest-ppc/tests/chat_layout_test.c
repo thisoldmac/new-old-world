@@ -23,11 +23,11 @@ static void inside(const Rect *r, const Rect *body)
     assert(r->left < r->right && r->top < r->bottom);
 }
 
-static void check(const Rect *body)
+static void check_lines(const Rect *body, int prompt_lines)
 {
     ChatLayoutRects r;
 
-    chat_layout_compute(body, &r);
+    chat_layout_compute(body, prompt_lines, &r);
     inside(&r.provider_popup, body);
     inside(&r.model_popup, body);
     inside(&r.new_button, body);
@@ -48,8 +48,37 @@ static void check(const Rect *body)
     assert(r.scrollbar.top == r.transcript.top);
     assert(r.scrollbar.bottom == r.transcript.bottom);
 
-    /* The pane must hold a useful number of rows even at minimum. */
+    /* The pane must hold a useful number of rows even at minimum -
+       including with the prompt grown to its full height. */
     assert(chat_layout_visible_lines(&r) >= 8);
+}
+
+static void check(const Rect *body)
+{
+    ChatLayoutRects one;
+    ChatLayoutRects three;
+    ChatLayoutRects capped;
+    int lines;
+
+    for (lines = 1; lines <= kChatPromptMaxLines; ++lines) {
+        check_lines(body, lines);
+    }
+
+    /* The well grows by exactly one transcript row per prompt line,
+       upward - the bottom edge and the Send button never move. */
+    chat_layout_compute(body, 1, &one);
+    chat_layout_compute(body, 3, &three);
+    assert(three.input.bottom == one.input.bottom);
+    assert(three.send_button.top == one.send_button.top);
+    assert(one.input.top - three.input.top == 2 * kChatLineHeight);
+    assert(three.transcript.bottom < one.transcript.bottom);
+
+    /* Out-of-range counts clamp instead of walking off the page. */
+    chat_layout_compute(body, 99, &capped);
+    assert(capped.input.top
+           == one.input.top - (kChatPromptMaxLines - 1) * kChatLineHeight);
+    chat_layout_compute(body, 0, &capped);
+    assert(capped.input.top == one.input.top);
 }
 
 int main(void)

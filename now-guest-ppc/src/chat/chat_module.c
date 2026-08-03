@@ -43,7 +43,9 @@ enum {
 };
 
 static WindowRef g_owner;
+static Rect g_body;                   /* kept for prompt-growth relayout */
 static ChatLayoutRects g_r;
+static int g_prompt_lines = 1;        /* TE line count, clamped, laid out */
 static ControlRef g_provider_popup;
 static ControlRef g_model_popup;
 static ControlRef g_new_btn;
@@ -151,14 +153,16 @@ static void inval_rows(int from, int to)
 
 /* --- the prompt (TextEdit) ----------------------------------------------- */
 
+static void prompt_grew_or_shrank(void);
+
 static void prompt_rects(Rect *view, Rect *dest)
 {
     *view = g_r.input;
     InsetRect(view, 4, 3);
-    /* Single line: the destination is far wider than the view, so TE
-       never wraps, and TEAutoView keeps the caret's end in sight. */
+    /* Destination matches the view's width, so TE wraps at the well's
+       edge; the well itself grows with the line count (layout), and
+       past the cap TEAutoView scrolls the caret's line into sight. */
     *dest = *view;
-    dest->right = (short)(dest->left + 2000);
 }
 
 static long prompt_size(void)
@@ -193,6 +197,7 @@ static void prompt_clear(void)
     }
     TESetText("", 0, g_te);
     inval(&g_r.input);                /* TESetText mutates, never draws */
+    prompt_grew_or_shrank();          /* a grown well shrinks back */
 }
 
 static void scroll_to(int top, Boolean from_person)
@@ -417,12 +422,11 @@ static void chat_note(int kind, const char *reply)
     default:
         break;
     }
-    /* The idle caches notice the line count moved and repaint only the
-       pane; scroll follows the tail while pinned. */
-    if (g_pinned) {
-        g_top = max_top();
-    }
-    sync_scrollbar();
+    /* Mutation only - the header's promise. The idle pass pins the
+       tail, syncs the scrollbar and computes the damage; pinning HERE
+       made idle's before/after top comparison read "nothing scrolled"
+       and the history above the tail was never repainted (metal,
+       2026-08-02: new chunks rewrote the bottom rows in place). */
 }
 
 /* --- actions ------------------------------------------------------------ */
@@ -557,7 +561,9 @@ static OSErr chat_create(WindowRef owner, const Rect *body)
     Str255 text;
 
     g_owner = owner;
-    chat_layout_compute(body, &g_r);
+    g_body = *body;
+    g_prompt_lines = 1;
+    chat_layout_compute(body, 1, &g_r);
     if (g_font == 0) {
         Str255 geneva;
 
@@ -661,9 +667,9 @@ static void chat_show(Boolean visible)
     }
 }
 
-static void chat_layout_op(const Rect *body)
+static void apply_layout(void)
 {
-    chat_layout_compute(body, &g_r);
+    chat_layout_compute(&g_body, g_prompt_lines, &g_r);
     MoveControl(g_provider_popup, g_r.provider_popup.left,
                 g_r.provider_popup.top);
     SizeControl(g_provider_popup,
@@ -693,11 +699,44 @@ static void chat_layout_op(const Rect *body)
         (*g_te)->viewRect = view;
         (*g_te)->destRect = dest;
         TECalText(g_te);
+        TESelView(g_te);              /* keep the caret's line in sight */
     }
     if (g_pinned) {
         g_top = max_top();
     }
     sync_scrollbar();
+}
+
+static void chat_layout_op(const Rect *body)
+{
+    g_body = *body;
+    apply_layout();
+}
+
+/* After any edit that can change TE's line count. The well grows and
+   the page above it moves - once per line boundary, never per key. */
+static void prompt_grew_or_shrank(void)
+{
+    int lines = g_te != NULL ? (*g_te)->nLines : 1;
+    Rect moved;
+
+    if (lines < 1) {
+        lines = 1;
+    }
+    if (lines > kChatPromptMaxLines) {
+        lines = kChatPromptMaxLines;
+    }
+    if (lines == g_prompt_lines) {
+        return;
+    }
+    g_prompt_lines = lines;
+    apply_layout();
+    /* Everything below the popups moved or resized; the popup row did
+       not. Honest full damage for a geometry change. */
+    moved = g_body;
+    moved.top = g_r.transcript.top;
+    inval(&moved);
+    g_shown_lines = -1;               /* the pane's rows all moved */
 }
 
 static void draw_transcript(void)
@@ -905,6 +944,7 @@ static Boolean chat_key(const EventRecord *event)
         TextFont(g_font);
         TextSize(9);
         TEKey((short)c, g_te);
+        prompt_grew_or_shrank();
         return true;
     }
     return false;

@@ -9,13 +9,24 @@ static void set_rect(Rect *r, short left, short top,
     r->bottom = bottom;
 }
 
-void chat_layout_compute(const Rect *body, ChatLayoutRects *out)
+void chat_layout_compute(const Rect *body, int prompt_lines,
+                         ChatLayoutRects *out)
 {
     short left = (short)(body->left + kChatMargin);
     short right = (short)(body->right - kChatMargin);
     short top = (short)(body->top + kChatMargin);
     short bottom = (short)(body->bottom - kChatMargin);
+    short input_h;
     short y;
+
+    if (prompt_lines < 1) {
+        prompt_lines = 1;
+    }
+    if (prompt_lines > kChatPromptMaxLines) {
+        prompt_lines = kChatPromptMaxLines;
+    }
+    input_h = (short)(kChatInputHeight
+                      + (prompt_lines - 1) * kChatLineHeight);
 
     /* Top row: provider then model, the model list following the
        provider choice; New Chat at the right. */
@@ -31,13 +42,14 @@ void chat_layout_compute(const Rect *body, ChatLayoutRects *out)
              (short)(right - kChatNewButtonWidth), top,
              right, (short)(top + kChatTopRowHeight));
 
-    /* Bottom row: the prompt well with Send against the right edge. */
+    /* Bottom row: the prompt well with Send against the right edge.
+       The well is the one rect that grows with its text. */
     set_rect(&out->send_button,
              (short)(right - kChatSendButtonWidth),
              (short)(bottom - kChatInputHeight),
              right, bottom);
     set_rect(&out->input, left,
-             (short)(bottom - kChatInputHeight),
+             (short)(bottom - input_h),
              (short)(out->send_button.left - kChatRowGap), bottom);
 
     /* The status line sits just above the input row. */

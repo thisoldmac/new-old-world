@@ -24,7 +24,9 @@ enum {
     kChatModelPopupWidth = 200,
     kChatNewButtonWidth = 76,
     kChatStatusHeight = 14,           /* the transient status line */
-    kChatInputHeight = 22,            /* hand-drawn prompt well */
+    kChatInputHeight = 22,            /* the prompt well at ONE line */
+    kChatPromptMaxLines = 5,          /* the well grows this far, then
+                                         TE scrolls inside it */
     kChatSendButtonWidth = 58,
     kChatScrollBarWidth = 16,
     kChatRowGap = 6,
@@ -42,7 +44,12 @@ typedef struct ChatLayoutRects {
     Rect send_button;                 /* Send / Stop, right of the well */
 } ChatLayoutRects;
 
-void chat_layout_compute(const Rect *body, ChatLayoutRects *out);
+/* prompt_lines is the TE line count, clamped here to
+   [1, kChatPromptMaxLines]: the well grows upward with the text and
+   the transcript gives up the rows. The Send button stays one line
+   tall, anchored at the bottom beside the well. */
+void chat_layout_compute(const Rect *body, int prompt_lines,
+                         ChatLayoutRects *out);
 
 /* How many whole transcript rows the pane shows - the scroll math's
    one shared number. */
