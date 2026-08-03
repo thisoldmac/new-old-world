@@ -67,6 +67,51 @@ it passes its environment through. Host-cc tested
 (`mirror_layout_test.c`, `mirror_port_staging_source_test.py`, both
 mutation-watched); **nothing in this entry has run on a machine.**
 
+## BROKEN: the scene and `observe` disagree about the same machine (2026-08-02)
+
+**Measured**, one machine, one moment, Finder in front, guest build
+`88507f25a8b9`:
+
+| asked | answer |
+|---|---|
+| `axsnap` | Finder `bind=ok`, `hasWindows=true`, a5 `0x1f50f550`, fresh stamp |
+| `observe(front)` | Finder, window "Desktop", with a minted ref |
+| **`scene.request`** | **one window, and it is NOW's OWN** — no Finder at all |
+| Mirror agent's `axtree` | the front app's window with **ten controls**, plus Desktop |
+
+The scene enumerates all nine processes correctly and marks the Finder
+front, so enumeration is not the gap. The Finder's app row carries **no
+error token**, meaning its anchor resolved — the scene admitted none of
+its windows and said nothing about why.
+
+**Two readers in the same binary disagree about the same process at the
+same instant.** `observe` goes through `now_ax_bind_process` and sees the
+window; the scene goes through `peek_read.c :: resolve` →
+`now_peek_windows_for_psn` and sees nothing. The capability is present
+and reachable — the scene is not using the path that works.
+
+**Why this matters beyond the bug.** This was run as the go/no-go for
+dropping Mirror's agent and integrating fully. It answers it: NOW's scene
+is **not** structurally poorer than the agent's. It already carries the
+front application's MENU BAR (eight menus, eighty items) which the
+agent's `axtree` does not carry at all, and the windows it is missing are
+readable by code in the same binary. The agent is not compensating for
+something NOW cannot do.
+
+**Two instrument gaps found on the way**, both worth closing with the
+reader:
+
+- The per-process anchor **verdict** is computed (`scene_collect.c` hands
+  it to `now_scene_add_process`) and **never encoded**. A process that
+  resolved fine and yielded no windows is indistinguishable from one that
+  genuinely has none — which is exactly what this investigation spent its
+  time on.
+- `kNowSceneAnchorNoWindows` produces no error token by design. Right for
+  a process with no windows; wrong here.
+
+**Not the cause, but fixed while here:** the scene path never armed the
+anchor plane at all. It does now.
+
 ## FIXED: the act plane now acts inside foreign applications (2026-08-02)
 
 **The diagnosis below was right and the repair is in.** `act_install`
