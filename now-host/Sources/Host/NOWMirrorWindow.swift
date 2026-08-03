@@ -1,0 +1,72 @@
+import AppKit
+import SwiftUI
+import MirrorKit
+import MirrorKitUI
+
+/// The mirror's own window, drawn by NOW.
+///
+/// A separate window rather than a Workshop pane, and that is a decision
+/// rather than an inheritance: a mirror is a whole other Macintosh's
+/// screen, and putting it in a detail pane beside a sidebar means every
+/// coordinate a person aims at is scaled into a box a third the size.
+/// `FitTransform` letterboxes to preserve the guest's aspect, so the
+/// mapping stays exact at any size — but only a window can be given the
+/// size that makes the target big enough to hit.
+///
+/// It is deliberately thin. Everything a person does lives in
+/// `LiveMirrorView`, and everything the machine answers lives in
+/// `NOWMirrorSource`; this owns a window and its lifetime.
+@MainActor
+final class NOWMirrorWindow: NSObject, NSWindowDelegate {
+
+    private var window: NSWindow?
+    private let source: NOWMirrorSource
+    private let screen: MirrorKit.Scene.ScreenSize
+
+    init(source: NOWMirrorSource,
+         screen: MirrorKit.Scene.ScreenSize = .init(w: 800, h: 600)) {
+        self.source = source
+        self.screen = screen
+    }
+
+    func show(title: String) {
+        if window == nil {
+            let controller = NSHostingController(
+                rootView: LiveMirrorView(controller: source))
+            /* The WINDOW owns its size, not the scene inside it. Without
+               this an arriving scene republishes its own ideal size as a
+               window constraint, so the window jumps every time the guest
+               opens something - the same defect the main window was fixed
+               for on 2026-07-31. */
+            controller.sizingOptions = []
+            let w = NSWindow(contentViewController: controller)
+            w.title = title
+            w.setContentSize(NSSize(width: screen.w, height: screen.h))
+            /* A floor rather than a fixed size: below roughly half the
+               guest's own screen the Platinum chrome a person aims at -
+               a 16-point scroll arrow, an 11-point close box - stops
+               being reliably clickable with a real mouse. */
+            w.contentMinSize = NSSize(width: screen.w / 2, height: screen.h / 2)
+            w.setFrameAutosaveName("NOWMirrorWindow")
+            w.isReleasedWhenClosed = false
+            w.delegate = self
+            window = w
+        }
+        source.start()
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func close() {
+        source.stop()
+        window?.orderOut(nil)
+    }
+
+    /// Closing the window stops the poll. A mirror nobody is looking at
+    /// should not keep taking the guest's one transfer lane — the machine
+    /// is cooperatively scheduled and every walk is time it is not doing
+    /// what its user asked.
+    func windowWillClose(_ notification: Notification) {
+        source.stop()
+    }
+}

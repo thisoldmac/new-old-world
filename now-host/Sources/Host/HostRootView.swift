@@ -99,7 +99,12 @@ struct HostRootView: View {
         case "processes":
             ProcessesModuleView(model: state.processes)
         case "mirror":
-            MirrorControlView(model: state.mirror)
+            MirrorControlView(
+                model: state.mirror,
+                openMirror: {
+                    state.mirrorWindow.show(
+                        title: "Mirror — \(state.connectedMachineName)")
+                })
         case "console":
             ConsoleModuleView(model: state.console, listener: state.listener)
         case "connections":

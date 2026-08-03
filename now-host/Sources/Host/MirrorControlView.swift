@@ -10,6 +10,12 @@ import SwiftUI
 /// without a reason.
 struct MirrorControlView: View {
     @ObservedObject var model: MirrorControlModel
+    /// Opens the mirror NOW draws itself. Separate from `model`, which is
+    /// the lifecycle of Mirror's own binary: this page now offers both
+    /// while the fold is in progress, and they are genuinely different
+    /// acts - one launches an application, the other opens a window this
+    /// app draws over the wire already connected.
+    var openMirror: (() -> Void)?
     @State private var showsDiagnostics = false
 
     var body: some View {
@@ -19,6 +25,7 @@ struct MirrorControlView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     statusCard
+                    nowMirrorCard
                     lifecycleCard
                     configCard
                 }
@@ -181,6 +188,26 @@ struct MirrorControlView: View {
     }
 
     // MARK: - Lifecycle
+
+    /// The mirror this app draws. It needs no Mirror checkout, no second
+    /// wire and no agent - the connected Mac and its NOW Extension are
+    /// the whole requirement, which is what the fold is FOR.
+    private var nowMirrorCard: some View {
+        card {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Mirror this Mac").font(.headline)
+                Spacer()
+                Button("Open Mirror") { openMirror?() }
+                    .disabled(openMirror == nil)
+            }
+            Text("Draws the connected Mac in a NOW window, over NOW's own "
+                 + "wire. Clicks, menus and window acts go through the act "
+                 + "plane in the NOW Extension.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
 
     private var lifecycleCard: some View {
         card {

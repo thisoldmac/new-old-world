@@ -97,6 +97,30 @@ final class HostAppState: ObservableObject {
     /// so the page moves with the picker like every other one.
     private(set) lazy var mirror = MirrorControlModel(
         guestProbe: MirrorGuestWireProbe(listener: listener))
+    /// The mirror NOW draws itself, over NOW's own wire — as opposed to
+    /// `mirror` above, which is the lifecycle of Mirror's separate binary
+    /// and its separate wire. Both exist while the fold is in progress and
+    /// they are not the same thing: one launches an application, this one
+    /// opens a window this app draws.
+    private(set) lazy var mirrorSource = NOWMirrorSource(
+        listener: listener,
+        act: AgentIntegrationActControl(
+            listener: listener,
+            currentSessionID: { [unowned self] in
+                self.agentIntegration.connectedSessionID()
+            }))
+    private(set) lazy var mirrorWindow = NOWMirrorWindow(source: mirrorSource)
+
+    /// What to put in the mirror window's title bar. A person may have
+    /// several Macs connected, and a window showing one of them that does
+    /// not say which is a window they will drive by mistake.
+    var connectedMachineName: String {
+        if case .connected(let name, _) = Self.guestState(
+            from: listener.state, key: listener.activeKey) {
+            return name
+        }
+        return "no Mac connected"
+    }
     private(set) lazy var census = CensusModuleModel(listener: listener)
     private(set) lazy var diagnostics = DiagnosticsModel(listener: listener)
     private(set) lazy var networking = NetworkingModel(listener: listener)
