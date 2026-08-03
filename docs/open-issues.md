@@ -80,6 +80,14 @@ gesture-first model could not express:
   background window fronts its APP and the rest is the Finder's choice.
 - **`role` is still a guess** (`min != max`), so About This Computer's
   memory bars are reported as scroll bars.
+- **The process strip is drawn but not clickable.** `SceneRenderer` paints
+  it at the bottom of the guest canvas, so its pixels are in GUEST
+  coordinates and `HitTester` — which only knows what the scene
+  contains — resolves a click there to whatever guest window is behind
+  it. Switching applications works, through the Application menu at the
+  top right (`appMenu` → `appMenuItem` → `activate`); the strip is the
+  obvious-looking route and is the one that does nothing. Either it
+  becomes a hit target or it should stop looking like one.
 
 ## The mirror NOW draws itself: built, gated, not yet WATCHED (2026-08-02)
 
