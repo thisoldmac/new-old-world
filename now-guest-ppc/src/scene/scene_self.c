@@ -282,17 +282,21 @@ static void add_one_menu(NowScene *s, MenuHandle menu, short left)
  * regression twice before this was traced to its cause: NOW was not
  * reporting the menu it actually has.
  *
- * A left of 0 is honest: these are right-aligned by the Menu Manager and
- * their position is not ours to state. The host lays them out on the
- * right and never uses the left for them. */
+ * The application menu is right-aligned and therefore keeps a left of 0:
+ * the host lays it out from the screen edge and never consumes that field.
+ * Help is different. It is the first menu after the ordinary left-hand
+ * list, and MenuList's `last_right` is the exact coordinate at which the
+ * Menu Manager placed it. Reporting 0 for Help made the mirror draw the
+ * word over the Apple menu and made the first title impossible to hit.
+ * Use the guest's coordinate; do not reconstruct title widths on the host. */
 enum {
     kNowSelfApplicationMenuID = -16489,
     kNowSelfHelpMenuID        = -16490
 };
 
-static void collect_self_system_menus(NowScene *s)
+static void collect_self_system_menus(NowScene *s, short help_left)
 {
-    add_one_menu(s, GetMenuHandle(kNowSelfHelpMenuID), 0);
+    add_one_menu(s, GetMenuHandle(kNowSelfHelpMenuID), help_left);
     add_one_menu(s, GetMenuHandle(kNowSelfApplicationMenuID), 0);
 }
 
@@ -318,7 +322,7 @@ static void collect_self_menubar(NowScene *s, int row)
     }
     /* And the ones the system put there, which the walk above cannot
        reach. Without these the host synthesises a switcher of its own. */
-    collect_self_system_menus(s);
+    collect_self_system_menus(s, head->last_right);
     DisposeHandle(bar);
 }
 

@@ -30,11 +30,13 @@
 # THE FOUR RULES THIS ENCODES, each measured, none negotiable:
 #
 #   1. AN INIT LOADS AT BOOT ONLY, and OS 9 ignores QMP `system_powerdown`.
-#      So the reboot is a hard QMP `quit` and a relaunch without -loadvm.
-#      A stage that soft-reboots silently leaves the OLD extension resident.
-#   2. GIVE THE VOLUME TIME TO FLUSH before the power-off. The re-verify
-#      after the reboot is the real guardrail: if the writes never reached
-#      the qcow2, this fails loudly instead of testing yesterday's bytes.
+#      The guest must therefore shut ITSELF down through Finder before the
+#      relaunch without -loadvm. A QMP `quit` is a power cut: it sets the
+#      unclean-volume bit and makes Disk First Aid part of the next boot.
+#   2. GIVE THE VOLUME TIME TO FLUSH, through a guest-clean shutdown rather
+#      than elapsed host time. The re-verify after the reboot remains the
+#      second guardrail: if the writes never reached the qcow2, this fails
+#      loudly instead of testing yesterday's bytes.
 #   3. SESSION-PRIVATE CLONE, ALWAYS. tbt_clone_disk (APFS cp -c) is
 #      instant and free, and it is what lets parallel sessions run without
 #      image-lock collisions. The shared base stays pristine.
@@ -162,14 +164,14 @@ boot () {   # $1 = fresh | cold
         "$HOSTFWD" "" "$QMP" "$RUN/qemu.pid" "$RUN/qemu.log"
 }
 
-# Poll the anchor with a real hello. The legacy headless path presses Return
-# through QMP between tries because a clone booted from a hard power-off shows
-# the Disk First Aid modal. UX verification must not use that path: set
-# NOW_DIRECT_INPUT_ONLY=1 with NOW_SPIN_DISPLAY=1 and dismiss the modal through
-# the visible emulator window with a real keyboard/mouse driver instead.
+# Poll the anchor with a real hello. This deliberately NEVER dismisses a boot
+# modal with QMP input. Doing so hid dirty base images and dirty staging reboots
+# behind a green readiness result. A visible direct-input run may let a person
+# diagnose and dismiss an already-dirty base; a headless run times out and
+# leaves the machine visible through its QMP screendump evidence.
 wait_anchor () {
     python3 - "$QMP" "$ANCHOR" "$LAB" "${NOW_DIRECT_INPUT_ONLY:-0}" <<'PY'
-import subprocess, sys, time
+import sys, time
 qmp, anchor, lab, direct_input_only = (
     sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4] == "1"
 )
@@ -183,12 +185,10 @@ while time.time() - t0 < 300:
             print(f"anchor ready ({int(time.time()-t0)}s)"); sys.exit(0)
     except Exception:
         pass
-    if not direct_input_only:
-        subprocess.run([f"{lab}/tools/qmp", qmp, "send-key",
-                        '{"keys":[{"type":"qcode","data":"ret"}]}'],
-                       capture_output=True)
     time.sleep(6)
-sys.exit("anchor timeout")
+mode = "visible direct-input run" if direct_input_only else "headless run"
+sys.exit(f"anchor timeout ({mode}); inspect a QMP screendump for a dirty-image "
+         "or other boot modal — readiness never dismisses one")
 PY
 }
 
@@ -199,13 +199,18 @@ echo "== stage the extension and the app =="
 NOW_ANCHOR_PORT="$ANCHOR" NOW_EXT_BIN="$EXT_BIN" NOW_APP_BIN="$APP_BIN" \
     python3 "$NOW/tools/stage-ext.py"
 
-echo "== let OS 9 flush the staged writes (${NOW_FLUSH_WAIT:-20}s) =="
-sleep "${NOW_FLUSH_WAIT:-20}"
-
-# Rule 1. Hard quit, not system_powerdown, and relaunch without -loadvm.
-echo "== COLD reboot, which is the only way an INIT loads =="
-"$LAB/tools/qmp" "$QMP" quit >/dev/null 2>&1 || true
-sleep 3
+# Rule 1. The Macintosh, not QEMU, owns the volume-clean transition. The
+# bootstrap Worker is already serving on ANCHOR and has the script verb; it
+# asks Finder to shut down, and shutdown-guest waits for QEMU to exit. If that
+# route is refused or times out, STOP with the VM intact. Falling back to quit
+# would manufacture the very Disk First Aid boot this gate is meant to avoid.
+echo "== guest-clean shutdown, then COLD boot so the INIT loads =="
+"$LAB/tools/shutdown-guest" "$QMP" --port "$ANCHOR" \
+    --timeout "${NOW_SHUTDOWN_WAIT:-120}" || {
+        echo "clean shutdown failed; VM left running at $QMP" >&2
+        exit 1
+    }
+sleep 2
 boot cold; wait_anchor
 
 echo "== did the staged files survive the reboot? =="
@@ -265,7 +270,8 @@ set -e
 
 echo
 echo "anchor=127.0.0.1:$ANCHOR  wire=127.0.0.1:$WIRE  qmp=$QMP"
-echo "stop:  $LAB/tools/qmp $QMP quit     # QMP quit, never pkill"
+echo "stop:  $LAB/tools/shutdown-guest $QMP --port $ANCHOR"
+echo "       # asks Finder to shut down and leaves the VM up on failure"
 echo "       ...and never by PORT. \`lsof -ti tcp:$WIRE\` matches QEMU:"
 echo "       under user-mode networking the GUEST's outbound connection"
 echo "       belongs to the qemu process, so killing what holds the wire"

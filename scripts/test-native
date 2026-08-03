@@ -190,6 +190,7 @@ run_py now-guest-shared control_kind_source_test.py
 echo "== Mirror UX gate =="
 run_py_path tools/mirror-gate-tests/test_mirror_gate_evidence.py
 run_py_path tools/mirror-gate-tests/test_mirror_parity_inventory.py
+run_py_path tools/mirror-gate-tests/test_spin_up_ppc_shutdown.py
 
 echo "== now-guest-ppc (PowerPC Carbon) =="
 run_c now-guest-ppc census_decode_test.c     ""  src/census/census_decode.c
@@ -259,6 +260,7 @@ run_py now-guest-ppc qdtrace_arm_order_source_test.py
 run_c now-guest-ppc scene_build_test.c       ""  src/scene/scene_build.c
 run_c now-guest-ppc scene_json_test.c        ""  src/scene/scene_build.c \
       src/scene/scene_json.c src/core/json.c
+run_py now-guest-ppc scene_self_menubar_source_test.py
 # The bridge between the ported walk and the scene's rules - the layer
 # the roadmap called "the ported walk has no caller". It is Toolbox-free
 # on purpose (it takes a bound memory seam as an argument), so the
