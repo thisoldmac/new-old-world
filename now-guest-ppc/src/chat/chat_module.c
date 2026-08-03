@@ -384,7 +384,7 @@ static void chat_note(int kind, const char *reply)
         break;
     case kChatAnswerGap:
         chat_transcript_end_answer(&g_transcript);
-        chat_transcript_add(&g_transcript, "* ", reply);
+        chat_transcript_add(&g_transcript, kChatLineMarker, "* ", reply);
         chat_transcript_begin_answer(&g_transcript);
         break;
     case kChatAnswerResult: {
@@ -403,7 +403,7 @@ static void chat_note(int kind, const char *reply)
             } else {
                 snprintf(line, sizeof line, "%.20s", code);
             }
-            chat_transcript_add(&g_transcript, "* ", line);
+            chat_transcript_add(&g_transcript, kChatLineMarker, "* ", line);
         }
         g_streaming = false;
         g_status[0] = '\0';
@@ -413,7 +413,7 @@ static void chat_note(int kind, const char *reply)
     }
     case kChatAnswerError:
         chat_transcript_end_answer(&g_transcript);
-        chat_transcript_add(&g_transcript, "* ", reply);
+        chat_transcript_add(&g_transcript, kChatLineMarker, "* ", reply);
         g_streaming = false;
         g_status[0] = '\0';
         retitle_send();
@@ -469,7 +469,7 @@ static void send_prompt(void)
         inval(&g_r.status);
         return;
     }
-    chat_transcript_add(&g_transcript, "> ", prompt);
+    chat_transcript_add(&g_transcript, kChatLinePerson, "> ", prompt);
     chat_transcript_begin_answer(&g_transcript);
     prompt_clear();
     g_streaming = true;
@@ -779,7 +779,19 @@ static void draw_transcript(void)
         band.bottom = (short)(band.top + kChatLineHeight);
         EraseRect(&band);
         if (line < lines) {
-            draw_at(x, y, chat_transcript_line(&g_transcript, line));
+            const char *text = chat_transcript_line(&g_transcript, line);
+
+            /* The person's turns sit against the right edge - who is
+               speaking is visible at a glance, the modern transcript
+               shape drawn with plain QuickDraw. */
+            if (chat_transcript_line_kind(&g_transcript, line)
+                    == kChatLinePerson) {
+                short w = TextWidth(text, 0, (short)strlen(text));
+
+                draw_at((short)(f.right - 5 - w), y, text);
+            } else {
+                draw_at(x, y, text);
+            }
         }
         y = (short)(y + kChatLineHeight);
     }

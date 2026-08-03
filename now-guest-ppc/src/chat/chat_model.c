@@ -220,10 +220,12 @@ static void transcript_take_line(void *ctx, const char *line)
     if (t->count == kChatMaxLines) {
         memmove(t->lines[0], t->lines[1],
                 (size_t)(kChatMaxLines - 1) * kChatCols);
+        memmove(t->kind, t->kind + 1, (size_t)(kChatMaxLines - 1));
         --t->count;
     }
     strncpy(t->lines[t->count], line, kChatCols - 1);
     t->lines[t->count][kChatCols - 1] = '\0';
+    t->kind[t->count] = t->adding_kind;
     ++t->count;
 }
 
@@ -231,6 +233,7 @@ void chat_transcript_reset(ChatTranscript *t)
 {
     t->count = 0;
     t->answering = 0;
+    t->adding_kind = kChatLineModel;
     chat_feed_reset(&t->feed, transcript_take_line, t);
 }
 
@@ -253,6 +256,15 @@ const char *chat_transcript_line(const ChatTranscript *t, int index)
         return t->feed.open;
     }
     return t->lines[index];
+}
+
+int chat_transcript_line_kind(const ChatTranscript *t, int index)
+{
+    if (index < 0 || index >= chat_transcript_count(t)
+        || index == t->count) {       /* the open tail is the model's */
+        return kChatLineModel;
+    }
+    return t->kind[index];
 }
 
 /* The adapter for chat_transcript_add: the prefix on the first line,
@@ -287,7 +299,7 @@ static void prefixed_take_line(void *ctx, const char *text)
     state->first = 0;
 }
 
-void chat_transcript_add(ChatTranscript *t, const char *prefix,
+void chat_transcript_add(ChatTranscript *t, int kind, const char *prefix,
                          const char *text)
 {
     /* A whole entry through its own feed, so wrapping is the one
@@ -299,6 +311,7 @@ void chat_transcript_add(ChatTranscript *t, const char *prefix,
     state.prefix = prefix;
     state.prefix_len = prefix != NULL ? strlen(prefix) : 0;
     state.first = 1;
+    t->adding_kind = (unsigned char)kind;
     chat_feed_reset(&feed, prefixed_take_line, &state);
     chat_feed_text(&feed, text != NULL ? text : "");
     chat_feed_flush(&feed);
@@ -307,6 +320,8 @@ void chat_transcript_add(ChatTranscript *t, const char *prefix,
            a blank prompt is a thing a person can send and should see. */
         prefixed_take_line(&state, "");
     }
+    /* Streamed lines landing later are the model's. */
+    t->adding_kind = kChatLineModel;
 }
 
 void chat_transcript_begin_answer(ChatTranscript *t)

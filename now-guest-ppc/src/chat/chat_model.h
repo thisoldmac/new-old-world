@@ -75,9 +75,21 @@ void chat_feed_flush(ChatLineFeed *feed);
    height rows anywhere in this application, and none here. The person's
    turns carry a "> " prefix, markers "* ", the model's text none. While
    an answer streams, the feed's open tail is visible as one extra line
-   so the page draws text the moment it arrives. */
+   so the page draws text the moment it arrives.
+
+   Every line remembers WHO SAID IT, because that is a drawing fact:
+   the page right-aligns the person's lines, and alignment must survive
+   the ring dropping old lines. */
+enum {
+    kChatLineModel = 0,
+    kChatLinePerson = 1,
+    kChatLineMarker = 2
+};
+
 typedef struct {
     char lines[kChatMaxLines][kChatCols];
+    unsigned char kind[kChatMaxLines];
+    unsigned char adding_kind;        /* what take_line stamps next */
     int count;
     ChatLineFeed feed;
     Boolean answering;
@@ -87,8 +99,11 @@ void chat_transcript_reset(ChatTranscript *t);
 /* Lines visible now, the open tail included while answering. */
 int chat_transcript_count(const ChatTranscript *t);
 const char *chat_transcript_line(const ChatTranscript *t, int index);
-/* A whole entry, wrapped, every line carrying the prefix's indent. */
-void chat_transcript_add(ChatTranscript *t, const char *prefix,
+/* kChatLine* for the line; the streaming open tail is the model's. */
+int chat_transcript_line_kind(const ChatTranscript *t, int index);
+/* A whole entry, wrapped, every line carrying the prefix's indent and
+   the given kind. */
+void chat_transcript_add(ChatTranscript *t, int kind, const char *prefix,
                          const char *text);
 void chat_transcript_begin_answer(ChatTranscript *t);
 void chat_transcript_feed(ChatTranscript *t, const char *chunk);

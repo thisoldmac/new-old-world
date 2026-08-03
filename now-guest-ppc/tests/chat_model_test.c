@@ -184,23 +184,29 @@ static void test_transcript_streams_and_rolls(void)
     int i;
 
     chat_transcript_reset(&t);
-    chat_transcript_add(&t, "> ", "what runs here?");
+    chat_transcript_add(&t, kChatLinePerson, "> ", "what runs here?");
     assert(chat_transcript_count(&t) == 1);
     assert(strcmp(chat_transcript_line(&t, 0), "> what runs here?") == 0);
+    assert(chat_transcript_line_kind(&t, 0) == kChatLinePerson);
 
     chat_transcript_begin_answer(&t);
     chat_transcript_feed(&t, "Looking at the ");
-    /* The open tail is visible mid-stream. */
+    /* The open tail is visible mid-stream, and it is the model's. */
     assert(chat_transcript_count(&t) == 2);
     assert(strcmp(chat_transcript_line(&t, 1), "Looking at the ") == 0);
+    assert(chat_transcript_line_kind(&t, 1) == kChatLineModel);
     chat_transcript_feed(&t, "process table.\nDone.");
     chat_transcript_end_answer(&t);
     assert(chat_transcript_count(&t) == 3);
     assert(strcmp(chat_transcript_line(&t, 1),
                   "Looking at the process table.") == 0);
     assert(strcmp(chat_transcript_line(&t, 2), "Done.") == 0);
+    assert(chat_transcript_line_kind(&t, 1) == kChatLineModel);
+    assert(chat_transcript_line_kind(&t, 2) == kChatLineModel);
 
-    /* A wrapped person entry indents its continuation to the prefix. */
+    /* A wrapped person entry indents its continuation to the prefix,
+       and EVERY wrapped line keeps the person's kind - alignment must
+       not fall off at the wrap. */
     chat_transcript_reset(&t);
     {
         char long_prompt[300];
@@ -209,19 +215,28 @@ static void test_transcript_streams_and_rolls(void)
         for (i = 0; i < 30; ++i) {
             strcat(long_prompt, "again ");
         }
-        chat_transcript_add(&t, "> ", long_prompt);
+        chat_transcript_add(&t, kChatLinePerson, "> ", long_prompt);
     }
     assert(chat_transcript_count(&t) >= 2);
     assert(chat_transcript_line(&t, 0)[0] == '>');
     assert(chat_transcript_line(&t, 1)[0] == ' ');
+    assert(chat_transcript_line_kind(&t, 0) == kChatLinePerson);
+    assert(chat_transcript_line_kind(&t, 1) == kChatLinePerson);
 
-    /* The ring rolls: the newest line survives, the oldest goes. */
+    /* A marker is its own kind. */
+    chat_transcript_add(&t, kChatLineMarker, "* ", "cancelled");
+    assert(chat_transcript_line_kind(&t, chat_transcript_count(&t) - 1)
+           == kChatLineMarker);
+
+    /* The ring rolls: the newest line survives, the oldest goes - and
+       the kinds roll WITH their lines. */
     chat_transcript_reset(&t);
+    chat_transcript_add(&t, kChatLinePerson, "> ", "first");
     for (i = 0; i < kChatMaxLines + 10; ++i) {
         char line[32];
 
         sprintf(line, "line %d", i);
-        chat_transcript_add(&t, NULL, line);
+        chat_transcript_add(&t, kChatLineModel, NULL, line);
     }
     assert(chat_transcript_count(&t) == kChatMaxLines);
     {
@@ -230,6 +245,10 @@ static void test_transcript_streams_and_rolls(void)
         sprintf(want, "line %d", kChatMaxLines + 9);
         assert(strcmp(chat_transcript_line(&t, kChatMaxLines - 1), want)
                == 0);
+    }
+    /* The person's line rolled out; nothing left claims their kind. */
+    for (i = 0; i < chat_transcript_count(&t); ++i) {
+        assert(chat_transcript_line_kind(&t, i) == kChatLineModel);
     }
 }
 
