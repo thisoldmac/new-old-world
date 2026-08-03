@@ -176,6 +176,8 @@ static void collect_process(NowScene *s, int row,
                                      win.left,
                                      win.bottom, win.right,
                                      win.visible ? 1 : 0)) {
+                now_scene_set_window_addr(s, now_scene_last_window(s),
+                                          (unsigned long)win.address);
                 now_scene_walk_window(s, now_scene_last_window(s),
                                       &ctx.memory, win.address, refs);
             }

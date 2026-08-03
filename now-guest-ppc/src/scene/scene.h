@@ -260,6 +260,22 @@ typedef struct {
     short text;                   /* index into NowScene.texts; -1 = absent */
 
     char ref[kNowSceneRefMax];    /* "" = not minted, key stays absent */
+
+    /* THE WINDOW RECORD'S OWN ADDRESS, and the only exact join key
+       between this scene and the machine it describes.
+     *
+       Everything else about a window is ambiguous across the seam:
+       titles collide (two "Untitled"), modal alerts have none, and
+       `id` is "<psn>/<title>#<idx>", which changes when the title or
+       the stacking does. A diff keyed on any of those is a heuristic,
+       and a heuristic oracle is worse than none - it reports a
+       mismatch that is really a mis-join.
+     *
+       0 means the producer could not say. Self-described windows carry
+       the WindowRef, which is the same pointer the Window Manager
+       hands anyone; walked windows carry the record address the walk
+       already read. Unknowns stay absent keys. */
+    unsigned long addr;
 } NowSceneWindow;
 
 typedef struct {
@@ -374,6 +390,10 @@ void now_scene_set_plane(NowScene *s, const char *plane);
    immediately after the row is admitted, and `now_scene_add_window`
    answers whether, not where. */
 int now_scene_last_window(const NowScene *s);
+
+/* The window record's address, for the row just added. No-op for an
+   out-of-range row; 0 leaves the key absent. */
+void now_scene_set_window_addr(NowScene *s, int index, unsigned long addr);
 
 /* --- the walked sub-planes (scene_build.c) ----------------------------- */
 

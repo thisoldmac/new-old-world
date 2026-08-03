@@ -211,6 +211,14 @@ public enum IRSchema {
         // were.
         "windows[].ref",
 
+        // 2026-08-03. The window record's own address, and the only exact
+        // join key between a scene and the machine it describes. Titles
+        // collide, modal alerts have none, and `id` moves when the title or
+        // the stacking does - so a structural differ keyed on any of them
+        // mis-joins, and a mis-join reads exactly like a mismatch. Absent
+        // when the producer could not say.
+        "windows[].addr",
+
         "windows[].items",
         "windows[].items[].alias",
         "windows[].items[].creator",
@@ -225,6 +233,11 @@ public enum IRSchema {
 
     /// Declared properties added after the freeze (wire-bearing or not).
     public static let v1AdditionalProperties: Set<String> = [
+        // 2026-08-03. See windows[].addr in v1Additions: the exact join key
+        // a structural differ needs, carried for harnesses rather than for
+        // rendering.
+        "Scene.Window.addr",
+
         "Scene.Window.ref",
     ]
 

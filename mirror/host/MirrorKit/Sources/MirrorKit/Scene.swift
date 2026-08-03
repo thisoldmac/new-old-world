@@ -124,6 +124,17 @@ public struct Scene: Codable, Equatable, Sendable {
         /// Carbon window is not readable at the classic offsets, so it
         /// reports no reference rather than a fabricated one.
         public var ref: String? = nil
+        /// The window record's own address on the guest, when the producer
+        /// could say.
+        ///
+        /// Carried for ONE reason: it is the only exact join key between a
+        /// scene and the machine it describes. `id` is a rendering key that
+        /// moves when the title or the stacking moves, titles collide, and
+        /// a modal alert has none — so a structural differ keyed on any of
+        /// them mis-joins, and a mis-join is indistinguishable from a real
+        /// mismatch. Nothing renders from this; it exists so a harness can
+        /// say *which* window it is comparing.
+        public var addr: UInt32? = nil
         /// Dialog TextEdit content (`kind==2` windows only today).
         public var text: TextContent?
         /// Icon-view items for a Finder window, in WINDOW-LOCAL content
@@ -172,6 +183,7 @@ public struct Scene: Codable, Equatable, Sendable {
             case controls, text, display
             case items          // additive in v1 — see the declaration
             case ref            // additive in v1 — see the declaration
+            case addr           // additive in v1 — see the declaration
         }
     }
 

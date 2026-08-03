@@ -205,6 +205,14 @@ int now_scene_add_window(NowScene *s, int proc, const char *title,
 
 /* --- the walked sub-planes --------------------------------------------- */
 
+void now_scene_set_window_addr(NowScene *s, int index, unsigned long addr)
+{
+    if (s == NULL || index < 0 || index >= s->window_count) {
+        return;
+    }
+    s->windows[index].addr = addr;
+}
+
 int now_scene_last_window(const NowScene *s)
 {
     if (s == NULL || s->window_count <= 0) {

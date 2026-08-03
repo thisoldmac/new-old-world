@@ -258,11 +258,37 @@ note says which drive closed it.
 
 ## 5. What "done" looks like
 
-A person opens the mirror and operates the Macintosh: moves and closes
-windows, opens disks and folders, launches an application, uses its
-menus, clicks its controls, types into its fields — and what they see
-matches what the machine is actually showing. Pixels and islands are
-optional throughout; nothing may be load-bearing on them.
+**The target, in one line: a high-fidelity emulator whose state is
+provided by the guest and whose state mutations are driven by the
+mirror.** Michelle, 2026-08-03. Everything below is a consequence of it,
+and it is worth reading before scoring anything.
+
+An emulator does not get to draw the interesting parts and leave the
+rest blank. It shows what the machine shows — the static text, the
+icons, the pictures, the list rows, the group boxes, the greyed-out
+label nobody clicks — because a person reads a screen, not a control
+tree. So:
+
+- **"The controls rendered" is never a pass.** A window whose buttons
+  are perfect and whose body is blank or garbled is a failure of the
+  thing this is for. Score the row on the worst part of the frame
+  (rule 2b), and if in doubt, look at the two pictures side by side.
+- **A structural check can VETO a pass. It can never grant one.** The
+  oracle, the diff, the row count, any harness: they are fast ways to
+  find a defect, and none of them is evidence of fidelity. Only pixels
+  compared against the machine's pixels, plus a person looking, grant.
+- **Pixels are the gate, not a bonus.** The old line here said "pixels
+  and islands are optional throughout" — that was about not making the
+  *mechanism* depend on a pixel plane, and it is still true of the
+  mechanism. It was never a licence to stop short of what the machine
+  displays, and it has been read that way.
+
+So the definition: a person opens the mirror and operates the Macintosh
+— moves and closes windows, opens disks and folders, launches an
+application, uses its menus, clicks its controls, types into its fields
+— and what they see **matches what the machine is showing**, checked
+against the machine's own framebuffer rather than against our idea of
+what mattered.
 
 Stop when that is true, not when the findings list is empty.
 

@@ -46,6 +46,7 @@ final class IRFreezeTests: XCTestCase {
             rect: rect, front: true, z: 0, visible: true,
             controls: [control],
             ref: "now-window-probe",
+            addr: 0x1EA2D3E0,
             text: .init(content: "c", active: true),
             items: [item],
             display: [op],

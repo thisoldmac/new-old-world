@@ -380,6 +380,7 @@ void now_scene_collect_self(NowScene *s, int row,
             continue;
         }
         index = now_scene_last_window(s);
+        now_scene_set_window_addr(s, index, (unsigned long)window);
         now_scene_set_window_kind(s, index, (short)GetWindowKind(window));
         if (refs != NULL) {
             char token[64];

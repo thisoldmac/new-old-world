@@ -427,6 +427,17 @@ static void put_windows(Sink *k, const NowScene *s)
            a window reference, not a control's - so a scene that named
            only controls would leave half the act plane unaddressable. */
         put_ref(k, w->ref);
+        /* The window record's address: the exact join key between this
+           scene and the machine, for a differ that has to decide which
+           reported window IS which real one. Absent when the producer
+           could not say, because a 0 would read as an address. */
+        if (w->addr != 0) {
+            char addr[32];
+
+            snprintf(addr, sizeof addr, ",\"addr\":%lu",
+                     (unsigned long)w->addr);
+            put(k, addr);
+        }
         /* The walked sub-planes, each present only for the rows whose
            walk ran and completed. `display` and `items` are still absent
            everywhere: this producer does not report them at all, and an
