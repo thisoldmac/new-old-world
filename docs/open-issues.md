@@ -14,6 +14,45 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## BROKEN: the staging reboot dirtied its own fresh clone (2026-08-03)
+
+**Emulator-observed; deferred from the Mirror UX arc.** After
+`tools/stage-ext.py`, the old `scripts/spin-up-ppc` sent QMP `quit`; the cold
+boot of that same private clone then reported that the computer had not shut
+down properly. “Fresh clone” described ownership, not cleanliness after a
+host-side power cut. Later probes also found the current layers of both shared
+OS 9 bases already presenting Disk First Aid before staging, so neither was a
+valid oracle for proving a repaired stop path.
+
+The first repair replaced `quit` with the parent `tools/shutdown-guest`, but
+the live os91-runner Worker did not grant its required `script` verb. Its
+hello advertised `click`, `key`, `type`, and `launch`; the Finder AppleScript
+was correctly refused. Two posted clicks are not a fallback: the first opens
+Special, then Finder is inside MenuSelect's tracking loop and the separately
+posted second click does not complete the held menu gesture.
+
+Several bounded guest-native probes were rejected: `ShutDwnStart`,
+`ShutDwnPower`, Finder shutdown Apple Events, and an embedded OSA script did
+not power the VM off; a 120-second observer left it intact. QMP power/eject
+keys also failed, and relative-pointer capture was not a trustworthy held-menu
+gesture. This remains **broken** and is explicitly punted until after the
+Mirror's data-driven fidelity and direct-input loop are proven. Do not dismiss
+Disk First Aid, and do not present QMP `quit` as a clean stop.
+
+## WATCHED: the Workshop menu no longer overwrites the Apple slot (2026-08-03)
+
+**Emulator-verified, not metal-verified.** The self-scene synthesized Help at
+left coordinate zero. That is the Apple menu's slot, so NOW Mirror showed
+Help over the left edge while the authoritative guest showed Apple, File,
+View, Windows, Help. The scene now reads `MenuList.last_right`, and a fresh
+paired live frame showed File, View, Windows, Help in the correct order.
+
+This fixes one menu placement defect, not Workshop fidelity as a whole. The
+live Mirror still lacks sidebar icon representations, draws several control
+kinds with the wrong chrome, and defers CopyBits without a bounded
+placeholder. The Workshop is no longer structurally empty; those whole-frame
+mismatches remain red.
+
 ## WATCHED: a person drove the guest from NOW's mirror (2026-08-03)
 
 **Emulator-verified.** Open Mirror on the Mirror page opens a NOW window

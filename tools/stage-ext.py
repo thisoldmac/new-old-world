@@ -26,9 +26,10 @@ THE FIVE THINGS THAT GO WRONG, each of which the mirror repository's
 tools/stage-agent.py already paid for and this inherits:
 
   * AN INIT LOADS AT BOOT ONLY, and OS 9 ignores a soft power-down. This
-    script stages; it does NOT reboot. `scripts/spin-up-ppc` performs the
-    hard QMP quit and relaunch, and re-verifies afterwards. A stage
-    without that cold reboot leaves the OLD extension resident and every
+    script stages; it does NOT reboot. `scripts/spin-up-ppc` attempts the
+    repository's guest-shutdown route, fails closed if the scoped Worker
+    cannot serve it, then relaunches and re-verifies. A stage without a
+    qualified cold reboot leaves the OLD extension resident and every
     result attributed to the new one.
 
   * BELIEVING A PUSH. Verification is by FORK SIZE and Finder type, read

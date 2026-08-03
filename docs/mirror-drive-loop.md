@@ -82,6 +82,13 @@ functional, accurate mirror of the guest** — one a person can operate.
    are all content, and content is a gate. So an alert whose icon is
    absent is noted; an alert whose two lines of text are rendered as a
    scroll bar and an empty field is a failure.
+2g. **A private clone is not automatically a clean clone.** It inherits
+   the base's state, then every staging reboot can dirty its own volume.
+   QMP `quit` is a power cut, not a reboot; readiness must never dismiss
+   Disk First Aid and call the run valid. If the scoped guest has no
+   qualified clean-shutdown route, record the setup as blocked and move
+   on rather than turning image repair into the UX task. Setup validity is
+   not a UX score, but an invalid setup cannot produce one.
 3. **If the mirror cannot do it, that IS the finding.** Record it. Do
    not reach past it to keep the run going.
 4. **Record, don't fix, during a sweep.** No edits, no builds, no

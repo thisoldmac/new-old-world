@@ -68,6 +68,7 @@ Two rules, and they matter more here than on any other doc in this tree.
 | Question | Answer | Where |
 |---|---|---|
 | What is the menu-list structure? | Carried in the ported walker; the offsets are 6 / 6 / 14 | [perceive plane](mirror-perceive-plane.md) |
+| Where does a self-scene put Help after the application menus? | At `MenuList.last_right`. Zero is the Apple slot's left edge and makes Help overwrite it. Measured in NOW's live Workshop on mac99, 2026-08-03 | `now-guest-ppc/src/scene/scene_self.c` |
 | Why can't a process-list verb see foreign windows and menus? | The Window and Menu Managers keep their roots in **per-process A5 globals**. That is why the hook is an INIT | [perceive plane](mirror-perceive-plane.md) |
 | Where does an icon in a Finder window really sit? | Ask the Finder for its **live position**, never the saved catalog field. 40/40 versus 0/40 | [perceive plane](mirror-perceive-plane.md) |
 | Can the QuickDraw stream tell us where Finder window icons are? | **No** — the Finder composites offscreen and emits one blit. Confirmed three ways. Dead end | [content plane](mirror-content-plane.md) |
@@ -117,6 +118,10 @@ transport is.**
 | A build stamp derived from a clock | Does not move when a source file changes. Hash the sources |
 | A whole-disk Finder search | **Wedged a real machine for about twelve minutes.** Scope every script to a window already open |
 | A journal device armed while falsifying ticks | Takes Open Transport down with it, because OT counts timeouts in ticks — so the wire disarm is unreachable in exactly the failure it exists for |
+| Treating a session-private disk clone as automatically clean | The base may be clean and the clone still becomes dirty when staging ends with QMP `quit`. The next boot's Disk First Aid was manufactured by the harness, not inherited from the base |
+| Assuming every bootstrap Worker grants `script` | The os91-runner Worker published `click`, `key`, `type`, and `launch`, but not `script`; Finder AppleScript shutdown was correctly refused. Session scope is evidence, not a constant |
+| Selecting Finder's Shut Down with two posted clicks | Finder's MenuSelect owns a held tracking gesture. Separately posted clicks do not reproduce it, and QMP's relative pointer could not be closed-loop verified from framebuffer captures. Do not call this a clean-shutdown route |
+| Assuming a Shutdown Manager call proves a clean emulator stop | Staged 68K helpers using `ShutDwnStart`, `ShutDwnPower`, Finder Apple Events, and embedded OSA all failed to power off the scoped OS 9/mac99 guest. The 120-second observer left the VM intact; this investigation is deferred, not solved |
 
 ## What upstream never answered
 

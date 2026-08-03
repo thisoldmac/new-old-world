@@ -158,8 +158,11 @@ removal cycles. Say which step a claim sits on. Gates, in order:
 
 1. **QEMU clone first** (`tools/launch` in the parent) — free, and it
    catches structure. The cold-boot recipe matters: OS 9 ignores a
-   soft power-down, INITs load at boot only, so cycling is hard-quit
-   and relaunch, then dismiss the Disk First Aid modal.
+   soft power-down and INITs load at boot only. A QMP `quit` is a power
+   cut; dismissing the Disk First Aid modal hides an invalid setup rather
+   than completing this gate. The scoped OS 9/mac99 image currently has no
+   qualified automated clean-shutdown route, so record this gate blocked
+   instead of substituting a hard stop.
 2. **PB1400c at 9.1, attended** — the metal authority. The filter runs
    under 68K emulation there, so the hot path's early-out is measured,
    not assumed (AXPeek's envelope: 0–1 tick on a 33 MHz 68040).
