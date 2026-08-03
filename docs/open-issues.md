@@ -58,6 +58,34 @@ there are now two:
   against the pre-fix fixture it fails naming both the control aimed at
   and what was hit instead.
 
+### The second half, found by asking the machine
+
+The control rects were only half of it. `windows[].rect` was the CONTENT
+region, where IR v1 wants that region grown UP by a title bar — the
+consumer recovers the content origin by adding the constant back, so a
+producer that skips the growth puts every control in the window twenty
+pixels low.
+
+**The round-trip gate cannot see this one**, and that is worth
+understanding rather than patching: it derives the click point from the
+same rects it hit-tests, so an offset shared by both halves of the
+document cancels exactly. It stayed green.
+
+So `scripts/probes/mirror-geometry-probe.py` asks the Macintosh. It
+computes the down arrow's position the way a renderer places it, delivers
+a real hardware click there over QMP, and reads the control back:
+
+    before   clicked (410,263)   value -4 -> -4    no change
+             clicked (410,243)   value -4 -> 60    MOVED
+    after    clicked (410,243)   value -4 -> 60    MOVED, downward
+             clicked (410,263)   value 60 -> 60    no change
+
+Its negative control displaces DOWNWARD, and passing requires the arrow
+to scroll DOWN rather than merely to scroll. Both were learned in the
+same hour: the first draft displaced upward into the page-up region,
+watched the bar move for a legitimate reason, and reported inconclusive
+on a build that was already correct.
+
 ### Still open
 
 - `role` on a control is derived from `min != max`
@@ -65,11 +93,17 @@ there are now two:
   **memory bar graphs are reported as scrollbars**. Harmless to render;
   it means `Scrollbar.part` computes arrow and thumb regions for a thing
   that has none, and a click there would ask a bar graph to scroll.
-- The window box is the frame and the controls are content-relative, but
-  nothing pins the **twenty-pixel title bar** the two are related by; it
-  is `SceneBuilder.titleBarHeight` on one side and the guest's content
-  origin on the other. They agree today because the Toolbox draws a
-  20-point title bar, not because either side told the other.
+- The twenty-pixel title bar the two rectangles are related by is now
+  stated in three places that share no header — `SceneBuilder
+  .titleBarHeight`, the guest's `kNowSceneIRTitleBarHeight`, and the
+  probe's own constant. The probe is what keeps them honest; there is no
+  compile-time tie, and there cannot be one across a Swift package, a
+  cross-compiled C guest and a Python instrument.
+- The FALLBACK window path (`now_peek_windows_for_psn`, taken for the
+  self process and for anything that does not bind) reports the
+  STRUCTURE region, which is a third convention again. It has not been
+  measured and no consumer has complained, because the windows that
+  matter come from the bound path.
 
 ## "Agent: Running" was true and useless (2026-08-02)
 
