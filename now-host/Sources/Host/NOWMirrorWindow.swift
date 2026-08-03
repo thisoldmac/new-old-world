@@ -61,13 +61,23 @@ final class NOWMirrorWindow: NSObject, NSWindowDelegate {
            nothing". */
         if let w = window { Self.ensureOnScreen(w) }
         source.start()
-        /* ACTIVATE FIRST. Activating an application re-orders its
-           windows, so ordering the mirror front and then activating put
-           the main window back on top of it - which looks exactly like
-           the window never opened, and cost two rounds of chasing an
-           off-screen frame that was not the problem. */
-        NSApp.activate(ignoringOtherApps: true)
-        window?.makeKeyAndOrderFront(nil)
+        /* NO NSApp.activate HERE, and that is the fix rather than an
+           omission. Activating trips `applicationShouldHandleReopen`,
+           whose job is to bring the MAIN window up - so asking for the
+           mirror ended with the main window on top of it, looking
+           exactly like the window had never opened. Three rounds went
+           into an off-screen frame that was never the problem.
+           A person clicking Open Mirror has this app frontmost already. */
+        /* DEFERRED PAST THIS EVENT. The raise runs inside the button's
+           own click, and the main window takes key back when that event
+           finishes - so the mirror ended up behind it, on-screen and
+           invisible, which read as "the window never opened". Its saved
+           frame was 624,367 800x632 on a 2048x1122 screen the whole
+           time; three fixes went into an off-screen frame that was never
+           the problem, and reading the frame settled it in one step. */
+        DispatchQueue.main.async { [weak self] in
+            self?.window?.makeKeyAndOrderFront(nil)
+        }
         fitToGuestScreen()
     }
 
