@@ -194,6 +194,23 @@ add_custom_target(generate_buildstamp ALL
     VERBATIM)
 add_dependencies(now-guest-ppc generate_buildstamp)
 
+# ...and rebuild the ONE file that bakes the hash in, whenever that header
+# changes. Without this the stamp UNDER-REPORTS: the header regenerates
+# with the new hash, every other object rebuilds from the changed source,
+# and build_stamp.o alone keeps the previous string - so the binary
+# carries the new code and reports the old identity.
+#
+# Measured 2026-08-02: a scene fix was staged and tested, the guest
+# announced the PREVIOUS stamp, and the obvious reading was "the change
+# did not land" - which would have discarded a real measurement and sent
+# somebody to re-fix code that was already running. AGENTS.md's rule
+# ("check the build stamp before believing a test result") assumes the
+# stamp errs on the side of being early; this made it err the other way,
+# which is worse, because a stale-looking stamp invites you to disbelieve
+# a true result.
+set_source_files_properties(src/core/build_stamp.c
+    PROPERTIES OBJECT_DEPENDS ${_buildstamp_header})
+
 # The canonical deploy artifact carries the product's real name, spaces
 # and all: "New Old World.bin", to match "New Old World.app" on the host.
 # A classic HFS name allows the spaces; a CMake target name does not, and
