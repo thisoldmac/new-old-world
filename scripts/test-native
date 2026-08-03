@@ -161,6 +161,7 @@ run_py now-guest-shared act_error_vocabulary_source_test.py
 # MenuSelect after boot loops forever, in every process, with no way in.
 run_py now-guest-shared act_install_reentrant_source_test.py
 run_py now-guest-shared arg_shadow_source_test.py
+run_py now-guest-shared control_kind_source_test.py
 
 echo "== now-guest-ppc (PowerPC Carbon) =="
 run_c now-guest-ppc census_decode_test.c     ""  src/census/census_decode.c

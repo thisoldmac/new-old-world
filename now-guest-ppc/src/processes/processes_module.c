@@ -11,6 +11,7 @@
 #include "processes_layout.h"
 #include "pump.h"
 #include "screenshot.h"
+#include "control_kind.h"
 
 /* The Processes page: a Data Browser of everything the Process Manager
    reports on the left, the selected process on the right, and the two
@@ -749,16 +750,16 @@ static OSErr procs_create(WindowRef owner, const Rect *body)
     g_quit_hilite = -1;
 
     CopyCStringToPascal("Bring to Front", text);
-    g_front = NewControl(owner, &g_r.front_btn, text, false, 0, 0, 1,
+    g_front = now_control_new(owner, &g_r.front_btn, text, false, 0, 0, 1,
                          pushButProc, 0);
     CopyCStringToPascal("Ask to Quit", text);
-    g_quit = NewControl(owner, &g_r.quit_btn, text, false, 0, 0, 1,
+    g_quit = now_control_new(owner, &g_r.quit_btn, text, false, 0, 0, 1,
                         pushButProc, 0);
     CopyCStringToPascal("NOW Extension", text);
-    g_group = NewControl(owner, &g_r.group, text, false, 0, 0, 1,
+    g_group = now_control_new(owner, &g_r.group, text, false, 0, 0, 1,
                          kControlGroupBoxTextTitleProc, 0);
     CopyCStringToPascal("Front & Capture", text);
-    g_capture = NewControl(owner, &g_r.capture_btn, text, false, 0, 0, 1,
+    g_capture = now_control_new(owner, &g_r.capture_btn, text, false, 0, 0, 1,
                            pushButProc, 0);
     if (g_front == NULL || g_quit == NULL || g_group == NULL
         || g_capture == NULL) {

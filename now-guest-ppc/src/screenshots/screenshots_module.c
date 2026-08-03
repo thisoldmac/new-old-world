@@ -7,6 +7,7 @@
 #include "pump.h"
 #include "screenshot.h"
 #include "wire.h"
+#include "control_kind.h"
 
 /* now_screenshot takes the local PICT, now_wire_offer_shot and the
    stream request/stop reach the peer, and prefs holds every setting.
@@ -209,7 +210,7 @@ static ControlRef make_popup(const Rect *bounds, const char *title,
     CopyCStringToPascal(title, text);
     /* classic popup CDEF: value = title justification, min = MENU id,
        max = title width in pixels */
-    return NewControl(g_owner, bounds, text, false, popupTitleLeftJust,
+    return now_control_new(g_owner, bounds, text, false, popupTitleLeftJust,
                       menu_id, title_width, popupMenuProc, 0);
 }
 
@@ -228,27 +229,27 @@ static OSErr shots_create(WindowRef owner, const Rect *body)
 
     g_depth = make_popup(&g_r.depth, "Depth:", kDepthMenuID, 48);
     CopyCStringToPascal("Compress on wire (PackBits)", text);
-    g_pack = NewControl(owner, &g_r.pack, text, false, 0, 0, 1,
+    g_pack = now_control_new(owner, &g_r.pack, text, false, 0, 0, 1,
                         checkBoxProc, 0);
     CopyCStringToPascal("Predictive capture", text);
-    g_predictive = NewControl(owner, &g_r.predictive, text, false, 0, 0, 1,
+    g_predictive = now_control_new(owner, &g_r.predictive, text, false, 0, 0, 1,
                               checkBoxProc, 0);
     CopyCStringToPascal("Interlaced fields", text);
-    g_interlace = NewControl(owner, &g_r.interlace, text, false, 0, 0, 1,
+    g_interlace = now_control_new(owner, &g_r.interlace, text, false, 0, 0, 1,
                              checkBoxProc, 0);
     text[0] = 0;
-    g_tri = NewControl(owner, &g_r.tri, text, false, 0, 0, 1,
+    g_tri = now_control_new(owner, &g_r.tri, text, false, 0, 0, 1,
                        kControlTriangleAutoToggleProc, 0);
     g_chunk = make_popup(&g_r.chunk, "Chunk:", kChunkMenuID, 52);
     g_pace = make_popup(&g_r.pace, "Pacing:", kPaceMenuID, 52);
     CopyCStringToPascal("Take Screenshot", text);
-    g_take = NewControl(owner, &g_r.take_btn, text, false, 0, 0, 1,
+    g_take = now_control_new(owner, &g_r.take_btn, text, false, 0, 0, 1,
                         pushButProc, 0);
     CopyCStringToPascal("Send", text);
-    g_send = NewControl(owner, &g_r.send_btn, text, false, 0, 0, 1,
+    g_send = now_control_new(owner, &g_r.send_btn, text, false, 0, 0, 1,
                         pushButProc, 0);
     CopyCStringToPascal("Start Streaming", text);
-    g_stream = NewControl(owner, &g_r.stream_btn, text, false, 0, 0, 1,
+    g_stream = now_control_new(owner, &g_r.stream_btn, text, false, 0, 0, 1,
                           pushButProc, 0);
     if (g_depth == NULL || g_pack == NULL || g_predictive == NULL
         || g_interlace == NULL || g_tri == NULL || g_chunk == NULL

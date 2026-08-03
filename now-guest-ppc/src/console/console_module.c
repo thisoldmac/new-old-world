@@ -8,6 +8,7 @@
 #include "prefs.h"
 #include "pump.h"
 #include "wire.h"
+#include "control_kind.h"
 
 /* The page owns pixels and the input line; every remembered thing -
    scrollback, history, the command table - lives in console_model.c, so
@@ -337,10 +338,10 @@ static OSErr console_create(WindowRef owner, const Rect *body)
         return memFullErr;
     }
     text[0] = 0;
-    g_scroll = NewControl(owner, &g_r.scrollbar, text, false, 0, 0, 0,
+    g_scroll = now_control_new(owner, &g_r.scrollbar, text, false, 0, 0, 0,
                           scrollBarProc, 0);
     CopyCStringToPascal("Invert", text);
-    g_invert = NewControl(owner, &g_r.invert_box, text, false,
+    g_invert = now_control_new(owner, &g_r.invert_box, text, false,
                           g_inverted ? 1 : 0, 0, 1, checkBoxProc, 0);
     if (g_scroll == NULL || g_invert == NULL) {
         return memFullErr;

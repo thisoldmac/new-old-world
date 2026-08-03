@@ -7,6 +7,7 @@
 #include "prefs.h"
 #include "pump.h"
 #include "wire.h"
+#include "control_kind.h"
 
 /* The Logs page is the Console page with the input line taken out: the
    same hand-drawn Monaco scrollback and scroll bar, reading nowlog.c's
@@ -258,13 +259,13 @@ static OSErr logs_create(WindowRef owner, const Rect *body)
         return memFullErr;
     }
     text[0] = 0;
-    g_scroll = NewControl(owner, &g_r.scrollbar, text, false, 0, 0, 0,
+    g_scroll = now_control_new(owner, &g_r.scrollbar, text, false, 0, 0, 0,
                           scrollBarProc, 0);
     CopyCStringToPascal("Log to disk", text);
-    g_disk = NewControl(owner, &g_r.disk_box, text, false,
+    g_disk = now_control_new(owner, &g_r.disk_box, text, false,
                         now_log_disk_on() ? 1 : 0, 0, 1, checkBoxProc, 0);
     CopyCStringToPascal("Invert", text);
-    g_invert = NewControl(owner, &g_r.invert_box, text, false,
+    g_invert = now_control_new(owner, &g_r.invert_box, text, false,
                           g_inverted ? 1 : 0, 0, 1, checkBoxProc, 0);
     if (g_scroll == NULL || g_disk == NULL || g_invert == NULL) {
         return memFullErr;

@@ -6,6 +6,7 @@
 #include "census.h"
 #include "pump.h"
 #include "wire.h"                 /* now_wire_pump, for the divider drag loop */
+#include "control_kind.h"
 
 /* The Hardware census page. A hand-drawn probe rail on the left - the
    Workshop sidebar's own two-line idiom, because a probe registry is
@@ -688,10 +689,10 @@ static OSErr census_create(WindowRef owner, const Rect *body)
     SetDataBrowserHasScrollBars(g_browser, false, true);
 
     CopyCStringToPascal("Run Census", text);
-    g_run = NewControl(owner, &g_r.run_btn, text, false, 0, 0, 1,
+    g_run = now_control_new(owner, &g_r.run_btn, text, false, 0, 0, 1,
                        pushButProc, 0);
     CopyCStringToPascal("Rerun", text);
-    g_rerun = NewControl(owner, &g_r.rerun_btn, text, false, 0, 0, 1,
+    g_rerun = now_control_new(owner, &g_r.rerun_btn, text, false, 0, 0, 1,
                          pushButProc, 0);
     if (g_run == NULL || g_rerun == NULL) {
         return memFullErr;

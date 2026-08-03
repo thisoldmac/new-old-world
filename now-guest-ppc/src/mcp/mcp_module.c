@@ -6,6 +6,7 @@
 #include "mcp_layout.h"
 #include "pump.h"
 #include "wire.h"
+#include "control_kind.h"
 
 /* The MCP page: one control and an honest account of it.
 
@@ -117,14 +118,14 @@ static OSErr mcp_create(WindowRef owner, const Rect *body)
     memset(g_shown_lines, 0, sizeof g_shown_lines);
 
     CopyCStringToPascal("Agent access", text);
-    g_group = NewControl(owner, &g_r.access_box, text, false, 0, 0, 0,
+    g_group = now_control_new(owner, &g_r.access_box, text, false, 0, 0, 0,
                          kControlGroupBoxTextTitleProc, 0);
     if (g_group == NULL) {
         return memFullErr;
     }
     for (i = 0; i < kMcpTierCount; ++i) {
         CopyCStringToPascal(mcp_tier_label((AgentAccessTier)i), text);
-        g_radios[i] = NewControl(owner, &g_r.radios[i], text, false, 0, 0,
+        g_radios[i] = now_control_new(owner, &g_r.radios[i], text, false, 0, 0,
                                  1, radioButProc, 0);
         if (g_radios[i] == NULL) {
             return memFullErr;

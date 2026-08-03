@@ -29,6 +29,7 @@
 #include "mirror_probe.h"
 #include "nowlog.h"
 #include "pump.h"
+#include "control_kind.h"
 
 static WindowRef g_owner;
 static Rect g_body;
@@ -221,12 +222,12 @@ static OSErr mirror_create(WindowRef owner, const Rect *body)
     now_mirror_probe(&g_facts);
     g_next_poll = TickCount() + kMirrorPollTicks;
 
-    g_enable = NewControl(owner, &g_r.enable, (ConstStr255Param)"\pEnable",
+    g_enable = now_control_new(owner, &g_r.enable, (ConstStr255Param)"\pEnable",
                           false, 0, 0, 0, kControlPushButtonProc, 0);
     if (g_enable == NULL) {
         return memFullErr;
     }
-    g_disable = NewControl(owner, &g_r.disable, (ConstStr255Param)"\pDisable",
+    g_disable = now_control_new(owner, &g_r.disable, (ConstStr255Param)"\pDisable",
                            false, 0, 0, 0, kControlPushButtonProc, 0);
     if (g_disable == NULL) {
         return memFullErr;

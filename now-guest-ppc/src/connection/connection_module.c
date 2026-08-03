@@ -8,6 +8,7 @@
 #include "prefs.h"
 #include "pump.h"
 #include "wire.h"
+#include "control_kind.h"
 
 /* The page has two halves: an "Other Mac" group that SHOWS the saved
    target (address and port drawn read-only, changed through the Edit
@@ -333,7 +334,7 @@ static ControlRef make_button(const Rect *bounds, const char *title)
     Str255 text;
 
     CopyCStringToPascal(title, text);
-    return NewControl(g_owner, bounds, text, false, 0, 0, 1, pushButProc,
+    return now_control_new(g_owner, bounds, text, false, 0, 0, 1, pushButProc,
                       0);
 }
 
@@ -350,20 +351,20 @@ static OSErr conn_create(WindowRef owner, const Rect *body)
     g_fail_line[0] = '\0';
 
     CopyCStringToPascal("Other Mac", text);
-    g_group_other = NewControl(owner, &g_r.other_group, text, false, 0, 0,
+    g_group_other = now_control_new(owner, &g_r.other_group, text, false, 0, 0,
                                0, kControlGroupBoxTextTitleProc, 0);
     CopyCStringToPascal("At a glance", text);
-    g_group_glance = NewControl(owner, &g_r.glance_group, text, false, 0,
+    g_group_glance = now_control_new(owner, &g_r.glance_group, text, false, 0,
                                 0, 0, kControlGroupBoxTextTitleProc, 0);
     g_edit = make_button(&g_r.edit_btn, "Edit\xC9");   /* MacRoman ellipsis */
     CopyCStringToPascal("Retry:", text);
     /* classic popup CDEF: value = title justification, min = MENU id,
        max = title width in pixels */
-    g_retry = NewControl(owner, &g_r.retry_popup, text, false,
+    g_retry = now_control_new(owner, &g_r.retry_popup, text, false,
                          popupTitleLeftJust, kRetryMenuID, 44,
                          popupMenuProc, 0);
     CopyCStringToPascal("Connect when New Old World opens", text);
-    g_auto = NewControl(owner, &g_r.auto_box, text, false, 0, 0, 1,
+    g_auto = now_control_new(owner, &g_r.auto_box, text, false, 0, 0, 1,
                         checkBoxProc, 0);
     g_action = make_button(&g_r.action_btn, "Connect");
     g_revert = make_button(&g_r.revert_btn, "Revert");

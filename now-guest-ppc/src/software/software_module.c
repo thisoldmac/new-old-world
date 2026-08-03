@@ -9,6 +9,7 @@
 #include "software_layout.h"
 #include "pump.h"
 #include "wire.h"
+#include "control_kind.h"
 
 /* Rung 3, the Data Browser cut - rebuilt from the first metal round.
    What that round taught:
@@ -1235,7 +1236,7 @@ static ControlRef make_popup(const Rect *bounds, short menu_id)
     Str255 empty;
 
     empty[0] = 0;
-    return NewControl(g_owner, bounds, empty, false, popupTitleLeftJust,
+    return now_control_new(g_owner, bounds, empty, false, popupTitleLeftJust,
                       menu_id, 0, popupMenuProc, 0);
 }
 
@@ -1252,22 +1253,22 @@ static OSErr software_create(WindowRef owner, const Rect *body)
 
     g_popup = make_popup(&g_lay.toolbar_popup, kSwDomainMenuID);
     text[0] = 0;
-    g_detail_box = NewControl(owner, &g_lay.detail, text, false, 0, 0, 1,
+    g_detail_box = now_control_new(owner, &g_lay.detail, text, false, 0, 0, 1,
                               kControlGroupBoxTextTitleProc, 0);
     CopyCStringToPascal("Launch", text);
-    g_launch = NewControl(owner, &g_lay.launch_btn, text, false, 0, 0, 1,
+    g_launch = now_control_new(owner, &g_lay.launch_btn, text, false, 0, 0, 1,
                           pushButProc, 0);
     CopyCStringToPascal("Bring to Front", text);
-    g_front = NewControl(owner, &g_lay.front_btn, text, false, 0, 0, 1,
+    g_front = now_control_new(owner, &g_lay.front_btn, text, false, 0, 0, 1,
                          pushButProc, 0);
     CopyCStringToPascal("Quit", text);
-    g_quit = NewControl(owner, &g_lay.quit_btn, text, false, 0, 0, 1,
+    g_quit = now_control_new(owner, &g_lay.quit_btn, text, false, 0, 0, 1,
                         pushButProc, 0);
     CopyCStringToPascal("Show in Finder", text);
-    g_reveal = NewControl(owner, &g_lay.reveal_btn, text, false, 0, 0, 1,
+    g_reveal = now_control_new(owner, &g_lay.reveal_btn, text, false, 0, 0, 1,
                           pushButProc, 0);
     CopyCStringToPascal("Rescan", text);
-    g_rescan = NewControl(owner, &g_lay.rescan_btn, text, false, 0, 0, 1,
+    g_rescan = now_control_new(owner, &g_lay.rescan_btn, text, false, 0, 0, 1,
                           pushButProc, 0);
     if (g_popup == NULL || g_detail_box == NULL || g_launch == NULL
         || g_front == NULL || g_quit == NULL || g_reveal == NULL

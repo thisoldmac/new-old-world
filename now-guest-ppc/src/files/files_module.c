@@ -7,6 +7,7 @@
 #include "files_share_view.h"
 #include "pump.h"
 #include "wire.h"
+#include "control_kind.h"
 
 /* Composition only: the browser view owns the remote half, the share
    view the local half, and this file owns the path row, the disclosure,
@@ -136,19 +137,19 @@ static OSErr files_create(WindowRef owner, const Rect *body)
     g_up_hilite = -1;
 
     CopyCStringToPascal("Up", text);
-    g_up = NewControl(owner, &g_r.up_btn, text, false, 0, 0, 1,
+    g_up = now_control_new(owner, &g_r.up_btn, text, false, 0, 0, 1,
                       pushButProc, 0);
     /* Created hidden and shown only while a transfer is live. A Stop
        button standing over a quiet pane is a control whose meaning a
        person has to work out; one that appears when a file starts coming
        down says what it is for by appearing. */
     CopyCStringToPascal("Stop", text);
-    g_stop = NewControl(owner, &g_r.stop_btn, text, false, 0, 0, 1,
+    g_stop = now_control_new(owner, &g_r.stop_btn, text, false, 0, 0, 1,
                         pushButProc, 0);
     g_stop_shown = false;
     g_xfer_step = -1;
     text[0] = 0;
-    g_tri = NewControl(owner, &g_r.tri, text, false, 1, 0, 1,
+    g_tri = now_control_new(owner, &g_r.tri, text, false, 1, 0, 1,
                        kControlTriangleAutoToggleProc, 0);
     if (g_up == NULL || g_tri == NULL || g_stop == NULL) {
         return memFullErr;

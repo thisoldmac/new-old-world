@@ -30,6 +30,7 @@
 #include "net_probe.h"
 #include "nowlog.h"
 #include "wire.h"
+#include "control_kind.h"
 
 static WindowRef g_owner;
 static Rect g_body;
@@ -407,7 +408,7 @@ static OSErr network_create(WindowRef owner, const Rect *body)
     recompute();
 
     r = g_r.scrollbar;
-    g_scroll = NewControl(owner, &r, (ConstStr255Param)"\p", true, 0, 0, 0,
+    g_scroll = now_control_new(owner, &r, (ConstStr255Param)"\p", true, 0, 0, 0,
                           kControlScrollBarLiveProc, 0);
     if (g_scroll == NULL) {
         return memFullErr;
@@ -425,7 +426,7 @@ static OSErr network_create(WindowRef owner, const Rect *body)
         }
         b.right = (short)(b.left + kNetButtonWidth);
         b.bottom = (short)(b.top + kNetButtonHeight);
-        g_buttons[i] = NewControl(owner, &b, (ConstStr255Param)"\pRefresh",
+        g_buttons[i] = now_control_new(owner, &b, (ConstStr255Param)"\pRefresh",
                                   false, 0, 0, 0,
                                   kControlPushButtonProc, (long)i);
     }

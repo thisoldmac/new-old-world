@@ -209,6 +209,12 @@ typedef struct {
     int visible;
     short value, min, max;
     char ref[kNowSceneRefMax];    /* "" = not minted, key stays absent */
+    /* What KIND of control this is, when something could actually say.
+       Empty means nobody could, and the emitter falls back to the range
+       guess it has always made. A walk of a foreign ControlRecord still
+       cannot tell button from checkbox; an application asking the
+       Control Manager about its OWN control can, and does. */
+    char role[16];
 } NowSceneControl;
 
 /* A window's TextEdit content. `truncated` is true when the TERec's own
@@ -397,6 +403,17 @@ int now_scene_add_control(NowScene *s, int window, const char *title,
    which is the one shape of this field that lies. No-op for an
    out-of-range row or index. */
 void now_scene_set_window_ref(NowScene *s, int window, const char *ref);
+/* The control's true kind, for a reader that knows it. Bounded copy; an
+   empty or NULL role leaves the row saying nothing, which is what the
+   walk honestly knows. */
+/* The index of the most recently appended control of a window, or -1
+   when it has none - the control-level twin of now_scene_last_window,
+   and needed for the same reason: add answers whether, not where. */
+int now_scene_last_control(const NowScene *s, int window);
+
+void now_scene_set_control_role(NowScene *s, int window, int index,
+                                const char *role);
+
 void now_scene_set_control_ref(NowScene *s, int window, int index,
                                const char *ref);
 

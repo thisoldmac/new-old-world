@@ -4,6 +4,7 @@
 
 #include "pump.h"
 #include "wire.h"
+#include "control_kind.h"
 
 enum {
     kWidth = 340,
@@ -89,7 +90,7 @@ Boolean now_confirm(const char *heading, const char *detail,
             kHeight - kMargin - kButtonHeight, kWidth - kMargin,
             kHeight - kMargin);
     CopyCStringToPascal(action, text);
-    g_action = NewControl(g_window, &bounds, text, true, 0, 0, 1,
+    g_action = now_control_new(g_window, &bounds, text, true, 0, 0, 1,
                           pushButProc, 0);
     /* Return already chose this button; nothing SAID so. The default ring
        is the only thing that tells a person which key commits, and its
@@ -107,7 +108,7 @@ Boolean now_confirm(const char *heading, const char *detail,
             kHeight - kMargin - kButtonHeight,
             kWidth - kMargin - 12 - kButtonWidth, kHeight - kMargin);
     CopyCStringToPascal("Cancel", text);
-    g_cancel = NewControl(g_window, &bounds, text, true, 0, 0, 1,
+    g_cancel = now_control_new(g_window, &bounds, text, true, 0, 0, 1,
                           pushButProc, 0);
     ShowWindow(g_window);
     SelectWindow(g_window);

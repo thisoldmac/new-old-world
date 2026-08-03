@@ -310,14 +310,22 @@ static void put_controls(Sink *k, const NowScene *s, const NowSceneWindow *w)
         const NowSceneControl *c = &s->controls[w->first_control + i];
         char rect[64];
 
-        /* `role` is required by the IR and has exactly two values there:
-           "scrollbar" when the control carries a live range, "control"
-           otherwise. The walk reads a ControlRecord and not its defProc,
-           so it cannot say button-vs-checkbox - and the IR does not ask
-           it to. A range is the one distinction this reader can make
-           honestly, and it is the one the IR draws. */
+        /* `role` is required by the IR, so SOMETHING is always emitted.
+           When a reader could actually say what the control is, that
+           wins; the range guess below is the fallback and is now known
+           to be actively wrong rather than merely coarse.
+         *
+         * Measured 2026-08-03 by hovering the mirror: a push button made
+         * with NewControl carries min 0 max 1, so `min != max` called it
+         * a SCROLL BAR - drawn as a track, hit-tested as `pageDown`, and
+         * a click on it would have sent a page-scroll part instead of a
+         * button press. A walk of a foreign ControlRecord still cannot do
+         * better; an application asking the Control Manager about its own
+         * control can, and scene_self.c does. */
         put(k, i > 0 ? ",{\"role\":" : "{\"role\":");
-        put_str(k, c->min != c->max ? "scrollbar" : "control");
+        put_str(k, c->role[0] != '\0' ? c->role
+                                       : (c->min != c->max ? "scrollbar"
+                                                           : "control"));
         put(k, ",\"title\":");
         put_str(k, c->title);
         snprintf(rect, sizeof rect, ",\"rect\":{\"l\":%d,\"t\":%d,\"r\":%d,"

@@ -320,6 +320,37 @@ void now_scene_set_window_ref(NowScene *s, int window, const char *ref)
     }
 }
 
+int now_scene_last_control(const NowScene *s, int window)
+{
+    const NowSceneWindow *w;
+
+    if (s == NULL || window < 0 || window >= s->window_count) {
+        return -1;
+    }
+    w = &s->windows[window];
+    return (w->control_count > 0) ? (int)w->control_count - 1 : -1;
+}
+
+void now_scene_set_control_role(NowScene *s, int window, int index,
+                                const char *role)
+{
+    NowSceneWindow *w = window_at(s, window);
+    NowSceneControl *c;
+
+    if (w == NULL || !w->controls_present) {
+        return;
+    }
+    if (index < 0 || index >= (int)w->control_count) {
+        return;
+    }
+    c = &s->controls[w->first_control + index];
+    c->role[0] = '\0';
+    if (role != NULL && role[0] != '\0') {
+        strncpy(c->role, role, sizeof c->role - 1);
+        c->role[sizeof c->role - 1] = '\0';
+    }
+}
+
 void now_scene_set_control_ref(NowScene *s, int window, int index,
                                const char *ref)
 {

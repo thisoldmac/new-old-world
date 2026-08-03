@@ -1,6 +1,8 @@
 #include "scene_self.h"
 
 #include <Controls.h>
+
+#include "control_kind.h"
 #include <MacWindows.h>
 
 #include <string.h>
@@ -85,6 +87,11 @@ static void add_control_tree(NowScene *s, int window, ControlRef control,
        bar. */
     (void)content;
 
+    /* WHAT IT IS, remembered rather than inferred. GetControlKind is
+       the Control Manager's own answer and CarbonLib 1.6 does not export
+       it - the link fails. The procID does just as well and this
+       application passes one every time it makes a control, so
+       control_kind.c records it there and answers here. */
     if (now_scene_add_control(s, window, ctitle,
                               box.top, box.left, box.bottom, box.right,
                               IsControlActive(control) ? 1 : 0,
@@ -92,6 +99,9 @@ static void add_control_tree(NowScene *s, int window, ControlRef control,
                               GetControlValue(control),
                               GetControlMinimum(control),
                               GetControlMaximum(control))) {
+        now_scene_set_control_role(s, window,
+                                   now_scene_last_control(s, window),
+                                   now_control_role(control));
         --*budget;
     }
 
@@ -117,7 +127,7 @@ static void add_control_tree(NowScene *s, int window, ControlRef control,
 static void find_controls_by_probe(NowScene *s, int index, WindowRef window,
                                    const Rect *content, int *budget)
 {
-    enum { kStep = 6, kSeenMax = 64 };
+    enum { kStep = 10, kSeenMax = 64 };
     ControlRef seen[kSeenMax];
     int seen_count = 0;
     GrafPtr saved = NULL;

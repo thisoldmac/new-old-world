@@ -13,6 +13,7 @@
 #include "json.h"
 #include "pump.h"
 #include "wire.h"
+#include "control_kind.h"
 
 /* The iCloud page: the modern machine's cloud, browsed from this one.
    One dropdown of services (cloud.report), and a render tailored to
@@ -711,15 +712,15 @@ static OSErr cloud_create(WindowRef owner, const Rect *body)
        The popup CDEF inserts it into the hierarchical list, which is
        where GetMenuHandle finds it again. */
     text[0] = 0;
-    g_popup = NewControl(owner, &g_r.popup, text, false,
+    g_popup = now_control_new(owner, &g_r.popup, text, false,
                          popupTitleLeftJust, kCloudServicesMenuID, 0,
                          popupMenuProc, 0);
     g_menu = popup_menu();
     CopyCStringToPascal("Refresh", text);
-    g_refresh = NewControl(owner, &g_r.refresh_btn, text, false, 0, 0, 1,
+    g_refresh = now_control_new(owner, &g_r.refresh_btn, text, false, 0, 0, 1,
                            pushButProc, 0);
     CopyCStringToPascal("Save to this Mac", text);
-    g_save = NewControl(owner, &g_r.save_btn, text, false, 0, 0, 1,
+    g_save = now_control_new(owner, &g_r.save_btn, text, false, 0, 0, 1,
                         pushButProc, 0);
     if (g_popup == NULL || g_refresh == NULL || g_save == NULL) {
         return memFullErr;

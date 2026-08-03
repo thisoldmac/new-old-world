@@ -7,6 +7,7 @@
 #include "pump.h"
 #include "vprobe.h"
 #include "wire.h"
+#include "control_kind.h"
 
 /* The Diagnostics page: what this Mac can measure about itself, run from
    the machine itself rather than only from the wire.
@@ -445,7 +446,7 @@ static OSErr diagnostics_create(WindowRef owner, const Rect *body)
         return memFullErr;
     }
     text[0] = 0;
-    g_scroll = NewControl(owner, &g_r.scrollbar, text, false, 0, 0, 0,
+    g_scroll = now_control_new(owner, &g_r.scrollbar, text, false, 0, 0, 0,
                           scrollBarProc, 0);
     if (g_scroll == NULL) {
         return memFullErr;
@@ -460,7 +461,7 @@ static OSErr diagnostics_create(WindowRef owner, const Rect *body)
         }
         to_window(&g_r.cards[i].button, &where);
         CopyCStringToPascal(title, text);
-        g_buttons[i] = NewControl(owner, &where, text, false, 0, 0, 1,
+        g_buttons[i] = now_control_new(owner, &where, text, false, 0, 0, 1,
                                   pushButProc, 0);
         if (g_buttons[i] == NULL) {
             return memFullErr;

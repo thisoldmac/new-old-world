@@ -7,6 +7,7 @@
 #include "prefs.h"
 #include "pump.h"
 #include "wire.h"
+#include "control_kind.h"
 
 /* Layout inside the area the module hands over:
      root name + "can browse" line   (drawn)
@@ -126,22 +127,22 @@ Boolean files_share_create(WindowRef owner, const Rect *area)
     g_bar_value = -1;
 
     CopyCStringToPascal("Share entire boot volume", text);
-    g_boot = NewControl(owner, &g_r.boot_check, text, false, 0, 0, 1,
+    g_boot = now_control_new(owner, &g_r.boot_check, text, false, 0, 0, 1,
                         checkBoxProc, 0);
     CopyCStringToPascal("Choose Folder...", text);
-    g_choose = NewControl(owner, &g_r.choose_btn, text, false, 0, 0, 1,
+    g_choose = now_control_new(owner, &g_r.choose_btn, text, false, 0, 0, 1,
                           pushButProc, 0);
     CopyCStringToPascal("Send File...", text);
-    g_send = NewControl(owner, &g_r.send_btn, text, false, 0, 0, 1,
+    g_send = now_control_new(owner, &g_r.send_btn, text, false, 0, 0, 1,
                         pushButProc, 0);
     text[0] = 0;
-    g_into = NewControl(owner, &g_r.into_btn, text, false, 0, 0, 1,
+    g_into = now_control_new(owner, &g_r.into_btn, text, false, 0, 0, 1,
                         pushButProc, 0);
     CopyCStringToPascal("Open", text);
-    g_reveal = NewControl(owner, &g_r.reveal_btn, text, false, 0, 0, 1,
+    g_reveal = now_control_new(owner, &g_r.reveal_btn, text, false, 0, 0, 1,
                           pushButProc, 0);
     /* Native determinate bar; scaled to 0..1000 below. */
-    g_bar = NewControl(owner, &g_r.progress, text, false, 0, 0, 1000,
+    g_bar = now_control_new(owner, &g_r.progress, text, false, 0, 0, 1000,
                        kControlProgressBarProc, 0);
     if (g_boot == NULL || g_choose == NULL || g_send == NULL
         || g_into == NULL || g_reveal == NULL || g_bar == NULL) {
