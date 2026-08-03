@@ -53,6 +53,13 @@ final class NOWMirrorWindow: NSObject, NSWindowDelegate {
             w.delegate = self
             window = w
         }
+        /* BEFORE it is shown, and again after the fit. A restored frame
+           can already be off every display - the fit only moves corners
+           further - and checking only afterwards left the window
+           invisible for as long as the first scene took to arrive, which
+           on a just-booted guest is many seconds of "Open Mirror did
+           nothing". */
+        if let w = window { Self.ensureOnScreen(w) }
         source.start()
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
