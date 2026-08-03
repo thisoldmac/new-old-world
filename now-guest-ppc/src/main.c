@@ -434,8 +434,21 @@ int main(void)
         conn_service();
         workshop_idle();
         ask_about_replacing();
+        /* NEVER SLEEP ZERO. A zero sleep tells WaitNextEvent to return
+           at once, so this application spins and, on a cooperatively
+           scheduled Macintosh, nothing else runs. That is survivable for
+           a wire that only answers questions about ITSELF. It is fatal
+           for a mirror: the anchor plane captures a process's A5 when
+           that process PUMPS, so starving every other application of
+           time starves the mirror of everything except the front window.
+         *
+           Watched 2026-08-03: the mirror could open Macintosh HD and
+           then could not see the window it had just opened, and the
+           scene carried exactly one window - ours - for as long as
+           anyone looked. One tick still yields; it does not cost the
+           wire anything a person can measure. */
         if (!WaitNextEvent(everyEvent, &event,
-                           conn_wants_fast_pump() ? 0 : 6, NULL)) {
+                           conn_wants_fast_pump() ? 1 : 6, NULL)) {
             continue;
         }
         switch (event.what) {
