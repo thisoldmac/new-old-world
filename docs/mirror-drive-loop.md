@@ -57,8 +57,8 @@ below it as regression.
 |---|---|---|
 | **1** | Frontmost window ops, on NOW's own window | hide, show, move, resize, zoom and close all work from the mirror |
 | **2** | Desktop and the Finder | icons right, double-click opens, menus match the machine, Macintosh HD opens and renders |
-| **3** | One application at a time, from the sample below | window and controls render, menus work, clicks land where they look |
-| **4** | Control panels | several open; **text fields select and type** |
+| **3** | One application at a time, from the sample below | window and controls render, menus work, clicks land where they look, and **anywhere it takes text, text goes in** |
+| **4** | Control panels | several open, and their **forms** work — see §3.3 |
 | **5** | Background applications | other apps' windows appear at all |
 
 Rung 2 needs anchors for **the Finder specifically** — a narrower
@@ -83,6 +83,32 @@ next.
 
 TCP/IP · Date & Time · Appearance · Monitors — between them: text
 fields, popups, radio groups, checkboxes, tabs and sliders.
+
+### 3.3 Text input is its own test, everywhere it appears
+
+Not a footnote on one rung. Anywhere a person can type, test it, and
+test the whole interaction rather than the keystroke alone:
+
+- **click to place the caret** in a field that already has text
+- **drag to select** a range, and select-all
+- **type** — the characters arrive, in order, in the right field
+- **delete and edit** an existing value, not only append to an empty one
+- **tab between fields** in a form, where the app supports it
+- **commit** — Return/Enter where the form expects it
+
+Two shapes, and both must work:
+
+| shape | where | why it differs |
+|---|---|---|
+| **single-line form fields** | TCP/IP addresses, Date & Time, Sherlock's search field | short, validated, often tab-linked; a wrong caret lands in the wrong field |
+| **multi-line text areas** | Stickies, a SimpleText-style document, any editable body | wrapping, scrolling, caret across lines; selection spans lines |
+
+**Type with keystrokes, not by setting the value.** The guest can write
+an element's text directly (`textset`) and that is the easy path and the
+wrong one to prove with: it skips focus, skips the caret, skips
+validation and skips everything an application does while a person
+types. `textset` is a fallback for a field that answers nothing else,
+and when it is used the note says so.
 
 ---
 
