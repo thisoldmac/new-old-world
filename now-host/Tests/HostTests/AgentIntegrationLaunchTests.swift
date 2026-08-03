@@ -29,7 +29,7 @@ final class AgentIntegrationLaunchTests: XCTestCase {
                     note: nil)))
             case .commandRequest(let request) where request.name == "launch":
                 commandCount.value += 1
-                launchedTarget.value = request.args?["target"]
+                launchedTarget.value = request.args?["target"]?.stringValue
                 let reply = commandResult.map {
                     CommandResult(
                         id: request.id,
@@ -281,7 +281,7 @@ final class AgentIntegrationLaunchTests: XCTestCase {
                         note: nil)))
                 }
             case .commandRequest(let request):
-                target.value = request.args?["target"]
+                target.value = request.args?["target"]?.stringValue
                 try? guest.send(.commandResult(.init(
                     id: request.id,
                     ok: true,

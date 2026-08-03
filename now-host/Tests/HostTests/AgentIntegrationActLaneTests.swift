@@ -62,7 +62,7 @@ final class AgentIntegrationActLaneTests: XCTestCase {
     private func installResponder(
         on guest: FakeGuest,
         verb: String,
-        seen: Box<[String: String]?> = Box(nil),
+        seen: Box<[String: CommandArg]?> = Box(nil),
         count: Box<Int> = Box(0),
         reply: ((Int) -> CommandResult)?
     ) {
@@ -105,7 +105,7 @@ final class AgentIntegrationActLaneTests: XCTestCase {
         async throws {
         let (listener, guest) = try await connectedListener()
         defer { guest.connection.cancel(); listener.stop() }
-        let seen = Box<[String: String]?>(nil)
+        let seen = Box<[String: CommandArg]?>(nil)
         installResponder(on: guest, verb: "winact", seen: seen) {
             Self.winactRows(id: $0)
         }
@@ -116,10 +116,15 @@ final class AgentIntegrationActLaneTests: XCTestCase {
         guard case .completed(let receipt) = result else {
             return XCTFail("an answered act is a completed act: \(result)")
         }
-        XCTAssertEqual(seen.value?["window"], Self.window)
-        XCTAssertEqual(seen.value?["action"], "move")
-        XCTAssertEqual(seen.value?["left"], "40")
-        XCTAssertEqual(seen.value?["top"], "60")
+        XCTAssertEqual(seen.value?["window"], .text(Self.window))
+        XCTAssertEqual(seen.value?["action"], .text("move"))
+        /* NUMBERS, and this is the assertion that was missing when every
+           numeric argument this host sent crossed as a quoted string and
+           the guest's strtol read it as zero. `.text("40")` would compile,
+           pass a round trip against a fake guest, and move the window to
+           the origin on a real one. */
+        XCTAssertEqual(seen.value?["left"], .number(40))
+        XCTAssertEqual(seen.value?["top"], .number(60))
         XCTAssertNil(seen.value?["width"],
                      "a move carries no extent, and the host must not "
                          + "invent one to fill the argument out")
@@ -259,7 +264,7 @@ final class AgentIntegrationActLaneTests: XCTestCase {
     func testAnActIsNotRefusedByTheTransferLane() async throws {
         let (listener, guest) = try await connectedListener()
         defer { guest.connection.cancel(); listener.stop() }
-        let seen = Box<[String: String]?>(nil)
+        let seen = Box<[String: CommandArg]?>(nil)
         installResponder(on: guest, verb: "winact", seen: seen) {
             Self.winactRows(id: $0)
         }

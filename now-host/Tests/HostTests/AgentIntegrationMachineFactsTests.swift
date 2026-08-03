@@ -16,7 +16,7 @@ final class AgentIntegrationMachineFactsTests: XCTestCase {
     private final class Asked {
         var count = 0
         var lines: [String?] = []
-        var args: [[String: String]?] = []
+        var args: [[String: CommandArg]?] = []
     }
 
     /// An abbreviated but shape-faithful answer from a PowerBook, in the

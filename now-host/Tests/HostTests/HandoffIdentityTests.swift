@@ -157,7 +157,7 @@ final class HandoffIdentityTests: XCTestCase {
                 // The name-shaped route, answered exactly as the guest
                 // answers it: honestly, and uselessly, when the name was
                 // never on the machine.
-                let target = request.args?["target"] ?? ""
+                let target = request.args?["target"]?.stringValue ?? ""
                 self.quitByName.append(target)
                 let found = target == self.deployedName
                 try? guest.send(.commandResult(CommandResult(

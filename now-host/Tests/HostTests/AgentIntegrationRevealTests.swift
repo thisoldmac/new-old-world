@@ -40,7 +40,7 @@ final class AgentIntegrationRevealTests: XCTestCase {
             switch message {
             case .commandRequest(let request) where request.name == "reveal":
                 count.value += 1
-                target.value = request.args?["target"]
+                target.value = request.args?["target"]?.stringValue
                 guard let reply else { return }
                 try? guest.send(.commandResult(reply(request.id)))
             default:

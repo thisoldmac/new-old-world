@@ -240,6 +240,16 @@ enum CommandArg: Codable, Equatable, Sendable, ExpressibleByStringLiteral {
         if let v = try? c.decode(Int.self) { self = .number(v); return }
         self = .text(try c.decode(String.self))
     }
+
+    /// The value as a person would read it, whichever case it is. For
+    /// asserting on what crossed; `.number(40)` and `.text("40")` are
+    /// deliberately NOT equal, which is the whole point of the type.
+    var stringValue: String {
+        switch self {
+        case .text(let v): return v
+        case .number(let v): return String(v)
+        }
+    }
 }
 
 struct CommandRequest: Codable, Equatable, Sendable {
