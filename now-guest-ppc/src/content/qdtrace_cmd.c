@@ -2,11 +2,11 @@
  * qdtrace_cmd.c - the four subcommands, and the only Toolbox in the
  * reader.
  *
- * Three things happen here that cannot happen in the other two files:
- * finding the block through the shared table, reading TickCount, and
- * setting the plane's capability bit. Everything else - the walk, the
- * verdicts, the JSON, the arm ordering - is next door and is executed by
- * a host cc.
+ * Four things happen here that cannot happen in the other two files:
+ * finding the block through the shared table, reading TickCount, setting
+ * the plane's capability bit, and resolving a ProcessSerialNumber to the
+ * target's current validated A5. The host names a process; only the guest
+ * has the anchor oracle needed to resolve it safely.
  *
  * REGISTRATION IS NOT OURS. src/commands/commands.c is held by another
  * lane while this is written, so this file exposes now_qdtrace_run and
@@ -19,8 +19,11 @@
 
 #include <Carbon.h>
 
+#include "axprocess.h"
 #include "json.h"
 #include "peek.h"
+#include "peek_oracle.h"
+#include "qdtrace_target.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -138,6 +141,84 @@ static int parse_u32(const char *json, const char *key,
     return 1;   /* absent is not malformed */
 }
 
+/* Command arguments may arrive as typed JSON booleans or through the
+   host's older string form. Both shapes mean the same thing; any other
+   present value is malformed rather than silently false. */
+static int parse_bool(const char *json, const char *key, int *out,
+                      int *present)
+{
+    char buf[8];
+
+    *present = 0;
+    if (now_json_find_string(json, key, buf, (long)sizeof buf)) {
+        if (strcmp(buf, "true") == 0) {
+            *out = 1;
+        } else if (strcmp(buf, "false") == 0) {
+            *out = 0;
+        } else {
+            return 0;
+        }
+        *present = 1;
+        return 1;
+    }
+    if (now_json_value(json, key) != NULL) {
+        *out = now_json_find_bool(json, key, 0);
+        *present = 1;
+    }
+    return 1;
+}
+
+/* Resolve the selected live process exactly as observation does: bind its
+   anchor, then apply the stricter trust gate required for arming. A stale
+   anchor may still be useful to look at and is not safe to instrument. */
+static int resolve_start_target(const ProcessSerialNumber *psn,
+                                NowContentU32 *a5, const char **code,
+                                const char **message)
+{
+    NowAxContext ctx;
+    NowPeekReadStatus status = now_ax_bind_process(psn, &ctx);
+
+    switch (status) {
+    case kNowPeekReadOk:
+        break;
+    case kNowPeekReadNoPlane:
+        *code = "anchor-plane-absent";
+        *message = "the NOW Extension's window-anchor plane is not armed, "
+                   "so no process can be resolved to an A5 from here";
+        return 0;
+    case kNowPeekReadNoAnchor:
+        *code = "not-pumped";
+        *message = "this process has not pumped its event loop since "
+                   "anchors were armed; bring it forward and ask again";
+        return 0;
+    case kNowPeekReadAmbiguous:
+        *code = "ambiguous";
+        *message = "two or more anchor slots claim this process; this Mac "
+                   "will not guess which one is current";
+        return 0;
+    case kNowPeekReadMismatch:
+        *code = "mismatch";
+        *message = "the matching anchor disagrees with this process's "
+                   "partition and cannot be used";
+        return 0;
+    case kNowPeekReadNoWindows:
+    case kNowPeekReadStub:
+    case kNowPeekReadUnreadable:
+    default:
+        *code = "unreadable";
+        *message = "this process's anchor cannot be validated safely";
+        return 0;
+    }
+    if (!now_peek_anchor_a5_arm_trusted(ctx.verdict)) {
+        *code = "a5-stale";
+        *message = "this process's anchor is safe to observe but too stale "
+                   "to arm; bring it forward so it pumps, then retry";
+        return 0;
+    }
+    *a5 = (NowContentU32)ctx.a5;
+    return 1;
+}
+
 /* ---- the subcommands ------------------------------------------------- */
 
 static void run_status(const char *json, long id, char *out, long cap)
@@ -189,7 +270,15 @@ static void run_start(const char *json, long id, char *out, long cap)
     NowContentBlock *block = now_qdtrace_block();
     NowQDArmPlan plan;
     NowContentU32 a5 = 0;
-    int present = 0;
+    NowContentU32 serial_hi = 0;
+    NowContentU32 serial_lo = 0;
+    int has_a5 = 0;
+    int has_serial_hi = 0;
+    int has_serial_lo = 0;
+    int has_front = 0;
+    int front_true = 0;
+    NowQDTarget target;
+    const char *route;
     char mode[16];
     long ttl;
     int verdict;
@@ -201,11 +290,66 @@ static void run_start(const char *json, long id, char *out, long cap)
                                out, cap);
         return;
     }
-    if (!parse_u32(json, "a5", &a5, &present)) {
+    if (!parse_u32(json, "a5", &a5, &has_a5)) {
         now_qdtrace_error_json(id, "bad-a5",
                                "a5 must be a decimal or 0x string",
                                out, cap);
         return;
+    }
+    if (!parse_u32(json, "serialHi", &serial_hi, &has_serial_hi)
+            || !parse_u32(json, "serialLo", &serial_lo, &has_serial_lo)) {
+        now_qdtrace_error_json(id, "bad-serial",
+                               "serialHi and serialLo must be decimal or "
+                               "0x strings", out, cap);
+        return;
+    }
+    if (!parse_bool(json, "front", &front_true, &has_front)) {
+        now_qdtrace_error_json(id, "bad-front",
+                               "front must be true or false", out, cap);
+        return;
+    }
+
+    target = now_qdtrace_pick_target(has_a5, has_serial_hi, has_serial_lo,
+                                     has_front, front_true);
+    route = now_qdtrace_target_route_name(target);
+    switch (target) {
+    case kNowQDTargetBadSerial:
+        now_qdtrace_error_json(id, "bad-serial",
+                               "serialHi and serialLo must be sent together; "
+                               "half a serial names a different process",
+                               out, cap);
+        return;
+    case kNowQDTargetNone:
+        now_qdtrace_error_json(id, "no-target",
+                               "qdtrace start needs serialHi+serialLo, "
+                               "front:true, or one already-resolved a5; "
+                               "there is no arm-everything", out, cap);
+        return;
+    case kNowQDTargetSerial:
+    case kNowQDTargetFront: {
+        ProcessSerialNumber psn;
+        const char *fail_code = "unreadable";
+        const char *fail_message = "";
+
+        if (target == kNowQDTargetFront) {
+            if (GetFrontProcess(&psn) != noErr) {
+                now_qdtrace_error_json(id, "no-front",
+                                       "there is no front process to arm",
+                                       out, cap);
+                return;
+            }
+        } else {
+            psn.highLongOfPSN = (long)serial_hi;
+            psn.lowLongOfPSN = (unsigned long)serial_lo;
+        }
+        if (!resolve_start_target(&psn, &a5, &fail_code, &fail_message)) {
+            now_qdtrace_error_json(id, fail_code, fail_message, out, cap);
+            return;
+        }
+        break;
+    }
+    case kNowQDTargetA5:
+        break;
     }
     if (!now_json_find_string(json, "mode", mode, (long)sizeof mode)) {
         mode[0] = '\0';
@@ -215,13 +359,9 @@ static void run_start(const char *json, long id, char *out, long cap)
     verdict = now_qdtrace_arm_plan(mode, a5, ttl,
                                    (NowContentU32)TickCount(), &plan);
     if (verdict == kNowQDArmNoTarget) {
-        /* The refusal this plane exists for. An arm with no target is
-           read by the extension as "hook nothing"; a caller who meant
-           "everything" is told no here, by name, rather than watching a
-           request succeed and produce silence. */
         now_qdtrace_error_json(id, "no-target",
-                               "qdtrace start needs the a5 of ONE process "
-                               "to instrument; there is no arm-everything",
+                               "qdtrace start resolved a zero target; there "
+                               "is no arm-everything",
                                out, cap);
         return;
     }
@@ -254,9 +394,10 @@ static void run_start(const char *json, long id, char *out, long cap)
     snprintf(out, (size_t)cap,
              "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
              "\"output\":{\"qdtrace\":{\"cmd\":\"start\",\"a5\":\"0x%08lx\","
+             "\"resolvedVia\":\"%s\","
              "\"mode\":\"%s\",\"expiry\":%lu,\"now\":%lu,"
              "\"requested\":true,\"armed\":false}}}",
-             id, (unsigned long)plan.a5,
+             id, (unsigned long)plan.a5, route,
              plan.mode == (NowContentU32)kNowContentModeRecord
                  ? "record" : "count",
              (unsigned long)plan.expiry, (unsigned long)TickCount());

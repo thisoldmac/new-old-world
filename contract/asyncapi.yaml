@@ -3524,9 +3524,12 @@ components:
         `status` (the default) counts without moving one record: it is
         the cheap question — "is anything drawing at all, and at whom?"
         — and a reader that could not answer it without a drain would
-        have made the cheap question expensive. `start` arms ONE A5
-        world for a bounded time in one of two modes; `stop` disarms;
-        `drain` reads records from a cursor.
+        have made the cheap question expensive. `start` arms ONE process
+        for a bounded time in one of two modes; the caller normally names
+        that process by its ProcessSerialNumber (or `front:true`) and the
+        guest resolves its own A5 through the same validated anchor oracle
+        used by observation. `stop` disarms; `drain` reads records from a
+        cursor.
 
         `start` answers `requested: true, armed: false`, and that is not
         pessimism. Nothing is hooked until the extension's own pass runs
@@ -3562,13 +3565,29 @@ components:
           a5:
             type: string
             description: >
-              start only, and REQUIRED there. The A5 world of the ONE
-              process to instrument. A STRING (decimal or 0x-prefixed),
-              not an integer: an A5 routinely has its top bit set and
-              the guest's `long` is 32 bits, so 0x80000000 would arrive
-              as a negative number. Zero is refused at the near end —
-              the plane reads it as "hook nothing", and a caller who
-              believed it meant "everything" is told no by name.
+              start only. Raw-A5 fallback for a caller that has already
+              resolved the ONE process to instrument. A STRING (decimal
+              or 0x-prefixed), not an integer: an A5 routinely has its top
+              bit set and the guest's `long` is 32 bits, so 0x80000000
+              would arrive as a negative number. Normal callers send the
+              process serial below and never handle an A5. Zero is refused
+              at the near end — the plane reads it as "hook nothing".
+          serialHi:
+            type: integer
+            description: >
+              start only, required together with serialLo. The exact
+              ProcessSerialNumber of the application to instrument. The
+              guest resolves it to a validated current A5; half a serial is
+              refused rather than retargeted.
+          serialLo:
+            type: integer
+            description: start only, required together with serialHi.
+          front:
+            type: boolean
+            description: >
+              start only. When true and no serial is supplied, target the
+              process that is frontmost when the guest reads the request.
+              Serial identity takes precedence; false is not a selector.
           mode:
             type: string
             enum: [count, record]
@@ -3630,6 +3649,12 @@ components:
               cmd:
                 type: string
                 enum: [status, start, stop, drain]
+              resolvedVia:
+                type: string
+                enum: [serial, front, a5]
+                description: >
+                  start only. Which selector actually resolved the target;
+                  never inferred from other fields the caller also sent.
 
     # THE REFERENCE LAYER, declared 2026-07-31 with the guest that serves
     # it. These four are not a second act plane; they are the half that

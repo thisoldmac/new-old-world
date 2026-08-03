@@ -256,4 +256,5 @@ endif()
 target_sources(now-guest-ppc PRIVATE
     src/content/qdtrace_read.c
     src/content/qdtrace_json.c
-    src/content/qdtrace_cmd.c)
+    src/content/qdtrace_cmd.c
+    src/content/qdtrace_target.c)

@@ -85,6 +85,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
     private let listener: GuestListener
     private let act: AgentIntegrationActControl
+    private let content: NOWMirrorContentPlane
     private let interval: TimeInterval
     private var running = false
     private var pending = false
@@ -111,6 +112,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
          interval: TimeInterval = 0.75) {
         self.listener = listener
         self.act = act
+        self.content = NOWMirrorContentPlane(listener: listener)
         self.interval = interval
     }
 
@@ -119,6 +121,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     func start() {
         guard !running else { return }
         running = true
+        content.guestChanged()
         ambient = "asking for a scene…"
         poll()
     }
@@ -141,7 +144,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             self.pending = false
             switch result {
             case .success(let delivery):
-                self.accept(delivery)
+                /* Content is a bounded command answer issued only after the
+                   scene transfer settles. Rearming the structural poll here
+                   would create a second cadence and race the one command
+                   whose records belong to this exact scene. */
+                self.accept(delivery) { [weak self] in self?.rearm() }
+                return
             case .failure(let failure):
                 /* The last scene STANDS. A poll that failed is a gap in
                    knowledge, not evidence the windows went away, and
@@ -155,16 +163,22 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         }
     }
 
-    private func accept(_ delivery: GuestListener.SceneDelivery) {
+    private func accept(_ delivery: GuestListener.SceneDelivery,
+                        completion: @escaping () -> Void) {
         do {
             var decoded = try NOWMirrorSceneDecoder.decode(
                 irVersion: delivery.irVersion, document: delivery.document)
             decoded = withIcons(decoded)
-            scene = decoded
-            refreshIconsIfStale(decoded)
-            ambient = "\(decoded.windows.count) windows · walk "
-                + "\(delivery.walkMs.map { "\($0)ms" } ?? "?") · transfer "
-                + "\(delivery.transferMs)ms"
+            content.join(into: decoded) { [weak self] update in
+                guard let self else { return }
+                self.scene = update.scene
+                self.refreshIconsIfStale(update.scene)
+                self.ambient = "\(update.scene.windows.count) windows · walk "
+                    + "\(delivery.walkMs.map { "\($0)ms" } ?? "?") · transfer "
+                    + "\(delivery.transferMs)ms · \(update.sentence)"
+                completion()
+            }
+            return
         } catch IR.CompatError.unknownMajor {
             ambient = "this Mac speaks scene IR v\(delivery.irVersion); "
                 + "this build reads \(NOWMirrorSceneDecoder.readableMajors)"
@@ -176,6 +190,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             ambient = "the scene did not decode as IR "
                 + "v\(delivery.irVersion): \(error)"
         }
+        completion()
     }
 
     private func rearm() {

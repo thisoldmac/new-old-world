@@ -243,6 +243,12 @@ run_c now-guest-ppc qdtrace_json_test.c \
       "-DNOW_PEEK_TABLE_HOST -I $repo_root/ext/src" \
       src/content/qdtrace_json.c src/content/qdtrace_read.c \
       src/core/json.c ../ext/src/now_content_logic.c
+# Target selection is pure even though resolving a selected process to a
+# validated A5 is Toolbox work. Keep the precedence and half-serial refusal
+# executable here rather than hiding all of start behind an emulator.
+run_c now-guest-ppc qdtrace_target_test.c \
+      "-I $repo_root/now-guest-ppc/src/content" \
+      src/content/qdtrace_target.c
 # The arm protocol is an ORDER, and an order is invisible to a test that
 # inspects the block afterwards. Gated as source text for that reason.
 run_py now-guest-ppc qdtrace_arm_order_source_test.py
