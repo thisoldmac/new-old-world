@@ -108,10 +108,27 @@ is up, and the guest's compiled-in default would dial IT, not us"; exit 1; }
 # Two forwards: the anchor, and Mirror's in-guest agent (1420) so a host
 # Mirror instance can reach THIS guest rather than whichever other VM
 # happens to hold the habitual port. 1730 matches the host app's default.
+#
+# PROBED LIKE THE ANCHOR, and it was not until 2026-08-02. Rule 4 above
+# says collision-safe ports and this one took the habitual number on
+# faith; when another session's VM already held 1730, QEMU refused the
+# forwarding rule and died before boot. The failure surfaced as an empty
+# run directory and an "anchor timeout" several minutes later, which
+# reads like a broken guest rather than a port that was never free.
 MIRROR_AGENT="${NOW_MIRROR_AGENT_PORT:-1730}"
+if [ -z "${NOW_MIRROR_AGENT_PORT:-}" ]; then
+    tries=0
+    while ! port_free "$MIRROR_AGENT"; do
+        MIRROR_AGENT=$((MIRROR_AGENT + 2)); tries=$((tries + 1))
+        [ "$tries" -gt 30 ] && { echo "no free mirror-agent port"; exit 1; }
+    done
+elif ! port_free "$MIRROR_AGENT"; then
+    echo "requested mirror-agent port $MIRROR_AGENT is in use (another \
+session?)"; exit 1
+fi
 HOSTFWD="hostfwd=tcp:127.0.0.1:${ANCHOR}-:1400,hostfwd=tcp:127.0.0.1:${MIRROR_AGENT}-:1420"
 printf '%s %s\n' "$ANCHOR" "$WIRE" > "$RUN/ports"
-echo "ports: anchor=$ANCHOR wire=$WIRE"
+echo "ports: anchor=$ANCHOR wire=$WIRE mirror-agent=$MIRROR_AGENT"
 
 # A window a person will look at comes from tbt_human_display, not from a
 # backend spelled here: cocoa shears under the pointer and SDL is what fixed

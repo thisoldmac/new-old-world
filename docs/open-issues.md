@@ -14,6 +14,63 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED: the mirror could not have clicked, and no gate could see it (2026-08-02)
+
+**Fixed on the guest, gated on the host, TESTED — not metal-verified.**
+
+NOW's scene emitted `windows[].controls[].rect` in **global** screen
+coordinates. IR v1 documents that field as content-relative, Mirror's own
+`SceneBuilder` subtracts the content origin to produce one, and
+`MirrorKit.HitTester` subtracts it from a click before it compares. So
+every control was hit-tested against a box displaced by its own window's
+origin.
+
+Nothing errors when that happens, which is the entire problem. Measured
+on a live Finder: a point computed from the centre of one scrollbar in
+About This Computer resolved to a **different control ninety pixels
+away**, and a point at the centre of another resolved to the **desktop**.
+The render looked correct throughout — the same picture a person would
+call working.
+
+This is the cause underneath "The last functional gap: a person cannot
+click the mirror" below. That entry described a chain with no join; this
+is what the join would have been wired to had it existed, and it would
+have mis-fired silently.
+
+### Why nothing caught it
+
+Both conventions are four honest integers, so:
+
+- the decode gate passed (the document is structurally valid IR v1);
+- the render gate passed (a displaced control still draws somewhere);
+- the guest's own `scene_walk_test` **asserted the wrong space in so many
+  words** — "a control's rect is translated to global coordinates" — and
+  had done since the day it landed.
+
+The only assertion that can hold this is one that names the space, so
+there are now two:
+
+- `now-guest-ppc/tests/scene_walk_test.c` — content-relative, stated,
+  mutation-verified;
+- `now-host/Tests/HostTests/SceneHitTestTests.swift` — a **round trip**:
+  compute a control's own centre from the document, hit-test it, require
+  the same control back. It cannot pass through a space mismatch. Run
+  against the pre-fix fixture it fails naming both the control aimed at
+  and what was hit instead.
+
+### Still open
+
+- `role` on a control is derived from `min != max`
+  (`now-guest-ppc/src/scene/scene_json.c`), so About This Computer's
+  **memory bar graphs are reported as scrollbars**. Harmless to render;
+  it means `Scrollbar.part` computes arrow and thumb regions for a thing
+  that has none, and a click there would ask a bar graph to scroll.
+- The window box is the frame and the controls are content-relative, but
+  nothing pins the **twenty-pixel title bar** the two are related by; it
+  is `SceneBuilder.titleBarHeight` on one side and the guest's content
+  origin on the other. They agree today because the Toolbox draws a
+  20-point title bar, not because either side told the other.
+
 ## "Agent: Running" was true and useless (2026-08-02)
 
 **Fixed on the guest, unverified on a machine.** Measured on a live
