@@ -47,6 +47,8 @@ let package = Package(
         .testTarget(name: "HostTests",
                     dependencies: ["Host", "NOWAgentIntegration",
                                    .product(name: "MirrorKit",
+                                            package: "MirrorKit"),
+                                   .product(name: "MirrorKitUI",
                                             package: "MirrorKit")],
                     path: "Tests/HostTests",
                     resources: [.copy("Fixtures")]),
