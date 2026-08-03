@@ -14,7 +14,7 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
-## BUILT, NOT UX-VERIFIED: Workshop reports its manually drawn structure (2026-08-03)
+## WATCHED, FIDELITY STILL RED: Workshop reports its manually drawn structure (2026-08-03)
 
 Cycle 19 paired the native Mirror with the authoritative guest and corrected an
 earlier, too-narrow assessment: proper Control Manager chrome did not make the
@@ -30,14 +30,40 @@ guest pixels. The Screenshots page also reports its current dimensions, depth,
 streaming state, transport disclosure, and rate text. Actual icon and screenshot
 art remains deliberately out of scope and visibly placeholder-backed.
 
-The same patch fixes the application switcher's asymmetric geometry. The real
-guest menu title is correctly right-aligned even though Menu Manager reports its
-nominal `left` as zero; its dropdown must therefore be anchored to the right
-screen edge too. Ordinary menu hit spans now exclude that special menu, and a
-missing Apple menu is synthesized independently. Focused producer and renderer
-tests pass. None of these changes is green until a later cycle clicks the
-right-edge switcher and compares the whole native Mirror frame with a same-moment
-guest capture.
+Cycle 20 staged that build without rebooting the guest and drove the native
+Mirror with Computer Use. A same-moment Mirror/QMP pair showed the structure
+above while the resident content plane still reported absent. This proves the
+fallback no longer depends on drawing capture: the empty/hatched Workshop
+regression is fixed on the watched surface.
+
+The whole-frame fidelity row is still red. Mirror showed Depth as numeric `4`
+while the guest showed the selected popup title `8-bit`; it also overlapped the
+preview placeholder text, and removed disabled controls when Finder was
+frontmost instead of dimming them. Sidebar icon art remains a named placeholder
+and is not scored while bitmap/picture work is out of scope. The popup-value
+cause was in the guest producer: it looked only in the process menu list, while
+the Appearance popup CDEF owns its MenuRef as control data. The producer now
+asks `kControlPopupButtonMenuHandleTag` first and retains the old lookup as a
+fallback. That follow-up passes the guest-native and PPC cross-build gates, but
+is not yet watched in a later drive.
+
+The same structural patch fixes the application switcher's asymmetric
+geometry. The real guest menu title is correctly right-aligned even though Menu
+Manager reports its nominal `left` as zero; its dropdown must therefore be
+anchored to the right screen edge too. Ordinary menu hit spans now exclude that
+special menu, and a missing Apple menu is synthesized independently. Cycle 20
+watched the right switcher open at the right edge and switch Finder/New Old
+World. It also proved the left Apple glyph was only a drawn fallback: clicking
+it answered `nothing under the pointer`. The guest now adds the real menu id
+128 to its self scene (without duplicating one already found), so drawing,
+hit-testing, and MenuSelect share one guest object. That follow-up is not green
+until the next drive watches the Apple menu open.
+
+Cycle 20 also found that the synthesized switcher lists background-only
+processes when Finder is frontmost. Choosing one refuses accurately as
+`activate-background-only`, but those rows should not be offered by an
+application switcher. This remains broken; the scene needs guest-provided
+foreground eligibility rather than a host signature allowlist.
 
 ## BUILT, NOT UX-VERIFIED: proven control roles survive the scene (2026-08-03)
 

@@ -151,8 +151,27 @@ static void add_control_tree(NowScene *s, int window, ControlRef control,
             now_scene_set_control_handle(s, window, index,
                                          (unsigned long)control);
             if (role != NULL && strcmp(role, "popup") == 0) {
-                MenuHandle menu = GetMenuHandle(GetControlMinimum(control));
+                MenuHandle menu = NULL;
+                Size got = 0;
                 short item = GetControlValue(control);
+
+                /* The Appearance popup owns its menu through control data.
+                   GetControlMinimum is only a compatibility hint: the CDEF
+                   may keep a private MenuRef without inserting it into the
+                   process menu list, in which case GetMenuHandle(min) is
+                   NULL and the old code fell back to the numeric item index
+                   ("4") instead of the visible title ("8-bit"). Ask the
+                   control first, exactly as the Workshop's Cloud popup does,
+                   then retain the older menu-list path as a fallback. */
+                if (GetControlData(control, kControlEntireControl,
+                                   kControlPopupButtonMenuHandleTag,
+                                   sizeof menu, (Ptr)&menu, &got) != noErr
+                        || got != (Size)sizeof menu) {
+                    menu = NULL;
+                }
+                if (menu == NULL) {
+                    menu = GetMenuHandle(GetControlMinimum(control));
+                }
 
                 if (menu != NULL && item > 0
                     && item <= CountMenuItems(menu)) {
@@ -348,12 +367,34 @@ static void add_one_menu(NowScene *s, MenuHandle menu, short left)
  * word over the Apple menu and made the first title impossible to hit.
  * Use the guest's coordinate; do not reconstruct title widths on the host. */
 enum {
+    kNowSelfAppleMenuID       = 128,
     kNowSelfApplicationMenuID = -16489,
     kNowSelfHelpMenuID        = -16490
 };
 
+static int self_scene_has_menu(const NowScene *s, short id)
+{
+    short i;
+
+    for (i = 0; i < s->menu_count; ++i) {
+        if (s->menus[i].id == id) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void collect_self_system_menus(NowScene *s, short help_left)
 {
+    /* CarbonLib gives the Apple menu its conventional id but does not
+       include it in the ordinary MenuList span this collector can walk.
+       Reporting only a drawn fallback made the Apple visible and inert;
+       worse, the application menu's nominal left==0 then became the only
+       actionable record near that slot. Add the real menu, once, so drawing,
+       hit-testing and MenuSelect all name the same guest object. */
+    if (!self_scene_has_menu(s, kNowSelfAppleMenuID)) {
+        add_one_menu(s, GetMenuHandle(kNowSelfAppleMenuID), 10);
+    }
     add_one_menu(s, GetMenuHandle(kNowSelfHelpMenuID), help_left);
     add_one_menu(s, GetMenuHandle(kNowSelfApplicationMenuID), 0);
 }
