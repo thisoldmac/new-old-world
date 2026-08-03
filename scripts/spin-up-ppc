@@ -93,9 +93,22 @@ elif ! port_free "$ANCHOR"; then
     echo "requested anchor port $ANCHOR is in use (another session?)"; exit 1
 fi
 WIRE="${NOW_WIRE_PORT:-5250}"
-port_free "$WIRE" || { echo "port $WIRE is already listening — another NOW host \
+# NOW_SPIN_RESTRICT=1 isolates the guest from every host listener
+# (slirp restrict=on): its dial to 10.0.2.2:5250 fails exactly as it
+# does on hardware with no host up, while the anchor hostfwd still
+# reaches in. This is the mode for UI work while a HUMAN's host app
+# holds 5250 — without it the guest walks into their session, which is
+# the same collision class the metal rules exist for. The wire verify
+# phase is skipped: nothing can dial us, so listening would only hang.
+RESTRICT="${NOW_SPIN_RESTRICT:-0}"
+if [ "$RESTRICT" = "1" ]; then
+    echo "restricted: the guest can reach nothing on this Mac"
+else
+    port_free "$WIRE" || { echo "port $WIRE is already listening — another NOW host \
 is up, and the guest's compiled-in default would dial IT, not us"; exit 1; }
+fi
 HOSTFWD="hostfwd=tcp:127.0.0.1:${ANCHOR}-:1400"
+[ "$RESTRICT" = "1" ] && HOSTFWD="restrict=on,$HOSTFWD"
 printf '%s %s\n' "$ANCHOR" "$WIRE" > "$RUN/ports"
 echo "ports: anchor=$ANCHOR wire=$WIRE"
 
@@ -188,19 +201,24 @@ Harness(host="127.0.0.1", port=anchor, expect_backing={"worker"}).request(
 print("  launch requested")
 PY
 
-set +e
-# --retries, because a just-launched application has not been ANCHORED yet:
-# the extension captures a process's A5 world when that process first pumps
-# an event, so the very first actselftest after a launch answers
-# `no-such-process` and the identical call moments later answers
-# `abi-agreed` (measured 2026-08-01, mac99). Reporting the first answer
-# would be reporting a lie about the trap ABI, which is the exact failure
-# class this verb exists to catch.
-python3 "$NOW/tools/askguest.py" --port "$WIRE" --wait "${NOW_DIAL_WAIT:-180}" \
-    --retries 6 --retry-delay 6 \
-    qdtrace:op=status axsnap actselftest
-rc=$?
-set -e
+if [ "$RESTRICT" = "1" ]; then
+    echo "== restricted run: the guest cannot dial, skipping the wire verify =="
+    rc=0
+else
+    set +e
+    # --retries, because a just-launched application has not been ANCHORED yet:
+    # the extension captures a process's A5 world when that process first pumps
+    # an event, so the very first actselftest after a launch answers
+    # `no-such-process` and the identical call moments later answers
+    # `abi-agreed` (measured 2026-08-01, mac99). Reporting the first answer
+    # would be reporting a lie about the trap ABI, which is the exact failure
+    # class this verb exists to catch.
+    python3 "$NOW/tools/askguest.py" --port "$WIRE" --wait "${NOW_DIAL_WAIT:-180}" \
+        --retries 6 --retry-delay 6 \
+        qdtrace:op=status axsnap actselftest
+    rc=$?
+    set -e
+fi
 
 echo
 echo "anchor=127.0.0.1:$ANCHOR  wire=127.0.0.1:$WIRE  qmp=$QMP"

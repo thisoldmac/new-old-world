@@ -52,6 +52,19 @@ rectangle that differs.
 literal renders as mojibake through `DrawString`. Comments are free;
 drawable strings are not.
 
+**A text field in the Workshop is TextEdit, never an edit-text
+control.** The window has no root control on purpose (workshop_window.c
+says why: embedding broke click routing in a `WaitNextEvent` app), so
+`SetKeyboardFocus` fails and an Appearance edit-text CDEF's keys never
+arrive — the console's first field died of this, and a 2026-08-02
+emulator run of `kControlEditTextProc` on the Chat page typed into a
+field that stayed empty. Classic TE needs no focus machinery: `TEKey`
+draws its own insertion, `TEClick` places the caret, `TEIdle` blinks,
+`TEActivate` follows the page. `chat_module.c` is the working pattern.
+The same fact means any `GetKeyboardFocus` gate in this window is dead
+code — three Data Browser pages carry one and their arrow keys have
+never fired.
+
 ## Two traps that are not about drawing
 
 **Preferences key off the binary's name.** `prefs_spec` treats

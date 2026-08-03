@@ -26,11 +26,16 @@
    rect, never the pane (metal, 2026-08-02: whole-pane damage per chunk
    read as flicker at streaming cadence).
 
-   The console's first build had an edit-text field that never took a
-   keystroke; the missing half was routing, not the control. Keys reach
-   it through HandleControlKey under an explicit SetKeyboardFocus, the
-   same pair the Data Browser pages have proven on metal, and the caret
-   blinks from IdleControls on the idle path. */
+   The prompt is CLASSIC TEXTEDIT, not an Appearance edit-text control,
+   and the choice is measured, not taste: this window has no root
+   control ON PURPOSE (workshop_window.c says why - embedding broke
+   click routing in a WaitNextEvent app), so SetKeyboardFocus fails and
+   the control CDEF's keys never arrive; the console's first field died
+   of exactly this, and an emulator run of the control here (2026-08-02)
+   typed into a field that stayed empty. TE needs no focus machinery:
+   TEKey inserts and draws incrementally, TEClick places the caret and
+   tracks selection, TEIdle blinks, TEActivate follows the window - the
+   same text engine every classic dialog field is made of. */
 
 enum {
     kChatModelsMenuID = 136,
@@ -61,7 +66,7 @@ static int g_filtered_sel = -1;
 static int g_row_sel = -1;            /* index into g_models, -1 = none */
 static Boolean g_asked_catalog;
 
-static ControlRef g_prompt;           /* edit text; the manager draws it */
+static TEHandle g_te;                 /* the prompt; TE draws it */
 
 static char g_status[128];            /* the transient chat.status line */
 static Boolean g_streaming;
@@ -144,47 +149,50 @@ static void inval_rows(int from, int to)
     inval(&r);
 }
 
-/* --- the prompt control -------------------------------------------------- */
+/* --- the prompt (TextEdit) ----------------------------------------------- */
+
+static void prompt_rects(Rect *view, Rect *dest)
+{
+    *view = g_r.input;
+    InsetRect(view, 4, 3);
+    /* Single line: the destination is far wider than the view, so TE
+       never wraps, and TEAutoView keeps the caret's end in sight. */
+    *dest = *view;
+    dest->right = (short)(dest->left + 2000);
+}
 
 static long prompt_size(void)
 {
-    Size len = 0;
-
-    if (g_prompt == NULL
-        || GetControlDataSize(g_prompt, kControlEditTextPart,
-                              kControlEditTextTextTag, &len) != noErr) {
-        return 0;
-    }
-    return (long)len;
+    return g_te != NULL ? (*g_te)->teLength : 0;
 }
 
 static long prompt_text(char *out, long cap)
 {
-    Size got = 0;
+    long len = prompt_size();
+    CharsHandle chars;
 
-    if (g_prompt == NULL
-        || GetControlData(g_prompt, kControlEditTextPart,
-                          kControlEditTextTextTag, (Size)(cap - 1),
-                          (Ptr)out, &got) != noErr) {
-        got = 0;
+    if (len > cap - 1) {
+        len = cap - 1;
     }
-    if (got > (Size)(cap - 1)) {
-        got = (Size)(cap - 1);
+    chars = g_te != NULL ? TEGetText(g_te) : NULL;
+    if (chars == NULL) {
+        len = 0;
+    } else {
+        HLock((Handle)chars);
+        memcpy(out, *chars, (size_t)len);
+        HUnlock((Handle)chars);
     }
-    out[got] = '\0';
-    return (long)got;
+    out[len] = '\0';
+    return len;
 }
 
 static void prompt_clear(void)
 {
-    if (g_prompt == NULL) {
+    if (g_te == NULL) {
         return;
     }
-    SetControlData(g_prompt, kControlEditTextPart, kControlEditTextTextTag,
-                   0, (Ptr)"");
-    if (g_visible) {
-        Draw1Control(g_prompt);
-    }
+    TESetText("", 0, g_te);
+    inval(&g_r.input);                /* TESetText mutates, never draws */
 }
 
 static void scroll_to(int top, Boolean from_person)
@@ -574,20 +582,24 @@ static OSErr chat_create(WindowRef owner, const Rect *body)
     g_scroll_action_upp = NewControlActionUPP(scroll_action);
     g_scroll = NewControl(owner, &g_r.scrollbar, text, false, 0, 0, 0,
                           scrollBarProc, 0);
-    text[0] = 0;
-    g_prompt = NewControl(owner, &g_r.input, text, false, 0, 0, 0,
-                          kControlEditTextProc, 0);
-    if (g_prompt != NULL) {
-        ControlFontStyleRec style;
+    {
+        Rect view;
+        Rect dest;
 
-        style.flags = kControlUseFontMask | kControlUseSizeMask;
-        style.font = g_font;
-        style.size = 9;
-        SetControlFontStyle(g_prompt, &style);
+        /* TENew samples the current port's text state. */
+        SetPortWindowPort(owner);
+        TextFont(g_font);
+        TextSize(9);
+        TextFace(normal);
+        prompt_rects(&view, &dest);
+        g_te = TENew(&dest, &view);
+        if (g_te != NULL) {
+            TEAutoView(true, g_te);
+        }
     }
     if (g_provider_popup == NULL || g_model_popup == NULL
         || g_new_btn == NULL || g_send_btn == NULL
-        || g_scroll == NULL || g_prompt == NULL
+        || g_scroll == NULL || g_te == NULL
         || g_scroll_action_upp == NULL) {
         return memFullErr;
     }
@@ -605,12 +617,15 @@ static void chat_dispose(void)
         DisposeControlActionUPP(g_scroll_action_upp);
         g_scroll_action_upp = NULL;
     }
+    if (g_te != NULL) {
+        TEDispose(g_te);              /* ours, not the window's */
+        g_te = NULL;
+    }
     g_provider_popup = NULL;
     g_model_popup = NULL;
     g_new_btn = NULL;
     g_send_btn = NULL;
     g_scroll = NULL;
-    g_prompt = NULL;
     g_owner = NULL;
 }
 
@@ -623,10 +638,9 @@ static void chat_show(Boolean visible)
         ShowControl(g_new_btn);
         ShowControl(g_send_btn);
         ShowControl(g_scroll);
-        ShowControl(g_prompt);
-        /* The routing the first edit-text field in this application
-           lacked: focus is asserted, never assumed. */
-        SetKeyboardFocus(g_owner, g_prompt, kControlEditTextPart);
+        if (g_te != NULL) {
+            TEActivate(g_te);         /* the caret follows the page */
+        }
         /* Every show, not once per connection: the host's providers
            change while this page is elsewhere (metal, 2026-08-02). */
         if (conn_phase() == kConnConnected) {
@@ -636,13 +650,14 @@ static void chat_show(Boolean visible)
         g_shown_lines = -1;
         g_shown_status[0] = '\0';
     } else {
-        ClearKeyboardFocus(g_owner);  /* keys must not land in a hidden page */
+        if (g_te != NULL) {
+            TEDeactivate(g_te);       /* keys must not land in a hidden page */
+        }
         HideControl(g_provider_popup);
         HideControl(g_model_popup);
         HideControl(g_new_btn);
         HideControl(g_send_btn);
         HideControl(g_scroll);
-        HideControl(g_prompt);
     }
 }
 
@@ -670,10 +685,15 @@ static void chat_layout_op(const Rect *body)
     SizeControl(g_scroll,
                 (short)(g_r.scrollbar.right - g_r.scrollbar.left),
                 (short)(g_r.scrollbar.bottom - g_r.scrollbar.top));
-    MoveControl(g_prompt, g_r.input.left, g_r.input.top);
-    SizeControl(g_prompt,
-                (short)(g_r.input.right - g_r.input.left),
-                (short)(g_r.input.bottom - g_r.input.top));
+    if (g_te != NULL) {
+        Rect view;
+        Rect dest;
+
+        prompt_rects(&view, &dest);
+        (*g_te)->viewRect = view;
+        (*g_te)->destRect = dest;
+        TECalText(g_te);
+    }
     if (g_pinned) {
         g_top = max_top();
     }
@@ -750,12 +770,27 @@ static void draw_status_line(void)
     TextFace(normal);
 }
 
+static void draw_input(void)
+{
+    Rect f = g_r.input;
+
+    /* Runs on page show and resize only: keystrokes never invalidate
+       here, because TEKey draws its own insertion incrementally. */
+    EraseRect(&f);
+    FrameRect(&f);
+    if (g_te != NULL) {
+        TextFont(g_font);
+        TextSize(9);
+        TextFace(normal);
+        TEUpdate(&(*g_te)->viewRect, g_te);
+    }
+}
+
 static void chat_draw(void)
 {
-    /* The prompt is the Control Manager's; this draws only the pane
-       and the status line. */
     draw_transcript();
     draw_status_line();
+    draw_input();
     g_shown_lines = chat_transcript_count(&g_transcript);
     g_shown_open_len = g_transcript.feed.open_len;
     strncpy(g_shown_status, g_status, sizeof g_shown_status - 1);
@@ -816,11 +851,15 @@ static Boolean chat_click(const EventRecord *event, Point local)
         }
         return true;
     }
-    if (control == g_prompt && part != 0) {
-        /* Focus first, then let the CDEF place the caret and track a
-           selection drag itself. */
-        SetKeyboardFocus(g_owner, g_prompt, kControlEditTextPart);
-        HandleControlClick(g_prompt, local, event->modifiers, NULL);
+    if (PtInRect(local, &g_r.input)) {
+        if (g_te != NULL) {
+            /* TEClick tracks selection until mouse-up without pumping
+               the wire - the same brief, unavoidable stall as a thumb
+               drag, and documented with them. */
+            TextFont(g_font);
+            TextSize(9);
+            TEClick(local, (event->modifiers & shiftKey) != 0, g_te);
+        }
         return true;
     }
     if (PtInRect(local, &g_r.transcript)) {
@@ -833,7 +872,6 @@ static Boolean chat_click(const EventRecord *event, Point local)
 static Boolean chat_key(const EventRecord *event)
 {
     char c = (char)(event->message & charCodeMask);
-    ControlRef focus = NULL;
 
     if (!g_visible) {
         return false;
@@ -855,16 +893,18 @@ static Boolean chat_key(const EventRecord *event)
                                      : -(visible_lines() - 1)), true);
         return true;
     }
-    if (GetKeyboardFocus(g_owner, &focus) == noErr && focus == g_prompt) {
-        /* The contract's cap, enforced at the door: printable keys at
-           the limit are dropped; editing keys always pass. */
+    if (g_te != NULL) {
+        /* The contract's cap, enforced at the door: a printable key at
+           the limit is dropped unless it replaces a selection; editing
+           keys always pass. TEKey draws its own change - no inval. */
         if ((unsigned char)c >= 0x20
-            && prompt_size() >= kChatPromptMax) {
+            && prompt_size() >= kChatPromptMax
+            && (*g_te)->selStart == (*g_te)->selEnd) {
             return true;
         }
-        HandleControlKey(g_prompt,
-                         (SInt16)((event->message & keyCodeMask) >> 8),
-                         (SInt16)c, event->modifiers);
+        TextFont(g_font);
+        TextSize(9);
+        TEKey((short)c, g_te);
         return true;
     }
     return false;
@@ -881,14 +921,18 @@ static void chat_activate(Boolean active)
         ActivateControl(g_new_btn);
         ActivateControl(g_send_btn);
         ActivateControl(g_scroll);
-        ActivateControl(g_prompt);
+        if (g_te != NULL && g_visible) {
+            TEActivate(g_te);
+        }
     } else {
         DeactivateControl(g_provider_popup);
         DeactivateControl(g_model_popup);
         DeactivateControl(g_new_btn);
         DeactivateControl(g_send_btn);
         DeactivateControl(g_scroll);
-        DeactivateControl(g_prompt);
+        if (g_te != NULL) {
+            TEDeactivate(g_te);
+        }
     }
 }
 
@@ -927,10 +971,10 @@ static void chat_idle(void)
         inval(&g_r.status);
         strncpy(g_shown_status, g_status, sizeof g_shown_status - 1);
     }
-    /* The caret. IdleControls walks visible controls only, so this is
+    /* The caret. TEIdle is a blink check against TickCount - well
        within the idle budget while the page is up. */
-    if (g_owner != NULL) {
-        IdleControls(g_owner);
+    if (g_te != NULL) {
+        TEIdle(g_te);
     }
     /* The catalog is asked once per connection; a page shown before
        the wire came up asks as soon as it is there. */
