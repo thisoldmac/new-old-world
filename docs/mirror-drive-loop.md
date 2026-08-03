@@ -129,21 +129,75 @@ below it as regression.
 
 | rung | target | done means |
 |---|---|---|
-| **1** | Frontmost window ops, on NOW's own window | hide, show, move, resize, zoom and close all work from the mirror |
+| **1** | Frontmost window ops | hide, show, move, resize, zoom and close all work from the mirror |
 | **2** | Desktop and the Finder | icons right, double-click opens, menus match the machine, Macintosh HD opens and renders |
-| **3** | One application at a time, from the sample below | window and controls render, menus work, clicks land where they look, and **anywhere it takes text, text goes in** |
-| **4** | Control panels | several open, and their **forms** work — see §3.3 |
-| **5** | Background applications | other apps' windows appear at all |
+| **3** | **Control panels** — the compliance gate | several open at once, all drawn right, all drivable, and their **forms** work |
+| **4** | **Modal alerts** — the sibling gate | the alert draws whole and can be answered |
+| **5** | One application at a time, from the sample | the compliant ones match; the awkward one **degrades honestly** |
+| **6** | Background applications | other apps' windows appear at all |
 
 Rung 2 needs anchors for **the Finder specifically** — a narrower
-problem than rung 5's general case, and fine to solve on its own.
+problem than rung 6's general case, and fine to solve on its own.
 
-### The application sample (rung 3)
+**Why first-party comes before applications.** Rungs 3 and 4 used to sit
+above "one application", which meant meeting a third-party app before
+we had proved we could draw a compliant one. That is backwards. A
+control panel and a system alert are **Apple's own**, built to Apple's
+own guidelines, so a gap in one is OUR defect with no "that app is
+strange" left to hide behind. They are the gate, and the bar is
+**perfect**.
 
-Deliberately not trivial ones, and deliberately varied — the eventual
-goal is to drive and render *any* application, so the sample has to
-stress different things. One at a time; finish one before starting the
-next.
+Rung 5 keeps a deliberately non-compliant application for the opposite
+reason, and its bar is different: **degrade honestly**. A mirror that
+cannot render a custom-drawn control must say so rather than draw
+something plausible. Polishing only against compliant software is how
+you get a mirror that lies about the software that isn't.
+
+### Control panels (rung 3)
+
+TCP/IP · Date & Time · Appearance · Monitors — between them: text
+fields, popups, radio groups, checkboxes, tabs, sliders, a scrolling
+list and colour swatches, which is most of the Toolbox's control classes
+in four windows that open in seconds.
+
+Three properties make them the gate rather than merely a good sample:
+
+- **Stateful.** You can toggle a thing and see it stick, which is the
+  difference between "drew a checkbox" and "the checkbox works".
+- **Several at once.** Open four and the rung also tests z-order,
+  switching by clicking a background window, switching through the
+  Application menu, and hide/show.
+- **Identical on every OS 9 machine.** A captured control-panel scene is
+  a permanent regression fixture in a way "whatever was open that day"
+  never is.
+
+### Modal alerts (rung 4)
+
+A sibling of rung 3, not a subset: an alert is chrome-less by design,
+is answered rather than operated, and blocks its own application while
+the rest of the machine carries on. Every one of those is a distinct
+thing to get wrong, and on 2026-08-03 the mirror got all of them wrong
+at once — three unlabelled scroll-bar tracks where the buttons were.
+
+**Raise one by double-clicking Mail on the desktop.** It asks whether
+the computer is set up for Internet access, every time, on a fresh boot
+— which makes it the one reliably reproducible alert on this machine.
+Answering "Yes" opens the Internet Setup Assistant, itself a useful
+target: a *titled* dialog, the case that proved chrome cannot be decided
+from `windowKind` alone.
+
+What the rung asks: the alert draws its icon and all of its text, not
+just its buttons; the buttons carry their titles and the default ring
+sits on the right one; a click on a button actually answers it; Return
+actuates the default; and while the alert is up the rest of the screen
+still mirrors faithfully.
+
+### The application sample (rung 5)
+
+Reached only once rungs 3 and 4 are green, because these are where the
+mirror stops being able to blame the application. Deliberately varied —
+the eventual goal is to drive and render *any* application. One at a
+time; finish one before starting the next.
 
 | app | what it stresses |
 |---|---|
@@ -153,10 +207,10 @@ next.
 | **Network Browser** | list/outline view, toolbar, progress |
 | **QuickTime Player** | custom-drawn controls — deliberately the awkward one, where semantics run out and we learn what a NON-compliant application costs |
 
-### Control panels (rung 4)
-
-TCP/IP · Date & Time · Appearance · Monitors — between them: text
-fields, popups, radio groups, checkboxes, tabs and sliders.
+The first four are held to the rung-3 bar. **QuickTime Player is held to
+the honesty bar instead**: what it cannot draw it must decline to draw,
+and what it cannot drive it must refuse by name. A plausible-looking
+guess there is worse than a blank.
 
 ### 3.3 Text input is its own test, everywhere it appears
 

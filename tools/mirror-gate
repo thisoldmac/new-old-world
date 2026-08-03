@@ -73,29 +73,52 @@ RUNGS = {
         ("r2.hd-contents", "its window renders its CONTENTS, not an empty box"),
         ("r2.window-scroll", "a folder window scrolls"),
     ]),
-    3: ("One application", [
-        ("r3.launch", "launched and frontmost from the mirror"),
-        ("r3.window-renders", "its window renders with chrome and title"),
-        ("r3.controls-render", "its controls render with the right roles"),
-        ("r3.menus-work", "its menus open and a command runs"),
-        ("r3.click-lands", "a click lands where it looks like it will"),
+    # THE COMPLIANCE GATE. First-party, so every gap is our defect, and
+    # the bar is perfect. TCP/IP, Date & Time, Appearance, Monitors.
+    3: ("Control panels", [
+        ("r3.opens", "the panel opens from the mirror"),
+        ("r3.title", "its title bar and title match the machine"),
+        ("r3.content", "its static text, labels and group boxes render"),
+        ("r3.controls", "every control draws as the right KIND - a checkbox "
+                        "as a checkbox, a popup as a popup, a radio as a radio"),
+        ("r3.click", "a click lands on the control it looks like it will"),
+        ("r3.toggle", "a checkbox or radio actually changes the panel's state"),
+        ("r3.popup", "a popup opens and a choice sticks"),
         ("r3.text.caret", "click places the caret in a field with text in it"),
         ("r3.text.select", "drag selects a range; select-all works"),
         ("r3.text.type", "typed characters arrive in order, right field"),
         ("r3.text.edit", "an EXISTING value can be edited and deleted"),
-        ("r3.text.tab", "tab moves between fields (where the app supports it)"),
+        ("r3.text.tab", "tab moves between fields"),
         ("r3.text.commit", "Return/Enter commits where the form expects it"),
+        ("r3.multi", "several panels open at once, all drawn, z-order right"),
+        ("r3.switch-click", "clicking a background panel brings it forward"),
+        ("r3.switch-menu", "the Application menu switches between them"),
+        ("r3.hide", "Hide, from the Application menu, hides one"),
+        ("r3.show", "Show All brings it back"),
     ]),
-    4: ("Control panels", [
-        ("r4.opens", "the panel opens from the mirror"),
-        ("r4.fields", "its text fields take keystrokes"),
-        ("r4.popup", "a popup menu opens and a choice sticks"),
-        ("r4.toggle", "a checkbox or radio actually changes the app's state"),
-        ("r4.commit", "the panel commits / closes without losing the change"),
+    # THE SIBLING GATE. Raised reliably by double-clicking Mail.
+    4: ("Modal alerts", [
+        ("r4.raise", "double-clicking Mail raises the alert"),
+        ("r4.chrome", "no title bar - correctly, a modal alert has none"),
+        ("r4.content", "its icon and ALL of its text render, not just buttons"),
+        ("r4.buttons", "buttons carry their titles, default ring on the right one"),
+        ("r4.click", "a click on a button answers it and the app acts"),
+        ("r4.default", "Return actuates the default button"),
+        ("r4.backdrop", "while it is up the rest of the screen still mirrors"),
     ]),
-    5: ("Background applications", [
-        ("r5.windows", "another app's windows appear at all"),
-        ("r5.acts", "and can be acted on, not just seen"),
+    5: ("One application", [
+        ("r5.launch", "launched and frontmost from the mirror"),
+        ("r5.window-renders", "its window renders with chrome, title and content"),
+        ("r5.controls-render", "its controls render with the right roles"),
+        ("r5.menus-work", "its menus open and a command runs"),
+        ("r5.click-lands", "a click lands where it looks like it will"),
+        ("r5.text", "anywhere it takes text, text goes in"),
+        ("r5.honesty", "what it CANNOT draw or drive, it declines by name "
+                       "rather than guessing (the QuickTime Player bar)"),
+    ]),
+    6: ("Background applications", [
+        ("r6.windows", "another app's windows appear at all"),
+        ("r6.acts", "and can be acted on, not just seen"),
     ]),
 }
 
@@ -114,25 +137,19 @@ FORBIDDEN = [
     (r"nc\s+(-\w+\s+)*(localhost|127\.0\.0\.1)\s+52\d\d", "a raw socket to the guest"),
 ]
 
-ABBREVIATED_RULES = """\
---- the rules, from %s ---
- 1. Drive the mirror with computer use. Never the wire, never NOW's
-    Console page, never QMP input, never a probe script.
- 2. QMP screendump is for LOOKING, never for doing.
- 3. If the mirror cannot do it, that IS the finding. Record it; do not
-    reach past it.
- 4. Record, don't fix, during a sweep.
- 5. Nothing is "fixed" until a LATER drive watched it work.
- 6. Do not restate a hypothesis as a fact.
- 7. No regressions -- lower rungs are re-swept every drive.
- 8. A blocker does not end a sweep: write it down, step over it, keep
-    sweeping, including rungs above the blocked one.
- 9. None of these ends the work: budget spent, patch limit reached,
-    findings written up, a rung went green, the gate passed, a good
-    report is ready. Give the report and keep going.
-The only real stops are the section 5 definition being met, something
-only Michelle can authorise, or tooling broken beyond repair from here.
-Full text: %s   Findings: %s""" % (LOOP_DOC, LOOP_DOC, NOTES)
+def rules_block():
+    path = os.path.join(ROOT, LOOP_DOC)
+    try:
+        with open(path) as f:
+            text = f.read()
+        body = text.split("## 1. The rules, recited every pass", 1)[1]
+        body = body.split("\n---", 1)[0].strip()
+    except (IOError, IndexError):
+        return ("mirror-gate: %s could not be read. That is itself a "
+                "problem worth stopping for." % LOOP_DOC)
+    return ("--- the rules, from %s, read from the file just now ---\n%s\n"
+            "\nThe ladder and the phases are in the same file. "
+            "Findings: %s" % (LOOP_DOC, body, NOTES))
 
 
 # --------------------------------------------------------------------------
@@ -164,7 +181,7 @@ def rows_for(rungs, app):
     for r in rungs:
         title, items = RUNGS[r]
         for rid, what in items:
-            what = what if r != 3 or not app else "%s: %s" % (app, what)
+            what = what if r != 5 or not app else "%s: %s" % (app, what)
             out.append({"id": rid, "rung": r, "what": what,
                         "result": None, "note": ""})
     return out
@@ -230,6 +247,13 @@ def cmd_begin(args):
     state["pause"] = None
     state["fruitless_blocks"] = 0
     save(state)
+    # THE REFRESH, as a consequence rather than a step. The Stop hook
+    # only quotes the rules when a turn tries to END; nothing made them
+    # land at the START of a cycle, which is where drift begins. `begin`
+    # is mandatory to open one, so printing them here means every cycle
+    # opens with the rules in context, read from the file.
+    print(rules_block())
+    print()
     print("cycle %s open -- rungs %s%s, %d rows"
           % (n, rung_list, (" app=%s" % app) if app else "", len(cycle["rows"])))
     for r in cycle["rows"]:
@@ -379,7 +403,7 @@ def cmd_status(args):
 
 def block(reason):
     """Exit 2 with the reason on stderr: Claude Code feeds it back."""
-    sys.stderr.write(reason + "\n\n" + ABBREVIATED_RULES + "\n")
+    sys.stderr.write(reason + "\n\n" + rules_block() + "\n")
     sys.exit(2)
 
 
