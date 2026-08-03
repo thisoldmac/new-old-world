@@ -49,7 +49,8 @@ reported value.
 ## Initial vocabulary
 
 Kinds are `pushButton`, `checkBox`, `radioButton`, `popupMenu`, `editText`,
-`staticText`, `scrollBar`, `icon`, `picture`, `userItem`, and `unknown`.
+`staticText`, `scrollBar`, `groupBox`, `progressIndicator`,
+`disclosureTriangle`, `icon`, `picture`, `userItem`, and `unknown`.
 
 Actions are `press`, `choose`, `edit`, and `scroll`. Advertising a capability
 does not imply the host executor implements it; an unimplemented action is a

@@ -66,6 +66,15 @@ public enum DisplayReplay {
                 path.addLine(to: pt(t[0], t[1]))
                 g.stroke(path, with: .color(fg), lineWidth: 1)
                 drew = true
+            case "bits":
+                /* CopyBits is geometry we know and pixels we deliberately do
+                   not carry in the semantic core. Silently skipping it made
+                   an offscreen-composited Workshop body look empty. Keep the
+                   exact guest destination visible as an exception without
+                   covering controls, which the renderer draws afterwards. */
+                guard let d = op.dst, d.count == 4 else { continue }
+                drawUnavailableBits(in: g, frame: rectFrom(d, pt: pt))
+                drew = true
             case "rect", "rrect", "oval":
                 guard let r = op.rect, r.count == 4 else { continue }
                 let rect = rectFrom(r, pt: pt)
@@ -80,7 +89,7 @@ public enum DisplayReplay {
                     break
                 }
             default:
-                break   // arc/poly/rgn/bits — v1 skips (M3 composes bits pixels)
+                break   // arc/poly/rgn remain unsupported structured ops
             }
         }
         return drew
@@ -96,6 +105,31 @@ public enum DisplayReplay {
         let a = pt(r[0], r[1]); let b = pt(r[2], r[3])
         return CGRect(x: a.x, y: a.y,
                       width: max(0, b.x - a.x), height: max(0, b.y - a.y))
+    }
+
+    private static func drawUnavailableBits(in ctx: GraphicsContext,
+                                             frame: CGRect) {
+        guard frame.width > 1, frame.height > 1 else { return }
+        var clipped = ctx
+        clipped.clip(to: Path(frame))
+        clipped.fill(Path(frame), with: .color(Platinum.g1))
+        var x = frame.minX - frame.height
+        while x < frame.maxX {
+            var hatch = Path()
+            hatch.move(to: CGPoint(x: x, y: frame.maxY))
+            hatch.addLine(to: CGPoint(x: x + frame.height, y: frame.minY))
+            clipped.stroke(hatch, with: .color(Platinum.g2), lineWidth: 1)
+            x += 6
+        }
+        clipped.stroke(Path(frame), with: .color(Platinum.g3),
+                       style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
+        guard frame.width >= 92, frame.height >= 14 else { return }
+        let label = "Bitmap unavailable"
+        if let font = FontBook.small {
+            font.draw(label, in: clipped, x: frame.minX + 4,
+                      baselineY: frame.midY + CGFloat(font.ascent) / 2,
+                      color: Platinum.g4)
+        }
     }
 
     /// Map a guest font id + size to a bundled NFNT strike. Font 3 = Geneva

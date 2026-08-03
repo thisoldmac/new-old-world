@@ -63,6 +63,7 @@ look dead.
 | interaction plan | disposition |
 |---|---|
 | `controlPart` | canonical broker primitive |
+| `dialogItem` | canonical broker primitive |
 | `windowAct` | canonical broker primitive |
 | `menuCommand` | canonical broker primitive |
 | `keystroke` | canonical broker primitive |

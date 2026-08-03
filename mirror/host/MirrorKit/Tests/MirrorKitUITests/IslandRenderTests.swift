@@ -113,4 +113,84 @@ final class IslandRenderTests: XCTestCase {
         XCTAssertFalse(inside.0 == 255 && inside.1 == 255 && inside.2 == 255,
                        "missing guest content needs a visible placeholder")
     }
+
+    /// QDPeek deliberately carries only CopyBits geometry. That limitation
+    /// must read as a bounded unavailable visual, not as a claim that the
+    /// guest drew an empty white region.
+    func testCopyBitsGeometryDrawsABoundedPlaceholder() throws {
+        let r = Rect(l: 100, t: 100, r: 500, b: 400)
+        var w = window(title: "Workshop", front: true, z: 0, rect: r,
+                       island: nil)
+        var bits = DisplayOp(op: "bits", ticks: 1)
+        bits.src = [0, 0, 80, 50]
+        bits.dst = [40, 50, 160, 130]
+        w.display = [bits]
+
+        let png = try RenderShot.png(scene: scene([w]))
+        let contentX = r.l + 1
+        let contentY = r.t + Int(Platinum.contentTop)
+        let inside = try XCTUnwrap(pixel(png, x: contentX + 80,
+                                         y: contentY + 95))
+        let outside = try XCTUnwrap(pixel(png, x: contentX + 20,
+                                          y: contentY + 95))
+        XCTAssertFalse(inside.0 == 255 && inside.1 == 255 && inside.2 == 255,
+                       "CopyBits destination needs an explicit placeholder")
+        XCTAssertTrue(outside.0 == 255 && outside.1 == 255
+                        && outside.2 == 255,
+                      "the placeholder must stay inside the guest dst rect")
+    }
+
+    /// Proven Control Manager kinds are presentation facts, not hints. The
+    /// renderer must not collapse a checkbox back into the legacy pill shape.
+    func testAProvenCheckboxIsNotRenderedAsAPushButton() throws {
+        let r = Rect(l: 100, t: 100, r: 500, b: 400)
+        var w = window(title: "Workshop", front: true, z: 0, rect: r,
+                       island: nil)
+        w.display = []
+        w.controls = [.init(
+            ref: "check", role: "checkbox", title: "Reveal system files",
+            rect: Rect(l: 20, t: 30, r: 180, b: 46), enabled: true,
+            visible: true, checked: true,
+            semantic: .init(knowledge: .known, kind: "checkBox",
+                            action: "press", state: "on",
+                            provenance: "control-kind",
+                            completeness: .complete))]
+
+        let png = try RenderShot.png(scene: scene([w]))
+        let contentX = r.l + 1
+        let contentY = r.t + Int(Platinum.contentTop)
+        let mark = try XCTUnwrap(pixel(png, x: contentX + 20,
+                                       y: contentY + 38))
+        let formerPillEdge = try XCTUnwrap(pixel(
+            png, x: contentX + 100, y: contentY + 30))
+        XCTAssertLessThan(mark.0, 100, "the checkbox mark is visible")
+        XCTAssertTrue(formerPillEdge.0 == 255 && formerPillEdge.1 == 255
+                        && formerPillEdge.2 == 255,
+                      "the semantic checkbox must not retain a pill border")
+    }
+
+    /// Popup controls use the guest-proven kind as well; this pins the square
+    /// classic popup frame and its arrow rather than accepting a pill by title.
+    func testAProvenPopupIsRenderedAsAPopupMenu() throws {
+        let r = Rect(l: 100, t: 100, r: 500, b: 400)
+        var w = window(title: "Workshop", front: true, z: 0, rect: r,
+                       island: nil)
+        w.display = []
+        w.controls = [.init(
+            ref: "depth", role: "popup", title: "8-bit color",
+            rect: Rect(l: 20, t: 60, r: 180, b: 80), enabled: true,
+            visible: true, value: 2,
+            semantic: .init(knowledge: .known, kind: "popupMenu",
+                            action: "choose", value: "2",
+                            provenance: "control-kind",
+                            completeness: .complete))]
+
+        let png = try RenderShot.png(scene: scene([w]))
+        let contentX = r.l + 1
+        let contentY = r.t + Int(Platinum.contentTop)
+        let squareCorner = try XCTUnwrap(pixel(
+            png, x: contentX + 20, y: contentY + 60))
+        XCTAssertLessThan(squareCorner.0, 200,
+                          "a popup has a square dark frame, unlike a pill")
+    }
 }

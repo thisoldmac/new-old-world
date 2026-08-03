@@ -314,8 +314,50 @@ static void put_ref(Sink *k, const char *ref)
  *     high and wider than it is tall, which is exactly what the old
  *     20-pixel threshold could not separate.
  *
- * Anything else says `control` and lets the host decide what to draw
- * from the title it now gets to keep. */
+ * Anything else stays unknown and unactionable. For NOW-owned controls,
+ * `now_scene_set_control_role` carries the exact procID-derived role; the
+ * encoder must preserve that distinction rather than flattening every known
+ * role back into a push button. */
+static const char *control_kind(const char *role)
+{
+    if (strcmp(role, "button") == 0) return "pushButton";
+    if (strcmp(role, "checkbox") == 0) return "checkBox";
+    if (strcmp(role, "radio") == 0) return "radioButton";
+    if (strcmp(role, "popup") == 0) return "popupMenu";
+    if (strcmp(role, "scrollbar") == 0) return "scrollBar";
+    if (strcmp(role, "group") == 0) return "groupBox";
+    if (strcmp(role, "progress") == 0) return "progressIndicator";
+    if (strcmp(role, "triangle") == 0) return "disclosureTriangle";
+    return "unknown";
+}
+
+static const char *control_action(const char *role)
+{
+    if (strcmp(role, "button") == 0
+            || strcmp(role, "checkbox") == 0
+            || strcmp(role, "radio") == 0
+            || strcmp(role, "triangle") == 0) {
+        return "press";
+    }
+    if (strcmp(role, "popup") == 0) return "choose";
+    if (strcmp(role, "scrollbar") == 0) return "scroll";
+    return NULL;
+}
+
+static int control_has_state(const char *role)
+{
+    return strcmp(role, "checkbox") == 0
+        || strcmp(role, "radio") == 0
+        || strcmp(role, "triangle") == 0;
+}
+
+static int control_has_value(const char *role)
+{
+    return strcmp(role, "popup") == 0
+        || strcmp(role, "scrollbar") == 0
+        || strcmp(role, "progress") == 0;
+}
+
 /* A window's controls, and only for a window whose whole chain was
    walked. `checked` is absent throughout: the walk reads a
    ControlRecord, not its defProc, so it cannot say whether a control
@@ -379,13 +421,25 @@ static void put_controls(Sink *k, const NowScene *s, const NowSceneWindow *w)
         if (c->role[0] == '\0') {
             put_str(k, "unknown");
         } else {
+            const char *action = control_action(c->role);
+            char value[16];
+
             put_str(k, "known");
             put(k, ",\"kind\":");
-            put_str(k, strcmp(c->role, "scrollbar") == 0
-                       ? "scrollBar" : "pushButton");
-            put(k, ",\"action\":");
-            put_str(k, strcmp(c->role, "scrollbar") == 0
-                       ? "scroll" : "press");
+            put_str(k, control_kind(c->role));
+            if (action != NULL) {
+                put(k, ",\"action\":");
+                put_str(k, action);
+            }
+            if (control_has_state(c->role)) {
+                put(k, ",\"state\":");
+                put_str(k, c->value != 0 ? "on" : "off");
+            }
+            if (control_has_value(c->role)) {
+                snprintf(value, sizeof value, "%d", (int)c->value);
+                put(k, ",\"value\":");
+                put_str(k, value);
+            }
         }
         put(k, ",\"provenance\":\"guest-control-manager\","
                "\"completeness\":\"complete\"}");

@@ -751,6 +751,72 @@ static void test_a_control_without_a_reference_still_carries_the_key(void)
     check_present(out, "\"ref\":\"\"");
 }
 
+/* Self-description already knows the CDEF procID for every control it made.
+ * That fact must survive the encoder unchanged: collapsing all known roles to
+ * pushButton made Workshop checkboxes and popups render as rounded buttons
+ * even though control_kind.c had recorded the right answer. */
+static void test_proven_control_roles_keep_their_semantics(void)
+{
+    static const struct {
+        const char *role;
+        const char *kind;
+        const char *action;
+        short value;
+    } cases[] = {
+        { "button", "pushButton", "press", 0 },
+        { "checkbox", "checkBox", "press", 1 },
+        { "radio", "radioButton", "press", 0 },
+        { "popup", "popupMenu", "choose", 2 },
+        { "scrollbar", "scrollBar", "scroll", 4 },
+        { "group", "groupBox", NULL, 0 },
+        { "progress", "progressIndicator", NULL, 35 },
+        { "triangle", "disclosureTriangle", "press", 1 }
+    };
+    NowScene s;
+    char out[16384];
+    int p;
+    size_t i;
+
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    p = now_scene_add_process(&s, 0, 9, "New Old World", 0x4E4F576FUL, 1,
+                              kNowSceneAnchorOk, 0);
+    (void)now_scene_add_window(&s, p, "Workshop", 40, 60, 400, 600, 1);
+    for (i = 0; i < sizeof cases / sizeof cases[0]; ++i) {
+        int index;
+
+        (void)now_scene_add_control(&s, 0, cases[i].role,
+                                    (short)(20 + i * 20), 20,
+                                    (short)(36 + i * 20), 180,
+                                    1, 1, cases[i].value, 0, 100);
+        index = now_scene_last_control(&s, 0);
+        now_scene_set_control_role(&s, 0, index, cases[i].role);
+        check(index >= 0, "the proven control was added");
+    }
+
+    check(now_scene_encode(&s, out, sizeof out, NULL) == kNowSceneEncodeOk,
+          "the proven control scene encodes");
+    for (i = 0; i < sizeof cases / sizeof cases[0]; ++i) {
+        char kind[96];
+        char action[64];
+
+        snprintf(kind, sizeof kind, "\"kind\":\"%s\"", cases[i].kind);
+        check_present(out, kind);
+        if (cases[i].action != NULL) {
+            snprintf(action, sizeof action, "\"action\":\"%s\"",
+                     cases[i].action);
+            check_present(out, action);
+        }
+    }
+    check_present(out, "\"kind\":\"checkBox\",\"action\":\"press\","
+                       "\"state\":\"on\"");
+    check_present(out, "\"kind\":\"radioButton\",\"action\":\"press\","
+                       "\"state\":\"off\"");
+    check_present(out, "\"kind\":\"popupMenu\",\"action\":\"choose\","
+                       "\"value\":\"2\"");
+    check_present(out, "\"kind\":\"progressIndicator\","
+                       "\"value\":\"35\"");
+}
+
 /* The role a walk may claim, pinned against a MEASUREMENT.
  *
  * These four controls are Mail's "Is your computer set up for Internet
@@ -909,6 +975,7 @@ static void test_dialog_items_carry_v2_semantics(void)
 
 int main(void)
 {
+    test_proven_control_roles_keep_their_semantics();
     test_unproven_controls_are_unknown_and_unactionable();
     test_dialog_items_carry_v2_semantics();
     test_a_control_without_a_reference_still_carries_the_key();

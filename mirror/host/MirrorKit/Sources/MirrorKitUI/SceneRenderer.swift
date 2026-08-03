@@ -842,8 +842,38 @@ public struct SceneRenderer {
                                          dy: contentOrigin.y)
         guard frame.width > 0, frame.height > 0 else { return }
 
+        // Guest-proven semantics win. These are the CDEF procIDs NOW recorded
+        // when it created its own controls; collapsing them all to buttons is
+        // what made Workshop popups and checkboxes appear as pills.
+        switch ctl.semantic?.kind {
+        case "pushButton":
+            drawButton(ctx, ctl, frame, isDefault: isDefault)
+            return
+        case "checkBox":
+            drawChoice(ctx, ctl, frame, radio: false)
+            return
+        case "radioButton":
+            drawChoice(ctx, ctl, frame, radio: true)
+            return
+        case "popupMenu":
+            drawPopup(ctx, ctl, frame)
+            return
+        case "groupBox":
+            drawGroup(ctx, ctl, frame)
+            return
+        case "progressIndicator":
+            drawProgress(ctx, ctl, frame)
+            return
+        case "disclosureTriangle":
+            drawDisclosure(ctx, ctl, frame)
+            return
+        default:
+            break
+        }
+
         // Ranged control: recessed track + thumb positioned from value.
-        if (ctl.semantic?.kind == "scrollBar" || ctl.role == "scrollbar"),
+        if (ctl.semantic?.kind == "scrollBar"
+                || (ctl.semantic == nil && ctl.role == "scrollbar")),
            let max = ctl.max, let min = ctl.min,
            max > min {
             drawScrollbar(ctx, frame, value: ctl.value ?? min,
@@ -860,11 +890,118 @@ public struct SceneRenderer {
             return
         }
 
-        if Self.looksLikeButton(ctl) {
+        /* A v2 unknown is not permission to reconstruct a button from title
+           and geometry. Keep that old approximation only for legacy scenes,
+           where it is presentation-only and cannot authorize an action. */
+        if ctl.semantic == nil && Self.looksLikeButton(ctl) {
             drawButton(ctx, ctl, frame, isDefault: isDefault)
         } else {
             drawGeneric(ctx, ctl, frame)
         }
+    }
+
+    private func drawChoice(_ ctx: GraphicsContext,
+                            _ ctl: MirrorKit.Scene.Control,
+                            _ frame: CGRect, radio: Bool) {
+        let mark = CGRect(x: frame.minX, y: frame.midY - 6,
+                          width: 12, height: 12)
+        let shape = radio ? Path(ellipseIn: mark) : Path(mark)
+        ctx.fill(shape, with: .color(Platinum.g0))
+        ctx.stroke(shape,
+                   with: .color(ctl.enabled ? Platinum.g6 : Platinum.g3),
+                   lineWidth: 1)
+        let on = ctl.semantic?.state == "on" || ctl.checked
+        if on {
+            if radio {
+                ctx.fill(Path(ellipseIn: mark.insetBy(dx: 3, dy: 3)),
+                         with: .color(Platinum.g6))
+            } else {
+                var tick = Path()
+                tick.move(to: CGPoint(x: mark.minX + 2, y: mark.midY))
+                tick.addLine(to: CGPoint(x: mark.minX + 5,
+                                         y: mark.maxY - 3))
+                tick.addLine(to: CGPoint(x: mark.maxX - 2,
+                                         y: mark.minY + 2))
+                ctx.stroke(tick, with: .color(Platinum.g6), lineWidth: 2)
+            }
+        }
+        appText(ctl.title, ctx, x: frame.minX + 16,
+                baselineY: frame.midY + 4,
+                color: ctl.enabled ? Platinum.g6 : Platinum.g3)
+    }
+
+    private func drawPopup(_ ctx: GraphicsContext,
+                           _ ctl: MirrorKit.Scene.Control,
+                           _ frame: CGRect) {
+        ctx.fill(Path(frame), with: .color(Platinum.g1))
+        ctx.stroke(Path(frame),
+                   with: .color(ctl.enabled ? Platinum.g6 : Platinum.g3),
+                   lineWidth: 1)
+        bevel(ctx, frame.insetBy(dx: 1, dy: 1),
+              light: Platinum.g0, shadow: Platinum.g4)
+        appText(ctl.title, ctx, x: frame.minX + 4,
+                baselineY: frame.midY + 4,
+                color: ctl.enabled ? Platinum.g6 : Platinum.g3)
+        sysCentered("▼", ctx, centerX: frame.maxX - 9,
+                    centerY: frame.midY,
+                    color: ctl.enabled ? Platinum.g6 : Platinum.g3)
+    }
+
+    private func drawGroup(_ ctx: GraphicsContext,
+                           _ ctl: MirrorKit.Scene.Control,
+                           _ frame: CGRect) {
+        ctx.stroke(Path(frame.insetBy(dx: 0.5, dy: 0.5)),
+                   with: .color(ctl.enabled ? Platinum.g4 : Platinum.g3),
+                   lineWidth: 1)
+        guard !ctl.title.isEmpty else { return }
+        let titleWidth = CGFloat(FontBook.app?.width(ctl.title) ?? 0)
+        let patch = CGRect(x: frame.minX + 8, y: frame.minY - 1,
+                           width: titleWidth + 8, height: 14)
+        ctx.fill(Path(patch), with: .color(Platinum.g0))
+        appText(ctl.title, ctx, x: patch.minX + 4,
+                baselineY: patch.minY + 10,
+                color: ctl.enabled ? Platinum.g6 : Platinum.g3)
+    }
+
+    private func drawProgress(_ ctx: GraphicsContext,
+                              _ ctl: MirrorKit.Scene.Control,
+                              _ frame: CGRect) {
+        ctx.fill(Path(frame), with: .color(Platinum.g0))
+        ctx.stroke(Path(frame), with: .color(Platinum.g6), lineWidth: 1)
+        let min = ctl.min ?? 0
+        let max = ctl.max ?? 100
+        let value = Swift.min(max, Swift.max(min, ctl.value ?? min))
+        guard max > min else { return }
+        let fraction = CGFloat(value - min) / CGFloat(max - min)
+        let fill = frame.insetBy(dx: 2, dy: 2)
+        ctx.fill(Path(CGRect(x: fill.minX, y: fill.minY,
+                             width: fill.width * fraction,
+                             height: fill.height)),
+                 with: .color(Platinum.g4))
+    }
+
+    private func drawDisclosure(_ ctx: GraphicsContext,
+                                _ ctl: MirrorKit.Scene.Control,
+                                _ frame: CGRect) {
+        let down = ctl.semantic?.state == "on"
+        let box = CGRect(x: frame.minX, y: frame.midY - 5,
+                         width: 10, height: 10)
+        var triangle = Path()
+        if down {
+            triangle.move(to: CGPoint(x: box.minX, y: box.minY + 2))
+            triangle.addLine(to: CGPoint(x: box.maxX, y: box.minY + 2))
+            triangle.addLine(to: CGPoint(x: box.midX, y: box.maxY))
+        } else {
+            triangle.move(to: CGPoint(x: box.minX + 2, y: box.minY))
+            triangle.addLine(to: CGPoint(x: box.maxX, y: box.midY))
+            triangle.addLine(to: CGPoint(x: box.minX + 2, y: box.maxY))
+        }
+        triangle.closeSubpath()
+        ctx.fill(triangle,
+                 with: .color(ctl.enabled ? Platinum.g6 : Platinum.g3))
+        appText(ctl.title, ctx, x: frame.minX + 14,
+                baselineY: frame.midY + 4,
+                color: ctl.enabled ? Platinum.g6 : Platinum.g3)
     }
 
     private func drawDialogItem(_ ctx: GraphicsContext,

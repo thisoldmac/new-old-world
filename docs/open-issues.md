@@ -14,6 +14,25 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## BUILT, NOT UX-VERIFIED: proven control roles survive the scene (2026-08-03)
+
+The guest already derived exact roles for NOW-owned Control Manager controls,
+including checkbox, radio, popup, group, progress, and disclosure controls.
+`scene_json.c` then collapsed every proven role except scroll bars into
+`pushButton`. The loss was in the producer, before Mirror rendered anything:
+Workshop's checkboxes and Depth popup therefore arrived as authoritative
+rounded buttons, and no renderer could recover the right kind honestly.
+
+The scene now preserves each proven role, its applicable state or value, and
+only the action that role advertises. Mirror draws those semantic kinds
+directly; a v2 unknown no longer falls back to a title-and-geometry button
+guess. CopyBits still carries no pixels by design, but its exact destination
+now gets an explicit bounded placeholder instead of becoming unexplained
+white space. Guest-native tests, the PPC cross-build, and offscreen render
+tests pass. This is **not green** until a later drive clicks and types in the
+native Mirror and compares the whole same-moment frame with the guest capture,
+state, operation, and logs.
+
 ## BROKEN: the staging reboot dirtied its own fresh clone (2026-08-03)
 
 **Emulator-observed; deferred from the Mirror UX arc.** After
