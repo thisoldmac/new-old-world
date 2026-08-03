@@ -14,7 +14,9 @@ rejection text carries the rules back into context.
 Three commands matter:
 
     tools/mirror-gate begin 13 --rungs 1,2 [--app "Sherlock 2"]
-    tools/mirror-gate row r1.move pass "watched it move 60px right"
+    tools/mirror-gate row r1.move pass \
+        --evidence docs/local/evidence/c13-r1-move.json \
+        "watched it move 60px right"
     tools/mirror-gate check          # what the Stop hook runs
 
 and two say the work may legitimately end:
@@ -39,6 +41,9 @@ ROOT = os.path.dirname(HERE)
 STATE = os.path.join(ROOT, "docs", "local", "mirror-sweep-state.json")
 LOOP_DOC = "docs/mirror-drive-loop.md"
 NOTES = "docs/local/mirror-drive-notes.md"
+
+EVIDENCE_SCHEMA = "now-mirror-ux-evidence/v1"
+EVIDENCE_CAPTURE_SLOP_SECONDS = 5.0
 
 # The gate gives up after this many consecutive blocks with no progress
 # in between. A hook that can never be satisfied is a wedge, and a wedge
@@ -266,17 +271,20 @@ def cmd_begin(args):
 
 def cmd_row(args):
     if len(args) < 2:
-        die("usage: mirror-gate row <id> <%s> [--shot PATH] [note]"
+        die("usage: mirror-gate row <id> <%s> [--evidence MANIFEST] [note]"
             % "|".join(RESULTS))
     rid, result = args[0], args[1]
     rest = list(args[2:])
-    shot = None
-    if "--shot" in rest:
-        i = rest.index("--shot")
+    evidence = None
+    if "--evidence" in rest:
+        i = rest.index("--evidence")
         if i + 1 >= len(rest):
-            die("--shot needs the path to the screendump")
-        shot = rest[i + 1]
+            die("--evidence needs the path to a correlated manifest")
+        evidence = rest[i + 1]
         del rest[i:i + 2]
+    if "--shot" in rest:
+        die("--shot is no longer sufficient. Use --evidence with the "
+            "correlated Mirror/input/guest/state/operation/log manifest")
     note = " ".join(rest)
     if result not in RESULTS:
         die("result must be one of %s" % ", ".join(RESULTS))
@@ -284,17 +292,12 @@ def cmd_row(args):
         die("a %s row needs a note saying what blocked it or why it does "
             "not apply -- an unexplained skip reads as coverage" % result)
     if result in ("pass", "fail"):
-        if not shot:
-            die("a %s needs its paired screendump: --shot <path>.\n"
-                "A mirror screenshot alone says what the mirror DREW, never "
-                "whether that is what the machine is showing, and the gap "
-                "between those two is the product. Take one at the same "
-                "moment:\n"
-                "  tools/qmp <run-dir>/qmp.sock screendump "
-                "'{\"filename\":\"/tmp/x.ppm\"}'" % result)
-        if not os.path.exists(shot):
-            die("no screendump at %r - take it at the same moment as the "
-                "mirror screenshot, not afterwards" % shot)
+        if not evidence:
+            die("a %s needs --evidence <manifest>. MCP-only success or a "
+                "guest screendump by itself cannot score UX" % result)
+        manifest = load_evidence(evidence, rid)
+    else:
+        manifest = None
 
     state = load()
     cycle = open_cycle(state)
@@ -304,7 +307,8 @@ def cmd_row(args):
         if r["id"] == rid:
             r["result"], r["note"] = result, note
             r["at"] = now_iso()
-            r["shot"] = shot or ""
+            r["evidence"] = evidence or ""
+            r["shot"] = (manifest or {}).get("guest", {}).get("path", "")
             break
     else:
         die("no row %r in cycle %s. Rows: %s"
@@ -314,6 +318,128 @@ def cmd_row(args):
     left = len(unpopulated(cycle))
     print("%s = %s (%d row%s left)" % (rid, result, left,
                                        "" if left == 1 else "s"))
+
+
+def parse_iso(value, label):
+    if not isinstance(value, str) or not value:
+        die("evidence %s must be a non-empty ISO-8601 timestamp" % label)
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        die("evidence %s is not an ISO-8601 timestamp: %r" % (label, value))
+    if parsed.tzinfo is None:
+        die("evidence %s must include a timezone" % label)
+    return parsed
+
+
+def evidence_file(manifest_path, section, field="path"):
+    value = section.get(field)
+    if not isinstance(value, str) or not value:
+        die("evidence %s.%s must name a file" % (section["_name"], field))
+    path = value if os.path.isabs(value) else os.path.join(
+        os.path.dirname(manifest_path), value)
+    if not os.path.isfile(path):
+        die("evidence %s.%s does not exist: %r"
+            % (section["_name"], field, value))
+    return path
+
+
+def evidence_json(path, section):
+    artifact = evidence_file(path, section)
+    try:
+        with open(artifact) as f:
+            return json.load(f)
+    except (OSError, ValueError) as exc:
+        die("evidence %s.path is not readable JSON: %s"
+            % (section["_name"], exc))
+
+
+def load_evidence(path, rid):
+    if not os.path.isfile(path):
+        die("no evidence manifest at %r" % path)
+    try:
+        with open(path) as f:
+            manifest = json.load(f)
+    except (OSError, ValueError) as exc:
+        die("evidence manifest %r is not readable JSON: %s" % (path, exc))
+
+    if manifest.get("schema") != EVIDENCE_SCHEMA:
+        die("evidence schema must be %r" % EVIDENCE_SCHEMA)
+    if manifest.get("row") != rid:
+        die("evidence row %r does not match scored row %r"
+            % (manifest.get("row"), rid))
+
+    required = ("input", "mirror", "guest", "state", "operation",
+                "guestLog")
+    for name in required:
+        if not isinstance(manifest.get(name), dict):
+            die("evidence manifest is missing object %r" % name)
+        manifest[name]["_name"] = name
+
+    event = manifest["input"]
+    if event.get("device") not in ("keyboard", "mouse"):
+        die("evidence input.device must be keyboard or mouse; MCP actuation "
+            "cannot score UX")
+    if event.get("target") != "NOW Mirror":
+        die("evidence input.target must be exactly 'NOW Mirror'")
+    if event.get("source") != "computer-use":
+        die("evidence input.source must be computer-use; API or MCP "
+            "actuation cannot score UX")
+    if not isinstance(event.get("event"), str) or not event["event"].strip():
+        die("evidence input.event must describe the keyboard or mouse input")
+
+    mirror = manifest["mirror"]
+    guest = manifest["guest"]
+    state = manifest["state"]
+    operation = manifest["operation"]
+    guest_log = manifest["guestLog"]
+    for section in (mirror, guest):
+        evidence_file(path, section)
+    state_artifact = evidence_json(path, state)
+    operation_artifact = evidence_json(path, operation)
+    guest_log_path = evidence_file(path, guest_log)
+
+    snapshot = mirror.get("snapshotId")
+    if not isinstance(snapshot, str) or not snapshot:
+        die("evidence mirror.snapshotId must be non-empty")
+    if state.get("snapshotId") != snapshot:
+        die("evidence state.snapshotId must match mirror.snapshotId")
+    if state_artifact.get("snapshotId") != snapshot:
+        die("evidence state artifact must contain mirror.snapshotId")
+
+    operation_id = operation.get("id")
+    if not isinstance(operation_id, str) or not operation_id:
+        die("evidence operation.id must be non-empty")
+    if operation.get("source") != "human":
+        die("evidence operation.source must be human; an MCP operation "
+            "cannot score UX")
+    if operation_artifact.get("id") != operation_id \
+            or operation_artifact.get("source") != "human":
+        die("evidence operation artifact must contain the human operation.id")
+    if guest_log.get("operationId") != operation_id:
+        die("evidence guestLog.operationId must match operation.id")
+    try:
+        with open(guest_log_path) as f:
+            log_text = f.read()
+    except OSError as exc:
+        die("evidence guestLog.path cannot be read: %s" % exc)
+    if operation_id not in log_text:
+        die("evidence guest log does not contain operation.id")
+
+    mirror_at = parse_iso(mirror.get("capturedAt"), "mirror.capturedAt")
+    guest_at = parse_iso(guest.get("capturedAt"), "guest.capturedAt")
+    if abs((mirror_at - guest_at).total_seconds()) \
+            > EVIDENCE_CAPTURE_SLOP_SECONDS:
+        die("Mirror and guest captures are not the same settled moment "
+            "(more than %.1fs apart)" % EVIDENCE_CAPTURE_SLOP_SECONDS)
+    if guest.get("source") != "qmp-screendump":
+        die("evidence guest.source must be qmp-screendump (observation only)")
+    if mirror.get("source") != "now-mirror-window":
+        die("evidence mirror.source must be now-mirror-window")
+
+    for name in required:
+        manifest[name].pop("_name", None)
+    return manifest
 
 
 def cmd_finding(args):

@@ -1,5 +1,82 @@
 # What Mirror actually contains, and what has crossed
 
+## Executable completion inventory, 2026-08-03
+
+This is the strangler map for the final fold. It is derived and checked by
+`tools/mirror-gate-tests/test_mirror_parity_inventory.py`; adding an old
+service method or a human `InteractionPlan` case without a row fails the
+ordinary native gate.
+
+The recovered Cycle 18 file is worktree-local by design. Its live contents
+are preserved as `tools/mirror-gate-tests/cycle-18-results.json`: **15 pass,
+20 fail, 3 blocked, 2 n/a**, 40 rows, source SHA-256
+`a436639e07498b443c71a7fe2f6198c0995ee7bdbf9eb1a65b54df72359f74b7`.
+That corrects the later plan summary without relabelling a row. The fixture is
+the reproducible before-state; screenshots and narrative remain under
+`docs/local/`.
+
+### Recovered scheduling baseline
+
+There is no numeric queue-wait baseline to preserve. The recovered
+`NOWMirrorSource` has a `pending` bit for its sequential scene poll, but each
+human act starts its own unqueued `Task`; `ActLog` records only end-to-end
+elapsed milliseconds. The tree therefore cannot distinguish time waiting for
+the shared guest lane from guest execution time, and concurrent acts have no
+declared order. The honest U1 baseline is **not observable**, not zero.
+
+U4 must add separate `queuedAt`, `dispatchedAt`, and settlement timestamps and
+then characterize the emulator workload. Its invariant is stronger than a
+latency target: once an act is queued, no new scene poll or bulk chunk starts
+ahead of it. No QEMU-only scheduler or input mechanism may be part of that
+implementation; QEMU remains the independent development oracle.
+
+### Old Mirror method disposition
+
+The current-human and current-MCP columns are characterization, not promises.
+The disposition is the required NOW end-state before the old method can go.
+
+| old method | current human primitive | current MCP projection | disposition |
+|---|---|---|---|
+| `mirror.attach` | none | none | compatibility adapter |
+| `mirror.detach` | none | none | compatibility adapter |
+| `mirror.status` | `status` | `now_session_health` | canonical broker primitive |
+| `mirror.scene` | `LiveMirrorView` | `now_observe_elements` | canonical broker primitive |
+| `mirror.find` | `ObjectResolver` | `now_observe_elements` | canonical broker primitive |
+| `mirror.shot` | `LiveMirrorView` | none | retirement blocker |
+| `mirror.wait` | none | none | retirement blocker |
+| `mirror.act.control` | `controlPart` | `now_control_act` | canonical broker primitive |
+| `mirror.act.menu` | `menuCommand` | `now_menu_act` | canonical broker primitive |
+| `mirror.act.type` | `typeText` | `now_text_set` | canonical broker primitive |
+| `mirror.act.key` | `keystroke` | none | retirement blocker |
+| `mirror.act.open` | `finderOpen` | none | canonical broker primitive |
+| `mirror.act.window` | `windowAct` | `now_window_act` | canonical broker primitive |
+| `mirror.act.scroll` | `controlPart` | `now_control_act` | canonical broker primitive |
+| `mirror.app` | `activateApp` | `now_bring_to_front` | canonical broker primitive |
+
+### Human action catalog
+
+These are the cases in `InteractionPlan`, the typed result of keyboard/mouse
+hit testing. `nothing` and `unsupported` are deliberate non-dispatch outcomes;
+they stay catalogued because silently dropping either would make an affordance
+look dead.
+
+| interaction plan | disposition |
+|---|---|
+| `controlPart` | canonical broker primitive |
+| `windowAct` | canonical broker primitive |
+| `menuCommand` | canonical broker primitive |
+| `keystroke` | canonical broker primitive |
+| `typeText` | canonical broker primitive |
+| `setText` | canonical broker primitive |
+| `activateApp` | canonical broker primitive |
+| `finderSelect` | canonical broker primitive |
+| `finderOpen` | canonical broker primitive |
+| `finderDeselect` | canonical broker primitive |
+| `nothing` | explicit refusal |
+| `unsupported` | explicit refusal |
+
+### Historical recount
+
 **Date:** 2026-07-31, **recounted 2026-08-01** · **Status:** audit,
 current as of `main` today
 

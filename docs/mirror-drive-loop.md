@@ -19,6 +19,11 @@ functional, accurate mirror of the guest** — one a person can operate.
 2. **QMP `screendump` is for LOOKING, never for doing.** The A-B
    reference must not come through the app under test; a defect shared
    by both halves is invisible otherwise.
+   QEMU is only the development oracle: no implementation may depend on
+   QMP input, QEMU devices, host framebuffer reads, or another mechanism
+   absent from a real Macintosh. Production state comes live from the
+   guest contract and production mutations start as keyboard or mouse
+   input in NOW Mirror, then resolve to typed guest operations.
 2a. **Every assessment of the mirror is PAIRED with a screendump of the
    same moment.** Not "for anything visual" — every pass and every fail.
    A mirror screenshot on its own says what the mirror drew, never
@@ -28,7 +33,7 @@ functional, accurate mirror of the guest** — one a person can operate.
    the strength of seeing seven buttons with titles in it. It was not
    rendering correctly, and one screendump would have said so
    immediately. `tools/mirror-gate row` refuses a pass or a fail without
-   one, so this is not a thing to remember.
+   one correlated manifest, so this is not a thing to remember.
 2b. **Compare the WHOLE frame, not the thing you just fixed.** A pairing
    is worthless if the comparison is not made. On 2026-08-03 I passed
    `controls-render` because three buttons had come out right, while the
@@ -143,7 +148,9 @@ stop early. A `PreToolUse` hook on `Bash` refuses the console, the wire
 and QMP input for the same reason.
 
     tools/mirror-gate begin 13 --rungs 1,2,3 --app "Sherlock 2"
-    tools/mirror-gate row  r2.hd-contents fail "renders as an empty box"
+    tools/mirror-gate row  r2.hd-contents fail \
+        --evidence docs/local/evidence/c13-r2-hd-contents.json \
+        "renders as an empty box"
     tools/mirror-gate finding "D13.4 icons fetch but never draw"
     tools/mirror-gate close          # ends the SWEEP, not the work
 
@@ -152,6 +159,27 @@ in but never choose it, and `begin` refuses a third consecutive cycle at
 the same reach — the ladder is meant to climb. Only two commands let a
 turn end: `pause --reason` (something only Michelle can authorise) and
 `done --evidence` (§5 is true).
+
+### The scored-row evidence manifest
+
+A pass or fail uses schema `now-mirror-ux-evidence/v1`. The manifest names
+the row and correlates six independently useful records:
+
+- `input`: `device` is `keyboard` or `mouse`, `target` is `NOW Mirror`,
+  `source` is `computer-use`, and `event` says what was done. MCP/API input
+  is refused.
+- `mirror`: the Mirror-rendered frame, displayed `snapshotId`, and capture
+  time, with `source: now-mirror-window`.
+- `guest`: the QMP screendump used only as the independent oracle, its
+  capture time, and `source: qmp-screendump`.
+- `state`: the decoded post-action state for the same `snapshotId`.
+- `operation`: the human-attributed operation record and its ID.
+- `guestLog`: the guest log evidence naming that operation ID.
+
+Every referenced file must exist. Mirror and guest captures must be within
+five seconds, the state must name the displayed snapshot, and the log must
+name the operation. A screenshot pair without keyboard/mouse provenance,
+state, operation, and logs is useful evidence but cannot score a UX row.
 
 ---
 

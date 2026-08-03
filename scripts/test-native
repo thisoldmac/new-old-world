@@ -115,6 +115,30 @@ run_py() {
     passed=$((passed + 1))
 }
 
+# run_py_path <path-from-repo-root>
+#
+# Tooling tests do not belong under either guest. Keep their repository path
+# explicit so the manifest proves the UX gate itself runs without pretending
+# it is guest-native code.
+run_py_path() {
+    test_src=$1
+    name=$(basename "$test_src" .py)
+    case "$name" in
+        *"$filter"*) ;;
+        *) skipped=$((skipped + 1)); return 0 ;;
+    esac
+    printf '%-28s ' "$name"
+    if ! python3 "$repo_root/$test_src" \
+            > "$out_root/$name.run" 2>&1; then
+        echo "FAILED"
+        cat "$out_root/$name.run"
+        failed=$((failed + 1)); failures="$failures $name"
+        return 0
+    fi
+    echo "ok"
+    passed=$((passed + 1))
+}
+
 # Compiled by BOTH guests, so it belongs to neither's section. The one
 # extra -I is the point of the test: it reads the PowerPC console page's
 # own input width from console_model.h rather than copying the number, so
@@ -162,6 +186,10 @@ run_py now-guest-shared act_error_vocabulary_source_test.py
 run_py now-guest-shared act_install_reentrant_source_test.py
 run_py now-guest-shared arg_shadow_source_test.py
 run_py now-guest-shared control_kind_source_test.py
+
+echo "== Mirror UX gate =="
+run_py_path tools/mirror-gate-tests/test_mirror_gate_evidence.py
+run_py_path tools/mirror-gate-tests/test_mirror_parity_inventory.py
 
 echo "== now-guest-ppc (PowerPC Carbon) =="
 run_c now-guest-ppc census_decode_test.c     ""  src/census/census_decode.c
@@ -456,7 +484,8 @@ run_c now-guest-68k test_swlist.c       "" src/software/n68_swlist.c \
 echo "== manifest =="
 unlisted=""
 for f in "$repo_root"/now-guest-ppc/tests/* "$repo_root"/now-guest-68k/tests/* \
-         "$repo_root"/now-guest-shared/tests/* "$repo_root"/scripts/probes/tests/*; do
+         "$repo_root"/now-guest-shared/tests/* "$repo_root"/scripts/probes/tests/* \
+         "$repo_root"/tools/mirror-gate-tests/*; do
     case "$f" in *.c|*.py) ;; *) continue ;; esac
     base=$(basename "$f")
     grep -q -- "$base" "$0" || unlisted="$unlisted $base"
