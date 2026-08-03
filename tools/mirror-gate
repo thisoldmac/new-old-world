@@ -77,6 +77,8 @@ RUNGS = {
     # the bar is perfect. TCP/IP, Date & Time, Appearance, Monitors.
     3: ("Control panels", [
         ("r3.opens", "the panel opens from the mirror"),
+        ("r3.fidelity", "it LOOKS like the machine's panel - judged on the "
+                        "whole frame, never inferred from the controls working"),
         ("r3.title", "its title bar and title match the machine"),
         ("r3.content", "its static text, labels and group boxes render"),
         ("r3.controls", "every control draws as the right KIND - a checkbox "
@@ -99,6 +101,7 @@ RUNGS = {
     # THE SIBLING GATE. Raised reliably by double-clicking Mail.
     4: ("Modal alerts", [
         ("r4.raise", "double-clicking Mail raises the alert"),
+        ("r4.fidelity", "it LOOKS like the machine's alert, whole frame"),
         ("r4.chrome", "no title bar - correctly, a modal alert has none"),
         ("r4.content", "its icon and ALL of its text render, not just buttons"),
         ("r4.buttons", "buttons carry their titles, default ring on the right one"),
@@ -108,6 +111,7 @@ RUNGS = {
     ]),
     5: ("One application", [
         ("r5.launch", "launched and frontmost from the mirror"),
+        ("r5.fidelity", "it LOOKS like the machine's window, whole frame"),
         ("r5.window-renders", "its window renders with chrome, title and content"),
         ("r5.controls-render", "its controls render with the right roles"),
         ("r5.menus-work", "its menus open and a command runs"),

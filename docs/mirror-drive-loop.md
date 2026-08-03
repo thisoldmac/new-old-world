@@ -44,6 +44,18 @@ functional, accurate mirror of the guest** — one a person can operate.
    session — an icon open, a disk open, and the click that actually did
    dismiss a modal alert. Wait for the scene to change, or for a
    generous timeout, and take the paired screendump after that.
+2d. **Score FIDELITY separately, and never infer it from behaviour.** A
+   control that is clickable is not a control that is drawn right, and a
+   window whose every element is present can still not look like the
+   window. Date & Time on 2026-08-03: the radio buttons worked, the text
+   field took a keystroke, the machine recalculated — and the panel was
+   a mess. Labels truncated mid-word and overlapping each other, group
+   boxes as dashed rectangles instead of engraved frames, checkboxes and
+   radios drawn as push buttons, every field value missing or drawn in
+   the window's top-left corner. Michelle: "just because its rendering
+   all the controls and fields doesnt mean its passing". Every rung
+   carries a `fidelity` row, judged on the whole frame against the
+   machine's, and it is scored even when everything else passed.
 3. **If the mirror cannot do it, that IS the finding.** Record it. Do
    not reach past it to keep the run going.
 4. **Record, don't fix, during a sweep.** No edits, no builds, no
