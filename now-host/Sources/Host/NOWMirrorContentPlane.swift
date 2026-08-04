@@ -29,6 +29,10 @@ final class NOWMirrorContentPlane {
     private(set) var operations: [ContentIdentity: [DisplayOp]] = [:]
     private(set) var settledOperations: [ContentIdentity: [DisplayOp]] = [:]
     private var currentDisplay: [String: ContentIdentity] = [:]
+    /// A ring overwrite makes the remainder of the current guest display
+    /// incomplete. Keep the last settled pixels until this exact slot reports
+    /// a strictly newer guest-authored epoch/generation.
+    private var replacementFloor: [String: ContentIdentity] = [:]
     private var armedAt: Date?
 
     /// Keep enough ordered drawing to include a full repaint without allowing
@@ -47,6 +51,7 @@ final class NOWMirrorContentPlane {
         operations.removeAll()
         settledOperations.removeAll()
         currentDisplay.removeAll()
+        replacementFloor.removeAll()
         armedAt = nil
     }
 
@@ -93,6 +98,7 @@ final class NOWMirrorContentPlane {
             cursor = 0
             operations.removeAll()
             currentDisplay.removeAll()
+            replacementFloor.removeAll()
             armedAt = nil
         }
         if needsTarget || needsRenewal {
@@ -201,9 +207,9 @@ final class NOWMirrorContentPlane {
                     + "draw records but this host decoded "
                     + "\(drain.records.count); retained the prior display")
         }
-        if drain.resync {
+        if drain.resync || drain.lostBytes > 0 {
             operations.removeAll()
-            settledOperations.removeAll()
+            replacementFloor = currentDisplay
         }
 
         let visible = Dictionary(uniqueKeysWithValues: scene.windows.compactMap {
@@ -216,6 +222,7 @@ final class NOWMirrorContentPlane {
         var matched = 0
         var unjoined = 0
         var stale = 0
+        var incomplete = 0
         for record in drain.records {
             guard let address = record.portAddress,
                   address == expectedWindow,
@@ -229,10 +236,15 @@ final class NOWMirrorContentPlane {
                 displayEpoch: record.displayEpoch,
                 generation: record.generation)
             let slot = "\(record.psn):\(address)"
+            if let floor = replacementFloor[slot] {
+                guard Self.isNewer(identity, than: floor) else {
+                    incomplete += 1
+                    continue
+                }
+                replacementFloor[slot] = nil
+            }
             if let current = currentDisplay[slot] {
-                let isOlder = record.generation < current.generation
-                    || (record.generation == current.generation
-                        && record.displayEpoch < current.displayEpoch)
+                let isOlder = Self.isNewer(current, than: identity)
                 let isSame = record.generation == current.generation
                     && record.displayEpoch == current.displayEpoch
                 if isOlder || (isSame
@@ -262,7 +274,7 @@ final class NOWMirrorContentPlane {
            that point showed a half-redrawn application for several polls and
            then mixed it with the semantic layer. Keep the previous settled
            display visible until the host has caught the ring completely. */
-        if !drain.more {
+        if !drain.more && replacementFloor.isEmpty {
             settledOperations = operations
         }
         let attached = attachCached(to: scene)
@@ -281,6 +293,11 @@ final class NOWMirrorContentPlane {
         if stale > 0 {
             facts.append("rejected \(stale) stale/superseded draw "
                          + "op\(stale == 1 ? "" : "s")")
+        }
+        if incomplete > 0 {
+            facts.append("ignored \(incomplete) op"
+                         + "\(incomplete == 1 ? "" : "s") from the "
+                         + "overwritten display generation")
         }
         if drain.more {
             facts.append("more remain in the guest ring")
@@ -328,6 +345,13 @@ final class NOWMirrorContentPlane {
     static func needsTarget(currentPSN: String?, currentWindow: UInt32?,
                             front: MirrorKit.Scene.Window) -> Bool {
         currentPSN != front.psn || currentWindow != front.addr
+    }
+
+    private static func isNewer(_ lhs: ContentIdentity,
+                                than rhs: ContentIdentity) -> Bool {
+        lhs.generation > rhs.generation
+            || (lhs.generation == rhs.generation
+                && lhs.displayEpoch > rhs.displayEpoch)
     }
 
     private static func int(_ value: JSONValue?) -> Int? {

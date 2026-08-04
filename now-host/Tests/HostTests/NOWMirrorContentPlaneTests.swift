@@ -101,7 +101,7 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
                        ["Half", "Done"])
     }
 
-    func testResyncRetractsContentThatMayHaveBeenOverwritten() throws {
+    func testResyncRetainsSettledContentUntilANewerGuestDisplay() throws {
         let model = plane()
         _ = model.apply(try drain("""
         {"cmd":"drain","ops":[
@@ -115,8 +115,33 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
         {"cmd":"drain","ops":[],"nextCursor":65536,"records":0,
          "resync":true,"lostBytes":4096}
         """), to: try scene())
-        XCTAssertNil(update.scene.windows[0].display)
+        XCTAssertEqual(update.scene.windows[0].display?.count, 1)
         XCTAssertTrue(update.sentence.contains("4096 earlier bytes"))
+
+        let sameGeneration = model.apply(try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"text","port":"0x1eba6800","ticks":2,
+           "a5":"0x00100000","psn":"0.29949953",
+           "displayEpoch":3,"generation":7,
+           "pen":[2,3],"font":3,"size":9,"face":0,
+           "len":7,"fullLen":7,"trunc":false,"text":"Too late"}],
+         "nextCursor":65568,"records":1}
+        """), to: try scene())
+        XCTAssertEqual(sameGeneration.scene.windows[0].display?.count, 1)
+        XCTAssertTrue(sameGeneration.sentence.contains(
+            "overwritten display generation"))
+
+        let replacement = model.apply(try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"text","port":"0x1eba6800","ticks":3,
+           "a5":"0x00100000","psn":"0.29949953",
+           "displayEpoch":4,"generation":7,
+           "pen":[2,3],"font":3,"size":9,"face":0,
+           "len":5,"fullLen":5,"trunc":false,"text":"Fresh"}],
+         "nextCursor":65600,"records":1}
+        """), to: try scene())
+        XCTAssertEqual(replacement.scene.windows[0].display?.map(\.text),
+                       ["Fresh"])
     }
 
     func testStaleGenerationCannotOverlayNewerDisplay() throws {

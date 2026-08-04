@@ -379,9 +379,11 @@ U3 records every mandatory preflight transition against this matrix. U5 cutover 
 export, the separate `MirrorOracleKit` executable adapter, and platform-neutral
 production target/action vocabulary are implemented and focused-tested.
 Explicit-socket oracle capture and guest/session/build identity joins are also
-implemented and mutation-watched. The remaining U4 work is producer-owned
-content epochs/coverage, any missing operation/log export joins, and live
-stability-sandwich shadow-parity evidence.
+implemented and mutation-watched. QuickDraw overwrite recovery now retains its
+last settled contribution until a newer guest epoch/generation completes. The
+remaining U4 work is typed coverage for the other enrichment producers, any
+missing operation/log export joins, and live stability-sandwich shadow-parity
+evidence.
 
 **Goal:** Make all render-bearing producers converge through the same replica and emit the evidence required by the strict gate.
 

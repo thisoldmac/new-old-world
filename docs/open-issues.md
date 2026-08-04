@@ -192,6 +192,23 @@ row still needs native Mirror keyboard/mouse input, Mirror pixels, state,
 operation settlement, both logs, stable generations, and human visual review.
 The retained VM and Mirror were not touched.
 
+### STATE ENGINE U4E: OVERWRITTEN CONTENT RETAINS THE LAST SETTLED DISPLAY (2026-08-04)
+
+The content plane no longer clears a window's settled display when the guest
+draw ring resyncs or reports overwritten bytes. It discards only the incomplete
+accumulator and records the current guest `displayEpoch`/`generation` as a
+replacement floor. Further records from that damaged generation are ignored;
+only a strictly newer guest-authored epoch or generation may build a
+replacement, and bounded `more` pages still cannot publish half a repaint.
+
+All nine content-plane tests pass. The guard was mutation-watched by restoring
+the old `settledOperations.removeAll()` transition: the retained-display test
+failed at the resync and same-generation assertions, then passed after the
+clear was removed again. This is the code-path repair for the C26 Workshop
+blanking report, but it is only **tested**, not yet directly re-driven in the
+native Mirror or compared with the guest. That row remains red until the full
+sanity preflight and Workshop visual comparison are run on the new build.
+
 ## CONTRACT FROZEN; UNIFICATION IMPLEMENTATION STILL OPEN (2026-08-03)
 
 The unified NOW Extension prerequisite now starts from a source-derived

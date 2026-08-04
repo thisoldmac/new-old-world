@@ -100,6 +100,14 @@ the structural generation; a real accepted enrichment advances only content.
 This gives the evidence stability sandwich values that can remain stable across
 ordinary polls instead of treating cadence as change.
 
+The QuickDraw producer's own `displayEpoch` and `generation` also govern
+replacement after ring loss. A resync or nonzero overwritten-byte count clears
+only the incomplete accumulator, not the last settled display. Records from
+the damaged epoch/generation remain ineligible; a strictly newer guest-authored
+epoch or generation starts the replacement, which publishes only after its
+bounded pages are complete. Thus an overwritten Workshop repaint is visible as
+expected-stale retained content rather than an invented empty window.
+
 `MirrorEvidenceExporter` writes a Mirror PNG and the full decoded engine state
 with one snapshot identity, guest/session, sequence, semantic digest, base
 completeness, and both generations. The native window captures its own AppKit
