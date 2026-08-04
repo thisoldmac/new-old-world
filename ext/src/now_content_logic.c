@@ -60,6 +60,9 @@ int now_content_arm_verdict(const NowContentRequest *req,
     if (req->arm_a5 == 0) {
         return kNowContentVerdictNoTarget;
     }
+    if (req->arm_window == 0 || req->arm_generation == 0) {
+        return kNowContentVerdictNoTarget;
+    }
 
     /* Expiry before context: a lapsed request must retire in WHATEVER
        process pumps next, or retiring it would depend on the target still
@@ -87,6 +90,59 @@ int now_content_arm_verdict(const NowContentRequest *req,
     return kNowContentVerdictArmed;
 }
 
+NowContentU32 now_content_lifecycle_decide(
+    const NowContentLifecycleFacts *facts)
+{
+    NowContentU32 actions = 0;
+    int owns_slot;
+
+    if (facts == NULL) {
+        return 0;
+    }
+    owns_slot = facts->has_slot
+        && facts->slot_a5 == facts->current_a5;
+
+    if (facts->verdict == kNowContentVerdictExpired) {
+        actions |= kNowContentLifeRetire;
+    }
+
+    if (facts->verdict == kNowContentVerdictArmed) {
+        if (!facts->window_live) {
+            if (owns_slot) {
+                actions |= kNowContentLifeForget;
+            }
+            return actions;
+        }
+        if (!facts->has_slot
+            || facts->slot_window != facts->request_window
+            || facts->slot_generation != facts->request_generation) {
+            if (owns_slot) {
+                if (facts->window_live && facts->hook_owned) {
+                    actions |= kNowContentLifeRestore;
+                }
+                actions |= kNowContentLifeForget;
+            }
+            actions |= kNowContentLifeInstall;
+        }
+        if (!facts->redraw_requested) {
+            actions |= kNowContentLifeInvalidate;
+        }
+        return actions;
+    }
+
+    /* Disarm, expiry, retarget, and a lapsed target all remove only an
+       owning-context slot. A suspended target cannot be entered; its hooks
+       remain strict pass-through after the global request retires and are
+       restored on its next owning-context event-loop pass. */
+    if (owns_slot) {
+        if (facts->window_live && facts->hook_owned) {
+            actions |= kNowContentLifeRestore;
+        }
+        actions |= kNowContentLifeForget;
+    }
+    return actions;
+}
+
 /*
  * Append one record to the ring.
  *
@@ -94,7 +150,7 @@ int now_content_arm_verdict(const NowContentRequest *req,
  * every call, the bytes remaining at the ring's end are either zero or at
  * least a whole header. A reader walks records by stepping over each
  * record's own `size`, so a tail too short to hold a header would be read
- * AS a header - twelve bytes of whatever was there before, whose `size`
+ * AS a header - a full header of whatever was there before, whose `size`
  * field then decides where the reader goes next. Upstream's ring advanced
  * its cursor past such a tail without writing anything into it. That path
  * never ran anywhere (its milestone did not pass), so it is a defect this
@@ -165,6 +221,11 @@ int now_content_ring_put(NowContentBlock *block,
     h->flags = flags;
     h->port = port;
     h->ticks = block->ticks;
+    h->a5 = block->active_a5;
+    h->psn_hi = block->active_psn_hi;
+    h->psn_lo = block->active_psn_lo;
+    h->display_epoch = block->display_epoch;
+    h->generation = block->active_generation;
     if (payload_len > 0 && payload != NULL) {
         dst = &block->ring[pos + sizeof(NowContentRecHeader)];
         for (i = 0; i < payload_len; ++i) {

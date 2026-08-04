@@ -103,9 +103,9 @@ static char g_out[4096];
 static void init_block(NowContentU32 cap)
 {
     memset(&g_block, 0, sizeof g_block);
-    g_block.format = (NowContentU16)kNowContentFormatV1;
+    g_block.format = (NowContentU16)kNowContentFormatV2;
     g_block.ring_cap = cap;
-    g_block.length = (NowContentU32)(offsetof(NowContentBlock, ring) + cap);
+    g_block.length = (NowContentU32)sizeof(NowContentBlock);
     g_block.magic = (NowContentU32)kNowContentBlockMagic;
 }
 
@@ -148,6 +148,9 @@ static void test_status_json(void)
     g_block.counters.skipped_ports = 2;
     g_block.counters.refused_wrong_context = 9;
     g_block.arm_a5 = 0x00123456u;
+    g_block.arm_window = 0x00654321u;
+    g_block.arm_psn_lo = 42u;
+    g_block.arm_generation = 7u;
     g_block.arm_commit = (NowContentU32)kNowContentArmCommit;
     g_block.mode = kNowContentModeRecord;
     g_block.active_a5 = 0;              /* asked for, not yet honoured */
@@ -169,6 +172,10 @@ static void test_status_json(void)
     check_has(g_out, "\"request\":{\"a5\":\"0x00123456\"",
               "the request names its target");
     check_has(g_out, "\"committed\":true", "and says it is committed");
+    check_has(g_out, "\"window\":\"0x00654321\"",
+              "the request names one exact window");
+    check_has(g_out, "\"generation\":7",
+              "the request carries a monotonic generation");
     check_has(g_out, "\"active\":{\"a5\":\"0x00000000\"",
               "while active says nothing is hooked yet");
     check_has(g_out, "\"refused\":{", "refusal counters are reported");
@@ -268,7 +275,7 @@ static void test_more_is_not_silence(void)
     check_balanced(g_out, "a bounded drain is balanced");
     check_has(g_out, "\"records\":3", "three of ten");
     check_has(g_out, "\"more\":true", "and the rest is announced");
-    check_has(g_out, "\"pending\":84", "with the byte count still waiting");
+    check_has(g_out, "\"pending\":224", "with the byte count still waiting");
 }
 
 /* The output budget, not the ring budget, is what ends a drain in
@@ -307,7 +314,7 @@ static void test_overrun_is_reported_not_hidden(void)
        4-byte tail the ring could not hold a header in. 364 - 256 = 108,
        and the number being ODD-LOOKING is the point - it is measured
        from the ring, not from a multiplication. */
-    check_has(g_out, "\"lostBytes\":108", "with the bytes lost, exactly");
+    check_has(g_out, "\"lostBytes\":704", "with the bytes lost, exactly");
     check_has(g_out, "\"records\":0", "and no records invented from it");
     /* The distinction this whole file exists for: a resync is NOT a
        `more`, and a caller must not read it as one. */

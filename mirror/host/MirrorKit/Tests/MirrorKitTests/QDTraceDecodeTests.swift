@@ -11,6 +11,7 @@ final class QDTraceDecodeTests: XCTestCase {
         let value = try object("""
         {"cmd":"drain","ops":[
           {"op":"text","port":"0x1eba6800","ticks":9,
+           "a5":"0x00100000","psn":"0.42","displayEpoch":3,"generation":7,
            "pen":[14,22],"font":3,"size":9,"face":0,
            "len":8,"fullLen":8,"trunc":false,"text":"Workshop"}],
          "cursor":0,"nextCursor":64,"writeCursor":64,"pending":0,
@@ -23,6 +24,9 @@ final class QDTraceDecodeTests: XCTestCase {
         XCTAssertEqual(drain.nextCursor, 64)
         XCTAssertEqual(drain.records.first?.port, "0x1eba6800")
         XCTAssertEqual(drain.records.first?.portAddress, 0x1eba6800)
+        XCTAssertEqual(drain.records.first?.psn, "0.42")
+        XCTAssertEqual(drain.records.first?.displayEpoch, 3)
+        XCTAssertEqual(drain.records.first?.generation, 7)
         XCTAssertEqual(drain.records.first?.op.text, "Workshop")
         XCTAssertEqual(drain.records.first?.op.pen, [14, 22])
     }
@@ -31,6 +35,7 @@ final class QDTraceDecodeTests: XCTestCase {
         let value = try object("""
         {"cmd":"drain","ops":[
           {"op":"line","port":"0x00001000","ticks":1,
+           "a5":"0x00100000","psn":"0.42","displayEpoch":3,"generation":7,
            "from":[1,2],"to":[3,4],"pen":[2,2]}],
          "records":1,"nextCursor":32}
         """)
@@ -48,6 +53,18 @@ final class QDTraceDecodeTests: XCTestCase {
         XCTAssertTrue(drain.recordCountAgrees,
                       "a torn reply deliberately retracts its partial rows")
         XCTAssertTrue(drain.records.isEmpty)
+    }
+
+    func testRecordWithoutFullV2IdentityIsRejected() throws {
+        let value = try object("""
+        {"cmd":"drain","ops":[
+          {"op":"rect","port":"0x1eba6800","ticks":1,
+           "verb":0,"rect":[0,0,20,20]}],
+         "records":1}
+        """)
+        let drain = try XCTUnwrap(QDTraceDecode.drain(value))
+        XCTAssertTrue(drain.records.isEmpty)
+        XCTAssertFalse(drain.recordCountAgrees)
     }
 
     func testStatusIsNotMisreadAsAnEmptyDrain() throws {

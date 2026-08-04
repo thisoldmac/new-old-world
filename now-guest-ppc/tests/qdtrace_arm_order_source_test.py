@@ -37,6 +37,7 @@ def source(name: str) -> str:
 
 
 READ = source("qdtrace_read.c")
+CONTENT = (ROOT.parent / "ext" / "src" / "now_content.c").read_text()
 
 
 def body(text: str, signature: str) -> str:
@@ -63,27 +64,47 @@ def store_index(fn: str, field: str) -> int:
     return fn.index(needle)
 
 
+def store_indices(fn: str, field: str) -> list[int]:
+    needle = f"b->{field} ="
+    out: list[int] = []
+    start = 0
+    while (index := fn.find(needle, start)) >= 0:
+        out.append(index)
+        start = index + len(needle)
+    return out
+
+
 def main() -> None:
     arm = body(READ, "void now_qdtrace_arm_commit(")
     disarm = body(READ, "void now_qdtrace_disarm(")
 
-    a5 = store_index(arm, "arm_a5")
-    expiry = store_index(arm, "arm_expiry")
-    mode = store_index(arm, "mode")
-    commit = store_index(arm, "arm_commit")
+    request_fields = [
+        "arm_a5", "arm_expiry", "mode", "arm_window", "arm_psn_hi",
+        "arm_psn_lo", "arm_generation",
+    ]
+    stores = [store_index(arm, field) for field in request_fields]
+    commits = store_indices(arm, "arm_commit")
+    if len(commits) != 2:
+        raise SystemExit("retarget must clear arm_commit first and publish "
+                         "kNowContentArmCommit last")
+    clear, commit = commits
 
-    if not (a5 < commit and expiry < commit and mode < commit):
+    if not (clear < min(stores) and all(index < commit for index in stores)):
         raise SystemExit(
             "arm_commit is not written LAST. A jGNE pass landing between "
             "the stores would see permission attached to the PREVIOUS "
             "request's target (contract/content_table.h, the arm protocol).")
+    if "b->arm_commit = 0" not in arm[clear:stores[0]]:
+        raise SystemExit("retarget does not clear the old live commit before "
+                         "rewriting request identity")
+    if arm.count('__asm__ volatile("" ::: "memory")') < 2:
+        raise SystemExit("retarget needs compiler barriers around identity "
+                         "stores; source order alone is not machine order")
 
     d_commit = store_index(disarm, "arm_commit")
-    d_a5 = store_index(disarm, "arm_a5")
-    d_mode = store_index(disarm, "mode")
-    d_expiry = store_index(disarm, "arm_expiry")
+    disarm_stores = [store_index(disarm, field) for field in request_fields]
 
-    if not (d_commit < d_a5 and d_commit < d_mode and d_commit < d_expiry):
+    if not all(d_commit < index for index in disarm_stores):
         raise SystemExit(
             "arm_commit is not CLEARED FIRST on disarm. Clearing the target "
             "before the permission leaves a window in which a live commit "
@@ -104,6 +125,37 @@ def main() -> None:
             raise SystemExit(f"now_qdtrace_{name} writes the block without a "
                              f"volatile view; the store ORDER is only real "
                              f"if the compiler is told not to move it")
+
+    shim = body(CONTENT, "static Boolean content_invalidate_window_compat(")
+    order = [
+        shim.index("GetPort(&saved)"),
+        shim.index("SetPort((GrafPtr)window)"),
+        shim.index("InvalRect(&bounds)"),
+        shim.index("SetPort(saved)"),
+    ]
+    if order != sorted(order) or len(set(order)) != len(order):
+        raise SystemExit("flat-INIT redraw shim must save/set/invalidate/restore")
+    forbidden = (
+        "BeginUpdate",
+        "EndUpdate",
+        "DrawControls",
+        "Draw1Control",
+        "CopyBits",
+        "PostEvent",
+        "PPostEvent",
+    )
+    if any(call in shim for call in forbidden):
+        raise SystemExit("redraw shim may invalidate only; it must not draw, "
+                         "enter the application's update loop, or inject input")
+    if "if (saved == NULL)" not in shim:
+        raise SystemExit("redraw shim must refuse when there is no port to "
+                         "restore")
+    if "content_forget_other_contexts" in CONTENT:
+        raise SystemExit("retarget must retain foreign-context rows until "
+                         "their owning context can safely restore them")
+    if "gPorts[i].port == port && gPorts[i].a5 == a5" not in CONTENT:
+        raise SystemExit("port slots must be keyed by A5 as well as address; "
+                         "a relaunched heap may reuse a pointer")
 
     print("ok")
 

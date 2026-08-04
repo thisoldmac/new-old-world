@@ -96,6 +96,46 @@ input against Date & Time and the Apple menu has not yet proved this partial
 plane in the running guest, so neither case is green. The development stage
 image also still contains the preceding resident build.
 
+### U4 P3 lifecycle and coherent-redraw path built; runtime proof still red
+
+P3 format v2 now arms one exact A5/window identity instead of every window in
+a process. Every retained record carries the echoed PSN, exact A5 and port,
+request generation, and resident display epoch. A retarget clears the old live
+commit before rewriting any identity word; same-context target changes restore
+only a still-live hook that NOW still owns, while dead or foreign-context rows
+are forgotten by value and remain strict pass-through. The host joins only the
+currently armed front window and rejects old process, window, generation, A5,
+or display-epoch records, so pointer reuse cannot overlay a relaunched target.
+
+After installing its exact hook, the resident requests one ordinary update and
+does not call the application's draw handler itself. `InvalWindowRect` cannot
+link into a flat 68K INIT, so this path uses the classic equivalent inside the
+resident only: prove exact WindowList membership and hook ownership, save the
+current port, set the target window port, call `InvalRect`, and restore the
+saved port. It reports `redrawRequested` only after that sequence and
+`redrawServiced` only after a later guest QuickDraw hook. A source-order guard
+forbids `BeginUpdate`, `EndUpdate`, direct drawing, CopyBits, or event injection
+in the shim.
+The Carbon UI lexical audit flags `InvalRect`; that finding is expected for this
+flat-INIT compatibility boundary, not waived for Carbon application source.
+
+Native lifecycle/ring tests, the host/MirrorKit join tests, and the actual PPC
+application and flat-68K extension cross-builds pass. This is **tested and
+builds, not emulator-verified**. No guest has yet proved that a foreign Date &
+Time window services the requested update, that target death/relaunch remains
+safe at runtime, or that the resulting initial display is coherent. Bitmap and
+CopyBits operations still carry only bounded geometry and render as explicit
+`Bitmap unavailable` placeholders; no pixel transport was added. The stage
+image still contains the preceding extension.
+
+The U4 cross-build produced a 63,978-byte `INIT 128` (64,386-byte resource
+fork), so the resident still exceeds the conservative 32 KiB inspection budget
+and runtime loading remains a required gate. Its artifact SHA-256 is
+`1b5ad7638477d974e71d6852d61ff428ea797d1690a3f4f1dd2b7f72264f9e11`;
+the embedded source manifest is `ffe26237 08404b43 c9ae73ce c44e25aa
+bb1c11a3` and build fingerprint is `707560f7 d034f202 a01a4a83 faa2c1c4
+576c0239`.
+
 ## CYCLE 25 RED; SETUP CORRECTED BEFORE C26 (2026-08-03)
 
 Cycle 25 directly re-ran the sanity preflight through the uniquely identified

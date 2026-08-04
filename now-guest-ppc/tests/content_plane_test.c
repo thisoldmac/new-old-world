@@ -60,7 +60,99 @@ static NowContentRequest good_request(void)
     r.arm_a5 = 0x00123456u;
     r.arm_expiry = 5000u;
     r.mode = (NowContentU32)kNowContentModeRecord;
+    r.arm_window = 0x00ABCDEFu;
+    r.arm_psn_hi = 0;
+    r.arm_psn_lo = 42;
+    r.arm_generation = 7;
     return r;
+}
+
+static NowContentLifecycleFacts live_lifecycle(void)
+{
+    NowContentLifecycleFacts f;
+
+    memset(&f, 0, sizeof f);
+    f.verdict = kNowContentVerdictArmed;
+    f.current_a5 = 0x1000u;
+    f.request_window = 0x2000u;
+    f.request_generation = 9u;
+    f.window_live = 1;
+    return f;
+}
+
+static void test_lifecycle_exact_window_and_redraw(void)
+{
+    NowContentLifecycleFacts f = live_lifecycle();
+    NowContentU32 actions = now_content_lifecycle_decide(&f);
+
+    check((actions & kNowContentLifeInstall) != 0,
+          "a live exact window installs");
+    check((actions & kNowContentLifeInvalidate) != 0,
+          "a new exact window requests one invalidation");
+    f.has_slot = 1;
+    f.slot_a5 = f.current_a5;
+    f.slot_window = f.request_window;
+    f.slot_generation = f.request_generation;
+    f.redraw_requested = 1;
+    actions = now_content_lifecycle_decide(&f);
+    check_eq((long)actions, 0,
+             "a stable installed generation neither reinstalls nor redraws");
+}
+
+static void test_lifecycle_close_relaunch_and_retarget(void)
+{
+    NowContentLifecycleFacts f = live_lifecycle();
+    NowContentU32 actions;
+
+    f.has_slot = 1;
+    f.slot_a5 = f.current_a5;
+    f.slot_window = f.request_window;
+    f.slot_generation = f.request_generation;
+    f.window_live = 0;
+    actions = now_content_lifecycle_decide(&f);
+    check((actions & kNowContentLifeForget) != 0,
+          "window disposal forgets without dereferencing the stale port");
+    check((actions & kNowContentLifeRestore) == 0,
+          "window disposal never restores through a dead port");
+
+    f = live_lifecycle();
+    f.has_slot = 1;
+    f.slot_a5 = f.current_a5;
+    f.slot_window = 0x3000u;
+    f.slot_generation = 8u;
+    f.hook_owned = 1;
+    actions = now_content_lifecycle_decide(&f);
+    check((actions & kNowContentLifeRestore) != 0,
+          "relaunch or retarget restores an owned live old hook");
+    check((actions & kNowContentLifeInstall) != 0,
+          "relaunch or retarget installs only the new exact identity");
+}
+
+static void test_lifecycle_disarm_expiry_death_and_suspension(void)
+{
+    NowContentLifecycleFacts f = live_lifecycle();
+    NowContentU32 actions;
+
+    f.has_slot = 1;
+    f.slot_a5 = f.current_a5;
+    f.slot_window = f.request_window;
+    f.slot_generation = f.request_generation;
+    f.hook_owned = 1;
+    f.verdict = kNowContentVerdictIdle;
+    actions = now_content_lifecycle_decide(&f);
+    check((actions & (kNowContentLifeRestore | kNowContentLifeForget))
+              == (kNowContentLifeRestore | kNowContentLifeForget),
+          "disarm restores only an owned live hook then forgets it");
+
+    f.verdict = kNowContentVerdictExpired;
+    actions = now_content_lifecycle_decide(&f);
+    check((actions & kNowContentLifeRetire) != 0,
+          "lease expiry retires even when observed outside the target");
+
+    f.current_a5 = 0x9999u;
+    actions = now_content_lifecycle_decide(&f);
+    check((actions & (kNowContentLifeRestore | kNowContentLifeForget)) == 0,
+          "death or suspension is not cleaned through a foreign context");
 }
 
 static void test_arm_happy_path(void)
@@ -270,7 +362,7 @@ static void test_ring_basic_append(void)
     check_eq(now_content_ring_put(&tb->block, kNowContentOpLine, 0,
                                   0x00ABCDEFu, &pl, sizeof(pl)),
              1, "a line record commits");
-    check_eq((long)tb->block.write_cursor, 24, "header + 12-byte payload");
+    check_eq((long)tb->block.write_cursor, 44, "v2 header + 12-byte payload");
     h = (const NowContentRecHeader *)(const void *)&tb->block.ring[0];
     check_eq(h->op, kNowContentOpLine, "op recorded");
     check_eq((long)h->port, 0x00ABCDEF, "port recorded");
@@ -293,7 +385,7 @@ static void test_ring_odd_payload_pads_even(void)
                                   pl, sizeof(pl)),
              1, "an odd payload commits");
     h = (const NowContentRecHeader *)(const void *)&tb->block.ring[0];
-    check_eq(h->size, 26, "12 + 13 rounds up to 26, not 25");
+    check_eq(h->size, 46, "32 + 13 rounds up to 46, not 45");
     check_eq((long)(tb->block.write_cursor % 2), 0, "cursor stays even");
     free(tb);
 }
@@ -318,7 +410,7 @@ static void test_ring_oversize_is_dropped_not_wrapped(void)
    next record starts at zero with no pad needed. */
 static void test_ring_absorbs_a_short_tail(void)
 {
-    TestBlock *tb = make_block(128u);
+    TestBlock *tb = make_block(228u);
     NowContentLinePayload pl;
     const NowContentRecHeader *h;
     int ops[32];
@@ -326,20 +418,20 @@ static void test_ring_absorbs_a_short_tail(void)
     int i;
 
     memset(&pl, 0, sizeof(pl));
-    /* 24 bytes each: four reach 96, and the fifth would leave 8 - too few
-       for a header - so it absorbs them and becomes 32. */
+    /* 44 bytes each: four reach 176, and the fifth would leave 8 - too few
+       for a v2 header - so it absorbs them and becomes 52. */
     for (i = 0; i < 5; ++i) {
         check_eq(now_content_ring_put(&tb->block, kNowContentOpLine, 0,
                                       (NowContentU32)i, &pl, sizeof(pl)),
                  1, "fill record commits");
     }
-    check_eq((long)tb->block.write_cursor, 128,
+    check_eq((long)tb->block.write_cursor, 228,
              "the fifth record absorbed the 8-byte tail");
-    h = (const NowContentRecHeader *)(const void *)&tb->block.ring[96];
-    check_eq(h->size, 32, "and says so in its own size field");
+    h = (const NowContentRecHeader *)(const void *)&tb->block.ring[176];
+    check_eq(h->size, 52, "and says so in its own size field");
     check_eq(h->op, kNowContentOpLine, "an absorbed record is still its op");
 
-    n = walk_records(&tb->block, 0, 128u, ops, 32);
+    n = walk_records(&tb->block, 0, 228u, ops, 32);
     check_eq(n, 5, "a reader sees exactly five records in the lap");
 
     /* The sixth starts at 0 with no WRAP record, because there is no tail
@@ -358,7 +450,7 @@ static void test_ring_absorbs_a_short_tail(void)
    smaller ones, which is why it needs its own case. */
 static void test_ring_pads_a_usable_tail_with_wrap(void)
 {
-    TestBlock *tb = make_block(128u);
+    TestBlock *tb = make_block(224u);
     NowContentLinePayload line;
     unsigned char big[36];
     const NowContentRecHeader *h;
@@ -372,21 +464,21 @@ static void test_ring_pads_a_usable_tail_with_wrap(void)
         (void)now_content_ring_put(&tb->block, kNowContentOpLine, 0,
                                    (NowContentU32)i, &line, sizeof(line));
     }
-    check_eq((long)tb->block.write_cursor, 96, "four 24-byte records");
-    n = walk_records(&tb->block, 0, 96u, ops, 32);
+    check_eq((long)tb->block.write_cursor, 176, "four 44-byte records");
+    n = walk_records(&tb->block, 0, 176u, ops, 32);
     check_eq(n, 4, "and a reader walks all four");
 
-    /* 12 + 36 = 48 wanted, 32 available: too big to fit, and the tail is
+    /* 32 + 36 = 68 wanted, 48 available: too big to fit, and the tail is
        big enough to hold a WRAP record. */
     check_eq(now_content_ring_put(&tb->block, kNowContentOpBits, 0, 77u,
                                   big, sizeof(big)),
              1, "the oversized-for-the-tail record commits");
-    h = (const NowContentRecHeader *)(const void *)&tb->block.ring[96];
+    h = (const NowContentRecHeader *)(const void *)&tb->block.ring[176];
     check_eq(h->op, kNowContentOpWrap, "the tail holds a WRAP record");
-    check_eq(h->size, 32, "sized to the tail exactly");
+    check_eq(h->size, 48, "sized to the tail exactly");
     h = (const NowContentRecHeader *)(const void *)&tb->block.ring[0];
     check_eq(h->op, kNowContentOpBits, "and the real record restarted at 0");
-    check_eq((long)tb->block.write_cursor, 128 + 48,
+    check_eq((long)tb->block.write_cursor, 224 + 68,
              "cursor covers the pad and the record");
 
     /* The wrapping record is 48 bytes at ring[0], so it has overwritten
@@ -394,11 +486,11 @@ static void test_ring_pads_a_usable_tail_with_wrap(void)
        what the overrun counter on the reader's side is for. What must
        still hold is that a reader whose cursor is BEHIND the damage walks
        cleanly to the end of the lap: two records and the pad. */
-    n = walk_records(&tb->block, 48u, 128u, ops, 32);
+    n = walk_records(&tb->block, 88u, 224u, ops, 32);
     check_eq(n, 3, "a reader behind the overwrite walks to the lap's end");
     check_eq(ops[2], kNowContentOpWrap, "ending on the pad");
     /* And walking the NEW lap finds the record that caused all this. */
-    n = walk_records(&tb->block, 128u, 128u + 48u, ops, 32);
+    n = walk_records(&tb->block, 224u, 224u + 68u, ops, 32);
     check_eq(n, 1, "the new lap holds the wrapping record");
     check_eq(ops[0], kNowContentOpBits, "which is the one that did not fit");
     free(tb);
@@ -409,7 +501,7 @@ static void test_ring_pads_a_usable_tail_with_wrap(void)
  *
  * Upstream's ring advanced its cursor past a tail too short to hold a
  * header WITHOUT writing anything into it. A reader stepping record by
- * record then reads those bytes as a header: twelve bytes of whatever was
+ * record then reads those bytes as a header: a full header of whatever was
  * there, whose `size` field decides where it goes next. That path never
  * ran anywhere - the milestone that would have exercised it did not pass -
  * so it is a defect to fix, not a measurement to preserve.
@@ -563,9 +655,9 @@ static void test_state_null_live(void)
    agree with us about, so a change to them fails here as well as there. */
 static void test_layout(void)
 {
-    check_eq((long)sizeof(NowContentRecHeader), 12, "record header is 12");
-    check_eq((long)sizeof(NowContentBlock), 140 + kNowContentRingCap,
-             "block is header + ring");
+    check_eq((long)sizeof(NowContentRecHeader), 32, "v2 record header is 32");
+    check_eq((long)sizeof(NowContentBlock), 192 + kNowContentRingCap,
+             "block is v1 prefix + ring + v2 identity tail");
     check_eq((long)kNowContentArmCommit, 0x4E576361L, "'NWca'");
     check_eq((long)kNowContentBlockMagic, 0x4E576362L, "'NWcb'");
     check(kNowContentArmCommit != 1 && kNowContentArmCommit != 0,
@@ -574,6 +666,9 @@ static void test_layout(void)
 
 int main(void)
 {
+    test_lifecycle_exact_window_and_redraw();
+    test_lifecycle_close_relaunch_and_retarget();
+    test_lifecycle_disarm_expiry_death_and_suspension();
     test_arm_happy_path();
     test_arm_without_a_target_refuses();
     test_arm_wrong_context_refuses();

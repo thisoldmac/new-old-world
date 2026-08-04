@@ -334,9 +334,15 @@ Users see one file; experiments get isolated blast radius.
   refuses that shell instead of guessing. See
   [p2-semantic-evidence.md](p2-semantic-evidence.md).
 - **P3 — content.** QuickDraw bottleneck hooks, the full Timbuktu
-  move. The riskiest code class here; it ships dark, arms per-port on
-  request, and does not exist until the mirror needs interiors better
-  than pixel fill.
+  move. The riskiest code class here; it ships dark and now arms one exact
+  A5/window/generation at a time. Format v2 requests one normal in-context
+  invalidation after hook installation, reports service only when a later
+  QuickDraw hook fires, and stamps each structured operation with target and
+  display epoch. Dead, retargeted, expired, and superseded identities fail
+  closed. CopyBits remains geometry-only and renders as an explicit bitmap
+  placeholder; there is no pixel transport. The lifecycle and join logic is
+  native-tested and cross-builds, but the foreign redraw/death/relaunch path is
+  not yet emulator-verified.
 
 Deferred by design: the Tier B background app (`'appe'`) for
 launch-NOW-when-closed, and the possibly-single-file `'appe'`+INIT

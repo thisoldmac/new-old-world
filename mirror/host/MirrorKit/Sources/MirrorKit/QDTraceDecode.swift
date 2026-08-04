@@ -8,6 +8,10 @@ public enum QDTraceDecode {
     public struct Drain: Equatable, Sendable {
         public struct Record: Equatable, Sendable {
             public var port: String
+            public var a5: String
+            public var psn: String
+            public var displayEpoch: Int
+            public var generation: Int
             public var op: DisplayOp
             /// `line` records use the wire's `pen` field for pen size, while
             /// text records use it for pen position. Keep the line value out
@@ -15,9 +19,14 @@ public enum QDTraceDecode {
             public var penSize: [Int]?
             public var detailless: Bool
 
-            public init(port: String, op: DisplayOp,
+            public init(port: String, a5: String, psn: String,
+                        displayEpoch: Int, generation: Int, op: DisplayOp,
                         penSize: [Int]? = nil, detailless: Bool = false) {
                 self.port = port
+                self.a5 = a5
+                self.psn = psn
+                self.displayEpoch = displayEpoch
+                self.generation = generation
                 self.op = op
                 self.penSize = penSize
                 self.detailless = detailless
@@ -97,6 +106,11 @@ public enum QDTraceDecode {
 
     static func record(from dictionary: [String: Any]) -> Drain.Record? {
         guard let port = dictionary["port"] as? String,
+              let a5 = dictionary["a5"] as? String,
+              let psn = dictionary["psn"] as? String,
+              let displayEpoch = SceneBuilder.intValue(dictionary["displayEpoch"]),
+              let generation = SceneBuilder.intValue(dictionary["generation"]),
+              displayEpoch > 0, generation > 0,
               var op = DisplayOp(fetched: dictionary) else { return nil }
         let detailless = (dictionary["detail"] as? NSNumber)
             .map { !$0.boolValue } ?? false
@@ -105,7 +119,9 @@ public enum QDTraceDecode {
             penSize = op.pen
             op.pen = nil
         }
-        return .init(port: port, op: op, penSize: penSize,
+        return .init(port: port, a5: a5, psn: psn,
+                     displayEpoch: displayEpoch, generation: generation,
+                     op: op, penSize: penSize,
                      detailless: detailless)
     }
 
@@ -114,7 +130,7 @@ public enum QDTraceDecode {
     static func undrawnName(_ record: Drain.Record) -> String? {
         if record.detailless { return "\(record.op.op) (no detail)" }
         switch record.op.op {
-        case "text", "line":
+        case "text", "line", "bits":
             return nil
         case "rect", "rrect", "oval":
             switch record.op.verb ?? 0 {

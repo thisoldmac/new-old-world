@@ -34,9 +34,11 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
         let update = model.apply(try drain("""
         {"cmd":"drain","ops":[
           {"op":"text","port":"0x1eba6800","ticks":1,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
            "pen":[20,30],"font":3,"size":9,"face":0,
            "len":8,"fullLen":8,"trunc":false,"text":"Workshop"},
           {"op":"text","port":"0x22222222","ticks":2,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
            "pen":[2,3],"font":3,"size":9,"face":0,
            "len":5,"fullLen":5,"trunc":false,"text":"Wrong"}],
          "cursor":0,"nextCursor":128,"writeCursor":128,"pending":0,
@@ -56,6 +58,7 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
         let first = model.apply(try drain("""
         {"cmd":"drain","ops":[
           {"op":"rect","port":"0x1eba6800","ticks":1,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
            "verb":0,"rect":[0,0,20,20],"ext":[0,0]}],
          "nextCursor":32,"records":1}
         """), to: try scene())
@@ -73,6 +76,7 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
         _ = model.apply(try drain("""
         {"cmd":"drain","ops":[
           {"op":"rect","port":"0x1eba6800","ticks":1,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
            "verb":0,"rect":[0,0,20,20],"ext":[0,0]}],
          "nextCursor":32,"records":1}
         """), to: try scene())
@@ -85,11 +89,88 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
         XCTAssertTrue(update.sentence.contains("4096 earlier bytes"))
     }
 
+    func testStaleGenerationCannotOverlayNewerDisplay() throws {
+        let model = plane()
+        let newer = model.apply(try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"text","port":"0x1eba6800","ticks":9,
+           "a5":"0x00100000","psn":"0.29949953",
+           "displayEpoch":4,"generation":8,
+           "pen":[2,3],"font":3,"size":9,"face":0,
+           "len":3,"fullLen":3,"trunc":false,"text":"New"}],
+         "nextCursor":64,"records":1}
+        """), to: try scene())
+        XCTAssertEqual(newer.scene.windows[0].display?.map(\.text), ["New"])
+
+        let stale = model.apply(try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"rect","port":"0x1eba6800","ticks":10,
+           "a5":"0x00999999","psn":"0.29949953",
+           "displayEpoch":99,"generation":7,
+           "verb":0,"rect":[0,0,20,20]}],
+         "nextCursor":128,"records":1}
+        """), to: try scene())
+        XCTAssertEqual(stale.scene.windows[0].display?.map(\.text), ["New"])
+        XCTAssertTrue(stale.sentence.contains("rejected 1 stale/superseded"))
+    }
+
+    func testBitmapPlaceholderDoesNotDiscardAdjacentStructuredOps() throws {
+        let model = plane()
+        let update = model.apply(try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"bits","port":"0x1eba6800","ticks":1,
+           "a5":"0x00100000","psn":"0.29949953",
+           "displayEpoch":3,"generation":7,
+           "src":[0,0,20,20],"dst":[4,4,24,24],"mode":0,"srcRowBytes":20},
+          {"op":"text","port":"0x1eba6800","ticks":2,
+           "a5":"0x00100000","psn":"0.29949953",
+           "displayEpoch":3,"generation":7,
+           "pen":[30,30],"font":3,"size":9,"face":0,
+           "len":5,"fullLen":5,"trunc":false,"text":"After"}],
+         "nextCursor":128,"records":2}
+        """), to: try scene())
+        XCTAssertEqual(update.scene.windows[0].display?.map(\.op),
+                       ["bits", "text"])
+        XCTAssertFalse(update.sentence.contains("renderer defers bits"))
+    }
+
     func testProcessSerialParsesOnlyTheTwoPartWireShape() {
         XCTAssertEqual(NOWMirrorContentPlane.serial("0.29360131")?.hi, 0)
         XCTAssertEqual(NOWMirrorContentPlane.serial("0.29360131")?.lo,
                        29_360_131)
         XCTAssertNil(NOWMirrorContentPlane.serial("front"))
         XCTAssertNil(NOWMirrorContentPlane.serial("1.2.3"))
+    }
+
+    func testSameProcessDifferentFrontWindowRequiresRetarget() throws {
+        let first = try scene(address: 0x1000)
+        let front = try XCTUnwrap(first.windows.first(where: \.front))
+        XCTAssertFalse(NOWMirrorContentPlane.needsTarget(
+            currentPSN: front.psn, currentWindow: 0x1000, front: front))
+
+        var changed = front
+        changed.addr = 0x2000
+        XCTAssertTrue(NOWMirrorContentPlane.needsTarget(
+            currentPSN: front.psn, currentWindow: 0x1000, front: changed))
+    }
+
+    func testOldVisibleWindowOfSameProcessCannotJoinAfterRetarget() throws {
+        let model = plane()
+        var value = try scene(address: 0x2000)
+        XCTAssertGreaterThan(value.windows.count, 1)
+        value.windows[1].psn = value.windows[0].psn
+        value.windows[1].addr = 0x1000
+        let update = model.apply(try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"text","port":"0x00001000","ticks":1,
+           "a5":"0x00100000","psn":"0.29949953",
+           "displayEpoch":2,"generation":6,
+           "pen":[2,3],"font":3,"size":9,"face":0,
+           "len":3,"fullLen":3,"trunc":false,"text":"Old"}],
+         "nextCursor":64,"records":1}
+        """), to: value)
+        XCTAssertNil(update.scene.windows[0].display)
+        XCTAssertNil(update.scene.windows[1].display)
+        XCTAssertTrue(update.sentence.contains("named no window"))
     }
 }

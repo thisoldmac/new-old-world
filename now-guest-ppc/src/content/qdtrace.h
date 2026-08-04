@@ -80,7 +80,7 @@
        at the ring's end are either zero or a whole header. Upstream's
        ring could advance its cursor past a tail too short to hold a
        header, and a record-stepping reader reads such a tail AS a header
-       - twelve bytes of stale ring whose `size` decides where it goes
+       - one stale v2 header whose `size` decides where it goes
        next. That defect is fixed in the writer; this reader still
        validates every `size` it steps by, because a reader that trusts
        the writer's invariant has no defence when the writer is a
@@ -142,6 +142,11 @@ typedef struct {
     int payload_ok;             /* 0 = header only, payload unreadable  */
     NowContentU32 port;
     NowContentU32 ticks;
+    NowContentU32 a5;
+    NowContentU32 psn_hi;
+    NowContentU32 psn_lo;
+    NowContentU32 display_epoch;
+    NowContentU32 generation;
     NowContentU32 size;         /* the record's own size, incl. padding */
     union {
         NowContentTextPayload text;
@@ -203,6 +208,15 @@ typedef struct {
     NowContentU32 active_a5;
     NowContentU32 active_mode;
     NowContentU32 hooked_ports;
+    NowContentU32 active_window;
+    NowContentU32 active_psn_hi;
+    NowContentU32 active_psn_lo;
+    NowContentU32 active_generation;
+    NowContentU32 display_epoch;
+    NowContentU32 redraw_requested_generation;
+    NowContentU32 redraw_serviced_generation;
+    NowContentU32 redraw_requests;
+    NowContentU32 redraw_services;
 
     /* What the application asked for (we write these). Reported back so
        a request that the extension never honoured is VISIBLE as a
@@ -210,6 +224,10 @@ typedef struct {
     NowContentU32 arm_a5;
     NowContentU32 arm_expiry;
     NowContentU32 arm_mode;
+    NowContentU32 arm_window;
+    NowContentU32 arm_psn_hi;
+    NowContentU32 arm_psn_lo;
+    NowContentU32 arm_generation;
     int arm_committed;           /* arm_commit == 'NWca' exactly        */
 
     /* Occupancy relative to the caller's cursor. */
@@ -239,6 +257,10 @@ typedef struct {
     NowContentU32 a5;
     NowContentU32 expiry;
     NowContentU32 mode;
+    NowContentU32 window;
+    NowContentU32 psn_hi;
+    NowContentU32 psn_lo;
+    NowContentU32 generation;
 } NowQDArmPlan;
 
 enum {
@@ -269,6 +291,10 @@ enum {
    "everything" should be told no at the near end. */
 int now_qdtrace_arm_plan(const char *mode_str,
                          NowContentU32 a5,
+                         NowContentU32 window,
+                         NowContentU32 psn_hi,
+                         NowContentU32 psn_lo,
+                         NowContentU32 generation,
                          long ttl_ticks,
                          NowContentU32 now_ticks,
                          NowQDArmPlan *out);

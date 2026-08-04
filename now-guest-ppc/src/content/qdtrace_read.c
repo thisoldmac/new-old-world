@@ -46,7 +46,7 @@ static int block_ok(const NowContentBlock *block)
     if (block->magic != (NowContentU32)kNowContentBlockMagic) {
         return 0;
     }
-    if (block->format != (NowContentU16)kNowContentFormatV1) {
+    if (block->format != (NowContentU16)kNowContentFormatV2) {
         return 0;
     }
     cap = block->ring_cap;
@@ -60,8 +60,7 @@ static int block_ok(const NowContentBlock *block)
     }
     /* The accretive rule: the block must claim at least the bytes we are
        about to read. */
-    if (block->length
-        < (NowContentU32)(offsetof(NowContentBlock, ring) + cap)) {
+    if (block->length < (NowContentU32)sizeof(NowContentBlock)) {
         return 0;
     }
     return 1;
@@ -147,8 +146,8 @@ static int decode_payload(NowQDRecord *rec, const unsigned char *body,
         copy_out(&rec->p.state, body, want);
         return 1;
     default:
-        /* kNowContentOpComment carries its kind in the header's flags in
-           v1 and has no payload struct; an unknown op is a newer writer
+        /* kNowContentOpComment carries its kind in the record-header flags
+           and has no payload struct; an unknown op is a newer writer
            and is reported as a header, not swallowed. */
         return 0;
     }
@@ -276,6 +275,11 @@ void now_qdtrace_drain(const NowContentBlock *block,
         rec.flags = h.flags;
         rec.port = h.port;
         rec.ticks = h.ticks;
+        rec.a5 = h.a5;
+        rec.psn_hi = h.psn_hi;
+        rec.psn_lo = h.psn_lo;
+        rec.display_epoch = h.display_epoch;
+        rec.generation = h.generation;
         rec.size = size;
         rec.payload_ok = decode_payload(
             &rec, &block->ring[pos + sizeof(NowContentRecHeader)],
@@ -365,10 +369,23 @@ void now_qdtrace_status(const NowContentBlock *block,
     out->active_a5 = block->active_a5;
     out->active_mode = block->active_mode;
     out->hooked_ports = block->hooked_ports;
+    out->active_window = block->active_window;
+    out->active_psn_hi = block->active_psn_hi;
+    out->active_psn_lo = block->active_psn_lo;
+    out->active_generation = block->active_generation;
+    out->display_epoch = block->display_epoch;
+    out->redraw_requested_generation = block->redraw_requested_generation;
+    out->redraw_serviced_generation = block->redraw_serviced_generation;
+    out->redraw_requests = block->redraw_requests;
+    out->redraw_services = block->redraw_services;
 
     out->arm_a5 = block->arm_a5;
     out->arm_expiry = block->arm_expiry;
     out->arm_mode = block->mode;
+    out->arm_window = block->arm_window;
+    out->arm_psn_hi = block->arm_psn_hi;
+    out->arm_psn_lo = block->arm_psn_lo;
+    out->arm_generation = block->arm_generation;
     out->arm_committed =
         (block->arm_commit == (NowContentU32)kNowContentArmCommit) ? 1 : 0;
 
@@ -388,6 +405,10 @@ void now_qdtrace_status(const NowContentBlock *block,
 
 int now_qdtrace_arm_plan(const char *mode_str,
                          NowContentU32 a5,
+                         NowContentU32 window,
+                         NowContentU32 psn_hi,
+                         NowContentU32 psn_lo,
+                         NowContentU32 generation,
                          long ttl_ticks,
                          NowContentU32 now_ticks,
                          NowQDArmPlan *out)
@@ -400,6 +421,10 @@ int now_qdtrace_arm_plan(const char *mode_str,
     out->a5 = 0;
     out->expiry = 0;
     out->mode = (NowContentU32)kNowContentModeOff;
+    out->window = 0;
+    out->psn_hi = 0;
+    out->psn_lo = 0;
+    out->generation = 0;
 
     if (mode_str == NULL || mode_str[0] == '\0'
         || strcmp(mode_str, "count") == 0) {
@@ -414,7 +439,7 @@ int now_qdtrace_arm_plan(const char *mode_str,
        extension. Zero is the value a caller reaches for when they mean
        "everything", and the plane reads it as "nothing"; telling them no
        here is the difference between a refusal and a silence. */
-    if (a5 == 0) {
+    if (a5 == 0 || window == 0 || generation == 0) {
         return kNowQDArmNoTarget;
     }
 
@@ -427,6 +452,10 @@ int now_qdtrace_arm_plan(const char *mode_str,
 
     out->a5 = a5;
     out->mode = mode;
+    out->window = window;
+    out->psn_hi = psn_hi;
+    out->psn_lo = psn_lo;
+    out->generation = generation;
     out->expiry = now_ticks + (NowContentU32)ttl_ticks;
     /* An expiry of exactly 0 is "expired on sight" in the contract, and
        TickCount wrap can land there. One tick later is not a meaningful
@@ -455,9 +484,19 @@ void now_qdtrace_arm_commit(NowContentBlock *block, const NowQDArmPlan *plan)
     if (block == NULL || plan == NULL) {
         return;
     }
+    /* Retarget is itself a disarm/rearm. Clear the old permission before
+       changing any identity word, or a resident pass between stores can
+       observe the old commit paired with a mixed request. */
+    b->arm_commit = 0;
+    __asm__ volatile("" ::: "memory");
     b->arm_a5 = plan->a5;
     b->arm_expiry = plan->expiry;
     b->mode = plan->mode;
+    b->arm_window = plan->window;
+    b->arm_psn_hi = plan->psn_hi;
+    b->arm_psn_lo = plan->psn_lo;
+    b->arm_generation = plan->generation;
+    __asm__ volatile("" ::: "memory");
     b->arm_commit = (NowContentU32)kNowContentArmCommit;
 }
 
@@ -476,4 +515,8 @@ void now_qdtrace_disarm(NowContentBlock *block)
     b->mode = (NowContentU32)kNowContentModeOff;
     b->arm_expiry = 0;
     b->arm_a5 = 0;
+    b->arm_window = 0;
+    b->arm_psn_hi = 0;
+    b->arm_psn_lo = 0;
+    b->arm_generation = 0;
 }

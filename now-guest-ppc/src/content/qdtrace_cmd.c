@@ -272,9 +272,12 @@ static void run_start(const char *json, long id, char *out, long cap)
     NowContentU32 a5 = 0;
     NowContentU32 serial_hi = 0;
     NowContentU32 serial_lo = 0;
+    NowContentU32 window = 0;
+    NowContentU32 generation;
     int has_a5 = 0;
     int has_serial_hi = 0;
     int has_serial_lo = 0;
+    int has_window = 0;
     int has_front = 0;
     int front_true = 0;
     NowQDTarget target;
@@ -282,8 +285,6 @@ static void run_start(const char *json, long id, char *out, long cap)
     char mode[16];
     long ttl;
     int verdict;
-    int redraw_windows = 0;
-    int redraw_target_is_self = 0;
 
     if (block == NULL) {
         now_qdtrace_error_json(id, "content-plane-absent",
@@ -303,6 +304,14 @@ static void run_start(const char *json, long id, char *out, long cap)
         now_qdtrace_error_json(id, "bad-serial",
                                "serialHi and serialLo must be decimal or "
                                "0x strings", out, cap);
+        return;
+    }
+    if (!parse_u32(json, "window", &window, &has_window)
+        || !has_window || window == 0) {
+        now_qdtrace_error_json(id, "no-window",
+                               "qdtrace start needs the exact nonzero scene "
+                               "window address; there is no all-windows arm",
+                               out, cap);
         return;
     }
     if (!parse_bool(json, "front", &front_true, &has_front)) {
@@ -348,16 +357,8 @@ static void run_start(const char *json, long id, char *out, long cap)
             now_qdtrace_error_json(id, fail_code, fail_message, out, cap);
             return;
         }
-        {
-            ProcessSerialNumber self;
-            Boolean same = false;
-
-            if (GetCurrentProcess(&self) == noErr) {
-                (void)SameProcess(&psn, &self, &same);
-            }
-            redraw_target_is_self = now_qdtrace_target_may_redraw(
-                target, same);
-        }
+        serial_hi = (NowContentU32)psn.highLongOfPSN;
+        serial_lo = (NowContentU32)psn.lowLongOfPSN;
         break;
     }
     case kNowQDTargetA5:
@@ -367,8 +368,13 @@ static void run_start(const char *json, long id, char *out, long cap)
         mode[0] = '\0';
     }
     ttl = now_json_find_int(json, "ttlTicks", 0);
+    generation = block->arm_generation + 1u;
+    if (generation == 0) {
+        generation = 1;
+    }
 
-    verdict = now_qdtrace_arm_plan(mode, a5, ttl,
+    verdict = now_qdtrace_arm_plan(mode, a5, window,
+                                   serial_hi, serial_lo, generation, ttl,
                                    (NowContentU32)TickCount(), &plan);
     if (verdict == kNowQDArmNoTarget) {
         now_qdtrace_error_json(id, "no-target",
@@ -405,38 +411,19 @@ static void run_start(const char *json, long id, char *out, long cap)
                          (unsigned long)plan.expiry);
     now_qdtrace_arm_commit(block, &plan);
 
-    /* The recorder is installed at the target's NEXT WaitNextEvent. NOW's
-       Workshop may already have completed its only full paint before this
-       request arrived, leaving a correctly armed ring empty forever. When
-       the target is this application, invalidating our own windows schedules
-       a normal update event: the extension installs as the app pumps, then
-       records the guest-authored repaint. Never walk a foreign WindowList. */
-    if (redraw_target_is_self) {
-        WindowRef window = FrontWindow();
-        int hops;
-
-        for (hops = 0; window != NULL && hops < 64;
-             window = GetNextWindow(window), ++hops) {
-            Rect bounds;
-
-            GetWindowPortBounds(window, &bounds);
-            InvalWindowRect(window, &bounds);
-            redraw_windows++;
-        }
-    }
-
     snprintf(out, (size_t)cap,
              "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
              "\"output\":{\"qdtrace\":{\"cmd\":\"start\",\"a5\":\"0x%08lx\","
+             "\"window\":\"0x%08lx\",\"generation\":%lu,"
              "\"resolvedVia\":\"%s\","
              "\"mode\":\"%s\",\"expiry\":%lu,\"now\":%lu,"
-             "\"redrawWindows\":%d,"
+             "\"redrawRequested\":false,\"redrawServiced\":false,"
              "\"requested\":true,\"armed\":false}}}",
-             id, (unsigned long)plan.a5, route,
+             id, (unsigned long)plan.a5, (unsigned long)plan.window,
+             (unsigned long)plan.generation, route,
              plan.mode == (NowContentU32)kNowContentModeRecord
                  ? "record" : "count",
-             (unsigned long)plan.expiry, (unsigned long)TickCount(),
-             redraw_windows);
+             (unsigned long)plan.expiry, (unsigned long)TickCount());
     /* `requested: true, armed: false` is not pessimism. Nothing is hooked
        until the extension's jGNE pass runs INSIDE the target process and
        agrees; this reply claims a request was written and never that it

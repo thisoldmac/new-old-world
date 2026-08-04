@@ -201,13 +201,26 @@ void now_qdtrace_status_json(const NowQDStatus *st, long id,
        of the two is reported. */
     ok = ok && emit(&e,
         "\"request\":{\"a5\":\"0x%08lx\",\"expiry\":%lu,\"mode\":\"%s\","
-        "\"committed\":%s},",
+        "\"window\":\"0x%08lx\",\"psn\":\"%lu.%lu\","
+        "\"generation\":%lu,\"committed\":%s},",
         (unsigned long)st->arm_a5, (unsigned long)st->arm_expiry,
-        mode_name(st->arm_mode), jbool(st->arm_committed));
+        mode_name(st->arm_mode), (unsigned long)st->arm_window,
+        (unsigned long)st->arm_psn_hi, (unsigned long)st->arm_psn_lo,
+        (unsigned long)st->arm_generation, jbool(st->arm_committed));
     ok = ok && emit(&e,
-        "\"active\":{\"a5\":\"0x%08lx\",\"mode\":\"%s\",\"hookedPorts\":%lu},",
+        "\"active\":{\"a5\":\"0x%08lx\",\"mode\":\"%s\",\"hookedPorts\":%lu,"
+        "\"window\":\"0x%08lx\",\"psn\":\"%lu.%lu\","
+        "\"generation\":%lu,\"displayEpoch\":%lu,"
+        "\"redrawRequested\":%s,\"redrawServiced\":%s},",
         (unsigned long)st->active_a5, mode_name(st->active_mode),
-        (unsigned long)st->hooked_ports);
+        (unsigned long)st->hooked_ports, (unsigned long)st->active_window,
+        (unsigned long)st->active_psn_hi, (unsigned long)st->active_psn_lo,
+        (unsigned long)st->active_generation,
+        (unsigned long)st->display_epoch,
+        jbool(st->active_generation != 0
+              && st->redraw_requested_generation == st->active_generation),
+        jbool(st->active_generation != 0
+              && st->redraw_serviced_generation == st->active_generation));
 
     ok = ok && emit(&e,
         "\"ring\":{\"writeCursor\":%lu,\"seq\":%lu,\"ticks\":%lu,"
@@ -235,7 +248,8 @@ void now_qdtrace_status_json(const NowQDStatus *st, long id,
     ok = ok && emit(&e,
         "\"loss\":{\"dropped\":%lu,\"skippedPorts\":%lu},"
         "\"lifecycle\":{\"installs\":%lu,\"uninstalls\":%lu,\"repairs\":%lu,"
-        "\"arms\":%lu,\"retires\":%lu},"
+        "\"arms\":%lu,\"retires\":%lu,\"redrawRequests\":%lu,"
+        "\"redrawServices\":%lu},"
         "\"refused\":{\"noTarget\":%lu,\"wrongContext\":%lu,\"expired\":%lu}",
         (unsigned long)st->counters.dropped,
         (unsigned long)st->counters.skipped_ports,
@@ -244,6 +258,8 @@ void now_qdtrace_status_json(const NowQDStatus *st, long id,
         (unsigned long)st->counters.repairs,
         (unsigned long)st->counters.arms,
         (unsigned long)st->counters.retires,
+        (unsigned long)st->redraw_requests,
+        (unsigned long)st->redraw_services,
         (unsigned long)st->counters.refused_no_target,
         (unsigned long)st->counters.refused_wrong_context,
         (unsigned long)st->counters.refused_expired);
@@ -268,9 +284,14 @@ static int drain_sink(void *ctx, const NowQDRecord *rec)
         return 0;   /* this buffer is full: `more`, not a silent end */
     }
 
-    if (!emit(e, "%s{\"op\":\"%s\",\"port\":\"0x%08lx\",\"ticks\":%lu",
+    if (!emit(e, "%s{\"op\":\"%s\",\"port\":\"0x%08lx\",\"ticks\":%lu,"
+              "\"a5\":\"0x%08lx\",\"psn\":\"%lu.%lu\","
+              "\"displayEpoch\":%lu,\"generation\":%lu",
               sep, op_name(rec->op), (unsigned long)rec->port,
-              (unsigned long)rec->ticks)) {
+              (unsigned long)rec->ticks, (unsigned long)rec->a5,
+              (unsigned long)rec->psn_hi, (unsigned long)rec->psn_lo,
+              (unsigned long)rec->display_epoch,
+              (unsigned long)rec->generation)) {
         e->pos = before;
         return 0;
     }

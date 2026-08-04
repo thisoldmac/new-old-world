@@ -86,6 +86,7 @@ enum {
        length >= what it reads, the accretive prefs-record rule. */
     kNowContentFormatNone = 0,
     kNowContentFormatV1 = 1,
+    kNowContentFormatV2 = 2,
 
     /* THE ARM COMMIT WORD, and it is deliberately not 1.
        A zeroed block, a block from a stale build, and a block whose
@@ -190,6 +191,29 @@ typedef struct {
     NowContentCounters counters;
 
     unsigned char ring[kNowContentRingCap];
+
+    /* --- v2 exact-window request and correlation --------------------
+       Appended: every v1 offset above remains fixed. The PSN is echoed
+       correlation, never resident safety authority. Only arm_a5 plus an
+       exact current WindowList membership permits a port dereference. */
+    NowContentU32 arm_window;
+    NowContentU32 arm_psn_hi;
+    NowContentU32 arm_psn_lo;
+    NowContentU32 arm_generation;
+
+    NowContentU32 active_window;
+    NowContentU32 active_psn_hi;
+    NowContentU32 active_psn_lo;
+    NowContentU32 active_generation;
+    NowContentU32 display_epoch;
+
+    /* Requested means InvalWindowRect was issued in the exact owning
+       context. Serviced means a later QuickDraw hook was observed; an
+       invalidation alone is never reported as a serviced redraw. */
+    NowContentU32 redraw_requested_generation;
+    NowContentU32 redraw_serviced_generation;
+    NowContentU32 redraw_requests;
+    NowContentU32 redraw_services;
 } NowContentBlock;
 
 /* ---- ring records --------------------------------------------------
@@ -203,7 +227,7 @@ typedef struct {
    reads each payload at its own fixed width, so trailing absorbed bytes
    are skipped without a special case. This is the one place the port
    diverges from upstream's ring, and it is because upstream's ring
-   never ran: its tail path could leave fewer than 12 bytes that a
+   never ran: its tail path could leave fewer than a complete header that a
    record-stepping reader would read as a header. See the test. */
 
 #define kNowContentOpText    1
@@ -235,6 +259,11 @@ typedef struct {
     unsigned char flags;  /* kNowContentFlag*                             */
     NowContentU32 port;   /* CGrafPtr - the window identity key           */
     NowContentU32 ticks;  /* TickCount at capture                         */
+    NowContentU32 a5;     /* exact resident safety target                 */
+    NowContentU32 psn_hi; /* echoed correlation, not resident authority  */
+    NowContentU32 psn_lo;
+    NowContentU32 display_epoch;
+    NowContentU32 generation;
 } NowContentRecHeader;
 
 typedef struct {
@@ -276,9 +305,11 @@ typedef struct {
 } NowContentStatePayload;
 
 /* The offsets ARE the contract. */
-_Static_assert(sizeof(NowContentRecHeader) == 12, "rec header layout");
+_Static_assert(sizeof(NowContentRecHeader) == 32, "rec header layout");
 _Static_assert(offsetof(NowContentRecHeader, port) == 4, "rec port offset");
 _Static_assert(offsetof(NowContentRecHeader, ticks) == 8, "rec ticks offset");
+_Static_assert(offsetof(NowContentRecHeader, generation) == 28,
+               "rec generation offset");
 _Static_assert(sizeof(NowContentTextPayload) == 12, "text payload layout");
 _Static_assert(sizeof(NowContentLinePayload) == 12, "line payload layout");
 _Static_assert(sizeof(NowContentRectPayload) == 14, "rect payload layout");
@@ -295,7 +326,10 @@ _Static_assert(offsetof(NowContentBlock, seq) == 40, "seq offset");
 _Static_assert(offsetof(NowContentBlock, write_cursor) == 52, "cursor offset");
 _Static_assert(offsetof(NowContentBlock, counters) == 56, "counters offset");
 _Static_assert(offsetof(NowContentBlock, ring) == 140, "ring offset");
-_Static_assert(sizeof(NowContentBlock) == 140 + kNowContentRingCap,
+_Static_assert(offsetof(NowContentBlock, arm_window)
+                   == 140 + kNowContentRingCap,
+               "v2 append offset");
+_Static_assert(sizeof(NowContentBlock) == 192 + kNowContentRingCap,
                "block size");
 
 /* ---- the arm verdict (now_content_logic.c) -------------------------
@@ -308,7 +342,39 @@ typedef struct {
     NowContentU32 arm_a5;
     NowContentU32 arm_expiry;
     NowContentU32 mode;
+    NowContentU32 arm_window;
+    NowContentU32 arm_psn_hi;
+    NowContentU32 arm_psn_lo;
+    NowContentU32 arm_generation;
 } NowContentRequest;
+
+/* Pure owning-context lifecycle decision. A stored port may be inspected
+   only after `window_live` was established by exact WindowList membership;
+   `hook_owned` is meaningful only when window_live is true. */
+typedef struct {
+    int verdict;
+    NowContentU32 current_a5;
+    NowContentU32 request_window;
+    NowContentU32 request_generation;
+    NowContentU32 slot_a5;
+    NowContentU32 slot_window;
+    NowContentU32 slot_generation;
+    int has_slot;
+    int window_live;
+    int hook_owned;
+    int redraw_requested;
+} NowContentLifecycleFacts;
+
+enum {
+    kNowContentLifeInstall = 1u << 0,
+    kNowContentLifeRestore = 1u << 1,
+    kNowContentLifeForget = 1u << 2,
+    kNowContentLifeInvalidate = 1u << 3,
+    kNowContentLifeRetire = 1u << 4
+};
+
+NowContentU32 now_content_lifecycle_decide(
+    const NowContentLifecycleFacts *facts);
 
 enum {
     /* Nothing is asked for: plane bit clear, no commit word, or mode

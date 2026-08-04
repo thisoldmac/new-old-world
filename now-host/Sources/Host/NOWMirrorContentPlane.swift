@@ -9,6 +9,14 @@ import MirrorKit
 /// visible as content-plane limitations instead of becoming hidden pixels.
 @MainActor
 final class NOWMirrorContentPlane {
+    struct ContentIdentity: Hashable {
+        var psn: String
+        var a5: String
+        var window: UInt32
+        var displayEpoch: Int
+        var generation: Int
+    }
+
     struct Update {
         var scene: MirrorKit.Scene
         var sentence: String
@@ -16,8 +24,10 @@ final class NOWMirrorContentPlane {
 
     private let listener: GuestListener
     private(set) var targetPSN: String?
+    private(set) var targetWindow: UInt32?
     private(set) var cursor = 0
-    private(set) var operations: [UInt32: [DisplayOp]] = [:]
+    private(set) var operations: [ContentIdentity: [DisplayOp]] = [:]
+    private var currentDisplay: [String: ContentIdentity] = [:]
     private var armedAt: Date?
 
     /// Keep enough ordered drawing to include a full repaint without allowing
@@ -31,8 +41,10 @@ final class NOWMirrorContentPlane {
 
     func guestChanged() {
         targetPSN = nil
+        targetWindow = nil
         cursor = 0
         operations.removeAll()
+        currentDisplay.removeAll()
         armedAt = nil
     }
 
@@ -41,18 +53,25 @@ final class NOWMirrorContentPlane {
     func join(into scene: MirrorKit.Scene,
               completion: @escaping (Update) -> Void) {
         guard let front = scene.windows.first(where: \.front) else {
+            targetPSN = nil
+            targetWindow = nil
+            operations.removeAll()
+            currentDisplay.removeAll()
             completion(.init(scene: scene,
                              sentence: "content: no front window"))
             return
         }
-        let needsTarget = targetPSN != front.psn
+        let needsTarget = Self.needsTarget(
+            currentPSN: targetPSN, currentWindow: targetWindow, front: front)
         let needsRenewal = armedAt.map {
             Date().timeIntervalSince($0) >= Self.renewAfter
         } ?? true
         if needsTarget {
             targetPSN = front.psn
+            targetWindow = front.addr
             cursor = 0
             operations.removeAll()
+            currentDisplay.removeAll()
             armedAt = nil
         }
         if needsTarget || needsRenewal {
@@ -89,10 +108,18 @@ final class NOWMirrorContentPlane {
                         + "serial \(front.psn)"))
                 return
             }
+            guard let window = front.addr else {
+                completion(.init(
+                    scene: self.attachCached(to: scene),
+                    sentence: "content: the front window has no exact guest "
+                        + "address, so P3 refused an all-windows arm"))
+                return
+            }
             self.listener.runCommand("qdtrace", typed: [
                 "op": .text("start"),
                 "serialHi": .number(serial.hi),
                 "serialLo": .number(serial.lo),
+                "window": .text(String(format: "0x%08x", window)),
                 "mode": .text("record"),
                 "ttlTicks": .number(36_000),
             ]) { [weak self] start in
@@ -157,20 +184,52 @@ final class NOWMirrorContentPlane {
             operations.removeAll()
         }
 
-        let visibleAddresses = Set(scene.windows.compactMap(\.addr))
+        let visible = Dictionary(uniqueKeysWithValues: scene.windows.compactMap {
+            window in window.addr.map { ($0, window.psn) }
+        })
+        let expectedPSN = targetPSN
+            ?? scene.windows.first(where: \.front)?.psn
+        let expectedWindow = targetWindow
+            ?? scene.windows.first(where: \.front)?.addr
         var matched = 0
         var unjoined = 0
+        var stale = 0
         for record in drain.records {
             guard let address = record.portAddress,
-                  visibleAddresses.contains(address) else {
+                  address == expectedWindow,
+                  let scenePSN = visible[address], scenePSN == record.psn,
+                  record.psn == expectedPSN else {
                 unjoined += 1
                 continue
             }
-            operations[address, default: []].append(record.op)
-            if operations[address, default: []].count
+            let identity = ContentIdentity(
+                psn: record.psn, a5: record.a5, window: address,
+                displayEpoch: record.displayEpoch,
+                generation: record.generation)
+            let slot = "\(record.psn):\(address)"
+            if let current = currentDisplay[slot] {
+                let isOlder = record.generation < current.generation
+                    || (record.generation == current.generation
+                        && record.displayEpoch < current.displayEpoch)
+                let isSame = record.generation == current.generation
+                    && record.displayEpoch == current.displayEpoch
+                if isOlder || (isSame
+                    && record.a5 != current.a5) {
+                    stale += 1
+                    continue
+                }
+                if !isSame {
+                    operations[current] = nil
+                    currentDisplay[slot] = identity
+                }
+            } else {
+                currentDisplay[slot] = identity
+            }
+            operations[identity, default: []].append(record.op)
+            if operations[identity, default: []].count
                     > Self.operationCapPerWindow {
-                operations[address]!.removeFirst(
-                    operations[address]!.count - Self.operationCapPerWindow)
+                operations[identity]!.removeFirst(
+                    operations[identity]!.count - Self.operationCapPerWindow)
             }
             matched += 1
         }
@@ -187,6 +246,10 @@ final class NOWMirrorContentPlane {
         if unjoined > 0 {
             facts.append("\(unjoined) op\(unjoined == 1 ? "" : "s") named "
                          + "no window in this scene")
+        }
+        if stale > 0 {
+            facts.append("rejected \(stale) stale/superseded draw "
+                         + "op\(stale == 1 ? "" : "s")")
         }
         if drain.more { facts.append("more remain in the guest ring") }
         if drain.lostBytes > 0 {
@@ -211,7 +274,9 @@ final class NOWMirrorContentPlane {
         var attached = scene
         for index in attached.windows.indices {
             guard let address = attached.windows[index].addr,
-                  let ops = operations[address], !ops.isEmpty else { continue }
+                  let identity = currentDisplay[
+                    "\(attached.windows[index].psn):\(address)"],
+                  let ops = operations[identity], !ops.isEmpty else { continue }
             attached.windows[index].display = ops
         }
         return attached
@@ -222,6 +287,11 @@ final class NOWMirrorContentPlane {
         guard parts.count == 2,
               let hi = Int(parts[0]), let lo = Int(parts[1]) else { return nil }
         return (hi, lo)
+    }
+
+    static func needsTarget(currentPSN: String?, currentWindow: UInt32?,
+                            front: MirrorKit.Scene.Window) -> Bool {
+        currentPSN != front.psn || currentWindow != front.addr
     }
 
     private static func int(_ value: JSONValue?) -> Int? {

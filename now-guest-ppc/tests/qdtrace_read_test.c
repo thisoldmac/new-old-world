@@ -56,13 +56,13 @@ static NowContentBlock g_block;
 static void init_block(NowContentU32 cap)
 {
     memset(&g_block, 0, sizeof g_block);
-    g_block.format = (NowContentU16)kNowContentFormatV1;
+    g_block.format = (NowContentU16)kNowContentFormatV2;
     g_block.ring_cap = cap;
-    g_block.length = (NowContentU32)(offsetof(NowContentBlock, ring) + cap);
+    g_block.length = (NowContentU32)sizeof(NowContentBlock);
     g_block.magic = (NowContentU32)kNowContentBlockMagic;
 }
 
-/* A header-only record: 12 bytes, the smallest thing the ring holds. */
+/* A header-only v2 record: 32 bytes, the smallest thing the ring holds. */
 static void put_bare(NowContentU32 port)
 {
     (void)now_content_ring_put(&g_block, kNowContentOpRgn, 0, port, NULL, 0);
@@ -270,9 +270,9 @@ static void test_unknown_op_is_reported(void)
 
 /* ---- the wrap, and the tail the port fixed --------------------------- */
 
-/* cap 256, 12-byte records: the 21st put would leave a 4-byte tail, too
+/* cap 260, 32-byte records: the eighth put would leave a 4-byte tail, too
    short to hold a header. The writer absorbs it, so that record's `size`
-   is 16 and the ring ends exactly on the boundary. The reader steps by
+   is 36 and the ring ends exactly on the boundary. The reader steps by
    `size` and never sees the absorbed bytes - which is the whole point of
    the fix, and is only true if the reader really does step by `size`. */
 static void test_tail_absorption(void)
@@ -282,19 +282,19 @@ static void test_tail_absorption(void)
     int i;
 
     memset(&c, 0, sizeof c);
-    init_block(256);
-    for (i = 0; i < 21; ++i) {
+    init_block(260);
+    for (i = 0; i < 8; ++i) {
         put_bare((NowContentU32)(100 + i));
     }
-    check_eq((long)g_block.write_cursor, 256,
-             "21 bare records fill the ring exactly");
+    check_eq((long)g_block.write_cursor, 260,
+             "eight v2 bare records fill the ring exactly");
 
     now_qdtrace_drain(&g_block, 0, 0, 0, collect, &c, &r);
     check_eq(r.outcome, kNowQDDrainOk, "the absorbed tail drains ok");
-    check_eq(c.n, 21, "all 21 records come back");
-    check_eq((long)c.recs[20].size, 16, "the last record absorbed the tail");
-    check_eq((long)c.recs[20].port, 120, "and is still the record it was");
-    check_eq((long)r.next_cursor, 256, "landing on the boundary");
+    check_eq(c.n, 8, "all eight records come back");
+    check_eq((long)c.recs[7].size, 36, "the last record absorbed the tail");
+    check_eq((long)c.recs[7].port, 107, "and is still the record it was");
+    check_eq((long)r.next_cursor, 260, "landing on the boundary");
 }
 
 /* Past the boundary, the writer emits a WRAP pad when a record will not
@@ -313,9 +313,9 @@ static void test_wrap_padding_is_stepped_over(void)
 
     memset(&c, 0, sizeof c);
     init_block(512);
-    /* 20-byte records: 25 fill 500 bytes, the 26th does not fit the
-       12-byte tail, so the writer pads it and starts again at 0. */
-    for (i = 0; i < 26; ++i) {
+    /* 40-byte records: 12 fill 480 bytes, the 13th does not fit the
+       32-byte tail, so the writer pads it and starts again at 0. */
+    for (i = 0; i < 13; ++i) {
         unsigned char body[8];
 
         memset(body, (int)i, sizeof body);
@@ -323,13 +323,13 @@ static void test_wrap_padding_is_stepped_over(void)
                                    (NowContentU32)i, body,
                                    (NowContentU16)sizeof body);
     }
-    check_eq((long)g_block.write_cursor, 532, "25 records, a pad, and one more");
+    check_eq((long)g_block.write_cursor, 552, "12 records, a pad, and one more");
 
-    now_qdtrace_drain(&g_block, 20u, 0, 0, collect, &c, &r);
+    now_qdtrace_drain(&g_block, 40u, 0, 0, collect, &c, &r);
     check_eq(r.outcome, kNowQDDrainOk, "a padded ring drains ok");
-    check_eq(c.n, 25, "25 records, and the pad is not one of them");
+    check_eq(c.n, 12, "12 records, and the pad is not one of them");
     check_eq((long)r.wraps, 1, "the pad is counted as a wrap");
-    check_eq((long)c.recs[24].port, 25, "including the one after the wrap");
+    check_eq((long)c.recs[11].port, 12, "including the one after the wrap");
     check_eq((long)r.next_cursor, (long)g_block.write_cursor,
              "the cursor lands on the writer's");
 }
@@ -570,7 +570,7 @@ static void test_a_commit_that_did_not_lap_is_kept(void)
     put_bare(1);
     put_bare(2);
 
-    now_qdtrace_drain(&g_block, 0, 24u, 0, nudging_sink, &c, &r);
+    now_qdtrace_drain(&g_block, 0, 64u, 0, nudging_sink, &c, &r);
     check_eq(r.outcome, kNowQDDrainOk, "a non-lapping commit keeps the read");
     check_eq((long)r.records, 2, "and its records");
 }
@@ -588,12 +588,12 @@ static void test_byte_budget_sets_more(void)
     for (i = 0; i < 10; ++i) {
         put_bare((NowContentU32)i);
     }
-    now_qdtrace_drain(&g_block, 0, 36u, 0, collect, &c, &r);
+    now_qdtrace_drain(&g_block, 0, 96u, 0, collect, &c, &r);
     check_eq(r.outcome, kNowQDDrainOk, "a bounded drain is ok");
-    check_eq(c.n, 3, "three 12-byte records fit 36 bytes");
+    check_eq(c.n, 3, "three v2 header records fit 96 bytes");
     check_eq(r.more, 1, "and the rest is `more`, not silence");
-    check_eq((long)r.next_cursor, 36, "the cursor stops on a boundary");
-    check_eq((long)r.pending, (long)(g_block.write_cursor - 36u),
+    check_eq((long)r.next_cursor, 96, "the cursor stops on a boundary");
+    check_eq((long)r.pending, (long)(g_block.write_cursor - 96u),
              "with the remainder reported");
 }
 
@@ -608,11 +608,11 @@ static void test_byte_budget_that_splits_a_record(void)
     for (i = 0; i < 10; ++i) {
         put_bare((NowContentU32)i);
     }
-    /* 30 bytes is two records and half of a third. The half is not
+    /* 80 bytes is two records and half of a third. The half is not
        delivered and the cursor does not advance into it. */
-    now_qdtrace_drain(&g_block, 0, 30u, 0, collect, &c, &r);
+    now_qdtrace_drain(&g_block, 0, 80u, 0, collect, &c, &r);
     check_eq(c.n, 2, "a record is never split across drains");
-    check_eq((long)r.next_cursor, 24, "the cursor stops before it");
+    check_eq((long)r.next_cursor, 64, "the cursor stops before it");
     check_eq(r.more, 1, "and says there is more");
 }
 
@@ -654,7 +654,7 @@ static void test_sink_refusal_does_not_consume(void)
     now_qdtrace_drain(&g_block, 0, 0, 0, collect, &c, &r);
     check_eq((long)r.records, 2, "two records were taken");
     check_eq(r.more, 1, "the refusal is `more`");
-    check_eq((long)r.next_cursor, 24, "and the refused record is not consumed");
+    check_eq((long)r.next_cursor, 64, "and the refused record is not consumed");
 
     memset(&c, 0, sizeof c);
     now_qdtrace_drain(&g_block, r.next_cursor, 0, 0, collect, &c, &r);
@@ -684,7 +684,7 @@ static void test_status(void)
 
     now_qdtrace_status(&g_block, 0, &st);
     check_eq(st.outcome, kNowQDDrainOk, "status reads");
-    check_eq((long)st.pending, 12, "12 bytes waiting");
+    check_eq((long)st.pending, 32, "one v2 header record waiting");
     check_eq(st.overrun, 0, "no overrun");
     check_eq(st.arm_committed, 1, "the commit word is exact");
     check_eq((long)st.counters.text, 41, "counters are carried whole");
@@ -733,22 +733,28 @@ static void test_arm_plan(void)
 {
     NowQDArmPlan p;
 
-    check_eq(now_qdtrace_arm_plan("record", 0, 600, 1000, &p),
+    check_eq(now_qdtrace_arm_plan("record", 0, 0x2000u, 0, 1, 7,
+                                  600, 1000, &p),
              kNowQDArmNoTarget, "no target is refused at the near end");
-    check_eq(now_qdtrace_arm_plan("both", 0x1000u, 600, 1000, &p),
+    check_eq(now_qdtrace_arm_plan("both", 0x1000u, 0x2000u, 0, 1, 7,
+                                  600, 1000, &p),
              kNowQDArmBadMode, "an unknown mode is refused");
-    check_eq(now_qdtrace_arm_plan("count", 0x1000u, 1, 1000, &p),
+    check_eq(now_qdtrace_arm_plan("count", 0x1000u, 0x2000u, 0, 1, 7,
+                                  1, 1000, &p),
              kNowQDArmBadTtl, "a sub-second deadline is refused");
-    check_eq(now_qdtrace_arm_plan("count", 0x1000u, 999999, 1000, &p),
+    check_eq(now_qdtrace_arm_plan("count", 0x1000u, 0x2000u, 0, 1, 7,
+                                  999999, 1000, &p),
              kNowQDArmBadTtl, "an unbounded deadline is refused");
 
-    check_eq(now_qdtrace_arm_plan(NULL, 0x1000u, 0, 1000, &p), kNowQDArmOk,
+    check_eq(now_qdtrace_arm_plan(NULL, 0x1000u, 0x2000u, 0, 1, 7,
+                                  0, 1000, &p), kNowQDArmOk,
              "defaults arm");
     check_eq((long)p.mode, kNowContentModeCount,
              "and the default mode is the cheap one");
     check_eq((long)p.expiry, 1000 + kNowQDTtlDefault, "with a bounded deadline");
 
-    check_eq(now_qdtrace_arm_plan("record", 0x1000u, 600, 1000, &p),
+    check_eq(now_qdtrace_arm_plan("record", 0x1000u, 0x2000u, 0, 1, 7,
+                                  600, 1000, &p),
              kNowQDArmOk, "record mode arms");
     check_eq((long)p.mode, kNowContentModeRecord, "as record");
     check_eq((long)p.a5, 0x1000, "at the named target");
@@ -756,7 +762,7 @@ static void test_arm_plan(void)
     /* TickCount wraps. An expiry that lands on exactly 0 means "expired
        on sight" in the contract, which would silently turn a request into
        a no-op once every 2^32 ticks. */
-    check_eq(now_qdtrace_arm_plan("count", 0x1000u, 60,
+    check_eq(now_qdtrace_arm_plan("count", 0x1000u, 0x2000u, 0, 1, 7, 60,
                                   (NowContentU32)(0u - 60u), &p),
              kNowQDArmOk, "an expiry across the tick wrap arms");
     check(p.expiry != 0, "and never lands on the expired-on-sight value");
@@ -774,7 +780,8 @@ static void test_arm_commit_end_state(void)
     NowContentRequest req;
 
     init_block(256);
-    check_eq(now_qdtrace_arm_plan("record", 0x1000u, 600, 1000, &p),
+    check_eq(now_qdtrace_arm_plan("record", 0x1000u, 0x2000u, 0, 1, 7,
+                                  600, 1000, &p),
              kNowQDArmOk, "plan builds");
     now_qdtrace_arm_commit(&g_block, &p);
 
@@ -783,6 +790,10 @@ static void test_arm_commit_end_state(void)
     req.arm_a5 = g_block.arm_a5;
     req.arm_expiry = g_block.arm_expiry;
     req.mode = g_block.mode;
+    req.arm_window = g_block.arm_window;
+    req.arm_psn_hi = g_block.arm_psn_hi;
+    req.arm_psn_lo = g_block.arm_psn_lo;
+    req.arm_generation = g_block.arm_generation;
     check_eq(now_content_arm_verdict(&req, 0x1000u, 1100u),
              kNowContentVerdictArmed,
              "what we wrote is what the extension arms on");
@@ -795,6 +806,8 @@ static void test_arm_commit_end_state(void)
     req.arm_a5 = g_block.arm_a5;
     req.arm_expiry = g_block.arm_expiry;
     req.mode = g_block.mode;
+    req.arm_window = g_block.arm_window;
+    req.arm_generation = g_block.arm_generation;
     check_eq(now_content_arm_verdict(&req, 0x1000u, 1100u),
              kNowContentVerdictIdle, "and disarm really disarms");
     check_eq((long)g_block.arm_a5, 0, "leaving no stale target behind");

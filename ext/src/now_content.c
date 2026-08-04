@@ -52,6 +52,8 @@
 
 #include "content_table.h"
 
+#include <string.h>
+
 /* Port layout, pinned. GrafPort and CGrafPort are the same SIZE and
    different layouts, which is exactly why the discriminator below is
    checked before anything touches grafProcs. */
@@ -99,6 +101,8 @@ static struct {
     GrafPtr port;
     CQDProcsPtr prev;
     NowPeekU32 a5;
+    NowPeekU32 generation;
+    short redraw_requested;
     short shadow_valid;
     NowContentPortState shadow;
 } gPorts[kNowContentMaxPorts];
@@ -138,10 +142,24 @@ static void content_stamp(void)
    some other application's port a strict pass-through. */
 static Boolean content_capture_enabled(void)
 {
-    return gBlock != NULL
-        && gArmedA5 != 0
-        && gArmedMode != kNowContentModeOff
-        && (NowPeekU32)LMGetCurrentA5() == gArmedA5;
+    GrafPtr port = NULL;
+
+    if (gBlock == NULL
+        || gArmedA5 == 0
+        || gArmedMode == kNowContentModeOff
+        || (NowPeekU32)LMGetCurrentA5() != gArmedA5) {
+        return false;
+    }
+    GetPort(&port);
+    if (port == NULL || (NowPeekU32)port != gBlock->active_window) {
+        return false;
+    }
+    if (gBlock->redraw_requested_generation == gBlock->active_generation
+        && gBlock->redraw_serviced_generation != gBlock->active_generation) {
+        gBlock->redraw_serviced_generation = gBlock->active_generation;
+        gBlock->redraw_services++;
+    }
+    return true;
 }
 
 /* Read one port's live drawing state into the pure comparison's shape.
@@ -170,12 +188,12 @@ static void content_read_state(GrafPtr port, NowContentPortState *out)
     out->bg_r = bg.red; out->bg_g = bg.green; out->bg_b = bg.blue;
 }
 
-static short content_slot_for(GrafPtr port)
+static short content_slot_for(GrafPtr port, NowPeekU32 a5)
 {
     short i;
 
     for (i = 0; i < gPortCount; ++i) {
-        if (gPorts[i].port == port) {
+        if (gPorts[i].port == port && gPorts[i].a5 == a5) {
             return i;
         }
     }
@@ -190,7 +208,7 @@ static void content_emit_state(GrafPtr port)
     NowContentPortState live;
     NowContentStatePayload pl;
     NowPeekU32 deltas;
-    short slot = content_slot_for(port);
+    short slot = content_slot_for(port, (NowPeekU32)LMGetCurrentA5());
 
     if (slot < 0) {
         return;
@@ -582,11 +600,12 @@ static void content_forget_slot(short i)
     gPortCount--;
 }
 
-static void content_install_port(GrafPtr port, NowPeekU32 a5)
+static void content_install_port(GrafPtr port, NowPeekU32 a5,
+                                 NowPeekU32 generation)
 {
     CQDProcsPtr prev;
 
-    if (port == NULL || content_slot_for(port) >= 0) {
+    if (port == NULL || content_slot_for(port, a5) >= 0) {
         return;
     }
     if (gPortCount >= kNowContentMaxPorts) {
@@ -609,6 +628,8 @@ static void content_install_port(GrafPtr port, NowPeekU32 a5)
     gPorts[gPortCount].port = port;
     gPorts[gPortCount].prev = prev;
     gPorts[gPortCount].a5 = a5;
+    gPorts[gPortCount].generation = generation;
+    gPorts[gPortCount].redraw_requested = 0;
     gPorts[gPortCount].shadow_valid = 0;
     gPortCount++;
     ((CGrafPtr)port)->grafProcs = &gHooks;
@@ -616,16 +637,71 @@ static void content_install_port(GrafPtr port, NowPeekU32 a5)
     gBlock->hooked_ports = (NowPeekU32)gPortCount;
 }
 
-static void content_install_windowlist(NowPeekU32 a5)
+static void content_install_exact_window(NowPeekU32 a5,
+                                         NowPeekU32 window,
+                                         NowPeekU32 generation)
 {
     WindowPeek w = (WindowPeek)LMGetWindowList();
     short guard = 0;
 
     while (w != NULL && guard < 128) {
-        content_install_port((GrafPtr)w, a5);
+        if ((NowPeekU32)w == window) {
+            content_install_port((GrafPtr)w, a5, generation);
+            return;
+        }
         w = w->nextWindow;
         guard++;
     }
+}
+
+/* Carbon's InvalWindowRect is unavailable to a flat 68K INIT. This is the
+   bounded resident equivalent, used only after the caller proved exact live
+   WindowList membership and that NOW still owns grafProcs. It schedules the
+   application's normal update; it never enters the update loop or draws. */
+static Boolean content_invalidate_window_compat(WindowPtr window)
+{
+    GrafPtr saved = NULL;
+    Rect bounds;
+
+    GetPort(&saved);
+    if (saved == NULL) {
+        return false;
+    }
+    SetPort((GrafPtr)window);
+    bounds = ((GrafPtr)window)->portRect;
+    InvalRect(&bounds);
+    SetPort(saved);
+    return true;
+}
+
+/* Schedule exactly one normal application-owned update. Membership is
+   proven before the stored port is dereferenced. The compatibility shim
+   does not draw, enter an update loop, or inject input; servicing is counted
+   only when a later QuickDraw hook fires. */
+static void content_request_redraw(NowPeekU32 a5, NowPeekU32 window,
+                                   NowPeekU32 generation)
+{
+    WindowPeek head = (WindowPeek)LMGetWindowList();
+    short slot = content_slot_for((GrafPtr)window, a5);
+    GrafPtr port;
+
+    if (slot < 0 || gPorts[slot].a5 != a5
+        || gPorts[slot].generation != generation
+        || gPorts[slot].redraw_requested
+        || !content_port_is_live(gPorts[slot].port, head)) {
+        return;
+    }
+    port = gPorts[slot].port;       /* membership proven above */
+    if (!content_port_is_color(port)
+        || ((CGrafPtr)port)->grafProcs != &gHooks) {
+        return;                      /* no longer our hook, no redraw claim */
+    }
+    if (!content_invalidate_window_compat((WindowPtr)port)) {
+        return;
+    }
+    gPorts[slot].redraw_requested = 1;
+    gBlock->redraw_requested_generation = generation;
+    gBlock->redraw_requests++;
 }
 
 /*
@@ -655,33 +731,31 @@ static void content_uninstall_context(NowPeekU32 a5)
     short i = 0;
 
     while (i < gPortCount) {
+        NowContentLifecycleFacts facts;
+        NowContentU32 actions;
+
         if (gPorts[i].a5 != a5) {
             i++;
             continue;
         }
-        if (content_port_is_live(gPorts[i].port, head)
-            && content_port_is_color(gPorts[i].port)
-            && ((CGrafPtr)gPorts[i].port)->grafProcs == &gHooks) {
+        memset(&facts, 0, sizeof facts);
+        facts.verdict = kNowContentVerdictIdle;
+        facts.current_a5 = a5;
+        facts.has_slot = 1;
+        facts.slot_a5 = gPorts[i].a5;
+        facts.slot_window = (NowPeekU32)gPorts[i].port;
+        facts.slot_generation = gPorts[i].generation;
+        facts.window_live = content_port_is_live(gPorts[i].port, head);
+        if (facts.window_live) {
+            facts.hook_owned = content_port_is_color(gPorts[i].port)
+                && ((CGrafPtr)gPorts[i].port)->grafProcs == &gHooks;
+        }
+        actions = now_content_lifecycle_decide(&facts);
+        if ((actions & kNowContentLifeRestore) != 0) {
             ((CGrafPtr)gPorts[i].port)->grafProcs = gPorts[i].prev;
             gBlock->counters.uninstalls++;
         }
-        content_forget_slot(i);
-    }
-    gBlock->hooked_ports = (NowPeekU32)gPortCount;
-}
-
-/* Forget every row that does not belong to `a5`, WITHOUT dereferencing
-   any of them. This is how rows are reclaimed without a Process Manager
-   call: upstream asked the Process Manager whether an owner still
-   existed, and NOW's resident code does not make that call. Forgetting
-   by value is always safe; the ports themselves are restored, if ever,
-   by their own context. */
-static void content_forget_other_contexts(NowPeekU32 a5)
-{
-    short i = 0;
-
-    while (i < gPortCount) {
-        if (gPorts[i].a5 != a5) {
+        if ((actions & kNowContentLifeForget) != 0) {
             content_forget_slot(i);
         } else {
             i++;
@@ -693,7 +767,8 @@ static void content_forget_other_contexts(NowPeekU32 a5)
 /* Prune rows whose window has closed (by WindowList membership, in the
    owning context), then pick up any new windows. Keeps coverage current
    as the application opens and closes windows without a fresh request. */
-static void content_repair(NowPeekU32 a5)
+static void content_repair(NowPeekU32 a5, NowPeekU32 window,
+                           NowPeekU32 generation)
 {
     WindowPeek head = (WindowPeek)LMGetWindowList();
     short i = 0;
@@ -706,7 +781,7 @@ static void content_repair(NowPeekU32 a5)
             i++;
         }
     }
-    content_install_windowlist(a5);
+    content_install_exact_window(a5, window, generation);
     gBlock->counters.repairs++;
     gBlock->hooked_ports = (NowPeekU32)gPortCount;
 }
@@ -732,6 +807,7 @@ void now_content_gne(NowPeekTable *table)
     NowPeekU32 a5;
     NowPeekU32 ticks;
     NowPeekU32 window_list;
+    NowPeekU32 generation;
     int verdict;
 
     if (gBlock == NULL || table == NULL) {
@@ -749,25 +825,45 @@ void now_content_gne(NowPeekTable *table)
     req.arm_a5 = gBlock->arm_a5;
     req.arm_expiry = gBlock->arm_expiry;
     req.mode = gBlock->mode;
+    req.arm_window = gBlock->arm_window;
+    req.arm_psn_hi = gBlock->arm_psn_hi;
+    req.arm_psn_lo = gBlock->arm_psn_lo;
+    req.arm_generation = gBlock->arm_generation;
     verdict = now_content_arm_verdict(&req, a5, ticks);
 
     switch (verdict) {
     case kNowContentVerdictArmed:
-        if (gArmedA5 != a5) {
-            /* A new target. Forget rows belonging to anyone else first -
-               by value, touching nothing - so a retargeted request cannot
-               inherit the previous target's slots. */
-            content_forget_other_contexts(a5);
+        generation = gBlock->arm_generation;
+        if (gArmedA5 != a5
+            || gBlock->active_window != gBlock->arm_window
+            || gBlock->active_generation != generation) {
+            /* A new identity. Restore/forget same-context rows now. Foreign
+               rows stay until THEIR owning context pumps: forgetting them
+               here would make safe restoration impossible. Their hooks are
+               strict pass-through because gArmedA5 already changes below. */
+            content_uninstall_context(a5);
             gArmedA5 = a5;
             gBlock->counters.arms++;
             gLastWindowList = 0;      /* force the first repair */
+            gBlock->display_epoch++;
+            if (gBlock->display_epoch == 0) {
+                gBlock->display_epoch = 1;
+            }
+            gBlock->redraw_requested_generation = 0;
+            gBlock->redraw_serviced_generation = 0;
         }
         gArmedMode = gBlock->mode;
         gBlock->active_a5 = a5;
         gBlock->active_mode = gArmedMode;
+        gBlock->active_window = gBlock->arm_window;
+        gBlock->active_psn_hi = gBlock->arm_psn_hi;
+        gBlock->active_psn_lo = gBlock->arm_psn_lo;
+        gBlock->active_generation = generation;
         table->arm_active |= (NowPeekU32)kNowPeekTableCapContent;
 
-        content_install_windowlist(a5);
+        content_install_exact_window(a5, gBlock->active_window,
+                                     generation);
+        content_request_redraw(a5, gBlock->active_window, generation);
         window_list = (NowPeekU32)LMGetWindowList();
         /* A WindowList head change catches opens and head closes at once;
            the half-second sweep catches non-head closes without charging
@@ -775,7 +871,7 @@ void now_content_gne(NowPeekTable *table)
            is TickCount-wrap safe. */
         if (window_list != gLastWindowList
             || ticks - gLastRepairTicks >= 30UL) {
-            content_repair(a5);
+            content_repair(a5, gBlock->active_window, generation);
             gLastWindowList = (NowPeekU32)LMGetWindowList();
             gLastRepairTicks = ticks;
         }
@@ -795,6 +891,8 @@ void now_content_gne(NowPeekTable *table)
         gArmedMode = kNowContentModeOff;
         gBlock->active_a5 = 0;
         gBlock->active_mode = kNowContentModeOff;
+        gBlock->active_window = 0;
+        gBlock->active_generation = 0;
         content_uninstall_context(a5);
         break;
 
@@ -812,6 +910,8 @@ void now_content_gne(NowPeekTable *table)
         gArmedMode = kNowContentModeOff;
         gBlock->active_a5 = 0;
         gBlock->active_mode = kNowContentModeOff;
+        gBlock->active_window = 0;
+        gBlock->active_generation = 0;
         content_uninstall_context(a5);
         break;
 
@@ -821,6 +921,8 @@ void now_content_gne(NowPeekTable *table)
             gArmedMode = kNowContentModeOff;
             gBlock->active_a5 = 0;
             gBlock->active_mode = kNowContentModeOff;
+            gBlock->active_window = 0;
+            gBlock->active_generation = 0;
         }
         if ((table->arm_active & (NowPeekU32)kNowPeekTableCapContent) != 0
             && gPortCount == 0) {
@@ -924,7 +1026,7 @@ void now_content_boot(NowPeekTable *table)
     if (block == NULL) {
         return;                       /* degrade to absent, honestly */
     }
-    block->format = kNowContentFormatV1;
+    block->format = kNowContentFormatV2;
     block->reserved = 0;
     block->length = (NowPeekU32)sizeof(NowContentBlock);
     block->ring_cap = (NowPeekU32)kNowContentRingCap;
