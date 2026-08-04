@@ -171,6 +171,27 @@ gate tooling, and live shadow parity; U5 read cutover, FIFO mutation, the
 direct native input/pixel campaign, guest build, and staged VM remain open.
 The live C26 Mirror and VM were deliberately left untouched.
 
+### STATE ENGINE U4D: ORACLE CAPTURES ARE EXPLICIT AND IDENTITY-BOUND (2026-08-04)
+
+`tools/shot` no longer guesses the newest `run/*/qmp.sock`. Each framebuffer
+capture requires an explicit socket and a versioned oracle-identity artifact
+that names the guest, exact connection session, guest build, QEMU VM name, and
+socket. The helper verifies QMP `query-name` before `screendump` and emits a
+capture sidecar with the same identity and capture timestamp.
+
+The UX evidence gate requires that sidecar, joins its guest/session to the
+engine state artifact, and rejects wrong build, VM, socket, frame, timestamp,
+or missing sidecar. QMP remains observation-only; none of this supplies input
+provenance. Twenty-eight scored-evidence tests and five shot-helper tests pass.
+The socket-discovery guard was mutation-watched: restoring an implicit `find`
+path failed the named test, then the explicit refusal was restored.
+
+This is a **tested tooling checkpoint**, not a direct sweep. The operator still
+has to create the identity artifact from the pinned live session, and a scored
+row still needs native Mirror keyboard/mouse input, Mirror pixels, state,
+operation settlement, both logs, stable generations, and human visual review.
+The retained VM and Mirror were not touched.
+
 ## CONTRACT FROZEN; UNIFICATION IMPLEMENTATION STILL OPEN (2026-08-03)
 
 The unified NOW Extension prerequisite now starts from a source-derived

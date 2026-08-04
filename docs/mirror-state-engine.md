@@ -191,3 +191,11 @@ legacy `MirrorApp` retains that adapter only as isolated development tooling.
 NOW's acceptance campaign uses QMP read-only for explicit-socket framebuffer
 capture and identity checks; native Mirror keyboard/mouse input remains the
 only mutation provenance eligible for a green row.
+
+`tools/shot` no longer scans `run/*` or chooses a newest socket. It requires an
+explicit QMP socket and a `now-mirror-oracle-identity/v1` artifact, verifies
+the QEMU VM name, and emits a `now-mirror-oracle-capture/v1` sidecar carrying
+the asserted guest, connection session, guest build, VM, socket, frame path,
+and capture time. The UX evidence gate joins that artifact to the engine state
+guest/session and the manifest's build/VM/socket. A mismatched or absent
+identity is evidence refusal, not a warning.

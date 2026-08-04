@@ -191,6 +191,7 @@ run_py now-guest-shared semantic_flat_init_source_test.py
 
 echo "== Mirror UX gate =="
 run_py_path tools/mirror-gate-tests/test_mirror_gate_evidence.py
+run_py_path tools/mirror-gate-tests/test_shot_explicit_oracle.py
 run_py_path tools/mirror-gate-tests/test_mirror_parity_inventory.py
 run_py_path tools/mirror-gate-tests/test_legacy_mirror_retirement.py
 run_py_path tools/mirror-gate-tests/test_spin_up_ppc_shutdown.py

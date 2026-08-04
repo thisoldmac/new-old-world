@@ -52,7 +52,17 @@ class MirrorGateEvidenceTests(unittest.TestCase):
         (self.evidence_dir / "guest.ppm").write_text("guest pixels\n")
         (self.evidence_dir / "scene.json").write_text(json.dumps(
             {"snapshotId": "snapshot-7", "sceneGeneration": 17,
-             "contentGeneration": 9}))
+             "contentGeneration": 9, "guest": "mac99",
+             "session": "session-7"}))
+        (self.evidence_dir / "guest.oracle.json").write_text(json.dumps({
+            "schema": "now-mirror-oracle-capture/v1",
+            "source": "qmp-screendump",
+            "capturedAt": "2026-08-03T16:00:01Z",
+            "path": str(self.evidence_dir / "guest.ppm"),
+            "guest": "mac99", "session": "session-7",
+            "build": "build-abc", "vmName": "Fixture VM",
+            "qmpSocket": "/private/tmp/fixture/qmp.sock",
+        }))
         (self.evidence_dir / "plane.json").write_text(json.dumps(
             {"snapshotId": "snapshot-7", "ownerEpoch": 4,
              "planes": {"structure": "active", "semantics": "active",
@@ -87,6 +97,10 @@ class MirrorGateEvidenceTests(unittest.TestCase):
             "guest": {
                 "path": "guest.ppm", "source": "qmp-screendump",
                 "capturedAt": "2026-08-03T16:00:01Z",
+                "identityPath": "guest.oracle.json",
+                "guest": "mac99", "session": "session-7",
+                "build": "build-abc", "vmName": "Fixture VM",
+                "qmpSocket": "/private/tmp/fixture/qmp.sock",
             },
             "state": {"path": "scene.json", "snapshotId": "snapshot-7"},
             "plane": {"path": "plane.json", "snapshotId": "snapshot-7"},
@@ -219,13 +233,41 @@ class MirrorGateEvidenceTests(unittest.TestCase):
         self.assert_refused(result, "guestLog.operationId must match")
 
     def test_the_pair_must_be_captured_at_the_same_settled_moment(self):
-        result = self.score(self.manifest(
-            guest__capturedAt="2026-08-03T16:00:03Z"))
+        manifest = self.manifest(
+            guest__capturedAt="2026-08-03T16:00:03Z")
+        capture = json.loads(
+            (self.evidence_dir / "guest.oracle.json").read_text())
+        capture["capturedAt"] = "2026-08-03T16:00:03Z"
+        (self.evidence_dir / "guest.oracle.json").write_text(
+            json.dumps(capture))
+        result = self.score(manifest)
         self.assert_refused(result, "not the same settled moment")
 
     def test_qmp_is_observation_only_and_is_named_as_the_guest_source(self):
         result = self.score(self.manifest(guest__source="mirror-screenshot"))
         self.assert_refused(result, "guest.source must be qmp-screendump")
+
+    def test_guest_identity_must_match_the_state_session(self):
+        result = self.score(self.manifest(guest__session="another-session"))
+        self.assert_refused(result, "guest session must match state artifact")
+
+    def test_guest_build_must_match_the_oracle_capture(self):
+        result = self.score(self.manifest(guest__build="another-build"))
+        self.assert_refused(result, "guest build must match oracle capture")
+
+    def test_oracle_capture_sidecar_is_required(self):
+        result = self.score(self.manifest(guest__identityPath="missing.json"))
+        self.assert_refused(result, "guest.identityPath does not exist")
+
+    def test_oracle_capture_requires_an_explicit_socket(self):
+        manifest = self.manifest()
+        capture = json.loads(
+            (self.evidence_dir / "guest.oracle.json").read_text())
+        capture["qmpSocket"] = "qmp.sock"
+        (self.evidence_dir / "guest.oracle.json").write_text(
+            json.dumps(capture))
+        result = self.score(manifest)
+        self.assert_refused(result, "absolute explicit QMP socket")
 
     def test_the_mirror_frame_is_named_as_the_window_under_test(self):
         result = self.score(self.manifest(mirror__source="guest-framebuffer"))

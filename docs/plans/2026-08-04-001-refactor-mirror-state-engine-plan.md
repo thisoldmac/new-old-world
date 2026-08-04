@@ -377,9 +377,11 @@ U3 records every mandatory preflight transition against this matrix. U5 cutover 
 
 **Checkpoint 2026-08-04:** Same-sequence render enrichment, app-owned frame
 export, the separate `MirrorOracleKit` executable adapter, and platform-neutral
-production target/action vocabulary are implemented and focused-tested. The
-remaining U4 work is producer-owned content epochs/coverage, the correlated
-gate manifest and stability-sandwich tooling, and live shadow-parity evidence.
+production target/action vocabulary are implemented and focused-tested.
+Explicit-socket oracle capture and guest/session/build identity joins are also
+implemented and mutation-watched. The remaining U4 work is producer-owned
+content epochs/coverage, any missing operation/log export joins, and live
+stability-sandwich shadow-parity evidence.
 
 **Goal:** Make all render-bearing producers converge through the same replica and emit the evidence required by the strict gate.
 

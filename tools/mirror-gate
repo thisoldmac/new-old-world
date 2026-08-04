@@ -434,6 +434,12 @@ def load_evidence(path, rid):
     guest_log = manifest["guestLog"]
     for section in (mirror, guest):
         evidence_file(path, section)
+    oracle_capture_path = evidence_file(path, guest, "identityPath")
+    try:
+        with open(oracle_capture_path) as handle:
+            oracle_capture = json.load(handle)
+    except (OSError, ValueError) as exc:
+        die("evidence guest.identityPath is not readable JSON: %s" % exc)
     state_artifact = evidence_json(path, state)
     plane_artifact = evidence_json(path, plane)
     operation_artifact = evidence_json(path, operation)
@@ -454,6 +460,29 @@ def load_evidence(path, rid):
         die("evidence plane artifact must contain mirror.snapshotId")
     if not isinstance(plane_artifact.get("planes"), dict):
         die("evidence plane artifact must contain plane state")
+
+    if oracle_capture.get("schema") != "now-mirror-oracle-capture/v1":
+        die("evidence guest oracle capture has the wrong schema")
+    if oracle_capture.get("source") != "qmp-screendump":
+        die("evidence guest oracle capture must be a QMP screendump")
+    oracle_frame = oracle_capture.get("path")
+    manifest_frame = evidence_file(path, guest)
+    if not isinstance(oracle_frame, str) \
+            or os.path.realpath(oracle_frame) != os.path.realpath(manifest_frame):
+        die("evidence guest frame must match the oracle capture sidecar")
+    for field in ("guest", "session", "build", "vmName", "qmpSocket"):
+        if not isinstance(oracle_capture.get(field), str) \
+                or not oracle_capture[field]:
+            die("evidence guest oracle capture requires non-empty %s" % field)
+    if guest.get("guest") != state_artifact.get("guest"):
+        die("evidence guest identity must match state artifact")
+    if guest.get("session") != state_artifact.get("session"):
+        die("evidence guest session must match state artifact")
+    if not os.path.isabs(oracle_capture["qmpSocket"]):
+        die("evidence oracle capture requires an absolute explicit QMP socket")
+    for field in ("guest", "session", "build", "vmName", "qmpSocket"):
+        if guest.get(field) != oracle_capture.get(field):
+            die("evidence guest %s must match oracle capture" % field)
 
     operation_id = operation.get("id")
     if not isinstance(operation_id, str) or not operation_id:
@@ -521,6 +550,10 @@ def load_evidence(path, rid):
 
     mirror_at = parse_iso(mirror.get("capturedAt"), "mirror.capturedAt")
     guest_at = parse_iso(guest.get("capturedAt"), "guest.capturedAt")
+    oracle_at = parse_iso(oracle_capture.get("capturedAt"),
+                          "guest oracle capturedAt")
+    if oracle_at != guest_at:
+        die("evidence guest timestamp must match oracle capture sidecar")
     if abs((mirror_at - guest_at).total_seconds()) \
             > EVIDENCE_CAPTURE_SLOP_SECONDS:
         die("Mirror and guest captures are not the same settled moment "

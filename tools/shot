@@ -1,23 +1,123 @@
 #!/bin/sh
-# The paired screendump, in one command, because rule 2a asks for one
-# beside EVERY mirror assessment and friction is what stops that
-# happening. Writes a PNG and prints its path.
+# Capture the guest framebuffer from one explicitly identified development
+# oracle. QMP observes pixels only; it is never an input route.
 #
-#     tools/shot d15-r1-move
+#   tools/shot --qmp /path/qmp.sock --identity oracle-identity.json d15-r1
+#
+# The identity file is produced for the active verification session and uses:
+#   {"schema":"now-mirror-oracle-identity/v1","guest":"mac99",
+#    "session":"...","build":"...","vmName":"NOW U7",
+#    "qmpSocket":"/absolute/path/qmp.sock"}
 set -eu
+
+usage() {
+    echo "usage: tools/shot --qmp SOCKET --identity IDENTITY_JSON [name]" >&2
+    exit 2
+}
+
+qmp_socket=
+identity_file=
+name=shot
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --qmp)
+            [ "$#" -ge 2 ] || usage
+            qmp_socket=$2
+            shift 2
+            ;;
+        --identity)
+            [ "$#" -ge 2 ] || usage
+            identity_file=$2
+            shift 2
+            ;;
+        --help|-h) usage ;;
+        --*) echo "unknown option: $1" >&2; usage ;;
+        *)
+            [ "$name" = shot ] || usage
+            name=$1
+            shift
+            ;;
+    esac
+done
+[ -n "$qmp_socket" ] || { echo "--qmp is required; socket discovery is forbidden" >&2; exit 2; }
+[ -n "$identity_file" ] || { echo "--identity is required; guest/build identity must be asserted" >&2; exit 2; }
+[ -e "$qmp_socket" ] || { echo "no QMP socket at $qmp_socket" >&2; exit 1; }
+[ -f "$identity_file" ] || { echo "no oracle identity at $identity_file" >&2; exit 1; }
+
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 now=$(dirname "$here")
 lab="$now"
 while [ "$lab" != / ] && [ ! -f "$lab/tools/lib.sh" ]; do lab=$(dirname "$lab"); done
 [ -f "$lab/tools/lib.sh" ] || { echo "no lab checkout above $now" >&2; exit 1; }
 
-sock=$(ls -t "$now"/run/*/qmp.sock 2>/dev/null | head -1)
-[ -n "$sock" ] || { echo "no VM: no run/*/qmp.sock under $now" >&2; exit 1; }
+expected_vm=$(python3 - "$identity_file" "$qmp_socket" <<'PY'
+import json
+import os
+import sys
+
+path, supplied_socket = sys.argv[1:]
+try:
+    with open(path, encoding="utf-8") as handle:
+        identity = json.load(handle)
+except (OSError, ValueError) as exc:
+    raise SystemExit(f"oracle identity is not readable JSON: {exc}")
+if identity.get("schema") != "now-mirror-oracle-identity/v1":
+    raise SystemExit("oracle identity has the wrong schema")
+for field in ("guest", "session", "build", "vmName", "qmpSocket"):
+    if not isinstance(identity.get(field), str) or not identity[field]:
+        raise SystemExit(f"oracle identity requires non-empty {field}")
+if os.path.realpath(identity["qmpSocket"]) != os.path.realpath(supplied_socket):
+    raise SystemExit("explicit QMP socket does not match oracle identity")
+print(identity["vmName"])
+PY
+)
+
+query=$($lab/tools/qmp "$qmp_socket" query-name)
+python3 - "$expected_vm" "$query" <<'PY'
+import json
+import sys
+
+expected, raw = sys.argv[1:]
+try:
+    actual = json.loads(raw)["return"]["name"]
+except (KeyError, TypeError, ValueError) as exc:
+    raise SystemExit(f"QMP query-name returned no usable identity: {exc}")
+if actual != expected:
+    raise SystemExit(f"QMP VM identity mismatch: expected {expected!r}, got {actual!r}")
+PY
 
 out="${NOW_SHOT_DIR:-${TMPDIR:-/tmp}}/mirror-shots"
 mkdir -p "$out"
-name="${1:-shot}"
-"$lab/tools/qmp" "$sock" screendump "{\"filename\":\"$out/$name.ppm\"}" >/dev/null
-sips -s format png "$out/$name.ppm" --out "$out/$name.png" >/dev/null
-rm -f "$out/$name.ppm"
-echo "$out/$name.png"
+ppm="$out/$name.ppm"
+png="$out/$name.png"
+sidecar="$out/$name.oracle.json"
+"$lab/tools/qmp" "$qmp_socket" screendump "{\"filename\":\"$ppm\"}" >/dev/null
+sips -s format png "$ppm" --out "$png" >/dev/null
+rm -f "$ppm"
+
+python3 - "$identity_file" "$qmp_socket" "$png" "$sidecar" <<'PY'
+from datetime import datetime, timezone
+import json
+import os
+import sys
+
+identity_path, socket_path, png_path, sidecar_path = sys.argv[1:]
+with open(identity_path, encoding="utf-8") as handle:
+    identity = json.load(handle)
+artifact = {
+    "schema": "now-mirror-oracle-capture/v1",
+    "source": "qmp-screendump",
+    "capturedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    "path": os.path.abspath(png_path),
+    "guest": identity["guest"],
+    "session": identity["session"],
+    "build": identity["build"],
+    "vmName": identity["vmName"],
+    "qmpSocket": os.path.abspath(socket_path),
+}
+with open(sidecar_path, "w", encoding="utf-8") as handle:
+    json.dump(artifact, handle, indent=2, sort_keys=True)
+    handle.write("\n")
+PY
+
+echo "$png"

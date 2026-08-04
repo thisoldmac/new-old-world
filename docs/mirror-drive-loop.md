@@ -206,7 +206,9 @@ the row and correlates six independently useful records:
 - `mirror`: the Mirror-rendered frame, displayed `snapshotId`, and capture
   time, with `source: now-mirror-window`.
 - `guest`: the QMP screendump used only as the independent oracle, its
-  capture time, and `source: qmp-screendump`.
+  capture time, `source: qmp-screendump`, and the identity sidecar emitted by
+  `tools/shot`. The sidecar binds an explicit absolute socket and QEMU VM name
+  to the guest, connection session, and guest build asserted for the sweep.
 - `state`: the decoded post-action state for the same `snapshotId`.
 - `operation`: the human-attributed operation record and its ID.
 - `guestLog`: the guest log evidence naming that operation ID.
@@ -215,6 +217,19 @@ Every referenced file must exist. Mirror and guest captures must be within
 five seconds, the state must name the displayed snapshot, and the log must
 name the operation. A screenshot pair without keyboard/mouse provenance,
 state, operation, and logs is useful evidence but cannot score a UX row.
+
+Capture the oracle only by explicit identity; newest-socket discovery is a
+hard refusal because another worktree's VM can otherwise answer:
+
+    tools/shot --qmp /private/tmp/now-session/qmp.sock \
+        --identity docs/local/evidence/oracle-identity.json c27-r3-date-time
+
+The identity file uses schema `now-mirror-oracle-identity/v1` and carries
+non-empty `guest`, `session`, `build`, `vmName`, and absolute `qmpSocket`
+fields. `tools/shot` verifies `query-name`, writes the PNG, and writes a sibling
+`*.oracle.json` capture artifact. The scored-row manifest's `guest.identityPath`
+must name that artifact; its guest/session must match the state artifact, and
+its build, VM, socket, timestamp, and frame path must match the manifest.
 
 ---
 
