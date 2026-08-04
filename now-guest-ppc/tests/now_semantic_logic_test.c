@@ -22,14 +22,22 @@ static void check(int condition, const char *message)
 static NowPeekU32 classify_control(void *context,
                                    NowPeekU32 window,
                                    NowPeekU32 control,
-                                   NowPeekU16 *kind)
+                                   NowPeekU16 *kind,
+                                   unsigned char *text,
+                                   NowPeekU16 capacity,
+                                   NowPeekU16 *length,
+                                   NowPeekU32 *flags)
 {
     Fixture *fixture = (Fixture *)context;
+    const char *value = "8/4/2026";
 
     if (window != 0x20 || control != 0x30)
         return kNowPeekSemanticStatusWrongTarget;
     *kind = fixture->custom ? kNowPeekSemanticControlCustom
-                            : kNowPeekSemanticControlStandard;
+                            : kNowPeekSemanticControlClock;
+    *length = (NowPeekU16)strlen(value);
+    memcpy(text, value, *length < capacity ? *length : capacity);
+    *flags = 0;
     return fixture->custom ? kNowPeekSemanticStatusUnsupportedCustom
                            : kNowPeekSemanticStatusOk;
 }
@@ -41,7 +49,11 @@ static NowPeekU32 list_bounds(void *context,
                               NowPeekU16 *columns)
 {
     NowPeekU16 kind;
-    NowPeekU32 status = classify_control(context, window, control, &kind);
+    unsigned char text[kNowPeekSemanticTextMax];
+    NowPeekU16 length = 0;
+    NowPeekU32 flags = 0;
+    NowPeekU32 status = classify_control(context, window, control, &kind,
+                                         text, sizeof text, &length, &flags);
 
     if (status != kNowPeekSemanticStatusOk) return status;
     *rows = 2;
@@ -147,6 +159,17 @@ int main(void)
           "Date & Time list-shaped fixture");
     check(cell.records[1].flags & kNowPeekSemanticRecordSelected,
           "selection carried");
+
+    make_request(&cell, kNowPeekSemanticOpControlClass);
+    now_semantic_resolve(&cell, 101, &source);
+    check(cell.response_status == kNowPeekSemanticStatusOk
+              && cell.response_record_count == 1
+              && cell.records[0].aux == kNowPeekSemanticControlClock
+              && cell.records[0].text_copied == 8
+              && (cell.records[0].flags
+                  & kNowPeekSemanticRecordTextComplete) != 0
+              && memcmp(cell.records[0].text, "8/4/2026", 8) == 0,
+          "typed control description carries bounded guest value");
 
     fixture.custom = 1;
     make_request(&cell, kNowPeekSemanticOpControlClass);

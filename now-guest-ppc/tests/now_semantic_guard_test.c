@@ -24,7 +24,7 @@ static void ready_table(NowPeekTable *table)
     table->length = sizeof(*table);
     table->caps = kNowPeekTableCapTree;
     table->arm_active = kNowPeekTableCapTree;
-    table->semantic_format = kNowPeekSemanticFormatV1;
+    table->semantic_format = kNowPeekSemanticFormatV2;
     table->semantic_length = sizeof(table->semantic);
     table->writer.resident_owner_epoch = 77;
     cell = &table->semantic;
@@ -74,6 +74,8 @@ int main(void)
 
     check(kNowPeekSemanticMaxRecords == 32,
           "P2 envelope covers the measured 16-row Finder Apple menu");
+    check(kNowPeekSemanticFormatV2 == 2,
+          "P2 v2 identifies typed control descriptions");
     check(sizeof(NowPeekSemanticRecord) == 48
               && kNowPeekSemanticTextMax == 32,
           "P2 record and text byte budgets stay frozen");

@@ -381,7 +381,7 @@ void _start(void)
     table->identity.build_fingerprint[4] = NOW_EXT_BUILD_FINGERPRINT_4;
     table->writer_format = kNowPeekWriterFormatV1;
     table->writer_length = (NowPeekU16)sizeof table->writer;
-    table->semantic_format = kNowPeekSemanticFormatV1;
+    table->semantic_format = kNowPeekSemanticFormatV2;
     table->semantic_length = (NowPeekU16)sizeof table->semantic;
     /* Magic last: a reader that somehow sees the address early finds it
        only once the table is fully formed. */

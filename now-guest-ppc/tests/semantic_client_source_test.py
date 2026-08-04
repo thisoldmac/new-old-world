@@ -12,6 +12,6 @@ assert "offer(30, kNowPeekSemanticOpSystemMenu" in client
 assert "Unsupported custom control" in client
 assert "System menu unavailable" in client
 assert "now_semantic_client_begin" in collect and "now_semantic_client_aim" in collect
-assert "source.kind == kNowAxDialogResourceControl" in walk
 assert "now_semantic_client_join_control" in walk and "now_semantic_client_join_menu" in walk
+assert walk.index("now_semantic_client_join_control") < walk.index("walk_dialog_items")
 print("semantic client scheduling/join source guard: ok")

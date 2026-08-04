@@ -64,11 +64,13 @@ that producer: `ext/src/now_semantic.c` rejects a list box when its LDEF is
 nonzero. The guest framebuffer proves that Mac OS has the rows; the Mirror's
 hatched list proves the structured producer does not yet expose them.
 
-The next production question is therefore bounded: determine whether the
-control's public `kControlListBoxListHandleTag` yields a valid List Manager
-record even with a custom drawing LDEF, then widen the NOW Extension's generic
-read-only list contract if the public record invariants hold. Do not add a
-Date & Time resource-ID special case and do not pipe the guest pixels.
+The first production patch now follows that bounded route: the extension
+classifies with public `kControlKindTag`, requires an Apple list-box kind, and
+then asks for `kControlListBoxListHandleTag` without treating a nonzero drawing
+LDEF as refusal. It contains no Date & Time resource-ID special case and pipes
+no guest pixels. This is cross-built and native-tested, but remains a
+hypothesis until the rebuilt INIT is cold-loaded and the same live control
+returns its rows.
 
 ## First cross-application inventory
 
@@ -85,12 +87,13 @@ control can receive the same status.
 | Sherlock 2 | one custom-kind window, 35 controls | channel strip, search-site rows, result panes, labels, and icons largely absent; only structural shells survive | mixed standard controls, edit field, list-like controls, application-defined controls, and deferred assets |
 | Key Caps | two windows, zero controls | keyboard face absent; only a content-unavailable shell appears | application QuickDraw, not a missing Control Manager semantic |
 
-The first extension batch must therefore be class-based. It should inventory
-and support public Mac OS control kinds/data tags across both Date & Time and
-Sherlock, retaining an explicit unsupported record for private structures. It
-must not turn each application or resource ID into a new semantic operation.
-Key Caps instead needs a meaningful structured unavailable placeholder while
-pixel/content transport remains out of scope.
+The first extension batch is therefore class-based. It inventories public Mac
+OS control kinds/data tags across both Date & Time and Sherlock, retains an
+explicit unsupported record for private structures, and expands the compact
+class cache so all 35 Sherlock controls can settle. It does not turn each
+application or resource ID into a new semantic operation. Key Caps instead
+uses the existing meaningful whole-content unavailable placeholder because its
+two windows expose no controls; pixel/content transport remains out of scope.
 
 The paired artifacts for this run are under
 `/private/tmp/now-u7-extension-only/`: `f214af2-*-mirror.jpeg`,

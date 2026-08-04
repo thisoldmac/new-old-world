@@ -97,6 +97,7 @@ void now_semantic_client_join_control(NowScene *scene, int window, int index,
     NowSemanticControlFact fact;
     unsigned int i;
     int complete;
+    const char *role = NULL;
 
     if (!now_semantic_policy_control(
             &g_policy, g_a5, window_ptr, control, &fact)) {
@@ -110,13 +111,49 @@ void now_semantic_client_join_control(NowScene *scene, int window, int index,
         return;
     }
     if (fact.class_status != kNowPeekSemanticStatusOk
-        || fact.class_kind != kNowPeekSemanticControlStandard) {
+        && fact.class_status != kNowPeekSemanticStatusTruncated
+        && fact.class_status != kNowPeekSemanticStatusUnsupported) {
         now_scene_set_control_semantic_value(
             scene, window, index, "Semantic classification unavailable");
         return;
     }
 
-    now_scene_set_control_role(scene, window, index, "listBox");
+    switch (fact.class_kind) {
+    case kNowPeekSemanticControlListBox: role = "listBox"; break;
+    case kNowPeekSemanticControlClock: role = "edit"; break;
+    case kNowPeekSemanticControlGroupBox: role = "group"; break;
+    case kNowPeekSemanticControlEditText: role = "edit"; break;
+    case kNowPeekSemanticControlStaticText: role = "static"; break;
+    case kNowPeekSemanticControlWindowHeader: role = "header"; break;
+    case kNowPeekSemanticControlPushButton: role = "button"; break;
+    case kNowPeekSemanticControlCheckBox: role = "checkbox"; break;
+    case kNowPeekSemanticControlRadioButton: role = "radio"; break;
+    case kNowPeekSemanticControlPopupButton: role = "popup"; break;
+    case kNowPeekSemanticControlScrollBar: role = "scrollbar"; break;
+    case kNowPeekSemanticControlDataBrowser: role = "dataBrowser"; break;
+    case kNowPeekSemanticControlUserPane: role = "userPane"; break;
+    case kNowPeekSemanticControlImageWell: role = "imageWell"; break;
+    default: role = "systemControl"; break;
+    }
+    now_scene_set_control_role(scene, window, index, role);
+    if (fact.class_value_length != 0) {
+        char value[kNowPeekSemanticTextMax + 1];
+        memcpy(value, fact.class_value, fact.class_value_length);
+        value[fact.class_value_length] = '\0';
+        now_scene_set_control_semantic_value(scene, window, index, value);
+    } else if (fact.class_status == kNowPeekSemanticStatusUnsupported) {
+        now_scene_set_control_semantic_value(
+            scene, window, index, "Structured value unavailable");
+    } else if (fact.class_kind == kNowPeekSemanticControlDataBrowser) {
+        now_scene_set_control_semantic_value(
+            scene, window, index, "Data browser content unavailable");
+    } else if (fact.class_kind == kNowPeekSemanticControlUserPane
+               || fact.class_kind == kNowPeekSemanticControlImageWell) {
+        now_scene_set_control_semantic_value(
+            scene, window, index, "Visual content unavailable");
+    }
+
+    if (fact.class_kind != kNowPeekSemanticControlListBox) return;
     if (fact.list_status == kNowPeekSemanticStatusNone) {
         offer(20, kNowPeekSemanticOpListCells, window_ptr, control, 0);
     } else if (fact.list_status == kNowPeekSemanticStatusOk

@@ -63,7 +63,7 @@ static int plane_format_compatible(const NowPeekTable *table,
         return format >= kNowPeekAnchorFormatV1
             && format <= kNowPeekAnchorFormatV3;
     case kMirrorPlaneSemantics:
-        return format == kNowPeekSemanticFormatV1;
+        return format == kNowPeekSemanticFormatV2;
     case kMirrorPlaneContent:
         return format == kNowContentFormatV2;
     case kMirrorPlaneInteraction:

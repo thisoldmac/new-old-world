@@ -24,10 +24,30 @@ static void resolve_control(NowPeekSemanticCell *cell,
 {
     NowPeekSemanticRecord *record;
     NowPeekU16 kind = kNowPeekSemanticControlUnknown;
-    NowPeekU32 status = source->classify_control(
-        source->ctx, cell->request_window, cell->request_object, &kind);
+    NowPeekU16 true_length = 0;
+    NowPeekU32 flags = 0;
+    NowPeekU32 status;
+
     record = add_record(cell, kNowPeekSemanticRecordControlClass, 0, kind);
-    if (record != NULL) record->status = (NowPeekU16)status;
+    if (record == NULL) {
+        cell->response_status = kNowPeekSemanticStatusTruncated;
+        return;
+    }
+    status = source->classify_control(
+        source->ctx, cell->request_window, cell->request_object, &kind,
+        record->text, kNowPeekSemanticTextMax, &true_length, &flags);
+    record->aux = kind;
+    record->status = (NowPeekU16)status;
+    record->text_length = true_length;
+    record->text_copied = true_length > kNowPeekSemanticTextMax
+                        ? kNowPeekSemanticTextMax : true_length;
+    record->flags = flags;
+    if (true_length <= kNowPeekSemanticTextMax) {
+        record->flags |= kNowPeekSemanticRecordTextComplete;
+    } else if (status == kNowPeekSemanticStatusOk) {
+        status = kNowPeekSemanticStatusTruncated;
+        record->status = (NowPeekU16)status;
+    }
     cell->response_total_count = 1;
     cell->response_status = status;
 }

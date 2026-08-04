@@ -61,10 +61,14 @@ int main(void)
     cell.response_status = kNowPeekSemanticStatusOk;
     cell.response_record_count = 1;
     cell.records[0].aux = kNowPeekSemanticControlStandard;
+    cell.records[0].text_copied = 8;
+    memcpy(cell.records[0].text, "8/4/2026", 8);
     now_semantic_policy_begin(&policy, 7, 3);
     now_semantic_policy_ingest(&policy, &cell);
     check(now_semantic_policy_control(&policy, 1, 2, 3, &control) &&
               control.class_kind == kNowPeekSemanticControlStandard &&
+              control.class_value_length == 8 &&
+              memcmp(control.class_value, "8/4/2026", 8) == 0 &&
               control.list_status == 0,
           "scene 3 advances class to list request");
 
@@ -143,6 +147,30 @@ int main(void)
     now_semantic_policy_ingest(&policy, &cell);
     check(!now_semantic_policy_control(&policy, 1, 2, 4, &control),
           "old response cannot bypass policy freshness");
+
+    /* Sherlock has 35 controls. A compact, long-lived class cache must reach
+       the last without expiring the first and restarting forever. */
+    memset(&policy, 0, sizeof(policy));
+    now_semantic_policy_begin(&policy, 7, 1);
+    {
+        int i;
+        for (i = 0; i < 35; ++i) {
+            make_response(&cell, (NowPeekU32)(i + 1),
+                          kNowPeekSemanticOpControlClass,
+                          (NowPeekU32)(100 + i));
+            cell.response_status = kNowPeekSemanticStatusOk;
+            cell.response_record_count = 1;
+            cell.records[0].aux = kNowPeekSemanticControlWindowHeader;
+            now_semantic_policy_begin(&policy, 7, (NowPeekU32)(i + 2));
+            now_semantic_policy_ingest(&policy, &cell);
+        }
+    }
+    check(now_semantic_policy_control(&policy, 1, 2, 100, &control)
+              && control.class_kind
+                    == kNowPeekSemanticControlWindowHeader,
+          "35-control window retains its first typed control");
+    check(now_semantic_policy_control(&policy, 1, 2, 134, &control),
+          "35-control window reaches its last typed control");
 
     if (g_failures != 0) return 1;
     puts("semantic policy: terminal menu -> class -> list -> next control");

@@ -346,6 +346,13 @@ static const char *control_kind(const char *role)
     if (strcmp(role, "progress") == 0) return "progressIndicator";
     if (strcmp(role, "triangle") == 0) return "disclosureTriangle";
     if (strcmp(role, "listBox") == 0) return "listBox";
+    if (strcmp(role, "edit") == 0) return "editText";
+    if (strcmp(role, "static") == 0) return "staticText";
+    if (strcmp(role, "header") == 0) return "columnHeader";
+    if (strcmp(role, "dataBrowser") == 0) return "dataBrowser";
+    if (strcmp(role, "userPane") == 0) return "userPane";
+    if (strcmp(role, "imageWell") == 0) return "imageWell";
+    if (strcmp(role, "systemControl") == 0) return "systemControl";
     return "unknown";
 }
 
@@ -374,7 +381,13 @@ static int control_has_value(const char *role)
     return strcmp(role, "popup") == 0
         || strcmp(role, "scrollbar") == 0
         || strcmp(role, "progress") == 0
-        || strcmp(role, "listBox") == 0;
+        || strcmp(role, "listBox") == 0
+        || strcmp(role, "edit") == 0
+        || strcmp(role, "static") == 0
+        || strcmp(role, "dataBrowser") == 0
+        || strcmp(role, "userPane") == 0
+        || strcmp(role, "imageWell") == 0
+        || strcmp(role, "systemControl") == 0;
 }
 
 /* A window's controls, and only for a window whose whole chain was

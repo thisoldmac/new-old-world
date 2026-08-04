@@ -28,14 +28,14 @@ void now_semantic_policy_begin(NowSemanticPolicy *policy, NowPeekU32 owner,
     policy->scene = scene;
 }
 
-static NowSemanticControlFact *control_slot(NowSemanticPolicy *policy,
+static NowSemanticControlClassFact *control_slot(NowSemanticPolicy *policy,
     NowPeekU32 a5, NowPeekU32 window, NowPeekU32 object)
 {
     int i;
     int empty = -1;
 
     for (i = 0; i < kNowSemanticPolicyMaxControls; ++i) {
-        NowSemanticControlFact *fact = &policy->controls[i];
+        NowSemanticControlClassFact *fact = &policy->controls[i];
 
         if (fact->a5 == a5 && fact->window == window
             && fact->object == object) {
@@ -53,6 +53,31 @@ static NowSemanticControlFact *control_slot(NowSemanticPolicy *policy,
     policy->controls[empty].window = window;
     policy->controls[empty].object = object;
     return &policy->controls[empty];
+}
+
+static NowSemanticListFact *list_slot(NowSemanticPolicy *policy,
+    NowPeekU32 a5, NowPeekU32 window, NowPeekU32 object)
+{
+    int i;
+    int empty = -1;
+
+    for (i = 0; i < kNowSemanticPolicyMaxLists; ++i) {
+        NowSemanticListFact *fact = &policy->lists[i];
+
+        if (fact->a5 == a5 && fact->window == window
+            && fact->object == object) {
+            return fact;
+        }
+        if (empty < 0 && !alive(policy->scene, fact->expires_scene)) {
+            empty = i;
+        }
+    }
+    if (empty < 0) empty = 0;
+    memset(&policy->lists[empty], 0, sizeof(policy->lists[empty]));
+    policy->lists[empty].a5 = a5;
+    policy->lists[empty].window = window;
+    policy->lists[empty].object = object;
+    return &policy->lists[empty];
 }
 
 static NowSemanticMenuFact *menu_slot(NowSemanticPolicy *policy,
@@ -110,26 +135,29 @@ void now_semantic_policy_ingest(NowSemanticPolicy *policy,
                fact->record_count * sizeof(cell->records[0]));
         fact->expires_scene = policy->scene + 8;
     } else if (cell->request_op == kNowPeekSemanticOpControlClass) {
-        NowSemanticControlFact *fact = control_slot(
+        NowSemanticControlClassFact *fact = control_slot(
             policy, cell->response_target_a5, cell->response_window,
             cell->response_object);
 
-        fact->class_status = cell->response_status;
-        fact->class_kind = kNowPeekSemanticControlUnknown;
-        fact->list_status = kNowPeekSemanticStatusNone;
-        fact->selected_length = 0;
-        fact->record_count = 0;
-        fact->total_count = 0;
+        fact->status = cell->response_status;
+        fact->kind = kNowPeekSemanticControlUnknown;
+        fact->value_length = 0;
         if (cell->response_record_count != 0) {
-            fact->class_kind = cell->records[0].aux;
+            const NowPeekSemanticRecord *record = &cell->records[0];
+            fact->kind = record->aux;
+            fact->value_length = record->text_copied;
+            memcpy(fact->value, record->text, fact->value_length);
         }
-        fact->expires_scene = policy->scene + 4;
+        /* A class is tied to the exact window/control handles and writer
+           epoch. Keep enough classes for a 64-control window so Sherlock
+           does not expire its first controls before reaching its last. */
+        fact->expires_scene = policy->scene + 128;
     } else if (cell->request_op == kNowPeekSemanticOpListCells) {
-        NowSemanticControlFact *fact = control_slot(
+        NowSemanticListFact *fact = list_slot(
             policy, cell->response_target_a5, cell->response_window,
             cell->response_object);
 
-        fact->list_status = cell->response_status;
+        fact->status = cell->response_status;
         fact->selected_length = 0;
         fact->record_count = cell->response_record_count;
         fact->total_count = cell->response_total_count;
@@ -176,13 +204,38 @@ int now_semantic_policy_control(const NowSemanticPolicy *policy,
     int i;
 
     for (i = 0; i < kNowSemanticPolicyMaxControls; ++i) {
-        const NowSemanticControlFact *fact = &policy->controls[i];
+        const NowSemanticControlClassFact *fact = &policy->controls[i];
 
         if (alive(policy->scene, fact->expires_scene)
             && fact->a5 == a5 && fact->window == window
             && fact->object == control) {
             if (out != NULL) {
-                *out = *fact;
+                int j;
+                memset(out, 0, sizeof(*out));
+                out->a5 = fact->a5;
+                out->window = fact->window;
+                out->object = fact->object;
+                out->expires_scene = fact->expires_scene;
+                out->class_status = fact->status;
+                out->class_kind = fact->kind;
+                out->class_value_length = fact->value_length;
+                memcpy(out->class_value, fact->value, fact->value_length);
+                for (j = 0; j < kNowSemanticPolicyMaxLists; ++j) {
+                    const NowSemanticListFact *list = &policy->lists[j];
+                    if (alive(policy->scene, list->expires_scene)
+                        && list->a5 == a5 && list->window == window
+                        && list->object == control) {
+                        out->list_status = list->status;
+                        out->selected_length = list->selected_length;
+                        memcpy(out->selected, list->selected,
+                               list->selected_length);
+                        out->record_count = list->record_count;
+                        out->total_count = list->total_count;
+                        memcpy(out->records, list->records,
+                               list->record_count * sizeof(list->records[0]));
+                        break;
+                    }
+                }
             }
             return 1;
         }

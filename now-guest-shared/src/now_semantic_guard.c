@@ -20,7 +20,7 @@ int now_semantic_table_ready(volatile const NowPeekTable *table)
         && table->ext_major == kNowPeekExtMajor
         && table->length >= need
         && (table->caps & kNowPeekTableCapTree) != 0
-        && table->semantic_format == kNowPeekSemanticFormatV1
+        && table->semantic_format == kNowPeekSemanticFormatV2
         && table->semantic_length == sizeof(NowPeekSemanticCell);
 }
 

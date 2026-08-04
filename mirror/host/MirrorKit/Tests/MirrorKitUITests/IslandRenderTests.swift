@@ -23,6 +23,8 @@ final class IslandRenderTests: XCTestCase {
         }
 
         XCTAssertFalse(SceneRenderer.semanticOwnsDisplay(control("groupBox")))
+        XCTAssertTrue(SceneRenderer.semanticSupersedesResource(
+            control("groupBox")))
         XCTAssertFalse(SceneRenderer.semanticOwnsDisplay(control("listBox")))
         XCTAssertFalse(SceneRenderer.semanticOwnsDisplay(control("popupMenu")))
         XCTAssertTrue(SceneRenderer.semanticOwnsDisplay(
@@ -159,6 +161,37 @@ final class IslandRenderTests: XCTestCase {
         let inside = try XCTUnwrap(pixel(png, x: r.l + 200, y: r.t + 150))
         XCTAssertFalse(inside.0 == 255 && inside.1 == 255 && inside.2 == 255,
                        "missing guest content needs a visible placeholder")
+    }
+
+    /// Sherlock's data-browser and channel controls are typed even before
+    /// their private payload is understood. That progress must be visible as
+    /// a bounded unavailable region, never another empty dashed shell.
+    func testTypedUnsupportedContentDrawsABoundedPlaceholder() throws {
+        let r = Rect(l: 100, t: 100, r: 500, b: 400)
+        var w = window(title: "Sherlock 2", front: true, z: 0, rect: r,
+                       island: nil)
+        w.display = []
+        w.controls = [.init(
+            ref: "browser", role: "control", title: "",
+            rect: Rect(l: 40, t: 50, r: 300, b: 220),
+            enabled: true, visible: true,
+            semantic: .init(knowledge: .known, kind: "dataBrowser",
+                            value: "Data browser content unavailable",
+                            provenance: "guest-semantic-assist",
+                            completeness: .partial))]
+
+        let png = try RenderShot.png(scene: scene([w]))
+        let contentX = r.l + 1
+        let contentY = r.t + Int(Platinum.contentTop)
+        let inside = try XCTUnwrap(pixel(png, x: contentX + 120,
+                                         y: contentY + 110))
+        let outside = try XCTUnwrap(pixel(png, x: contentX + 20,
+                                          y: contentY + 110))
+        XCTAssertFalse(inside.0 == 255 && inside.1 == 255 && inside.2 == 255,
+                       "typed unsupported content needs a visible placeholder")
+        XCTAssertTrue(outside.0 == 255 && outside.1 == 255
+                        && outside.2 == 255,
+                      "the placeholder must stay inside the guest control")
     }
 
     /// QDPeek deliberately carries only CopyBits geometry. That limitation

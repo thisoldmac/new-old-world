@@ -6,7 +6,10 @@
 typedef struct {
     void *ctx;
     NowPeekU32 (*classify_control)(void *ctx, NowPeekU32 window,
-                                   NowPeekU32 control, NowPeekU16 *kind);
+                                   NowPeekU32 control, NowPeekU16 *kind,
+                                   unsigned char *text, NowPeekU16 cap,
+                                   NowPeekU16 *true_length,
+                                   NowPeekU32 *flags);
     NowPeekU32 (*list_bounds)(void *ctx, NowPeekU32 window,
                               NowPeekU32 control, NowPeekU16 *rows,
                               NowPeekU16 *cols);

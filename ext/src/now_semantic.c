@@ -1,5 +1,6 @@
 #include <ControlDefinitions.h>
 #include <Controls.h>
+#include <DateTimeUtils.h>
 #include <Lists.h>
 #include <LowMem.h>
 #include <MacWindows.h>
@@ -53,15 +54,16 @@ static int live_control(NowPeekU32 window_word, NowPeekU32 control_word)
 static NowPeekU32 list_for_control(NowPeekU32 window, NowPeekU32 control,
                                    ListHandle *list)
 {
-    SInt16 ldef = -1;
+    ControlKind kind;
     Size actual = 0;
     OSErr err;
     if (!live_control(window, control)) return kNowPeekSemanticStatusInvalid;
     err = GetControlData((ControlRef)control, kControlEntireControl,
-                         kControlListBoxLDEFTag, sizeof(ldef), &ldef, &actual);
-    if (err != noErr || actual != sizeof(ldef))
+                         kControlKindTag, sizeof(kind), &kind, &actual);
+    if (err != noErr || actual != sizeof(kind)
+        || kind.signature != kControlKindSignatureApple
+        || kind.kind != kControlKindListBox)
         return kNowPeekSemanticStatusUnsupportedCustom;
-    if (ldef != 0) return kNowPeekSemanticStatusUnsupportedCustom;
     actual = 0; *list = NULL;
     err = GetControlData((ControlRef)control, kControlEntireControl,
                          kControlListBoxListHandleTag, sizeof(*list),
@@ -71,23 +73,117 @@ static NowPeekU32 list_for_control(NowPeekU32 window, NowPeekU32 control,
     return kNowPeekSemanticStatusOk;
 }
 
-static NowPeekU32 classify(void *ctx, NowPeekU32 window, NowPeekU32 control,
-                           NowPeekU16 *kind)
+static void copy_text(const unsigned char *source, NowPeekU16 length,
+                      unsigned char *text, NowPeekU16 cap,
+                      NowPeekU16 *true_length)
 {
-    ListHandle list;
-    NowPeekU32 status;
+    NowPeekU16 copied = length < cap ? length : cap;
+    if (copied != 0) BlockMoveData(source, text, copied);
+    *true_length = length;
+}
+
+static NowPeekU32 control_text(ControlRef control, ResType tag,
+                               unsigned char *text, NowPeekU16 cap,
+                               NowPeekU16 *true_length)
+{
+    unsigned char value[256];
+    Size size = 0, actual = 0;
+    OSErr err = GetControlDataSize(control, kControlEntireControl,
+                                   tag, &size);
+    if (err != noErr || size < 0) return kNowPeekSemanticStatusUnsupported;
+    *true_length = size > 0xffffL ? 0xffff : (NowPeekU16)size;
+    if (size > (Size)sizeof value) return kNowPeekSemanticStatusTruncated;
+    err = GetControlData(control, kControlEntireControl, tag, size,
+                         value, &actual);
+    if (err != noErr || actual != size)
+        return kNowPeekSemanticStatusUnsupported;
+    copy_text(value, (NowPeekU16)size, text, cap, true_length);
+    return size > cap ? kNowPeekSemanticStatusTruncated
+                      : kNowPeekSemanticStatusOk;
+}
+
+static NowPeekU32 clock_text(ControlRef control, unsigned char *text,
+                             NowPeekU16 cap, NowPeekU16 *true_length)
+{
+    LongDateRec date;
+    LongDateTime seconds;
+    Str255 value;
+    Size actual = 0;
+    ControlVariant variant;
+    OSErr err = GetControlData(control, kControlEntireControl,
+                               kControlClockLongDateTag, sizeof(date),
+                               &date, &actual);
+    if (err != noErr || actual != sizeof(date))
+        return kNowPeekSemanticStatusUnsupported;
+    LongDateToSeconds(&date, &seconds);
+    variant = GetControlVariant(control);
+    if (variant == (kControlClockTimeProc & 0x0f)
+        || variant == (kControlClockTimeSecondsProc & 0x0f)) {
+        LongTimeString(&seconds,
+                       variant == (kControlClockTimeSecondsProc & 0x0f),
+                       value, NULL);
+    } else {
+        LongDateString(&seconds, shortDate, value, NULL);
+    }
+    copy_text(value + 1, value[0], text, cap, true_length);
+    return value[0] > cap ? kNowPeekSemanticStatusTruncated
+                          : kNowPeekSemanticStatusOk;
+}
+
+static NowPeekU16 compact_kind(OSType kind)
+{
+    if (kind == kControlKindListBox) return kNowPeekSemanticControlListBox;
+    if (kind == kControlKindClock) return kNowPeekSemanticControlClock;
+    if (kind == kControlKindGroupBox) return kNowPeekSemanticControlGroupBox;
+    if (kind == kControlKindEditText) return kNowPeekSemanticControlEditText;
+    if (kind == kControlKindStaticText) return kNowPeekSemanticControlStaticText;
+    if (kind == kControlKindWindowHeader)
+        return kNowPeekSemanticControlWindowHeader;
+    if (kind == kControlKindPushButton)
+        return kNowPeekSemanticControlPushButton;
+    if (kind == kControlKindCheckBox) return kNowPeekSemanticControlCheckBox;
+    if (kind == kControlKindRadioButton)
+        return kNowPeekSemanticControlRadioButton;
+    if (kind == kControlKindPopupButton)
+        return kNowPeekSemanticControlPopupButton;
+    if (kind == kControlKindScrollBar) return kNowPeekSemanticControlScrollBar;
+    if (kind == kControlKindDataBrowser)
+        return kNowPeekSemanticControlDataBrowser;
+    if (kind == kControlKindUserPane) return kNowPeekSemanticControlUserPane;
+    if (kind == kControlKindImageWell) return kNowPeekSemanticControlImageWell;
+    return kNowPeekSemanticControlOtherSystem;
+}
+
+static NowPeekU32 classify(void *ctx, NowPeekU32 window, NowPeekU32 control,
+                           NowPeekU16 *kind, unsigned char *text,
+                           NowPeekU16 cap, NowPeekU16 *true_length,
+                           NowPeekU32 *flags)
+{
+    ControlKind system_kind;
+    Size actual = 0;
+    OSErr err;
     (void)ctx;
-    status = list_for_control(window, control, &list);
-    if (status == kNowPeekSemanticStatusOk) {
-        *kind = kNowPeekSemanticControlStandard;
-        return status;
-    }
-    if (status == kNowPeekSemanticStatusUnsupportedCustom) {
+    *true_length = 0;
+    *flags = 0;
+    if (!live_control(window, control)) return kNowPeekSemanticStatusInvalid;
+    err = GetControlData((ControlRef)control, kControlEntireControl,
+                         kControlKindTag, sizeof(system_kind), &system_kind,
+                         &actual);
+    if (err != noErr || actual != sizeof(system_kind)
+        || system_kind.signature != kControlKindSignatureApple) {
         *kind = kNowPeekSemanticControlCustom;
-        return status;
+        return kNowPeekSemanticStatusUnsupportedCustom;
     }
-    *kind = kNowPeekSemanticControlUnknown;
-    return status;
+    *kind = compact_kind(system_kind.kind);
+    if (*kind == kNowPeekSemanticControlClock)
+        return clock_text((ControlRef)control, text, cap, true_length);
+    if (*kind == kNowPeekSemanticControlEditText)
+        return control_text((ControlRef)control, kControlEditTextTextTag,
+                            text, cap, true_length);
+    if (*kind == kNowPeekSemanticControlStaticText)
+        return control_text((ControlRef)control, kControlStaticTextTextTag,
+                            text, cap, true_length);
+    return kNowPeekSemanticStatusOk;
 }
 
 typedef struct {

@@ -24,7 +24,9 @@ adding evidence.
 
 ## Frozen envelope
 
-P2 v1 is one single-consumer cell. It carries one request and at most 32
+P2 is one single-consumer cell. Format v2 keeps the v1 fixed layout while
+giving a control-class record a typed Control Manager kind and an optional
+bounded displayed value. It carries one request and at most 32
 fixed 48-byte records (1536 bytes) per committed response. The filter examines
 at most one pending request per event pass, and a resolver performs at most
 32 item/cell operations and copies at most 1024 payload bytes. Requests
@@ -33,8 +35,9 @@ generation is nonzero and even, two reads of that generation agree, the
 writer/owner epoch still matches, the target A5 and every applicable object
 identity echo the request, and the response age is no greater than 120 ticks.
 
-The cell has no generic `kind -> guess` path. Its operations are exact control
-classification, exact standard-list cells, and exact system-menu rows. Each
+The cell has no application-name or resource-ID guess path. Its operations are
+exact control classification, exact standard-list cells, and exact system-menu
+rows. Each
 resolver is a separate entry point and may only fill
 records of its own kind. Overflow is `truncated`, unfamiliar definitions are
 `unsupported-custom`, invalid handles are `invalid`, a changed identity is
@@ -51,13 +54,24 @@ checkpoint did not advertise P2; the bounded partial implementation below now
 does. Date & Time and the Apple menu are still not considered resolved merely
 because the ABI and standard-list slice can represent their facts.
 
-The bounded resolver policy and 68K adapter now prove exact window/control
+The bounded resolver policy and 68K adapter prove exact window/control
 membership through the live Window Manager root and a 64-entry iterative
-Appearance control hierarchy walk. Standard list-box data is accepted only
-when both `kControlListBoxLDEFTag` and `kControlListBoxListHandleTag` succeed
-and the LDEF is zero; custom/legacy definitions refuse explicitly. Native
-fixtures cover a Date & Time-shaped list, custom classification, overflow,
-and an 18-row Finder Apple menu.
+Appearance control hierarchy walk. A live 2026-08-04 sweep then showed why the
+v1 classifier was too narrow: it asked every control for a list-box LDEF, so
+ordinary standard controls and genuinely private controls both collapsed to
+`unsupported-custom`; it also rejected Set Time Zone's public ListHandle
+solely because its drawing LDEF was nonzero.
+
+Format v2 instead reads the public `kControlKindTag` in the target process,
+accepts only Apple-owned kinds, and maps list boxes, clocks, groups, text,
+buttons, choices, popups, scroll bars, data browsers, user panes, image wells,
+and other system controls into compact shared kinds. Clock and text controls
+may return bounded values through their public data tags. List traversal
+requires an Apple list-box kind and a valid public
+`kControlListBoxListHandleTag`; the drawing LDEF is no longer treated as proof
+that the List Manager record is private. Unknown signatures still refuse
+explicitly. Native fixtures cover a Date & Time-shaped list, typed/value
+classification, custom refusal, overflow, and an 18-row Finder Apple menu.
 
 The system-menu adapter is blocked at the flat-INIT ABI boundary. Universal
 Interfaces declares `AcquireRootMenu`, `GetMenuItemHierarchicalMenu`, and
@@ -73,17 +87,23 @@ nonempty-menu paths are real; support remains a per-operation result.
 
 The scene collector copies one prior committed response, joins only an exact
 identity match, and publishes at most one cache miss for the next target event
-pass. Its bounded cross-scene policy retains two terminal menus and eight
-control facts, each capped at the ABI's 32 fixed records, resetting on
-writer-owner epoch change or scene regression. A list fact retains every
+pass. The walk now offers every live control, not only DITL resource controls,
+so Sherlock's ordinary window controls reach P2. Its bounded cross-scene
+policy retains two terminal menus, 64 compact control-class facts for 128
+scenes, and four separate bounded list facts, resetting on writer-owner epoch
+change or scene regression. The split prevents 35-control windows from either
+thrashing an eight-entry cache or multiplying the 32-record list payload by
+every control. A list fact retains every
 bounded row/column/text/selection record plus the true total count; it does not
 collapse the response to one selected string. Terminal
 menu results suppress only that exact menu; standard classification advances
-to list cells, a completed list advances to the next resource control, and
-facts expire after four or eight scenes rather than becoming capability truth.
-Unknown custom controls remain visible with an unsupported placeholder;
-an unsupported empty system shell gains a disabled placeholder row instead of
-becoming an empty menu. P1-only output remains intact when P2 is off. Resolving
+to list cells only for a typed list box, and a completed list advances to the
+next control. Unknown custom controls remain visible with an unsupported
+placeholder; typed data browsers, user panes, image wells, and other
+not-yet-decoded system controls render a bounded unavailable placeholder rather
+than a blank shell. An unsupported empty system shell gains a disabled
+placeholder row instead of becoming an empty menu. P1-only output remains
+intact when P2 is off. Resolving
 the root-menu ABI boundary is still prerequisite to Apple-menu acceptance and
 direct Date & Time/Apple-menu proof.
 
@@ -95,3 +115,10 @@ explicitly partial and presentation-only. Mirror groups the reported cells by
 row and column inside the real control rectangle; it does not invent missing
 rows. When an older guest supplies only the selected value, the existing
 recessed partial placeholder remains the honest fallback.
+
+This v2 checkpoint passes the native semantic/scene tests, the focused Mirror
+renderer tests, and real Retro68 PPC, 68K, and flat-INIT cross-builds. The new
+Sherlock placeholder regression guard was watched fail under mutation and pass
+after restoration. It is not emulator-verified until the rebuilt extension is
+cold-loaded and Date & Time, Set Time Zone, Sherlock, and Key Caps are driven
+through the Mirror against paired guest captures.

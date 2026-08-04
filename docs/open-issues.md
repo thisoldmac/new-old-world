@@ -147,6 +147,19 @@ placeholder/deferred-pixels path rather than the control-semantic patch. The
 extension work remains open until the Date & Time and Sherlock control classes
 are inventoried and patched together.
 
+**Later 2026-08-04 implementation checkpoint:** P2 format v2 now classifies
+Apple-owned controls through public `kControlKindTag`, reads bounded clock/text
+values through public data tags, permits a public list-box ListHandle with a
+nonzero drawing LDEF, offers every live control, and retains 64 compact class
+facts plus four bounded list payloads. Sherlock's 35-control census therefore
+cannot restart after eight entries, and typed-but-undecoded data browsers/user
+panes/image wells produce explicit bounded placeholders. Key Caps remains the
+separate zero-control, draw-owned placeholder case. Focused native/renderer
+tests pass, the new placeholder guard was watched fail under mutation, and the
+PPC, 68K, and flat-INIT Retro68 cross-builds pass. This is **built and tested,
+not emulator-verified** until the new INIT is cold-loaded and the broad direct
+Mirror sweep is repeated.
+
 ### STATE ENGINE U1A: TYPED COVERAGE AND LIFETIME IDENTITY BUILT (2026-08-04)
 
 The IR v2 producer and MirrorKit consumer now agree on typed collection

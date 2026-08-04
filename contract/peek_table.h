@@ -581,6 +581,9 @@ typedef struct {
 enum {
     kNowPeekSemanticFormatNone = 0,
     kNowPeekSemanticFormatV1 = 1,
+    /* Same fixed cell layout; control-class records now carry a typed
+       Control Manager kind and an optional bounded displayed value. */
+    kNowPeekSemanticFormatV2 = 2,
     kNowPeekSemanticMaxRecords = 32,
     kNowPeekSemanticTextMax = 32,
     kNowPeekSemanticLeaseTicks = 120
@@ -614,9 +617,24 @@ enum {
 
 enum {
     kNowPeekSemanticControlUnknown = 0,
-    kNowPeekSemanticControlStandard = 1,
+    kNowPeekSemanticControlListBox = 1,
+    kNowPeekSemanticControlStandard = kNowPeekSemanticControlListBox,
     kNowPeekSemanticControlResource = 2,
     kNowPeekSemanticControlCustom = 3,
+    kNowPeekSemanticControlClock = 4,
+    kNowPeekSemanticControlGroupBox = 5,
+    kNowPeekSemanticControlEditText = 6,
+    kNowPeekSemanticControlStaticText = 7,
+    kNowPeekSemanticControlWindowHeader = 8,
+    kNowPeekSemanticControlPushButton = 9,
+    kNowPeekSemanticControlCheckBox = 10,
+    kNowPeekSemanticControlRadioButton = 11,
+    kNowPeekSemanticControlPopupButton = 12,
+    kNowPeekSemanticControlScrollBar = 13,
+    kNowPeekSemanticControlDataBrowser = 14,
+    kNowPeekSemanticControlUserPane = 15,
+    kNowPeekSemanticControlImageWell = 16,
+    kNowPeekSemanticControlOtherSystem = 17,
     kNowPeekSemanticRecordSelected = 1u << 0,
     kNowPeekSemanticRecordEnabled = 1u << 1,
     kNowPeekSemanticRecordChecked = 1u << 2,

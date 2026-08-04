@@ -140,6 +140,11 @@ static void walk_controls(NowScene *s, int window, const NowAxMemory *memory,
            complete. */
         name_control(s, window, hops, refs, win->address, handle);
         now_scene_set_control_handle(s, window, hops, handle);
+        /* P2 is a target-context description of every live control, not a
+           Date & Time resource-control special case. This is what lets the
+           same extension inventory Sherlock's ordinary window controls. */
+        now_semantic_client_join_control(s, window, hops,
+                                         win->address, handle);
         handle = control.next_control;
     }
 }
@@ -212,12 +217,6 @@ static void walk_dialog_items(NowScene *s, int window,
         item = &s->dialog_items[s->dialog_item_count - 1];
         control = control_for_handle(s, window, source.handle);
         if (control != NULL) {
-            if (source.kind == kNowAxDialogResourceControl) {
-                int control_index = (int)(control
-                    - &s->controls[s->windows[window].first_control]);
-                now_semantic_client_join_control(s, window, control_index,
-                                                  address, source.handle);
-            }
             /* DITL's disable bit is the resource default. The live
                ControlRecord is authoritative after creation. Date & Time
                disables two checkboxes at runtime while their DITL rows stay

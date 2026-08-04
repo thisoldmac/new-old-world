@@ -672,7 +672,7 @@ public struct SceneRenderer {
            precedence painted a hatch over Date & Time's real list payload. */
         let semanticControlRefs: Set<String> = Set(win.controls.compactMap {
             control -> String? in
-            Self.semanticOwnsDisplay(control) ? control.ref : nil
+            Self.semanticSupersedesResource(control) ? control.ref : nil
         })
         let dialogRefs: Set<String> = Set((win.dialogItems ?? []).compactMap {
             item -> String? in
@@ -862,10 +862,32 @@ public struct SceneRenderer {
             return ctl.min != nil && ctl.max != nil && ctl.value != nil
         case "listBox":
             return !(ctl.semantic?.listCells?.isEmpty ?? true)
+        case "staticText", "editText":
+            return ctl.semantic?.value != nil
+        case "columnHeader":
+            return !ctl.title.isEmpty
         case "groupBox":
             return false
         default:
             return false
+        }
+    }
+
+    /// A typed control may replace its exact unknown DITL resource shell
+    /// without claiming the whole rectangle against P3. Group boxes are the
+    /// important distinction: their border/title are complete structured
+    /// facts, but their interior may still contain application drawing.
+    static func semanticSupersedesResource(
+        _ ctl: MirrorKit.Scene.Control
+    ) -> Bool {
+        guard ctl.semantic?.knowledge == .known else { return false }
+        switch ctl.semantic?.kind {
+        case "groupBox", "staticText", "editText", "columnHeader":
+            return true
+        case "listBox":
+            return !(ctl.semantic?.listCells?.isEmpty ?? true)
+        default:
+            return semanticOwnsDisplay(ctl)
         }
     }
 
@@ -903,6 +925,37 @@ public struct SceneRenderer {
             return
         case "listBox":
             drawListSelection(ctx, ctl, frame)
+            return
+        case "staticText":
+            appText(ctl.semantic?.value ?? ctl.title, ctx,
+                    x: frame.minX,
+                    baselineY: frame.minY
+                        + CGFloat(FontBook.app?.ascent ?? 10),
+                    color: ctl.enabled ? Platinum.g6 : Platinum.g3)
+            return
+        case "editText":
+            ctx.fill(Path(frame), with: .color(Platinum.g0))
+            ctx.stroke(Path(frame), with: .color(Platinum.g6), lineWidth: 1)
+            appText(ctl.semantic?.value ?? ctl.title, ctx,
+                    x: frame.minX + 3, baselineY: frame.midY + 4,
+                    color: ctl.enabled ? Platinum.g6 : Platinum.g3)
+            return
+        case "columnHeader":
+            ctx.fill(Path(frame), with: .color(Platinum.g2))
+            ctx.stroke(Path(frame), with: .color(Platinum.g5), lineWidth: 1)
+            appText(ctl.title, ctx, x: frame.minX + 4,
+                    baselineY: frame.midY + 4,
+                    color: ctl.enabled ? Platinum.g6 : Platinum.g3)
+            return
+        case "dataBrowser", "userPane", "imageWell", "systemControl":
+            /* These are real guest-proven regions, but this semantic slice
+               does not yet carry their private rows or drawing. Never turn
+               that bounded absence back into an empty application surface. */
+            drawUnavailableVisual(ctx, frame,
+                                  ctl.semantic?.value
+                                    ?? (ctl.title.isEmpty
+                                        ? "Structured content unavailable"
+                                        : ctl.title))
             return
         default:
             break
