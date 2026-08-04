@@ -77,6 +77,12 @@ public enum MirrorOperationReducer {
         case .processFront(let identity):
             return evidence.coverage.scope == "processes"
                 && evidence.frontProcess == identity
+        case .processVisibility(let expected):
+            return evidence.coverage.scope == "process-visibility"
+                && !expected.isEmpty
+                && expected.allSatisfy {
+                    evidence.processVisibility[$0.key] == $0.value
+                }
         }
     }
 }

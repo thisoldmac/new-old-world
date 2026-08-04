@@ -246,6 +246,7 @@ final class NOWMirrorSourceTests: XCTestCase {
             act: testAct(listener), interval: 3_600,
             planePolicy: { _ in planes },
             finderRefreshOverride: { _, _, completion in completion() },
+            visibilityRefreshOverride: { _, _, completion in completion() },
             cycleIO: harness.io)
 
         source.start()
@@ -656,6 +657,22 @@ final class NOWMirrorIconParsingTests: XCTestCase {
         XCTAssertEqual(dateAndTime.y, 221)
         XCTAssertTrue(dateAndTime.placed,
                       "the bitmap may be absent; the named hit target may not")
+    }
+
+    func testVisibilityCensusIsBoundedAndKeepsFalseDistinctFromUnknown() {
+        let script = NOWMirrorSource.visibilityScript(offset: 8, limit: 8)
+        XCTAssertTrue(script.contains("set firstIndex to 9"))
+        XCTAssertTrue(script.contains("set lastIndex to 16"))
+        XCTAssertTrue(script.contains(
+            "repeat with i from firstIndex to lastIndex"))
+
+        let parsed = NOWMirrorSource.parseVisibility(
+            "\"N\t2\rV\tFinder\tfalse\rV\tNew Old World\ttrue\r\"")
+        XCTAssertEqual(parsed.total, 2)
+        XCTAssertEqual(parsed.rowCount, 2)
+        XCTAssertEqual(parsed.byName["Finder"], false)
+        XCTAssertEqual(parsed.byName["New Old World"], true)
+        XCTAssertTrue(parsed.unique)
     }
 
     /// The two passes are two scripts now, and their results are joined.

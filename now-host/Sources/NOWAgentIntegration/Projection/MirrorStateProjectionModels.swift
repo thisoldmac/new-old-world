@@ -88,12 +88,14 @@ public struct AgentIntegrationMirrorEntity:
     public let name: String
     public let title: String?
     public let front: Bool
-    public let visible: Bool
+    /// nil is honest unknown: process visibility is a separate retained
+    /// guest observation, not something the structural roster implies.
+    public let visible: Bool?
     public let freshness: String
     public let actionable: Bool
 
     public init(id: String, kind: Kind, ownerID: String?, name: String,
-                title: String?, front: Bool, visible: Bool,
+                title: String?, front: Bool, visible: Bool?,
                 freshness: String, actionable: Bool) {
         self.id = id
         self.kind = kind

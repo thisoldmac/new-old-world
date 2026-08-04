@@ -28,6 +28,12 @@ final class MirrorStateEngine: ObservableObject {
     private(set) var replica: MirrorReplica?
     private var semantics: [MirrorWindowIdentity: SemanticContribution] = [:]
     private var content: [MirrorWindowIdentity: ContentContribution] = [:]
+    /// Machine-wide process visibility is observed independently from the
+    /// structural walk. Keep the last values even while their coverage is
+    /// stale so projection can be continuous without letting stale state
+    /// settle a mutation.
+    private var visibility: [MirrorProcessIdentity: Bool] = [:]
+    private var visibilityCoverage: Scene.CoverageClaim?
     private var publicationID = 0
     private var digestScene: Scene?
     private var digestPlanes: Set<MirrorPlaneID> = []
@@ -57,6 +63,12 @@ final class MirrorStateEngine: ObservableObject {
             _ = retainSemantics(from: scene, identities: identities, in: next)
             _ = retainContent(from: scene, identities: identities, in: next)
             pruneContributions(to: next)
+            if !visibility.isEmpty {
+                visibilityCoverage = .init(
+                    scope: "process-visibility", status: .stale,
+                    reason: "retained until visibility is observed for sequence "
+                        + "\(next.lastSequence)")
+            }
             lastRejection = nil
             publish(from: next.snapshot, at: receivedAt)
         case .rejected(let rejection):
@@ -84,6 +96,50 @@ final class MirrorStateEngine: ObservableObject {
 
     func enrichFinder(_ scene: Scene, receivedAt: Date = Date()) -> Bool {
         enrich(scene, plane: nil, receivedAt: receivedAt)
+    }
+
+    /// Join a complete guest-side Finder visibility census to the exact
+    /// structural generation it describes. Names are used only as a join
+    /// key; duplicate or missing names keep coverage partial and therefore
+    /// non-settling.
+    @discardableResult
+    func enrichVisibility(_ byName: [String: Bool], complete: Bool,
+                          sequence: Int, receivedAt: Date = Date()) -> Bool {
+        guard let replica, sequence == replica.lastSequence else {
+            return false
+        }
+        var next = visibility
+        var matched = Set<MirrorProcessIdentity>()
+        var ambiguous = false
+        for (name, value) in byName {
+            let candidates = replica.applications.values.filter {
+                $0.app.name == name
+            }
+            guard candidates.count == 1, let record = candidates.first else {
+                ambiguous = true
+                continue
+            }
+            next[record.identity] = value
+            matched.insert(record.identity)
+        }
+        let authoritative = complete && !ambiguous
+            && matched == Set(replica.applications.keys)
+        let coverage = Scene.CoverageClaim(
+            scope: "process-visibility",
+            status: authoritative ? .complete : .partial,
+            reason: authoritative ? nil
+                : "visibility census did not uniquely cover every application")
+        guard next != visibility || coverage != visibilityCoverage else {
+            return false
+        }
+        visibility = next
+        visibilityCoverage = coverage
+        publish(from: replica.snapshot, at: receivedAt)
+        return true
+    }
+
+    func processVisibility(_ identity: MirrorProcessIdentity) -> Bool? {
+        visibility[identity]
     }
 
     private func enrich(_ scene: Scene, plane: MirrorPlaneID?,
@@ -150,7 +206,7 @@ final class MirrorStateEngine: ObservableObject {
                   coverage: $0, receivedAt: receivedAt,
                   presentProcesses: processes, presentWindows: windows,
                   frontProcess: frontProcess, frontWindow: frontWindow,
-                  windowTitles: titles)
+                  windowTitles: titles, processVisibility: visibility)
         }
     }
 
@@ -171,6 +227,12 @@ final class MirrorStateEngine: ObservableObject {
 
     private func compose(_ base: Scene) -> Scene {
         var scene = base
+        if let visibilityCoverage {
+            var coverage = scene.meta.coverage ?? []
+            coverage.removeAll { $0.scope == visibilityCoverage.scope }
+            coverage.append(visibilityCoverage)
+            scene.meta.coverage = coverage
+        }
         let identities = windowIdentities(in: scene)
         for index in scene.windows.indices {
             if enabledPlanes.contains(.semantics),
@@ -289,6 +351,14 @@ final class MirrorStateEngine: ObservableObject {
         }) {
             content = content.filter {
                 replica.windows[$0.key]?.window.rect == $0.value.rect
+            }
+        }
+        let processIdentities = Set(replica.applications.keys)
+        if visibility.keys.contains(where: {
+            !processIdentities.contains($0)
+        }) {
+            visibility = visibility.filter {
+                processIdentities.contains($0.key)
             }
         }
     }

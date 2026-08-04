@@ -197,4 +197,42 @@ final class MirrorOperationReducerTests: XCTestCase {
         XCTAssertEqual(MirrorOperationReducer.reduce(
             pending, event: .observation(wrongOwner)), pending)
     }
+
+    func testVisibilityNeedsLaterCompleteExactGuestEvidence() {
+        let session = MirrorGuestSession(guest: "maxbook",
+                                         incarnation: "session-a")
+        let finder = MirrorProcessIdentity(session: session,
+                                           incarnation: "finder")
+        let now = MirrorProcessIdentity(session: session,
+                                        incarnation: "now")
+        var operation = MirrorOperation(
+            id: "hide-others", source: .human, displayedSnapshotID: 3,
+            displayedSequence: 4, target: .process(now),
+            postcondition: .processVisibility([finder: false, now: true]),
+            enqueuedAt: Date())
+        operation = MirrorOperationReducer.reduce(
+            operation, event: .dispatched(at: Date()))
+
+        let stale = MirrorSettlementEvidence(
+            session: session, sequence: 5,
+            coverage: .init(scope: "process-visibility", status: .stale),
+            processVisibility: [finder: false, now: true])
+        XCTAssertEqual(MirrorOperationReducer.reduce(
+            operation, event: .observation(stale)), operation)
+
+        let wrong = MirrorSettlementEvidence(
+            session: session, sequence: 5,
+            coverage: .init(scope: "process-visibility", status: .complete),
+            processVisibility: [finder: true, now: true])
+        XCTAssertEqual(MirrorOperationReducer.reduce(
+            operation, event: .observation(wrong)), operation)
+
+        let exact = MirrorSettlementEvidence(
+            session: session, sequence: 5,
+            coverage: .init(scope: "process-visibility", status: .complete),
+            receivedAt: Date(),
+            processVisibility: [finder: false, now: true])
+        XCTAssertEqual(MirrorOperationReducer.reduce(
+            operation, event: .observation(exact)).outcome, .confirmed)
+    }
 }

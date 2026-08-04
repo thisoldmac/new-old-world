@@ -93,6 +93,26 @@ final class MirrorStateProjectionServiceTests: XCTestCase {
         XCTAssertEqual(engine.store.entries.count, 1)
     }
 
+    func testProcessVisibilityIsUnknownUntilGuestCensusAndThenProjected()
+        async throws {
+        let registry = MirrorStateEngineRegistry()
+        let engine = registry.engine(for: key)
+        _ = engine.accept(try scene(seq: 1))
+
+        let unknown = await service(registry).read(.init(intention: .snapshot))
+        XCTAssertNil(unknown.value?.snapshot?.entities.first {
+            $0.kind == .process
+        }?.visible, "a process roster does not imply that it is shown")
+
+        XCTAssertTrue(engine.enrichVisibility(
+            ["Finder": false], complete: true, sequence: 1))
+        let observed = await service(registry).read(
+            .init(intention: .snapshot))
+        XCTAssertEqual(observed.value?.snapshot?.entities.first {
+            $0.kind == .process
+        }?.visible, false)
+    }
+
     func testWaitReturnsTheNextSnapshotFromTheSameEngine() async throws {
         let registry = MirrorStateEngineRegistry()
         let engine = registry.engine(for: key)

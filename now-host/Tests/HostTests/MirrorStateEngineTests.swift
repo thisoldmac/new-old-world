@@ -285,6 +285,36 @@ final class MirrorStateEngineTests: XCTestCase {
                        "P4 policy gates mutation, never retained history")
     }
 
+    func testVisibilityIsRetainedButBecomesStaleAcrossStructuralGenerations()
+        throws {
+        let engine = MirrorStateEngine(guestKey: key)
+        _ = engine.accept(try scene(seq: 1))
+        let finder = MirrorProcessIdentity(
+            session: engine.session, incarnation: "process-finder")
+
+        XCTAssertTrue(engine.enrichVisibility(
+            ["Finder": true], complete: true, sequence: 1))
+        XCTAssertEqual(engine.processVisibility(finder), true)
+        XCTAssertEqual(engine.snapshot?.scene.meta.coverage?.first {
+            $0.scope == "process-visibility"
+        }?.status, .complete)
+
+        _ = engine.accept(try scene(seq: 2))
+        XCTAssertEqual(engine.processVisibility(finder), true,
+                       "new P1 state must not erase its retained visibility")
+        XCTAssertEqual(engine.snapshot?.scene.meta.coverage?.first {
+            $0.scope == "process-visibility"
+        }?.status, .stale,
+                       "retained display is not fresh settlement evidence")
+
+        XCTAssertTrue(engine.enrichVisibility(
+            ["Finder": false], complete: true, sequence: 2))
+        XCTAssertEqual(engine.processVisibility(finder), false)
+        XCTAssertEqual(engine.settlementEvidence().first {
+            $0.coverage.scope == "process-visibility"
+        }?.processVisibility[finder], false)
+    }
+
     func testProjectionDigestIgnoresObservationSequenceAndCaptureTime() throws {
         let engine = MirrorStateEngine(guestKey: key)
         _ = engine.accept(try scene(seq: 1))

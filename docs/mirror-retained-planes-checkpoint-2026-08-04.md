@@ -117,3 +117,27 @@ shared producer path:
 At checkpoint close, all four plane switches were restored to on. The host and
 VM were deliberately left running for manual inspection; their PIDs are not
 durable identity and are therefore omitted.
+
+## Follow-up implementation checkpoint
+
+The first batch found above is now implemented but still requires a new direct
+sweep before any red row changes status:
+
+- structured P3 retention now uses the renderer's actual supported operation
+  vocabulary, so Sherlock's undrawable invert cannot erase retained text and
+  controls;
+- Finder item rosters are read in bounded pages carrying a stable total, so a
+  later Control Panels item such as Date & Time cannot be silently truncated;
+- self-targeted Apple-menu commands now reach the guest application's normal
+  Apple-menu handler, including desk accessories such as Key Caps;
+- process visibility is now a retained P1 shelf with `complete`, `partial`, and
+  expected-`stale` coverage. Hide, Hide Others, and Show All carry exact typed
+  postconditions and cannot turn green until a later complete guest census
+  matches every expected process;
+- the host projection reports unknown process visibility as unknown rather
+  than inventing `true` from mere process presence.
+
+The Finder paging, Sherlock structured-retention, and visibility matching
+guards were each watched fail under deliberate mutation and pass after the
+implementation was restored. Focused host suites are green; this is not yet a
+direct-input or emulator-visual result.

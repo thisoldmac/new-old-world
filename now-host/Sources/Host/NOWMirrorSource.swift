@@ -158,6 +158,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private let finderRefreshOverride: (@MainActor (
         MirrorKit.Scene, Int, @escaping () -> Void
     ) -> Void)?
+    private let visibilityRefreshOverride: (@MainActor (
+        MirrorKit.Scene, Int, @escaping () -> Void
+    ) -> Void)?
     private let lifecycleDidChange: @MainActor () -> Void
     private var running = false
     private var runGeneration = 0
@@ -182,6 +185,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private var iconLayout: String = "<none>"
     private var fetchingIcons = false
     private var iconTask: Task<Void, Never>?
+    private var visibilityTask: Task<Void, Never>?
     private var actGeneration = 0
     private var settlementTracker = MirrorSettlementTracker()
     private var planCorrelation: String?
@@ -203,6 +207,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
          finderRefreshOverride: (@MainActor (
              MirrorKit.Scene, Int, @escaping () -> Void
          ) -> Void)? = nil,
+         visibilityRefreshOverride: (@MainActor (
+             MirrorKit.Scene, Int, @escaping () -> Void
+         ) -> Void)? = nil,
          cycleIO: NOWMirrorCycleIO? = nil,
          lifecycleDidChange: @escaping @MainActor () -> Void = {}) {
         self.listener = listener
@@ -213,6 +220,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         self.interval = interval
         self.planePolicy = planePolicy
         self.finderRefreshOverride = finderRefreshOverride
+        self.visibilityRefreshOverride = visibilityRefreshOverride
         self.lifecycleDidChange = lifecycleDidChange
     }
 
@@ -223,6 +231,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         runGeneration &+= 1
         iconTask?.cancel()
         iconTask = nil
+        visibilityTask?.cancel()
+        visibilityTask = nil
         fetchingIcons = false
         guard let key = cycleIO.activeKey() else {
             ambient = "no Mac is connected"
@@ -254,6 +264,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         rearmTask = nil
         iconTask?.cancel()
         iconTask = nil
+        visibilityTask?.cancel()
+        visibilityTask = nil
         fetchingIcons = false
         guard let stoppingKey = pinnedGuestKey,
               stoppingKey == cycleIO.activeKey() else {
@@ -382,8 +394,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                     guard self.isCurrentCycle(generation) else { return }
                     self.shadowEngine?.compareVisible(decoded)
                     self.scene = self.projectedScene(fallback: decoded)
-                    self.refreshIconsIfStale(decoded,
-                                             generation: generation) {
+                    self.refreshComplements(decoded,
+                                            generation: generation) {
                         guard self.isCurrentCycle(generation) else { return }
                         self.ambient = "\(decoded.windows.count) windows · "
                             + (failure.map {
@@ -407,8 +419,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                    next poll, so a later scene could win while the older
                    roster was still in flight. Keep the cycle open until the
                    exact layout's bounded pages have settled. */
-                self.refreshIconsIfStale(update.scene,
-                                         generation: generation) {
+                self.refreshComplements(update.scene,
+                                        generation: generation) {
                     guard self.isCurrentCycle(generation) else { return }
                     self.ambient = "\(update.scene.windows.count) windows · walk "
                         + "\(delivery.walkMs.map { "\($0)ms" } ?? "?") · transfer "
@@ -492,6 +504,20 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         let folders = scene.windows.filter(FinderItems.isFolderWindow)
         return (["desktop"] + folders.map(FinderItems.layoutKey))
             .joined(separator: "|")
+    }
+
+    /// Asynchronous planes settle one structural generation before the next
+    /// starts. Each contribution remains independently retained by the state
+    /// engine; this ordering only prevents two guest commands from racing on
+    /// the cooperative wire lane.
+    private func refreshComplements(_ scene: MirrorKit.Scene,
+                                    generation: Int,
+                                    completion: @escaping () -> Void) {
+        refreshIconsIfStale(scene, generation: generation) { [weak self] in
+            guard let self else { return }
+            self.refreshVisibility(scene, generation: generation,
+                                   completion: completion)
+        }
     }
 
     private func refreshIconsIfStale(_ scene: MirrorKit.Scene,
@@ -716,6 +742,105 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             }
         }
         return nil
+    }
+
+    // MARK: - Retained process visibility
+
+    nonisolated private static let visibilityPageSize = 8
+
+    static func visibilityScript(offset: Int,
+                                 limit: Int = visibilityPageSize) -> String {
+        """
+        tell application "Finder"
+        set ps to every application process
+        set totalCount to count ps
+        set out to "N" & tab & totalCount & return
+        set firstIndex to \(offset + 1)
+        set lastIndex to \(offset + limit)
+        if lastIndex > totalCount then set lastIndex to totalCount
+        if firstIndex <= lastIndex then
+        repeat with i from firstIndex to lastIndex
+        set candidate to item i of ps
+        set out to out & "V" & tab & (name of candidate) & tab & \
+        (visible of candidate) & return
+        end repeat
+        end if
+        end tell
+        return out
+        """
+    }
+
+    static func parseVisibility(_ raw: String)
+        -> (total: Int?, byName: [String: Bool], rowCount: Int,
+            unique: Bool) {
+        let text = unquote(raw)
+        var total: Int?
+        var byName: [String: Bool] = [:]
+        var rowCount = 0
+        var unique = true
+        for line in text.components(separatedBy: CharacterSet.newlines) {
+            let fields = line.components(separatedBy: "\t")
+            if fields.count == 2, fields[0] == "N" {
+                total = Int(fields[1])
+            } else if fields.count == 3, fields[0] == "V" {
+                let normalized = fields[2].lowercased()
+                guard normalized == "true" || normalized == "false" else {
+                    continue
+                }
+                rowCount += 1
+                if byName[fields[1]] != nil { unique = false }
+                byName[fields[1]] = normalized == "true"
+            }
+        }
+        return (total, byName, rowCount, unique)
+    }
+
+    private func refreshVisibility(_ scene: MirrorKit.Scene,
+                                   generation: Int,
+                                   completion: @escaping () -> Void) {
+        if let visibilityRefreshOverride {
+            visibilityRefreshOverride(scene, generation, completion)
+            return
+        }
+        visibilityTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            var observed: [String: Bool] = [:]
+            var expectedTotal: Int?
+            var offset = 0
+            var complete = true
+            while expectedTotal == nil || offset < expectedTotal! {
+                let read = await self.readingOutput(
+                    "script", ["source": .text(Self.visibilityScript(
+                        offset: offset))])
+                let page = read.value.map(Self.parseVisibility)
+                guard !read.truncated, read.error == nil,
+                      let page, let total = page.total,
+                      expectedTotal == nil || expectedTotal == total,
+                      page.unique,
+                      page.rowCount == min(Self.visibilityPageSize,
+                                           total - offset) else {
+                    complete = false
+                    break
+                }
+                expectedTotal = total
+                for (name, visible) in page.byName {
+                    if observed[name] != nil { complete = false }
+                    observed[name] = visible
+                }
+                offset += page.rowCount
+                if total == 0 { break }
+            }
+            guard !Task.isCancelled,
+                  self.isCurrentCycle(generation) else { return }
+            _ = self.shadowEngine?.enrichVisibility(
+                observed, complete: complete
+                    && observed.count == expectedTotal,
+                sequence: scene.seq)
+            self.scene = self.projectedScene(fallback: scene)
+            self.observeOperations()
+            self.visibilityTask = nil
+            completion()
+        }
     }
 
     /// OSADoScript's SOURCE-form wrapper, removed once.
@@ -1087,11 +1212,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
         case .applicationVisibility(let visibility):
             let result = await applicationVisibility(visibility)
-            if result == nil, case .showAll = visibility {
-                /* Show All's script re-reads every Finder process. Hide and
-                   Hide Others only earn confirmation from later guest
-                   state; their resident dispatch is not the effect. */
-                planSettlement = "confirmed"
+            if result == nil {
+                /* Even Show All's mutation script is only attempt evidence.
+                   The typed operation settles from the separately retained
+                   visibility census for a later structural generation. */
+                planSettlement = "dispatched-but-unconfirmed"
             }
             return result
 

@@ -93,7 +93,8 @@ final class MirrorStateProjectionService {
                 AgentIntegrationMirrorEntity(
                     id: processID(record.identity), kind: .process,
                     ownerID: nil, name: record.app.name, title: nil,
-                    front: record.app.front, visible: true,
+                    front: record.app.front,
+                    visible: engine.processVisibility(record.identity),
                     freshness: record.freshness.rawValue,
                     actionable: record.actionable)
             }

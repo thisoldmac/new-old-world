@@ -12,7 +12,8 @@ enum MirrorActionExecutor {
     static func requiresTypedSettlement(for interaction: Interaction,
                                         plan: InteractionPlan) -> Bool {
         switch plan {
-        case .activateApp, .activateWindow, .finderOpen:
+        case .activateApp, .activateWindow, .applicationVisibility,
+             .finderOpen:
             return true
         case .windowAct(_, let act):
             if case .close = act { return true }
@@ -76,6 +77,39 @@ enum MirrorActionExecutor {
             guard let identity = window(ref) else { return nil }
             return make(target: .window(identity),
                         postcondition: .windowFront(identity))
+        case .applicationVisibility(let visibility):
+            switch visibility {
+            case .hide(let psn, let incarnation, _, _, _, _):
+                guard let identity = process(psn),
+                      incarnation == nil
+                        || identity.incarnation == incarnation else {
+                    return nil
+                }
+                return make(target: .process(identity),
+                            postcondition: .processVisibility([
+                                identity: false,
+                            ]))
+            case .hideOthers(let psn, let incarnation, _, _, _, _):
+                guard let identity = process(psn),
+                      incarnation == nil
+                        || identity.incarnation == incarnation else {
+                    return nil
+                }
+                let expected = Dictionary(uniqueKeysWithValues:
+                    replica.applications.keys.map {
+                        ($0, $0 == identity)
+                    })
+                return make(target: .process(identity),
+                            postcondition: .processVisibility(expected))
+            case .showAll:
+                guard let front = replica.applications.values.first(where: {
+                    $0.app.front
+                })?.identity else { return nil }
+                let expected = Dictionary(uniqueKeysWithValues:
+                    replica.applications.keys.map { ($0, true) })
+                return make(target: .process(front),
+                            postcondition: .processVisibility(expected))
+            }
         case .windowAct(let ref, let act):
             guard case .close = act, let identity = window(ref) else {
                 return nil

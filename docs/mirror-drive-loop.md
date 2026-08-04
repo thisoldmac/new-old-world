@@ -118,6 +118,10 @@ functional, accurate mirror of the guest** — one a person can operate.
    generation; only the engine may retain compatible expected-stale structured
    drawing across later bitmap-only generations. This separation is what lets
    a sweep interleave planes without making a diagnostic toggle destructive.
+   Process visibility is independently retained within P1: a new structural
+   generation marks its prior values `stale` but does not erase them, and only
+   a complete visibility census for that exact generation may settle Hide,
+   Hide Others, or Show All. A process roster never implies `visible = true`.
 2k. **A saved development image gets a shutdown preflight.** Before a shutdown
    whose disk will become the next stage image, dismiss modal dialogs, close
    guest applications and their windows, return to a Finder-only desktop, and

@@ -35,6 +35,9 @@ final class MirrorActionExecutorTests: XCTestCase {
         XCTAssertFalse(MirrorActionExecutor.requiresTypedSettlement(
             for: menuClick("About", index: 2),
             plan: workshop))
+        XCTAssertTrue(MirrorActionExecutor.requiresTypedSettlement(
+            for: windowClick,
+            plan: .applicationVisibility(.showAll)))
     }
 
     func testSameAppWindowClickTargetsExactIncarnation() throws {
@@ -81,6 +84,42 @@ final class MirrorActionExecutorTests: XCTestCase {
         XCTAssertEqual(operation.postcondition,
                        .windowNamedPresent(owner: now,
                                            title: "New Old World"))
+    }
+
+    func testVisibilityPlansCarryExactProcessPostconditions() throws {
+        let engine = try makeEngine()
+        let menu = MirrorObject.Menu(
+            id: ObjectResolver.applicationMenuID, title: "", left: 600,
+            isApple: false)
+        let app = MirrorObject.App(
+            psn: "0.4", name: "New Old World", isFront: true,
+            incarnation: "now")
+        let object = MirrorObject.ApplicationMenuAction(
+            title: "Hide Others", isEnabled: true,
+            kind: .hideOthers(except: app), menu: menu, index: 2)
+        let interaction = Interaction(
+            object: .applicationMenuAction(object),
+            gesture: .click(count: 1, mods: 0, at: .init(x: 610, y: 50)))
+        let finder = MirrorProcessIdentity(session: engine.session,
+                                           incarnation: "finder")
+        let now = MirrorProcessIdentity(session: engine.session,
+                                        incarnation: "now")
+
+        let hideOthers = try XCTUnwrap(MirrorActionExecutor.operation(
+            for: interaction,
+            plan: .applicationVisibility(.hideOthers(
+                exceptPSN: "0.4", incarnation: "now",
+                name: "New Old World", menuID: menu.id,
+                itemIndex: 2, titleLeft: menu.left)),
+            engine: engine, id: "hide-others"))
+        XCTAssertEqual(hideOthers.postcondition,
+                       .processVisibility([finder: false, now: true]))
+
+        let showAll = try XCTUnwrap(MirrorActionExecutor.operation(
+            for: interaction, plan: .applicationVisibility(.showAll),
+            engine: engine, id: "show-all"))
+        XCTAssertEqual(showAll.postcondition,
+                       .processVisibility([finder: true, now: true]))
     }
 
     private func makeEngine() throws -> MirrorStateEngine {
