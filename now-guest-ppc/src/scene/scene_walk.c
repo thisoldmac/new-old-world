@@ -341,6 +341,110 @@ static void walk_items(NowScene *s, int menu_row, const NowAxMemory *memory,
     }
 }
 
+int now_scene_fill_blank_system_apple(NowScene *s,
+                                      const NowAxMemory *memory,
+                                      unsigned long menu_list)
+{
+    NowAxMenuList list;
+    int target = -1;
+    int i;
+
+    if (s == NULL || memory == NULL || !s->menubar_present
+            || menu_list == 0) {
+        return 0;
+    }
+    for (i = 0; i < s->menu_count; ++i) {
+        NowSceneMenu *menu = &s->menus[i];
+        int j;
+
+        if ((unsigned char)menu->title[0] != 0x14
+                || !menu->items_present || menu->item_count <= 0) {
+            continue;
+        }
+        for (j = 0; j < menu->item_count; ++j) {
+            if (s->menu_items[menu->first_item + j].title[0] != '\0') {
+                break;
+            }
+        }
+        if (j == menu->item_count) {
+            target = i;
+            break;
+        }
+    }
+    if (target < 0
+            || now_ax_open_menu_list(memory, menu_list, &list) != kNowAxOk
+            || list.truncated) {
+        return 0;
+    }
+    for (i = 0; i < (int)list.count; ++i) {
+        NowAxMenu menu;
+        NowAxMenuCursor cursor;
+        NowAxMenuItem rows[kNowAxMenuItemMax];
+        int count = 0;
+        int start;
+        int j;
+
+        if (now_ax_read_menu(memory, &list, (unsigned int)i, &menu)
+                != kNowAxOk
+                || menu.title_len != 1
+                || (unsigned char)menu.title[0] != 0x14) {
+            continue;
+        }
+        now_ax_menu_cursor_init(&menu, &cursor);
+        for (;;) {
+            int rc;
+
+            if (count >= kNowAxMenuItemMax) {
+                count = 0;
+                break;
+            }
+            rc = now_ax_menu_next(memory, &cursor, &rows[count]);
+
+            if (rc == kNowAxNotFound) {
+                break;
+            }
+            if (rc != kNowAxOk) {
+                count = 0;
+                break;
+            }
+            ++count;
+        }
+        start = count - s->menus[target].item_count;
+        if (start < 0) {
+            continue;
+        }
+        /* The two-NUL prefix is the guest evidence that these are the
+           system-managed Apple Menu Items rows, not an inactive
+           application's own About item or separator. Requiring it for the
+           entire equal-sized suffix prevents a plausible cross-menu copy. */
+        for (j = start; j < count; ++j) {
+            if (rows[j].title_nul_prefix != 2 || rows[j].title_len == 0) {
+                break;
+            }
+        }
+        if (j != count) {
+            continue;
+        }
+        for (j = 0; j < s->menus[target].item_count; ++j) {
+            NowSceneMenuItem *dst =
+                &s->menu_items[s->menus[target].first_item + j];
+            const NowAxMenuItem *src = &rows[start + j];
+
+            memset(dst->title, 0, sizeof dst->title);
+            strncpy(dst->title, src->title, sizeof dst->title - 1);
+            dst->separator = item_is_separator(src);
+            dst->enabled = src->enabled ? 1 : 0;
+            dst->mark = src->mark != 0;
+            dst->cmd = src->command >= kNowSceneFirstCmdChar
+                ? (char)src->command : '\0';
+            /* Keep dst->index: it belongs to the current front menu and is
+               the value MenuSelect will receive. */
+        }
+        return 1;
+    }
+    return 0;
+}
+
 void now_scene_walk_menubar(NowScene *s, int proc,
                             const NowAxMemory *memory,
                             unsigned long menu_list)

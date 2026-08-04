@@ -29,6 +29,17 @@ winact = winact.split("/* ---- textget", 1)[0]
 require("&handle, ref, 1)" in winact,
         "winact no longer opts its self window into direct Window Manager acts")
 
+self_act = SOURCE.split("static void self_window_act", 1)[1]
+self_act = self_act.split("void now_act_run_winact", 1)[0]
+require('row_add(&rows, "Dispatch", "dispatched")' in self_act,
+        "direct self-window acts must use the shared dispatched vocabulary")
+require('row_add(&rows, "Dispatch", "performed")' not in self_act,
+        "the host cannot interpret the private performed dispatch value")
+require("g_self_window_close_handler(window)" in self_act,
+        "self close must enter the owning application's close path")
+require("HideWindow(window)" not in self_act,
+        "self close cannot leave an application-owned hidden window behind")
+
 ctlact = SOURCE.split("void now_act_run_ctlact", 1)[1]
 ctlact = ctlact.split("/* ---- ditemact", 1)[0]
 require("&handle, ref, 0)" in ctlact,

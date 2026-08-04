@@ -1,6 +1,8 @@
 #ifndef NOW_ACT_CMDS_H
 #define NOW_ACT_CMDS_H
 
+#include <Carbon.h>
+
 /* The act plane's six commands, as the wire sees them.
 
    Three are declared in contract/asyncapi.yaml already - winact,
@@ -42,10 +44,18 @@ void now_act_run_ditemact(const char *request_json, long id,
 void now_act_run_menuact(const char *request_json, long id,
                          char *out, long cap);
 
-/* The application installs its one real menu dispatcher here. A menu act
-   aimed at this process can then run that same handler directly instead of
-   waiting for its own wire callback to enter MenuSelect. */
-typedef void (*NowActSelfMenuHandler)(long choice);
+/* The application installs its bounded menu queue here. A menu act aimed at
+   this process is accepted during the wire callback, then the application
+   drains it from its next main event-loop turn. The return value says whether
+   the one-slot queue accepted the choice. */
+typedef int (*NowActSelfMenuHandler)(long choice);
 void now_act_set_self_menu_handler(NowActSelfMenuHandler handler);
+
+/* Window Manager hiding is not application close semantics. The owning
+   application installs a bounded close dispatcher so its save/dispose/dialog
+   path runs from the main event loop, just like a real close-box click. */
+typedef int (*NowActSelfWindowCloseHandler)(WindowRef window);
+void now_act_set_self_window_close_handler(
+    NowActSelfWindowCloseHandler handler);
 
 #endif /* NOW_ACT_CMDS_H */

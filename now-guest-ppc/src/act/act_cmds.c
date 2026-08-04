@@ -251,10 +251,17 @@ static const char *refusal_code(NowObsVerdict verdict)
    reply: a receipt names what was asked for. */
 static int act_target_is_self(const ProcessSerialNumber *psn);
 static NowActSelfMenuHandler g_self_menu_handler;
+static NowActSelfWindowCloseHandler g_self_window_close_handler;
 
 void now_act_set_self_menu_handler(NowActSelfMenuHandler handler)
 {
     g_self_menu_handler = handler;
+}
+
+void now_act_set_self_window_close_handler(
+    NowActSelfWindowCloseHandler handler)
+{
+    g_self_window_close_handler = handler;
 }
 
 static int resolve_for_act(const char *json, long id, char *out, long cap,
@@ -399,14 +406,13 @@ static void self_window_act(WindowRef window, const NowActWinArgs *args,
                    false);
         break;
     case kNowActWinClose:
-        /* HIDDEN, not disposed. This surface does not know what closing
-           one of this application's windows MEANS - the application's own
-           close may save state, may quit, may put a dialog up - and
-           guessing would be the worst of the three. Hiding is the part
-           that is unambiguously reversible and unambiguously what a
-           person asked for when they wanted it out of the way. Said
-           plainly in the reply rather than reported as a close. */
-        HideWindow(window);
+        if (g_self_window_close_handler == NULL
+            || !g_self_window_close_handler(window)) {
+            reply_error(out, cap, id, "self-close-busy",
+                        "the application's close command could not be "
+                        "queued for its main event loop");
+            return;
+        }
         break;
     default:
         reply_error(out, cap, id, "bad-request",
@@ -417,11 +423,15 @@ static void self_window_act(WindowRef window, const NowActWinArgs *args,
     row_add(&rows, "Window", "this application's own");
     snprintf(number, sizeof number, "0x%08lX", (unsigned long)window);
     row_add(&rows, "Ref", number);
-    row_add(&rows, "Dispatch", "performed");
+    /* The action ran synchronously, but Dispatch is a shared wire
+       vocabulary rather than a strength scale. `performed` was private to
+       this branch; the typed host therefore rejected successful resize,
+       zoom and close replies as outcome-unknown. Effect strength still
+       comes from the later authoritative scene. */
+    row_add(&rows, "Dispatch", "dispatched");
     row_add(&rows, "Mechanism",
                      args->action == kNowActWinClose
-                         ? "HideWindow, called directly - this surface does "
-                           "not know what this application means by close"
+                         ? "the application's main-loop close path"
                          : "the Window Manager, called directly in this "
                            "process");
     reply_rows(out, cap, id, "winact", &rows);
@@ -1006,13 +1016,18 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
     psn.lowLongOfPSN = (unsigned long)lo;
     want = &psn;
     if (act_target_is_self(want) && g_self_menu_handler != NULL) {
-        g_self_menu_handler((menu << 16) | (item & 0xFFFFL));
+        if (!g_self_menu_handler((menu << 16) | (item & 0xFFFFL))) {
+            reply_error(out, cap, id, "self-menu-busy",
+                        "the application's prior menu command is still "
+                        "queued for its main event loop");
+            return;
+        }
         rows_reset(&rows);
         row_addf(&rows, "Menu", "%ld", menu);
         row_addf(&rows, "Item", "%ld", item);
-        row_add(&rows, "Dispatch", "performed");
-        row_add(&rows, "Mechanism", "the application's own menu handler");
-        now_log(kLogInfo, "act", "#%ld menuact %ld/%ld performed directly",
+        row_add(&rows, "Dispatch", "dispatched");
+        row_add(&rows, "Mechanism", "the application's main-loop menu queue");
+        now_log(kLogInfo, "act", "#%ld menuact %ld/%ld queued for main loop",
                 id, menu, item);
         reply_rows(out, cap, id, "menuact", &rows);
         return;

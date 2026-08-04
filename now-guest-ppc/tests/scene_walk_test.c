@@ -485,6 +485,25 @@ static unsigned long put_item(AxFixture *f, unsigned long at,
     return at + 5 + len;
 }
 
+static unsigned long put_prefixed_item(AxFixture *f, unsigned long at,
+                                       const char *text)
+{
+    size_t len = strlen(text);
+    size_t i;
+
+    axfix_put8(f, at, (unsigned)(len + 2));
+    axfix_put8(f, at + 1, 0);
+    axfix_put8(f, at + 2, 0);
+    for (i = 0; i < len; ++i) {
+        axfix_put8(f, at + 3 + i, (unsigned char)text[i]);
+    }
+    axfix_put8(f, at + 3 + len, 0);           /* icon */
+    axfix_put8(f, at + 4 + len, 0);           /* command */
+    axfix_put8(f, at + 5 + len, 0);           /* mark */
+    axfix_put8(f, at + 6 + len, 0);           /* style */
+    return at + 7 + len;
+}
+
 static void build_bar(AxFixture *f)
 {
     unsigned long items;
@@ -547,6 +566,61 @@ static void menubar_complete(void)
     check(s.menu_items[s.menus[1].first_item + 1].mark == 1,
           "but its mark character is a mark");
     check(s.menubar_refused == 0, "nothing was dropped");
+}
+
+static void blank_self_apple_uses_only_guest_system_rows(void)
+{
+    static const char *rows[16] = {
+        "Apple System Profiler", "Calculator", "Chooser",
+        "Control Panels", "Find File", "Key Caps", "Network Browser",
+        "Note Pad", "Recent Applications", "Recent Documents",
+        "Recent Servers", "Scrapbook", "Sherlock 2", "SimpleSound",
+        "Stickies", "System Preferences"
+    };
+    AxFixture f;
+    NowAxMemory m;
+    NowScene s;
+    unsigned long items;
+    int p;
+    int menu;
+    int i;
+
+    axfix_init(&f, &m);
+    axfix_put_handle(&f, kListH, kList);
+    axfix_put16(&f, kList, 6);                /* one menu */
+    axfix_put32(&f, kList + 6, kMenuH0);
+    axfix_put16(&f, kList + 10, 0);
+    items = build_menu(&f, kMenuH0, kMenu0, 256, "\024",
+                       0xFFFFFFFFUL);
+    items = put_item(&f, items, "About This Computer", 0, 0);
+    items = put_item(&f, items, "-", 0, 0);
+    for (i = 0; i < 16; ++i) {
+        items = put_prefixed_item(&f, items, rows[i]);
+    }
+    axfix_put8(&f, items, 0);
+
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    p = now_scene_add_process(&s, 0, 7, "New Old World", 0x4E4F576FUL,
+                              1, kNowSceneAnchorOk, 0);
+    check(now_scene_open_menubar(&s, p), "self menubar opens");
+    menu = now_scene_add_menu(&s, "\024", -16383, 10);
+    for (i = 1; i <= 16; ++i) {
+        check(now_scene_add_menu_item(&s, menu, "", (short)i,
+                                      0, 1, 0, '\0'),
+              "the system shell row is represented");
+    }
+
+    check(now_scene_fill_blank_system_apple(&s, &m, kListH),
+          "a validated guest system menu fills the blank self shell");
+    check(strcmp(s.menu_items[s.menus[menu].first_item].title,
+                 "Apple System Profiler") == 0,
+          "the Finder-specific About and separator prefix are not copied");
+    check(strcmp(s.menu_items[s.menus[menu].first_item + 15].title,
+                 "System Preferences") == 0,
+          "all sixteen guest Apple Menu Items rows survive");
+    check(s.menu_items[s.menus[menu].first_item].index == 1
+          && s.menu_items[s.menus[menu].first_item + 15].index == 16,
+          "the current menu's MenuSelect indices remain authoritative");
 }
 
 /* A process with no menu bar: the plane opens and carries zero menus,
@@ -769,6 +843,7 @@ int main(void)
     malformed_ditl_retracts_the_plane();
     text_is_gated_on_the_kind();
     menubar_complete();
+    blank_self_apple_uses_only_guest_system_rows();
     a_null_menu_list_is_an_empty_answer();
     an_unparsable_list_retracts_the_plane();
     a_refused_anchor_never_opens_the_bar();

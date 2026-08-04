@@ -265,6 +265,41 @@ static void handle_menu_choice(long choice)
     }
 }
 
+/* A wire callback may run inside one of the nested pumps documented in
+   pump.h. Creating or disposing Toolbox UI there made Windows > Workshop
+   report success without showing a window. Keep one serialized choice and
+   execute it as soon as conn_service returns to the application's main loop,
+   which is the same ownership context as a real MenuSelect. */
+static long g_pending_menu_choice;
+
+static int queue_menu_choice(long choice)
+{
+    if (choice == 0 || g_pending_menu_choice != 0) {
+        return 0;
+    }
+    g_pending_menu_choice = choice;
+    return 1;
+}
+
+static int queue_window_close(WindowRef window)
+{
+    if (!workshop_is(window)) {
+        return 0;
+    }
+    return queue_menu_choice(((long)kFileMenuID << 16) | kFileCloseItem);
+}
+
+static void dispatch_pending_menu_choice(void)
+{
+    long choice = g_pending_menu_choice;
+
+    if (choice == 0) {
+        return;
+    }
+    g_pending_menu_choice = 0;
+    handle_menu_choice(choice);
+}
+
 static void handle_mouse_down(const EventRecord *event)
 {
     WindowRef window;
@@ -379,7 +414,8 @@ int main(void)
     }
     compute_screen_bounds();
     create_menu_bar();
-    now_act_set_self_menu_handler(handle_menu_choice);
+    now_act_set_self_menu_handler(queue_menu_choice);
+    now_act_set_self_window_close_handler(queue_window_close);
     /* The Workshop is the primary window; the remaining old module
        windows stay reachable from the menus until each one moves in. If
        the shell cannot build its navigation, say so once - the rest of
@@ -434,6 +470,7 @@ int main(void)
 
     while (g_running) {
         conn_service();
+        dispatch_pending_menu_choice();
         workshop_idle();
         ask_about_replacing();
         /* NEVER SLEEP ZERO. A zero sleep tells WaitNextEvent to return

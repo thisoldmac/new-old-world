@@ -330,6 +330,7 @@ run_c now-guest-ppc obsresolve_test.c       ""  src/observe/obsresolve.c \
 # that fails instead.
 run_py now-guest-ppc one_minter_source_test.py
 run_py now-guest-ppc self_window_act_source_test.py
+run_py now-guest-ppc self_menu_act_source_test.py
 # The seam the SCENE walk mints through. It is the one test in the tree
 # that mints a reference and then RESOLVES it, which is the only way to
 # tell an address from a decoration: a `ref` that is well formed and

@@ -76,4 +76,16 @@ void now_scene_walk_menubar(NowScene *s, int proc,
                             const NowAxMemory *memory,
                             unsigned long menu_list);
 
+/* Mac OS 9 may expose the front Carbon application's Apple menu as an exact
+   shell whose rows have indices and enablement but blank text. A validated
+   classic process menu can still carry the system-owned Apple Menu Items
+   rows, identified by the two-NUL prefix measured in axmenu.c. Fill only an
+   already-present, wholly blank Apple shell with an equal-sized suffix of
+   those guest rows. The current menu keeps its own ID, geometry and
+   MenuSelect indices; no host label or application-specific prefix is
+   synthesized. Returns nonzero only when a fill occurred. */
+int now_scene_fill_blank_system_apple(NowScene *s,
+                                      const NowAxMemory *memory,
+                                      unsigned long menu_list);
+
 #endif /* NOW_SCENE_WALK_H */

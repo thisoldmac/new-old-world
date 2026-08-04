@@ -369,11 +369,8 @@ static MenuRef root_items_for(MenuRef root, MenuHandle entry)
         return entry;
     }
     wanted = GetMenuID(entry);
-    installed = GetMenuHandle(wanted);
-    if (installed != NULL && CountMenuItems(installed) > 0) {
-        return installed;
-    }
     count = CountMenuItems(root);
+
     for (i = 1; i <= count; ++i) {
         MenuRef child = NULL;
         MenuID  attached = 0;
@@ -392,6 +389,15 @@ static MenuRef root_items_for(MenuRef root, MenuHandle entry)
                        && child != NULL && GetMenuID(child) == wanted) {
             return child;
         }
+    }
+    /* The live MenuList handle is frequently also the installed handle.
+       For system menus that handle can contain the right row count and
+       still hold only blank shell text, so it must not outrank an attached
+       root submenu with the same ID. Ordinary application menus have no
+       such root child and arrive here unchanged. */
+    installed = GetMenuHandle(wanted);
+    if (installed != NULL && CountMenuItems(installed) > 0) {
+        return installed;
     }
     return entry;
 }
@@ -417,11 +423,11 @@ static void collect_self_menubar(NowScene *s, int row)
     for (offset = 6; offset <= head->last_offset; offset = (short)(offset + 6)) {
         NowMenuListEntry *entry =
             (NowMenuListEntry *)((char *)*bar + offset);
-        MenuRef items = entry->menu;
-
-        if (entry->menu != NULL && CountMenuItems(entry->menu) == 0) {
-            items = root_items_for(root, entry->menu);
-        }
+        /* Count is not completeness. On OS 9 the system Apple shell can
+           carry the correct number of blank rows. Resolve every live entry
+           through Carbon's attached root submenu by menu ID; normal menus
+           simply fall back to their installed handle. */
+        MenuRef items = root_items_for(root, entry->menu);
         add_one_menu(s, entry->menu, items, entry->left);
     }
     if (root != NULL) {

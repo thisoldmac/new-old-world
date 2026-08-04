@@ -250,6 +250,14 @@ static void collect_process(NowScene *s, int row,
        name. */
     if (bound && s->procs[row].front) {
         now_scene_walk_menubar(s, row, &ctx.memory, ctx.menu_list);
+    } else if (bound) {
+        /* A background process's whole menu bar is not the one on screen,
+           so it is never filed as `menubar`. Its validated system Apple
+           rows may, however, complete the front Carbon app's exact blank
+           shell. The bridge admits only the measured two-NUL system rows
+           and preserves the front menu's own IDs and action indices. */
+        (void)now_scene_fill_blank_system_apple(
+            s, &ctx.memory, ctx.menu_list);
     }
 }
 

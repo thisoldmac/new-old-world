@@ -38,8 +38,11 @@ def main() -> None:
         raise SystemExit("the system-owned Apple rows must be acquired from "
                          "and released with Carbon's live root menu")
     if "root_items_for(root, entry->menu)" not in collect:
-        raise SystemExit("an empty MenuList shell must resolve its root-menu "
+        raise SystemExit("every live MenuList entry must resolve its root-menu "
                          "submenu by identity")
+    if "CountMenuItems(entry->menu) == 0" in collect:
+        raise SystemExit("a non-empty system shell can contain blank rows; "
+                         "root-menu resolution cannot be count-gated")
     root_items = body("static MenuRef root_items_for(")
     if "GetMenuItemHierarchicalMenu" not in root_items:
         raise SystemExit("root-menu rows must come from the attached submenu")
@@ -49,6 +52,10 @@ def main() -> None:
     if "GetMenuHandle(wanted)" not in root_items:
         raise SystemExit("an installed menu with the measured ID must beat "
                          "the empty low-memory shell")
+    if root_items.index("GetMenuHandle(wanted)") < root_items.index(
+            "GetMenuItemHierarchicalID"):
+        raise SystemExit("the installed MenuList shell must not outrank the "
+                         "root menu's attached submenu")
     if "GetMenuID(child) == wanted" not in root_items:
         raise SystemExit("the root submenu must match the measured MenuList "
                          "entry by menu ID, not by title or geometry")
