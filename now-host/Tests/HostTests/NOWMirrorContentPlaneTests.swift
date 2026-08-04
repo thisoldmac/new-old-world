@@ -222,6 +222,40 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
         XCTAssertFalse(update.sentence.contains("renderer defers bits"))
     }
 
+    func testBitmapOnlyGenerationRetainsPriorStructuredDrawing() throws {
+        let model = plane()
+        let first = model.apply(try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"state","port":"0x1eba6800","ticks":1,
+           "a5":"0x00100000","psn":"0.29949953",
+           "displayEpoch":3,"generation":7,
+           "kind":"origin","origin":[0,0]},
+          {"op":"text","port":"0x1eba6800","ticks":2,
+           "a5":"0x00100000","psn":"0.29949953",
+           "displayEpoch":3,"generation":7,
+           "pen":[30,30],"font":3,"size":9,"face":0,
+           "len":4,"fullLen":4,"trunc":false,"text":"City"}],
+         "nextCursor":96,"records":2}
+        """), to: try scene())
+        XCTAssertEqual(first.scene.windows[0].display?.map(\.op),
+                       ["state", "text"])
+
+        let bitmap = model.apply(try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"bits","port":"0x1eba6800","ticks":3,
+           "a5":"0x00100000","psn":"0.29949953",
+           "displayEpoch":4,"generation":8,
+           "src":[0,0,100,100],"dst":[0,0,100,100]}],
+         "nextCursor":160,"records":1}
+        """), to: try scene())
+
+        XCTAssertEqual(bitmap.scene.windows[0].display?.map(\.op),
+                       ["bits", "state", "text"])
+        XCTAssertEqual(bitmap.scene.windows[0].display?.last?.text, "City")
+        XCTAssertTrue(bitmap.sentence.contains(
+            "retained 1 expected-stale structured draw op"))
+    }
+
     func testProcessSerialParsesOnlyTheTwoPartWireShape() {
         XCTAssertEqual(NOWMirrorContentPlane.serial("0.29360131")?.hi, 0)
         XCTAssertEqual(NOWMirrorContentPlane.serial("0.29360131")?.lo,

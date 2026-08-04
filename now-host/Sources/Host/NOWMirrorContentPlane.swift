@@ -300,15 +300,34 @@ final class NOWMirrorContentPlane {
            that point showed a half-redrawn application for several polls and
            then mixed it with the semantic layer. Keep the previous settled
            display visible until the host has caught the ring completely. */
+        var retainedStructured = 0
         if !drain.more && replacementFloor.isEmpty {
             for (slot, identity) in currentDisplay {
                 guard let complete = operations[identity], !complete.isEmpty
                 else { continue }
+                var published = complete
+                if !Self.hasStructuredDrawing(complete),
+                   let prior = settledDisplay[slot], prior != identity,
+                   let priorOps = settledOperations[prior],
+                   Self.hasStructuredDrawing(priorOps) {
+                    /* A classic application may finish a repaint with one
+                       CopyBits of its chrome after the text/control drawing
+                       was captured in an earlier guest-authored generation.
+                       The bitmap geometry is fresh, but it cannot honestly
+                       delete structured state it never reports. Preserve the
+                       prior non-bitmap operations as expected-stale until the
+                       same window supplies newer structured drawing. */
+                    let stale = priorOps.filter { $0.op != "bits" }
+                    published.append(contentsOf: stale)
+                    retainedStructured += stale.filter {
+                        $0.op != "state"
+                    }.count
+                }
                 if let prior = settledDisplay[slot], prior != identity {
                     settledOperations[prior] = nil
                 }
                 settledDisplay[slot] = identity
-                settledOperations[identity] = complete
+                settledOperations[identity] = published
             }
         }
         let attached = attachCached(to: scene)
@@ -336,6 +355,12 @@ final class NOWMirrorContentPlane {
         if drain.more {
             facts.append("more remain in the guest ring")
             facts.append("retained the last settled display")
+        }
+        if retainedStructured > 0 {
+            facts.append("retained \(retainedStructured) expected-stale "
+                         + "structured draw op"
+                         + "\(retainedStructured == 1 ? "" : "s") above "
+                         + "a bitmap-only display")
         }
         if drain.lostBytes > 0 {
             facts.append("\(drain.lostBytes) earlier bytes were overwritten")
@@ -367,6 +392,11 @@ final class NOWMirrorContentPlane {
             attached.windows[index].display = ops
         }
         return attached
+    }
+
+    private static func hasStructuredDrawing(_ operations: [DisplayOp])
+        -> Bool {
+        operations.contains { $0.op != "bits" && $0.op != "state" }
     }
 
     static func serial(_ psn: String) -> (hi: Int, lo: Int)? {
