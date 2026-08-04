@@ -73,6 +73,7 @@ add_application(now-guest-ppc
     src/peek/peek_validate.c
     src/peek/peek_oracle.c
     src/peek/peek_read.c
+    ../now-guest-shared/src/now_semantic_guard.c
     src/processes/proc_actions.c
     src/processes/proc_quit_args.c
     src/processes/processes_layout.c

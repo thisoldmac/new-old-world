@@ -526,6 +526,104 @@ typedef struct {
     NowPeekU32 resident_owner_epoch;
 } NowPeekWriterLease;
 
+/* P2 semantic assist. The evidence and rejected alternatives behind this
+   deliberately small operation set are in docs/p2-semantic-evidence.md.
+   The records are fixed-size because this code runs from a system-wide event
+   filter: no allocation, unbounded traversal, or caller-selected byte count
+   is permitted. */
+enum {
+    kNowPeekSemanticFormatNone = 0,
+    kNowPeekSemanticFormatV1 = 1,
+    kNowPeekSemanticMaxRecords = 32,
+    kNowPeekSemanticTextMax = 32,
+    kNowPeekSemanticLeaseTicks = 120
+};
+
+enum {
+    kNowPeekSemanticOpNone = 0,
+    kNowPeekSemanticOpControlClass = 1,
+    kNowPeekSemanticOpListCells = 2,
+    kNowPeekSemanticOpSystemMenu = 3
+};
+
+enum {
+    kNowPeekSemanticStatusNone = 0,
+    kNowPeekSemanticStatusPending = 1,
+    kNowPeekSemanticStatusOk = 2,
+    kNowPeekSemanticStatusUnsupported = 3,
+    kNowPeekSemanticStatusUnsupportedCustom = 4,
+    kNowPeekSemanticStatusTruncated = 5,
+    kNowPeekSemanticStatusInvalid = 6,
+    kNowPeekSemanticStatusWrongTarget = 7,
+    kNowPeekSemanticStatusStale = 8
+};
+
+enum {
+    kNowPeekSemanticRecordNone = 0,
+    kNowPeekSemanticRecordControlClass = 1,
+    kNowPeekSemanticRecordListCell = 2,
+    kNowPeekSemanticRecordMenuItem = 3
+};
+
+enum {
+    kNowPeekSemanticControlUnknown = 0,
+    kNowPeekSemanticControlStandard = 1,
+    kNowPeekSemanticControlResource = 2,
+    kNowPeekSemanticControlCustom = 3,
+    kNowPeekSemanticRecordSelected = 1u << 0,
+    kNowPeekSemanticRecordEnabled = 1u << 1,
+    kNowPeekSemanticRecordChecked = 1u << 2,
+    kNowPeekSemanticRecordSeparator = 1u << 3,
+    kNowPeekSemanticRecordTextComplete = 1u << 4
+};
+
+/* All 16-bit fields are paired so the record is 48 bytes under all three
+   compilers. `index` is the 1-based menu item or list row; `aux` is the list
+   column or control class, and `flags` carries the record flag bits. Text has an
+   explicit true length: when it exceeds the fixed buffer the whole response
+   is truncated and the record never claims TextComplete. */
+typedef struct {
+    NowPeekU16 kind;
+    NowPeekU16 status;
+    NowPeekU16 index;
+    NowPeekU16 aux;
+    NowPeekU32 flags;
+    NowPeekU16 text_length;
+    NowPeekU16 text_copied;
+    unsigned char text[kNowPeekSemanticTextMax];
+} NowPeekSemanticRecord;
+
+/* One request/reply cell. The application writes request fields and publishes
+   request_generation LAST. The resident snapshots it, validates the exact A5
+   and object tuple, writes response_generation odd while publishing, then
+   writes the next nonzero even value LAST. A reader copies only between two
+   equal even generation reads and rechecks every echoed identity. */
+typedef struct {
+    NowPeekU32 request_generation;
+    NowPeekU32 request_op;
+    NowPeekU32 request_writer_epoch;
+    NowPeekU32 request_target_a5;
+    NowPeekU32 request_scene_generation;
+    NowPeekU32 request_window;
+    NowPeekU32 request_object;
+    NowPeekI32 request_object_aux;
+    NowPeekU32 request_deadline_ticks;
+
+    NowPeekU32 response_generation;
+    NowPeekU32 response_request_generation;
+    NowPeekU32 response_status;
+    NowPeekU32 response_writer_epoch;
+    NowPeekU32 response_target_a5;
+    NowPeekU32 response_scene_generation;
+    NowPeekU32 response_window;
+    NowPeekU32 response_object;
+    NowPeekI32 response_object_aux;
+    NowPeekU32 response_served_ticks;
+    NowPeekU16 response_record_count;
+    NowPeekU16 response_total_count;
+    NowPeekSemanticRecord records[kNowPeekSemanticMaxRecords];
+} NowPeekSemanticCell;
+
 typedef struct {
     NowPeekU32 magic;         /* kNowPeekTableMagic */
     NowPeekU16 ext_major;     /* exact match required */
@@ -587,6 +685,10 @@ typedef struct {
     NowPeekU32 anchor_change_publishes;
     NowPeekU32 anchor_cadence_publishes;
     NowPeekU32 anchor_last_publish_ticks;
+    /* U3 P2 append. Old identity/writer/P1 evidence offsets stay stable. */
+    NowPeekU16 semantic_format;
+    NowPeekU16 semantic_length;
+    NowPeekSemanticCell semantic;
 } NowPeekTable;
 
 /* The offsets ARE the contract; a drift here is a defect on the other
@@ -675,7 +777,21 @@ _Static_assert(offsetof(NowPeekTable, anchor_event_passes)
                    == offsetof(NowPeekTable, writer) + 36,
                "P1 counters append offset");
 _Static_assert(sizeof(NowPeekTable)
-                   == offsetof(NowPeekTable, anchor_last_publish_ticks) + 4,
+                   == offsetof(NowPeekTable, semantic)
+                    + sizeof(NowPeekSemanticCell),
                "table size");
+_Static_assert(sizeof(NowPeekSemanticRecord) == 48,
+               "semantic record size");
+_Static_assert(offsetof(NowPeekTable, semantic_format)
+                   == offsetof(NowPeekTable, anchor_last_publish_ticks) + 4,
+               "semantic append offset");
+_Static_assert(offsetof(NowPeekTable, semantic)
+                   == offsetof(NowPeekTable, semantic_format) + 4,
+               "semantic cell offset");
+_Static_assert(offsetof(NowPeekSemanticCell, records) == 80,
+               "semantic records offset");
+_Static_assert(sizeof(NowPeekSemanticCell)
+                   == 80 + 48 * kNowPeekSemanticMaxRecords,
+               "semantic cell size");
 
 #endif /* NOW_PEEK_TABLE_H */

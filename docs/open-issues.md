@@ -61,6 +61,23 @@ new exact `NWid` fingerprint, table identity, writer handoff, callback chaining,
 and six-tick counters before any runtime row turns green. The stage image still
 contains the older resident and must not be used as evidence for this build.
 
+### U3 ABI checkpoint only; semantic resolvers remain red
+
+The R11 evidence review is now durable in `docs/p2-semantic-evidence.md`. It
+rejects every fact the bounded P1 reader already proves, rejects non-dialog
+TextEdit from v1 because no documented safe root exists, and fixes a 32-record
+envelope large enough for the measured 16-row Finder Apple menu. The table has
+an appended exact-target P2 cell, explicit refusal/truncation states, and a
+volatile generation-checked application copy. Mutation fixtures cover short
+tables, stale/wrong identity, partial publication, overflow, resolver-kind
+mismatch, and dishonest text completeness.
+
+This is an **incomplete checkpoint**, not P2 behavior. NOW Extension does not
+advertise or arm P2 yet. Invalid-handle-safe Control/Resource/List/Menu Manager
+resolvers, request publication, scene joining, disabled-P2 degradation, and
+the direct Date & Time/Apple UX proof all remain red. The ABI's ability to
+represent those facts is not evidence that the guest has produced them.
+
 ## CYCLE 25 RED; SETUP CORRECTED BEFORE C26 (2026-08-03)
 
 Cycle 25 directly re-ran the sanity preflight through the uniquely identified
