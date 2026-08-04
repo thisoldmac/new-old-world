@@ -229,7 +229,8 @@ public enum ActionModel {
     public static let menuRowHeight = 16
     public static let menubarHeight = HitTester.menubarHeight
 
-    static func menuItemPoint(menuLeft: Int, itemIndex: Int) -> (x: Int, y: Int) {
+    public static func menuItemPoint(menuLeft: Int, itemIndex: Int)
+        -> (x: Int, y: Int) {
         (menuLeft + 20,
          menubarHeight + 1 + (itemIndex - 1) * menuRowHeight + menuRowHeight / 2)
     }

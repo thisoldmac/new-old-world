@@ -163,7 +163,25 @@ Open before visible cutover:
 - a per-session observation scheduler beyond the conservative global pending
   slot, complete shadow parity, and content/evidence integration;
 - guest-authored content epochs/generations and typed Finder/content coverage;
-- the QMP-only code split into a development-oracle product rather than the
-  production MirrorKit dependency;
+- removal of the remaining QMP-shaped action/target vocabulary from core
+  types; the executable QMP client and dispatcher are already isolated below;
 - native FIFO and direct keyboard/mouse acceptance campaign;
 - guest cross-build, staged VM update, and clean saved shutdown.
+
+## Development oracle boundary
+
+`MirrorOracleKit` is a separate SwiftPM product containing `QmpClient`, the
+QMP-capable dispatcher, and the legacy live controller that composes stale
+windows. `MirrorApp` and oracle-facing tests opt into it. The production NOW
+Host depends only on `MirrorKit` and `MirrorKitUI`; neither contains those
+files, and the built Host binary contains none of the QMP handshake or
+dispatcher markers. Host tests derive the package edge from the manifests and
+source layout so moving either executable client back into a production target
+fails the ordinary suite.
+
+The split is not yet complete at the vocabulary level: historical
+`MirrorAction` cases and `MirrorTarget.qmp` still describe the oracle's input
+options in core types. They execute only in `MirrorOracleKit`, but U4 remains
+open until those fields become oracle-owned as well. QMP remains a read-only
+development oracle for NOW's acceptance campaign and is never a production
+state or mutation source.

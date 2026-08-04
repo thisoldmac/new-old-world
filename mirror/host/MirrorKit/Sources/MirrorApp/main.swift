@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import MirrorKit
 import MirrorKitUI
+import MirrorOracleKit
 import SwiftUI
 
 /// MirrorApp shell v0: CLI → MirrorTarget → live polling / render-screenshot.

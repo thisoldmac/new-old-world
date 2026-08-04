@@ -1,5 +1,6 @@
 import XCTest
 @testable import MirrorKit
+import MirrorOracleKit
 
 /// Hit-testing + action-model tests against the captured fixture scenes —
 /// the same real geometry the renderer draws.

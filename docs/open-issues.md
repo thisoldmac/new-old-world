@@ -132,6 +132,22 @@ Finder/content coverage, the QMP-only oracle target split, live direct parity,
 and visible read cutover remain open, so this is a **tested shadow checkpoint**,
 not emulator-verified product behavior.
 
+### STATE ENGINE U4B: EXECUTABLE QMP CODE IS ORACLE-ONLY (2026-08-04)
+
+The QMP socket client, QMP-capable action dispatcher, and legacy live polling
+controller now live in a separate `MirrorOracleKit` SwiftPM product.
+`MirrorApp` opts into that development target; production NOW Host still links
+only `MirrorKit` and `MirrorKitUI`. The Host app builds without the oracle
+product, its binary contains none of the QMP handshake/dispatcher markers, two
+host tests guard the manifest/source boundary, and the standalone legacy
+MirrorApp still builds.
+
+This is not yet the whole U4 cleanup: historical QMP-named action cases,
+availability fields, and `MirrorTarget.qmp` remain in core data types even
+though their executable behavior no longer links into NOW Host. Those types
+must become platform-neutral or oracle-owned before U4 is complete. No live VM
+or Mirror was touched, and this checkpoint changes no visible projection.
+
 ## CONTRACT FROZEN; UNIFICATION IMPLEMENTATION STILL OPEN (2026-08-03)
 
 The unified NOW Extension prerequisite now starts from a source-derived

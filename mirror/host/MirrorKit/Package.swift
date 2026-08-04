@@ -10,6 +10,7 @@ let package = Package(
     products: [
         .library(name: "MirrorKit", targets: ["MirrorKit"]),
         .library(name: "MirrorKitUI", targets: ["MirrorKitUI"]),
+        .library(name: "MirrorOracleKit", targets: ["MirrorOracleKit"]),
         .executable(name: "MirrorApp", targets: ["MirrorApp"]),
     ],
     targets: [
@@ -19,11 +20,14 @@ let package = Package(
                             .copy("Resources/patterns"),
                             .copy("Resources/icons"),
                             .copy("Resources/appicons")]),
+        .target(name: "MirrorOracleKit",
+                dependencies: ["MirrorKit", "MirrorKitUI"]),
         .executableTarget(name: "MirrorApp",
-                          dependencies: ["MirrorKit", "MirrorKitUI"]),
+                          dependencies: ["MirrorKit", "MirrorKitUI",
+                                         "MirrorOracleKit"]),
         .testTarget(
             name: "MirrorKitTests",
-            dependencies: ["MirrorKit"],
+            dependencies: ["MirrorKit", "MirrorOracleKit"],
             resources: [.copy("Fixtures")]
         ),
         .testTarget(

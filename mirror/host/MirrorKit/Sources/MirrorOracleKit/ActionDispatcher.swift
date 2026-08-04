@@ -1,4 +1,5 @@
 import Foundation
+import MirrorKit
 
 /// Executes `MirrorAction`s against a target: wire verbs through the
 /// WireClient, the drag plane through QMP (closed-loop positioned on the
@@ -138,8 +139,15 @@ public final class ActionDispatcher {
 
     private func mouseloc() throws -> (x: Int, y: Int) {
         let r = try wire.request("mouseloc").result
-        return (SceneBuilder.intValue(r["x"]) ?? 0,
-                SceneBuilder.intValue(r["y"]) ?? 0)
+        return (Self.intValue(r["x"]) ?? 0,
+                Self.intValue(r["y"]) ?? 0)
+    }
+
+    private static func intValue(_ raw: Any?) -> Int? {
+        if let value = raw as? Int { return value }
+        if let value = raw as? NSNumber { return value.intValue }
+        if let value = raw as? String { return Int(value) }
+        return nil
     }
 
     /// Closed-loop the emulated cursor onto (tx,ty) using mouseloc feedback

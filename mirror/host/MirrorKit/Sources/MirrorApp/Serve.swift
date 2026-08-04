@@ -1,6 +1,7 @@
 import Foundation
 import MirrorKit
 import MirrorKitUI
+import MirrorOracleKit
 
 /// The agent-facing mirror service — `MirrorApp --serve <socket>`.
 ///

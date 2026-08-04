@@ -1,5 +1,6 @@
 import Foundation
 import MirrorKit
+import MirrorOracleKit
 
 /// The actuation battery: drive the guest through the full gesture set via the
 /// REAL hit-test → action-model → dispatcher path (the same code the live app
