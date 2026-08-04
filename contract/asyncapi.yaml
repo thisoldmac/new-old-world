@@ -2297,6 +2297,15 @@ components:
             releases only this owner's Tree claim; P1 Structure remains
             required and armed. This is host policy carried to its named
             claim, not a cached resident capability.
+        interaction:
+          type: boolean
+          default: true
+          description: >
+            Whether this open scene owner requests P4 Interaction. False
+            releases only this owner's Act claim. Carrying the policy on
+            the recurring scene request makes the resident lease describe
+            the live Mirror window rather than the last action it happened
+            to send.
     SceneBegin:
       type: object
       required: [type, id, transfer, bytes, irVersion]
@@ -2985,9 +2994,11 @@ components:
     # set true.
     winact:
       description: >
-        Move, resize, zoom or close ONE window, by answering the owning
-        application's own FindWindow. No mouse is simulated and no
-        emulator is involved: the application is handed the answer it
+        Select, move, resize, zoom or close ONE window. Select and move run
+        the corresponding Window Manager operation in the owning process;
+        the other operations answer that application's own FindWindow.
+        No mouse is simulated and no emulator is involved: the application
+        is handed the answer it
         would have got had a person dragged the window, so it does what
         it would have done, and applications that police their own
         geometry keep policing it.
@@ -2998,8 +3009,9 @@ components:
         that has closed is refused; it is never resolved to a
         neighbouring one.
 
-        move and resize carry their own geometry and the other two carry
-        none. zoom takes none because the standard state is the
+        move and resize carry their own geometry and the other three carry
+        none. select identifies the exact window to bring forward within
+        its application. zoom takes none because the standard state is the
         application's to compute — a caller that supplied one would be
         deciding what the window is for. close takes none and is
         destructive: an application may lose unsaved work, or may put up
@@ -3016,7 +3028,7 @@ components:
               forgeable and means nothing once the window dies.
           action:
             type: string
-            enum: [move, resize, zoom, close]
+            enum: [select, move, resize, zoom, close]
           left:
             type: integer
             description: Content origin, for move. QuickDraw Rect range.

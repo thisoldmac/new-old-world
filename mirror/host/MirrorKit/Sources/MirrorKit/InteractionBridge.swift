@@ -50,6 +50,9 @@ public enum InteractionBridge {
         case .activateApp(let psn):
             return [.activate(psn: psn)]
 
+        case .activateWindow(let psn, let ref):
+            return [.activate(psn: psn), .windowAct(ref: ref, act: .select)]
+
         case .applicationVisibility:
             /* The old action vocabulary has no system Application-menu
                visibility operation. NOW's direct driver serves this typed

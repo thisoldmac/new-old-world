@@ -228,6 +228,13 @@ static int begin_window(NowPeekActCell *cell)
         }
         return kNowActServeMove;
 
+    case kNowPeekActWinSelect:
+        if (cell->window_ptr == 0) {
+            cell->error = kNowPeekActErrNoWindow;
+            return kNowActServeRefused;
+        }
+        return kNowActServeSelect;
+
     case kNowPeekActWinResize:
         if (!patches_present(cell, (unsigned long)kNowPeekActPatchFindWindow
                                        | kNowPeekActPatchGrowWindow)) {
@@ -539,8 +546,9 @@ short now_act_findwindow_answer(NowPeekActCell *cell, unsigned long current_a5,
     if (p == NULL || out_window == NULL) {
         return 0;
     }
-    if (p->window_op == kNowPeekActWinMove) {
-        return 0;               /* MOVE never arms a patch */
+    if (p->window_op == kNowPeekActWinMove
+        || p->window_op == kNowPeekActWinSelect) {
+        return 0;               /* direct operations never arm a patch */
     }
 
     /* THE GUARD. A Point is {short v; short h}, so v is the HIGH word. */

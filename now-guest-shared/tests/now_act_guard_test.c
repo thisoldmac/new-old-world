@@ -328,6 +328,11 @@ static void test_window_stages(void)
                                          point_of(120, 90), 5UL, &window),
                0, "FindWindow never answers for move");
 
+    arm_window(&cell, kNowPeekActWinSelect);
+    check_long(now_act_findwindow_answer(&cell, kTargetA5,
+                                         point_of(120, 90), 5UL, &window),
+               0, "FindWindow never answers for select");
+
     /* Zoom: the part FindWindow answered and the part TrackBox is asked
        about must agree, or the application is tracking a different box. */
     arm_window(&cell, kNowPeekActWinZoom);
@@ -501,6 +506,12 @@ static void test_serve_begin(void)
     cell.status = kNowPeekActStatusPending;
     check_long(now_act_serve_begin(&cell, kTargetA5, 1UL), kNowActServeMove,
                "move is served in-context, not armed");
+
+    arm_window(&cell, kNowPeekActWinSelect);
+    cell.armed = kNowPeekActArmNone;
+    cell.status = kNowPeekActStatusPending;
+    check_long(now_act_serve_begin(&cell, kTargetA5, 1UL), kNowActServeSelect,
+               "select is served in-context, not armed");
 
     /* A window request naming no window is refused before anything runs. */
     arm_window(&cell, kNowPeekActWinMove);

@@ -177,6 +177,8 @@ public struct AgentIntegrationArgumentRefusal: Error, Equatable, Sendable {
 /// mechanism, one addressing grammar, one authorization.
 public enum AgentIntegrationWindowAction:
     String, Codable, Equatable, Sendable, CaseIterable {
+    /// Select this exact window within its owning application.
+    case select
     /// Move the window's content origin to `left`/`top`.
     case move
     /// Resize the window's content to `width`/`height`.
@@ -230,7 +232,7 @@ public struct AgentIntegrationWindowActRequest:
         switch action {
         case .move: return ["left", "top"]
         case .resize: return ["width", "height"]
-        case .zoom, .close: return []
+        case .select, .zoom, .close: return []
         }
     }
 

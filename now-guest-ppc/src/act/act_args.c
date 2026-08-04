@@ -21,6 +21,9 @@ int now_act_win_action(const char *name)
     if (strcmp(name, "close") == 0) {
         return kNowActWinClose;
     }
+    if (strcmp(name, "select") == 0) {
+        return kNowActWinSelect;
+    }
     return kNowActWinUnknown;
 }
 
@@ -64,7 +67,7 @@ int now_act_win_args_check(const NowActWinArgs *args, const char **reason)
     }
     if (args->action == kNowActWinUnknown) {
         if (reason != NULL) {
-            *reason = "winact requires action: one of close, move, "
+            *reason = "winact requires action: one of select, close, move, "
                       "resize, zoom";
         }
         return 0;

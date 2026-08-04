@@ -267,7 +267,7 @@ enum {
     kNowPeekActWinMove = 1,   /* MoveWindow(w, h, v, false), in-context */
     kNowPeekActWinResize = 2, /* FindWindow->inGrow, GrowWindow->size   */
     kNowPeekActWinZoom = 3,   /* FindWindow->zoomPart, TrackBox->true   */
-    kNowPeekActWinClose = 4   /* FindWindow->inGoAway, TrackGoAway->true
+    kNowPeekActWinClose = 4,  /* FindWindow->inGoAway, TrackGoAway->true
                                  The application runs its OWN close path
                                  from there, save-changes dialog and all.
                                  Closing a window by calling CloseWindow
@@ -276,6 +276,7 @@ enum {
                                  sub-op does not promise the window
                                  closes; it promises the application was
                                  ASKED, exactly as a user asks. */
+    kNowPeekActWinSelect = 5  /* SelectWindow(w), in-context              */
 };
 
 /* FindWindow part codes (Inside Macintosh: Macintosh Toolbox Essentials,

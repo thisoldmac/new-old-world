@@ -59,6 +59,7 @@ static void test_actions(void)
     check(now_act_win_action("resize") == kNowActWinResize, "resize");
     check(now_act_win_action("zoom") == kNowActWinZoom, "zoom");
     check(now_act_win_action("close") == kNowActWinClose, "close");
+    check(now_act_win_action("select") == kNowActWinSelect, "select");
     check(now_act_win_action("Move") == kNowActWinUnknown,
           "the vocabulary is exact, not case-folded");
     check(now_act_win_action("drag") == kNowActWinUnknown,
@@ -117,6 +118,12 @@ static void test_key_sets(void)
     a.left = 5;
     check(!accepts(a),
           "a close carrying geometry is refused, not performed and trimmed");
+
+    a = base(kNowActWinSelect);
+    check(accepts(a), "select takes no geometry");
+    a.has_width = 1;
+    a.width = 300;
+    check(!accepts(a), "select carrying geometry is refused");
 
     a = base(kNowActWinUnknown);
     check(!accepts(a), "no action, no act");

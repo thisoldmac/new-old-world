@@ -16,6 +16,7 @@
 #include "prefs.h"
 #include "wire.h"
 #include "observe.h"
+#include "act_cmds.h"
 #include "workshop_layout.h"
 #include "workshop_window.h"
 
@@ -378,6 +379,7 @@ int main(void)
     }
     compute_screen_bounds();
     create_menu_bar();
+    now_act_set_self_menu_handler(handle_menu_choice);
     /* The Workshop is the primary window; the remaining old module
        windows stay reachable from the menus until each one moves in. If
        the shell cannot build its navigation, say so once - the rest of

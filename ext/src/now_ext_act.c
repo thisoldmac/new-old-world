@@ -684,6 +684,14 @@ void now_ext_act_apply(NowPeekTable *table)
         now_act_v2_note(table, kNowPeekActStageFired,
                         (unsigned long)LMGetTicks());
         break;
+    case kNowActServeSelect:
+        SelectWindow((WindowPtr)(unsigned long)cell->window_ptr);
+        cell->fired = 1;
+        cell->armed = kNowPeekActArmNone;
+        cell->find_window_fired = 0;
+        now_act_v2_note(table, kNowPeekActStageFired,
+                        (unsigned long)LMGetTicks());
+        break;
     case kNowActServeText:
         error = act_serve_text(cell, cell->op == kNowPeekActOpTextSet);
         if (error == kNowPeekActErrNone) {

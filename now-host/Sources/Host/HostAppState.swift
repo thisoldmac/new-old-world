@@ -99,7 +99,8 @@ final class HostAppState: ObservableObject {
             currentSessionID: { [unowned self] in
                 self.agentIntegration.connectedSessionID()
             }),
-        planePolicy: { [unowned self] in self.mirror.requestedPlaneIDs })
+        planePolicy: { [unowned self] in self.mirror.requestedPlaneIDs },
+        lifecycleDidChange: { [weak self] in self?.mirror.refreshLifecycle() })
     private(set) lazy var mirrorWindow = NOWMirrorWindow(source: mirrorSource)
 
     /// What to put in the mirror window's title bar. A person may have

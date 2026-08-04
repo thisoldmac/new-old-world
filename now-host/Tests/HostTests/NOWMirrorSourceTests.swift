@@ -176,6 +176,10 @@ final class NOWMirrorSourceTests: XCTestCase {
     func testEachWindowActCarriesTheKeysItTakes() {
         let ref = "now-window-1"
 
+        let select = NOWMirrorSource.request(ref, .select)
+        XCTAssertEqual(select.action, .select)
+        assertOnly(select, keys: [])
+
         let close = NOWMirrorSource.request(ref, .close)
         XCTAssertEqual(close.action, .close)
         assertOnly(close, keys: [])
@@ -206,7 +210,8 @@ final class NOWMirrorSourceTests: XCTestCase {
     /// that did not exist at all until `Scene.Window` started carrying
     /// the reference its producer had always sent.
     func testEveryActNamesItsWindow() {
-        for what: MirrorAction.WindowAct in [.close, .zoom(out: false),
+        for what: MirrorAction.WindowAct in [.select, .close,
+                                             .zoom(out: false),
                                              .move(left: 1, top: 2),
                                              .resize(width: 3, height: 4)] {
             XCTAssertEqual(NOWMirrorSource.request("now-window-7", what).window,
@@ -216,12 +221,21 @@ final class NOWMirrorSourceTests: XCTestCase {
 
     // MARK: - System Application-menu visibility
 
+    func testFinderItemCommandsAlsoActivateFinder() {
+        let source = NOWMirrorSource.finderScript(
+            "open item \"Macintosh HD\" of desktop")
+        XCTAssertTrue(source.contains("open item \"Macintosh HD\" of desktop"))
+        XCTAssertTrue(source.contains("activate"))
+        XCTAssertTrue(source.contains("tell application \"Finder\""))
+    }
+
     func testApplicationVisibilityUsesClassicFinderSemantics() {
         let hide = NOWMirrorSource.applicationVisibilityScript(
             .hide(name: "New Old World"))
         XCTAssertTrue(hide.contains("set visible of application process "
                                     + "\"New Old World\" to false"))
-        XCTAssertTrue(hide.contains("if observed then return \"confirmed\""))
+        XCTAssertTrue(hide.contains("ignoring application responses"))
+        XCTAssertTrue(hide.contains("return \"dispatched-but-unconfirmed\""))
         let show = NOWMirrorSource.applicationVisibilityScript(.showAll)
         XCTAssertTrue(show.contains("set visible of every application "
                                     + "process to true"))
@@ -236,6 +250,7 @@ final class NOWMirrorSourceTests: XCTestCase {
             others)
         XCTAssertTrue(others.contains("set visible of candidate to false"),
                       others)
+        XCTAssertTrue(others.contains("ignoring application responses"))
         XCTAssertNil(NOWMirrorSource.visibilityOutcome("\"confirmed\""))
         XCTAssertEqual(NOWMirrorSource.visibilityOutcome(
             "\"dispatched-but-unconfirmed\""),

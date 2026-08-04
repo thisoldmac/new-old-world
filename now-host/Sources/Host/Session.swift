@@ -1362,6 +1362,7 @@ final class Session {
     /// Asks for one scene. Primes the receive state the same way
     /// `sendCaptureRequest` does, because the answer arrives the same way.
     func sendSceneRequest(id: Int, staleAfterMs: Int?, semantics: Bool,
+                          interaction: Bool,
                           tuning: GuestListener.CaptureTuning) {
         sceneBegin = nil
         sceneBuffer = []
@@ -1369,7 +1370,8 @@ final class Session {
         sceneStart = Date()
         send(.sceneRequest(SceneRequest(
             id: id, chunkKb: tuning.chunkKb, paceMs: tuning.paceMs,
-            staleAfterMs: staleAfterMs, semantics: semantics)))
+            staleAfterMs: staleAfterMs, semantics: semantics,
+            interaction: interaction)))
     }
 
     private func gate(_ hello: Hello) {

@@ -37,6 +37,10 @@ public enum InteractionPlan: Equatable, Sendable {
     /// Bring an application forward, by PSN.
     case activateApp(psn: String)
 
+    /// Bring the owning application forward, then select this exact window
+    /// within it. Both identities come from the same guest scene.
+    case activateWindow(psn: String, ref: String)
+
     /// Apply one system-owned visibility command from the Application
     /// menu. Kept typed so it cannot fall back to commanding menu -16489,
     /// the route that reported success without changing the machine.
@@ -256,16 +260,13 @@ public enum InteractionPolicy {
                                            height: max(1, to.y - top)))
 
         case (.titleBar, .click), (.content, .click):
-            /* Clicking a background window brings its APPLICATION
-               forward, which is what a Mac does and what the wire can
-               say. Selecting one window among an app's own is a
-               different act and there is no verb for it - so a click on
-               the FRONT window's chrome or empty content does nothing,
-               honestly, rather than fronting an app that is already
-               front. */
+            /* A window click has two ordered effects: activate its process,
+               then select that exact window within the process. Collapsing
+               these to process activation made a second Finder window
+               impossible to bring forward. */
             return w.isFront
                 ? .nothing(why: "that window is already front")
-                : .activateApp(psn: w.psn)
+                : .activateWindow(psn: w.psn, ref: ref)
 
         case (_, .scroll):
             return .nothing(why: "there is no scroll bar under the pointer")

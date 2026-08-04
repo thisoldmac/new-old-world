@@ -945,6 +945,8 @@ struct SceneRequest: Codable, Equatable, Sendable {
     var staleAfterMs: Int?
     /// Host policy for this scene owner's optional P2 claim. P1 remains on.
     var semantics: Bool? = nil
+    /// Host policy for this open scene owner's optional P4 claim.
+    var interaction: Bool? = nil
 }
 
 struct SceneBegin: Codable, Equatable, Sendable {

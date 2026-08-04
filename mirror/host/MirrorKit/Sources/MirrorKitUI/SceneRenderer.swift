@@ -667,7 +667,8 @@ public struct SceneRenderer {
         let displayOwnsVisuals = !(win.display?.isEmpty ?? true)
         let dialogRefs = Set((win.dialogItems ?? []).compactMap(\.ref))
         let semanticFrames = win.controls.compactMap { control -> CGRect? in
-            guard control.visible, !dialogRefs.contains(control.ref),
+            guard control.visible, Self.semanticOwnsDisplay(control),
+                  !dialogRefs.contains(control.ref),
                   let local = control.rect else { return nil }
             return rect(local).offsetBy(dx: content.minX, dy: content.minY)
         } + (win.dialogItems ?? []).compactMap { item -> CGRect? in
@@ -682,7 +683,8 @@ public struct SceneRenderer {
             drawWindowText(contentCtx, text, in: content)
         }
         for control in win.controls where control.visible
-                && !dialogRefs.contains(control.ref) {
+                && !dialogRefs.contains(control.ref)
+                && (!displayOwnsVisuals || Self.semanticOwnsDisplay(control)) {
             drawControl(contentCtx, control, contentOrigin: content.origin,
                         isDefault: control.semantic?.isDefault == true)
         }
@@ -822,6 +824,29 @@ public struct SceneRenderer {
               }) else { return false }
         guard let r = ctl.rect else { return false }
         return (r.b - r.t) <= 26 && (r.r - r.l) > 20
+    }
+
+    /// Whether P2 carries enough visual facts to replace P3 inside the whole
+    /// control rectangle. Containers, partial lists, and value-less popups do
+    /// not: clipping their rectangle erased the Date & Time labels and list
+    /// rows that only the guest's drawing stream knew.
+    static func semanticOwnsDisplay(_ ctl: MirrorKit.Scene.Control) -> Bool {
+        switch ctl.semantic?.kind {
+        case "pushButton", "checkBox", "radioButton":
+            return !ctl.title.isEmpty
+        case "popupMenu":
+            return ctl.semantic?.value != nil
+        case "progressIndicator":
+            return ctl.value != nil
+        case "disclosureTriangle":
+            return ctl.semantic?.state != nil
+        case "scrollBar":
+            return ctl.min != nil && ctl.max != nil && ctl.value != nil
+        case "groupBox", "listBox":
+            return false
+        default:
+            return false
+        }
     }
 
     private func drawControl(_ ctx: GraphicsContext, _ ctl: MirrorKit.Scene.Control,

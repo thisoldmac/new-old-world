@@ -2007,6 +2007,7 @@ final class GuestListener: ObservableObject {
     /// exists), and a second caller silently orphaning the first one's
     /// completion is how a page waits forever.
     func requestScene(staleAfterMs: Int? = nil, semantics: Bool = true,
+                      interaction: Bool = true,
                       tuning: CaptureTuning = .init(),
                       completion: @escaping (Result<SceneDelivery,
                                                     SceneFailure>) -> Void) {
@@ -2034,6 +2035,7 @@ final class GuestListener: ObservableObject {
         }
         session.sendSceneRequest(id: id, staleAfterMs: staleAfterMs,
                                  semantics: semantics,
+                                 interaction: interaction,
                                  tuning: tuning)
     }
 

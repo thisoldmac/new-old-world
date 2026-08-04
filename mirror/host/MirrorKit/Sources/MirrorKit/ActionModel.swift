@@ -47,8 +47,8 @@ public enum MirrorAction: Equatable {
     /// on either. A driver without one declares so and the gesture falls
     /// back to the hardware press.
     case controlPart(ref: String, part: Int, mods: Int = 0)
-    /// **A window act addressed by reference**: close it, zoom it, move it,
-    /// size it. The Window Manager's own operations, rather than a hardware
+    /// **A window act addressed by reference**: select it, close it, zoom it,
+    /// move it, size it. The Window Manager's own operations, rather than a hardware
     /// press inside a widget whose tracking loop then runs.
     ///
     /// Same argument as `controlPart`, and the same fallback. A title-bar
@@ -56,12 +56,11 @@ public enum MirrorAction: Equatable {
     /// plane is resident.
     case windowAct(ref: String, act: WindowAct)
 
-    /// What `windowAct` can ask for. Deliberately the four the Window
-    /// Manager exposes as operations - a RAISE is not here, because
-    /// selecting one window among an application's own is not something
-    /// any wire verb does today, and inventing a name for it would promise
-    /// a capability that does not exist.
+    /// What `windowAct` can ask for. `select` is the exact-window primitive
+    /// a process activation cannot replace: Finder may own several visible
+    /// windows and clicking one must select that one, not merely Finder.
     public enum WindowAct: Equatable, Sendable {
+        case select
         case close
         case zoom(out: Bool)
         case move(left: Int, top: Int)

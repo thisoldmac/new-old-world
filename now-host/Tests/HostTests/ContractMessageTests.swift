@@ -3,12 +3,15 @@ import XCTest
 import NOWAgentIntegration
 
 final class ContractMessageTests: XCTestCase {
-    func testSceneRequestCarriesNamedSemanticsPolicy() throws {
+    func testSceneRequestCarriesNamedPlanePolicy() throws {
         let request = SceneRequest(id: 9, chunkKb: 8, paceMs: 0,
-                                   staleAfterMs: 500, semantics: false)
+                                   staleAfterMs: 500, semantics: false,
+                                   interaction: false)
         let data = try ControlMessageCodec.encode(.sceneRequest(request))
         XCTAssertTrue(String(decoding: data, as: UTF8.self)
             .contains("\"semantics\":false"))
+        XCTAssertTrue(String(decoding: data, as: UTF8.self)
+            .contains("\"interaction\":false"))
         XCTAssertEqual(try ControlMessageCodec.decode(data),
                        .sceneRequest(request))
     }

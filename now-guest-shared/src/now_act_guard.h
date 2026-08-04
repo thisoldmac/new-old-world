@@ -101,7 +101,8 @@ enum {
     kNowActServeText = 3,      /* the hook must run the text op          */
     kNowActServeSelfTest = 4,  /* the hook must run the ABI selftest     */
     kNowActServeRefused = 5,   /* refused; status and error are written  */
-    kNowActServeDialogItem = 6 /* validate and queue one DITL press      */
+    kNowActServeDialogItem = 6,/* validate and queue one DITL press      */
+    kNowActServeSelect = 7     /* the hook must call SelectWindow        */
 };
 
 /* Claim the request if it names THIS A5 world, and say what to do with

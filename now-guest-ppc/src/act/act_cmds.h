@@ -42,4 +42,10 @@ void now_act_run_ditemact(const char *request_json, long id,
 void now_act_run_menuact(const char *request_json, long id,
                          char *out, long cap);
 
+/* The application installs its one real menu dispatcher here. A menu act
+   aimed at this process can then run that same handler directly instead of
+   waiting for its own wire callback to enter MenuSelect. */
+typedef void (*NowActSelfMenuHandler)(long choice);
+void now_act_set_self_menu_handler(NowActSelfMenuHandler handler);
+
 #endif /* NOW_ACT_CMDS_H */

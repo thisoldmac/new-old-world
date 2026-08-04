@@ -94,6 +94,7 @@ static int effect_seen(const NowActSettlementRecord *r, const NowScene *scene)
         }
         if (spec->aux == kNowPeekActWinClose) return found == NULL;
         if (found == NULL) return 0;
+        if (spec->aux == kNowPeekActWinSelect) return found->front != 0;
         if (spec->aux == kNowPeekActWinMove)
             return found->rect.l == spec->expected_a
                 && found->rect.t == spec->expected_b;

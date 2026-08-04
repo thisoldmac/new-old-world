@@ -26,7 +26,8 @@ enum {
     kNowActWinMove = 1,
     kNowActWinResize = 2,
     kNowActWinZoom = 3,
-    kNowActWinClose = 4
+    kNowActWinClose = 4,
+    kNowActWinSelect = 5
 };
 
 /* The range a QuickDraw Rect can hold: its members are signed 16-bit, so
@@ -55,7 +56,7 @@ typedef struct {
     int  has_height;
 } NowActWinArgs;
 
-/* "move" / "resize" / "zoom" / "close", else kNowActWinUnknown. */
+/* "select" / "move" / "resize" / "zoom" / "close", else unknown. */
 int now_act_win_action(const char *name);
 
 /* The zoom direction: 1 for out (the standard state), 0 for in (back to

@@ -184,12 +184,11 @@ final class InteractionPolicyTests: XCTestCase {
                        .windowAct(ref: "now-window-1", act: .zoom(out: true)))
     }
 
-    /// Clicking a background window fronts its APPLICATION, which is what
-    /// a Mac does and what the wire can say. Clicking the front one does
-    /// nothing rather than re-fronting what is already front.
-    func testClickingABackgroundWindowFrontsItsApp() {
+    /// Clicking a background window activates its application and selects
+    /// that exact window. The latter is essential when Finder owns several.
+    func testClickingABackgroundWindowSelectsThatExactWindow() {
         XCTAssertEqual(plan(.window(win(front: false)), tap),
-                       .activateApp(psn: "0.9"))
+                       .activateWindow(psn: "0.9", ref: "now-window-1"))
         guard case .nothing = plan(.window(win(front: true)), tap) else {
             return XCTFail("the front window is already front")
         }

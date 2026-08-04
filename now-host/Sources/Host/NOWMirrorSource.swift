@@ -88,6 +88,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private let content: NOWMirrorContentPlane
     private let interval: TimeInterval
     private let planePolicy: @MainActor () -> Set<MirrorPlaneID>
+    private let lifecycleDidChange: @MainActor () -> Void
     private var running = false
     private var pending = false
 
@@ -116,12 +117,14 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
          interval: TimeInterval = 0.75,
          planePolicy: @escaping @MainActor () -> Set<MirrorPlaneID> = {
              Set(MirrorPlaneID.allCases)
-         }) {
+         },
+         lifecycleDidChange: @escaping @MainActor () -> Void = {}) {
         self.listener = listener
         self.act = act
         self.content = NOWMirrorContentPlane(listener: listener)
         self.interval = interval
         self.planePolicy = planePolicy
+        self.lifecycleDidChange = lifecycleDidChange
     }
 
     // MARK: - The poll
@@ -131,6 +134,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         running = true
         content.guestChanged()
         ambient = "asking for a scene…"
+        lifecycleDidChange()
         poll()
     }
 
@@ -146,6 +150,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             self.ambient = failure.map {
                 "stopped; Content claim release refused: \($0)"
             } ?? "stopped"
+            self.lifecycleDidChange()
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 11_000_000_000)
+                self?.lifecycleDidChange()
+            }
         }
     }
 
@@ -158,7 +167,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         guard !listener.isScenePending else { return rearm() }
         pending = true
         listener.requestScene(
-            semantics: planePolicy().contains(.semantics)) { [weak self] result in
+            semantics: planePolicy().contains(.semantics),
+            interaction: planePolicy().contains(.interaction)) { [weak self] result in
             guard let self else { return }
             self.pending = false
             switch result {
@@ -198,6 +208,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                         + (failure.map { "content release refused: \($0)" }
                            ?? "content off")
                     completion()
+                    self.lifecycleDidChange()
                 }
                 return
             }
@@ -209,6 +220,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                     + "\(delivery.walkMs.map { "\($0)ms" } ?? "?") · transfer "
                     + "\(delivery.transferMs)ms · \(update.sentence)"
                 completion()
+                self.lifecycleDidChange()
             }
             return
         } catch IR.CompatError.unknownMajor {
@@ -285,6 +297,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             self.icons = fresh
             self.iconLayout = key
             self.fetchingIcons = false
+            if let current = self.scene {
+                self.scene = self.withIcons(current)
+            }
         }
     }
 
@@ -595,6 +610,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             if result == nil { planSettlement = "confirmed" }
             return result
 
+        case .activateWindow(let psn, let ref):
+            if let complaint = await activate(psn) { return complaint }
+            return readingResident(await act.windowAct(
+                Self.request(ref, .select)))
+
         case .applicationVisibility(let visibility):
             let result = await applicationVisibility(visibility)
             if result == nil { planSettlement = "confirmed" }
@@ -640,8 +660,17 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         }
     }
 
+    static func finderScript(_ phrase: String) -> String {
+        """
+        tell application "Finder"
+        \(phrase)
+        activate
+        end tell
+        """
+    }
+
     private func finder(_ phrase: String) async -> String? {
-        let source = "tell application \"Finder\" to \(phrase)"
+        let source = Self.finderScript(phrase)
         let complaint = await run("script", ["source": .text(source)])
         if let settlement = Self.dispatchOnlySettlement(
             ifSuccessful: complaint) {
@@ -684,25 +713,22 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         switch action {
         case .hide(let name):
             return """
+            ignoring application responses
             tell application "Finder"
             set visible of application process "\(quoted(name))" to false
-            set observed to not (visible of application process "\(quoted(name))")
             end tell
-            if observed then return "confirmed"
+            end ignoring
             return "dispatched-but-unconfirmed"
             """
         case .hideOthers(let except):
             return """
+            ignoring application responses
             tell application "Finder"
             repeat with candidate in every application process
             if name of candidate is not "\(quoted(except))" then set visible of candidate to false
             end repeat
-            set observed to true
-            repeat with candidate in every application process
-            if name of candidate is not "\(quoted(except))" and visible of candidate then set observed to false
-            end repeat
             end tell
-            if observed then return "confirmed"
+            end ignoring
             return "dispatched-but-unconfirmed"
             """
         case .showAll:
@@ -878,6 +904,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                         _ what: MirrorAction.WindowAct)
         -> AgentIntegrationWindowActRequest {
         switch what {
+        case .select:
+            return .init(window: ref, action: .select)
         case .close:
             return .init(window: ref, action: .close)
         case .zoom:

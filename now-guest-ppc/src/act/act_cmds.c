@@ -250,6 +250,12 @@ static const char *refusal_code(NowObsVerdict verdict)
    `ref_out` is the caller's own reference string, echoed back in the
    reply: a receipt names what was asked for. */
 static int act_target_is_self(const ProcessSerialNumber *psn);
+static NowActSelfMenuHandler g_self_menu_handler;
+
+void now_act_set_self_menu_handler(NowActSelfMenuHandler handler)
+{
+    g_self_menu_handler = handler;
+}
 
 static int resolve_for_act(const char *json, long id, char *out, long cap,
                            NowObsKind kind, NowObsHandle *handle,
@@ -382,6 +388,9 @@ static void self_window_act(WindowRef window, const NowActWinArgs *args,
     case kNowActWinMove:
         MoveWindow(window, (short)args->left, (short)args->top, false);
         break;
+    case kNowActWinSelect:
+        SelectWindow(window);
+        break;
     case kNowActWinResize:
         SizeWindow(window, (short)args->width, (short)args->height, true);
         break;
@@ -401,8 +410,8 @@ static void self_window_act(WindowRef window, const NowActWinArgs *args,
         break;
     default:
         reply_error(out, cap, id, "bad-request",
-                    "winact on this application's own window serves move, "
-                    "resize, zoom and close");
+                    "winact on this application's own window serves select, "
+                    "move, resize, zoom and close");
         return;
     }
     row_add(&rows, "Window", "this application's own");
@@ -439,7 +448,7 @@ void now_act_run_winact(const char *request_json, long id, char *out, long cap)
     memset(&args, 0, sizeof args);
     if (!arg_str(request_json, "action", action, (long)sizeof action)) {
         reply_error(out, cap, id, "bad-request",
-                    "winact requires action: one of close, move, resize, "
+                    "winact requires action: one of select, close, move, resize, "
                     "zoom");
         return;
     }
@@ -532,7 +541,7 @@ void now_act_run_winact(const char *request_json, long id, char *out, long cap)
        already run by the time the status flips, because DragWindow
        returns void and there is no question for a patch to answer. The
        other three need a click to make the application call FindWindow. */
-    if (args.action != kNowActWinMove) {
+    if (args.action != kNowActWinMove && args.action != kNowActWinSelect) {
         if (!act_reached_the_machine(&g_snap)) {
             now_act_withdraw();
             reply_registered_status(out, cap, id, kNowActNotArmed);
@@ -576,7 +585,8 @@ void now_act_run_winact(const char *request_json, long id, char *out, long cap)
        was handed to the addressed element's own application - not that
        the window moved. Whoever wants to know that reads it back. */
     row_add(&rows, "Dispatch", "dispatched");
-    row_add(&rows, "Mechanism", args.action == kNowActWinMove
+    row_add(&rows, "Mechanism", (args.action == kNowActWinMove
+                                  || args.action == kNowActWinSelect)
                                     ? "the window manager, in the "
                                       "application's own context"
                                     : "the application's own FindWindow");
@@ -962,11 +972,6 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
     int                 v;
 
     now_act_begin_command();
-    st = now_act_ready();
-    if (st != kNowActOk) {
-        reply_status(out, cap, id, st);
-        return;
-    }
     if (!arg_int(request_json, "menu", &menu)
         || !arg_int(request_json, "item", &item) || item < 1) {
         reply_error(out, cap, id, "bad-request",
@@ -1000,6 +1005,23 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
     psn.highLongOfPSN = hi;
     psn.lowLongOfPSN = (unsigned long)lo;
     want = &psn;
+    if (act_target_is_self(want) && g_self_menu_handler != NULL) {
+        g_self_menu_handler((menu << 16) | (item & 0xFFFFL));
+        rows_reset(&rows);
+        row_addf(&rows, "Menu", "%ld", menu);
+        row_addf(&rows, "Item", "%ld", item);
+        row_add(&rows, "Dispatch", "performed");
+        row_add(&rows, "Mechanism", "the application's own menu handler");
+        now_log(kLogInfo, "act", "#%ld menuact %ld/%ld performed directly",
+                id, menu, item);
+        reply_rows(out, cap, id, "menuact", &rows);
+        return;
+    }
+    st = now_act_ready();
+    if (st != kNowActOk) {
+        reply_status(out, cap, id, st);
+        return;
+    }
     st = now_act_open(want, &g_target);
     if (st != kNowActOk) {
         reply_status(out, cap, id, st);

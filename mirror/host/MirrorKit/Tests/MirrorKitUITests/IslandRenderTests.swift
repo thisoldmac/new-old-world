@@ -11,6 +11,24 @@ import AppKit
 @MainActor
 final class IslandRenderTests: XCTestCase {
 
+    func testPartialSemanticContainersDoNotEraseGuestDisplayContent() {
+        func control(_ kind: String, value: String? = nil) -> Scene.Control {
+            .init(ref: "now-element-1", role: "control", title: "",
+                  rect: .init(l: 0, t: 0, r: 120, b: 60),
+                  enabled: true, visible: true,
+                  semantic: .init(knowledge: .known, kind: kind,
+                                  value: value,
+                                  provenance: "guest",
+                                  completeness: .partial))
+        }
+
+        XCTAssertFalse(SceneRenderer.semanticOwnsDisplay(control("groupBox")))
+        XCTAssertFalse(SceneRenderer.semanticOwnsDisplay(control("listBox")))
+        XCTAssertFalse(SceneRenderer.semanticOwnsDisplay(control("popupMenu")))
+        XCTAssertTrue(SceneRenderer.semanticOwnsDisplay(
+            control("popupMenu", value: "Long Date")))
+    }
+
     func testApplicationMenuDoesNotSuppressMissingAppleMenuFallback() {
         let appMenu = Scene.Menu(
             title: "", apple: false, left: 0,
