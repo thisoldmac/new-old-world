@@ -107,18 +107,59 @@ public struct AgentIntegrationMirrorEntity:
     }
 }
 
+public struct AgentIntegrationMirrorMenuItem:
+    Codable, Equatable, Sendable {
+    public let title: String
+    public let index: Int
+    public let separator: Bool
+    public let enabled: Bool
+    public let marked: Bool
+    public let command: String
+
+    public init(title: String, index: Int, separator: Bool, enabled: Bool,
+                marked: Bool, command: String) {
+        self.title = title
+        self.index = index
+        self.separator = separator
+        self.enabled = enabled
+        self.marked = marked
+        self.command = command
+    }
+}
+
+public struct AgentIntegrationMirrorMenu:
+    Codable, Equatable, Sendable {
+    public let id: Int
+    public let title: String
+    public let apple: Bool
+    public let left: Int
+    public let items: [AgentIntegrationMirrorMenuItem]
+
+    public init(id: Int, title: String, apple: Bool, left: Int,
+                items: [AgentIntegrationMirrorMenuItem]) {
+        self.id = id
+        self.title = title
+        self.apple = apple
+        self.left = left
+        self.items = items
+    }
+}
+
 public struct AgentIntegrationMirrorSnapshot:
     Codable, Equatable, Sendable {
     public let metadata: AgentIntegrationMirrorSnapshotMetadata
     public let coverage: [AgentIntegrationMirrorCoverage]
     public let entities: [AgentIntegrationMirrorEntity]
+    public let menus: [AgentIntegrationMirrorMenu]
 
     public init(metadata: AgentIntegrationMirrorSnapshotMetadata,
                 coverage: [AgentIntegrationMirrorCoverage],
-                entities: [AgentIntegrationMirrorEntity]) {
+                entities: [AgentIntegrationMirrorEntity],
+                menus: [AgentIntegrationMirrorMenu]) {
         self.metadata = metadata
         self.coverage = coverage
         self.entities = entities
+        self.menus = menus
     }
 }
 

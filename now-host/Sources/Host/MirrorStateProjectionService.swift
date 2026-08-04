@@ -113,9 +113,21 @@ final class MirrorStateProjectionService {
         }.sorted {
             ($0.scope, $0.owner ?? "") < ($1.scope, $1.owner ?? "")
         }
+        let menus = (projection.scene.menubar?.menus ?? []).map { menu in
+            AgentIntegrationMirrorMenu(
+                id: menu.id, title: menu.title, apple: menu.apple,
+                left: menu.left,
+                items: menu.items.map {
+                    AgentIntegrationMirrorMenuItem(
+                        title: $0.title, index: $0.index,
+                        separator: $0.separator, enabled: $0.enabled,
+                        marked: $0.mark, command: $0.cmd)
+                })
+        }
         return .init(
             metadata: metadata(projection), coverage: coverage,
-            entities: (applications + windows).sorted { $0.id < $1.id })
+            entities: (applications + windows).sorted { $0.id < $1.id },
+            menus: menus)
     }
 
     private func metadata(_ projection: MirrorProjection)

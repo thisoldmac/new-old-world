@@ -1,6 +1,11 @@
 import Foundation
 
 public enum AgentIntegrationLocalProtocol {
+    /// Version 10 adds the guest-provided menubar and rows to the Mirror
+    /// snapshot DTO. The same bounded scene can carry 96 menu items, so the
+    /// local envelope grows to the MCP face's existing 64 KiB ceiling rather
+    /// than truncating the state engine's authoritative projection.
+    ///
     /// Version 9 adds one read-only lane over the native Mirror's immutable
     /// state engine. Status, snapshot, find and wait are intentions on that
     /// lane rather than four transports, and none of them polls the guest.
@@ -25,8 +30,8 @@ public enum AgentIntegrationLocalProtocol {
     /// asked about another.
     ///
     /// Version 6 added the read-only session capability report.
-    public static let version = 9
-    public static let maximumMessageBytes = 16 * 1024
+    public static let version = 10
+    public static let maximumMessageBytes = 64 * 1024
 }
 
 public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {

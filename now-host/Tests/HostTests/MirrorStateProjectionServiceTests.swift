@@ -18,6 +18,14 @@ final class MirrorStateProjectionServiceTests: XCTestCase {
           "processes":[{"psn":"0.3","name":"Finder","front":true,
                          "signature":"MACS",
                          "incarnation":"process-finder"}],
+          "menubar":{"app":"Finder","menus":[
+            {"title":"","apple":true,"left":0,"id":256,"items":[
+              {"title":"Apple System Profiler","index":1,
+               "separator":false,"enabled":true,"mark":false,"cmd":""}
+            ]},
+            {"title":"File","apple":false,"left":28,"id":129,
+             "items":[]}
+          ]},
           "windows":[{
             "id":"0.3/\#(title)#0","app":"Finder","psn":"0.3",
             "title":"\#(title)",
@@ -28,6 +36,8 @@ final class MirrorStateProjectionServiceTests: XCTestCase {
           }],
           "meta":{"errors":[],"coverage":[
             {"scope":"processes","status":"complete"},
+            {"scope":"menubar","owner":"process-finder",
+             "status":"complete"},
             {"scope":"windows","owner":"process-finder",
              "status":"complete"}
           ]}
@@ -61,6 +71,9 @@ final class MirrorStateProjectionServiceTests: XCTestCase {
             "process:process-finder",
             "window:process-finder:process-finder/window-disk",
         ])
+        XCTAssertEqual(snapshot.value?.snapshot?.menus.map(\.id), [256, 129])
+        XCTAssertEqual(snapshot.value?.snapshot?.menus.first?.items.first?.title,
+                       "Apple System Profiler")
         XCTAssertEqual(engine.store.entries.count, originalEntries,
                        "a projection read must publish no second snapshot")
     }

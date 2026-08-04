@@ -74,7 +74,7 @@ public enum MirrorSnapshotProjection: HostProjection {
     public static var mcpDescriptor: [String: Any] {
         MirrorStateProjectionSchema.descriptor(
             title: "New Old World Mirror Snapshot",
-            description: "Returns the exact immutable state projection the native Mirror reads: snapshot and session identity, digest, coverage, freshness, and stable process/window entities.",
+            description: "Returns the immutable state projection the native Mirror reads: snapshot and session identity, digest, coverage, freshness, stable process/window entities, and guest-provided menubar rows.",
             properties: [:])
     }
     public static func invoke(_ arguments: HostProjectionArguments,
