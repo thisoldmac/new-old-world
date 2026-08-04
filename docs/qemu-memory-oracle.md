@@ -72,6 +72,37 @@ no guest pixels. This is cross-built and native-tested, but remains a
 hypothesis until the rebuilt INIT is cold-loaded and the same live control
 returns its rows.
 
+## Cold-load correction: the single cell can lag the front application
+
+The v2 INIT and matching application were cold-loaded on 2026-08-04 and the
+same modal was driven through a freshly built Mirror. Set Time Zone remained
+red: the list region still contained only unavailable bitmap geometry, and
+Sherlock's newest settled P3 generation likewise contained a final CopyBits
+blit without structured drawing above it. Moving CopyBits placeholders behind
+structured ops is therefore a valid renderer rule, but it cannot manufacture
+the P2 controls and rows those surfaces still lack.
+
+A coherent physical-memory sample found the live `NWpt` table at physical
+`0x00935c10` (table addresses are evidence for this VM only). Two samples
+showed the request generation advancing from `0x1fa` to `0x223` while naming
+the same Finder `System Folder` window/control tuple. The last completed P2
+response remained at request generation `0x1de`, status
+`UnsupportedCustom`, for a Date & Time base-window control. At the same time,
+the host state-engine snapshot identified Date & Time and Set Time Zone as the
+fresh front process/window. This does **not** prove what
+`kControlKindTag` returns for the Set Time Zone list, because the sampled cell
+never completed that exact request. It does prove that the one-cell producer
+can spend repeated front-window scenes waiting on a background-process target
+and leave the live modal without a current semantic answer.
+
+The next producer patch must therefore address scheduling/settlement as well
+as classification. A capability probe using the public
+`kControlListBoxListHandleTag` is a valid generic fallback when a custom
+signature still exposes a standard List Manager handle; it must remain an
+exact live-control request, and failure remains explicit custom/unsupported.
+No QEMU address, Date & Time resource ID, or private control-data offset may
+enter the product path.
+
 ## First cross-application inventory
 
 The same live run captured three surfaces before any further extension patch.

@@ -220,6 +220,32 @@ final class IslandRenderTests: XCTestCase {
                       "the placeholder must stay inside the guest dst rect")
     }
 
+    /// Missing bitmap pixels are an annotation behind the useful data, not a
+    /// substitute surface. Sherlock and Set Time Zone both draw structured
+    /// content before a later CopyBits; the unavailable marker must not erase
+    /// those controls and labels merely because the bitmap arrived last.
+    func testLateCopyBitsPlaceholderStaysBehindStructuredDrawing() throws {
+        let r = Rect(l: 100, t: 100, r: 500, b: 400)
+        var text = DisplayOp(op: "text", ticks: 1)
+        text.text = "Guest-reported row"
+        text.pen = [30, 60]
+        text.font = 3
+        text.size = 12
+        var bits = DisplayOp(op: "bits", ticks: 2)
+        bits.src = [0, 0, 200, 100]
+        bits.dst = [20, 30, 240, 120]
+
+        var lateBitmap = window(title: "Sherlock 2", front: true, z: 0,
+                                rect: r, island: nil)
+        lateBitmap.display = [text, bits]
+        var backgroundBitmap = lateBitmap
+        backgroundBitmap.display = [bits, text]
+
+        XCTAssertEqual(try RenderShot.png(scene: scene([lateBitmap])),
+                       try RenderShot.png(scene: scene([backgroundBitmap])),
+                       "CopyBits placeholders must remain behind structured ops")
+    }
+
     /// P2 semantics own exact control rectangles while P3 owns the surrounding
     /// content. This prevents both CopyBits placeholders and raw QuickDraw
     /// titles from painting underneath a control we can render and actuate.
@@ -417,5 +443,40 @@ final class IslandRenderTests: XCTestCase {
         XCTAssertEqual(try RenderShot.png(scene: scene([withResourceItem])),
                        try RenderShot.png(scene: scene([expected])),
                        "a proven list must replace its unknown DITL resource shell")
+    }
+
+    /// The list kind and its payload settle independently. A typed list with
+    /// no cells yet must suppress only the DITL's generic resource hatch while
+    /// leaving P3 free to show the guest-drawn rows underneath.
+    func testTypedIncompleteListSuppressesUnknownResourceShell() throws {
+        let r = Rect(l: 100, t: 100, r: 500, b: 400)
+        let list = Scene.Control(
+            ref: "cities", role: "listBox", title: "",
+            rect: Rect(l: 20, t: 40, r: 260, b: 140), enabled: true,
+            visible: true,
+            semantic: .init(knowledge: .known, kind: "listBox",
+                            provenance: "guest-semantic-assist",
+                            completeness: .partial))
+        var row = DisplayOp(op: "text", ticks: 1)
+        row.text = "Abu Dhabi        U.A.E."
+        row.pen = [28, 62]
+        row.font = 3
+        row.size = 12
+        var expected = window(title: "Set Time Zone", front: true, z: 0,
+                              rect: r, island: nil)
+        expected.display = [row]
+        expected.controls = [list]
+
+        var withResourceItem = expected
+        withResourceItem.dialogItems = [Scene.DialogItem(
+            number: 3, title: "", rect: Rect(l: 20, t: 40, r: 260, b: 140),
+            enabled: true, visible: true, ref: "cities",
+            semantic: .init(knowledge: .unknown,
+                            provenance: "guest-ditl",
+                            completeness: .complete))]
+
+        XCTAssertEqual(try RenderShot.png(scene: scene([withResourceItem])),
+                       try RenderShot.png(scene: scene([expected])),
+                       "typed list identity must reject the unknown DITL hatch")
     }
 }

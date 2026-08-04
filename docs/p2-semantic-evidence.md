@@ -122,3 +122,16 @@ Sherlock placeholder regression guard was watched fail under mutation and pass
 after restoration. It is not emulator-verified until the rebuilt extension is
 cold-loaded and Date & Time, Set Time Zone, Sherlock, and Key Caps are driven
 through the Mirror against paired guest captures.
+
+The cold-load sweep did not verify that hypothesis. Set Time Zone remained a
+bitmap-unavailable region, and Sherlock's latest settled content generation
+contained only its final CopyBits geometry. A read-only `NWpt` sample showed
+the single semantic request repeatedly naming a background Finder control
+while Date & Time was front; its last completed response was an older
+`UnsupportedCustom` Date & Time base control, not the list. The extension has
+therefore not yet produced live list cells, and the public kind path remains
+unverified. The renderer now treats unavailable CopyBits destinations as a
+background annotation and suppresses an unknown DITL resource shell once P2
+has typed the same control; both guards were mutation-watched. Those changes
+preserve structured evidence when it exists, but the UX rows remain red until
+P2 settles the front modal's exact list request and returns its data.

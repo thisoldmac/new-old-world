@@ -160,6 +160,20 @@ PPC, 68K, and flat-INIT Retro68 cross-builds pass. This is **built and tested,
 not emulator-verified** until the new INIT is cold-loaded and the broad direct
 Mirror sweep is repeated.
 
+**Cold-load result:** the broad direct-input sweep is still red. Set Time Zone
+and Sherlock retain bitmap-unavailable regions; the latter's newest settled P3
+generation contains only its final CopyBits blit, so renderer ordering alone
+cannot recover its structured controls. A paired state-engine/QEMU sample
+showed Date & Time as the fresh front process while the live P2 request kept
+naming one Finder control and the last completed response remained an older
+`UnsupportedCustom` Date & Time base-control answer. The sample did not reach
+the exact Set Time Zone list, so it neither verifies nor refutes the public
+list-kind hypothesis. It does establish a second producer defect: the
+single-cell scheduler can lag the front modal behind a background target. The
+renderer now keeps unavailable CopyBits geometry behind structured ops and
+lets a typed incomplete list suppress only its unknown DITL shell; both tests
+were mutation-watched, but neither row is green without current P2 data.
+
 ### STATE ENGINE U1A: TYPED COVERAGE AND LIFETIME IDENTITY BUILT (2026-08-04)
 
 The IR v2 producer and MirrorKit consumer now agree on typed collection

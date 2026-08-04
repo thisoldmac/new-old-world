@@ -885,7 +885,11 @@ public struct SceneRenderer {
         case "groupBox", "staticText", "editText", "columnHeader":
             return true
         case "listBox":
-            return !(ctl.semantic?.listCells?.isEmpty ?? true)
+            /* Knowing this is a list is enough to reject the DITL's generic
+               unknown-resource hatch. It is not enough to replace P3: until
+               cells arrive, semanticOwnsDisplay remains false and the guest's
+               structured drawing continues through this rectangle. */
+            return true
         default:
             return semanticOwnsDisplay(ctl)
         }

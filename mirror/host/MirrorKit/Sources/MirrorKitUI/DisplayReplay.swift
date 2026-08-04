@@ -10,8 +10,12 @@ import MirrorKit
 /// repaints accumulate instead of replacing the pixels that came before.
 ///
 /// Ops are port-local (window content coords); a `state`/`origin` op shifts
-/// them. They're replayed in order — later ops paint over earlier, like the
-/// guest framebuffer — clipped to the content rect.
+/// them. Structured ops are replayed in order, like the guest framebuffer,
+/// clipped to the content rect. CopyBits is the deliberate exception: because
+/// the semantic core carries only its destination geometry, its unavailable
+/// marker is a background annotation rather than substitute pixels. Drawing
+/// those markers first keeps missing bitmap data visible without allowing it
+/// to cover text and controls the guest did report.
 public enum DisplayReplay {
 
     /// Draw `ops` into `content` (mirror-space rect for the window's content
@@ -72,6 +76,46 @@ public enum DisplayReplay {
         }
 
         var drew = false
+
+        // CopyBits carries geometry but no pixels. Replay just the state that
+        // locates and clips those destinations, then paint their unavailable
+        // markers below every structured op. Guest order remains authoritative
+        // among the structured ops in the second pass.
+        var bitsOriginH = 0
+        var bitsOriginV = 0
+        var bitsClip: CGRect?
+        func bitsPoint(_ h: Int, _ v: Int) -> CGPoint {
+            CGPoint(x: content.minX + CGFloat(h - bitsOriginH),
+                    y: content.minY + CGFloat(v - bitsOriginV))
+        }
+        for op in ops {
+            if op.op == "state" {
+                switch op.kind {
+                case "origin":
+                    if let o = op.origin, o.count == 2 {
+                        bitsOriginH = o[0]; bitsOriginV = o[1]
+                    }
+                case "clip":
+                    if let r = op.rect, r.count == 4 {
+                        bitsClip = rectFrom(r, pt: bitsPoint)
+                    }
+                default:
+                    break
+                }
+                continue
+            }
+            guard op.op == "bits", let d = op.dst, d.count == 4 else {
+                continue
+            }
+            var draw = g
+            if let bitsClip {
+                let bounded = bitsClip.intersection(content)
+                if !bounded.isNull { draw.clip(to: Path(bounded)) }
+            }
+            drawUnavailableBits(in: draw, frame: rectFrom(d, pt: bitsPoint))
+            drew = true
+        }
+
         for op in ops {
             /* State always flows: a control-local draw may establish the
                colour/origin/clip used by the next app-owned operation. Only
@@ -121,15 +165,7 @@ public enum DisplayReplay {
                 draw.stroke(path, with: .color(fg), lineWidth: 1)
                 drew = true
             case "bits":
-                /* CopyBits is geometry we know and pixels we deliberately do
-                   not carry in the semantic core. Silently skipping it made
-                   an offscreen-composited Workshop body look empty. Keep the
-                   exact guest destination visible as an exception without
-                   covering controls, which the renderer draws afterwards. */
-                guard let d = op.dst, d.count == 4 else { continue }
-                drawUnavailableBits(in: drawingContext(),
-                                    frame: rectFrom(d, pt: pt))
-                drew = true
+                break // unavailable geometry was painted below this pass
             case "rect", "rrect", "oval", "rgn":
                 guard let r = op.rect, r.count == 4 else { continue }
                 let rect = rectFrom(r, pt: pt)
