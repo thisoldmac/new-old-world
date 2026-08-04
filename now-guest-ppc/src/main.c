@@ -17,6 +17,7 @@
 #include "wire.h"
 #include "observe.h"
 #include "act_cmds.h"
+#include "scene_self.h"
 #include "workshop_layout.h"
 #include "workshop_window.h"
 
@@ -240,6 +241,8 @@ static void close_front_window(void)
 
 static void handle_menu_choice(long choice)
 {
+    Str255 apple_item;
+
     if (HiWord(choice) == kFileMenuID) {
         if (LoWord(choice) == kFileCloseItem) {
             close_front_window();
@@ -262,6 +265,15 @@ static void handle_menu_choice(long choice)
         if (LoWord(choice) == kWindowsWorkshopItem) {
             workshop_open();
         }
+    } else if (now_scene_copy_apple_menu_item(
+                   (MenuID)HiWord(choice), (MenuItemIndex)LoWord(choice),
+                   apple_item)) {
+        /* The queued wire path must end in the same application-owned
+           handler as a physical MenuSelect. Key Caps and the other classic
+           desk accessories are opened by name; dispatching the menu ID and
+           then dropping it here was why a successful menuact settled as
+           unknown while the guest did nothing. */
+        (void)OpenDeskAcc(apple_item);
     }
 }
 

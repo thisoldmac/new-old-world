@@ -402,6 +402,39 @@ static MenuRef root_items_for(MenuRef root, MenuHandle entry)
     return entry;
 }
 
+Boolean now_scene_copy_apple_menu_item(MenuID menu_id, MenuItemIndex item,
+                                       Str255 text)
+{
+    MenuHandle entry = GetMenuHandle(menu_id);
+    MenuRef    root;
+    MenuRef    items;
+    Str255     title;
+    Boolean    copied = false;
+
+    if (text == NULL) {
+        return false;
+    }
+    text[0] = 0;
+    if (entry == NULL) {
+        return false;
+    }
+    title[0] = 0;
+    GetMenuTitle(entry, title);
+    if (title[0] == 0 || title[1] != 0x14) {
+        return false;
+    }
+    root = AcquireRootMenu();
+    items = root_items_for(root, entry);
+    if (items != NULL && item >= 1 && item <= CountMenuItems(items)) {
+        GetMenuItemText(items, item, text);
+        copied = text[0] > 0;
+    }
+    if (root != NULL) {
+        ReleaseMenu(root);
+    }
+    return copied;
+}
+
 static void collect_self_menubar(NowScene *s, int row)
 {
     /* This is the same source AXPeek publishes for a foreign observer. The

@@ -29,6 +29,14 @@ def main() -> None:
     if 'row_add(&rows, "Dispatch", "performed")' in branch:
         raise SystemExit("the wire callback cannot claim a queued UI effect "
                          "was already performed")
+    handler = MAIN[MAIN.index("static void handle_menu_choice"):
+                   MAIN.index("static long g_pending_menu_choice")]
+    if "now_scene_copy_apple_menu_item" not in handler:
+        raise SystemExit("the deferred self-menu path still drops system "
+                         "Apple-menu items such as Key Caps")
+    if "OpenDeskAcc" not in handler:
+        raise SystemExit("a resolved Apple-menu desk accessory must re-enter "
+                         "the application's normal OpenDeskAcc path")
 
     print("PASS: self menu acts return to the main event loop")
 
