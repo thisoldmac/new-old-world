@@ -219,9 +219,6 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
     /// reports it. We know what WE selected; a selection the human makes on the
     /// guest directly is invisible to us and will not show here.
     @State private var selectedItem: String?
-    /// The Application menu (app switcher) is open, and which row is hovered.
-    @State private var appMenuOpen = false
-    @State private var hoveredApp: String?
     @State private var lastClick: (at: Date, x: Int, y: Int)?
     @State private var dragOutline: Rect?
     @State private var dragMode: DragMode?
@@ -265,8 +262,6 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                     SceneView(scene: scene, openMenu: openMenu,
                               hoveredItem: hoveredItem,
                               selectedItem: selectedItem,
-                              appMenuOpen: appMenuOpen,
-                              hoveredApp: hoveredApp,
                               dragOutline: dragOutline)
                         .gesture(mouseGesture(scene: scene, size: geo.size))
                         .onContinuousHover { phase in
@@ -285,16 +280,6 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                             } else {
                                 hovered = ""
                                 NSCursor.arrow.set()
-                            }
-                            if appMenuOpen {
-                                if case .active(let pt) = phase {
-                                    let g = guestPoint(pt, scene: scene,
-                                                       size: geo.size)
-                                    hoveredApp = HitTester.appMenuRow(
-                                        scene, x: g.x, y: g.y)?.psn
-                                } else {
-                                    hoveredApp = nil
-                                }
                             }
                             guard let idx = openMenu,
                                   let menus = scene.menubar?.menus,
@@ -409,26 +394,7 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                 }
 
                 if moved < 6 {
-                    // The app switcher is mirror-local UI: opening it sends
-                    // nothing to the guest, and only choosing a row does —
-                    // as `activate`, which names a process rather than a place.
-                    if appMenuOpen {
-                        defer { appMenuOpen = false; hoveredApp = nil }
-                        if let app = HitTester.appMenuRow(scene, x: start.x,
-                                                          y: start.y) {
-                            act(.app(.init(psn: app.psn, name: app.name,
-                                           isFront: false)),
-                                .click(count: 1, mods: 0,
-                                       at: Point(x: start.x, y: start.y)))
-                        }
-                        return
-                    }
                     let target = HitTester.hitTest(scene, x: start.x, y: start.y)
-                    if case .appMenu = target {
-                        appMenuOpen = true
-                        openMenu = nil
-                        return
-                    }
                     if case .menuTitle(let index) = target {
                         openMenu = index
                         return
@@ -598,9 +564,7 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
         case .growBox: return "grow box"
         case .titlebar(_, let psn, _, _): return "raise \(psn)"
         case .content(_, _, _, let x, let y): return "\(prefix)click \(x),\(y)"
-        case .appMenu: return "application menu"
         case .menubarBackground: return "unreported menu bar"
-        case .appMenuItem(_, let name): return "switch to \(name)"
         case .desktopItem(let name, _, _): return "\(prefix)select \(name)"
         case .windowItem(_, let name, _, _): return "\(prefix)select \(name)"
         case .desktop(let x, let y): return "\(prefix)click desktop \(x),\(y)"

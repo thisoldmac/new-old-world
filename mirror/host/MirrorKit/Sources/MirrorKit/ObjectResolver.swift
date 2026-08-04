@@ -60,16 +60,11 @@ public enum ObjectResolver {
         case .menuTitle(let index):
             return menu(index, in: scene).map(MirrorObject.menu)
 
-        case .appMenu, .menubarBackground:
-            /* Opening the switcher is mirror-local UI: nothing is sent
-               to the guest until a row is chosen. Unreported menubar
-               chrome likewise has no guest object that may be invented. */
+        case .menubarBackground:
+            /* Unreported menubar chrome has no guest object that may be
+               invented. In particular, do not rebuild the Application menu
+               from the process roster: that loses its command rows. */
             return nil
-
-        case .appMenuItem(let psn, let name):
-            return .app(.init(psn: psn, name: name,
-                              isFront: scene.apps.first { $0.psn == psn }?
-                                  .front ?? false))
 
         case .desktopItem(let name, let x, let y):
             return .finderItem(.init(name: name, container: nil,

@@ -114,11 +114,12 @@ functional, accurate mirror of the guest** — one a person can operate.
    items. Resize the Workshop, close it, and double-click Macintosh HD.
    Visually compare the Finder window against the guest, then hide Finder
    through the app switcher and verify that it disappeared. Only after all
-   eight pass may the sweep enter its current slice — Date & Time in the
-   present control-panel campaign. A failure closes the sweep at the
-   baseline and becomes the patch target; later rows do not turn green
-   around it. The gate emits these rows before every rung and refuses
-   out-of-order scoring.
+   eight have been attempted may the sweep enter its current slice — Date &
+   Time in the present control-panel campaign. A failure becomes a patch
+   target, but it does not erase independent coverage later in the sweep.
+   Patch the collected failures in a batch, then start again from the first
+   preflight row. The gate emits these rows before every rung and refuses
+   skipped or out-of-order scoring.
 
 ---
 

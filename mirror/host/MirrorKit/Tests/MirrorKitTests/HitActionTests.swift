@@ -287,6 +287,18 @@ final class HitActionTests: XCTestCase {
         XCTAssertEqual(ActionModel.click(on: .menubarBackground), [])
     }
 
+    func testMissingApplicationMenuDoesNotSynthesizeASecondSelector() throws {
+        var scene = try fixtureScene("04-axtree-front-simpletext-doc")
+        scene.menubar?.menus.removeAll {
+            $0.id == ObjectResolver.applicationMenuID
+        }
+
+        XCTAssertEqual(
+            HitTester.hitTest(scene, x: scene.screen.w - 4, y: 8),
+            .menubarBackground,
+            "missing guest menu state must stay inert, not become an app-only selector")
+    }
+
     func testMenuSelectShortcutlessGoesThroughThePortal() {
         // CHANGED 2026-07-31, deliberately. A shortcut-less item used to fall
         // back to a QMP menu drag; it now goes through the Portal, which answers

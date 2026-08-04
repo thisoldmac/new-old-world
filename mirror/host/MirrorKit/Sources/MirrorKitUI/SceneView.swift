@@ -9,20 +9,15 @@ public struct SceneView: View {
     public let openMenu: Int?
     public let hoveredItem: Int?
     public let selectedItem: String?
-    public let appMenuOpen: Bool
-    public let hoveredApp: String?
     public let dragOutline: Rect?
 
     public init(scene: MirrorKit.Scene, openMenu: Int? = nil,
                 hoveredItem: Int? = nil, selectedItem: String? = nil,
-                appMenuOpen: Bool = false, hoveredApp: String? = nil,
                 dragOutline: Rect? = nil) {
         self.scene = scene
         self.openMenu = openMenu
         self.hoveredItem = hoveredItem
         self.selectedItem = selectedItem
-        self.appMenuOpen = appMenuOpen
-        self.hoveredApp = hoveredApp
         self.dragOutline = dragOutline
     }
 
@@ -31,7 +26,6 @@ public struct SceneView: View {
             SceneRenderer(scene: scene, openMenu: openMenu,
                           hoveredItem: hoveredItem,
                           selectedItem: selectedItem,
-                          appMenuOpen: appMenuOpen, hoveredApp: hoveredApp,
                           dragOutline: dragOutline)
                 .draw(in: ctx, size: size)
         }
@@ -49,13 +43,11 @@ public enum RenderShot {
                            openMenu: Int? = nil,
                            hoveredItem: Int? = nil,
                            selectedItem: String? = nil,
-                           appMenuOpen: Bool = false,
                            size: CGSize? = nil) throws -> Data {
         let size = size ?? SceneRenderer(scene: scene).logicalSize
         let view = SceneView(scene: scene, openMenu: openMenu,
                              hoveredItem: hoveredItem,
-                             selectedItem: selectedItem,
-                             appMenuOpen: appMenuOpen)
+                             selectedItem: selectedItem)
             .frame(width: size.width, height: size.height)
         let renderer = ImageRenderer(content: view)
         renderer.scale = 1

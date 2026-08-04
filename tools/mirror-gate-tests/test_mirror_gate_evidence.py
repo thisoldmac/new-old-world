@@ -172,7 +172,7 @@ class MirrorGateEvidenceTests(unittest.TestCase):
             mirror__capturedAt="2026-08-03T16:00:00"))
         self.assert_refused(result, "mirror.capturedAt must include a timezone")
 
-    def test_slice_rows_cannot_run_before_the_sanity_preflight(self):
+    def test_slice_rows_cannot_run_before_the_sanity_preflight_is_attempted(self):
         value = json.loads(self.state.read_text())
         value["cycles"][0]["rows"].insert(0, {
             "id": "p.workshop-fidelity", "rung": 0,
@@ -181,7 +181,18 @@ class MirrorGateEvidenceTests(unittest.TestCase):
         self.state.write_text(json.dumps(value, indent=2))
 
         result = self.run_gate("row", "r1.move", "blocked", "not yet")
-        self.assert_refused(result, "sanity preflight must pass")
+        self.assert_refused(result, "sanity preflight must be attempted")
+
+    def test_a_red_preflight_does_not_hide_independent_slice_coverage(self):
+        value = json.loads(self.state.read_text())
+        value["cycles"][0]["rows"].insert(0, {
+            "id": "p.workshop-fidelity", "rung": 0,
+            "what": "compare Workshop", "result": "fail", "note": "red",
+        })
+        self.state.write_text(json.dumps(value, indent=2))
+
+        result = self.run_gate("row", "r1.move", "blocked", "independent red")
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_every_cycle_begins_with_the_complete_ordered_preflight(self):
         value = json.loads(self.state.read_text())

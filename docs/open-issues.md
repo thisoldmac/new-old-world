@@ -14,6 +14,43 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## CYCLE 25 RED; SETUP CORRECTED BEFORE C26 (2026-08-03)
+
+Cycle 25 directly re-ran the sanity preflight through the uniquely identified
+C25 native host. Workshop resize and close both mutated the guest; their act
+log rows answered `now-window-act-outcome-unknown`, while the paired guest
+frames proved the operations landed. The Macintosh HD double-click likewise
+dispatched and opened the guest Finder window.
+
+Two real defects survived the sweep. Apple still opened a correctly placed but
+empty dropdown, so resolving the empty low-memory shell only through
+`GetMenuItemHierarchicalMenu` was insufficient. The next patch also checks the
+installed menu with the same measured ID and the root item's hierarchical ID;
+it remains red until C26 watches the rows. Separately, a locally synthesised
+app-only selector still appeared whenever the guest Application menu was
+absent. It collided with the native menu and necessarily dropped Hide, Hide
+Others, and Show All. The custom dropdown, hit target, hover state, and action
+route are now removed. Only guest menu `-16489` may open or act; missing menu
+state is inert rather than replaced with a second control.
+
+The sweep also made a setup error explicit. The extension *file* was staged,
+but the running system had never cold-booted it. The first Mirror frame said
+`content-plane-absent`, and the live act log later said "the NOW Extension is
+not installed". The earlier carry-forward assumption that an old resident was
+loaded was wrong. Therefore the missing foreign Finder and Date & Time windows
+and menus in C25 are **not an implementation verdict**: foreign scene
+collection was being tested without its resident plane.
+
+The corrected local oracle is
+`~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2`. It contains the verified
+`NOW Extension` and current `New Old World`, was stopped by a human-performed
+guest shutdown (the exact QEMU PID exited on its own), and passed `qemu-img
+check` before and after preservation. Its SHA-256 at creation was
+`c466baa9a5455c343908e12197d68e57ffc7f07c140276a90c97a5ae2a137d70`.
+Future extension changes must update and cleanly shut down this stage image
+before a Mirror sweep; merely copying a new INIT into a running clone does not
+change the resident code under test.
+
 ## CYCLE 24 RED BASELINE; FIX BUILT, NOT UX-VERIFIED (2026-08-03)
 
 Cycle 24 was driven through the uniquely identified native C24 Mirror and
@@ -51,11 +88,12 @@ and an explicit Retro68 PowerPC Carbon cross-build passes. Mutation checks were
 watched fail against the pre-patch self-window route and pre-preflight gate.
 This is **tested, not emulator UX-verified and not metal-verified**.
 
-Every future cycle now begins with a gate-enforced five-step sanity preflight:
-compare Workshop, resize Workshop, close Workshop, double-click Macintosh HD,
-and compare Finder. Slice-specific work — currently Date & Time — cannot score
-until all five pass in order. A failed preflight closes the cycle with later
-rows explicitly blocked rather than implying they were exercised.
+Every future cycle now begins with a gate-enforced eight-step sanity preflight:
+compare Workshop, compare the menubar, inspect Apple's real rows, resize and
+close Workshop, double-click Macintosh HD, compare Finder, and hide Finder
+through the native Application menu. Slice-specific work is currently Date &
+Time. Every row is attempted before patching independent failures in a batch;
+one red row does not erase coverage of later independent rows.
 
 ## WATCHED, FIDELITY STILL RED: Workshop reports its manually drawn structure (2026-08-03)
 

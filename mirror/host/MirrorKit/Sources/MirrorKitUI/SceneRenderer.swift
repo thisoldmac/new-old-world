@@ -23,24 +23,17 @@ public struct SceneRenderer {
     /// Name of the desktop icon the mirror believes is selected. See
     /// LiveMirrorView.selectedItem — this is our own model, not guest truth.
     public let selectedItem: String?
-    /// Mirror-local: the Application menu (app switcher) is open.
-    public let appMenuOpen: Bool
-    /// PSN of the switcher row under the pointer.
-    public let hoveredApp: String?
     /// A live drag/resize outline (guest coords), drawn on top — the classic
     /// Mac dotted-gray tracking rectangle. nil = not dragging.
     public let dragOutline: Rect?
 
     public init(scene: MirrorKit.Scene, openMenu: Int? = nil,
                 hoveredItem: Int? = nil, selectedItem: String? = nil,
-                appMenuOpen: Bool = false, hoveredApp: String? = nil,
                 dragOutline: Rect? = nil) {
         self.scene = scene
         self.openMenu = openMenu
         self.hoveredItem = hoveredItem
         self.selectedItem = selectedItem
-        self.appMenuOpen = appMenuOpen
-        self.hoveredApp = hoveredApp
         self.dragOutline = dragOutline
     }
 
@@ -394,7 +387,7 @@ public struct SceneRenderer {
         let guestAppMenuOpen = openMenu.flatMap { index in
             menus.indices.contains(index) ? menus[index].id : nil
         } == ObjectResolver.applicationMenuID
-        let switcherOpen = appMenuOpen || guestAppMenuOpen
+        let switcherOpen = guestAppMenuOpen
 
         if switcherOpen {
             ctx.fill(Path(CGRect(x: appLeft, y: 0,
@@ -415,45 +408,6 @@ public struct SceneRenderer {
         _ = drawRightAligned(ctx, Self.clockString(scene.capturedAt),
                              at: appLeft - 12)
 
-        if appMenuOpen {
-            drawAppMenu(ctx, right: bounds.width)
-        }
-    }
-
-    /// The Application menu's dropdown: every switchable app, the front one
-    /// checked, exactly as the Finder lists them.
-    private func drawAppMenu(_ ctx: GraphicsContext, right: CGFloat) {
-        let apps = HitTester.switchableApps(scene)
-        guard !apps.isEmpty else { return }
-        let width = CGFloat(HitTester.appMenuDropdownWidth(scene))
-        let height = CGFloat(apps.count * 16 + 4)
-        let frame = CGRect(x: right - width, y: 19, width: width, height: height)
-        ctx.fill(Path(frame.offsetBy(dx: 2, dy: 2)),
-                 with: .color(.black.opacity(0.35)))
-        ctx.fill(Path(frame), with: .color(Platinum.g0))
-        ctx.stroke(Path(frame), with: .color(Platinum.g6), lineWidth: 1)
-
-        var y = frame.minY + 2
-        for app in apps {
-            defer { y += 16 }
-            let hovered = (hoveredApp == app.psn)
-            if hovered {
-                ctx.fill(Path(CGRect(x: frame.minX + 1, y: y,
-                                     width: frame.width - 2, height: 16)),
-                         with: .color(Platinum.g6))
-            }
-            let color = hovered ? Platinum.g0 : Platinum.g6
-            if app.front {
-                appText("\u{2713}", ctx, x: frame.minX + 4, baselineY: y + 12,
-                        color: color)
-            }
-            if let img = IconAtlas.namedIcon("application") {
-                ctx.draw(Image(decorative: img, scale: 1),
-                         in: CGRect(x: frame.minX + 16, y: y, width: 16, height: 16))
-            }
-            appText(app.name, ctx, x: frame.minX + 36, baselineY: y + 12,
-                    color: color)
-        }
     }
 
     private func drawMenuTitle(_ ctx: GraphicsContext, _ title: String,

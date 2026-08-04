@@ -363,17 +363,33 @@ static MenuRef root_items_for(MenuRef root, MenuHandle entry)
     MenuItemIndex i;
     ItemCount     count;
     MenuID        wanted;
+    MenuRef       installed;
 
     if (root == NULL || entry == NULL) {
         return entry;
     }
     wanted = GetMenuID(entry);
+    installed = GetMenuHandle(wanted);
+    if (installed != NULL && CountMenuItems(installed) > 0) {
+        return installed;
+    }
     count = CountMenuItems(root);
     for (i = 1; i <= count; ++i) {
         MenuRef child = NULL;
+        MenuID  attached = 0;
 
-        if (GetMenuItemHierarchicalMenu(root, i, &child) == noErr
-                && child != NULL && GetMenuID(child) == wanted) {
+        if (GetMenuItemHierarchicalID(root, i, &attached) == noErr
+                && attached == wanted) {
+            if (GetMenuItemHierarchicalMenu(root, i, &child) == noErr
+                    && child != NULL) {
+                return child;
+            }
+            installed = GetMenuHandle(attached);
+            if (installed != NULL && CountMenuItems(installed) > 0) {
+                return installed;
+            }
+        } else if (GetMenuItemHierarchicalMenu(root, i, &child) == noErr
+                       && child != NULL && GetMenuID(child) == wanted) {
             return child;
         }
     }

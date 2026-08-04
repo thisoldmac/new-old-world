@@ -29,7 +29,7 @@ struct Options {
     var renderMenu: Int?        // open this menu index in the offscreen render
     var hoverItem: Int?         // highlight this row — proves hover offscreen
     var selectItem: String?     // draw this desktop icon selected, for proofs
-    var appMenu = false         // draw the app switcher open, for proofs
+    var appMenu = false         // open the guest Application menu, for proofs
     /// Live actuation through the real core path (hit-test / action model /
     /// dispatcher): poll → resolve → perform → re-poll.
     var actMenu: String?        // "File>New" — ⌘ via key, else QMP menu-drag
@@ -149,12 +149,10 @@ func summarize(_ scene: MirrorKit.Scene) -> String {
 @MainActor
 func writeRenderShot(_ scene: MirrorKit.Scene, to path: String,
                      openMenu: Int? = nil, hoveredItem: Int? = nil,
-                     selectedItem: String? = nil,
-                     appMenuOpen: Bool = false) throws {
+                     selectedItem: String? = nil) throws {
     let png = try RenderShot.png(scene: scene, openMenu: openMenu,
                                  hoveredItem: hoveredItem,
-                                 selectedItem: selectedItem,
-                                 appMenuOpen: appMenuOpen)
+                                 selectedItem: selectedItem)
     try png.write(to: URL(fileURLWithPath: path))
     print("render-screenshot: \(path) (\(png.count) bytes, " +
           "\(scene.windows.count) windows)")
@@ -631,11 +629,13 @@ for i in 0..<max(1, options.polls) {
                 // --render-menu/--hover-item apply to the LIVE snapshot too:
                 // that is how the menu surface gets verified offscreen, since an
                 // agent cannot screenshot the window itself.
+                let menu = options.renderMenu
+                    ?? (options.appMenu
+                        ? HitTester.applicationMenuIndex(scene) : nil)
                 try writeRenderShot(scene, to: snapshot,
-                                    openMenu: options.renderMenu,
+                                    openMenu: menu,
                                     hoveredItem: options.hoverItem,
-                                    selectedItem: options.selectItem,
-                                    appMenuOpen: options.appMenu)
+                                    selectedItem: options.selectItem)
             }
         }
     } catch {

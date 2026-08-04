@@ -318,17 +318,17 @@ def cmd_row(args):
         prior = preflight_ids[:preflight_ids.index(rid)]
         unfinished = [row_id for row_id in prior
                       if next((r for r in cycle["rows"]
-                               if r["id"] == row_id), {}).get("result") != "pass"]
+                               if r["id"] == row_id), {}).get("result") is None]
         if unfinished:
-            die("sanity preflight is ordered; pass first: %s"
+            die("sanity preflight is ordered; attempt first: %s"
                 % ", ".join(unfinished))
     else:
         preflight = [r for r in cycle["rows"] if r["id"] in preflight_ids]
-        not_green = [r for r in preflight if r.get("result") != "pass"]
-        if not_green:
-            die("sanity preflight must pass before slice testing: %s. "
-                "Close and patch the baseline if one failed."
-                % ", ".join(r["id"] for r in not_green))
+        unattempted = [r for r in preflight if r.get("result") is None]
+        if unattempted:
+            die("sanity preflight must be attempted before slice testing: %s. "
+                "Record red rows, then keep testing independent surfaces."
+                % ", ".join(r["id"] for r in unattempted))
 
     if result in ("pass", "fail"):
         if not evidence:

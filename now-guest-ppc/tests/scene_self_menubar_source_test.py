@@ -43,6 +43,12 @@ def main() -> None:
     root_items = body("static MenuRef root_items_for(")
     if "GetMenuItemHierarchicalMenu" not in root_items:
         raise SystemExit("root-menu rows must come from the attached submenu")
+    if "GetMenuItemHierarchicalID" not in root_items:
+        raise SystemExit("root-menu lookup must compare the submenu identity "
+                         "even when Carbon does not return its MenuRef")
+    if "GetMenuHandle(wanted)" not in root_items:
+        raise SystemExit("an installed menu with the measured ID must beat "
+                         "the empty low-memory shell")
     if "GetMenuID(child) == wanted" not in root_items:
         raise SystemExit("the root submenu must match the measured MenuList "
                          "entry by menu ID, not by title or geometry")

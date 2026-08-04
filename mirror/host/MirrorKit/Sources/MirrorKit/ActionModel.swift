@@ -316,14 +316,10 @@ public enum ActionModel {
             // The thumb is a drag, not a click.
             guard part != .thumb else { return [] }
             return [.qmpClick(x: x, y: y)]
-        case .appMenu, .menubarBackground:
-            // Opening the switcher is mirror-local UI: nothing is sent to the
-            // guest until a row is chosen. Missing menubar content is inert.
+        case .menubarBackground:
+            // Missing menubar content is inert; no local substitute may pose
+            // as a guest-provided menu.
             return []
-        case .appMenuItem(let psn, _):
-            // Switching apps names a PROCESS, not a place on screen.
-            // SetFrontProcess is metal-safe and already proven.
-            return [.activate(psn: psn)]
         case .windowItem(_, _, let x, let y):
             // Identical treatment to a desktop icon, and for the same reason:
             // the coordinates are the icon's own centre as the FINDER reports

@@ -16,18 +16,11 @@ public enum HitTester {
         /// A menubar title (resolved from the wire's MenuList `left`s).
         case menuTitle(index: Int)
 
-        /// The Application menu at the right of the bar — the app switcher.
-        case appMenu
-
         /// Menubar chrome for which the guest supplied no menu. This is
         /// deliberately distinct from the desktop: an unreported Apple menu
-        /// must not turn into either a second Application menu or a Finder
-        /// click merely because both occupy the same global x coordinate.
+        /// or Application menu must not turn into invented controls or a
+        /// Finder click merely because both occupy a known global position.
         case menubarBackground
-
-        /// A row in the open Application menu: switching apps is `activate`,
-        /// which names a process rather than a place on screen.
-        case appMenuItem(psn: String, name: String)
         /// A title-bar widget on the front window — actuated by a real
         /// press-release at its center (TrackGoAway/TrackBox are tracking
         /// loops; the wire can't drive them, QMP can).
@@ -183,24 +176,6 @@ public enum HitTester {
         return 24 + name.count * 6 + 10
     }
 
-    /// Width of the open switcher, sized to its longest app name.
-    public static func appMenuDropdownWidth(_ scene: Scene) -> Int {
-        let longest = switchableApps(scene).map(\.name.count).max() ?? 0
-        return max(140, 40 + longest * 6 + 12)
-    }
-
-    /// A row in the open Application menu, by pointer position.
-    public static func appMenuRow(_ scene: Scene, x: Int, y: Int)
-        -> Scene.AppRef? {
-        let apps = switchableApps(scene)
-        let width = appMenuDropdownWidth(scene)
-        let left = scene.screen.w - width
-        guard x >= left, y >= menubarHeight else { return nil }
-        let row = (y - menubarHeight - 2) / 16
-        guard row >= 0, row < apps.count else { return nil }
-        return apps[row]
-    }
-
     /// The Application menu as the GUEST has it, when the scene carries
     /// it. Its id is the system's (-16489) and its items are the real
     /// ones: Hide <app>, Hide Others, Show All, a separator, then the
@@ -217,14 +192,14 @@ public enum HitTester {
     public static func hitTest(_ scene: Scene, x: Int, y: Int) -> Target {
         if y >= 0, y < menubarHeight,
            x >= scene.screen.w - appMenuWidth(scene) {
-            /* The guest's own Application menu if we have it, so a person
-               gets Hide / Hide Others / Show All beside the apps. The
-               synthesised switcher stays as the fallback for a scene
-               whose menu bar was not read. */
+            /* Only the guest's own Application menu is a control. A locally
+               synthesised app list collided with this menu and silently
+               dropped Hide / Hide Others / Show All whenever foreign scene
+               collection was incomplete. Missing guest state is inert. */
             if let index = applicationMenuIndex(scene) {
                 return .menuTitle(index: index)
             }
-            return .appMenu
+            return .menubarBackground
         }
         // The menubar strip resolves against the wire's MenuList lefts:
         // a title's span runs from its left to the next title's left.
