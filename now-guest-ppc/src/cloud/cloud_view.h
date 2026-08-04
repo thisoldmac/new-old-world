@@ -6,9 +6,13 @@
 #include "cloud_layout.h"
 #include "cloud_model.h"
 
-/* The Data Browser's two columns, shared by both of today's views (the
-   list one draws them from CloudRow, the drive one from FileEntry) and
-   by the shell, which owns the control and its item_data callback. */
+/* The SHELL's Data Browser's two columns, drawn from CloudRow by its
+   item_data callback for the list and contacts views. Drive and
+   Photos do not use them: each owns a browser of its own (Drive's
+   Files-page Name/Kind/Size/Modified set, Photos' Name/Size/Modified)
+   for the same reason — one control cannot change its column set
+   under CarbonLib 1.6 on the PB1400c, so a different set means a
+   different control (cloud_drive_view.c's header says why in full). */
 enum {
     kCloudColTitle = 'titl',
     kCloudColSubtitle = 'subt'
@@ -21,17 +25,27 @@ enum {
    lets the Workshop render whichever page is selected.
 
    Same NULL-op tolerance: every entry may be NULL, and the shell must
-   check before calling. Today's two views each leave several ops NULL
-   rather than supply a no-op body — list's click/key/idle/reset are
-   NULL because ask_save/HandleControlKey/nothing/nothing is already
-   what the shell does by default; drive's create/show/layout are NULL
-   because it owns no controls of its own, and drive's draw is NULL
-   because drive mode's layout (cloud_layout.c) gives it no card pane
-   to draw into — full body width for the list instead, per-row detail
-   already in the browser's own Detail column, and a pull's progress on
-   the status placard (cloud_drive_view.c's set_status host hook)
-   rather than a pane that does not exist. A fourth view is free to use
-   as many or as few as it needs. */
+   check before calling. Today's views leave ops NULL rather than
+   supply a no-op body — list's click/key/idle/reset are NULL because
+   ask_save/HandleControlKey/nothing/nothing is already what the shell
+   does by default. Drive supplies create/layout/draw for what it owns
+   (its four-column browser, the breadcrumb row above the split, and
+   its own pane content) and, since the pull destination chooser
+   (2026-08-02), show and control_click for its own "Save into:" row
+   and Choose... button, and download-bar/byte-line furniture, too —
+   the photos card's destination and progress furniture, one lane
+   over, now genuinely shared geometry (cloud_layout.c reuses the same
+   list/detail split for both). Which BROWSER is on stage stays MODE
+   chrome the shell owns; the destination button is this view's own,
+   the same split photos already draws between the shell's Save button
+   and its own Size popup. Drive DOES have a pane now (2026-08-02): the
+   selected item's own name/kind/size/date and the double-click
+   affordance line, drawn by this view's own draw() into r->detail_text
+   — the shell's g_selected stays -1 in drive mode either way (this
+   view keeps its own g_sel, the shell never sees its browser's
+   notifications), so draw()'s `selected` argument is ignored here and
+   the pane content comes from the view's own state instead. A fourth
+   view is free to use as many or as few of these as it needs. */
 
 typedef struct CloudViewOps {
     /* Called once, when the page is created (mirrors module create):
@@ -100,6 +114,33 @@ typedef struct CloudViewOps {
        otherwise show. */
     Boolean (*row_matches)(int index, const CloudStore *store,
                            const char *needle);
+
+    /* Selection changed: `selected` is the new row index (-1 = none).
+       The shell calls this on every real selection change AND with -1
+       on every service change, after its own ask_card bookkeeping, so
+       a view that keeps per-selection state (the photos preview: one
+       image in memory, evicted on every change) has exactly one seam
+       to keep it at. NULL for the views whose card is all the state
+       there is. */
+    void (*select)(const CloudLayout *r, const CloudStore *store,
+                   int selected);
+
+    /* A control the shell does not own was clicked (FindControl has
+       already succeeded on `control`; nothing has tracked it yet).
+       The view tracks it with whatever action proc ITS control needs
+       — a popup CDEF wants (ControlActionUPP)-1L, a button wants
+       now_pump_action() — and returns true when the control was this
+       view's. NULL for views that own no controls of their own
+       (today: list and contacts; photos' Size popup and destination
+       chooser and drive's own destination chooser live here). */
+    Boolean (*control_click)(ControlRef control,
+                             const EventRecord *event, Point local);
+
+    /* The size token a Save/cloud.get should carry — the contract's
+       "original"/"fit1024"/"fit640", or NULL to omit the field and
+       take the host's configured default. NULL op means NULL token:
+       a view with no size choice always asks for the default. */
+    const char *(*save_size)(void);
 } CloudViewOps;
 
 #endif /* NOW_CLOUD_VIEW_H */

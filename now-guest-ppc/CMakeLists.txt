@@ -17,6 +17,7 @@ add_application(now-guest-ppc
     src/screenshots/capture.c
     src/files/fileshare.c
     src/core/pump.c
+    src/core/db_hilite.c
     src/core/build_stamp.c
     src/core/agent_access.c
     src/screenshots/screenshot.c
@@ -40,12 +41,18 @@ add_application(now-guest-ppc
     src/network/net_layout.c
     src/network/net_probe.c
     src/network/network_module.c
+    src/cloud/cloud_card_cache.c
     src/cloud/cloud_filter.c
     src/cloud/cloud_layout.c
     src/cloud/cloud_model.c
     src/cloud/cloud_module.c
+    src/cloud/cloud_nav.c
+    src/cloud/cloud_preview.c
+    src/cloud/cloud_photo_size.c
+    src/cloud/cloud_preview_well.c
     src/cloud/cloud_drive_view.c
     src/cloud/cloud_list_view.c
+    src/cloud/cloud_photos_view.c
     src/cloud/cloud_contacts_card.c
     src/cloud/cloud_contacts_view.c
     src/mirror/mirror_layout.c

@@ -260,8 +260,13 @@ final class GuestFileUploadCommandTests: XCTestCase {
             creator: "ttxt",
             modified: Int(UInt32.max)))
         let stage = try XCTUnwrap(begin.value)
-        // Modern unsigned classic seconds do not fit the deployed guest's
-        // signed parser; transfer must omit rather than saturate the date.
+        // A classic file date is unsigned seconds since 1904 - up to
+        // UInt32.max is representable, and the guest now parses it
+        // unsigned (now_json_find_u32), so this survives to the wire
+        // rather than being omitted. This used to clamp at Int32.max
+        // (the deployed guest's OLD signed strtol ceiling, ~Jan 1972)
+        // and silently drop every modern date - the regression this
+        // test now guards against reintroducing.
         _ = await commands.appendUpload(
             uploadID: stage.uploadID, offset: 0, bytes: payload)
         let committed = await commands.commitUpload(
@@ -269,7 +274,7 @@ final class GuestFileUploadCommandTests: XCTestCase {
         let receipt = try XCTUnwrap(committed.value)
 
         XCTAssertNotNil(capturedOffer)
-        XCTAssertNil(capturedOffer?.modified)
+        XCTAssertEqual(capturedOffer?.modified, Int(UInt32.max))
         XCTAssertEqual(committed.receipt.outcome, .success)
         XCTAssertEqual(receipt.receiverConfirmedBytes, payload.count)
         XCTAssertEqual(receipt.guestReservedBytes, payload.count)

@@ -207,6 +207,20 @@ void now_files_downloads_name(char *out, long cap);
    0 = cancelled, -1 = failed. */
 int now_files_choose_downloads(char *why, long why_cap);
 
+/* One NavChooseFolder resolved to the folder's own volume and
+   directory ID, persisting nothing — the shared body every "pick a
+   folder" door uses. 1 = chosen, 0 = cancelled, -1 = failed. */
+int now_files_choose_folder(const char *prompt, short *vref, long *dir,
+                            char *why, long why_cap);
+
+/* The folder's full display path ("Macintosh HD:Lab:Photos"), for a
+   label. 1 = written, 0 = the climb failed. */
+int now_files_dir_path(short vref, long dir, char *out, long cap);
+
+/* The share point as a volume and directory ID — what a relative path
+   resolves against, for a caller comparing a chosen folder to it. */
+int now_files_share_root(short *vref, long *dir);
+
 /* Opens it in the Finder, so "where did it go" has an answer that is
    one click rather than a hunt. */
 int now_files_reveal_downloads(void);

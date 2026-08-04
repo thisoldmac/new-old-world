@@ -219,9 +219,15 @@ final class AgentIntegrationArtifactTests: XCTestCase {
             for message in guest.received {
                 if case .fileOffer(let offer) = message {
                     offerID = offer.id
+                    // The source file was just written, so it carries a
+                    // real (modern) modification date. This used to be
+                    // nil unconditionally - not because the artifact
+                    // lane omits dates by design, but because
+                    // ClassicDate.guestWireSeconds stopped at Int32.max
+                    // (~Jan 1972) and every modern date came back nil.
                     return offer.name == "Agent Note.txt"
                         && offer.path == ""
-                        && offer.modified == nil
+                        && offer.modified != nil
                         && offer.overwrite != true
                 }
             }

@@ -66,6 +66,12 @@ int cloud_parse_report(const char *reply, CloudStore *store)
                              sizeof service->state);
         now_json_find_text(object, "detail", service->detail,
                            sizeof service->detail);
+        /* find_string, not find_text: this is a protocol token that
+           goes back on the wire verbatim, not something a person
+           reads. Absent leaves it empty, which the popup reads as
+           "the host named no size" rather than as a size. */
+        now_json_find_string(object, "defaultSize", service->default_size,
+                             sizeof service->default_size);
         ++store->service_count;
     }
     return store->service_count;
@@ -104,8 +110,13 @@ int cloud_parse_listing(const char *reply, CloudStore *store)
         now_json_find_text(object, "subtitle", row->subtitle,
                            sizeof row->subtitle);
         row->bytes = now_json_find_int(object, "bytes", 0);
-        row->modified =
-            (unsigned long)now_json_find_int(object, "modified", 0);
+        /* Unsigned: a classic file date is unsigned seconds since 1904
+           and the host may send up to 2^32-1, which now_json_find_int
+           (strtol into a signed 32-bit long) saturates at 2^31-1 -
+           every date after January 1972 - and draws it as "--". */
+        row->modified = now_json_find_u32(object, "modified", 0);
+        row->width = now_json_find_int(object, "width", 0);
+        row->height = now_json_find_int(object, "height", 0);
         ++store->row_count;
         ++appended;
     }
@@ -115,18 +126,20 @@ int cloud_parse_listing(const char *reply, CloudStore *store)
     return appended;
 }
 
-int cloud_parse_card(const char *reply, CloudStore *store)
+int cloud_parse_card_rows(const char *reply, char *item_out, long item_cap,
+                          CloudCardRow *rows_out, int rows_cap)
 {
     char pair[224];
     const char *p;
+    int count = 0;
 
-    store->card_count = 0;
-    store->card_item[0] = '\0';
-    now_json_find_string(reply, "item", store->card_item,
-                         sizeof store->card_item);
+    if (item_out != NULL && item_cap > 0) {
+        item_out[0] = '\0';
+        now_json_find_string(reply, "item", item_out, item_cap);
+    }
     p = now_json_array(reply, "rows");
-    while (p != NULL && store->card_count < kCloudMaxCardRows) {
-        CloudCardRow *row = &store->card[store->card_count];
+    while (p != NULL && count < rows_cap) {
+        CloudCardRow *row = &rows_out[count];
 
         p = now_json_next_array(p, pair, sizeof pair);
         if (p == NULL) {
@@ -138,8 +151,17 @@ int cloud_parse_card(const char *reply, CloudStore *store)
             continue;
         }
         now_json_array_string(pair, 1, row->value, sizeof row->value);
-        ++store->card_count;
+        ++count;
     }
+    return count;
+}
+
+int cloud_parse_card(const char *reply, CloudStore *store)
+{
+    store->card_count = cloud_parse_card_rows(reply, store->card_item,
+                                              sizeof store->card_item,
+                                              store->card,
+                                              kCloudMaxCardRows);
     return store->card_count;
 }
 
@@ -191,4 +213,119 @@ int cloud_first_listable(const CloudStore *store)
         }
     }
     return -1;
+}
+
+/* --- the download-size popup and the download read-out ------------------ */
+
+void cloud_dest_leaf(const char *path, char *out, long cap)
+{
+    long end;
+    long start;
+
+    if (out == NULL || cap < 1) {
+        return;
+    }
+    out[0] = '\0';
+    if (path == NULL) {
+        return;
+    }
+    end = (long)strlen(path);
+    /* A volume names itself with a trailing colon; that colon is
+       punctuation, not an empty segment. */
+    while (end > 0 && path[end - 1] == ':') {
+        --end;
+    }
+    start = end;
+    while (start > 0 && path[start - 1] != ':') {
+        --start;
+    }
+    if (end - start >= cap) {
+        end = start + cap - 1;
+    }
+    memcpy(out, path + start, (size_t)(end - start));
+    out[end - start] = '\0';
+}
+
+const char *cloud_size_token(int menu_item)
+{
+    /* MENU 136's order is load-bearing the way MENU 134's is for
+       software_module: items 1-4 are the contract's four tokens,
+       largest first. There is no "host default" item — the host's
+       setting arrives in the report and is preselected below, so
+       every item on screen names a size it can also SHOW. Out of
+       range returns NULL: the popup cannot produce it, and a guess
+       would be a size nobody chose. */
+    switch (menu_item) {
+    case 1:  return "original";
+    case 2:  return "long1600";
+    case 3:  return "long1024";
+    case 4:  return "long640";
+    default: return 0;
+    }
+}
+
+int cloud_size_item(const char *token)
+{
+    int item;
+
+    if (token == 0 || token[0] == '\0') {
+        return 0;
+    }
+    for (item = 1; item <= kCloudSizeItemCount; ++item) {
+        const char *known = cloud_size_token(item);
+
+        if (known != 0 && strcmp(known, token) == 0) {
+            return item;
+        }
+    }
+    /* A retired fitN box, or a token from a host newer than this
+       guest: not offered here, and deliberately not translated into
+       the nearest thing (contract: refused by name, never aliased). */
+    return 0;
+}
+
+int cloud_size_default_item(const char *token)
+{
+    int item = cloud_size_item(token);
+
+    return item > 0 ? item : kCloudSizeLargestStopItem;
+}
+
+int cloud_dl_bar_value(long received, long expected)
+{
+    if (expected <= 0) {
+        return -1;                    /* nothing honest to show */
+    }
+    if (received <= 0) {
+        return 0;
+    }
+    if (received >= expected) {
+        return 1000;
+    }
+    /* long is 32 bits on the guest toolchain, so received * 1000 is
+       exact only below ~2MB; past that the division moves to the
+       other operand, which costs at most one part in two thousand of
+       accuracy on a multi-megabyte photo — invisible at 12 pixels a
+       percent-tenth wide. */
+    if (received <= 0x1FFFFFL) {
+        return (int)((received * 1000L) / expected);
+    }
+    {
+        int v = (int)(received / (expected / 1000L));
+
+        return v > 1000 ? 1000 : v;
+    }
+}
+
+void cloud_dl_bytes_line(long received, long expected,
+                         char *out, long cap)
+{
+    long rk = received >= 0 ? (received + 1023) / 1024 : 0;
+    long ek = expected > 0 ? (expected + 1023) / 1024 : 0;
+
+    if (expected > 0) {
+        snprintf(out, (size_t)cap, "%ldK of %ldK", rk, ek);
+    } else {
+        snprintf(out, (size_t)cap, "%ldK", rk);
+    }
 }

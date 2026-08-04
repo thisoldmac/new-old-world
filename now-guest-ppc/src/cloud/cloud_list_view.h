@@ -20,4 +20,11 @@
 
 const CloudViewOps *cloud_list_view_ops(void);
 
+/* The generic card render alone, for a view that adds to it rather
+   than replaces it: the photos view draws THIS whenever it has no
+   pixels to show, so the two card renders cannot drift. */
+void cloud_list_view_draw_card(const CloudLayout *r,
+                               const CloudStore *store,
+                               const CloudService *service, int selected);
+
 #endif /* NOW_CLOUD_LIST_VIEW_H */

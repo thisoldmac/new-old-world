@@ -805,26 +805,26 @@ void now_files_downloads_name(char *out, long cap)
     }
 }
 
-/* Picks where pulled files land, and remembers it. 1 = changed,
-   0 = cancelled, -1 = failed (why says how). */
-int now_files_choose_downloads(char *why, long why_cap)
+/* One NavChooseFolder, resolved to the folder's OWN volume and
+   directory ID. The shared body of every "pick a folder" door here:
+   the downloads chooser persists what this returns, the iCloud page's
+   destination chooser keeps it for a session. 1 = chosen, 0 =
+   cancelled, -1 = failed (why says how). */
+int now_files_choose_folder(const char *prompt, short *vref, long *dir,
+                            char *why, long why_cap)
 {
     NavDialogOptions options;
     NavReplyRecord reply;
-    NowPrefs prefs;
     FSSpec spec;
     CInfoPBRec pb;
     Str255 name;
-    HParamBlockRec vpb;
-    Str255 vname;
 
     why[0] = '\0';
     if (NavGetDefaultDialogOptions(&options) != noErr) {
         snprintf(why, (size_t)why_cap, "Navigation Services is unavailable");
         return -1;
     }
-    CopyCStringToPascal("Choose where files you get are put",
-                        options.message);
+    CopyCStringToPascal(prompt, options.message);
     if (NavChooseFolder(NULL, &reply, &options, now_pump_nav_event(),
                         NULL, NULL) != noErr
         || !reply.validRecord) {
@@ -836,8 +836,7 @@ int now_files_choose_downloads(char *why, long why_cap)
     }
     NavDisposeReply(&reply);
 
-    /* Same identity as the share: a volume name and a directory ID.
-       Nav hands back the folder's own spec, whose parID is its PARENT,
+    /* Nav hands back the folder's own spec, whose parID is its PARENT,
        so ask the File Manager which directory this actually is. */
     memset(&pb, 0, sizeof pb);
     memcpy(name, spec.name, spec.name[0] + 1);
@@ -850,11 +849,61 @@ int now_files_choose_downloads(char *why, long why_cap)
         snprintf(why, (size_t)why_cap, "that is not a folder");
         return -1;
     }
+    *vref = spec.vRefNum;
+    *dir = pb.dirInfo.ioDrDirID;
+    return 1;
+}
 
+/* The folder's full display path ("Macintosh HD:Lab:Photos"), for a
+   label that says where something will land. 1 = written, 0 = the
+   climb failed (out is untouched past a terminator). */
+int now_files_dir_path(short vref, long dir, char *out, long cap)
+{
+    if (cap > 0) {
+        out[0] = '\0';
+    }
+    return full_path_of_dir(vref, dir, out, cap);
+}
+
+/* The share point as a volume and directory ID — the same pair
+   resolve() uses, so a caller comparing a chosen folder against the
+   share root can never disagree with what the share actually is. */
+int now_files_share_root(short *vref, long *dir)
+{
+    NowPrefs prefs;
+
+    now_prefs_load(&prefs);
+    share_point(&prefs);
+    if (!share_volume(vref, &prefs)) {
+        return kFilesIOError;
+    }
+    *dir = prefs.share_dir > 0 ? prefs.share_dir : fsRtDirID;
+    return kFilesOK;
+}
+
+/* Picks where pulled files land, and remembers it. 1 = changed,
+   0 = cancelled, -1 = failed (why says how). */
+int now_files_choose_downloads(char *why, long why_cap)
+{
+    NowPrefs prefs;
+    HParamBlockRec vpb;
+    Str255 vname;
+    short vref;
+    long dir;
+    int rc;
+
+    rc = now_files_choose_folder("Choose where files you get are put",
+                                 &vref, &dir, why, why_cap);
+    if (rc <= 0) {
+        return rc;
+    }
+
+    /* Same identity as the share: a volume NAME and a directory ID,
+       so the preference survives a remount renumbering vRefNums. */
     memset(&vpb, 0, sizeof vpb);
     vname[0] = 0;
     vpb.volumeParam.ioNamePtr = vname;
-    vpb.volumeParam.ioVRefNum = spec.vRefNum;
+    vpb.volumeParam.ioVRefNum = vref;
     vpb.volumeParam.ioVolIndex = 0;
     if (PBHGetVInfoSync(&vpb) != noErr || vname[0] == 0) {
         snprintf(why, (size_t)why_cap, "could not name that volume");
@@ -867,7 +916,7 @@ int now_files_choose_downloads(char *why, long why_cap)
     }
     memcpy(prefs.dl_vol, vname + 1, vname[0]);
     prefs.dl_vol[vname[0]] = '\0';
-    prefs.dl_dir = pb.dirInfo.ioDrDirID;
+    prefs.dl_dir = dir;
     if (now_prefs_save(&prefs) != noErr) {
         snprintf(why, (size_t)why_cap, "could not save that setting");
         return -1;

@@ -37,6 +37,63 @@ static void test_booleans_are_not_integers(void)
     assert(now_json_find_bool("{\"id\":1}", "ok", 0) == 0);
 }
 
+/* --- the unsigned parse a classic file date needs ------------------------
+   A classic Mac modification date is unsigned seconds since 1904. Read
+   through find_int (strtol into a signed 32-bit long), a date past
+   January 1972 (2^31-1 classic seconds) saturates at LONG_MAX instead
+   of parsing - the exact regression that shipped: 2026 photos drew
+   "--" because the wrong-shaped value made it look valid. find_u32
+   must read the same field correctly at and past that point. */
+static void test_unsigned_date_parsing(void)
+{
+    char msg[96];
+
+    /* 2^31-1: the OLD ceiling. Both parsers agree here - this is the
+       boundary itself, not yet past it. */
+    snprintf(msg, sizeof msg, "{\"modified\":%lu}", 2147483647UL);
+    assert(now_json_find_u32(msg, "modified", 0) == 2147483647UL);
+    assert((unsigned long)now_json_find_int(msg, "modified", 0)
+           == 2147483647UL);
+
+    /* 2^31: one past it. This is where the bug actually bites - a
+       January 1972 classic date, and every date after it, on the
+       32-bit `long` this scanner is actually built for (the Mac).
+       find_int would saturate there (strtol into a 32-bit long can go
+       no higher); find_u32 must not. This host's own `long` may be 64
+       bits, so find_int happens not to misbehave HERE - which is
+       exactly why find_u32 masks to 32 bits explicitly instead of
+       trusting strtoul's width, and why this assertion is about
+       find_u32's own arithmetic, not a comparison against find_int. */
+    snprintf(msg, sizeof msg, "{\"modified\":%lu}", 2147483648UL);
+    assert(now_json_find_u32(msg, "modified", 0) == 2147483648UL);
+
+    /* 2^32-1: the top of the unsigned range, and the top of what a
+       classic file date can hold at all (early 2040). */
+    snprintf(msg, sizeof msg, "{\"modified\":%lu}", 4294967295UL);
+    assert(now_json_find_u32(msg, "modified", 0) == 4294967295UL);
+
+    /* Past 2^32: not a value this field can ever legitimately carry
+       (the host stops sending before here - ClassicDate.macSeconds
+       refuses it), but the scanner must still behave predictably
+       rather than reading arbitrary memory past a fixed-width
+       accumulator: digits are accumulated and masked to 32 bits, so
+       this wraps rather than reading out of range. */
+    assert(now_json_find_u32("{\"modified\":4294967296}", "modified", 0)
+           == 0UL);
+    assert(now_json_find_u32("{\"modified\":4294967397}", "modified", 0)
+           == 101UL);
+
+    /* Absent key: the fallback, same contract as find_int. */
+    assert(now_json_find_u32("{\"id\":1}", "modified", 0) == 0UL);
+    assert(now_json_find_u32("{\"id\":1}", "modified", 42) == 42UL);
+
+    /* A non-numeric value is not a match: fallback, not 0-by-strtoul. */
+    assert(now_json_find_u32("{\"modified\":\"x\"}", "modified", 7) == 7UL);
+
+    /* NULL safety, the same contract as every other accessor here. */
+    assert(now_json_find_u32(NULL, "modified", 9) == 9UL);
+}
+
 static void test_text_decoding(void)
 {
     char buf[64];
@@ -335,6 +392,7 @@ int main(void)
 
     printf("json_native_test: all assertions passed\n");
     test_booleans_are_not_integers();
+    test_unsigned_date_parsing();
     test_text_decoding();
     test_inbound_hfs_path();
     test_array_walking();

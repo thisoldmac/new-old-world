@@ -126,9 +126,10 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `capture.accept` / `capture.refuse` / `capture.cancel` | ✅ | ❌ | the guest-OFFERS-a-capture handshake; 68K only answers requests |
 | `stream.start` / `stream.stop` / `stream.refresh` | ✅ | ❌ | |
 | `agent.access` | ❌ | ❌ | neither guest HANDLES one — it is guest-to-host only, and a host never sends it. PPC SENDS it when its consent tier changes; 68K has no tier to change |
-| `cloud.report` / `cloud.listing` / `cloud.card` / `cloud.refuse` | ✅ | ❌ | the ASKER's half: the PPC guest consumes these as answers for its iCloud page and SENDS `cloud.services` / `cloud.list` / `cloud.detail` / `cloud.get`. No guest serves the family — its subject is the host's own iCloud (contract `guestAsksCloud`), so these rows can never grow guest ticks |
+| `cloud.report` / `cloud.listing` / `cloud.card` / `cloud.refuse` | ✅ | ❌ | the ASKER's half: the PPC guest consumes these as answers for its iCloud page and SENDS `cloud.services` / `cloud.list` / `cloud.detail` / `cloud.get` / `cloud.preview`. No guest serves the family — its subject is the host's own iCloud (contract `guestAsksCloud`), so these rows can never grow guest ticks |
+| `preview.begin` / `preview.end` | ✅ | ❌ | the photo preview's transfer bracket, answering the PPC guest's own `cloud.preview`: raw indexed rows the HOST already dithered, landed in the iCloud page's pane by one CopyBits. Asker's half again — no guest will ever serve it |
 
-PPC handles 37 inbound types; NOW-68K handles 23. **That count
+PPC handles 39 inbound types; NOW-68K handles 23. **That count
 understates the difference** — see the next two sections, where two of
 these rows open into 36 command verbs and 14 hardware probes.
 

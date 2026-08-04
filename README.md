@@ -38,7 +38,7 @@ noticed. Adding them: see [docs/images/README.md](docs/images/README.md).
 | Installed software: applications, extensions, control panels | yes | yes, without versions or a running flag | metal-verified (PPC); 68K tested only |
 | Hardware census (14 probes) | yes | 14 probes, 4 of them honestly `absent`/`refused` on this hardware | metal-verified (PPC); **68K's probes have never run at all** |
 | Two Macs on one port, with a picker for which one you are driving | yes | yes | tested; **never run against real hardware** |
-| iCloud: the host's Drive, Photos and Contacts served to the guest's iCloud page — drive browser, live filter-as-you-type, photo download, contact cards | yes | no | metal-verified (PPC) at working-as-intended; itemized claims and the deferred thumbnail design in [docs/icloud.md](docs/icloud.md) |
+| iCloud: the host's Drive, Photos and Contacts served to the guest's iCloud page — drive browser with history and breadcrumbs, live filter-as-you-type, photo preview and download at chosen resolution, contact cards | yes | no | metal-verified (PPC) for Drive and the granted services; the newest layout pass is tested only — [docs/icloud.md](docs/icloud.md) |
 
 The cells that say "no" are not oversights.
 [docs/contract-coverage.md](docs/contract-coverage.md) is the inventory
@@ -113,7 +113,7 @@ enforces it.
 | Path | What lives there |
 |---|---|
 | `contract/asyncapi.yaml` | **The source of truth.** Every message, the frame header, connection rules, `x-commands`. A behaviour change starts here. |
-| `now-guest-ppc/` | PowerPC Carbon guest. `src/` is split by domain: `core/` (wire, JSON, prefs, logging), `workshop/` for the one-window shell, then one directory per Workshop page — `console/`, `files/`, `processes/`, `screenshots/`, `software/`, `census/`, `logs/`, `connection/`, `mirror/`, plus `commands/` and `peek/`. |
+| `now-guest-ppc/` | PowerPC Carbon guest. `src/` is split by domain: `core/` (wire, JSON, prefs, logging), `workshop/` for the one-window shell, then one directory per Workshop page — `console/`, `files/`, `cloud/`, `processes/`, `screenshots/`, `software/`, `census/`, `network/`, `logs/`, `connection/`, `mirror/`, plus `commands/` and `peek/`. |
 | `now-guest-68k/` | NOW-68K. A *sibling* of the Carbon guest, not a port of it, and filed the same way: `core/`, `ui/`, `commands/`, `console/`, `connection/`, `files/`, `processes/`, `screenshots/`, `census/`. |
 | `now-guest-shared/` | Source compiled by **both** guests, one file per unit rather than a copy each. Only for logic that is genuinely identical on both machines — see docs/naming.md for the bar. |
 | `now-host/` | Swift package (`GuestListener` + modules) and `NewOldWorld.xcodeproj` for signed builds. |

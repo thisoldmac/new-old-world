@@ -470,6 +470,13 @@ final class Session {
             onServeCloud(.detail(request))
         case .cloudGet(let request):
             onServeCloud(.get(request))
+        case .cloudPreview(let request):
+            onServeCloud(.preview(request))
+        case .previewBegin, .previewEnd:
+            /* Declared asymmetry: previews answer cloud.preview, and
+               this host never asks one — its screen can decode the
+               photo itself. Ignoring is the contract's word. */
+            break
         case .fileAccept(let accept):
             onFileAccept(accept)
             sendAcceptedFile(accept)
@@ -711,6 +718,72 @@ final class Session {
     }
 
     private var outbound: Outbound?
+
+    /* --- serving a preview -----------------------------------------
+       The begin / bulk / end shape serveFile takes, without the file
+       family's resume, window or receipt machinery: a preview is
+       bounded small (the serve clamps its box), evicted by the guest on
+       the next selection, and worthless the moment a newer one is
+       asked — so the simplest honest sender is chunks driven off the
+       socket's own completion, which is real backpressure at this
+       size. While one is in flight the transfer lane reads held
+       (GuestListener.transferLaneHolder asks previewInFlight). */
+
+    private struct PreviewOutbound {
+        var id: Int
+        var transfer: UInt16
+        var data: Data
+        var sent: Int
+    }
+
+    private var previewOutbound: PreviewOutbound?
+
+    var previewInFlight: Bool { previewOutbound != nil }
+
+    func servePreview(id: Int, pixels: ClassicDither.Indexed) {
+        let transfer = nextTransfer()
+        send(.previewBegin(PreviewBegin(
+            id: id, transfer: Int(transfer), width: pixels.width,
+            height: pixels.height, depth: pixels.depth,
+            rowBytes: pixels.rowBytes, bytes: pixels.pixels.count)))
+        previewOutbound = PreviewOutbound(id: id, transfer: transfer,
+                                          data: pixels.pixels, sent: 0)
+        sendNextPreviewChunk()
+    }
+
+    private func sendNextPreviewChunk() {
+        guard let out = previewOutbound else { return }
+        guard out.sent < out.data.count else {
+            previewOutbound = nil
+            send(.previewEnd(PreviewEnd(id: out.id,
+                                        transfer: Int(out.transfer),
+                                        ok: true)))
+            return
+        }
+        let end = min(out.sent + Self.outboundFrameBytes, out.data.count)
+        let last = end == out.data.count
+        let payload = out.data.subdata(in: out.sent..<end)
+        guard let frame = try? FrameCodec.encode(
+            channel: .bulk, flags: last ? [.end] : [],
+            transfer: out.transfer, payload: payload) else {
+            previewOutbound = nil
+            send(.previewEnd(PreviewEnd(id: out.id,
+                                        transfer: Int(out.transfer),
+                                        ok: false)))
+            return
+        }
+        previewOutbound?.sent = end
+        sendMetered(frame) { [weak self] error in
+            guard let self else { return }
+            if error != nil {
+                /* The connection is what failed; there is nobody left
+                   to tell, so the state just clears. */
+                self.previewOutbound = nil
+                return
+            }
+            self.sendNextPreviewChunk()
+        }
+    }
 
     /// Turns any serving failure into the one refusal the contract has.
     func refuseFile(id: Int, error: Error) {

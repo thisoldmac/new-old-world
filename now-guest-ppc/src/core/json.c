@@ -58,6 +58,22 @@ long now_json_find_int(const char *json, const char *key, long fallback)
     return strtol(p, NULL, 10);
 }
 
+unsigned long now_json_find_u32(const char *json, const char *key,
+                                unsigned long fallback)
+{
+    const char *p = now_json_value(json, key);
+    unsigned long v = 0;
+
+    if (p == NULL || *p < '0' || *p > '9') {
+        return fallback;
+    }
+    while (*p >= '0' && *p <= '9') {
+        v = (v * 10UL + (unsigned long)(*p - '0')) & 0xFFFFFFFFUL;
+        ++p;
+    }
+    return v;
+}
+
 int now_json_find_bool(const char *json, const char *key, int fallback)
 {
     const char *p = now_json_value(json, key);

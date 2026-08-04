@@ -29,23 +29,32 @@ nothing about behaviour, **tested** means the suites pass, and
 
 ## What works today
 
-- **The Workshop** — the guest is one window now: a sidebar rail
-  (Screenshots, Files, Console, with Connection pinned at the bottom
-  behind a divider and a status lamp), a header placard per page, a
-  status placard below, Cmd-1..4 to switch. The five separate windows
-  and the Connection dialog are gone. Metal-verified on the PB1400c:
-  all four pages, including a live listing, a pull, a capture with its
-  preview, streaming start/stop, and the in-canvas Console prompt.
-- **iCloud** (2026-08-01) — the host serves its own Drive, Photos and
-  Contacts to the guest's iCloud page over the additive `cloud.*`
-  family: a full-width drive browser, photo list + one-at-a-time
-  download as ordinary file transfers, address-book cards, and live
-  filter-as-you-type in every view. Photos and Contacts are off until
-  switched on host-side and granted through macOS's own prompts
-  (hardened-runtime entitlements required — the trap and the design
-  are both in [icloud.md](icloud.md)). Metal-verified at
-  working-as-intended; thumbnails and Messages are designed, not
-  built.
+- **The Workshop** — the guest is one window: a sidebar rail of pages
+  with Logs and Connection pinned at the bottom behind a divider and a
+  status lamp, a header placard per page, a status placard below, and
+  the View menu to switch — Cmd-1..9, then Cmd-0 for the tenth page
+  (iCloud) when the digits ran out, with the pinned pair unkeyed.
+  Twelve pages today, and the roster is the enum in
+  `now-guest-ppc/src/workshop/workshop_module.h`, not this sentence —
+  which read "four" for a while after the machine served more. The five
+  separate windows and the Connection dialog are gone. Metal-verified
+  on the PB1400c as the four-page shell it landed as — a live listing,
+  a pull, a capture with its preview, streaming start/stop, and the
+  in-canvas Console prompt; every page added since carries its own
+  verification status in its own entry.
+- **iCloud** (2026-08-01, extended 08-02) — the host serves its own
+  Drive, Photos and Contacts to the guest's iCloud page over the
+  additive `cloud.*` family. Drive is a real browser: Name/Kind/Size/
+  Modified columns with native icons, Back/Forward/Up and breadcrumbs
+  on one row above the listing, a chooseable download destination.
+  Photos list with preview-on-select (host-dithered to the guest's
+  depth) and download at 640/1024/1600 by longest edge or the
+  original, HEIC transcoded on the way. Contacts are grouped cards
+  with a lazy photo. Live filter-as-you-type on every page. Photos and
+  Contacts stay off until switched on host-side and granted — the
+  hardened-runtime entitlements are required, and their absence looks
+  exactly like a broken button ([icloud.md](icloud.md)).
+  Metal-verified through 08-01; the 08-02 layout pass is tested only.
 - **Persistent connection** — the guest dials the host and holds one TCP
   connection with a guest-driven heartbeat, reconnect on a cadence the
   guest picks (capped backoff, or a fixed interval from the Connection
@@ -54,8 +63,10 @@ nothing about behaviour, **tested** means the suites pass, and
   saturated wire can never silently eat a protocol word. Connecting on
   launch is now a checkbox — off means the Connection page is the only
   dialer, and a Save never dials by surprise.
-- **Console** — one command table on the guest, reachable from its own
-  window and as a shell from this side. The host console is a **dumb
+- **Console** — one command table on the guest, reachable from the
+  machine's own console (a Workshop page on the PowerPC guest, its own
+  window on NOW-68K) and as a shell from this side. The host console is
+  a **dumb
   shell**: it relays the line as typed and knows no command's grammar,
   because the two guests do not serve the same commands — so `help` is a
   wire request (a machine that serves four commands says four), Tab
@@ -197,7 +208,7 @@ nothing about behaviour, **tested** means the suites pass, and
   approval-receipt path, uploads are create-only and never overwrite, and
   every invocation goes through one dispatch, which is what makes an
   audit event unskippable. Everything the companion did is on the host's
-  Agent page and in the host log.
+  MCP page and in the host log.
 
   **Tested here. Two things have been driven against a real Macintosh**:
   `now_capture_screen` end to end, and guest addressing in four of its
@@ -217,14 +228,19 @@ nothing about behaviour, **tested** means the suites pass, and
   verbatim and in order. **Built and tested; nobody has looked at it, and
   no reading in it has come off a real machine through this page.**
 
-- **An Agent page on the host** — what a companion is doing to this Mac,
-  in four parts: whether one is attached and what it has done, the
-  connected machine's own consent answer, a bounded newest-first audit
-  stream of every call with the capability's own words and a badge on the
-  ones that change the Mac, and the socket's endpoint. It is a glance and
-  not the record: the stream is per launch and in memory, holds no
-  arguments, paths or payloads, and the log is what survives. It offers
-  no switch — consent is the guest's answer, not a host preference.
+- **An MCP page on the host** — the Agent page until the rename
+  (`ModuleRegistry.renamedIDs` carries the forwarding address, because
+  the saved selection is by id): the server an agent reaches this Mac
+  through, and what a companion is doing to it. Four parts: the server
+  itself — running or not, its socket's endpoint, and the switch to
+  stop it — whether a companion is attached and what it has done, the
+  connected machine's own consent answer, and a bounded newest-first
+  audit stream of every call with the capability's own words and a
+  badge on the ones that change the Mac. It is a glance and not the
+  record: the stream is per launch and in memory, holds no arguments,
+  paths or payloads, and the log is what survives. The one switch it
+  offers is the server's own lifecycle; consent has none here, because
+  that is the guest's answer, not a host preference.
   **Built and tested; see below for what that does not cover.**
 
 Measured on the real PB1400c: ~4.9 fps at 8-bit with predictive +
@@ -242,9 +258,12 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   Metal-verified: it dials out, completes the hello handshake, holds a
   keepalive at a **33 ms** round trip, reports the machine honestly
   (`mach=71 68030 sys=7.1.0 VM=off 640x480x8 row=640 RAM=4MB`), writes
-  one timestamped log per launch into `logs:`, quits cleanly, and serves
-  two commands — `launch` and `quit`, the latter answering `gone` after
-  confirming by re-listing rather than trusting the Apple Event's return.
+  one timestamped log per launch into `logs:`, quits cleanly, and — at
+  that first pass — served two commands, `launch` and `quit`, the latter
+  answering `gone` after confirming by re-listing rather than trusting
+  the Apple Event's return. The verb roster has grown well past two
+  since; [docs/contract-coverage.md](contract-coverage.md) is the
+  inventory and this file does not repeat its counts.
   Since 2026-07-25 the rest of `quit`'s outcome table is metal-proven too,
   including the one it was written for: a TeachText holding unsaved text
   answers **`quit-declined`**, not success. So are the orderly `bye`, the
@@ -284,7 +303,8 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   toggles), with an edit field, up/down history and a scrollback pane.
   The main window's console pane stays what it always was: a log viewer.
   It runs the same command table the wire does rather than a copy —
-  `launch`, `quit`, `ps` — because the two faces failing at different
+  the roster is in [docs/contract-coverage.md](contract-coverage.md) —
+  because the two faces failing at different
   times is the normal case here, and the day the 180c's display died the
   wire was all that still worked. `ps` reached that table late: it began
   as a console-only reader of the `process.list` family, which made it
@@ -438,7 +458,7 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   has it too. Each capability's own watch-for is in
   [docs/metal-and-ux-review.md](metal-and-ux-review.md).
 
-- **No person has looked at the Agent page**, including its resting
+- **No person has looked at the MCP page**, including its resting
   state — which is what it shows on most machines for most of their
   lives, because on most of them no companion has ever attached. That
   state is the one most likely to read as *broken* rather than as *idle*,
@@ -557,7 +577,8 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
 - **Sending a file from NOW-68K is emulator-verified, not
   metal-verified.** Round-tripped byte-identical to 4 MB on the same
   Quadra 800, with the control lane proved to survive a transfer
-  (`gestalt` 0.05 s idle against 0.10 s during a 1 MB push). Nothing has
+  (`help` 0.05 s idle against 0.10 s during a 1 MB push — the probe is
+  `help`, not `gestalt`, which NOW-68K does not serve). Nothing has
   sent a byte on the 180c. The sender takes an abstract byte source
   rather than a file, so a screen capture can feed the pipe in bands
   instead of buffering 300 KB against a 384 KB partition; a file is
