@@ -1,0 +1,61 @@
+import Foundation
+
+/// Operation state changes only from broker facts or later guest evidence.
+/// Dispatch deliberately never confirms its own effect.
+public enum MirrorOperationReducer {
+    public static func reduce(_ current: MirrorOperation,
+                              event: MirrorOperationEvent) -> MirrorOperation {
+        if current.outcome.isTerminal { return current }
+        var operation = current
+        switch event {
+        case .dispatched(let at):
+            guard operation.outcome == .queued else { return current }
+            operation.outcome = .dispatched
+            operation.dispatchedAt = at
+        case .refused(let reason, let at):
+            operation.outcome = .refused
+            operation.reason = reason
+            operation.settledAt = at
+        case .timedOut(let at):
+            guard operation.outcome == .dispatched else { return current }
+            operation.outcome = .timedOut
+            operation.settledAt = at
+        case .sessionChanged(let at):
+            operation.outcome = .sessionChanged
+            operation.reason = "guest session changed"
+            operation.settledAt = at
+        case .observation(let evidence):
+            guard operation.outcome == .dispatched
+                    || operation.outcome == .timedOut,
+                  evidence.session == operation.session,
+                  evidence.sequence > operation.displayedSequence,
+                  confirms(operation.postcondition, with: evidence) else {
+                return current
+            }
+            operation.outcome = operation.outcome == .timedOut
+                ? .confirmedAfterTimeout : .confirmed
+            operation.settledSequence = evidence.sequence
+            operation.settledAt = evidence.receivedAt
+                ?? operation.settledAt ?? operation.dispatchedAt
+        }
+        return operation
+    }
+
+    private static func confirms(
+        _ postcondition: MirrorOperationPostcondition,
+        with evidence: MirrorSettlementEvidence) -> Bool {
+        guard evidence.coverage.status == .complete else { return false }
+        switch postcondition {
+        case .windowAbsent(let identity):
+            return evidence.coverage.scope == "windows"
+                && evidence.coverage.owner == identity.process.incarnation
+                && !evidence.presentWindows.contains(identity)
+        case .processAbsent(let identity):
+            return evidence.coverage.scope == "processes"
+                && !evidence.presentProcesses.contains(identity)
+        case .processFront(let identity):
+            return evidence.coverage.scope == "processes"
+                && evidence.frontProcess == identity
+        }
+    }
+}

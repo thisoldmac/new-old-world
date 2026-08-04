@@ -61,6 +61,29 @@ emulator-verified**. U1 remains open for exact Finder-item and application
 visibility capability identities plus forced collector-exit coverage guards;
 those must not be replaced with title/name matching merely to advance U2.
 
+### STATE ENGINE U2A: PURE RECONCILIATION AND SETTLEMENT BUILT (2026-08-04)
+
+MirrorKit now has session/process/window identities, an ordered scene
+observation, a pure replica reducer, immutable projection metadata and semantic
+digest, tombstones, and a separate pure operation reducer. Incomplete absence
+retains compatible entities expected-stale, non-frontmost, and inert; only an
+exact complete parent scope deletes. A complete process census plus complete
+window membership for every process is the base-acquisition barrier. IR v1 is
+still displayable but cannot enter durable maps or authorize deletion/action.
+
+Fourteen focused reducer tests pass. A deliberate mutation that treated any
+process coverage claim as complete made the background-retention test fail by
+deleting New Old World, then the correct predicate was restored. The broader
+MirrorKit suite is **not green**: seven historical fixtures compare current-v2
+builder output with v1-stamped golden scenes. That pre-existing version
+expectation is recorded rather than hidden or repaired inside this state slice.
+
+This is still additive pure state, not visible Mirror behavior. Host shadow
+plumbing, full producer coverage, content generations, bounded history,
+capability-safe Finder/app actions, direct-input pixels, guest build, and VM
+staging remain open. The implementation contract and limits are in
+`docs/mirror-state-engine.md`.
+
 ## CONTRACT FROZEN; UNIFICATION IMPLEMENTATION STILL OPEN (2026-08-03)
 
 The unified NOW Extension prerequisite now starts from a source-derived
