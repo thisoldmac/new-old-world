@@ -147,11 +147,99 @@ public enum MirrorReplicaReducer {
         let projection = MirrorProjection(
             id: (previous?.snapshot.id ?? 0) + 1, session: session,
             sequence: scene.seq, digest: digest, baseComplete: baseComplete,
+            sceneGeneration: previous.map {
+                $0.snapshot.sceneGeneration
+                    + ($0.snapshot.digest == digest ? 0 : 1)
+            } ?? 1,
+            contentGeneration: previous?.snapshot.contentGeneration ?? 0,
             scene: projectionScene)
         return .accepted(.init(
             session: session, lastSequence: scene.seq,
             applications: applications, windows: windows, menubar: menubar,
             tombstones: tombstones, snapshot: projection))
+    }
+
+    /// Adds independently arriving render-bearing fields to the exact
+    /// structural observation they were derived from. It never changes
+    /// membership, geometry, coverage, actionability, or sequence, and a
+    /// stale/mismatched contribution is therefore a no-op rather than a
+    /// second authority.
+    public static func enrich(_ enriched: Scene, previous: MirrorReplica)
+        -> MirrorReplica? {
+        guard enriched.seq == previous.lastSequence else { return nil }
+        let processesByPSN = Dictionary(
+            uniqueKeysWithValues: (enriched.processes ?? []).compactMap {
+                process -> (String, String)? in
+                guard let incarnation = process.incarnation else { return nil }
+                return (process.psn, incarnation)
+            })
+        var windows = previous.windows
+        var changed = false
+
+        for contribution in enriched.windows {
+            guard let processIncarnation = processesByPSN[contribution.psn],
+                  let windowIncarnation = contribution.incarnation else {
+                continue
+            }
+            let process = MirrorProcessIdentity(
+                session: previous.session, incarnation: processIncarnation)
+            let identity = MirrorWindowIdentity(
+                process: process, incarnation: windowIncarnation)
+            guard var record = windows[identity],
+                  record.window.rect == contribution.rect else { continue }
+            var window = record.window
+            if let display = contribution.display,
+               display != window.display {
+                window.display = display
+            }
+            if let items = contribution.items, items != window.items {
+                window.items = items
+            }
+            if let text = contribution.text, text != window.text {
+                window.text = text
+            }
+            if let dialogItems = contribution.dialogItems,
+               dialogItems != window.dialogItems {
+                window.dialogItems = dialogItems
+            }
+            guard window != record.window else { continue }
+            record.window = window
+            windows[identity] = record
+            changed = true
+        }
+
+        var projectionScene = project(
+            previous.snapshot.scene,
+            applications: previous.applications,
+            windows: windows, menubar: previous.menubar)
+        if let desktopItems = enriched.desktopItems,
+           desktopItems != projectionScene.desktopItems {
+            projectionScene.desktopItems = desktopItems
+            changed = true
+        }
+        guard changed else { return nil }
+        let digest = semanticDigest(
+            applications: previous.applications, windows: windows,
+            menubar: previous.menubar,
+            coverage: projectionScene.meta.coverage ?? [],
+            unprovenApps: projectionScene.apps.filter {
+                $0.incarnation == nil
+            },
+            unprovenWindows: projectionScene.windows.filter {
+                $0.incarnation == nil
+            })
+        let projection = MirrorProjection(
+            id: previous.snapshot.id + 1, session: previous.session,
+            sequence: previous.lastSequence, digest: digest,
+            baseComplete: previous.snapshot.baseComplete,
+            sceneGeneration: previous.snapshot.sceneGeneration,
+            contentGeneration: previous.snapshot.contentGeneration + 1,
+            scene: projectionScene)
+        return .init(
+            session: previous.session, lastSequence: previous.lastSequence,
+            applications: previous.applications, windows: windows,
+            menubar: previous.menubar, tombstones: previous.tombstones,
+            snapshot: projection)
     }
 
     private static func reduceMenubar(

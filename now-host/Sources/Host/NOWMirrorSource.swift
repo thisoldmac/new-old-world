@@ -275,6 +275,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             sceneGuestKey = delivery.guestKey
             decoded = continuity.scene
             decoded = withIcons(decoded)
+            _ = shadowEngine?.enrich(decoded)
             let menuStatus = continuity.retainedAppleItems
                 ? " · Apple menu expected-stale" : ""
             guard pinnedGuestKey == listener.activeKey else {
@@ -304,6 +305,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             content.join(into: decoded) { [weak self] update in
                 guard let self else { return }
                 self.scene = update.scene
+                _ = self.shadowEngine?.enrich(update.scene)
                 self.shadowEngine?.compareVisible(update.scene)
                 self.refreshIconsIfStale(update.scene)
                 self.ambient = "\(update.scene.windows.count) windows · walk "
@@ -389,7 +391,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             self.iconLayout = key
             self.fetchingIcons = false
             if let current = self.scene {
-                self.scene = self.withIcons(current)
+                let enriched = self.withIcons(current)
+                self.scene = enriched
+                _ = self.shadowEngine?.enrich(enriched)
+                self.shadowEngine?.compareVisible(enriched)
             }
         }
     }

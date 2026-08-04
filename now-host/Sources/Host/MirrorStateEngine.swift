@@ -46,4 +46,20 @@ final class MirrorStateEngine: ObservableObject {
         guard let snapshot else { return }
         diagnostics.compare(legacy: legacy, engine: snapshot, at: date)
     }
+
+    /// Reduces asynchronous content/Finder results into the already accepted
+    /// structural sequence. Returns true only when a new immutable projection
+    /// was actually published.
+    @discardableResult
+    func enrich(_ scene: Scene, receivedAt: Date = Date()) -> Bool {
+        guard let replica,
+              let next = MirrorReplicaReducer.enrich(scene,
+                                                      previous: replica) else {
+            return false
+        }
+        self.replica = next
+        snapshot = next.snapshot
+        store.publish(next.snapshot, at: receivedAt)
+        return true
+    }
 }

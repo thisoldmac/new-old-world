@@ -146,6 +146,28 @@ final class NOWMirrorWindow: NSObject, ObservableObject, NSWindowDelegate {
         isOpen = false
     }
 
+    /// Captures only the pixels NOW drew for the Mirror, paired with the exact
+    /// immutable engine snapshot. It refuses while shadow and visible paths
+    /// disagree or if either changes during AppKit's display capture.
+    func exportEvidence(to directory: URL) throws
+        -> MirrorEvidenceExporter.Export {
+        guard let engine = source.shadowEngine else {
+            throw MirrorEvidenceExporter.ExportError.noSnapshot
+        }
+        return try MirrorEvidenceExporter(
+            engine: engine, visibleScene: { [weak source] in source?.scene })
+            .export(to: directory) { [weak self] in
+                guard let view = self?.window?.contentView,
+                      let rep = view.bitmapImageRepForCachingDisplay(
+                        in: view.bounds) else {
+                    throw MirrorEvidenceExporter.ExportError.emptyFrame
+                }
+                view.cacheDisplay(in: view.bounds, to: rep)
+                return rep.representation(using: .png,
+                                          properties: [:]) ?? Data()
+            }
+    }
+
     /// Closing the window stops the poll. A mirror nobody is looking at
     /// should not keep taking the guest's one transfer lane — the machine
     /// is cooperatively scheduled and every walk is time it is not doing

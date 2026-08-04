@@ -108,6 +108,30 @@ and Finder enrichment reduction, native read cutover, guest build, and VM
 staging remain open. The visible product is still the C26 legacy projection and
 must not be described as state-engine-driven yet.
 
+### STATE ENGINE U4A: ASYNC RENDER ENRICHMENT AND FRAME EXPORT BUILT (2026-08-04)
+
+Settled QuickDraw content, cached Finder window items, and desktop items now
+converge through the shadow engine after their exact structural sequence. The
+pure enrichment path changes render-bearing fields only, requires the same
+process/window incarnations and geometry, ignores stale sequences, and does not
+publish semantic no-ops. Engine snapshots now expose stable structural and
+content generations independently.
+
+The native Mirror window also has an app-owned evidence export that pairs its
+PNG with the full decoded engine scene, exact snapshot identity, guest/session,
+sequence, digest, base completeness, and both generations. It refuses if the
+visible legacy scene differs from shadow state or if the snapshot changes while
+AppKit captures the frame. This is only the Mirror/state member of the strict
+gate; it does not replace direct keyboard/mouse provenance, authoritative guest
+capture, operation/settlement, or logs.
+
+Ten focused engine/export tests plus nine content-plane and 21 Mirror-source
+tests pass. The stale-enrichment guard was watched fail under mutation, then
+restored. Guest-authored content epoch/generation metadata, typed
+Finder/content coverage, the QMP-only oracle target split, live direct parity,
+and visible read cutover remain open, so this is a **tested shadow checkpoint**,
+not emulator-verified product behavior.
+
 ## CONTRACT FROZEN; UNIFICATION IMPLEMENTATION STILL OPEN (2026-08-03)
 
 The unified NOW Extension prerequisite now starts from a source-derived

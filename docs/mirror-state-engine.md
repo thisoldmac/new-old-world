@@ -85,6 +85,29 @@ until the person selects that exact Mac. This prevents cross-guest mutation;
 the later operation broker must replace the limitation with session-addressed
 dispatch rather than weakening the check.
 
+QuickDraw and Finder results now enter the shadow engine as same-sequence
+enrichments after the structural observation is accepted. The enrichment
+reducer may update only display ops, Finder items, dialog/text contributions,
+and desktop items for an exact process/window incarnation with unchanged
+geometry. It cannot change membership, coverage, actionability, structure, or
+sequence. A result from an older sequence, a different identity, or different
+geometry is ignored. A semantic no-op publishes nothing.
+
+Published projections carry separate `sceneGeneration` and
+`contentGeneration` counters. A transport-only scene sequence does not advance
+the structural generation; a real accepted enrichment advances only content.
+This gives the evidence stability sandwich values that can remain stable across
+ordinary polls instead of treating cadence as change.
+
+`MirrorEvidenceExporter` writes a Mirror PNG and the full decoded engine state
+with one snapshot identity, guest/session, sequence, semantic digest, base
+completeness, and both generations. The native window captures its own AppKit
+content; the exporter refuses before writing anything when the visible legacy
+scene differs from the engine projection or when the snapshot changes during
+capture. Guest/QMP capture, input provenance, operations, settlement, and logs
+remain independent required gate members; this exporter cannot green a row by
+itself.
+
 Stopping the Mirror releases the long-lived content claim only when the pinned
 session is still active. A delayed release callback cannot clear a newly
 started binding. If the picker has already moved, the source reports that it
@@ -139,5 +162,8 @@ Open before visible cutover:
 - bounded tombstone/snapshot/journal retention tied to pending operations;
 - a per-session observation scheduler beyond the conservative global pending
   slot, complete shadow parity, and content/evidence integration;
+- guest-authored content epochs/generations and typed Finder/content coverage;
+- the QMP-only code split into a development-oracle product rather than the
+  production MirrorKit dependency;
 - native FIFO and direct keyboard/mouse acceptance campaign;
 - guest cross-build, staged VM update, and clean saved shutdown.

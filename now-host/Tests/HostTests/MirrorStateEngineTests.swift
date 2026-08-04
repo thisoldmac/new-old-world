@@ -107,4 +107,92 @@ final class MirrorStateEngineTests: XCTestCase {
         XCTAssertEqual(current.windows.count, 1)
         XCTAssertEqual(empty.windows.count, 0)
     }
+
+    func testSameSequenceContentEnrichmentPublishesThroughTheEngine() throws {
+        let engine = MirrorStateEngine(guestKey: key)
+        let structural = try scene(seq: 1)
+        _ = engine.accept(structural)
+        let structuralSnapshot = try XCTUnwrap(engine.snapshot)
+
+        var enriched = structural
+        enriched.windows[0].display = [.init(op: "frameRect", ticks: 7)]
+        XCTAssertTrue(engine.enrich(enriched))
+
+        let contentSnapshot = try XCTUnwrap(engine.snapshot)
+        XCTAssertEqual(contentSnapshot.scene.windows[0].display?.count, 1)
+        XCTAssertEqual(contentSnapshot.sceneGeneration,
+                       structuralSnapshot.sceneGeneration)
+        XCTAssertEqual(contentSnapshot.contentGeneration,
+                       structuralSnapshot.contentGeneration + 1)
+        XCTAssertNotEqual(contentSnapshot.digest, structuralSnapshot.digest)
+        XCTAssertEqual(engine.store.entries.count, 2)
+    }
+
+    func testEnrichmentCannotPatchAnotherSequenceOrGeometry() throws {
+        let engine = MirrorStateEngine(guestKey: key)
+        let structural = try scene(seq: 2)
+        _ = engine.accept(structural)
+        let snapshot = engine.snapshot
+
+        var stale = try scene(seq: 1)
+        stale.windows[0].display = [.init(op: "paintRect", ticks: 3)]
+        XCTAssertFalse(engine.enrich(stale))
+        XCTAssertEqual(engine.snapshot, snapshot)
+
+        var wrongGeometry = structural
+        wrongGeometry.windows[0].rect.r += 1
+        wrongGeometry.windows[0].display = [.init(op: "paintRect", ticks: 4)]
+        XCTAssertFalse(engine.enrich(wrongGeometry))
+        XCTAssertEqual(engine.snapshot, snapshot)
+    }
+
+    func testNoOpEnrichmentDoesNotPublishAnotherSnapshot() throws {
+        let engine = MirrorStateEngine(guestKey: key)
+        let structural = try scene(seq: 1)
+        _ = engine.accept(structural)
+
+        XCTAssertFalse(engine.enrich(structural))
+        XCTAssertEqual(engine.store.entries.count, 1)
+        XCTAssertEqual(engine.snapshot?.contentGeneration, 0)
+    }
+
+    func testEvidenceExporterWritesFrameAndCorrelatedState() throws {
+        let engine = MirrorStateEngine(guestKey: key)
+        _ = engine.accept(try scene(seq: 1))
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mirror-evidence-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let result = try MirrorEvidenceExporter(engine: engine).export(
+            to: directory, framePNG: { Data([1, 2, 3]) })
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath:
+            result.frameURL.path))
+        let artifact = try JSONDecoder().decode(
+            MirrorEvidenceExporter.StateArtifact.self,
+            from: Data(contentsOf: result.stateURL))
+        XCTAssertEqual(artifact.snapshotId, result.snapshotId)
+        XCTAssertEqual(artifact.sceneGeneration, 1)
+        XCTAssertEqual(artifact.contentGeneration, 0)
+        XCTAssertEqual(artifact.sequence, 1)
+    }
+
+    func testEvidenceExporterRefusesAFrameAcrossSnapshotChange() throws {
+        let engine = MirrorStateEngine(guestKey: key)
+        _ = engine.accept(try scene(seq: 1))
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mirror-evidence-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        XCTAssertThrowsError(try MirrorEvidenceExporter(engine: engine)
+            .export(to: directory, framePNG: {
+                _ = engine.accept(try self.scene(seq: 2))
+                return Data([1, 2, 3])
+            })) { error in
+                XCTAssertEqual(error as? MirrorEvidenceExporter.ExportError,
+                               .snapshotChanged)
+            }
+        XCTAssertFalse(FileManager.default.fileExists(atPath:
+            directory.path), "a torn capture must publish no artifacts")
+    }
 }
