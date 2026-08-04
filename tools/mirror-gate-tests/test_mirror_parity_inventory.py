@@ -53,8 +53,12 @@ def legacy_capabilities(source_root):
         "mirror-agent:" + verb
         for verb in re.findall(r'strcmp\(verb, "([a-z-]+)"\)', dispatch))
 
-    staging = (source_root / "tools" / "stage-ext.py").read_text()
-    spin_up = (source_root / "scripts" / "spin-up-ppc").read_text()
+    # After U7 the production NOW stager and launcher must contain none of
+    # this runtime. Derive the historical staging/transport rows from the
+    # preserved legacy Mirror tools instead of requiring retired code to stay
+    # executable in NOW's path merely so the inventory can remember it.
+    staging = (source_root / "mirror" / "tools" / "stage-agent.py").read_text()
+    spin_up = (source_root / "mirror" / "tools" / "spin-up.sh").read_text()
     host_service = (source_root / "mirror" / "host" / "MirrorKit" / "Sources"
                     / "MirrorApp" / "Serve.swift").read_text()
     if all(name in staging for name in ("AXPeek", "QDPeek", "Portal")):

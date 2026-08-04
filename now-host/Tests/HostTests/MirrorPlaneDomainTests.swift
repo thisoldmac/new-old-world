@@ -7,8 +7,6 @@ final class MirrorPlaneDomainTests: XCTestCase {
         let facts: MirrorWireFacts
         init(facts: MirrorWireFacts) { self.facts = facts }
         var activeGuest: ConnectedGuest? { nil }
-        func listExtensions(completion: @escaping (Result<[SoftwareEntry], MirrorProbeFailure>) -> Void) {}
-        func listProcesses(completion: @escaping (Result<[String], MirrorProbeFailure>) -> Void) {}
         func readMirrorFacts(completion: @escaping (Result<MirrorWireFacts, MirrorProbeFailure>) -> Void) {
             completion(.success(facts))
         }
@@ -160,11 +158,15 @@ final class MirrorPlaneDomainTests: XCTestCase {
     func testActiveMirrorSurfaceCannotRegressToLegacyRuntime() throws {
         let active = try GateSource.hostSwift(
             "now-host/Sources/Host/MirrorControlView.swift")
+        let model = try GateSource.hostSwift(
+            "now-host/Sources/Host/MirrorControlModel.swift")
+        let sources = active + model
         for forbidden in ["AXPeek", "QDPeek", "Portal", "mirror-agent",
                           "forwardedAgentPort", "qmpSocketPath",
-                          "buildFromSource", "Launch Mirror"] {
-            XCTAssertFalse(active.contains(forbidden),
-                           "active Mirror UI contains legacy runtime term \(forbidden)")
+                          "buildFromSource", "MirrorProcessSpawner",
+                          "MirrorTCPProbe", "Launch Mirror"] {
+            XCTAssertFalse(sources.contains(forbidden),
+                           "active Mirror path contains legacy runtime term \(forbidden)")
         }
         XCTAssertTrue(active.contains("Open Mirror"))
         XCTAssertTrue(active.contains("Close Mirror"))
@@ -211,7 +213,6 @@ final class MirrorPlaneDomainTests: XCTestCase {
         let model = MirrorControlModel(
             guestProbe: LifecycleProbe(facts: .init(
                 schema: 1, resident: resident, planes: planes)),
-            checkout: nil,
             defaults: UserDefaults(suiteName: "MirrorDisconnect-\(UUID())")!)
         model.connection = .connected(named: "Mac")
         model.refreshLifecycle()

@@ -192,6 +192,7 @@ run_py now-guest-shared semantic_flat_init_source_test.py
 echo "== Mirror UX gate =="
 run_py_path tools/mirror-gate-tests/test_mirror_gate_evidence.py
 run_py_path tools/mirror-gate-tests/test_mirror_parity_inventory.py
+run_py_path tools/mirror-gate-tests/test_legacy_mirror_retirement.py
 run_py_path tools/mirror-gate-tests/test_spin_up_ppc_shutdown.py
 
 echo "== now-guest-ppc (PowerPC Carbon) =="
@@ -377,7 +378,6 @@ run_c now-guest-ppc mirror_json_test.c       ""  src/mirror/mirror_json.c \
 # while the page said "Running". tools/stage-ext.py cannot run here - it
 # opens a socket to a live anchor the moment it is imported - so the
 # write, its overwrite and its verify are gated as source text.
-run_py now-guest-ppc mirror_port_staging_source_test.py
 run_c now-guest-ppc share_path_test.c        ""
 # The Files pane's pull presentation: when Stop is armed, and the line a
 # person reads while a file comes down. The percentage overflows a 32-bit

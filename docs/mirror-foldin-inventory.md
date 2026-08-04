@@ -110,10 +110,10 @@ only differential-oracle inputs to that owner's proof.
 | `mirror-agent:textset` | `mirrorverbs.c:dispatch_verb` | edit addressed foreign text | goal | outcome-equivalent-through-NOW | prerequisite U5 direct-input text settlement proof |
 | `mirror-agent:volumes` | `mirrorverbs.c:dispatch_verb` | enumerate guest volumes | goal | same-capability | prerequisite U7 focused Macintosh HD proof |
 | `mirror-agent:winact` | `mirrorverbs.c:dispatch_verb` | act on an addressed foreign window | goal | outcome-equivalent-through-NOW | prerequisite U5 window settlement proof |
-| `staging:TB-residents` | `tools/stage-ext.py` | install three old resident files | legacy-only | prohibited-mechanism/no-consumer | prerequisite U7 extension-only staging mutation watch |
-| `staging:mirror-agent` | `tools/stage-ext.py` | install the old faceless guest service | legacy-only | prohibited-mechanism/no-consumer | prerequisite U7 extension-only staging mutation watch |
-| `transport:mirror.port` | `tools/stage-ext.py` | configure the old agent's separate port | legacy-only | prohibited-mechanism/no-consumer | prerequisite U7 staging and stopped-image absence proof |
-| `transport:port-1420` | `stage-ext.py` and `spin-up-ppc` | forward the old agent's separate socket | legacy-only | prohibited-mechanism/no-consumer | prerequisite U7 port-1420 mutation watch |
+| `staging:TB-residents` | preserved `mirror/tools/stage-agent.py` | install three old resident files | legacy-only | prohibited-mechanism/no-consumer | U7 extension-only staging mutation watch |
+| `staging:mirror-agent` | preserved `mirror/tools/stage-agent.py` | install the old faceless guest service | legacy-only | prohibited-mechanism/no-consumer | U7 extension-only staging mutation watch |
+| `transport:mirror.port` | preserved `mirror/tools/stage-agent.py` | configure the old agent's separate port | legacy-only | prohibited-mechanism/no-consumer | U7 staging and stopped-image absence proof |
+| `transport:port-1420` | preserved `mirror/tools/stage-agent.py` and `spin-up.sh` | forward the old agent's separate socket | legacy-only | prohibited-mechanism/no-consumer | U7 port-1420 mutation watch |
 
 ### Old Mirror method disposition
 
