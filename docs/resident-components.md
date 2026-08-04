@@ -9,10 +9,12 @@ every member follows. The first member is the NOW Extension
 ([processes-and-peek.md](processes-and-peek.md) is its feature ladder);
 the rules here outlive it.
 
-The prior art is the parent project's AX workstream (AXPeek, qdpeek,
-the Worker, the mirror spike). **No code is imported from it** — the
-charter's rule stands — but its findings are load-bearing throughout,
-and they are cited where they bite.
+The prior art is the parent project's AX workstream (AXPeek, QDPeek,
+Portal, the Worker, the mirror spike). Its source, fixtures, and measurements
+are retained as an isolated differential oracle, but **none of those components
+is a production dependency**. Mechanisms may be reimplemented behind NOW's
+single contract only after their user outcome and safety bounds are accounted
+for in [the derived retirement ledger](mirror-foldin-inventory.md#legacy-runtime-capability-disposition).
 
 ## The three tiers
 
@@ -76,6 +78,12 @@ probe, one version — and "drag NOW Extension out, reboot, does it
 persist?" is a one-step support diagnostic. Version skew between
 planes never exists.
 
+The production invariant is stronger than packaging: the normal host, guest,
+staging path, and development image must not require AXPeek, QDPeek, Portal,
+`mirror-agent`, `mirror.port`, or port 1420. They may exist in source and in an
+isolated archival comparison image. Installing them beside NOW Extension is a
+named coexistence experiment, never the default proof environment.
+
 ## The table is a contract, stated once
 
 The extension publishes one table in the system heap; the Gestalt
@@ -105,9 +113,24 @@ Rules the table carries:
   absent or stale slot — distinct states, both rendered truthfully by
   every consumer up to the mirror. Slots carry a ticks stamp; readers
   judge staleness, the extension never guesses.
-- **The filter writes the table; the app writes only the arm cells.**
-  One direction per word, no locking to reason about beyond the
-  volatile single-writer stamps.
+- **Ownership is per cell, not merely per process.** The extension writes
+  observations and active state. Canonical New Old World writes request cells
+  through one named-owner/lease union and is the sole production `NWex` writer;
+  differently named development apps use a separate development selector or
+  remain read-only. A writer heartbeat/nonce and resident-echoed owner epoch
+  make crash expiry and replacement explicit. No content or action helper may
+  bypass that aggregator with a direct arm-bit write.
+
+The four production planes are Structure (P1, required while Mirror is open),
+Semantics (P2), Content (P3), and Interaction (P4). P2-P4 are optional user
+policy claims, independently armable for diagnosis. A disabled plane cannot
+clear another plane or another owner's claim. Capability, declared length,
+format, freshness, and owner lease must all agree before a plane is trusted.
+
+P3 transports bounded structured drawing and explicit visual-exception bounds,
+not framebuffer bytes. Bitmap, PICT, CopyBits-only, or manually drawn regions
+remain declared placeholders until the later pixel roadmap; pixel transport is
+never load-bearing for an otherwise normal application.
 
 ## What is never resident
 

@@ -14,6 +14,34 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## CONTRACT FROZEN; UNIFICATION IMPLEMENTATION STILL OPEN (2026-08-03)
+
+The unified NOW Extension prerequisite now starts from a source-derived
+retirement ledger rather than the claim that AXPeek/QDPeek/Portal parity can be
+remembered. The ordinary native guard derives 66 capability keys from the old
+resident shared headers, agent dispatch, service, and staging paths. Each key
+has a goal-facing outcome, allowed disposition, and one prerequisite proof
+owner. Goal-relevant rows cannot close as a bounded refusal, retained fixture,
+or retirement blocker. The older fold roadmap is historical; Mirror completion
+plan 001 is blocked until the prerequisite completes and now retains only the
+broker, broad renderer/UX, MCP, and later pixel work.
+
+The scored-row gate also now enforces the full correlated evidence boundary.
+A pass/fail needs native NOW Mirror keyboard/mouse provenance, Mirror pixels and
+snapshot identity, a QMP observation capture within two seconds, decoded state,
+plane state, terminal operation settlement, both host and guest logs, no
+nonterminal operation, two unchanged pre-capture generation polls, and an
+unchanged post-capture generation/owner-epoch reread. The previous gate was
+watched accepting manifests without the new plane/settlement/log/quiescence
+members; the focused test then failed seven cases before the validator changed.
+
+This is **contract and guard work only**. No resident plane has been unified by
+this entry, the focused corpus has not passed, and the development VM has not
+yet been replaced with the final exact extension/application pair. Workshop and
+menubar geometry remain the regression floor; Apple content, Finder/Date & Time
+foreign content, direct controls, and truthful settlement remain red until the
+direct-input paired sweep proves them.
+
 ## CYCLE 25 RED; SETUP CORRECTED BEFORE C26 (2026-08-03)
 
 Cycle 25 directly re-ran the sanity preflight through the uniquely identified

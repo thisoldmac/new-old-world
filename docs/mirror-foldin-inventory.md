@@ -30,6 +30,91 @@ latency target: once an act is queued, no new scene poll or bulk chunk starts
 ahead of it. No QEMU-only scheduler or input mechanism may be part of that
 implementation; QEMU remains the independent development oracle.
 
+### Legacy runtime capability disposition
+
+This is the retirement ledger for the unified NOW Extension prerequisite. Its
+keys are derived by
+`tools/mirror-gate-tests/test_mirror_parity_inventory.py` from AXPeek's sample
+record, QDPeek's operation constants, Portal's operation and window-operation
+constants, the agent dispatch, and the old staging/service paths. Adding a
+legacy capability without a row fails the ordinary native gate. The source
+column says where the key comes from; it is not evidence that NOW already
+provides the outcome.
+
+`goal` means the user outcome is part of the data-driven Mirror. Such a row
+cannot close as a refusal, fixture, or blocker: it must have the same capability,
+an outcome-equivalent NOW path, or be a prohibited mechanism with no remaining
+consumer. The proof owner is the unit in the unified-extension prerequisite,
+not the older fold roadmap or Mirror completion plan. Upstream measurements are
+only differential-oracle inputs to that owner's proof.
+
+| capability | derived source | goal-facing outcome | relevance | disposition | proof owner |
+|---|---|---|---|---|---|
+| `AXPeek:appName` | `axshared.h:AXContextSample.appName` | identify the sampled application | goal | outcome-equivalent-through-NOW | prerequisite U2 P1 identity/freshness tests |
+| `AXPeek:currentA5` | `axshared.h:AXContextSample.currentA5` | bind a foreign context exactly | goal | same-capability | prerequisite U2 P1 anchor tests |
+| `AXPeek:menuList` | `axshared.h:AXContextSample.menuList` | locate the target's system menus | goal | outcome-equivalent-through-NOW | prerequisite U2/U3 anchor and semantics tests |
+| `AXPeek:sample-throttle` | `axgne.S` | fresh anchors without an every-event full scan | goal | outcome-equivalent-through-NOW | prerequisite U2 six-tick mutation watch |
+| `AXPeek:stackBase` | `axshared.h:AXContextSample.stackBase` | corroborate partition identity | goal | same-capability | prerequisite U2 P1 identity tests |
+| `AXPeek:ticks` | `axshared.h:AXContextSample.ticks` | report bounded freshness | goal | same-capability | prerequisite U2 cadence/freshness tests |
+| `AXPeek:windowList` | `axshared.h:AXContextSample.windowList` | locate foreign windows | goal | same-capability | prerequisite U2 P1 anchor tests |
+| `MirrorApp:--serve` | `MirrorApp/Serve.swift` | old host IPC service lifecycle | legacy-only | prohibited-mechanism/no-consumer | prerequisite U7 absence guard after Plan 001 broker boundary is recorded |
+| `Portal:control-invoke` | `ptshared.h:PT_OP_CONTROL_INVOKE` | actuate the addressed control in its owner context | goal | outcome-equivalent-through-NOW | prerequisite U5 typed P4 positive/no-hijack proof |
+| `Portal:menu-geometry` | `ptshared.h:PT_OP_MENU_GEOMETRY` | resolve non-uniform menu item geometry | goal | outcome-equivalent-through-NOW | prerequisite U3 bounded P2 evidence table and fixtures |
+| `Portal:menu-invoke` | `ptshared.h:PT_OP_MENU_INVOKE` | select an addressed menu item through the application | goal | outcome-equivalent-through-NOW | prerequisite U5 typed P4 settlement proof |
+| `Portal:selftest` | `ptshared.h:PT_OP_SELFTEST` | prove the resident act ABI before actions | goal | same-capability | prerequisite U5 `actselftest` positive control |
+| `Portal:text-get` | `ptshared.h:PT_OP_TEXT_GET` | read addressed TextEdit/dialog text in context | goal | outcome-equivalent-through-NOW | prerequisite U3/U5 semantic and settlement proof |
+| `Portal:text-set` | `ptshared.h:PT_OP_TEXT_SET` | change addressed text and prove redraw/effect | goal | outcome-equivalent-through-NOW | prerequisite U5 typed text settlement proof |
+| `Portal:window-act` | `ptshared.h:PT_OP_WINDOW_ACT` | route addressed window behavior through its owner | goal | outcome-equivalent-through-NOW | prerequisite U5 window settlement proof |
+| `Portal:window-close` | `ptshared.h:PT_WIN_CLOSE` | ask the application to close the addressed window | goal | outcome-equivalent-through-NOW | prerequisite U5 close/postcondition proof |
+| `Portal:window-move` | `ptshared.h:PT_WIN_MOVE` | move the addressed window | goal | outcome-equivalent-through-NOW | prerequisite U5 move/postcondition proof |
+| `Portal:window-resize` | `ptshared.h:PT_WIN_RESIZE` | resize through the application's window path | goal | outcome-equivalent-through-NOW | prerequisite U5 resize/postcondition proof |
+| `Portal:window-zoom` | `ptshared.h:PT_WIN_ZOOM` | zoom through the application's window path | goal | outcome-equivalent-through-NOW | prerequisite U5 zoom/postcondition proof |
+| `QDPeek:arc` | `qdshared.h:QD_OP_ARC` | retain bounded structured arc drawing | goal | outcome-equivalent-through-NOW | prerequisite U4 P3 fixture and epoch proof |
+| `QDPeek:bits` | `qdshared.h:QD_OP_BITS` | retain bounds/provenance for an unavailable bitmap | goal | outcome-equivalent-through-NOW | prerequisite U4 bounded-placeholder proof; no pixels transported |
+| `QDPeek:comment` | `qdshared.h:QD_OP_COMMENT` | old QuickDraw comment record | legacy-only | prohibited-mechanism/no-consumer | prerequisite U7 derived absence/consumer audit |
+| `QDPeek:line` | `qdshared.h:QD_OP_LINE` | retain bounded structured line drawing | goal | outcome-equivalent-through-NOW | prerequisite U4 P3 fixture and epoch proof |
+| `QDPeek:oval` | `qdshared.h:QD_OP_OVAL` | retain bounded structured oval drawing | goal | outcome-equivalent-through-NOW | prerequisite U4 P3 fixture and epoch proof |
+| `QDPeek:poly` | `qdshared.h:QD_OP_POLY` | retain bounded structured polygon bounds | goal | outcome-equivalent-through-NOW | prerequisite U4 P3 fixture and epoch proof |
+| `QDPeek:rect` | `qdshared.h:QD_OP_RECT` | retain bounded structured rectangle drawing | goal | outcome-equivalent-through-NOW | prerequisite U4 P3 fixture and epoch proof |
+| `QDPeek:rgn` | `qdshared.h:QD_OP_RGN` | retain bounded structured region bounds | goal | outcome-equivalent-through-NOW | prerequisite U4 P3 fixture and epoch proof |
+| `QDPeek:rrect` | `qdshared.h:QD_OP_RRECT` | retain bounded structured round-rectangle drawing | goal | outcome-equivalent-through-NOW | prerequisite U4 P3 fixture and epoch proof |
+| `QDPeek:state` | `qdshared.h:QD_OP_STATE` | place and color structured operations correctly | goal | outcome-equivalent-through-NOW | prerequisite U4 P3 state/epoch proof |
+| `QDPeek:text` | `qdshared.h:QD_OP_TEXT` | retain guest-authored drawn text as structure | goal | outcome-equivalent-through-NOW | prerequisite U4 initial-display and fixture proof |
+| `mirror-agent:activate` | `mirrorverbs.c:dispatch_verb` | bring the addressed application frontmost | goal | same-capability | prerequisite U5 activation settlement proof |
+| `mirror-agent:apple-event` | `mirrorverbs.c:dispatch_verb` | bounded quit/open lifecycle outcomes | goal | outcome-equivalent-through-NOW | prerequisite U5 observed postcondition proof |
+| `mirror-agent:axdo` | `mirrorverbs.c:dispatch_verb` | act on an identity-addressed control/text target | goal | outcome-equivalent-through-NOW | prerequisite U5 typed P4 operations |
+| `mirror-agent:axsnap` | `mirrorverbs.c:dispatch_verb` | snapshot guest-authored object state | goal | outcome-equivalent-through-NOW | prerequisite U3 scene fixture proof |
+| `mirror-agent:axtree` | `mirrorverbs.c:dispatch_verb` | expose guest-authored object structure | goal | outcome-equivalent-through-NOW | prerequisite U3 scene fixture proof |
+| `mirror-agent:capture` | `mirrorverbs.c:dispatch_verb` | old guest pixel capture | legacy-only | prohibited-mechanism/no-consumer | prerequisite U7 no-pixel-transport consumer audit |
+| `mirror-agent:click` | `mirrorverbs.c:dispatch_verb` | a Mirror pointer gesture changes the addressed guest object | goal | outcome-equivalent-through-NOW | prerequisite U5 typed identity action; no synthetic guest click |
+| `mirror-agent:close` | `mirrorverbs.c:dispatch_verb` | old bulk-transfer close | legacy-only | prohibited-mechanism/no-consumer | prerequisite U7 old-lane absence guard |
+| `mirror-agent:ctlinvoke` | `mirrorverbs.c:dispatch_verb` | actuate the addressed control | goal | outcome-equivalent-through-NOW | prerequisite U5 control settlement proof |
+| `mirror-agent:fetch` | `mirrorverbs.c:dispatch_verb` | old bulk-transfer page fetch | legacy-only | prohibited-mechanism/no-consumer | prerequisite U7 old-lane absence guard |
+| `mirror-agent:hello` | `mirrorverbs.c:dispatch_verb` | identify capability and build at session start | goal | outcome-equivalent-through-NOW | prerequisite U2/U6 exact identity handshake proof |
+| `mirror-agent:journalprobe` | `mirrorverbs.c:dispatch_verb` | closed event-journal experiment | legacy-only | prohibited-mechanism/no-consumer | prerequisite U7 consumer audit |
+| `mirror-agent:key` | `mirrorverbs.c:dispatch_verb` | a Mirror keyboard event reaches the intended guest target | goal | outcome-equivalent-through-NOW | prerequisite U5 direct-input keyboard proof |
+| `mirror-agent:launch` | `mirrorverbs.c:dispatch_verb` | launch an addressed application | goal | same-capability | prerequisite U5 observed launch settlement |
+| `mirror-agent:list` | `mirrorverbs.c:dispatch_verb` | list guest files for Finder representation | goal | same-capability | prerequisite U7 focused Macintosh HD/Finder proof |
+| `mirror-agent:menugeom` | `mirrorverbs.c:dispatch_verb` | resolve real menu item geometry | goal | outcome-equivalent-through-NOW | prerequisite U3 semantic evidence and U5 menu proof |
+| `mirror-agent:menuinvoke` | `mirrorverbs.c:dispatch_verb` | invoke an addressed menu item | goal | outcome-equivalent-through-NOW | prerequisite U5 menu settlement proof |
+| `mirror-agent:mouseloc` | `mirrorverbs.c:dispatch_verb` | old guest cursor-position probe | legacy-only | prohibited-mechanism/no-consumer | prerequisite U7 consumer audit |
+| `mirror-agent:observe` | `mirrorverbs.c:dispatch_verb` | observe applications, windows, and controls | goal | outcome-equivalent-through-NOW | prerequisite U3 scene and focused-corpus proof |
+| `mirror-agent:ping` | `mirrorverbs.c:dispatch_verb` | prove session liveness | goal | same-capability | prerequisite U6 unified handshake/lifecycle proof |
+| `mirror-agent:portal` | `mirrorverbs.c:dispatch_verb` | old Portal raw operation wrapper | legacy-only | prohibited-mechanism/no-consumer | prerequisite U5 typed operations plus U7 consumer audit |
+| `mirror-agent:portalselftest` | `mirrorverbs.c:dispatch_verb` | prove the resident action ABI | goal | same-capability | prerequisite U5 `actselftest` positive control |
+| `mirror-agent:qdtrace` | `mirrorverbs.c:dispatch_verb` | fetch structured retained drawing | goal | outcome-equivalent-through-NOW | prerequisite U4 P3 lifecycle and display proof |
+| `mirror-agent:quit` | `mirrorverbs.c:dispatch_verb` | stop the old faceless agent | legacy-only | prohibited-mechanism/no-consumer | prerequisite U7 agent-absence proof |
+| `mirror-agent:script` | `mirrorverbs.c:dispatch_verb` | arbitrary guest scripting escape hatch | legacy-only | prohibited-mechanism/no-consumer | prerequisite U7 consumer audit |
+| `mirror-agent:stat` | `mirrorverbs.c:dispatch_verb` | inspect guest file metadata | goal | same-capability | prerequisite U7 focused Macintosh HD/Finder proof |
+| `mirror-agent:textget` | `mirrorverbs.c:dispatch_verb` | read addressed foreign text | goal | outcome-equivalent-through-NOW | prerequisite U3/U5 text proof |
+| `mirror-agent:textset` | `mirrorverbs.c:dispatch_verb` | edit addressed foreign text | goal | outcome-equivalent-through-NOW | prerequisite U5 direct-input text settlement proof |
+| `mirror-agent:volumes` | `mirrorverbs.c:dispatch_verb` | enumerate guest volumes | goal | same-capability | prerequisite U7 focused Macintosh HD proof |
+| `mirror-agent:winact` | `mirrorverbs.c:dispatch_verb` | act on an addressed foreign window | goal | outcome-equivalent-through-NOW | prerequisite U5 window settlement proof |
+| `staging:TB-residents` | `tools/stage-ext.py` | install three old resident files | legacy-only | prohibited-mechanism/no-consumer | prerequisite U7 extension-only staging mutation watch |
+| `staging:mirror-agent` | `tools/stage-ext.py` | install the old faceless guest service | legacy-only | prohibited-mechanism/no-consumer | prerequisite U7 extension-only staging mutation watch |
+| `transport:mirror.port` | `tools/stage-ext.py` | configure the old agent's separate port | legacy-only | prohibited-mechanism/no-consumer | prerequisite U7 staging and stopped-image absence proof |
+| `transport:port-1420` | `stage-ext.py` and `spin-up-ppc` | forward the old agent's separate socket | legacy-only | prohibited-mechanism/no-consumer | prerequisite U7 port-1420 mutation watch |
+
 ### Old Mirror method disposition
 
 The current-human and current-MCP columns are characterization, not promises.

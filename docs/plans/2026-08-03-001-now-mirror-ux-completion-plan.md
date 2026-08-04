@@ -14,7 +14,7 @@ execution: code
 
 Complete the recovered NOW Mirror as a faithful and operable classic Mac surface. The guest remains the authority for machine state. The NOW Mirror renders that state and mutates it through identity-bearing guest operations. Human gestures and MCP operations share one scene, one action catalog, one broker, and one truthful operation journal.
 
-The work starts from recovered commit `2047b6b`. Its committed Cycle 18 ledger is the characterization baseline: 10 of 40 rows pass, 16 fail, 2 are blocked, 2 are not applicable, and 10 remain unscored. The first implementation slice fixes the semantic source of the failures rather than adding renderer heuristics. The final core slice retires MirrorApp, port 1420, and the TB* components only after direct UX and agent parity pass; bounded pixel exceptions remain a later roadmap unit.
+The work starts from recovered commit `2047b6b`. Its committed Cycle 18 ledger is the characterization baseline: 10 of 40 rows pass, 16 fail, 2 are blocked, 2 are not applicable, and 10 remain unscored. Execution is blocked until [the unified NOW Extension prerequisite](2026-08-03-002-feat-unified-now-extension-plan.md) has delivered and proven P1-P4, retired MirrorApp/port 1420/TB* runtime dependencies, and promoted the clean extension-only development image. This plan then consumes those artifacts and completes the broader broker, renderer, UX, and MCP campaign; bounded pixel exceptions remain a later roadmap unit.
 
 ## Problem Frame
 
@@ -51,7 +51,7 @@ Cycle 18 makes these defects visible. Date & Time fields render as scroll bars. 
 - F3. **Agent mutation.** MCP authorization admits an operation. The same catalog and broker execute it with agent attribution. The Mirror window observes the resulting canonical snapshot without a parallel poller.
 - F4. **Concurrent use.** Human and agent reads share the scene cache. Mutations serialize fairly through one per-guest act cell. A session change refuses queued stale work.
 - F5. **UX proof.** An agent looks at NOW Mirror and drives that window with keyboard and mouse input. It captures the same settled guest frame through QMP, compares the pixels and visible state, inspects logs and guest evidence, records the worst mismatch, and only then scores the row.
-- F6. **Retirement.** The old Mirror service stays available as a differential reference until every former method and UI affordance has a tested disposition. A final NWpt-only run proves the replacement before old lifecycle and wire surfaces are removed.
+- F6. **Retirement handoff.** The prerequisite retains old source, fixtures, and an isolated comparison image while removing the old runtime from normal staging. This plan consumes its disposition ledger and NWpt-only proof; it does not reinstall the legacy stack as a live dependency.
 
 ```mermaid
 flowchart LR
@@ -100,7 +100,7 @@ flowchart LR
 - R19. `docs/mirror-drive-loop.md` owns behavioral acceptance: the agent must look at and operate NOW Mirror with keyboard and mouse, QMP is observation-only, and a row can pass only after paired pixels, state, logs, and guest evidence agree.
 - R20. The campaign must pass all six rungs and the complete text matrix while retaining every prior pass: windows, Finder, Apple control panels, modal alerts, representative applications, and background applications.
 - R21. Each new guard is watched failing under a deliberate mutation before it is accepted.
-- R22. MirrorApp, `--serve`, port 1420, the TB* components, and compatibility forwarding remain until a registry-derived parity inventory is complete and an NWpt-only campaign passes.
+- R22. MirrorApp, `--serve`, port 1420, the TB* components, and compatibility forwarding are absent before this plan resumes. Their registry-derived disposition ledger and NWpt-only proof are prerequisite artifacts; this plan verifies continued absence while adding only remaining broker/MCP host projections.
 - R23. Contract coverage, MCP coverage, the open-issues ledger, README capability limits, and durable Mirror knowledge change in the same arc as the behavior they describe.
 - R24. Verification reports `Builds`, `Tested`, and `Metal-verified` separately. This plan does not authorize a hardware run.
 
@@ -230,6 +230,31 @@ flowchart TD
 - A successful host suite does not prove guest behavior. Each UX-bearing unit requires the paired emulator loop in addition to automated gates.
 - The original Mirror prototype is evidence, not current NOW behavior. Port its measured mechanisms only through NOW's contract and tests.
 
+### Prerequisite boundary and unit ownership
+
+[Unified NOW Extension prerequisite 002](2026-08-03-002-feat-unified-now-extension-plan.md)
+must reach its Definition of Done before any unit below executes. Its focused
+keyboard/mouse corpus is the regression floor, not a substitute for this plan's
+broader six-rung campaign. Shared behavior has one owner:
+
+| this unit | consumes from prerequisite 002 | ownership retained here |
+|---|---|---|
+| U1 | derived legacy ledger, R28 evidence gate, frozen focused corpus | preserve Cycle 18 and extend the broad human/MCP catalog; no gate or retirement-ledger rewrite |
+| U2 | validated P2 facts, formats, refusals, and Date & Time/Apple fixtures | scene IR v2, broad normal-context translation, decoder knowledge states, and noninteractive host presentation |
+| U3 | truthful plane lifecycle plus guest settlement source | per-session host broker, snapshot/cache, poll coalescing, pinning, and host enrichment |
+| U4 | application-owned bounded settlement records from P4 | fair host action queue, journal, late settlement presentation, and human/agent attribution |
+| U5 | typed resident/guest actions for popup, dialog, text, menu, application visibility, and window operations | MirrorKit gesture/key routing and broker integration across the full Cycle 18 interaction set |
+| U6 | authoritative P2/P3 semantics and the known-good Workshop/menubar floor | full classic-Mac renderer, hit testing, fixtures, icon treatment, and whole-frame fidelity |
+| U7 | lifecycle-safe initial P3 structured display and bounded placeholder contract | broad structured-content coverage across representative/background applications; no resident ABI or pixel transport |
+| U8 | extension-only image, retired staging/host lifecycle, and focused direct proof | MCP adapters over the proven broker, broad cross-surface parity, documentation, and continued-absence verification |
+| U9 | no implementation dependency; begins only after core completion | later optional bounded pixel exceptions; never load-bearing for normal applications |
+
+`contract/peek_table.h`, resident sources, NOW's plane policy/status surfaces,
+focused P4 settlement, legacy staging removal, and the canonical development
+image belong exclusively to prerequisite 002. `MirrorBroker`, the broad action
+queue/journal, full renderer and application corpus, MCP projection, and later
+pixel exceptions belong here.
+
 ## Implementation Units
 
 ### U1. Freeze the parity and characterization baseline
@@ -238,28 +263,31 @@ flowchart TD
 
 **Requirements:** R19-R23.
 
-**Dependencies:** None.
+**Dependencies:** Unified NOW Extension prerequisite 002 complete, including
+its U1 ledger/evidence guards and U7 focused proof.
 
 **Files:**
 
 - `docs/local/mirror-sweep-state.json`
 - `docs/local/mirror-drive-notes.md`
-- `docs/mirror-foldin-inventory.md`
 - `docs/mcp-coverage.md`
 - `docs/contract-coverage.md`
 - `now-host/Sources/NOWAgentIntegration/Projection/MirrorActProjections.swift`
 - `now-host/Tests/HostTests/MirrorActProjectionTests.swift`
 - `now-host/Tests/HostTests/MCPCoverageTests.swift`
-- `tools/mirror-gate`
-- `tools/mirror-gate-tests/` (new)
 
 **Approach:**
 
 - Preserve Cycle 18 rows as the before-state. Do not relabel existing failures while implementing.
 - Measure queue wait under the recovered scene, capture, and command workload. Record the baseline used by U4 and keep the invariant that no new poll or bulk chunk starts ahead of a queued act.
-- Harden `tools/mirror-gate` so every scored row requires one correlated manifest with keyboard/mouse input provenance, Mirror-rendered pixels and snapshot ID, same-moment QMP frame, post-action scene state, operation record, and guest-log evidence.
-- Derive a matrix from the Mirror method registry, current NOW Mirror affordances, and current MCP projections.
-- Give each old method and UI affordance one disposition: canonical broker primitive, compatibility adapter, explicit refusal, or retirement blocker.
+- Consume the prerequisite's immutable focused corpus and evidence-manifest
+  guard; extend coverage only for broad-plan rows without weakening its R28
+  correlation or direct-input provenance.
+- Derive a matrix from the current NOW Mirror affordances and current MCP
+  projections, joined to the prerequisite's old-method ledger rather than
+  rebuilding it.
+- Give each remaining broad UI/MCP affordance a broker projection or explicit
+  divergence. Legacy runtime disposition remains owned by prerequisite 002.
 - Add structural tests that fail when either the human or MCP face gains an unregistered action or context operation.
 
 **Test scenarios:**
@@ -277,7 +305,7 @@ flowchart TD
 
 **Requirements:** R1-R3, R6, R8.
 
-**Dependencies:** U1.
+**Dependencies:** U1 and prerequisite 002's validated P2 artifact.
 
 **Files:**
 
@@ -288,8 +316,6 @@ flowchart TD
 - `mirror/host/MirrorKit/Sources/MirrorKit/Scene.swift`
 - `now-guest-ppc/src/axwalk/axwalk.h`
 - `now-guest-ppc/src/axwalk/axwalk.c`
-- `contract/peek_table.h`
-- `ext/src/now_ext_act.c`
 - `now-guest-ppc/src/scene/scene.h`
 - `now-guest-ppc/src/scene/scene_collect.c`
 - `now-guest-ppc/src/scene/scene_walk.c`
@@ -304,7 +330,9 @@ flowchart TD
 
 - Define IR v2 fields for semantic kind, advertised action capability, state, value, selection, focus, defaultness, provenance, and completeness.
 - Add bounded DITL and control-definition reads only where the guest can validate layout and ownership.
-- Use a versioned resident observation table with shared-layout assertions when passive foreign-memory reads cannot safely prove a fact in the NOW application.
+- Consume prerequisite 002's validated P2 response facts when passive
+  foreign-memory reads cannot safely prove a fact in the NOW application. Do
+  not extend the resident ABI here.
 - Keep structural controls and dialog items distinct when their actuation paths differ.
 - Add a normative IR-v2 knowledge-state table. Define the JSON representation, applicable field or plane, decoder type, actionability, and v1 mapping for known, unknown, not reported, truncated, and stale.
 - Remove `guess_role` from the action-bearing path. Keep a presentation fallback only if it is provenance-labeled and non-interactive.
@@ -420,19 +448,11 @@ flowchart TD
 
 **Requirements:** R6-R11 and R19-R21.
 
-**Dependencies:** U2 and U4.
+**Dependencies:** U2, U4, and prerequisite 002's completed typed P4 operations
+and focused settlement proof.
 
 **Files:**
 
-- `now-guest-ppc/src/act/act_args.h`
-- `now-guest-ppc/src/act/act_args.c`
-- `now-guest-ppc/src/act/act_cmds.c`
-- `now-guest-ppc/src/act/act_client.c`
-- `now-guest-ppc/src/commands/cmd_help.c`
-- `contract/asyncapi.yaml`
-- `contract/peek_table.h`
-- `ext/src/now_ext_act.c`
-- `ext/src/now_ext_act_patch.S`
 - `mirror/host/MirrorKit/Sources/MirrorKit/InteractionPolicy.swift`
 - `mirror/host/MirrorKit/Sources/MirrorKit/ObjectResolver.swift`
 - `mirror/host/MirrorKit/Sources/MirrorKitUI/KeyCapture.swift`
@@ -443,9 +463,11 @@ flowchart TD
 
 **Approach:**
 
-- Implement separate paths for popup tracking, Dialog Manager items, same-app background-window activation, close/collapse/zoom chrome, application Hide/Show/Hide Others, and TextEdit selection/edit/tab/commit.
-- Extend the versioned resident table and patch set for foreign-context popup, dialog-item, and text-selection behavior. Add exact refusal states and shared-layout assertions before adding guest commands.
-- Reuse proven Portal mechanisms where the application must answer its own Toolbox question. Port them through NOW's resident contract and wire rather than calling the old service.
+- Integrate the prerequisite's separate popup, Dialog Manager, same-app
+  activation, window, application visibility, and TextEdit operations into
+  MirrorKit's gesture/key paths and the host broker.
+- Treat prerequisite 002's resident table, patch set, guest commands, exact
+  refusals, and Portal-derived mechanisms as immutable inputs to this unit.
 - Keep exact-target, no-hijack, stale-ref, and app-never-entered-trap refusals.
 - Define a visible postcondition for each Cycle 18 action where guest state can prove one.
 - Preserve a keyboard-routing matrix for text, Return and Enter, Tab, Escape, arrows, navigation keys, guest Command shortcuts, key-up/modifiers, no-focus input, and macOS-reserved combinations.
@@ -515,11 +537,10 @@ flowchart TD
 
 **Requirements:** R4-R5 and R19-R21.
 
-**Dependencies:** U6.
+**Dependencies:** U6 and prerequisite 002's lifecycle-safe initial P3 display.
 
 **Files:**
 
-- `contract/peek_table.h`
 - `now-guest-ppc/src/scene/`
 - `mirror/host/MirrorKit/Sources/MirrorKit/Scene.swift`
 - `mirror/host/MirrorKit/Sources/MirrorKitUI/SceneRenderer.swift`
@@ -530,8 +551,10 @@ flowchart TD
 
 **Approach:**
 
-- Add a captured fixture for the already-frozen display plane before extending it.
-- Use NOW's `qdtrace` command to carry bounded structured draw operations for text and primitives where they add guest-authored information.
+- Start from the prerequisite's captured initial-display fixture and validated
+  P3 epoch contract before extending broad application coverage.
+- Consume NOW's bounded structured draw operations for text and primitives;
+  do not change the resident ABI in this unit.
 - Represent bitmap, PICT, CopyBits-only, and manually drawn background regions with a data record containing bounds, visual kind, provenance, and a reason code. Render a classic-Mac-appropriate unavailable-visual placeholder.
 - Do not add region capture, pixel islands, framebuffer bytes, or a runtime dependency on Mirror's old `WireClient`, W1 pager, or port 1420.
 - Keep semantic objects and actions live around and above a placeholder. An exception record never masks missing semantic coverage.
@@ -549,9 +572,10 @@ flowchart TD
 
 **Verification:** Run display-list, placeholder, fixture, and host/guest gates. Complete rungs 5-6 and then re-run rungs 1-4 and the text matrix. Paired guest evidence must validate each declared placeholder's bounds and prevent exception creep under R19.
 
-### U8. Prove agent parity and retire the old Mirror stack
+### U8. Prove agent parity and continued legacy absence
 
-**Goal:** Remove the separate Mirror service and guest components only after strict NOW parity is proven.
+**Goal:** Project the proven direct broker through MCP and verify the
+prerequisite's legacy-runtime absence remains intact through the broad campaign.
 
 **Requirements:** R12-R18 and R22-R24.
 
@@ -559,9 +583,6 @@ flowchart TD
 
 **Files:**
 
-- `now-host/Sources/Host/MirrorControlModel.swift`
-- `now-host/Sources/Host/MirrorControlView.swift`
-- `now-host/Sources/Host/MirrorProduct.swift`
 - `now-host/Sources/Host/HostAppState.swift`
 - `now-host/Sources/NOWAgentIntegration/Projection/`
 - `now-host/Sources/NOWAgentIntegration/AgentIntegrationLocalProtocol.swift`
@@ -572,8 +593,6 @@ flowchart TD
 - `now-host/Tests/HostTests/MirrorActProjectionTests.swift`
 - `now-host/Tests/HostTests/MCPCoverageTests.swift`
 - `now-host/Tests/HostTests/CaptureProjectionTests.swift`
-- `scripts/spin-up-ppc`
-- `docs/mirror-foldin-inventory.md`
 - `docs/mcp-coverage.md`
 - `docs/contract-coverage.md`
 - `docs/open-issues.md`
@@ -589,10 +608,13 @@ flowchart TD
 - Require each MCP request to name a guest key and session, then route it to the same pinned broker used by the corresponding Mirror window.
 - Treat MCP work as a thin parity adapter. If an adapter exposes a missing or broken direct interaction, fix and re-prove the direct path before continuing parity work.
 - Keep MCP consent and grants at the adapter boundary. Verify human and agent concurrency and attribution.
-- Close every U1 disposition. Replace lifecycle UI for the separate MirrorApp with the NOW-owned Mirror status and diagnostics.
-- Boot an NWpt-only image without the TB* components, Mirror agent, MirrorApp, `--serve`, port 1420, or compatibility forward.
+- Consume every closed prerequisite disposition; do not reopen its legacy
+  lifecycle UI or reinstall a differential runtime.
+- Verify the promoted NWpt-only image still lacks the TB* components, Mirror
+  agent, MirrorApp, `--serve`, port 1420, and compatibility forward.
 - Run the full automated gate and the full paired UX campaign on that image.
-- Remove old forwarding, lifecycle, and packaging only after the proof passes. Preserve historical source and findings according to repository policy.
+- If a legacy dependency reappears, fail and route the regression back to the
+  prerequisite-owned absence guard; this unit does not own staging removal.
 - Update published capability and unverified-state documentation in the same commit.
 - Reconcile stale vendoring, scene-producer, and open-issues claims against the live recovered code.
 

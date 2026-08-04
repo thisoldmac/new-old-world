@@ -51,9 +51,19 @@ class MirrorGateEvidenceTests(unittest.TestCase):
         (self.evidence_dir / "mirror.png").write_text("mirror pixels\n")
         (self.evidence_dir / "guest.ppm").write_text("guest pixels\n")
         (self.evidence_dir / "scene.json").write_text(json.dumps(
-            {"snapshotId": "snapshot-7"}))
+            {"snapshotId": "snapshot-7", "sceneGeneration": 17,
+             "contentGeneration": 9}))
+        (self.evidence_dir / "plane.json").write_text(json.dumps(
+            {"snapshotId": "snapshot-7", "ownerEpoch": 4,
+             "planes": {"structure": "active", "semantics": "active",
+                        "content": "active", "interaction": "active"}}))
         (self.evidence_dir / "operation.json").write_text(json.dumps(
             {"id": "operation-12", "source": "human"}))
+        (self.evidence_dir / "settlement.json").write_text(json.dumps(
+            {"operationId": "operation-12", "terminal": True,
+             "outcome": "confirmed"}))
+        (self.evidence_dir / "host.log").write_text(
+            "operation-12 confirmed by host\n")
         (self.evidence_dir / "guest.log").write_text(
             "operation-12 dispatched by guest\n")
 
@@ -76,14 +86,31 @@ class MirrorGateEvidenceTests(unittest.TestCase):
             },
             "guest": {
                 "path": "guest.ppm", "source": "qmp-screendump",
-                "capturedAt": "2026-08-03T16:00:03Z",
+                "capturedAt": "2026-08-03T16:00:01Z",
             },
             "state": {"path": "scene.json", "snapshotId": "snapshot-7"},
+            "plane": {"path": "plane.json", "snapshotId": "snapshot-7"},
             "operation": {
                 "path": "operation.json", "id": "operation-12",
                 "source": "human",
             },
+            "settlement": {
+                "path": "settlement.json", "operationId": "operation-12",
+            },
+            "hostLog": {"path": "host.log", "operationId": "operation-12"},
             "guestLog": {"path": "guest.log", "operationId": "operation-12"},
+            "quiescence": {
+                "nonterminalOperations": 0,
+                "pollIntervalMs": 250,
+                "before": [
+                    {"sceneGeneration": 17, "contentGeneration": 9,
+                     "ownerEpoch": 4},
+                    {"sceneGeneration": 17, "contentGeneration": 9,
+                     "ownerEpoch": 4},
+                ],
+                "after": {"sceneGeneration": 17, "contentGeneration": 9,
+                          "ownerEpoch": 4},
+            },
         }
         for dotted, replacement in changes.items():
             section, field = dotted.split("__", 1)
@@ -124,6 +151,43 @@ class MirrorGateEvidenceTests(unittest.TestCase):
         result = self.score(self.manifest(operation__source="mcp"))
         self.assert_refused(result, "operation.source must be human")
 
+    def test_plane_state_is_required(self):
+        manifest = self.manifest()
+        value = json.loads(manifest.read_text())
+        del value["plane"]
+        manifest.write_text(json.dumps(value))
+        result = self.score(manifest)
+        self.assert_refused(result, "missing object 'plane'")
+
+    def test_terminal_settlement_is_required(self):
+        result = self.score(self.manifest(settlement__path="missing.json"))
+        self.assert_refused(result, "settlement.path does not exist")
+
+    def test_host_and_guest_logs_must_both_correlate_the_operation(self):
+        result = self.score(self.manifest(hostLog__operationId="operation-99"))
+        self.assert_refused(result, "hostLog.operationId must match")
+
+    def test_capture_requires_two_unchanged_pre_capture_polls(self):
+        manifest = self.manifest()
+        value = json.loads(manifest.read_text())
+        value["quiescence"]["before"][1]["sceneGeneration"] = 18
+        manifest.write_text(json.dumps(value))
+        result = self.score(manifest)
+        self.assert_refused(result, "two unchanged pre-capture polls")
+
+    def test_capture_is_discarded_when_generation_changes_afterward(self):
+        manifest = self.manifest()
+        value = json.loads(manifest.read_text())
+        value["quiescence"]["after"]["contentGeneration"] = 10
+        manifest.write_text(json.dumps(value))
+        result = self.score(manifest)
+        self.assert_refused(result, "changed during capture")
+
+    def test_capture_requires_no_nonterminal_operation(self):
+        result = self.score(self.manifest(
+            quiescence__nonterminalOperations=1))
+        self.assert_refused(result, "nonterminal operation")
+
     def test_api_input_cannot_pose_as_computer_use(self):
         result = self.score(self.manifest(input__source="mcp"))
         self.assert_refused(result, "input.source must be computer-use")
@@ -156,7 +220,7 @@ class MirrorGateEvidenceTests(unittest.TestCase):
 
     def test_the_pair_must_be_captured_at_the_same_settled_moment(self):
         result = self.score(self.manifest(
-            guest__capturedAt="2026-08-03T16:00:12Z"))
+            guest__capturedAt="2026-08-03T16:00:03Z"))
         self.assert_refused(result, "not the same settled moment")
 
     def test_qmp_is_observation_only_and_is_named_as_the_guest_source(self):

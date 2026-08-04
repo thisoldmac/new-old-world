@@ -1,7 +1,16 @@
 # Folding Mirror's residents into the NOW Extension, then Mirror into NOW
 
-**Date:** 2026-08-02 · **Status:** roadmap only — nothing below is built ·
+**Date:** 2026-08-02 · **Status:** superseded historical roadmap ·
 **Namespace:** `claude/` · **Branch under study:** `claude/mirror-subproject`
+
+> **Superseded 2026-08-03.** Implementation authority moved to
+> [the unified NOW Extension prerequisite](2026-08-03-002-feat-unified-now-extension-plan.md),
+> followed by [NOW Mirror UX Completion](2026-08-03-001-now-mirror-ux-completion-plan.md).
+> The prerequisite owns the resident ABI, P1-P4, legacy-runtime retirement,
+> direct-input focused proof, and clean development image. Plan 001 resumes
+> only after that prerequisite is complete. The work packages below remain as
+> provenance for measurements and rejected paths; they must not be executed as
+> a parallel implementation plan.
 
 A snapshot of intent, per [README](README.md). Where this and the code
 disagree, the code is right; where this and

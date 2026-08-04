@@ -23,6 +23,36 @@ calls it*, not that it has been run against a guest, emulated or real.
 > caller-supplied handle before any dereference and bounds `hText` again in
 > `act_te_read`.
 
+## Focused extension UX corpus, frozen 2026-08-03
+
+This is the prerequisite's fixed direct-input corpus. It is intentionally
+narrower than the six-rung completion campaign and must pass before that broader
+plan resumes. A row is scored only through native NOW Mirror keyboard/mouse
+input and one correlated `now-mirror-ux-evidence/v1` manifest. Raw wire/MCP
+reachability and a Mirror-only or guest-only picture cannot make a row green.
+QMP is observation-only.
+
+The starting baseline is evidence, not a waiver: Workshop's data-driven 13-row
+sidebar/header/text/control structure and the guest-derived menubar geometry
+(Apple, File, View, Windows, Help, clock) are the known-good regression floor.
+Their interactions and whole-frame fidelity remained red where noted in
+`docs/open-issues.md`; later work may improve them but may not silently lose
+their current structure or geometry.
+
+| row family | required direct interaction and verdict |
+|---|---|
+| Workshop baseline | visually compare the whole frame; resize; close; reopen from NOW's own menu; retain the 13-row structured page rather than an empty/hatched window |
+| menubar and Apple | visually compare the full bar; click the guest Apple slot and require the guest-provided Apple rows, not an empty or custom host selector |
+| native Application menu | require exactly the guest's native application menu; select another app; Hide; Hide Others when multiple apps run; Show All when hidden; refuse actions the guest state cannot confirm |
+| desktop to Finder | click the bare mirrored desktop and require Finder to become frontmost; then hide Finder through the native Application menu |
+| Macintosh HD and Finder | double-click Macintosh HD; compare Finder chrome, items, selection, content, and foreground state; an empty Finder window is red |
+| Date & Time | navigate through Finder; compare its list/content or bounded declared placeholder; exercise a native control/text input where reported; Cancel must dismiss the warning/panel path rather than wedge |
+| foreign content | require coherent structured first display; bitmap/manual-only regions may be bounded placeholders, but an entirely empty ordinary window is red |
+| settlement truth | correlate the human operation with plane state, guest-observed postcondition or named non-success, host and guest logs; dispatch alone is never success |
+
+Every pass starts again at Workshop and menubar preflight. Patch batches may
+address the blocker and at most two related defects before replaying this corpus.
+
 ## NOW's own numbers (2026-08-02)
 
 The rig, stated once so every number below inherits it: a **session-private

@@ -43,7 +43,7 @@ LOOP_DOC = "docs/mirror-drive-loop.md"
 NOTES = "docs/local/mirror-drive-notes.md"
 
 EVIDENCE_SCHEMA = "now-mirror-ux-evidence/v1"
-EVIDENCE_CAPTURE_SLOP_SECONDS = 5.0
+EVIDENCE_CAPTURE_SLOP_SECONDS = 2.0
 
 # The gate gives up after this many consecutive blocks with no progress
 # in between. A hook that can never be satisfied is a wedge, and a wedge
@@ -297,7 +297,8 @@ def cmd_row(args):
         del rest[i:i + 2]
     if "--shot" in rest:
         die("--shot is no longer sufficient. Use --evidence with the "
-            "correlated Mirror/input/guest/state/operation/log manifest")
+            "correlated input/Mirror/guest/state/plane/operation/settlement/"
+            "log/quiescence manifest")
     note = " ".join(rest)
     if result not in RESULTS:
         die("result must be one of %s" % ", ".join(RESULTS))
@@ -404,8 +405,8 @@ def load_evidence(path, rid):
         die("evidence row %r does not match scored row %r"
             % (manifest.get("row"), rid))
 
-    required = ("input", "mirror", "guest", "state", "operation",
-                "guestLog")
+    required = ("input", "mirror", "guest", "state", "plane", "operation",
+                "settlement", "hostLog", "guestLog", "quiescence")
     for name in required:
         if not isinstance(manifest.get(name), dict):
             die("evidence manifest is missing object %r" % name)
@@ -426,12 +427,18 @@ def load_evidence(path, rid):
     mirror = manifest["mirror"]
     guest = manifest["guest"]
     state = manifest["state"]
+    plane = manifest["plane"]
     operation = manifest["operation"]
+    settlement = manifest["settlement"]
+    host_log = manifest["hostLog"]
     guest_log = manifest["guestLog"]
     for section in (mirror, guest):
         evidence_file(path, section)
     state_artifact = evidence_json(path, state)
+    plane_artifact = evidence_json(path, plane)
     operation_artifact = evidence_json(path, operation)
+    settlement_artifact = evidence_json(path, settlement)
+    host_log_path = evidence_file(path, host_log)
     guest_log_path = evidence_file(path, guest_log)
 
     snapshot = mirror.get("snapshotId")
@@ -441,6 +448,12 @@ def load_evidence(path, rid):
         die("evidence state.snapshotId must match mirror.snapshotId")
     if state_artifact.get("snapshotId") != snapshot:
         die("evidence state artifact must contain mirror.snapshotId")
+    if plane.get("snapshotId") != snapshot:
+        die("evidence plane.snapshotId must match mirror.snapshotId")
+    if plane_artifact.get("snapshotId") != snapshot:
+        die("evidence plane artifact must contain mirror.snapshotId")
+    if not isinstance(plane_artifact.get("planes"), dict):
+        die("evidence plane artifact must contain plane state")
 
     operation_id = operation.get("id")
     if not isinstance(operation_id, str) or not operation_id:
@@ -451,15 +464,60 @@ def load_evidence(path, rid):
     if operation_artifact.get("id") != operation_id \
             or operation_artifact.get("source") != "human":
         die("evidence operation artifact must contain the human operation.id")
-    if guest_log.get("operationId") != operation_id:
-        die("evidence guestLog.operationId must match operation.id")
-    try:
-        with open(guest_log_path) as f:
-            log_text = f.read()
-    except OSError as exc:
-        die("evidence guestLog.path cannot be read: %s" % exc)
-    if operation_id not in log_text:
-        die("evidence guest log does not contain operation.id")
+    if settlement.get("operationId") != operation_id:
+        die("evidence settlement.operationId must match operation.id")
+    if settlement_artifact.get("operationId") != operation_id:
+        die("evidence settlement artifact must contain operation.id")
+    if settlement_artifact.get("terminal") is not True:
+        die("evidence settlement artifact must record a terminal outcome")
+    if not isinstance(settlement_artifact.get("outcome"), str) \
+            or not settlement_artifact["outcome"]:
+        die("evidence settlement artifact must name its outcome")
+    for label, section, log_path in (("hostLog", host_log, host_log_path),
+                                     ("guestLog", guest_log,
+                                      guest_log_path)):
+        if section.get("operationId") != operation_id:
+            die("evidence %s.operationId must match operation.id" % label)
+        try:
+            with open(log_path) as f:
+                log_text = f.read()
+        except OSError as exc:
+            die("evidence %s.path cannot be read: %s" % (label, exc))
+        if operation_id not in log_text:
+            die("evidence %s does not contain operation.id" % label)
+
+    quiescence = manifest["quiescence"]
+    if quiescence.get("nonterminalOperations") != 0:
+        die("evidence capture cannot begin with a nonterminal operation")
+    poll_interval = quiescence.get("pollIntervalMs")
+    if not isinstance(poll_interval, int) or isinstance(poll_interval, bool) \
+            or poll_interval <= 0:
+        die("evidence quiescence.pollIntervalMs must be a positive integer")
+    before = quiescence.get("before")
+    after = quiescence.get("after")
+    if not isinstance(before, list) or len(before) != 2 \
+            or not all(isinstance(sample, dict) for sample in before):
+        die("evidence quiescence requires two unchanged pre-capture polls")
+    generation_keys = ("sceneGeneration", "contentGeneration", "ownerEpoch")
+    for sample in before + ([after] if isinstance(after, dict) else []):
+        if any(not isinstance(sample.get(key), int)
+               or isinstance(sample.get(key), bool)
+               or sample[key] < 0 for key in generation_keys):
+            die("evidence quiescence samples require non-negative scene/content "
+                "generations and owner epoch")
+    if any(before[0][key] != before[1][key] for key in generation_keys):
+        die("evidence quiescence requires two unchanged pre-capture polls")
+    if not isinstance(after, dict) \
+            or any(before[1][key] != after.get(key) for key in generation_keys):
+        die("evidence generations or owner epoch changed during capture; "
+            "discard the pair")
+    if state_artifact.get("sceneGeneration") != after["sceneGeneration"] \
+            or state_artifact.get("contentGeneration") \
+            != after["contentGeneration"]:
+        die("evidence state artifact generations must match the post-capture "
+            "reread")
+    if plane_artifact.get("ownerEpoch") != after["ownerEpoch"]:
+        die("evidence plane owner epoch must match the post-capture reread")
 
     mirror_at = parse_iso(mirror.get("capturedAt"), "mirror.capturedAt")
     guest_at = parse_iso(guest.get("capturedAt"), "guest.capturedAt")

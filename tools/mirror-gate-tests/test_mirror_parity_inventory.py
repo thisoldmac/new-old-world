@@ -16,6 +16,60 @@ SOURCE_ROOT = Path(os.environ.get("NOW_SOURCE_ROOT", ROOT))
 INVENTORY = ROOT / "docs" / "mirror-foldin-inventory.md"
 
 
+def legacy_capabilities(source_root):
+    """Derive the inventory keys from the legacy component contracts."""
+    capabilities = set()
+
+    ax = (source_root / "mirror" / "guest" / "extensions" / "axpeek"
+          / "src" / "axshared.h").read_text()
+    sample = ax.split("typedef struct {", 1)[1].split("} AXContextSample", 1)[0]
+    fields = re.findall(r"(?:uint32_t|unsigned char)\s+(\w+)(?:\[|;)", sample)
+    capabilities.update("AXPeek:" + field for field in fields)
+    capabilities.add("AXPeek:sample-throttle")
+
+    qd = (source_root / "mirror" / "guest" / "extensions" / "qdpeek"
+          / "src" / "qdshared.h").read_text()
+    capabilities.update(
+        "QDPeek:" + name.lower().replace("_", "-")
+        for name in re.findall(r"^#define QD_OP_([A-Z0-9_]+)\s+\d+", qd,
+                               re.MULTILINE)
+        if name != "WRAP")
+
+    portal = (source_root / "mirror" / "guest" / "extensions" / "portal"
+              / "src" / "ptshared.h").read_text()
+    capabilities.update(
+        "Portal:" + name.lower().replace("_", "-")
+        for name in re.findall(r"\bPT_OP_([A-Z0-9_]+)\s*=\s*\d+", portal)
+        if name != "NONE")
+    capabilities.update(
+        "Portal:window-" + name.lower().replace("_", "-")
+        for name in re.findall(r"\bPT_WIN_([A-Z0-9_]+)\s*=\s*\d+", portal))
+
+    agent = (source_root / "mirror" / "guest" / "app" / "src"
+             / "mirrorverbs.c").read_text()
+    dispatch = agent.split("static int dispatch_verb", 1)[1]
+    dispatch = dispatch.split("int mirror_verb_handle", 1)[0]
+    capabilities.update(
+        "mirror-agent:" + verb
+        for verb in re.findall(r'strcmp\(verb, "([a-z-]+)"\)', dispatch))
+
+    staging = (source_root / "tools" / "stage-ext.py").read_text()
+    spin_up = (source_root / "scripts" / "spin-up-ppc").read_text()
+    host_service = (source_root / "mirror" / "host" / "MirrorKit" / "Sources"
+                    / "MirrorApp" / "Serve.swift").read_text()
+    if all(name in staging for name in ("AXPeek", "QDPeek", "Portal")):
+        capabilities.add("staging:TB-residents")
+    if "mirror-agent" in staging:
+        capabilities.add("staging:mirror-agent")
+    if "mirror.port" in staging:
+        capabilities.add("transport:mirror.port")
+    if "1420" in staging or "1420" in spin_up:
+        capabilities.add("transport:port-1420")
+    if "--serve" in host_service:
+        capabilities.add("MirrorApp:--serve")
+    return capabilities
+
+
 def table_under(text, heading):
     body = text.split(heading, 1)[1]
     rows = []
@@ -92,6 +146,39 @@ class MirrorParityInventoryTests(unittest.TestCase):
         for row in rows:
             self.assertEqual(len(row), 2)
             self.assertIn(row[1], allowed, row[0])
+
+    def test_every_legacy_runtime_capability_has_a_goal_facing_disposition(self):
+        rows = table_under(INVENTORY.read_text(),
+                           "### Legacy runtime capability disposition")
+        documented = [row[0] for row in rows]
+        self.assertEqual(len(documented), len(set(documented)),
+                         "legacy capability appears twice in inventory")
+        self.assertEqual(
+            set(documented), legacy_capabilities(SOURCE_ROOT),
+            "legacy capability inventory drifted from dispatch/shared headers/"
+            "staging paths; add a disposition and proof owner for every row")
+        allowed = {
+            "same-capability", "outcome-equivalent-through-NOW",
+            "prohibited-mechanism/no-consumer", "explicit-bounded-refusal",
+            "retained-as-fixture", "retirement-blocker",
+        }
+        retirement_closures = {
+            "same-capability", "outcome-equivalent-through-NOW",
+            "prohibited-mechanism/no-consumer",
+        }
+        for row in rows:
+            self.assertEqual(len(row), 6, row[0])
+            capability, source, outcome, relevance, disposition, owner = row
+            self.assertTrue(source, capability)
+            self.assertTrue(outcome, capability)
+            self.assertIn(relevance, {"goal", "legacy-only"}, capability)
+            self.assertIn(disposition, allowed, capability)
+            self.assertTrue(owner, capability)
+            if relevance == "goal":
+                self.assertIn(
+                    disposition, retirement_closures,
+                    "%s is goal-relevant and cannot close as refusal, fixture, "
+                    "or blocker" % capability)
 
 
 if __name__ == "__main__":
