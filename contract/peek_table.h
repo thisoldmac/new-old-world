@@ -253,7 +253,16 @@ enum {
     /* Validate one observed DITL control item in the target context, then
        queue its press. No trap: the application's Dialog Manager path
        consumes the event itself. */
-    kNowPeekActOpDialogItem = 7
+    kNowPeekActOpDialogItem = 7,
+    /* A system Application-menu visibility command, served in the target
+       process context. `item_index` carries kNowPeekActVisibility* so the
+       V1 cell keeps every existing offset. */
+    kNowPeekActOpVisibility = 8
+};
+
+enum {
+    kNowPeekActVisibilityHide = 1,
+    kNowPeekActVisibilityHideOthers = 2
 };
 
 /* kNowPeekActOpWindow sub-ops.

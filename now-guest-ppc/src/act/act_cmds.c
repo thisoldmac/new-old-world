@@ -980,6 +980,7 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
     long                lo = 0;
     int                 h;
     int                 v;
+    int                 visibility;
 
     now_act_begin_command();
     if (!arg_int(request_json, "menu", &menu)
@@ -1015,7 +1016,9 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
     psn.highLongOfPSN = hi;
     psn.lowLongOfPSN = (unsigned long)lo;
     want = &psn;
-    if (act_target_is_self(want) && g_self_menu_handler != NULL) {
+    visibility = menu == -16489L && (item == 1L || item == 2L);
+    if (!visibility && act_target_is_self(want)
+        && g_self_menu_handler != NULL) {
         if (!g_self_menu_handler((menu << 16) | (item & 0xFFFFL))) {
             reply_error(out, cap, id, "self-menu-busy",
                         "the application's prior menu command is still "
@@ -1051,9 +1054,12 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
     /* The menu bar is 20 px tall; aim at its middle. */
     h = (int)(title_left + 4);
     v = 10;
-    cell->op = kNowPeekActOpMenu;
+    cell->op = visibility ? kNowPeekActOpVisibility : kNowPeekActOpMenu;
     cell->menu_id = (NowPeekI32)menu;
-    cell->item_index = (NowPeekI32)item;
+    cell->item_index = visibility
+        ? (NowPeekI32)(item == 1L ? kNowPeekActVisibilityHide
+                                 : kNowPeekActVisibilityHideOthers)
+        : (NowPeekI32)item;
     cell->arm_point_h = (NowPeekI32)h;
     cell->arm_point_v = (NowPeekI32)v;
 
@@ -1075,7 +1081,9 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
     if (st != kNowActOk) {
         reply_registered_error(
             out, cap, id, "act-not-taken",
-            "armed, and the application never called MenuSelect");
+            visibility
+                ? "the target context did not accept the visibility key"
+                : "armed, and the application never called MenuSelect");
         return;
     }
     now_act_withdraw();
@@ -1088,7 +1096,9 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
        reporting the stronger claim is how an ABI bug stayed invisible
        upstream for an afternoon. */
     row_add(&rows, "Dispatch", "dispatched");
-    row_add(&rows, "Mechanism", "the application's own MenuSelect");
+    row_add(&rows, "Mechanism", visibility
+        ? "the Process Manager's keyboard equivalent in the target context"
+        : "the application's own MenuSelect");
     now_log(kLogInfo, "act", "#%ld menuact %ld/%ld dispatched", id, menu, item);
     settlement_rows(&rows);
     reply_rows(out, cap, id, "menuact", &rows);

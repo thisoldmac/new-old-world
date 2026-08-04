@@ -238,6 +238,10 @@ static void act_v2_describe(NowPeekTable *table, const NowActTarget *target,
         v2->operation_object = cell->control_handle;
         v2->operation_aux = cell->text_item;
         break;
+    case kNowPeekActOpVisibility:
+        v2->operation_kind = kNowPeekActKindVisibility;
+        v2->operation_object = (NowPeekU32)cell->item_index;
+        break;
     default:
         v2->operation_kind = kNowPeekActKindNone;
         break;

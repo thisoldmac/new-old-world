@@ -621,6 +621,41 @@ static int act_post_click(NowPeekActCell *cell)
     return 1;
 }
 
+/* The system Application menu is owned by the Process Manager, not by the
+   application whose MenuSelect the generic menu act can answer. Queue the
+   two public keyboard equivalents from inside that exact application's A5
+   world instead. PPostEvent is unavailable to the Carbon client and is why
+   this small foreign-context effect belongs in the resident plane. */
+#define kNowActVisibilityKeyWaitTicks 3UL
+
+static int act_post_visibility_key(NowPeekActCell *cell)
+{
+    EvQElPtr down = NULL;
+    EvQElPtr up = NULL;
+    unsigned long start;
+    UInt32 message = ((UInt32)4 << 8) | (UInt32)'h';
+    short modifiers = cmdKey;
+
+    if (cell->item_index == kNowPeekActVisibilityHideOthers) {
+        modifiers |= optionKey;
+    }
+    if (PPostEvent(keyDown, message, &down) != noErr || down == NULL) {
+        return 0;
+    }
+    down->evtQModifiers = modifiers;
+
+    start = (unsigned long)LMGetTicks();
+    while ((unsigned long)LMGetTicks() - start
+           < kNowActVisibilityKeyWaitTicks) {
+        /* Bounded: the modifier stamp was measured unreliable when the
+           up event followed in the same tick. This hook cannot yield. */
+    }
+    if (PPostEvent(keyUp, message, &up) == noErr && up != NULL) {
+        up->evtQModifiers = modifiers;
+    }
+    return 1;
+}
+
 /* ---- the filter's act pass --------------------------------------------
  *
  * Called from now_ext_gne_apply on every GetNextEvent/WaitNextEvent in
@@ -719,6 +754,16 @@ void now_ext_act_apply(NowPeekTable *table)
                 now_act_v2_note(table, kNowPeekActStageFired,
                                 (unsigned long)LMGetTicks());
             }
+        }
+        break;
+    case kNowActServeVisibility:
+        if (!act_post_visibility_key(cell)) {
+            error = kNowPeekActErrPostFailed;
+        } else {
+            cell->fired = 1;
+            cell->armed = kNowPeekActArmNone;
+            now_act_v2_note(table, kNowPeekActStageFired,
+                            (unsigned long)LMGetTicks());
         }
         break;
     case kNowActServeArmed:

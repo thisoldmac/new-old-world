@@ -553,6 +553,26 @@ static void test_serve_begin(void)
           "the dialog press is scoped until the hook validates it");
     check(cell.fired == 0, "a dialog item is not claimed before it is queued");
 
+    /* Application visibility is a target-context effect. It must never
+       fall through to the generic menu patch, whose MenuSelect answer is
+       ignored for the Process Manager-owned Application menu. */
+    memset(&cell, 0, sizeof cell);
+    cell.op = kNowPeekActOpVisibility;
+    cell.item_index = kNowPeekActVisibilityHide;
+    cell.target_a5 = (NowPeekU32)kTargetA5;
+    cell.status = kNowPeekActStatusPending;
+    check_long(now_act_serve_begin(&cell, kTargetA5, 1UL),
+               kNowActServeVisibility,
+               "Hide is handed to the target-context visibility path");
+
+    cell.status = kNowPeekActStatusPending;
+    cell.item_index = 99;
+    check_long(now_act_serve_begin(&cell, kTargetA5, 1UL),
+               kNowActServeRefused,
+               "an unknown visibility operation is refused");
+    check_long((long)cell.error, kNowPeekActErrBadOp,
+               "an unknown visibility operation names why");
+
     /* A failing commit must never leave a patch armed. */
     arm_menu(&cell, 52, 10);
     now_act_serve_commit(&cell, kNowPeekActErrNotOurWindow);

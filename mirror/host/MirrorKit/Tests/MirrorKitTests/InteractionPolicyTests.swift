@@ -257,9 +257,9 @@ final class InteractionPolicyTests: XCTestCase {
                                  id: ObjectResolver.applicationMenuID,
                                  items: [])
         let apps = [Scene.AppRef(psn: "0.3", name: "Finder", front: false,
-                                 error: nil),
+                                 incarnation: "process-finder", error: nil),
                     Scene.AppRef(psn: "0.7", name: "Mail", front: true,
-                                 error: nil)]
+                                 incarnation: "process-mail", error: nil)]
 
         let row = Scene.MenuItem(title: "Finder", index: 4, separator: false,
                                  enabled: true, mark: false, cmd: "")
@@ -276,10 +276,16 @@ final class InteractionPolicyTests: XCTestCase {
         let visibilityRows: [(Scene.MenuItem,
                               InteractionPlan.ApplicationVisibility)] = [
             (.init(title: "Hide Mail", index: 1, separator: false,
-                   enabled: true, mark: false, cmd: ""), .hide(name: "Mail")),
+                   enabled: true, mark: false, cmd: ""),
+             .hide(psn: "0.7", incarnation: "process-mail", name: "Mail",
+                   menuID: ObjectResolver.applicationMenuID, itemIndex: 1,
+                   titleLeft: 600)),
             (.init(title: "Hide Others", index: 2, separator: false,
                    enabled: true, mark: false, cmd: ""),
-             .hideOthers(except: "Mail")),
+             .hideOthers(exceptPSN: "0.7", incarnation: "process-mail",
+                         name: "Mail",
+                         menuID: ObjectResolver.applicationMenuID,
+                         itemIndex: 2, titleLeft: 600)),
             (.init(title: "Show All", index: 3, separator: false,
                    enabled: true, mark: false, cmd: ""), .showAll),
         ]

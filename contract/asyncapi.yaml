@@ -3272,6 +3272,11 @@ components:
         An ok reply means the application's MenuSelect returned this
         item. What its command handler then did is the caller's to
         verify against this Mac's own state.
+
+        The Process Manager-owned Application menu is the one exception:
+        items 1 and 2 are served as their system keyboard equivalents in
+        the exact target process context. Answering an application's
+        MenuSelect for menu -16489 does not perform those system actions.
       args:
         type: object
         required: [menu, item, titleLeft]

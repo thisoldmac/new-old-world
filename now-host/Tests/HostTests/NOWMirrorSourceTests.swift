@@ -326,28 +326,14 @@ final class NOWMirrorSourceTests: XCTestCase {
         XCTAssertTrue(source.contains("tell application \"Finder\""))
     }
 
-    func testApplicationVisibilityUsesClassicFinderSemantics() {
-        let hide = NOWMirrorSource.applicationVisibilityScript(
-            .hide(name: "New Old World"))
-        XCTAssertTrue(hide.contains("set visible of application process "
-                                    + "\"New Old World\" to false"))
-        XCTAssertTrue(hide.contains("ignoring application responses"))
-        XCTAssertTrue(hide.contains("return \"dispatched-but-unconfirmed\""))
-        let show = NOWMirrorSource.applicationVisibilityScript(.showAll)
+    func testApplicationVisibilityUsesTypedTargetAndFinderShowAll() {
+        XCTAssertEqual(NOWMirrorSource.processSerial("0.7"),
+                       .init(high: 0, low: 7))
+        XCTAssertNil(NOWMirrorSource.processSerial("Finder"))
+        let show = NOWMirrorSource.showAllApplicationsScript
         XCTAssertTrue(show.contains("set visible of every application "
                                     + "process to true"))
         XCTAssertTrue(show.contains("if not (visible of candidate)"))
-
-        let others = NOWMirrorSource.applicationVisibilityScript(
-            .hideOthers(except: "New \"Old\" World"))
-        XCTAssertTrue(others.contains("repeat with candidate in every "
-                                      + "application process"), others)
-        XCTAssertTrue(others.contains(
-            "if name of candidate is not \"New \\\"Old\\\" World\" then"),
-            others)
-        XCTAssertTrue(others.contains("set visible of candidate to false"),
-                      others)
-        XCTAssertTrue(others.contains("ignoring application responses"))
         XCTAssertNil(NOWMirrorSource.visibilityOutcome("\"confirmed\""))
         XCTAssertEqual(NOWMirrorSource.visibilityOutcome(
             "\"dispatched-but-unconfirmed\""),

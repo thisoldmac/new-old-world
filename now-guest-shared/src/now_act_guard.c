@@ -106,13 +106,16 @@ static int v2_identity_matches(const NowPeekTable *table)
         object = cell->control_handle;
         aux = cell->text_item;
         break;
+    case kNowPeekActKindVisibility:
+        if (cell->op != kNowPeekActOpVisibility) return 0;
+        object = (NowPeekU32)cell->item_index;
+        break;
     case kNowPeekActKindNone:
         /* The ABI selftest has no guest object, but still has an exact op. */
         if (cell->op != kNowPeekActOpSelfTest) return 0;
         break;
     default:
-        /* Activation and visibility are normal-context operations. They
-           never enter this resident channel. */
+        /* Activation remains a normal-context operation. */
         return 0;
     }
     return v2->operation_object == object && v2->operation_aux == aux;
@@ -350,6 +353,17 @@ int now_act_serve_begin(NowPeekActCell *cell, unsigned long current_a5,
         cell->fired = 0;
         cell->armed = kNowPeekActArmReady;
         verdict = kNowActServeDialogItem;
+        break;
+
+    case kNowPeekActOpVisibility:
+        if (cell->item_index != kNowPeekActVisibilityHide
+            && cell->item_index != kNowPeekActVisibilityHideOthers) {
+            cell->error = kNowPeekActErrBadOp;
+            verdict = kNowActServeRefused;
+            break;
+        }
+        cell->fired = 0;
+        verdict = kNowActServeVisibility;
         break;
 
     default:

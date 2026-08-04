@@ -140,11 +140,13 @@ public enum ObjectResolver {
         if menu.id == applicationMenuID, !item.separator,
            let app = apps.first(where: { $0.name == item.title }) {
             return .app(.init(psn: app.psn, name: app.name,
-                              isFront: app.front))
+                              isFront: app.front,
+                              incarnation: app.incarnation))
         }
         if menu.id == applicationMenuID, !item.separator {
             let front = apps.first(where: { $0.front }).map {
-                MirrorObject.App(psn: $0.psn, name: $0.name, isFront: true)
+                MirrorObject.App(psn: $0.psn, name: $0.name, isFront: true,
+                                 incarnation: $0.incarnation)
             }
             let kind: MirrorObject.ApplicationMenuAction.Kind?
             if let front, item.title == "Hide \(front.name)" {
@@ -158,7 +160,8 @@ public enum ObjectResolver {
             }
             if let kind {
                 return .applicationMenuAction(.init(
-                    title: item.title, isEnabled: item.enabled, kind: kind))
+                    title: item.title, isEnabled: item.enabled, kind: kind,
+                    menu: shape(menu), index: index))
             }
         }
         return .menuItem(.init(menu: shape(menu), index: index,
@@ -189,7 +192,8 @@ public enum ObjectResolver {
                       .map({ Scene.AppRef(psn: $0.psn, name: $0.name,
                                           front: $0.front, error: nil) })
         else { return nil }
-        return .init(psn: app.psn, name: app.name, isFront: app.front)
+        return .init(psn: app.psn, name: app.name, isFront: app.front,
+                     incarnation: app.incarnation)
     }
 
     // MARK: - Lookups

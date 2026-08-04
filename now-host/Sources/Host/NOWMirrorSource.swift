@@ -859,7 +859,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
         case .applicationVisibility(let visibility):
             let result = await applicationVisibility(visibility)
-            if result == nil { planSettlement = "confirmed" }
+            if result == nil, case .showAll = visibility {
+                /* Show All's script re-reads every Finder process. Hide and
+                   Hide Others only earn confirmation from later guest
+                   state; their resident dispatch is not the effect. */
+                planSettlement = "confirmed"
+            }
             return result
 
         case .finderSelect(let item, let container):
@@ -941,40 +946,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         return nil
     }
 
-    /// Classic Finder owns the Application menu's visibility semantics.
-    /// The names come from the same live process rows that populated the
-    /// menu; this uses the guest's portable script command and no QEMU-only
-    /// input or framebuffer route.
-    static func applicationVisibilityScript(
-        _ action: InteractionPlan.ApplicationVisibility
-    ) -> String {
-        func quoted(_ name: String) -> String {
-            name.replacingOccurrences(of: "\\", with: "\\\\")
-                .replacingOccurrences(of: "\"", with: "\\\"")
-        }
-        switch action {
-        case .hide(let name):
-            return """
-            ignoring application responses
-            tell application "Finder"
-            set visible of application process "\(quoted(name))" to false
-            end tell
-            end ignoring
-            return "dispatched-but-unconfirmed"
-            """
-        case .hideOthers(let except):
-            return """
-            ignoring application responses
-            tell application "Finder"
-            repeat with candidate in every application process
-            if name of candidate is not "\(quoted(except))" then set visible of candidate to false
-            end repeat
-            end tell
-            end ignoring
-            return "dispatched-but-unconfirmed"
-            """
-        case .showAll:
-            return """
+    /// Show All has no system keyboard equivalent on this OS. Ask the
+    /// guest's Finder to expose every process, then re-read its visibility
+    /// claims before treating the call as confirmed.
+    static let showAllApplicationsScript = """
             tell application "Finder"
             set visible of every application process to true
             set observed to true
@@ -985,15 +960,38 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             if observed then return "confirmed"
             return "dispatched-but-unconfirmed"
             """
-        }
-    }
 
     private func applicationVisibility(
         _ action: InteractionPlan.ApplicationVisibility) async -> String? {
-        let read = await readingOutput(
-            "script", ["source": .text(Self.applicationVisibilityScript(action))])
-        if let error = read.error { return error }
-        return Self.visibilityOutcome(read.value)
+        switch action {
+        case .hide(let psn, let incarnation, _, let menuID, let item,
+                   let titleLeft),
+             .hideOthers(let psn, let incarnation, _, let menuID, let item,
+                         let titleLeft):
+            guard let app = scene?.apps.first(where: { $0.psn == psn }),
+                  app.front, app.incarnation == incarnation else {
+                return "the Application-menu target changed before dispatch"
+            }
+            guard let process = Self.processSerial(psn) else {
+                return "that process reference is not a PSN"
+            }
+            return readingResident(await act.menuAct(.init(
+                menu: menuID, item: item, titleLeft: titleLeft,
+                process: process)))
+
+        case .showAll:
+            let read = await readingOutput(
+                "script", ["source": .text(Self.showAllApplicationsScript)])
+            if let error = read.error { return error }
+            return Self.visibilityOutcome(read.value)
+        }
+    }
+
+    static func processSerial(_ psn: String) -> AgentIntegrationProcessSerial? {
+        let parts = psn.split(separator: ".")
+        guard parts.count == 2, let hi = Int(parts[0]), let lo = Int(parts[1])
+        else { return nil }
+        return .init(high: hi, low: lo)
     }
 
     static func visibilityOutcome(_ raw: String?) -> String? {

@@ -209,8 +209,11 @@ public enum MirrorObject: Equatable, Sendable {
         public var psn: String
         public var name: String
         public var isFront: Bool
-        public init(psn: String, name: String, isFront: Bool) {
+        public var incarnation: String?
+        public init(psn: String, name: String, isFront: Bool,
+                    incarnation: String? = nil) {
             self.psn = psn; self.name = name; self.isFront = isFront
+            self.incarnation = incarnation
         }
     }
 
@@ -223,10 +226,15 @@ public enum MirrorObject: Equatable, Sendable {
         public var title: String
         public var isEnabled: Bool
         public var kind: Kind
-        public init(title: String, isEnabled: Bool, kind: Kind) {
+        public var menu: Menu
+        public var index: Int
+        public init(title: String, isEnabled: Bool, kind: Kind,
+                    menu: Menu, index: Int) {
             self.title = title
             self.isEnabled = isEnabled
             self.kind = kind
+            self.menu = menu
+            self.index = index
         }
     }
 

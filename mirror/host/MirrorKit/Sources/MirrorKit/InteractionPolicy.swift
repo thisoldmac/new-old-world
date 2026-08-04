@@ -76,8 +76,10 @@ public enum InteractionPlan: Equatable, Sendable {
     }
 
     public enum ApplicationVisibility: Equatable, Sendable {
-        case hide(name: String)
-        case hideOthers(except: String)
+        case hide(psn: String, incarnation: String?, name: String,
+                  menuID: Int, itemIndex: Int, titleLeft: Int)
+        case hideOthers(exceptPSN: String, incarnation: String?, name: String,
+                        menuID: Int, itemIndex: Int, titleLeft: Int)
         case showAll
     }
 }
@@ -341,9 +343,15 @@ public enum InteractionPolicy {
         }
         switch action.kind {
         case .hide(let app):
-            return .applicationVisibility(.hide(name: app.name))
+            return .applicationVisibility(.hide(
+                psn: app.psn, incarnation: app.incarnation, name: app.name,
+                menuID: action.menu.id, itemIndex: action.index,
+                titleLeft: action.menu.left))
         case .hideOthers(let app):
-            return .applicationVisibility(.hideOthers(except: app.name))
+            return .applicationVisibility(.hideOthers(
+                exceptPSN: app.psn, incarnation: app.incarnation,
+                name: app.name, menuID: action.menu.id,
+                itemIndex: action.index, titleLeft: action.menu.left))
         case .showAll:
             return .applicationVisibility(.showAll)
         }

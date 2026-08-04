@@ -190,6 +190,8 @@ static const char *const d_ditemact[] = {
 static const char *const d_menuact[] = {
     "  Answers the application's own MenuSelect, so a menu item with no",
     "  keyboard shortcut becomes reachable. No menu is drawn.",
+    "  Application-menu items 1 and 2 instead use the Process Manager's",
+    "  keyboard equivalents in the exact target process context.",
     "  titleLeft is where the press will land, and it is this act's",
     "  identity check: a menu carries no handle to name, so a press",
     "  anywhere else is somebody else's and chains through.",
