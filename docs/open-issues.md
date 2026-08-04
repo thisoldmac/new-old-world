@@ -60,6 +60,21 @@ is **tested, not yet live-parity verified**: the running host predates protocol
 v9 and the development VM still has a stale guest application despite the
 current NOW Extension.
 
+**Later 2026-08-04 runtime correction:** protocol v9 was exercised through the
+exact newly built Host and `now_mirror_status` returned the live engine's guest,
+session, snapshot ID, sequence, digest, completeness, and both generations.
+That proves the socket/read projection is live, but not whole-surface parity.
+The first direct U8 preflight remained red: the cold Mirror acquired only a
+desktop shell until the first Apple-menu click; that click recovered six
+windows, but Finder and Date & Time content was blank/placeholder, the Apple
+menu had no rows, and both `Windows > Workshop` and Application-menu Finder
+selection refused because the displayed compatibility entities lacked stable
+guest identities. The exact current extension file was then staged, but the
+current guest application could not overwrite its running predecessor
+(`create err -48`). The scoped Worker refuses both targeted quit and scripted
+shutdown, so the image is explicitly **partially staged and not clean-saved**
+until the visible app is quit and the full app/extension pair is cold-booted.
+
 Two items remain explicitly deferred. The old `now_observe_elements` call
 cannot be removed until the state engine owns structured control elements and
 their capability references; removing it now would make the existing act rows

@@ -639,6 +639,28 @@ therefore has no proven semantic reference and cannot block mandatory read
 parity. Live socket parity remains for U8 after the exact guest/extension image
 is staged.
 
+**U8 entry evidence, 2026-08-04.** The exact v9 Host was launched once with
+`--mirror-scale 0.9`; a live companion read returned the engine's exact guest,
+session, snapshot, digest, coverage and generation DTOs. This closes the basic
+live socket reach check but not visual/read parity. A batched direct-input
+preflight found four independent reds before any patching: cold acquisition
+published only a desktop until the first Apple-menu click; that click recovered
+six background windows, whose Finder/Date & Time structured content still drew
+blank/placeholder; the Apple menu had no rows; and Workshop/Finder menu acts
+could not dispatch because compatibility rows had no stable guest identity.
+
+The current artifacts were rebuilt from this worktree. `New Old World.bin`
+has source stamp `bfdc513e4c3f` and SHA-1
+`37d35ef9893c002f3915f5e83e606ecae1a2b37c`; `NowExt.bin` has fingerprint
+`e684321e46524687f2a9819874ca6035bcb8df6b`, source manifest
+`fdbdbd69b29ce8827e7f58769a0f01878dbb033c`, and SHA-1
+`6f03201db5c6074aae4f72350baedde35d88818f`. Extension transfer and guest-side
+fork verification completed, but the application transfer stopped with
+`create err -48` because the old application remained running. Both the app's
+cooperative quit and this Worker's scoped shutdown path refused. Therefore the
+development image is only partially staged, has not loaded the new resident
+extension, and has not earned the U8 clean-image claim.
+
 ### U8. Run the full direct campaign and promote the development image
 
 **Goal:** Prove the state-engine cutover, preserve findings, and hand control back to the broader completion plan on a clean exact guest image.

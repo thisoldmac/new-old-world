@@ -6,6 +6,13 @@ operation FIFO, and read-only MCP projections are built and focused-tested.
 Exact guest/extension staging, the full direct campaign, remaining structured
 producers, live MCP parity proof, and metal proof remain open.
 
+The first live U8 entry run did prove the v9 status projection against the
+newly built Host. It did not prove visual parity. The development image is
+currently only partially staged: the latest extension file is present on disk,
+but the old running guest application prevented replacement of its file and
+the new extension has not been cold-loaded. Treat every result from that mixed
+runtime as characterization, not verification of the current pair.
+
 The Mirror is a client of a guest-authoritative replica. A scene is an
 observation to reduce, not a replacement document to install wholesale. This
 distinction is the guard against the repeated failure mode in which a
