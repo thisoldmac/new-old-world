@@ -425,6 +425,20 @@ another session. The source tests now hold real scene/content completions and
 count requests instead of inspecting source strings. Both lifecycle guards
 were mutation-watched; the four focused suites pass 62 tests.
 
+The first direct run of `ccf68a0` is recorded in
+`docs/mirror-retained-planes-checkpoint-2026-08-04.md`. P2 and P3 live
+reprojection behaved as designed: P3 could be hidden while P1/P2 remained,
+P2 could be hidden while retained QuickDraw content remained, and restoring
+P2 immediately restored the same semantic generation. The complete sanity
+preflight is still red. Finder and Control Panels content arrived only after a
+later polling cycle; Hide Finder remained unconfirmed; Date & Time's Finder
+item was absent and therefore not actionable from the Mirror; Key Caps did not
+launch; and Sherlock's structured content was again overwritten by a later
+bitmap-only/invert observation. The last result is direct evidence that the
+production renderer path still bypasses or obscures the engine retention that
+the focused guard proves. Status is now **host-tested and partially
+emulator-observed, not a green sweep and not metal-verified**.
+
 The same sweep exposed a separate outcome-classification defect. Several
 actions whose effects later appeared in authoritative pixels or scenes kept an
 immediate `act-refused`, `outcome-unknown`, or
