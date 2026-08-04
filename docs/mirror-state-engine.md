@@ -229,6 +229,15 @@ NOW's acceptance campaign uses QMP read-only for explicit-socket framebuffer
 capture and identity checks; native Mirror keyboard/mouse input remains the
 only mutation provenance eligible for a green row.
 
+The same boundary now covers `tools/qemu-oracle`, a host-side development
+microscope for coherent virtual-memory snapshots. It pauses one explicitly
+identified VM, waits for the named application's A5 context, decodes bounded
+classic Window/Dialog/DITL/Control records, and resumes it. It is allowed to
+answer how Mac OS constructs state so that the NOW Extension can expose the
+corresponding public Mac OS structure or event. Its addresses and bytes are
+never state-engine input, and neither NOW guest nor Host has an oracle
+dependency. See [qemu-memory-oracle.md](qemu-memory-oracle.md).
+
 `tools/shot` no longer scans `run/*` or chooses a newest socket. It requires an
 explicit QMP socket and a `now-mirror-oracle-identity/v1` artifact, verifies
 the QEMU VM name, and emits a `now-mirror-oracle-capture/v1` sidecar carrying

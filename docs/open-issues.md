@@ -124,6 +124,29 @@ unbooted list patch. Treat this as a blocking crash sentinel for the next cold
 boot: record the resident extension identity, arm content conservatively, and
 stop the sweep if Finder faults again.
 
+**Later 2026-08-04 live correction:** the rebuilt extension and application
+were cold-loaded, and a coherent QEMU memory sample reached the exact Set Time
+Zone list control. The extension's `NWpt` semantic cell completed that request
+as `UnsupportedCustom`; it did not return the city/country cells. The earlier
+bridge-collapse diagnosis came from unit fixtures and is valid coverage for a
+standard list, but it was not the live cause of this panel's blank rows. The
+current guest classifier rejects any list box with a nonzero LDEF before
+asking for its ListHandle. The generic, metal-compatible next step is to prove
+the public List Manager backing record and widen the extension producer under
+validated invariants, not special-case Date & Time or introduce pixels. The
+read-only dev method and exact observed records are in
+`docs/qemu-memory-oracle.md`.
+
+The same run broadened the next batch before another extension rebuild.
+Date & Time's base window has 20 DITL items and 21 controls but loses multiple
+structured values and status strings. Sherlock has 35 live controls spanning
+standard, edit, list-like, and application-defined definitions while its
+Mirror is mostly structural shells. Key Caps has two windows and no controls
+at all, so its missing keyboard is draw-owned and belongs to the explicit
+placeholder/deferred-pixels path rather than the control-semantic patch. The
+extension work remains open until the Date & Time and Sherlock control classes
+are inventoried and patched together.
+
 ### STATE ENGINE U1A: TYPED COVERAGE AND LIFETIME IDENTITY BUILT (2026-08-04)
 
 The IR v2 producer and MirrorKit consumer now agree on typed collection
