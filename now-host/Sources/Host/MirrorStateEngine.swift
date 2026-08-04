@@ -261,11 +261,12 @@ final class MirrorStateEngine: ObservableObject {
                 continue
             }
             var display = window.display
-            if let fresh = display, !Self.hasStructuredDrawing(fresh),
+            if let fresh = display,
+               !Self.hasRenderableStructuredDrawing(fresh),
                let retained = content[identity],
                retained.rect == window.rect,
                let prior = retained.display,
-               Self.hasStructuredDrawing(prior) {
+               Self.hasRenderableStructuredDrawing(prior) {
                 display!.append(contentsOf: prior.filter { $0.op != "bits" })
             }
             let next = ContentContribution(
@@ -311,9 +312,31 @@ final class MirrorStateEngine: ObservableObject {
         item.ref ?? "#\(item.number)"
     }
 
-    private static func hasStructuredDrawing(_ operations: [DisplayOp])
+    /// Match the renderer's actual structured vocabulary. An operation family
+    /// is not evidence that the host can draw this particular operation:
+    /// invert rectangles need destination pixels, malformed text has no
+    /// glyph position, and arc/poly are still unsupported. Treating any of
+    /// those as a usable repaint let one later Sherlock invert erase the last
+    /// complete text/control display from the retained P3 shelf.
+    private static func hasRenderableStructuredDrawing(
+        _ operations: [DisplayOp]
+    )
         -> Bool {
-        operations.contains { $0.op != "bits" && $0.op != "state" }
+        operations.contains { operation in
+            switch operation.op {
+            case "text":
+                return !(operation.text?.isEmpty ?? true)
+                    && operation.pen?.count == 2
+            case "line":
+                return operation.from?.count == 2
+                    && operation.to?.count == 2
+            case "rect", "rrect", "oval", "rgn":
+                return operation.rect?.count == 4
+                    && [0, 1, 2, 4].contains(operation.verb ?? 0)
+            default:
+                return false
+            }
+        }
     }
 
     private func digest(_ scene: Scene,

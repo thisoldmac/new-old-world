@@ -155,6 +155,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private let cycleIO: NOWMirrorCycleIO
     private let interval: TimeInterval
     private let planePolicy: @MainActor (GuestKey) -> Set<MirrorPlaneID>
+    private let finderRefreshOverride: (@MainActor (
+        MirrorKit.Scene, Int, @escaping () -> Void
+    ) -> Void)?
     private let lifecycleDidChange: @MainActor () -> Void
     private var running = false
     private var runGeneration = 0
@@ -178,6 +181,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private var icons: [String: [MirrorKit.Scene.DesktopItem]] = [:]
     private var iconLayout: String = "<none>"
     private var fetchingIcons = false
+    private var iconTask: Task<Void, Never>?
     private var actGeneration = 0
     private var settlementTracker = MirrorSettlementTracker()
     private var planCorrelation: String?
@@ -196,6 +200,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
              _ in
              Set(MirrorPlaneID.allCases)
          },
+         finderRefreshOverride: (@MainActor (
+             MirrorKit.Scene, Int, @escaping () -> Void
+         ) -> Void)? = nil,
          cycleIO: NOWMirrorCycleIO? = nil,
          lifecycleDidChange: @escaping @MainActor () -> Void = {}) {
         self.listener = listener
@@ -205,6 +212,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         self.cycleIO = cycleIO ?? .live(listener: listener, content: content)
         self.interval = interval
         self.planePolicy = planePolicy
+        self.finderRefreshOverride = finderRefreshOverride
         self.lifecycleDidChange = lifecycleDidChange
     }
 
@@ -213,6 +221,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     func start() {
         guard !running else { return }
         runGeneration &+= 1
+        iconTask?.cancel()
+        iconTask = nil
+        fetchingIcons = false
         guard let key = cycleIO.activeKey() else {
             ambient = "no Mac is connected"
             return
@@ -241,6 +252,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         pollRequestedAfterCycle = false
         rearmTask?.cancel()
         rearmTask = nil
+        iconTask?.cancel()
+        iconTask = nil
+        fetchingIcons = false
         guard let stoppingKey = pinnedGuestKey,
               stoppingKey == cycleIO.activeKey() else {
             ambient = "stopped; pinned Mac was not active"
@@ -349,6 +363,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             decoded = continuity.scene
             decoded = withIcons(decoded)
             _ = shadowEngine?.enrichFinder(decoded)
+            scene = projectedScene(fallback: decoded)
             let menuStatus = continuity.retainedAppleItems
                 ? " · Apple menu expected-stale" : ""
             guard pinnedGuestKey == cycleIO.activeKey() else {
@@ -367,12 +382,16 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                     guard self.isCurrentCycle(generation) else { return }
                     self.shadowEngine?.compareVisible(decoded)
                     self.scene = self.projectedScene(fallback: decoded)
-                    self.refreshIconsIfStale(decoded)
-                    self.ambient = "\(decoded.windows.count) windows · "
-                        + (failure.map { "content release refused: \($0)" }
-                           ?? "content off") + menuStatus
-                    self.finishCycle(generation)
-                    self.lifecycleDidChange()
+                    self.refreshIconsIfStale(decoded,
+                                             generation: generation) {
+                        guard self.isCurrentCycle(generation) else { return }
+                        self.ambient = "\(decoded.windows.count) windows · "
+                            + (failure.map {
+                                "content release refused: \($0)"
+                            } ?? "content off") + menuStatus
+                        self.finishCycle(generation)
+                        self.lifecycleDidChange()
+                    }
                 }
                 return
             }
@@ -383,13 +402,21 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 self.observeOperations()
                 self.shadowEngine?.compareVisible(update.scene)
                 self.scene = self.projectedScene(fallback: update.scene)
-                self.refreshIconsIfStale(update.scene)
-                self.ambient = "\(update.scene.windows.count) windows · walk "
-                    + "\(delivery.walkMs.map { "\($0)ms" } ?? "?") · transfer "
-                    + "\(delivery.transferMs)ms · \(update.sentence)"
-                    + menuStatus
-                self.finishCycle(generation)
-                self.lifecycleDidChange()
+                /* The Finder roster is part of this structural cycle. The
+                   old code launched it after P3 and immediately rearmed the
+                   next poll, so a later scene could win while the older
+                   roster was still in flight. Keep the cycle open until the
+                   exact layout's bounded pages have settled. */
+                self.refreshIconsIfStale(update.scene,
+                                         generation: generation) {
+                    guard self.isCurrentCycle(generation) else { return }
+                    self.ambient = "\(update.scene.windows.count) windows · walk "
+                        + "\(delivery.walkMs.map { "\($0)ms" } ?? "?") · transfer "
+                        + "\(delivery.transferMs)ms · \(update.sentence)"
+                        + menuStatus
+                    self.finishCycle(generation)
+                    self.lifecycleDidChange()
+                }
             }
             return
         } catch IR.CompatError.unknownMajor {
@@ -461,7 +488,19 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
     private static let desktopKey = "\u{0}desktop"
 
-    private func refreshIconsIfStale(_ scene: MirrorKit.Scene) {
+    private static func iconLayoutKey(_ scene: MirrorKit.Scene) -> String {
+        let folders = scene.windows.filter(FinderItems.isFolderWindow)
+        return (["desktop"] + folders.map(FinderItems.layoutKey))
+            .joined(separator: "|")
+    }
+
+    private func refreshIconsIfStale(_ scene: MirrorKit.Scene,
+                                     generation: Int,
+                                     completion: @escaping () -> Void) {
+        if let finderRefreshOverride {
+            finderRefreshOverride(scene, generation, completion)
+            return
+        }
         let folders = scene.windows.filter(FinderItems.isFolderWindow)
         /* The leading "desktop" is not decoration. The key used to be just
            the folder windows joined, so a machine with NO Finder window
@@ -469,15 +508,22 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
            so the guard never fired and the DESKTOP's own icons were never
            fetched at all. Watched: a mirror with a bare desktop drew no
            icons, ever, while every folder window drew its own. */
-        let key = (["desktop"] + folders.map(FinderItems.layoutKey))
-            .joined(separator: "|")
-        guard key != iconLayout, !fetchingIcons else { return }
+        let key = Self.iconLayoutKey(scene)
+        guard key != iconLayout else { return completion() }
+        guard !fetchingIcons else {
+            note("Finder roster read was already in flight; retained the "
+                 + "last complete roster")
+            return completion()
+        }
         fetchingIcons = true
-        Task { @MainActor [weak self] in
+        iconTask = Task { @MainActor [weak self] in
             guard let self else { return }
             var fresh: [String: [MirrorKit.Scene.DesktopItem]] = [:]
+            var complete = true
             if let d = await self.readIcons(container: "desktop") {
                 fresh[Self.desktopKey] = d
+            } else {
+                complete = false
             }
             for win in folders {
                 let quoted = win.title.replacingOccurrences(of: "\"",
@@ -485,10 +531,16 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 if let items = await self.readIcons(
                     container: "window \"\(quoted)\"") {
                     fresh[win.title] = items
+                } else {
+                    complete = false
                 }
             }
-            self.icons = fresh
-            self.iconLayout = key
+            guard !Task.isCancelled,
+                  self.isCurrentCycle(generation) else { return }
+            for (container, items) in fresh {
+                self.icons[container] = items
+            }
+            if complete { self.iconLayout = key }
             self.fetchingIcons = false
             if let current = self.scene {
                 let enriched = self.withIcons(current)
@@ -497,6 +549,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 self.shadowEngine?.compareVisible(enriched)
                 self.scene = self.projectedScene(fallback: enriched)
             }
+            self.iconTask = nil
+            completion()
         }
     }
 
@@ -538,10 +592,37 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         snapshot?.scene ?? fallback
     }
 
-    /// Three vectorised Apple events, not three per icon. Asking for
-    /// `name of every item` costs one event; asking each item its name
-    /// costs one each, and on a cooperatively-scheduled Mac that is the
-    /// difference between a third of a second and a stall a person sees.
+    /// Vectorised, bounded pages rather than one Apple event per icon. A
+    /// single all-items result exceeded the guest's 1 KiB script-result cap
+    /// in Control Panels and silently lost later rows such as Date & Time.
+    /// Eight HFS names plus positions/kinds remain comfortably below that
+    /// bound; every page carries the same total so a partial read is refused.
+    nonisolated private static let iconPageSize = 8
+
+    static func iconItemsScript(container: String, offset: Int,
+                                limit: Int = iconPageSize) -> String {
+        """
+        tell application "Finder"
+        set ns to name of every item of \(container)
+        set ps to position of every item of \(container)
+        set ks to kind of every item of \(container)
+        end tell
+        set totalCount to count ns
+        set out to "N" & tab & totalCount & return
+        set firstIndex to \(offset + 1)
+        set lastIndex to \(offset + limit)
+        if lastIndex > totalCount then set lastIndex to totalCount
+        if firstIndex <= lastIndex then
+        repeat with i from firstIndex to lastIndex
+        set p to item i of ps
+        set out to out & "I" & tab & (item i of ns) & tab & (item 1 of p) & \
+        tab & (item 2 of p) & tab & (item i of ks) & return
+        end repeat
+        end if
+        return out
+        """
+    }
+
     private func readIcons(container: String)
         async -> [MirrorKit.Scene.DesktopItem]? {
         /* Two vectorised passes, not one per icon. The first names every
@@ -563,25 +644,34 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
            drive while Control Panels beside it drew 33 items. Losing the
            right icon art is a blemish; losing the contents is not a
            mirror. */
-        let items = """
-        tell application "Finder"
-        set ns to name of every item of \(container)
-        set ps to position of every item of \(container)
-        set ks to kind of every item of \(container)
-        end tell
-        set out to ""
-        repeat with i from 1 to (count ns)
-        set p to item i of ps
-        set out to out & "I" & tab & (item i of ns) & tab & (item 1 of p) & \
-        tab & (item 2 of p) & tab & (item i of ks) & return
-        end repeat
-        return out
-        """
-        let read = await readingOutput("script", ["source": .text(items)])
-        guard let text = read.value else {
-            note("could not read the items of \(container)"
-                 + " - \(read.error ?? "no reason given")")
-            return nil
+        var roster: [MirrorKit.Scene.DesktopItem] = []
+        var expectedTotal: Int?
+        var offset = 0
+        while expectedTotal == nil || offset < expectedTotal! {
+            let source = Self.iconItemsScript(container: container,
+                                              offset: offset)
+            let read = await readingOutput("script", ["source": .text(source)])
+            guard let text = read.value, !read.truncated,
+                  let total = Self.iconPageTotal(text),
+                  expectedTotal == nil || expectedTotal == total,
+                  total <= FinderItems.maxItemsPerWindow else {
+                let reason = read.truncated
+                    ? "guest result truncated"
+                    : (read.error ?? "incomplete or changing item roster")
+                note("could not read the items of \(container) - \(reason)")
+                return nil
+            }
+            expectedTotal = total
+            let page = Self.parseIcons(text)
+            let expectedCount = min(Self.iconPageSize, total - offset)
+            guard page.count == expectedCount else {
+                note("could not read the items of \(container) - page "
+                     + "\(offset / Self.iconPageSize + 1) was incomplete")
+                return nil
+            }
+            roster.append(contentsOf: page)
+            offset += page.count
+            if total == 0 { break }
         }
 
         let types = """
@@ -598,16 +688,34 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         return out
         """
         let art = await readingOutput("script", ["source": .text(types)])
-        if art.value == nil {
+        if art.value == nil || art.truncated {
             note("\(container): items read, but not their icon art"
-                 + " - \(art.error ?? "no reason given")")
+                 + " - \(art.truncated ? "guest result truncated" : "\(art.error ?? "no reason given")")")
         }
         /* Unquote BEFORE joining. Each script answers in SOURCE form, so
            each blob carries its own surrounding quotes; concatenating
            them raw would leave a `""` inside one line and eat the row on
            either side of it. */
-        return Self.parseIcons(Self.unquote(text) + "\r"
-                               + Self.unquote(art.value ?? ""))
+        let typesByName = Dictionary(uniqueKeysWithValues:
+            Self.parseIconTypes(art.truncated ? "" : (art.value ?? "")))
+        return roster.map { item in
+            guard let pair = typesByName[item.name] else { return item }
+            var out = item
+            out.type = pair.0.isEmpty ? nil : String(pair.0.prefix(4))
+            out.creator = pair.1.isEmpty ? nil : String(pair.1.prefix(4))
+            return out
+        }
+    }
+
+    static func iconPageTotal(_ raw: String) -> Int? {
+        let text = unquote(raw)
+        for line in text.components(separatedBy: CharacterSet.newlines) {
+            let fields = line.components(separatedBy: "\t")
+            if fields.count == 2, fields[0] == "N" {
+                return Int(fields[1])
+            }
+        }
+        return nil
     }
 
     /// OSADoScript's SOURCE-form wrapper, removed once.
@@ -661,6 +769,17 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             out.creator = pair.1.isEmpty ? nil : String(pair.1.prefix(4))
             return out
         }
+    }
+
+    private static func parseIconTypes(_ raw: String)
+        -> [(String, (String, String))] {
+        let text = unquote(raw)
+        return text.components(separatedBy: CharacterSet.newlines)
+            .compactMap { line in
+                let fields = line.components(separatedBy: "\t")
+                guard fields.count >= 4, fields[0] == "F" else { return nil }
+                return (fields[1], (fields[2], fields[3]))
+            }
     }
 
     // MARK: - The dispatch
@@ -1126,20 +1245,26 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private func readingOutput(_ verb: String,
                                _ args: [String: CommandArg],
                                row: String = "output")
-        async -> (value: String?, error: String?) {
+        async -> (value: String?, error: String?, truncated: Bool) {
         await withCheckedContinuation { continuation in
             listener.runCommand(verb, typed: args) { result in
                 guard result.ok else {
                     let e = result.error
                     return continuation.resume(returning: (
                         nil,
-                        "\(e?.code ?? "error"): \(e?.message ?? "no reason")"))
+                        "\(e?.code ?? "error"): \(e?.message ?? "no reason")",
+                        false))
                 }
                 var value: String?
+                var truncated = false
                 for cells in result.output?[verb] ?? [] where cells.first == row {
                     value = cells.count > 1 ? cells.last : ""
                 }
-                continuation.resume(returning: (value, nil))
+                for cells in result.output?[verb] ?? []
+                where cells.first == "truncated" {
+                    truncated = cells.last?.lowercased() == "true"
+                }
+                continuation.resume(returning: (value, nil, truncated))
             }
         }
     }

@@ -244,7 +244,9 @@ final class NOWMirrorSourceTests: XCTestCase {
         let source = NOWMirrorSource(
             listener: listener, engineRegistry: registry,
             act: testAct(listener), interval: 3_600,
-            planePolicy: { _ in planes }, cycleIO: harness.io)
+            planePolicy: { _ in planes },
+            finderRefreshOverride: { _, _, completion in completion() },
+            cycleIO: harness.io)
 
         source.start()
         XCTAssertEqual(harness.sceneRequests.count, 1)
@@ -626,6 +628,34 @@ final class NOWMirrorIconParsingTests: XCTestCase {
     func testAnEmptyContainerIsNoIconsRatherThanACrash() {
         XCTAssertTrue(NOWMirrorSource.parseIcons("\"\"").isEmpty)
         XCTAssertTrue(NOWMirrorSource.parseIcons("").isEmpty)
+    }
+
+    func testFinderRosterScriptRequestsOneBoundedPageAndTotal() {
+        let script = NOWMirrorSource.iconItemsScript(
+            container: "window \"Control Panels\"", offset: 16, limit: 8)
+
+        XCTAssertTrue(script.contains("set out to \"N\" & tab & totalCount"))
+        XCTAssertTrue(script.contains("set firstIndex to 17"))
+        XCTAssertTrue(script.contains("set lastIndex to 24"))
+        XCTAssertTrue(script.contains("repeat with i from firstIndex to lastIndex"))
+        XCTAssertFalse(script.contains("repeat with i from 1 to (count ns)"),
+                       "one unbounded result can exceed the guest's 1 KiB cap")
+    }
+
+    func testLaterFinderPageKeepsDateAndTimeNameAndHitTarget() throws {
+        let page = "\"N\t33\r"
+            + "I\tDate & Time\t184\t221\tcontrol panel\r"
+            + "I\tEnergy Saver\t280\t221\tcontrol panel\r\""
+
+        XCTAssertEqual(NOWMirrorSource.iconPageTotal(page), 33)
+        let parsed = NOWMirrorSource.parseIcons(page)
+        let dateAndTime = try XCTUnwrap(parsed.first {
+            $0.name == "Date & Time"
+        })
+        XCTAssertEqual(dateAndTime.x, 184)
+        XCTAssertEqual(dateAndTime.y, 221)
+        XCTAssertTrue(dateAndTime.placed,
+                      "the bitmap may be absent; the named hit target may not")
     }
 
     /// The two passes are two scripts now, and their results are joined.

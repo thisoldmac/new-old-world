@@ -200,6 +200,7 @@ final class MirrorStateEngineTests: XCTestCase {
         var structured = structural
         var city = DisplayOp(op: "text", ticks: 7)
         city.text = "City"
+        city.pen = [12, 24]
         structured.windows[0].display = [
             .init(op: "state", ticks: 6), city,
         ]
@@ -214,6 +215,36 @@ final class MirrorStateEngineTests: XCTestCase {
                        ["bits", "state", "text"])
         XCTAssertEqual(engine.snapshot?.scene.windows[0].display?.last?.text,
                        "City")
+    }
+
+    func testUndrawableInvertCannotEraseRetainedStructuredDrawing() throws {
+        let engine = MirrorStateEngine(guestKey: key)
+        let structural = try scene(seq: 1)
+        _ = engine.accept(structural)
+
+        var structured = structural
+        var origin = DisplayOp(op: "state", ticks: 6)
+        origin.kind = "origin"
+        origin.origin = [0, 0]
+        var title = DisplayOp(op: "text", ticks: 7)
+        title.text = "Search Sites"
+        title.pen = [12, 24]
+        structured.windows[0].display = [origin, title]
+        XCTAssertTrue(engine.enrichContent(structured))
+
+        var bitmapAndInvert = structural
+        var bitmap = DisplayOp(op: "bits", ticks: 8)
+        bitmap.dst = [0, 0, 300, 200]
+        var invert = DisplayOp(op: "rect", ticks: 9)
+        invert.rect = [10, 10, 30, 30]
+        invert.verb = 3
+        bitmapAndInvert.windows[0].display = [bitmap, invert]
+
+        XCTAssertTrue(engine.enrichContent(bitmapAndInvert))
+        XCTAssertEqual(engine.snapshot?.scene.windows[0].display?.map(\.op),
+                       ["bits", "rect", "state", "text"])
+        XCTAssertEqual(engine.snapshot?.scene.windows[0].display?.last?.text,
+                       "Search Sites")
     }
 
     func testDisabledPlaneStillAcceptsNewEvidenceForLaterInterleaving() throws {
