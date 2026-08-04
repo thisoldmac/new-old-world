@@ -6,7 +6,6 @@ import SwiftUI
 struct MirrorControlView: View {
     @ObservedObject var model: MirrorControlModel
     @ObservedObject var mirrorWindow: NOWMirrorWindow
-    var machineName: String
 
     var body: some View {
         VStack(spacing: 0) {
@@ -63,7 +62,8 @@ struct MirrorControlView: View {
                     if mirrorWindow.isOpen {
                         mirrorWindow.close()
                     } else {
-                        mirrorWindow.show(title: "Mirror — \(machineName)")
+                        mirrorWindow.show(
+                            title: "Mirror — \(model.connection.peerLabel)")
                     }
                 }
                 .disabled(!mirrorWindow.isOpen && !model.connection.canCapture)

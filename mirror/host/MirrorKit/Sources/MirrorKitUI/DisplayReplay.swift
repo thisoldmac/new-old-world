@@ -5,7 +5,9 @@ import MirrorKit
 /// content area — the QDPeek content plane made visible. Text draws through the
 /// extracted NFNT strikes at the op's exact pen position (closing M1's
 /// positional reconstruction into pixel-honest glyphs); primitives draw as
-/// Canvas paths; STATE ops set the current colour and origin.
+/// Canvas paths; STATE ops set the current colours, origin and clip. Erase
+/// operations use the guest's background colour: without that rule, repeated
+/// repaints accumulate instead of replacing the pixels that came before.
 ///
 /// Ops are port-local (window content coords); a `state`/`origin` op shifts
 /// them. They're replayed in order — later ops paint over earlier, like the
@@ -17,22 +19,66 @@ public enum DisplayReplay {
     /// placeholder).
     @discardableResult
     public static func draw(_ ops: [MirrorKit.DisplayOp], in ctx: GraphicsContext,
-                            content: CGRect) -> Bool {
+                            content: CGRect,
+                            excluding semanticFrames: [CGRect] = []) -> Bool {
         guard !ops.isEmpty else { return false }
         var g = ctx
         g.clip(to: Path(content))
 
         var fg = Color.black
+        var bg = Color.white
         var originH = 0
         var originV = 0
+        var clip: CGRect?
 
         func pt(_ h: Int, _ v: Int) -> CGPoint {
             CGPoint(x: content.minX + CGFloat(h - originH),
                     y: content.minY + CGFloat(v - originV))
         }
 
+        func drawingContext() -> GraphicsContext {
+            var draw = g
+            if let clip {
+                let bounded = clip.intersection(content)
+                if !bounded.isNull { draw.clip(to: Path(bounded)) }
+            }
+            return draw
+        }
+
+        func semanticOwns(_ op: MirrorKit.DisplayOp) -> Bool {
+            func owns(_ bounds: CGRect) -> Bool {
+                semanticFrames.contains { $0.contains(bounds) }
+            }
+            switch op.op {
+            case "text":
+                guard let p = op.pen, p.count == 2 else { return false }
+                let point = pt(p[0], p[1])
+                return semanticFrames.contains { $0.contains(point) }
+            case "line":
+                guard let from = op.from, let to = op.to,
+                      from.count == 2, to.count == 2 else { return false }
+                let a = pt(from[0], from[1])
+                let b = pt(to[0], to[1])
+                return semanticFrames.contains { $0.contains(a) && $0.contains(b) }
+            case "bits":
+                guard let r = op.dst, r.count == 4 else { return false }
+                return owns(rectFrom(r, pt: pt))
+            case "rect", "rrect", "oval", "rgn":
+                guard let r = op.rect, r.count == 4 else { return false }
+                return owns(rectFrom(r, pt: pt))
+            default:
+                return false
+            }
+        }
+
         var drew = false
         for op in ops {
+            /* State always flows: a control-local draw may establish the
+               colour/origin/clip used by the next app-owned operation. Only
+               concrete drawing wholly contained by one semantic rectangle
+               yields to P2. Large background erases still cross that region
+               and therefore remain P3-owned. */
+            if semanticOwns(op) { continue }
             switch op.op {
             case "state":
                 switch op.kind {
@@ -40,19 +86,26 @@ public enum DisplayReplay {
                     if let o = op.origin, o.count == 2 { originH = o[0]; originV = o[1] }
                 case "fg":
                     if let c = op.rgb, c.count == 3 { fg = rgb(c) }
+                case "bg":
+                    if let c = op.rgb, c.count == 3 { bg = rgb(c) }
+                case "clip":
+                    if let r = op.rect, r.count == 4 {
+                        clip = rectFrom(r, pt: pt)
+                    }
                 default:
-                    break   // clip/bg tracked by the guest; not needed to draw
+                    break
                 }
             case "text":
                 guard let s = op.text, !s.isEmpty, let p = op.pen, p.count == 2
                 else { continue }
                 let font = strike(font: op.font ?? 3, size: op.size ?? 12)
                 let where0 = pt(p[0], p[1])
+                let draw = drawingContext()
                 if let font {
-                    font.draw(s, in: g, x: where0.x, baselineY: where0.y,
+                    font.draw(s, in: draw, x: where0.x, baselineY: where0.y,
                               color: fg)
                 } else {
-                    g.draw(g.resolve(Text(s)
+                    draw.draw(draw.resolve(Text(s)
                         .font(.system(size: CGFloat(op.size ?? 12)))
                         .foregroundColor(fg)),
                         at: CGPoint(x: where0.x, y: where0.y), anchor: .bottomLeading)
@@ -64,7 +117,8 @@ public enum DisplayReplay {
                 var path = Path()
                 path.move(to: pt(f[0], f[1]))
                 path.addLine(to: pt(t[0], t[1]))
-                g.stroke(path, with: .color(fg), lineWidth: 1)
+                let draw = drawingContext()
+                draw.stroke(path, with: .color(fg), lineWidth: 1)
                 drew = true
             case "bits":
                 /* CopyBits is geometry we know and pixels we deliberately do
@@ -73,23 +127,28 @@ public enum DisplayReplay {
                    exact guest destination visible as an exception without
                    covering controls, which the renderer draws afterwards. */
                 guard let d = op.dst, d.count == 4 else { continue }
-                drawUnavailableBits(in: g, frame: rectFrom(d, pt: pt))
+                drawUnavailableBits(in: drawingContext(),
+                                    frame: rectFrom(d, pt: pt))
                 drew = true
-            case "rect", "rrect", "oval":
+            case "rect", "rrect", "oval", "rgn":
                 guard let r = op.rect, r.count == 4 else { continue }
                 let rect = rectFrom(r, pt: pt)
+                let draw = drawingContext()
                 switch op.verb ?? 0 {
                 case 0:   // frame
-                    g.stroke(Path(rect), with: .color(fg), lineWidth: 1)
+                    draw.stroke(Path(rect), with: .color(fg), lineWidth: 1)
                     drew = true
                 case 1, 4:  // paint / fill
-                    g.fill(Path(rect), with: .color(fg))
+                    draw.fill(Path(rect), with: .color(fg))
                     drew = true
-                default:   // erase (usually bg) / invert — skip to avoid noise
+                case 2:   // erase uses the port's current background colour
+                    draw.fill(Path(rect), with: .color(bg))
+                    drew = true
+                default:   // invert needs destination pixels we do not carry
                     break
                 }
             default:
-                break   // arc/poly/rgn remain unsupported structured ops
+                break   // arc/poly remain unsupported structured ops
             }
         }
         return drew

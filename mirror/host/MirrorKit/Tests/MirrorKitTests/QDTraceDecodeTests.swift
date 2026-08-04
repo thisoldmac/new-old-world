@@ -71,4 +71,19 @@ final class QDTraceDecodeTests: XCTestCase {
         XCTAssertNil(QDTraceDecode.drain(try object(
             "{\"cmd\":\"status\",\"active\":{\"mode\":\"off\"}}")))
     }
+
+    func testImplementedBackgroundAndEraseAreNotReportedAsDeferred() throws {
+        let value = try object("""
+        {"cmd":"drain","ops":[
+          {"op":"state","port":"0x1eba6800","ticks":1,
+           "a5":"0x00100000","psn":"0.42","displayEpoch":3,
+           "generation":7,"kind":"bg","rgb":[1,2,3]},
+          {"op":"rect","port":"0x1eba6800","ticks":2,
+           "a5":"0x00100000","psn":"0.42","displayEpoch":3,
+           "generation":7,"verb":2,"rect":[0,0,20,20]}],
+         "records":2,"nextCursor":64}
+        """)
+        let drain = try XCTUnwrap(QDTraceDecode.drain(value))
+        XCTAssertTrue(drain.undrawn.isEmpty)
+    }
 }

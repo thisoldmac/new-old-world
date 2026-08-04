@@ -101,8 +101,7 @@ struct HostRootView: View {
         case "mirror":
             MirrorControlView(
                 model: state.mirror,
-                mirrorWindow: state.mirrorWindow,
-                machineName: state.connectedMachineName)
+                mirrorWindow: state.mirrorWindow)
         case "console":
             ConsoleModuleView(model: state.console, listener: state.listener)
         case "connections":

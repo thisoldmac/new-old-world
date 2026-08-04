@@ -134,14 +134,19 @@ public enum QDTraceDecode {
             return nil
         case "rect", "rrect", "oval":
             switch record.op.verb ?? 0 {
-            case 0, 1, 4: return nil
-            case 2: return "\(record.op.op) (erase)"
+            case 0, 1, 2, 4: return nil
             case 3: return "\(record.op.op) (invert)"
             default: return "\(record.op.op) (verb \(record.op.verb ?? 0))"
             }
+        case "rgn":
+            switch record.op.verb ?? 0 {
+            case 0, 1, 2, 4: return "rgn (bounds only)"
+            case 3: return "rgn (invert)"
+            default: return "rgn (verb \(record.op.verb ?? 0))"
+            }
         case "state":
             switch record.op.kind {
-            case "origin", "fg": return nil
+            case "origin", "clip", "fg", "bg": return nil
             case let kind?: return "state/\(kind)"
             case nil: return "state"
             }

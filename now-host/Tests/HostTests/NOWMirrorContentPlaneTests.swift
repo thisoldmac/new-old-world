@@ -71,6 +71,36 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
         XCTAssertTrue(second.sentence.contains("retained 1 draw ops"))
     }
 
+    func testPartialDrainDoesNotPublishHalfADisplay() throws {
+        let model = plane()
+        let partial = model.apply(try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"text","port":"0x1eba6800","ticks":1,
+           "a5":"0x00100000","psn":"0.29949953",
+           "displayEpoch":3,"generation":7,
+           "pen":[20,30],"font":3,"size":9,"face":0,
+           "len":4,"fullLen":4,"trunc":false,"text":"Half"}],
+         "nextCursor":64,"writeCursor":128,"records":1,"more":true}
+        """), to: try scene())
+
+        XCTAssertNil(partial.scene.windows[0].display,
+                     "a bounded ring page is not a coherent repaint")
+        XCTAssertEqual(model.operations.values.first?.map(\.text), ["Half"])
+        XCTAssertTrue(partial.sentence.contains("last settled display"))
+
+        let complete = model.apply(try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"text","port":"0x1eba6800","ticks":2,
+           "a5":"0x00100000","psn":"0.29949953",
+           "displayEpoch":3,"generation":7,
+           "pen":[20,44],"font":3,"size":9,"face":0,
+           "len":4,"fullLen":4,"trunc":false,"text":"Done"}],
+         "nextCursor":128,"writeCursor":128,"records":1,"more":false}
+        """), to: try scene())
+        XCTAssertEqual(complete.scene.windows[0].display?.map(\.text),
+                       ["Half", "Done"])
+    }
+
     func testResyncRetractsContentThatMayHaveBeenOverwritten() throws {
         let model = plane()
         _ = model.apply(try drain("""

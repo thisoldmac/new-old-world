@@ -660,16 +660,27 @@ public struct SceneRenderer {
             return
         }
 
-        // QDPeek content plane: replay the window's captured draw ops in place
-        // of the empty content. Text renders through the NFNT strikes at their
-        // exact pen positions.
-        if let display = win.display {
-            DisplayReplay.draw(display, in: contentCtx, content: content)
+        // P3 owns unstructured content, while P2 owns concrete drawing wholly
+        // contained by an exact semantic control/dialog rectangle. The replay
+        // still carries whole-window background erases through those regions;
+        // only control-local CopyBits/text/shapes yield to guest semantics.
+        let displayOwnsVisuals = !(win.display?.isEmpty ?? true)
+        let dialogRefs = Set((win.dialogItems ?? []).compactMap(\.ref))
+        let semanticFrames = win.controls.compactMap { control -> CGRect? in
+            guard control.visible, !dialogRefs.contains(control.ref),
+                  let local = control.rect else { return nil }
+            return rect(local).offsetBy(dx: content.minX, dy: content.minY)
+        } + (win.dialogItems ?? []).compactMap { item -> CGRect? in
+            guard item.visible else { return nil }
+            return rect(item.rect).offsetBy(dx: content.minX, dy: content.minY)
         }
-        if let text = win.text {
+        if let display = win.display {
+            DisplayReplay.draw(display, in: contentCtx, content: content,
+                               excluding: semanticFrames)
+        }
+        if !displayOwnsVisuals, let text = win.text {
             drawWindowText(contentCtx, text, in: content)
         }
-        let dialogRefs = Set((win.dialogItems ?? []).compactMap(\.ref))
         for control in win.controls where control.visible
                 && !dialogRefs.contains(control.ref) {
             drawControl(contentCtx, control, contentOrigin: content.origin,

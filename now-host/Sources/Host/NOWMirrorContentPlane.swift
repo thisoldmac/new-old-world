@@ -27,6 +27,7 @@ final class NOWMirrorContentPlane {
     private(set) var targetWindow: UInt32?
     private(set) var cursor = 0
     private(set) var operations: [ContentIdentity: [DisplayOp]] = [:]
+    private(set) var settledOperations: [ContentIdentity: [DisplayOp]] = [:]
     private var currentDisplay: [String: ContentIdentity] = [:]
     private var armedAt: Date?
 
@@ -44,6 +45,7 @@ final class NOWMirrorContentPlane {
         targetWindow = nil
         cursor = 0
         operations.removeAll()
+        settledOperations.removeAll()
         currentDisplay.removeAll()
         armedAt = nil
     }
@@ -74,6 +76,7 @@ final class NOWMirrorContentPlane {
             targetPSN = nil
             targetWindow = nil
             operations.removeAll()
+            settledOperations.removeAll()
             currentDisplay.removeAll()
             completion(.init(scene: scene,
                              sentence: "content: no front window"))
@@ -200,6 +203,7 @@ final class NOWMirrorContentPlane {
         }
         if drain.resync {
             operations.removeAll()
+            settledOperations.removeAll()
         }
 
         let visible = Dictionary(uniqueKeysWithValues: scene.windows.compactMap {
@@ -252,6 +256,15 @@ final class NOWMirrorContentPlane {
             matched += 1
         }
 
+        /* A drain is one bounded control answer, not one display frame. The
+           resident deliberately returns `more` while a coherent repaint is
+           still split across later answers. Publishing the accumulator at
+           that point showed a half-redrawn application for several polls and
+           then mixed it with the semantic layer. Keep the previous settled
+           display visible until the host has caught the ring completely. */
+        if !drain.more {
+            settledOperations = operations
+        }
         let attached = attachCached(to: scene)
         var facts: [String] = []
         if matched > 0 {
@@ -269,7 +282,10 @@ final class NOWMirrorContentPlane {
             facts.append("rejected \(stale) stale/superseded draw "
                          + "op\(stale == 1 ? "" : "s")")
         }
-        if drain.more { facts.append("more remain in the guest ring") }
+        if drain.more {
+            facts.append("more remain in the guest ring")
+            facts.append("retained the last settled display")
+        }
         if drain.lostBytes > 0 {
             facts.append("\(drain.lostBytes) earlier bytes were overwritten")
         }
@@ -294,7 +310,9 @@ final class NOWMirrorContentPlane {
             guard let address = attached.windows[index].addr,
                   let identity = currentDisplay[
                     "\(attached.windows[index].psn):\(address)"],
-                  let ops = operations[identity], !ops.isEmpty else { continue }
+                  let ops = settledOperations[identity], !ops.isEmpty else {
+                continue
+            }
             attached.windows[index].display = ops
         }
         return attached

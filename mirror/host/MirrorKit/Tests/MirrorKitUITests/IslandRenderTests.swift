@@ -169,6 +169,91 @@ final class IslandRenderTests: XCTestCase {
                       "the placeholder must stay inside the guest dst rect")
     }
 
+    /// P2 semantics own exact control rectangles while P3 owns the surrounding
+    /// content. This prevents both CopyBits placeholders and raw QuickDraw
+    /// titles from painting underneath a control we can render and actuate.
+    func testSettledDisplayClipsOutSemanticControlPixels() throws {
+        let r = Rect(l: 100, t: 100, r: 500, b: 400)
+        var semanticOnly = window(title: "Generic App", front: true, z: 0,
+                                  rect: r, island: nil)
+        semanticOnly.display = []
+        semanticOnly.controls = [.init(
+            ref: "button", role: "button", title: "Do It",
+            rect: Rect(l: 20, t: 30, r: 140, b: 52),
+            enabled: true, visible: true,
+            semantic: .init(knowledge: .known, kind: "pushButton",
+                            action: "press", provenance: "guest-semantic-assist",
+                            completeness: .complete))]
+        var withDisplay = semanticOnly
+        var fill = DisplayOp(op: "rect", ticks: 1)
+        fill.verb = 1
+        fill.rect = [20, 30, 140, 52]
+        var label = DisplayOp(op: "text", ticks: 2)
+        label.text = "Wrong copy"
+        label.pen = [25, 46]
+        label.font = 0
+        label.size = 12
+        withDisplay.display = [fill, label]
+
+        XCTAssertEqual(try RenderShot.png(scene: scene([withDisplay])),
+                       try RenderShot.png(scene: scene([semanticOnly])),
+                       "P3 must not paint beneath a P2-owned control rectangle")
+    }
+
+    func testGuestEraseMakesRepeatedRepaintsReplacePriorDrawing() throws {
+        let r = Rect(l: 100, t: 100, r: 500, b: 400)
+        func op(_ name: String, _ ticks: Int,
+                _ configure: (inout DisplayOp) -> Void) -> DisplayOp {
+            var value = DisplayOp(op: name, ticks: ticks)
+            configure(&value)
+            return value
+        }
+        let first: [DisplayOp] = [
+            op("state", 1) {
+                $0.kind = "bg"; $0.rgb = [56_797, 56_797, 56_797]
+            },
+            op("rect", 2) { $0.verb = 2; $0.rect = [0, 0, 200, 100] },
+            op("state", 3) { $0.kind = "fg"; $0.rgb = [0, 0, 0] },
+            op("text", 4) {
+                $0.text = "Old"; $0.pen = [20, 30]
+                $0.font = 3; $0.size = 9
+            },
+        ]
+        var second = first
+        second[3].text = "Current"
+        second[3].pen = [80, 30]
+        var twice = window(title: "Generic App", front: true, z: 0,
+                           rect: r, island: nil)
+        twice.display = first + second
+        var once = twice
+        once.display = second
+
+        XCTAssertEqual(try RenderShot.png(scene: scene([twice])),
+                       try RenderShot.png(scene: scene([once])),
+                       "a later guest erase must clear the previous repaint")
+    }
+
+    func testRegionEraseUsesItsReportedBounds() throws {
+        let r = Rect(l: 100, t: 100, r: 500, b: 400)
+        var w = window(title: "Generic App", front: true, z: 0,
+                       rect: r, island: nil)
+        var black = DisplayOp(op: "rect", ticks: 1)
+        black.verb = 1; black.rect = [0, 0, 80, 80]
+        var bg = DisplayOp(op: "state", ticks: 2)
+        bg.kind = "bg"; bg.rgb = [65_535, 65_535, 65_535]
+        var erase = DisplayOp(op: "rgn", ticks: 3)
+        erase.verb = 2; erase.rect = [0, 0, 80, 80]
+        w.display = [black, bg, erase]
+
+        let png = try RenderShot.png(scene: scene([w]))
+        let sample = try XCTUnwrap(pixel(
+            png, x: r.l + 1 + 40,
+            y: r.t + Int(Platinum.contentTop) + 40))
+        XCTAssertGreaterThan(sample.0, 245)
+        XCTAssertGreaterThan(sample.1, 245)
+        XCTAssertGreaterThan(sample.2, 245)
+    }
+
     /// Proven Control Manager kinds are presentation facts, not hints. The
     /// renderer must not collapse a checkbox back into the legacy pill shape.
     func testAProvenCheckboxIsNotRenderedAsAPushButton() throws {
