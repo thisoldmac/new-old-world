@@ -1,7 +1,8 @@
 # Mirror state engine
 
-**Status:** pure reducer built and focused-tested; host shadow integration,
-native cutover, direct-input proof, and metal proof remain open.
+**Status:** pure reducer and first host shadow slice built and focused-tested;
+content/enrichment ownership, native cutover, direct-input parity, guest build,
+VM staging, and metal proof remain open.
 
 The Mirror is a client of a guest-authoritative replica. A scene is an
 observation to reduce, not a replacement document to install wholesale. This
@@ -58,6 +59,38 @@ producer-specific content epochs and generations where those exist. A torn,
 overwritten, or partial content drain may never replace the last settled
 display.
 
+## Host shadow boundary
+
+`MirrorStateEngineRegistry` owns exactly one engine for one `GuestKey`, which
+already includes the connection-session UUID. A successor connection therefore
+gets a successor replica instead of inheriting state or capabilities under the
+same human-readable Mac name. Each accepted engine projection is retained in a
+bounded 32-snapshot, 15-minute store, and shadow comparison keeps a bounded
+diagnostic list without patching either projection.
+
+`NOWMirrorSource` pins its guest when the Mirror starts. Structural scene polls
+are sent to that exact session even if the host's active picker later changes;
+an addressed scene response is accepted only from the same key. There remains
+one conservative host-wide pending scene slot, and a second caller is refused
+rather than overwriting the first callback. This is coalescing, not yet the
+final per-session observation scheduler.
+
+The visible scene is still the C26 legacy path, including Apple-menu continuity
+and its current content join. Every decoded structural scene is also reduced by
+the shadow engine and compared with the scene the legacy path displays. Shadow
+state never authorizes an action. While the pinned Mac is not the active Mac,
+the Mirror may continue its addressed structural observations but pauses the
+legacy active-only content and action paths. A gesture receives a named refusal
+until the person selects that exact Mac. This prevents cross-guest mutation;
+the later operation broker must replace the limitation with session-addressed
+dispatch rather than weakening the check.
+
+Stopping the Mirror releases the long-lived content claim only when the pinned
+session is still active. A delayed release callback cannot clear a newly
+started binding. If the picker has already moved, the source reports that it
+could not perform the active-only release and relies on the other short leases
+to expire honestly.
+
 ## Operations
 
 `MirrorOperationReducer` keeps queued intent separate from canonical guest
@@ -104,6 +137,7 @@ Open before visible cutover:
 - typed producer coverage beyond census/windows/menubar, especially Finder
   enrichment, content epochs, and global layer order;
 - bounded tombstone/snapshot/journal retention tied to pending operations;
-- one per-session poll owner, shadow parity, content/evidence integration;
+- a per-session observation scheduler beyond the conservative global pending
+  slot, complete shadow parity, and content/evidence integration;
 - native FIFO and direct keyboard/mouse acceptance campaign;
 - guest cross-build, staged VM update, and clean saved shutdown.

@@ -84,6 +84,30 @@ capability-safe Finder/app actions, direct-input pixels, guest build, and VM
 staging remain open. The implementation contract and limits are in
 `docs/mirror-state-engine.md`.
 
+### STATE ENGINE U3A: SESSION-PINNED SHADOW ENGINE WIRED (2026-08-04)
+
+The host now keeps one shadow engine per exact `GuestKey` connection session,
+publishes accepted projections into a bounded 32-snapshot/15-minute history,
+and records bounded semantic differences against the still-visible legacy
+scene. `NOWMirrorSource` pins the session it started on and sends structural
+polls to that exact socket even after the active picker changes. Responses from
+another session are ignored, and a second scene caller is refused instead of
+silently replacing the first completion.
+
+The old action and content paths remain active-session-only. This checkpoint
+therefore pauses them and visibly refuses gestures whenever the selected Mac is
+not the Mirror's pinned Mac; shadow state never authorizes mutation. A delayed
+stop callback also cannot clear a newer Mirror binding. This is an honest
+safety boundary, not the final addressed operation broker.
+
+Five focused engine tests, the addressed two-guest polling test, and all 21
+existing `NOWMirrorSourceTests` pass. The live C26 Mirror/VM were deliberately
+not touched during this plumbing checkpoint. Full direct mouse/keyboard
+preflight, shadow parity across Workshop/Finder/Date & Time, structured-content
+and Finder enrichment reduction, native read cutover, guest build, and VM
+staging remain open. The visible product is still the C26 legacy projection and
+must not be described as state-engine-driven yet.
+
 ## CONTRACT FROZEN; UNIFICATION IMPLEMENTATION STILL OPEN (2026-08-03)
 
 The unified NOW Extension prerequisite now starts from a source-derived

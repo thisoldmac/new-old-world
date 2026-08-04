@@ -256,6 +256,63 @@ final class MultiGuestFocusTests: XCTestCase {
         }
     }
 
+    func testAddressedSceneRequestDoesNotFollowTheActivePicker() async throws {
+        let listener = listener()
+        listener.start(port: 0)
+        try await waitUntil("listening") {
+            if case .listening = listener.state { return true }
+            return false
+        }
+        let port = try XCTUnwrap(listener.boundPort)
+        var firstAsks = 0
+        var secondAsks = 0
+
+        func dial(_ name: String, asks: @escaping () -> Void) async throws
+            -> FakeGuest {
+            let guest = FakeGuest(port: port)
+            guest.onMessage = { message in
+                if case .sceneRequest = message { asks() }
+            }
+            guest.start()
+            try guest.send(.hello(Hello(
+                contract: Contract.revision, side: "guest", version: "test",
+                name: name, os: "9.1", chunk: 8192)))
+            try await waitUntil("\(name) connected") {
+                listener.guests.contains { $0.name == name }
+            }
+            return guest
+        }
+
+        let first = try await dial("First Mac") { firstAsks += 1 }
+        let second = try await dial("Second Mac") { secondAsks += 1 }
+        defer {
+            first.connection.cancel(); second.connection.cancel()
+            listener.stop()
+        }
+        let firstKey = try XCTUnwrap(
+            listener.guests.first { $0.name == "First Mac" }?.key)
+        let secondKey = try XCTUnwrap(
+            listener.guests.first { $0.name == "Second Mac" }?.key)
+        XCTAssertTrue(listener.selectGuest(secondKey))
+
+        listener.requestScene(for: firstKey) { _ in }
+        var duplicateFailure: String?
+        listener.requestScene(for: firstKey) { result in
+            if case .failure(let failure) = result {
+                duplicateFailure = failure.message
+            }
+        }
+        try await waitUntil("the pinned guest receives the scene request") {
+            firstAsks == 1
+        }
+        XCTAssertEqual(secondAsks, 0,
+                       "the active picker must not retarget a pinned Mirror")
+        XCTAssertEqual(firstAsks, 1,
+                       "a second caller must not orphan the first completion")
+        XCTAssertEqual(duplicateFailure,
+                       "A scene is already on its way. Ask again when it arrives.")
+    }
+
     /// The defect in the plainest form it has: rows that came off one
     /// machine's disk, on screen under the other machine's name.
     ///

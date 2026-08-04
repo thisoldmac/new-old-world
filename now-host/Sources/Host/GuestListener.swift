@@ -1953,6 +1953,10 @@ final class GuestListener: ObservableObject {
 
     private var pendingScene:
         ((Result<SceneDelivery, SceneFailure>) -> Void)?
+    /// The exact socket the outstanding scene belongs to. The active picker
+    /// may change while a pinned Mirror remains open; without this identity a
+    /// late scene from the old active guest could settle the new guest's wait.
+    private var pendingSceneGuestKey: GuestKey?
     private var sceneWatchdogId: Int?
 
     /// Whether a scene is already on its way here.
@@ -2006,16 +2010,28 @@ final class GuestListener: ObservableObject {
     /// possible caller (a person today, an agent when the projection row
     /// exists), and a second caller silently orphaning the first one's
     /// completion is how a page waits forever.
-    func requestScene(staleAfterMs: Int? = nil, semantics: Bool = true,
+    func requestScene(for requestedKey: GuestKey? = nil,
+                      staleAfterMs: Int? = nil, semantics: Bool = true,
                       interaction: Bool = true,
                       tuning: CaptureTuning = .init(),
                       completion: @escaping (Result<SceneDelivery,
                                                     SceneFailure>) -> Void) {
-        guard let session, case .connected = state else {
+        guard let targetKey = requestedKey ?? activeKey,
+              let targetSession = sessions[targetKey] else {
             completion(.failure(.init(message: "No Mac is connected")))
             return
         }
-        if let holder = transferLaneHolder {
+        guard !isScenePending else {
+            completion(.failure(.init(
+                message: "A scene is already on its way. Ask again when it arrives.")))
+            return
+        }
+        /* Existing callers drive the active session and keep the full local
+           lane guard. A pinned background Mirror has its own guest-side lane;
+           this host has no background transfer ledger yet, so it sends one
+           addressed request and lets that guest return the typed busy refusal
+           rather than consulting another guest's lane state. */
+        if requestedKey == nil, let holder = transferLaneHolder {
             completion(.failure(.init(
                 message: "The Mac can move one thing at a time and "
                     + "\(holder). Ask again when it is done.")))
@@ -2024,6 +2040,7 @@ final class GuestListener: ObservableObject {
         let id = nextCommandId
         nextCommandId += 1
         pendingScene = completion
+        pendingSceneGuestKey = targetKey
         sceneWatchdogId = id
         /* A walk is not a screen grab: it visits every process and window
            through the extension, on a machine whose whole job used to be
@@ -2033,16 +2050,19 @@ final class GuestListener: ObservableObject {
         armWatchdog(id: id, seconds: 20) { [weak self] reason in
             self?.deliverScene(.failure(.init(message: reason)))
         }
-        session.sendSceneRequest(id: id, staleAfterMs: staleAfterMs,
-                                 semantics: semantics,
-                                 interaction: interaction,
-                                 tuning: tuning)
+        targetSession.sendSceneRequest(id: id, staleAfterMs: staleAfterMs,
+                                       semantics: semantics,
+                                       interaction: interaction,
+                                       tuning: tuning)
     }
 
     fileprivate func deliverScene(
-        _ result: Result<SceneDelivery, SceneFailure>) {
+        _ result: Result<SceneDelivery, SceneFailure>,
+        from guestKey: GuestKey? = nil) {
+        if let guestKey, guestKey != pendingSceneGuestKey { return }
         let completion = pendingScene
         pendingScene = nil
+        pendingSceneGuestKey = nil
         if let id = sceneWatchdogId { clearWatchdog(id) }
         sceneWatchdogId = nil
         completion?(result)
@@ -2346,8 +2366,11 @@ final class GuestListener: ObservableObject {
                 self?.resolveExecResult(result)
             },
             onGuestError: { [weak self] problem in
-                guard fromActive() else { return }
-                self?.recordGuestError(problem)
+                guard let self else { return }
+                let originKey = origin.session?.guestKey
+                guard fromActive() || originKey == self.pendingSceneGuestKey
+                else { return }
+                self.recordGuestError(problem)
             },
             onCensusReport: { [weak self] report in
                 guard fromActive() else { return }
@@ -2362,8 +2385,10 @@ final class GuestListener: ObservableObject {
                 self?.noteCaptureProgress(progress)
             },
             onScene: { [weak self] result in
-                guard fromActive() else { return }
-                self?.deliverScene(result)
+                guard let self, let key = origin.session?.guestKey else {
+                    return
+                }
+                self.deliverScene(result, from: key)
             },
             /* A push is not an answer: a guest sends it unasked, and a
                background guest pushing a screenshot is a thing it is

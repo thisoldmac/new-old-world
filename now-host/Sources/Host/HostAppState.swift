@@ -59,6 +59,7 @@ final class HostAppState: ObservableObject {
     /// to HostLog before the first wire event has a line to write.
     let logs: LogsModel
     let listener: GuestListener
+    let mirrorEngines: MirrorStateEngineRegistry
     let agentIntegration: AgentIntegrationHostAdapter
     /// Who has been driving this host over the local agent endpoint. Fed by
     /// the app delegate when it stands the server up; `.neverAttached` until
@@ -94,6 +95,7 @@ final class HostAppState: ObservableObject {
     /// actually makes.
     private(set) lazy var mirrorSource = NOWMirrorSource(
         listener: listener,
+        engineRegistry: mirrorEngines,
         act: AgentIntegrationActControl(
             listener: listener,
             currentSessionID: { [unowned self] in
@@ -164,6 +166,7 @@ final class HostAppState: ObservableObject {
         self.defaults = defaults
         settings = SettingsModel(defaults: defaults)
         logs = LogsModel(log: .shared, defaults: defaults)
+        mirrorEngines = MirrorStateEngineRegistry()
         listener = GuestListener(
             identity: .init(
                 version: ProductIdentity.version,
