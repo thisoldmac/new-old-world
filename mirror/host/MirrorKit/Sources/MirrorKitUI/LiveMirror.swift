@@ -12,8 +12,8 @@ import MirrorKit
 ///
 /// NOW carries the same scene over a different wire (binary-framed, the
 /// guest dials the host) and serves acts its own way, with verbs Mirror's
-/// vocabulary marks emulator-only - a scrollbar part is `ctlact`, a
-/// window move is `winact`, neither needs QMP. Re-implementing the
+/// vocabulary marks device-backed fallbacks - a scrollbar part is `ctlact`, a
+/// window move is `winact`, neither needs positioned input. Re-implementing the
 /// gesture layer to reach them would fork the one piece of this codebase
 /// where a subtle behavioural difference is invisible in review and
 /// obvious to a person's hand.
@@ -51,8 +51,8 @@ public protocol MirrorSceneSource: ObservableObject {
 }
 
 public extension MirrorSceneSource {
-    /// Mirror's agent, which is what every conformer was until 2026-08-02.
-    var planes: ActionPlanes { .agent }
+    /// Positioned device input, which every conformer used until 2026-08-02.
+    var planes: ActionPlanes { .deviceDriven }
 
     func perform(_ interaction: Interaction) {
         switch InteractionPolicy.plan(for: interaction, planes: planes) {
@@ -293,7 +293,7 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                     dragged(scene, from: start, to: end)
                 } else if case .thumb = mode {
                     controller.perform(
-                        ActionModel.thumbDrag(from: start, to: end),
+                        ActionModel.thumbTracking(from: start, to: end),
                         label: "scroll thumb \(start) → \(end)")
                 }
             }

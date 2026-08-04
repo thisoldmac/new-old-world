@@ -92,9 +92,9 @@ final class ScrollbarTests: XCTestCase {
         let origin = (x: 4, y: 40)
         let down = ActionModel.wheel(3, on: live(value: 0), contentOrigin: origin)
         XCTAssertEqual(down.count, 3)
-        XCTAssertEqual(down.first, .qmpClick(x: 434, y: 184), "down arrow, global")
+        XCTAssertEqual(down.first, .deviceClick(x: 434, y: 184), "down arrow, global")
         let up = ActionModel.wheel(-1, on: live(), contentOrigin: origin)
-        XCTAssertEqual(up, [.qmpClick(x: 434, y: 47)], "up arrow, global")
+        XCTAssertEqual(up, [.deviceClick(x: 434, y: 47)], "up arrow, global")
         XCTAssertTrue(ActionModel.wheel(0, on: live(), contentOrigin: origin).isEmpty)
         // A bar with nothing to scroll gets no clicks at all.
         var dead = live(); dead.max = 0; dead.value = 0; dead.role = "control"
@@ -110,6 +110,6 @@ final class ScrollbarTests: XCTestCase {
         // Arrows and pages DO click, through the QMP tracking plane.
         let arrow = HitTester.Target.scrollbar(windowID: "w", control: live(),
                                                part: .lineDown, x: 434, y: 184)
-        XCTAssertEqual(ActionModel.click(on: arrow), [.qmpClick(x: 434, y: 184)])
+        XCTAssertEqual(ActionModel.click(on: arrow), [.deviceClick(x: 434, y: 184)])
     }
 }

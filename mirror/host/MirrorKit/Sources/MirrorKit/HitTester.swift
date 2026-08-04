@@ -23,7 +23,7 @@ public enum HitTester {
         case menubarBackground
         /// A title-bar widget on the front window — actuated by a real
         /// press-release at its center (TrackGoAway/TrackBox are tracking
-        /// loops; the wire can't drive them, QMP can).
+        /// loops; the semantic wire can't drive them, positioned input can).
         case widget(windowID: String, kind: WidgetKind, x: Int, y: Int)
         /// The grow box: drag = resize (GrowWindow, same tracking story).
         case growBox(windowID: String, x: Int, y: Int)

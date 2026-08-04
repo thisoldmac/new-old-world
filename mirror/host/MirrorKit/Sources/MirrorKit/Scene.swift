@@ -174,7 +174,7 @@ public struct Scene: Codable, Equatable, Sendable {
         public var title: String
         public var apple: Bool
         /// Guest menubar x of this title (MenuList `left`) — the anchor for
-        /// guest-true menubar layout and for the QMP menu-drag.
+        /// guest-true menubar layout and for input-device menu tracking.
         public var left: Int
         /// The guest's own menu ID. Carried because acting by IDENTITY needs it:
         /// the Portal answers the application's MenuSelect with (menuID, item),

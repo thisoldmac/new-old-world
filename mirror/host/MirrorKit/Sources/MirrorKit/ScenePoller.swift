@@ -81,7 +81,7 @@ public struct ScenePoller {
 
     /// Fetch the QuickDraw content plane (QDPeek `qdtrace`) for the front app
     /// and attach it to the front window's `display`. Off by default — it
-    /// installs draw-time hooks on the guest (emu-only, toolkit + QDPeek
+    /// installs draw-time hooks on the guest (optional toolkit + QDPeek
     /// required). A failed qdtrace just leaves `display` nil.
     public var includeDisplay = false
 

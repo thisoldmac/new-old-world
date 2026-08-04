@@ -93,6 +93,6 @@ final class DesktopHitTests: XCTestCase {
         XCTAssertEqual(ActionModel.click(on: target, count: 1),
                        [.click(x: 624, y: 364, count: 1, mods: 0)])
         XCTAssertEqual(ActionModel.click(on: target, count: 2),
-                       [.qmpDoubleClick(x: 624, y: 364)])
+                       [.deviceDoubleClick(x: 624, y: 364)])
     }
 }

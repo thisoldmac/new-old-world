@@ -29,4 +29,17 @@ final class MirrorOracleBoundaryTests: XCTestCase {
                 sources.appendingPathComponent("MirrorOracleKit/\(name)").path))
         }
     }
+
+    func testProductionMirrorModelsDoNotNameTheDevelopmentOracle() throws {
+        let productionSources = [
+            "mirror/host/MirrorKit/Sources/MirrorKit/MirrorTarget.swift",
+            "mirror/host/MirrorKit/Sources/MirrorKit/ActionModel.swift",
+        ]
+        for relativePath in productionSources {
+            let source = try String(contentsOf:
+                nowRoot.appendingPathComponent(relativePath), encoding: .utf8)
+            XCTAssertFalse(source.localizedCaseInsensitiveContains("qmp"),
+                           "\(relativePath) must stay adapter-neutral")
+        }
+    }
 }

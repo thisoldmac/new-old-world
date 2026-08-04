@@ -6,7 +6,7 @@ import XCTest
 /// ## Why the vocabulary grew instead of forking
 ///
 /// Mirror's agent reaches a scroll arrow by pressing the mouse on it, so
-/// `ActionModel` resolved a scrollbar hit to `qmpClick` — the emulator's
+/// `ActionModel` resolved a scrollbar hit to `deviceClick` — the emulator's
 /// input plane, and nothing else. That is correct for that driver and
 /// fatal for a real Macintosh, where there is no QMP: a mirror driven
 /// that way cannot scroll, resize, move or close anything.
@@ -64,11 +64,11 @@ final class ActionPlanesTests: XCTestCase {
         }
         XCTAssertEqual(part, .lineDown)
 
-        // Both the old signature and an explicit `.agent` must be the
+        // Both the old signature and explicit device input must be the
         // behaviour every existing caller was written against.
         for actions in [ActionModel.click(on: hit),
-                        ActionModel.click(on: hit, planes: .agent, in: s)] {
-            guard case .qmpClick = actions.first else {
+                        ActionModel.click(on: hit, planes: .deviceDriven, in: s)] {
+            guard case .deviceClick = actions.first else {
                 return XCTFail("the agent must still press: \(actions)")
             }
         }
@@ -137,7 +137,7 @@ final class ActionPlanesTests: XCTestCase {
         let box = WindowChrome.widgetBox(s.windows[0], .close)!
         let c = WindowChrome.center(box)
         let hit = HitTester.hitTest(s, x: c.x, y: c.y)
-        guard case .qmpClick = ActionModel.click(on: hit,
+        guard case .deviceClick = ActionModel.click(on: hit,
                                                  planes: .residentActPlane,
                                                  in: s).first else {
             return XCTFail("expected the press to stand in")
@@ -169,9 +169,9 @@ final class ActionPlanesTests: XCTestCase {
                                       height: 400 - contentTop))
 
         // And the agent keeps its drag.
-        guard case .drag = ActionModel.titlebarDrag(
+        guard case .deviceDrag = ActionModel.titlebarDrag(
             from: (100, 50), to: (140, 90),
-            window: win, planes: .agent).first else {
+            window: win, planes: .deviceDriven).first else {
             return XCTFail("the agent must still drag")
         }
     }
@@ -179,10 +179,10 @@ final class ActionPlanesTests: XCTestCase {
     // MARK: - Nothing is substituted silently
 
     func testAnActATargetCannotServeIsRefusedByName() {
-        // A semantic act against Mirror's agent: unsupported, not emu-only.
+        // A semantic act against a device-only driver is unsupported.
         let semantic = MirrorAction.controlPart(ref: "r", part: 21)
         guard case .unsupported = ActionModel.availability(semantic,
-                                                           planes: .agent)
+                                                           planes: .deviceDriven)
         else {
             return XCTFail("a semantic act needs an act plane, and the "
                            + "refusal must say so rather than blame the "
@@ -204,13 +204,14 @@ final class ActionPlanesTests: XCTestCase {
             positional, planes: .residentActPlane) else {
             return XCTFail("NOW has no positional click verb")
         }
-        XCTAssertEqual(ActionModel.availability(positional, planes: .agent),
+        XCTAssertEqual(ActionModel.availability(positional,
+                                                planes: .deviceDriven),
                        .available)
 
         // QMP is about the MACHINE, and keeps saying so.
-        guard case .emulatorOnly = ActionModel.availability(
-            .qmpClick(x: 1, y: 1), planes: .residentActPlane) else {
-            return XCTFail("a QMP act on a QMP-less target is emulatorOnly")
+        guard case .inputDeviceUnavailable = ActionModel.availability(
+            .deviceClick(x: 1, y: 1), planes: .residentActPlane) else {
+            return XCTFail("a device act without an adapter must be unavailable")
         }
     }
 

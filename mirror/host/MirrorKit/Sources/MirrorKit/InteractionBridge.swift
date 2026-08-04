@@ -72,7 +72,7 @@ public enum InteractionBridge {
                 return []
             }
             if case .finderOpen = plan {
-                return [.qmpDoubleClick(x: item.point.x, y: item.point.y)]
+                return [.deviceDoubleClick(x: item.point.x, y: item.point.y)]
             }
             return [.click(x: item.point.x, y: item.point.y,
                            count: 1, mods: 0)]

@@ -1,8 +1,9 @@
 # Mirror state engine
 
-**Status:** pure reducer and first host shadow slice built and focused-tested;
-content/enrichment ownership, native cutover, direct-input parity, guest build,
-VM staging, and metal proof remain open.
+**Status:** pure reducer, first host shadow slice, render enrichment, evidence
+export, and production/oracle isolation are built and focused-tested. Typed
+producer completion, native cutover, direct-input parity, guest build, VM
+staging, and metal proof remain open.
 
 The Mirror is a client of a guest-authoritative replica. A scene is an
 observation to reduce, not a replacement document to install wholesale. This
@@ -163,8 +164,6 @@ Open before visible cutover:
 - a per-session observation scheduler beyond the conservative global pending
   slot, complete shadow parity, and content/evidence integration;
 - guest-authored content epochs/generations and typed Finder/content coverage;
-- removal of the remaining QMP-shaped action/target vocabulary from core
-  types; the executable QMP client and dispatcher are already isolated below;
 - native FIFO and direct keyboard/mouse acceptance campaign;
 - guest cross-build, staged VM update, and clean saved shutdown.
 
@@ -179,9 +178,16 @@ dispatcher markers. Host tests derive the package edge from the manifests and
 source layout so moving either executable client back into a production target
 fails the ordinary suite.
 
-The split is not yet complete at the vocabulary level: historical
-`MirrorAction` cases and `MirrorTarget.qmp` still describe the oracle's input
-options in core types. They execute only in `MirrorOracleKit`, but U4 remains
-open until those fields become oracle-owned as well. QMP remains a read-only
-development oracle for NOW's acceptance campaign and is never a production
-state or mutation source.
+The vocabulary boundary is also explicit. `MirrorTarget` contains only the
+guest wire and machine identity. Core `MirrorAction` and `ActionPlanes` name a
+platform-neutral positioned input-device capability, and fail closed when a
+driver lacks one. The development executable passes its optional socket only
+to `MirrorOracleKit`; the production target cannot discover or configure it.
+A source guard rejects QMP vocabulary in the two production model files and
+was watched fail with a mutation sentinel before being restored.
+
+This separation does not authorize QMP mutation in the new architecture. The
+legacy `MirrorApp` retains that adapter only as isolated development tooling.
+NOW's acceptance campaign uses QMP read-only for explicit-socket framebuffer
+capture and identity checks; native Mirror keyboard/mouse input remains the
+only mutation provenance eligible for a green row.

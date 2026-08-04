@@ -36,7 +36,7 @@ public enum WindowChrome {
     /// (`r.l + 1`), collapse is `r.r - 3 - size` (rightmost), zoom sits
     /// `r.r - 18 - size` (left of collapse). Both the renderer and the
     /// hit-tester use these, so the drawn box, the click zone, and the guest's
-    /// real box all coincide — a mismatch here means QMP clicks miss.
+    /// real box all coincide — a mismatch here means device clicks miss.
     public static func widgetBox(_ win: Scene.Window, _ widget: Widget) -> Rect? {
         guard win.kind != 2, win.front else { return nil }
         let r = win.rect

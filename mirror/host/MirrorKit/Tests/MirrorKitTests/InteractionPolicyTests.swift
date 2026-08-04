@@ -229,7 +229,7 @@ final class InteractionPolicyTests: XCTestCase {
         // A guest that CAN post a modified key: the shortcut is the
         // cheapest, most deterministic route.
         guard case .keystroke(let code, _, let mods) =
-            InteractionPolicy.plan(for: withCmd, planes: .agent) else {
+            InteractionPolicy.plan(for: withCmd, planes: .deviceDriven) else {
             return XCTFail("a ⌘ item is a keystroke where ⌘ can be posted")
         }
         XCTAssertEqual(mods, ActionModel.cmdKey)

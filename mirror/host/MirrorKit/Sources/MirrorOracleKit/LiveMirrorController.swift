@@ -11,6 +11,7 @@ public final class LiveMirrorController: MirrorSceneSource {
     @Published public private(set) var status: String = "connecting…"
 
     public let target: MirrorTarget
+    public var planes: ActionPlanes { dispatcher.actionPlanes }
     private let queue = DispatchQueue(label: "mirror.wire")
     private var poller: ScenePoller
     private let dispatcher: ActionDispatcher
@@ -19,6 +20,7 @@ public final class LiveMirrorController: MirrorSceneSource {
     public let screen: Scene.ScreenSize
 
     public init(target: MirrorTarget,
+                qmpSocket: String? = nil,
                 display: Bool = false, islands: Bool = false) {
         self.target = target
         let wire = WireClient(target: target)
@@ -28,7 +30,8 @@ public final class LiveMirrorController: MirrorSceneSource {
         poller.includeIslands = islands
         screen = poller.detectScreen()
         self.poller = poller
-        dispatcher = ActionDispatcher(target: target, wire: wire)
+        dispatcher = ActionDispatcher(target: target, qmpSocket: qmpSocket,
+                                      wire: wire)
     }
 
     public func start(interval: Double = 0.5) {
@@ -87,7 +90,7 @@ public final class LiveMirrorController: MirrorSceneSource {
     public func perform(_ actions: [MirrorAction], label: String) {
         guard !actions.isEmpty else { return }
         for action in actions {
-            let availability = ActionModel.availability(action, target: target)
+            let availability = dispatcher.availability(action)
             guard availability == .available else {
                 status = "\(label): \(availability)"
                 return

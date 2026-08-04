@@ -375,15 +375,15 @@ final class NOWMirrorSourceTests: XCTestCase {
            deliberately. Declaring otherwise would make every desktop
            click a silent no-op instead of a named refusal. */
         XCTAssertFalse(planes.positionalClick)
-        XCTAssertFalse(planes.qmpInput)
+        XCTAssertFalse(planes.inputDevice)
 
         guard case .unsupported = ActionModel.availability(
             .click(x: 1, y: 1), planes: planes) else {
             return XCTFail("a positional click must be refused BY NAME")
         }
-        guard case .emulatorOnly = ActionModel.availability(
-            .drag(x0: 0, y0: 0, x1: 1, y1: 1), planes: planes) else {
-            return XCTFail("a QMP drag is about the machine, not the act")
+        guard case .inputDeviceUnavailable = ActionModel.availability(
+            .deviceDrag(x0: 0, y0: 0, x1: 1, y1: 1), planes: planes) else {
+            return XCTFail("a device drag needs an input adapter")
         }
         XCTAssertEqual(
             ActionModel.availability(.controlPart(ref: "r", part: 21),

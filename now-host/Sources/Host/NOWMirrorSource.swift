@@ -1120,7 +1120,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         switch verdict {
         case .available:
             return "available"
-        case .emulatorOnly(let reason), .unsupported(let reason):
+        case .inputDeviceUnavailable(let reason), .unsupported(let reason):
             return reason
         }
     }

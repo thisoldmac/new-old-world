@@ -17,7 +17,7 @@ struct ActBattery {
     var poller: ScenePoller
     let dispatcher: ActionDispatcher
 
-    init(target: MirrorTarget) {
+    init(target: MirrorTarget, qmpSocket: String?) {
         self.target = target
         // One shared wire (single-connection worker).
         let wire = WireClient(target: target)
@@ -26,7 +26,8 @@ struct ActBattery {
         poller.includeDesktopItems = true   // so the disk-icon test has a target
         poller.detectScreen()
         self.poller = poller
-        self.dispatcher = ActionDispatcher(target: target, wire: wire)
+        self.dispatcher = ActionDispatcher(target: target, qmpSocket: qmpSocket,
+                                           wire: wire)
     }
 
     struct Result { let name: String; let status: Status; let detail: String }
@@ -139,11 +140,11 @@ struct ActBattery {
             let range = "\(bar.min ?? 0)…\(bar.max ?? 0)"
             // Park at the top so a line-DOWN has room whatever the prior state.
             if let up = Scrollbar.center(bar, .lineUp) {
-                dispatch([.qmpClick(x: up.x + origin.x, y: up.y + origin.y)])
+                dispatch([.deviceClick(x: up.x + origin.x, y: up.y + origin.y)])
             }
             let parked = settle(4) { _ in false }.flatMap(Self.barValue) ?? v0
             if let down = Scrollbar.center(bar, .lineDown) {
-                dispatch([.qmpClick(x: down.x + origin.x, y: down.y + origin.y)])
+                dispatch([.deviceClick(x: down.x + origin.x, y: down.y + origin.y)])
                 let now = settle { (Self.barValue($0) ?? parked) > parked }
                     .flatMap(Self.barValue) ?? parked
                 record("scroll line (arrow)", now > parked ? .pass : .fail,
@@ -161,7 +162,7 @@ struct ActBattery {
                 // would prove nothing.
                 let want = at >= mx ? mn : mx
                 if let to = Scrollbar.thumbTarget(bar2, value: want) {
-                    dispatch(ActionModel.thumbDrag(
+                    dispatch(ActionModel.thumbTracking(
                         from: (from.x + origin.x, from.y + origin.y),
                         to: (to.x + origin.x, to.y + origin.y)))
                     let landed = settle { abs((Self.barValue($0) ?? 9999) - want) <= 1 }
@@ -329,7 +330,7 @@ struct ActBattery {
 
     private func dispatch(_ actions: [MirrorAction]) {
         for a in actions {
-            guard ActionModel.availability(a, target: target) == .available
+            guard dispatcher.availability(a) == .available
             else { continue }
             _ = try? dispatcher.perform(a)
         }

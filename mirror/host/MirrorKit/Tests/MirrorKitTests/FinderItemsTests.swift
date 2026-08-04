@@ -194,7 +194,7 @@ final class FinderItemsTests: XCTestCase {
         XCTAssertEqual(ActionModel.click(on: hit),
                        [.click(x: 82, y: 88, count: 1, mods: 0)])
         XCTAssertEqual(ActionModel.click(on: hit, count: 2),
-                       [.qmpDoubleClick(x: 82, y: 88)])
+                       [.deviceDoubleClick(x: 82, y: 88)])
     }
 
     // MARK: - The cache key

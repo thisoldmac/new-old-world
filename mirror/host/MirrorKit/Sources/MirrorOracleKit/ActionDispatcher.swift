@@ -10,6 +10,7 @@ import MirrorKit
 /// silent no-op.
 public final class ActionDispatcher {
     public let target: MirrorTarget
+    public let qmpSocket: String?
     private let wire: WireClient
 
     public enum DispatchError: Error, CustomStringConvertible {
@@ -26,17 +27,31 @@ public final class ActionDispatcher {
         }
     }
 
-    public init(target: MirrorTarget, timeout: Double = 10.0) {
+    public init(target: MirrorTarget, qmpSocket: String? = nil,
+                timeout: Double = 10.0) {
         self.target = target
+        self.qmpSocket = qmpSocket
         self.wire = WireClient(target: target, timeout: timeout)
     }
 
     /// Share the poller's wire — the toolkit worker serves ONE connection,
     /// so the dispatcher must reuse it, not open a second (which the worker
     /// resets, breaking mouseloc mid-drag).
-    public init(target: MirrorTarget, wire: WireClient) {
+    public init(target: MirrorTarget, qmpSocket: String? = nil,
+                wire: WireClient) {
         self.target = target
+        self.qmpSocket = qmpSocket
         self.wire = wire
+    }
+
+    public var actionPlanes: ActionPlanes {
+        ActionPlanes(inputDevice: qmpSocket != nil,
+                     semanticActs: false,
+                     positionalClick: true)
+    }
+
+    public func availability(_ action: MirrorAction) -> ActionAvailability {
+        ActionModel.availability(action, planes: actionPlanes)
     }
 
     /// Dispatch a gesture's action sequence in order. Returns the guest
@@ -48,7 +63,7 @@ public final class ActionDispatcher {
 
     @discardableResult
     public func perform(_ action: MirrorAction) throws -> [String: Any] {
-        let availability = ActionModel.availability(action, target: target)
+        let availability = availability(action)
         guard availability == .available else {
             throw DispatchError.notAvailable(availability)
         }
@@ -85,19 +100,19 @@ public final class ActionDispatcher {
             throw DispatchError.notAvailable(.unsupported(
                 reason: "this dispatcher drives Mirror's agent, which has "
                     + "no act plane; a semantic act needs one"))
-        case .drag(let x0, let y0, let x1, let y1):
+        case .deviceDrag(let x0, let y0, let x1, let y1):
             return try drag(x0: x0, y0: y0, x1: x1, y1: y1)
-        case .qmpClick(let x, let y):
-            let qmp = try QmpClient(socketPath: target.qmp!)
+        case .deviceClick(let x, let y):
+            let qmp = try QmpClient(socketPath: qmpSocket!)
             try position(qmp: qmp, x: x, y: y)
             try qmp.button(down: true)
             usleep(120_000)   // hold long enough for TrackGoAway/SelectWindow
             try qmp.button(down: false)
             return ["qmpClicked": [x, y]]
-        case .qmpDoubleClick(let x, let y):
+        case .deviceDoubleClick(let x, let y):
             // Position once, then two rapid clicks — a genuine double-click
             // (well within the ~500ms guest double-click time).
-            let qmp = try QmpClient(socketPath: target.qmp!)
+            let qmp = try QmpClient(socketPath: qmpSocket!)
             try position(qmp: qmp, x: x, y: y)
             for _ in 0..<2 {
                 try qmp.button(down: true)
@@ -106,7 +121,7 @@ public final class ActionDispatcher {
                 usleep(45_000)
             }
             return ["qmpDoubleClicked": [x, y]]
-        case .thumbDrag(let x0, let y0, let x1, let y1):
+        case .thumbTracking(let x0, let y0, let x1, let y1):
             // Unity, not 1.6x: TrackControl tracks the thumb to wherever the
             // cursor lands, so the drop position IS the scroll value (the same
             // reason the menu drag needs it — 1.6x overshoots to the end).
@@ -119,7 +134,7 @@ public final class ActionDispatcher {
             return try wire.request("menuinvoke",
                                     ["menuID": menuID, "item": itemIndex,
                                      "titleLeft": titleLeft]).result
-        case .menuDrag(let menuLeft, let itemIndex):
+        case .menuTracking(let menuLeft, let itemIndex):
             // Press on the title, drag down the guest-drawn menu, release
             // on the item row. Positioning before the press is closed-loop;
             // once MenuSelect tracks, mouseloc is starved, so the drop is
@@ -177,7 +192,7 @@ public final class ActionDispatcher {
     /// time; holding it would lock out tools/qmp and tools/stop).
     private func drag(x0: Int, y0: Int, x1: Int, y1: Int,
                       compensation: Double = 1.6) throws -> [String: Any] {
-        let qmp = try QmpClient(socketPath: target.qmp!)
+        let qmp = try QmpClient(socketPath: qmpSocket!)
         try position(qmp: qmp, x: x0, y: y0)
         try qmp.button(down: true)
         usleep(150_000)

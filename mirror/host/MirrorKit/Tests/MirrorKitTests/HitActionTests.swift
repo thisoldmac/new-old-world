@@ -189,7 +189,7 @@ final class HitActionTests: XCTestCase {
         XCTAssertEqual(
             ActionModel.click(on: .content(windowID: doc.id, psn: doc.psn,
                                            front: false, x: 100, y: 100)),
-            [.qmpClick(x: 100, y: 100)])
+            [.deviceClick(x: 100, y: 100)])
         // The front window's content click stays a semantic wire click.
         XCTAssertEqual(
             ActionModel.click(on: .content(windowID: doc.id, psn: doc.psn,
@@ -199,10 +199,10 @@ final class HitActionTests: XCTestCase {
         XCTAssertEqual(
             ActionModel.click(on: .titlebar(windowID: doc.id, psn: doc.psn,
                                             x: 50, y: 5)),
-            [.qmpClick(x: 50, y: 5)])
+            [.deviceClick(x: 50, y: 5)])
     }
 
-    func testDoubleClickOpensViaQmpDoubleClick() throws {
+    func testDoubleClickOpensViaDeviceDoubleClick() throws {
         let scene = try fixtureScene("05-axtree-front-save-dialog")
         let doc = scene.windows.first { $0.kind == 8 }!
         // Double-clicking window content or the desktop → a real QMP
@@ -211,10 +211,10 @@ final class HitActionTests: XCTestCase {
             ActionModel.click(on: .content(windowID: doc.id, psn: doc.psn,
                                            front: true, x: 40, y: 40),
                               count: 2),
-            [.qmpDoubleClick(x: 40, y: 40)])
+            [.deviceDoubleClick(x: 40, y: 40)])
         XCTAssertEqual(
             ActionModel.click(on: .desktop(x: 700, y: 40), count: 2),
-            [.qmpDoubleClick(x: 700, y: 40)])
+            [.deviceDoubleClick(x: 700, y: 40)])
         // Single clicks stay as before.
         XCTAssertEqual(
             ActionModel.click(on: .desktop(x: 700, y: 40), count: 1),
@@ -336,7 +336,7 @@ final class HitActionTests: XCTestCase {
             // Actuation point is the box center → QMP press-release there.
             XCTAssertEqual(ActionModel.click(
                 on: .widget(windowID: front.id, kind: kind, x: ax, y: ay)),
-                [.qmpClick(x: c.x, y: c.y)])
+                [.deviceClick(x: c.x, y: c.y)])
         }
         // Grow box at the bottom-right corner.
         let grow = WindowChrome.growBox(front)!
@@ -407,28 +407,26 @@ final class HitActionTests: XCTestCase {
         XCTAssertEqual(fronts.first?.title, "Macintosh HD")
     }
 
-    // MARK: - Typed emu-only availability (plan decision 6)
+    // MARK: - Typed input-device availability
 
     func testDragAvailability() {
-        let emu = MirrorTarget(host: "h", port: 1, machine: "mac99",
-                               qmp: "/tmp/qmp.sock")
-        let metal = MirrorTarget(host: "h", port: 1, machine: "pb1400c")
-        let qmpActions: [MirrorAction] = [
-            .drag(x0: 0, y0: 0, x1: 10, y1: 10),
-            .qmpClick(x: 5, y: 5),
-            .menuDrag(menuLeft: 38, itemIndex: 6),
+        let deviceActions: [MirrorAction] = [
+            .deviceDrag(x0: 0, y0: 0, x1: 10, y1: 10),
+            .deviceClick(x: 5, y: 5),
+            .menuTracking(menuLeft: 38, itemIndex: 6),
         ]
-        for action in qmpActions {
-            XCTAssertEqual(ActionModel.availability(action, target: emu),
+        for action in deviceActions {
+            XCTAssertEqual(ActionModel.availability(action, planes: .deviceDriven),
                            .available)
-            guard case .emulatorOnly = ActionModel.availability(
-                action, target: metal) else {
-                return XCTFail("\(action) on a QMP-less target must be "
-                               + "typed emu-only")
+            guard case .inputDeviceUnavailable = ActionModel.availability(
+                action, planes: .residentActPlane) else {
+                return XCTFail("\(action) without a device adapter must be "
+                               + "typed unavailable")
             }
             // …and the dispatcher refuses fail-closed, before any wire I/O.
             XCTAssertThrowsError(
-                try ActionDispatcher(target: metal).perform(action))
+                try ActionDispatcher(target: MirrorTarget(
+                    host: "h", port: 1, machine: "pb1400c")).perform(action))
         }
     }
 }

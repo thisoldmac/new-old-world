@@ -148,6 +148,29 @@ though their executable behavior no longer links into NOW Host. Those types
 must become platform-neutral or oracle-owned before U4 is complete. No live VM
 or Mirror was touched, and this checkpoint changes no visible projection.
 
+### STATE ENGINE U4C: PRODUCTION ACTION MODEL IS ORACLE-NEUTRAL (2026-08-04)
+
+The remaining development-oracle vocabulary has been removed from production
+state and action types. `MirrorTarget` now identifies only the guest wire and
+machine. Positioned press, double-click, drag, menu tracking, and thumb
+tracking are platform-neutral device actions behind `ActionPlanes.inputDevice`;
+the optional QMP socket and its availability decision live in
+`MirrorOracleKit`. `LiveMirrorController` exposes the adapter's actual planes,
+so a development launch without a socket no longer advertises device tracking
+that its dispatcher will refuse.
+
+Sixty-one focused Mirror action/hit/Finder/scroll tests and 24 NOW source and
+oracle-boundary tests pass. Both `MirrorApp` and production `Host` build, and
+the Host binary contains none of the QMP client markers. The new model-source
+guard was mutation-watched: adding a QMP sentinel to `ActionModel.swift`
+failed the named test, and restoring the boundary passed it.
+
+This is a **tested architecture checkpoint**, not visible or emulator-verified
+progress. U4 still needs producer-owned content epochs, strict full-manifest
+gate tooling, and live shadow parity; U5 read cutover, FIFO mutation, the
+direct native input/pixel campaign, guest build, and staged VM remain open.
+The live C26 Mirror and VM were deliberately left untouched.
+
 ## CONTRACT FROZEN; UNIFICATION IMPLEMENTATION STILL OPEN (2026-08-03)
 
 The unified NOW Extension prerequisite now starts from a source-derived

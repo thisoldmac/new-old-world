@@ -2,7 +2,7 @@ import Foundation
 
 /// The semantic action vocabulary: what the mirror can DO to the guest,
 /// element-first. Every gesture resolves to a list of these; the dispatcher
-/// turns them into wire verbs (or the QMP drag plane).
+/// turns them into wire verbs or a concrete input-device adapter.
 public enum MirrorAction: Equatable {
     /// Semantic, fail-closed click on a resolved control.
     case axdo(ref: String, count: Int = 1, mods: Int = 0, text: String? = nil)
@@ -15,44 +15,41 @@ public enum MirrorAction: Equatable {
     case activate(psn: String)
     /// Positional click at a guest point (front app receives it).
     case click(x: Int, y: Int, count: Int = 1, mods: Int = 0)
-    /// Press-move-release, positioned closed-loop over QMP. Drives
-    /// DragWindow/GrowWindow tracking loops the wire can't. EMU-ONLY.
-    case drag(x0: Int, y0: Int, x1: Int, y1: Int)
-    /// A real hardware press-release at a point via QMP — for the title-bar
-    /// widget tracking loops (TrackGoAway/TrackBox). EMU-ONLY.
-    case qmpClick(x: Int, y: Int)
-    /// A real hardware double-click at a point via QMP — two rapid
+    /// Press-move-release through a positioned input-device adapter. Drives
+    /// DragWindow/GrowWindow tracking loops the semantic wire cannot enter.
+    case deviceDrag(x0: Int, y0: Int, x1: Int, y1: Int)
+    /// A hardware-shaped press-release at a point, for title-bar widget
+    /// tracking loops such as TrackGoAway and TrackBox.
+    case deviceClick(x: Int, y: Int)
+    /// A hardware-shaped double-click at a point — two rapid
     /// press-releases without repositioning between, so the guest sees a
-    /// genuine double-click (opens icons). EMU-ONLY.
-    case qmpDoubleClick(x: Int, y: Int)
+    /// genuine double-click (opens icons).
+    case deviceDoubleClick(x: Int, y: Int)
     /// Select a shortcut-less menu item: press on the menubar title, drag
-    /// down the guest-drawn menu to the item row, release. EMU-ONLY.
-    case menuDrag(menuLeft: Int, itemIndex: Int)
+    /// down the guest-drawn menu to the item row, release.
+    case menuTracking(menuLeft: Int, itemIndex: Int)
 
     /// Perform a menu command through the Portal: the guest's in-process agent
     /// answers the application's own MenuSelect with this item, so the app runs
     /// its real command handler. No menu is drawn, no tracking loop runs, and
-    /// no QMP is involved — which is what makes it metal-shaped where the drag
-    /// below is emulator-only. This is the path for a shortcut-less item; a ⌘
-    /// item should still go as a keystroke, which needs no patch at all.
+    /// no input device is involved. This is the path for a shortcut-less
+    /// item; a ⌘ item should still go as a keystroke, which needs no patch.
     case menuInvoke(menuID: Int, itemIndex: Int, titleLeft: Int)
     /// **A Control Manager part on a resolved control.** The semantic form
-    /// of everything `qmpClick` does to a scroll bar: the arrow, the page
+    /// of everything `deviceClick` does to a scroll bar: the arrow, the page
     /// gap and the thumb are three different acts, and this says which one
     /// without a mouse being involved.
     ///
-    /// Metal-shaped, which is the whole reason it exists. `qmpClick` needs
-    /// the emulator's input plane, so on a real Macintosh a mirror built on
-    /// it cannot scroll anything - and a resident act plane can serve this
-    /// on either. A driver without one declares so and the gesture falls
-    /// back to the hardware press.
+    /// A resident act plane can serve this on an emulator or on metal. A
+    /// driver without one declares so and the gesture may fall back to its
+    /// input-device adapter when one is explicitly available.
     case controlPart(ref: String, part: Int, mods: Int = 0)
     /// **A window act addressed by reference**: select it, close it, zoom it,
     /// move it, size it. The Window Manager's own operations, rather than a hardware
     /// press inside a widget whose tracking loop then runs.
     ///
     /// Same argument as `controlPart`, and the same fallback. A title-bar
-    /// drag over QMP works only on an emulator; this works wherever the act
+    /// device drag depends on an input adapter; this works wherever the act
     /// plane is resident.
     case windowAct(ref: String, act: WindowAct)
 
@@ -67,23 +64,21 @@ public enum MirrorAction: Equatable {
         case resize(width: Int, height: Int)
     }
 
-    /// A scrollbar thumb drag. Distinct from `drag` because the DROP POSITION
-    /// is the value: TrackControl live-tracks the thumb, so this needs the
+    /// A scrollbar thumb drag. Distinct from `deviceDrag` because the drop
+    /// position is the value: TrackControl live-tracks the thumb, so this needs the
     /// precise (unity-compensated) motion a menu drag needs — the 1.6x a
     /// window drag wants would overshoot and slam the thumb to the end.
-    case thumbDrag(x0: Int, y0: Int, x1: Int, y1: Int)
+    case thumbTracking(x0: Int, y0: Int, x1: Int, y1: Int)
 }
 
-/// Per-target availability — the typed emu-only discipline (plan decision
-/// 6): the GUI grays what a target can't do, the headless head reports it
-/// as data; nothing degrades silently.
+/// Per-driver availability: the GUI grays what a driver can't do, the
+/// headless head reports it as data; nothing degrades silently.
 public enum ActionAvailability: Equatable {
     case available
-    /// Requires the emulator's QMP input plane and this target has none
-    /// (metal, or emu launched without --qmp).
-    case emulatorOnly(reason: String)
+    /// Requires a positioned input-device adapter and this driver has none.
+    case inputDeviceUnavailable(reason: String)
     /// The driver serves no verb for this act at all. Distinct from
-    /// `emulatorOnly`, which says "this machine, not this act" - here the
+    /// `inputDeviceUnavailable`, which says "this driver, not this act" - here the
     /// act is simply outside what the target's wire can express, and no
     /// emulator makes it possible. A GUI greys both and says different
     /// things.
@@ -104,10 +99,10 @@ public enum ActionAvailability: Equatable {
 /// target is where a behavioural difference becomes invisible in review
 /// and obvious to a person's hand.
 public struct ActionPlanes: Equatable, Sendable {
-    /// Positioned hardware input (the emulator's QMP plane). Drives the
+    /// Positioned hardware-shaped input. Drives the
     /// Toolbox tracking loops - DragWindow, GrowWindow, TrackControl -
-    /// that no wire verb can enter. Emulator only, always.
-    public var qmpInput: Bool
+    /// that no semantic wire verb can enter.
+    public var inputDevice: Bool
     /// Acts addressed by an opaque reference the guest minted: a control
     /// part, a window act, a menu item. Needs a resident act plane on the
     /// guest; works on metal, which is the point.
@@ -132,26 +127,25 @@ public struct ActionPlanes: Equatable, Sendable {
     /// modifier at all.
     public var modifiedKeystrokes: Bool
 
-    public init(qmpInput: Bool, semanticActs: Bool, positionalClick: Bool,
+    public init(inputDevice: Bool, semanticActs: Bool, positionalClick: Bool,
                 modifiedKeystrokes: Bool = true) {
-        self.qmpInput = qmpInput
+        self.inputDevice = inputDevice
         self.semanticActs = semanticActs
         self.positionalClick = positionalClick
         self.modifiedKeystrokes = modifiedKeystrokes
     }
 
-    /// Mirror's own agent: a positional click verb, QMP when the target is
-    /// an emulator, and no act plane. The default, so every existing
-    /// caller keeps the behaviour it was written against.
-    public static let agent = ActionPlanes(
-        qmpInput: true, semanticActs: false, positionalClick: true)
+    /// A driver with positioned device input and a positional click verb,
+    /// but no resident semantic act plane.
+    public static let deviceDriven = ActionPlanes(
+        inputDevice: true, semanticActs: false, positionalClick: true)
 
     /// A guest with the resident act plane and no positional click - NOW.
     /// Window and control acts go semantically and work on metal; a click
     /// on bare desktop has nowhere to go and is refused by name rather
     /// than silently dropped.
     public static let residentActPlane = ActionPlanes(
-        qmpInput: false, semanticActs: true, positionalClick: false,
+        inputDevice: false, semanticActs: true, positionalClick: false,
         modifiedKeystrokes: false)
 }
 
@@ -172,13 +166,6 @@ public enum ActionModel {
         "7": 26, "8": 28, "9": 25,
     ]
 
-    public static func availability(_ action: MirrorAction,
-                                    target: MirrorTarget) -> ActionAvailability {
-        availability(action, planes: ActionPlanes(
-            qmpInput: target.qmp != nil, semanticActs: false,
-            positionalClick: true))
-    }
-
     /// The same question asked of a driver rather than of a wire address,
     /// because NOW is not one: it is reached over its own wire and serves
     /// acts a `MirrorTarget` has no way to describe.
@@ -186,11 +173,13 @@ public enum ActionModel {
                                     planes: ActionPlanes)
         -> ActionAvailability {
         switch action {
-        case .drag, .qmpClick, .qmpDoubleClick, .menuDrag, .thumbDrag:
-            return planes.qmpInput
+        case .deviceDrag, .deviceClick, .deviceDoubleClick,
+             .menuTracking, .thumbTracking:
+            return planes.inputDevice
                 ? .available
-                : .emulatorOnly(reason: "needs the emulator QMP input plane; "
-                                + "this target has none")
+                : .inputDeviceUnavailable(
+                    reason: "needs a positioned input-device adapter; "
+                        + "this driver has none")
         case .controlPart, .windowAct:
             return planes.semanticActs
                 ? .available
@@ -242,7 +231,8 @@ public enum ActionModel {
     /// [] when the element is inert (disabled control, desktop backdrop…).
     public static func click(on target: HitTester.Target,
                              count: Int = 1, mods: Int = 0) -> [MirrorAction] {
-        click(on: target, count: count, mods: mods, planes: .agent, in: nil)
+        click(on: target, count: count, mods: mods,
+              planes: .deviceDriven, in: nil)
     }
 
     /// The same gesture, resolved against what the driver can actually do.
@@ -278,7 +268,7 @@ public enum ActionModel {
                                                     act: .zoom(out: true))]
                     // The Window Manager exposes no collapse operation, so
                     // the hardware press on the box is the only route and
-                    // it stays emulator-only rather than being invented.
+                    // it stays device-backed rather than being invented.
                     case .collapse: break
                     }
                 }
@@ -315,7 +305,7 @@ public enum ActionModel {
             // CENTRE — a page gap — whatever the user actually pressed.
             // The thumb is a drag, not a click.
             guard part != .thumb else { return [] }
-            return [.qmpClick(x: x, y: y)]
+            return [.deviceClick(x: x, y: y)]
         case .menubarBackground:
             // Missing menubar content is inert; no local substitute may pose
             // as a guest-provided menu.
@@ -325,38 +315,38 @@ public enum ActionModel {
             // the coordinates are the icon's own centre as the FINDER reports
             // it, so the click is as good as the guest's own layout. Select
             // with a wire click (metal-safe); open with a real double-click,
-            // which is the QMP path today.
-            if count >= 2 { return [.qmpDoubleClick(x: x, y: y)] }
+            // which needs a real input-device path.
+            if count >= 2 { return [.deviceDoubleClick(x: x, y: y)] }
             return [.click(x: x, y: y, count: 1, mods: mods)]
         case .desktopItem(_, let x, let y):
             // A plain click SELECTS the icon; a double-click OPENS it. The
             // coordinates are the icon's own centre, not where the pointer
             // landed, so the click is as good as the position the guest itself
             // reported. Selection is metal-safe (a posted click); opening still
-            // wants a real double-click, which is the QMP path today.
-            if count >= 2 { return [.qmpDoubleClick(x: x, y: y)] }
+            // wants a real input-device double-click.
+            if count >= 2 { return [.deviceDoubleClick(x: x, y: y)] }
             return [.click(x: x, y: y, count: 1, mods: mods)]
         case .titlebar(_, _, let x, let y):
             // A real click in the title bar raises the window (the guest's
             // SelectWindow) — activate/SetFrontProcess only fronts the app,
             // not a specific window, and never reorders same-app windows.
-            return [.qmpClick(x: x, y: y)]
+            return [.deviceClick(x: x, y: y)]
         case .content(_, _, let front, let x, let y):
-            // Double-click (open an icon/item) → a real QMP double-click.
-            if count >= 2 { return [.qmpDoubleClick(x: x, y: y)] }
+            // Double-click (open an icon/item) → a real device double-click.
+            if count >= 2 { return [.deviceDoubleClick(x: x, y: y)] }
             // Front window: a semantic click (metal-safe). Background window:
             // a real click to raise it (+ hit the content), like the guest.
             return front ? [.click(x: x, y: y, count: 1, mods: mods)]
-                         : [.qmpClick(x: x, y: y)]
+                         : [.deviceClick(x: x, y: y)]
         case .desktop(let x, let y):
-            // Double-click a desktop icon → a real QMP double-click (the
+            // Double-click a desktop icon → a real device double-click (the
             // Finder opens it); single click selects via a wire click.
-            if count >= 2 { return [.qmpDoubleClick(x: x, y: y)] }
+            if count >= 2 { return [.deviceDoubleClick(x: x, y: y)] }
             return [.click(x: x, y: y, count: 1, mods: mods)]
         case .widget(_, _, let x, let y):
             // Real press-release inside the box; the widget's tracking loop
             // needs the hardware button.
-            return [.qmpClick(x: x, y: y)]
+            return [.deviceClick(x: x, y: y)]
         case .growBox:
             return []   // the grow box acts on drag, not click
         case .menuTitle:
@@ -367,7 +357,7 @@ public enum ActionModel {
     /// A grow-box drag → resize (GrowWindow tracks from the grab point).
     public static func growDrag(from: (x: Int, y: Int),
                                 to: (x: Int, y: Int)) -> [MirrorAction] {
-        [.drag(x0: from.x, y0: from.y, x1: to.x, y1: to.y)]
+        [.deviceDrag(x0: from.x, y0: from.y, x1: to.x, y1: to.y)]
     }
 
     /// The same resize as a window act, when the driver can serve one.
@@ -393,9 +383,9 @@ public enum ActionModel {
     /// A scrollbar thumb drag → scroll (TrackControl live-tracks the thumb).
     /// Both points are GLOBAL; the caller maps the control's space through the
     /// window's content origin.
-    public static func thumbDrag(from: (x: Int, y: Int),
+    public static func thumbTracking(from: (x: Int, y: Int),
                                  to: (x: Int, y: Int)) -> [MirrorAction] {
-        [.thumbDrag(x0: from.x, y0: from.y, x1: to.x, y1: to.y)]
+        [.thumbTracking(x0: from.x, y0: from.y, x1: to.x, y1: to.y)]
     }
 
     /// A wheel notch over a window → line scrolls on its scrollbar. OS 9 has
@@ -408,13 +398,13 @@ public enum ActionModel {
               let c = Scrollbar.center(ctl, notches > 0 ? .lineDown : .lineUp)
         else { return [] }
         let p = (x: c.x + contentOrigin.x, y: c.y + contentOrigin.y)
-        return Array(repeating: MirrorAction.qmpClick(x: p.x, y: p.y),
+        return Array(repeating: MirrorAction.deviceClick(x: p.x, y: p.y),
                      count: Swift.min(abs(notches), 8))
     }
 
     /// Select a menu item, whatever it takes: ⌘ items go by keystroke
-    /// (cheap, wire-only, metal-safe); shortcut-less items go by QMP
-    /// menu-drag (emu-only, typed). A separator is structurally inert.
+    /// (cheap, wire-only, metal-safe); shortcut-less items use typed menu
+    /// tracking when an input-device adapter exists. A separator is inert.
     ///
     /// We deliberately do NOT gate on `item.enabled`. A classic app disables
     /// its menus at rest and only AdjustMenus()es them at menu-down time, so
@@ -432,15 +422,15 @@ public enum ActionModel {
         // Shortcut-less items go through the Portal, which answers the app's own
         // MenuSelect by IDENTITY. The menu-drag that used to serve this case
         // aimed at rows computed from a uniform-16px assumption the guest has
-        // since disproved (separators are 6px), and was emulator-only besides.
+        // since disproved (separators are 6px), and was device-only besides.
         return [.menuInvoke(menuID: menu.id, itemIndex: item.index,
                             titleLeft: menu.left)]
     }
 
-    /// A title-bar drag gesture → window move (emu-only availability).
+    /// A title-bar drag gesture → window move (device-backed availability).
     public static func titlebarDrag(from: (x: Int, y: Int),
                                     to: (x: Int, y: Int)) -> [MirrorAction] {
-        [.drag(x0: from.x, y0: from.y, x1: to.x, y1: to.y)]
+        [.deviceDrag(x0: from.x, y0: from.y, x1: to.x, y1: to.y)]
     }
 
     /// The same move as a window act. The act names WHERE THE WINDOW GOES
@@ -463,7 +453,7 @@ public enum ActionModel {
 
     /// The keystroke path for a ⌘-shortcut menu item (both heads land here).
     /// Shortcut-less items don't come through here — `menuSelect` routes them
-    /// to the QMP menu-drag instead.
+    /// to input-device menu tracking instead.
     public static func menuItem(_ item: Scene.MenuItem) -> [MirrorAction] {
         // No `item.enabled` gate — see menuSelect: the resting enable flag is
         // not authoritative for app menus. A ⌘ keystroke to a truly disabled

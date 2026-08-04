@@ -20,6 +20,8 @@ import SwiftUI
 /// is the headless smoke check.
 struct Options {
     var target: MirrorTarget?
+    /// Development-oracle input adapter. Kept outside the production target.
+    var qmpSocket: String?
     var plane = ScenePoller.Plane.axtree
     var polls = 1
     var interval = 1.0
@@ -116,8 +118,9 @@ func parseArgs() -> Options? {
     }
     if let port {
         o.target = MirrorTarget(host: host, port: port, scope: scope,
-                                machine: machine, qmp: qmp)
+                                machine: machine)
     }
+    o.qmpSocket = qmp
     if o.managedServe {
         return o
     }
@@ -262,7 +265,8 @@ if options.managedServe {
         + "Runtime/mirror.sock"
     let sock = ((env["TBT_MIRROR_SOCKET"] ?? defaultSock) as NSString)
         .expandingTildeInPath
-    let service = MirrorService(target: target, socketPath: sock)
+    let service = MirrorService(target: target, qmpSocket: options.qmpSocket,
+                                socketPath: sock)
     service.managedReadiness = (identity: identity, port: readinessPort)
     service.run()
 }
@@ -271,7 +275,8 @@ if options.managedServe {
 // mcp/mirror-service-ipc.toml over a unix stream — the headless head of
 // the one-brain-two-heads architecture. Blocks forever.
 if let sock = options.serve, let target = options.target {
-    MirrorService(target: target, socketPath: sock).run()
+    MirrorService(target: target, qmpSocket: options.qmpSocket,
+                  socketPath: sock).run()
 }
 
 // M3 pixel island: --island "l,t,r,b" [--out png]. Fetches ONE screen region's
@@ -341,7 +346,7 @@ guard let target = options.target else { exit(2) }
 // The actuation battery: drive the real action model through a gesture suite.
 if options.battery {
     print("actuation battery @ \(target.host):\(target.port)")
-    var battery = ActBattery(target: target)
+    var battery = ActBattery(target: target, qmpSocket: options.qmpSocket)
     let results = battery.run()
     let pass = results.filter { $0.status == .pass }.count
     let fail = results.filter { $0.status == .fail }.count
@@ -380,6 +385,7 @@ if options.window {
     app.setActivationPolicy(.regular)
 
     let controller = LiveMirrorController(target: target,
+                                          qmpSocket: options.qmpSocket,
                                           display: options.display,
                                           islands: options.islands)
     controller.start(interval: options.interval)
@@ -447,7 +453,9 @@ if options.actScroll != nil || options.actMenu != nil || options.actControl != n
     actPoller.includeDisplay = options.display
     actPoller.includeIslands = options.islands
     actPoller.detectScreen()
-    let dispatcher = ActionDispatcher(target: target, wire: actWire)
+    let dispatcher = ActionDispatcher(target: target,
+                                      qmpSocket: options.qmpSocket,
+                                      wire: actWire)
     do {
         let before = try actPoller.poll(options.plane)
         print("before: " + summarize(before))
@@ -471,7 +479,7 @@ if options.actScroll != nil || options.actMenu != nil || options.actControl != n
                       let from = Scrollbar.center(bar, .thumb),
                       let to = Scrollbar.thumbTarget(bar, value: want)
                 else { fail("--act-scroll thumb:VALUE needs a live thumb") }
-                actions = ActionModel.thumbDrag(from: global(from), to: global(to))
+                actions = ActionModel.thumbTracking(from: global(from), to: global(to))
             } else if spec.hasPrefix("wheel:") {
                 guard let n = Int(spec.dropFirst(6)) else { fail("wheel:N") }
                 actions = ActionModel.wheel(n, on: bar, contentOrigin: origin)
@@ -579,7 +587,7 @@ if options.actScroll != nil || options.actMenu != nil || options.actControl != n
         }
 
         for action in actions {
-            let availability = ActionModel.availability(action, target: target)
+            let availability = dispatcher.availability(action)
             guard availability == .available else {
                 fail("not available on this target: \(availability)")
             }

@@ -19,6 +19,7 @@ final class MirrorService {
     private let queue = DispatchQueue(label: "mirror.serve.wire")
     private var poller: ScenePoller
     private let dispatcher: ActionDispatcher
+    private let qmpSocket: String?
     private let socketPath: String
 
     // MARK: Session (one at a time — the service drives one guest)
@@ -36,15 +37,17 @@ final class MirrorService {
     /// standalone `--serve <socket>` dev path.
     var managedReadiness: (identity: String, port: UInt16)?
 
-    init(target: MirrorTarget, socketPath: String) {
+    init(target: MirrorTarget, qmpSocket: String?, socketPath: String) {
         self.target = target
+        self.qmpSocket = qmpSocket
         self.socketPath = socketPath
         let wire = WireClient(target: target)
         var poller = ScenePoller(target: target, wire: wire)
         poller.includeDesktopItems = true
         poller.detectScreen()
         self.poller = poller
-        self.dispatcher = ActionDispatcher(target: target, wire: wire)
+        self.dispatcher = ActionDispatcher(target: target, qmpSocket: qmpSocket,
+                                           wire: wire)
     }
 
     // MARK: - Socket server (accept loop; one request per connection)
@@ -268,7 +271,7 @@ final class MirrorService {
             return err("bad_request", "unknown planes: \(unknown.sorted())")
         }
         var granted = wanted
-        if wanted.contains("tracking") && target.qmp == nil {
+        if wanted.contains("tracking") && qmpSocket == nil {
             granted.remove("tracking")   // plane_unavailable at act time
         }
         let id = UUID().uuidString
@@ -306,7 +309,7 @@ final class MirrorService {
             "islandBytesFetched": poller.islandBytesFetched,
             "actAvailability": [
                 "semantic": true,
-                "tracking": target.qmp != nil,
+                "tracking": qmpSocket != nil,
             ],
         ])
     }
@@ -579,7 +582,7 @@ final class MirrorService {
             return err("plane_not_granted",
                        "\(mechanism) needs the \(plane) plane")
         }
-        if plane == "tracking" && target.qmp == nil {
+        if plane == "tracking" && qmpSocket == nil {
             return err("plane_unavailable", "no QMP plane on this target")
         }
         guard !actions.isEmpty else {
@@ -930,7 +933,7 @@ final class MirrorService {
                 return err("act_failed", "no draggable thumb")
             }
             return performAct(
-                ActionModel.thumbDrag(from: global(from), to: global(dest)),
+                ActionModel.thumbTracking(from: global(from), to: global(dest)),
                 mechanism: "thumb-drag", plane: "tracking",
                 sess: sess, params: p)
         }
@@ -948,7 +951,7 @@ final class MirrorService {
             }
             let g = global(c)
             let clicks = Array(
-                repeating: MirrorAction.qmpClick(x: g.x, y: g.y),
+                repeating: MirrorAction.deviceClick(x: g.x, y: g.y),
                 count: min(abs(n), 8))
             return performAct(clicks, mechanism: part.rawValue,
                               plane: "tracking", sess: sess, params: p)

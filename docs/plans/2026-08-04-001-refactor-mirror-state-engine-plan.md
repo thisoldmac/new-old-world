@@ -375,6 +375,12 @@ U3 records every mandatory preflight transition against this matrix. U5 cutover 
 
 ### U4. Integrate enrichment, structured content, and snapshot evidence
 
+**Checkpoint 2026-08-04:** Same-sequence render enrichment, app-owned frame
+export, the separate `MirrorOracleKit` executable adapter, and platform-neutral
+production target/action vocabulary are implemented and focused-tested. The
+remaining U4 work is producer-owned content epochs/coverage, the correlated
+gate manifest and stability-sandwich tooling, and live shadow-parity evidence.
+
 **Goal:** Make all render-bearing producers converge through the same replica and emit the evidence required by the strict gate.
 
 **Requirements:** R9-R14, R23-R28.
