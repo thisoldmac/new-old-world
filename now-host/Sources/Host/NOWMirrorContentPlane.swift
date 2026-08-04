@@ -28,6 +28,11 @@ final class NOWMirrorContentPlane {
     private(set) var cursor = 0
     private(set) var operations: [ContentIdentity: [DisplayOp]] = [:]
     private(set) var settledOperations: [ContentIdentity: [DisplayOp]] = [:]
+    /// The identity currently being accumulated is not necessarily the one
+    /// safe to display. A repaint can span several drains, and changing the
+    /// active application must not turn that partial accumulator into a blank
+    /// inactive window. Keep the published identity per exact guest window.
+    private var settledDisplay: [String: ContentIdentity] = [:]
     private var currentDisplay: [String: ContentIdentity] = [:]
     /// A ring overwrite makes the remainder of the current guest display
     /// incomplete. Keep the last settled pixels until this exact slot reports
@@ -50,6 +55,7 @@ final class NOWMirrorContentPlane {
         cursor = 0
         operations.removeAll()
         settledOperations.removeAll()
+        settledDisplay.removeAll()
         currentDisplay.removeAll()
         replacementFloor.removeAll()
         armedAt = nil
@@ -80,11 +86,17 @@ final class NOWMirrorContentPlane {
         guard let front = scene.windows.first(where: \.front) else {
             targetPSN = nil
             targetWindow = nil
-            operations.removeAll()
-            settledOperations.removeAll()
-            currentDisplay.removeAll()
-            completion(.init(scene: scene,
-                             sentence: "content: no front window"))
+            armedAt = nil
+            replacementFloor.removeAll()
+            let retained = settledOperations.values.reduce(0) {
+                $0 + $1.count
+            }
+            completion(.init(
+                scene: attachCached(to: scene),
+                sentence: retained == 0
+                    ? "content: no front window"
+                    : "content: no front window; retained \(retained) "
+                        + "expected-stale draw ops"))
             return
         }
         let needsTarget = Self.needsTarget(
@@ -93,11 +105,19 @@ final class NOWMirrorContentPlane {
             Date().timeIntervalSince($0) >= Self.renewAfter
         } ?? true
         if needsTarget {
+            /* The accumulator belongs to one arm of P3. Retargeting starts a
+               fresh arm, but the last PUBLISHED display remains valid as
+               expected-stale data for every inactive window. This is the
+               same distinction the state engine makes between an incomplete
+               observation and a deletion. */
+            let slot = Self.slot(psn: front.psn, window: front.addr)
+            if let slot, let incomplete = currentDisplay.removeValue(
+                forKey: slot) {
+                operations[incomplete] = nil
+            }
             targetPSN = front.psn
             targetWindow = front.addr
             cursor = 0
-            operations.removeAll()
-            currentDisplay.removeAll()
             replacementFloor.removeAll()
             armedAt = nil
         }
@@ -209,7 +229,13 @@ final class NOWMirrorContentPlane {
         }
         if drain.resync || drain.lostBytes > 0 {
             operations.removeAll()
-            replacementFloor = currentDisplay
+            replacementFloor.removeAll()
+            let front = scene.windows.first(where: \.front)
+            if let slot = Self.slot(psn: targetPSN ?? front?.psn,
+                                    window: targetWindow ?? front?.addr),
+               let current = currentDisplay[slot] {
+                replacementFloor[slot] = current
+            }
         }
 
         let visible = Dictionary(uniqueKeysWithValues: scene.windows.compactMap {
@@ -275,7 +301,15 @@ final class NOWMirrorContentPlane {
            then mixed it with the semantic layer. Keep the previous settled
            display visible until the host has caught the ring completely. */
         if !drain.more && replacementFloor.isEmpty {
-            settledOperations = operations
+            for (slot, identity) in currentDisplay {
+                guard let complete = operations[identity], !complete.isEmpty
+                else { continue }
+                if let prior = settledDisplay[slot], prior != identity {
+                    settledOperations[prior] = nil
+                }
+                settledDisplay[slot] = identity
+                settledOperations[identity] = complete
+            }
         }
         let attached = attachCached(to: scene)
         var facts: [String] = []
@@ -325,7 +359,7 @@ final class NOWMirrorContentPlane {
         var attached = scene
         for index in attached.windows.indices {
             guard let address = attached.windows[index].addr,
-                  let identity = currentDisplay[
+                  let identity = settledDisplay[
                     "\(attached.windows[index].psn):\(address)"],
                   let ops = settledOperations[identity], !ops.isEmpty else {
                 continue
@@ -345,6 +379,11 @@ final class NOWMirrorContentPlane {
     static func needsTarget(currentPSN: String?, currentWindow: UInt32?,
                             front: MirrorKit.Scene.Window) -> Bool {
         currentPSN != front.psn || currentWindow != front.addr
+    }
+
+    private static func slot(psn: String?, window: UInt32?) -> String? {
+        guard let psn, let window else { return nil }
+        return "\(psn):\(window)"
     }
 
     private static func isNewer(_ lhs: ContentIdentity,

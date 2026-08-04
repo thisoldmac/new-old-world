@@ -131,17 +131,50 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
         XCTAssertTrue(sameGeneration.sentence.contains(
             "overwritten display generation"))
 
-        let replacement = model.apply(try drain("""
+        let replacementPage = model.apply(try drain("""
         {"cmd":"drain","ops":[
           {"op":"text","port":"0x1eba6800","ticks":3,
            "a5":"0x00100000","psn":"0.29949953",
            "displayEpoch":4,"generation":7,
            "pen":[2,3],"font":3,"size":9,"face":0,
            "len":5,"fullLen":5,"trunc":false,"text":"Fresh"}],
-         "nextCursor":65600,"records":1}
+         "nextCursor":65600,"records":1,"more":true}
+        """), to: try scene())
+        XCTAssertEqual(replacementPage.scene.windows[0].display?.count, 1,
+                       "a partial replacement keeps the settled display")
+
+        let replacement = model.apply(try drain("""
+        {"cmd":"drain","ops":[],"nextCursor":65600,"records":0,
+         "more":false}
         """), to: try scene())
         XCTAssertEqual(replacement.scene.windows[0].display?.map(\.text),
                        ["Fresh"])
+    }
+
+    func testFrontlessObservationRetainsInactiveWindowDisplay() throws {
+        let model = plane()
+        _ = model.apply(try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"text","port":"0x1eba6800","ticks":1,
+           "a5":"0x00100000","psn":"0.29949953",
+           "displayEpoch":3,"generation":7,
+           "pen":[2,3],"font":3,"size":9,"face":0,
+           "len":7,"fullLen":7,"trunc":false,"text":"Retained"}],
+         "nextCursor":64,"records":1}
+        """), to: try scene())
+
+        var frontless = try scene()
+        for index in frontless.windows.indices {
+            frontless.windows[index].front = false
+        }
+        let finished = expectation(description: "frontless join")
+        model.join(into: frontless) { update in
+            XCTAssertEqual(update.scene.windows[0].display?.map(\.text),
+                           ["Retained"])
+            XCTAssertTrue(update.sentence.contains("expected-stale"))
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 1)
     }
 
     func testStaleGenerationCannotOverlayNewerDisplay() throws {

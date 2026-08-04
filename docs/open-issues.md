@@ -209,6 +209,41 @@ blanking report, but it is only **tested**, not yet directly re-driven in the
 native Mirror or compared with the guest. That row remains red until the full
 sanity preflight and Workshop visual comparison are run on the new build.
 
+### STATE ENGINE U4F: INACTIVE WINDOW CONTENT IS RETAINED, RUNTIME RECHECK OPEN (2026-08-04)
+
+The first direct-input sweep of the U4E build reproduced a second destructive
+transition that its ring-overwrite test did not cover. Selecting New Old World
+left the Finder window visible but produced a frontless structural observation;
+`NOWMirrorContentPlane.join` treated that bounded absence as a deletion and
+cleared every settled display. Retargeting another front window also discarded
+the accumulator identity used to find the last settled display. The Mirror
+therefore oscillated between the Finder's 106 structured draw operations and a
+five-operation `Bitmap unavailable` shell.
+
+The content plane now records the last published identity separately from the
+in-progress identity for each exact guest process/window slot. Frontless and
+retarget observations retain compatible published content as expected-stale;
+partial replacement pages keep drawing the settled display until the newer
+guest epoch/generation finishes. Retention remains session-bounded and
+`guestChanged` still clears it atomically.
+
+Ten content-plane tests and all 21 Mirror-source tests pass. A mutation that
+cleared the published identity on a frontless observation made
+`testFrontlessObservationRetainsInactiveWindowDisplay` fail with a missing
+display, then the correct transition was restored. This checkpoint remains
+**tested, not emulator-verified** until the rebuilt host is directly driven
+through the complete preflight.
+
+That sweep also recorded action reds rather than hiding them: the Apple menu
+and native Application menu rows rendered correctly; selecting New Old World
+did not raise Workshop; `Windows > Workshop` did not surface it; clicking the
+inactive Finder window was refused because the running guest accepted no
+`select` window act; Hide Finder and Date & Time open were dispatched but did
+not visibly settle. The source tree already carries `winact select`, so the
+guest/build mismatch must be resolved by staging and proving the exact
+latest extension and guest before treating those runtime results as current
+implementation failures.
+
 ## CONTRACT FROZEN; UNIFICATION IMPLEMENTATION STILL OPEN (2026-08-03)
 
 The unified NOW Extension prerequisite now starts from a source-derived

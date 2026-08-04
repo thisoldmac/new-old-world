@@ -380,10 +380,14 @@ export, the separate `MirrorOracleKit` executable adapter, and platform-neutral
 production target/action vocabulary are implemented and focused-tested.
 Explicit-socket oracle capture and guest/session/build identity joins are also
 implemented and mutation-watched. QuickDraw overwrite recovery now retains its
-last settled contribution until a newer guest epoch/generation completes. The
-remaining U4 work is typed coverage for the other enrichment producers, any
-missing operation/log export joins, and live stability-sandwich shadow-parity
-evidence.
+last settled contribution until a newer guest epoch/generation completes.
+Inactive and frontless observations now retain each exact window's independently
+published display as expected-stale instead of clearing it or exposing a partial
+replacement. The first direct U4E sweep caught this distinct transition and U4F
+is focused-tested and mutation-watched. The remaining U4 work is typed coverage
+for the other enrichment producers, any missing operation/log export joins, the
+exact latest resident/guest stage, and live stability-sandwich shadow-parity
+evidence across the complete preflight.
 
 **Goal:** Make all render-bearing producers converge through the same replica and emit the evidence required by the strict gate.
 
