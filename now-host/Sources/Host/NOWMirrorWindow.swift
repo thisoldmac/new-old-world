@@ -24,11 +24,15 @@ final class NOWMirrorWindow: NSObject, ObservableObject, NSWindowDelegate {
     private var didFit = false
     private let source: NOWMirrorSource
     private let screen: MirrorKit.Scene.ScreenSize
+    private let requestedScale: CGFloat?
 
     init(source: NOWMirrorSource,
-         screen: MirrorKit.Scene.ScreenSize = .init(w: 800, h: 600)) {
+         screen: MirrorKit.Scene.ScreenSize = .init(w: 800, h: 600),
+         launchOptions: MirrorLaunchOptions = .parse(
+            ProcessInfo.processInfo.arguments)) {
         self.source = source
         self.screen = screen
+        requestedScale = launchOptions.scale
     }
 
     func show(title: String) {
@@ -43,7 +47,9 @@ final class NOWMirrorWindow: NSObject, ObservableObject, NSWindowDelegate {
             controller.sizingOptions = []
             let w = NSWindow(contentViewController: controller)
             w.title = title
-            w.setContentSize(NSSize(width: screen.w, height: screen.h))
+            let scale = requestedScale ?? 1
+            w.setContentSize(NSSize(width: CGFloat(screen.w) * scale,
+                                    height: CGFloat(screen.h) * scale))
             /* A floor rather than a fixed size: below roughly half the
                guest's own screen the Platinum chrome a person aims at -
                a 16-point scroll arrow, an 11-point close box - stops
@@ -98,11 +104,13 @@ final class NOWMirrorWindow: NSObject, ObservableObject, NSWindowDelegate {
                 guard let self, let w = self.window else { return }
                 if let s = self.source.scene?.screen, s.w > 0, s.h > 0 {
                     self.didFit = true
-                    let fits = min(1.0,
+                    let screenFit = min(1.0,
                                    min((w.screen?.visibleFrame.width ?? 1200)
                                        * 0.9 / CGFloat(s.w),
                                        (w.screen?.visibleFrame.height ?? 800)
                                        * 0.9 / CGFloat(s.h)))
+                    let fits = min(self.requestedScale ?? screenFit,
+                                   screenFit)
                     w.setContentSize(NSSize(width: CGFloat(s.w) * fits,
                                             height: CGFloat(s.h) * fits))
                     w.contentAspectRatio = NSSize(width: s.w, height: s.h)

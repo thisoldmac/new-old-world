@@ -98,6 +98,15 @@ functional, accurate mirror of the guest** — one a person can operate.
    a registered Desktop copy twice and contaminated port 5250. Do not call
    `open` again merely because UI discovery found the wrong bundle. Stop only
    the exact test-host PID, re-identify the survivor, and relaunch once.
+2i. **Pin the Mirror scale before coordinate-driven gates.** Launch the exact
+   test host with `--mirror-scale 0.9` (or another explicit value from 0.5 to
+   1.0) when the computer-use screenshot service would otherwise downscale a
+   guest-sized window plus its native title bar. The argument sizes the guest
+   canvas uniformly; it does not change guest coordinates or hit-testing.
+   Record the chosen scale and click the rendered target at that scale. Do not
+   read guest-pixel coordinates off a resized screenshot and send them back as
+   host-window coordinates — that missed both a Finder title and Application
+   menu rows on 2026-08-04 and produced observations of the wrong controls.
 3. **If the mirror cannot do it, that IS the finding.** Record it. Do
    not reach past it to keep the run going.
 4. **Record, don't fix, during a sweep.** No edits, no builds, no
