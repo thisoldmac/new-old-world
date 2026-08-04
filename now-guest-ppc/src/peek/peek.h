@@ -4,6 +4,7 @@
 #include <Carbon.h>
 
 #include "peek_table.h"
+#include "peek_lease.h"
 
 /* The application's view of the NOW Extension - the optional resident
    component (docs/resident-components.md is the family charter,
@@ -43,17 +44,10 @@ void now_peek_status_line(char *out, long cap);
    arm_request (ours). Re-probes Gestalt each call - cheap (a trap). */
 const NowPeekTable *now_peek_table(void);
 
-/* Request / release a plane by capability bit(s). Sets or clears the
-   arm_request word the extension polls; a no-op when the extension is
-   absent. Arming is what makes a dormant plane start doing work
-   (docs/resident-components.md). */
-void now_peek_arm(unsigned long caps);
-void now_peek_disarm(unsigned long caps);
-
 /* **Who wants a plane armed.**
  *
- * `now_peek_arm`/`now_peek_disarm` write one shared bit, so the LAST
- * caller decides for everybody. Two owners wanted the anchor plane and
+ * A direct arm/disarm pair made the LAST caller decide for everybody.
+ * Two owners wanted the anchor plane and
  * the loser was the mirror: `serve_scene` armed anchors and walked in
  * the same pass, and the Processes page disarmed them whenever it was
  * not the visible module - which is almost always. Only the process
@@ -64,15 +58,15 @@ void now_peek_disarm(unsigned long caps);
  * So an owner claims and releases its OWN interest, and the bit is the
  * union. A plane stays armed while anyone wants it and goes dark when
  * the last one lets go. */
-typedef enum {
-    kNowPeekOwnerScene = 0,       /* scene.request, while mirroring */
-    kNowPeekOwnerProcesses,       /* the Processes page, while visible */
-    kNowPeekOwnerAct,
-    kNowPeekOwnerContent,
-    kNowPeekOwnerCount
-} NowPeekOwner;
-
 void now_peek_claim(NowPeekOwner owner, unsigned long caps);
+void now_peek_claim_until(NowPeekOwner owner, unsigned long caps,
+                          unsigned long expiry_ticks);
 void now_peek_release(NowPeekOwner owner, unsigned long caps);
+void now_peek_disconnect(void);
+
+/* Exact resident identity. Returns false for old/short/unknown layouts. */
+int now_peek_build_identity(NowPeekBuildIdentity *out);
+int now_peek_build_matches(
+    const NowPeekU32 expected[kNowPeekIdentityWordCount]);
 
 #endif /* NOW_PEEK_H */

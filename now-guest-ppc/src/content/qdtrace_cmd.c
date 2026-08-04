@@ -400,7 +400,9 @@ static void run_start(const char *json, long id, char *out, long cap)
        The reverse would be a committed request the plane bit had not yet
        enabled, which is also idle, but only because nothing reads it
        yet. Prefer the order that is idle for a stated reason. */
-    now_peek_arm((unsigned long)kNowPeekTableCapContent);
+    now_peek_claim_until(kNowPeekOwnerContent,
+                         (unsigned long)kNowPeekTableCapContent,
+                         (unsigned long)plan.expiry);
     now_qdtrace_arm_commit(block, &plan);
 
     /* The recorder is installed at the target's NEXT WaitNextEvent. NOW's
@@ -457,7 +459,8 @@ static void run_stop(long id, char *out, long cap)
     /* The plane bit is released too. Leaving it set would keep a dormant
        plane armed at the table level for no reason, and the counters that
        say "a request was refused" would keep ticking on nothing. */
-    now_peek_disarm((unsigned long)kNowPeekTableCapContent);
+    now_peek_release(kNowPeekOwnerContent,
+                     (unsigned long)kNowPeekTableCapContent);
 
     snprintf(out, (size_t)cap,
              "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"

@@ -384,6 +384,25 @@ the app owns `arm_request`, the extension owns everything else. A
 machine whose user never opens a bounds-consuming feature never runs
 the capture loop.
 
+As of the unified-extension prerequisite, that single writer is enforced by a
+resident-visible application-session lease. Only the canonical process
+identity (`New Old World`, creator `NOWo`) may publish the production `NWex`
+request word; differently named development copies are read-only. Named
+normal-context owners claim capabilities through one aggregator, which renews
+from cooperative lifecycle pumps rather than repaint callbacks. Releasing one
+owner therefore cannot disarm another live consumer, and a dead or disconnected
+application loses the lease without relying on its teardown code running.
+
+The table also appends two deterministic identities: a manifest hash over the
+resident inputs and an embedded build fingerprint carried in both the table and
+the INIT's `NWid` resource. The staged MacBinary SHA-256 is a third identity;
+none substitutes for another. P1 now publishes diagnostic counters and applies
+the six-tick unchanged-anchor cadence from the measured AXPeek loop. An A5 or
+`WindowList` change may publish immediately; otherwise a continuously pumping
+target gets at most one full publish per six ticks. These are **native-tested
+and cross-built, not yet emulator-verified** until a cold boot proves the exact
+resident fingerprint and its callback behavior.
+
 **The app-side validated read — where the foreign memory is touched.**
 This is application code, never resident code, because a bug here is a
 file copy from fixed. To get the front window's bounds:

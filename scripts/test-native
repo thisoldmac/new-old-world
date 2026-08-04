@@ -202,6 +202,12 @@ run_c now-guest-ppc json_native_test.c       ""  src/core/json.c
 run_c now-guest-ppc peek_table_test.c \
       "-DNOW_PEEK_TABLE_HOST"
 run_c now-guest-ppc peek_validate_test.c     ""  src/peek/peek_validate.c
+run_c now-guest-ppc peek_lease_test.c \
+      "-DNOW_PEEK_TABLE_HOST" src/peek/peek_lease.c
+run_py now-guest-ppc peek_owner_source_test.py
+run_c now-guest-ppc now_ext_core_logic_test.c \
+      "-DNOW_PEEK_TABLE_HOST -I $repo_root/ext/src" \
+      ../ext/src/now_ext_core_logic.c
 # The act plane's ABI selftest, read. The plane has SERVED
 # kNowPeekActOpSelfTest since it landed and had no caller; this is the
 # reading half of the verb that calls it. It is here rather than beside

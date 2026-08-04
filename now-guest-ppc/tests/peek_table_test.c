@@ -56,8 +56,15 @@ int main(void)
 
     check(kNowPeekGestaltSelector == 0x4E576578L, "selector is 'NWex'");
     check(kNowPeekTableMagic == 0x4E577074L, "magic is 'NWpt'");
-    check((kNowPeekTableCapAnchors & kNowPeekTableCapTree) == 0,
-          "capability bits are distinct");
+    check((kNowPeekTableCapAnchors | kNowPeekTableCapTree
+           | kNowPeekTableCapAct | kNowPeekTableCapContent) == 0x0f
+              && (kNowPeekTableCapAnchors & kNowPeekTableCapTree) == 0
+              && (kNowPeekTableCapAnchors & kNowPeekTableCapAct) == 0
+              && (kNowPeekTableCapAnchors & kNowPeekTableCapContent) == 0
+              && (kNowPeekTableCapTree & kNowPeekTableCapAct) == 0
+              && (kNowPeekTableCapTree & kNowPeekTableCapContent) == 0
+              && (kNowPeekTableCapAct & kNowPeekTableCapContent) == 0,
+          "all four capability bits are distinct");
 
     memset(&t, 0, sizeof t);
     t.magic = (NowPeekU32)kNowPeekTableMagic;
@@ -93,6 +100,19 @@ int main(void)
     check(sizeof(NowPeekAnchorSlot) % 4 == 0
               && sizeof(NowPeekAnchorSlot) == 60,
           "the V3 slot is 60 bytes with no padding");
+    check(offsetof(NowPeekTable, identity_format)
+              == offsetof(NowPeekTable, content_block) + 4,
+          "build identity was appended after every existing plane");
+    check(offsetof(NowPeekTable, writer_format)
+              == offsetof(NowPeekTable, identity)
+                   + sizeof(NowPeekBuildIdentity),
+          "writer lease was appended after build identity");
+    check(sizeof(NowPeekBuildIdentity) == 40,
+          "source and resident identities are five words each");
+    check(sizeof(NowPeekWriterLease) == 36,
+          "writer lease layout is fixed across compilers");
+    check(kNowPeekAnchorCadenceTicks == 6,
+          "P1 cadence is the measured six-tick budget");
     /* A whole Str31 fits: length byte plus 31 characters, so there is
        no truncation rule for the two sides to disagree about. */
     check(kNowPeekAnchorNameSize == 32, "a Str31 fits the name field whole");

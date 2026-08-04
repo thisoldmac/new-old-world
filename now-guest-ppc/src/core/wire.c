@@ -273,6 +273,7 @@ static void link_drop_transfers(void)
     put_drop();                       /* no half-written file left behind */
     get_cleanup(false);               /* nor half a file coming the other way */
     ctlq_clear();
+    now_peek_disconnect();             /* release every wire-owned plane */
 }
 
 /* Move to backoff after a failure; status keeps the reason already set. */

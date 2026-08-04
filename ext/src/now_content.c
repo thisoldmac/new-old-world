@@ -740,7 +740,11 @@ void now_content_gne(NowPeekTable *table)
     a5 = (NowPeekU32)LMGetCurrentA5();
     ticks = (NowPeekU32)LMGetTicks();
 
-    req.plane_bits = table->arm_request;
+    req.plane_bits = (table->writer.resident_owner_epoch != 0
+                      && table->writer.resident_owner_epoch
+                             == table->writer.owner_epoch)
+                         ? table->arm_request
+                         : 0;
     req.arm_commit = gBlock->arm_commit;
     req.arm_a5 = gBlock->arm_a5;
     req.arm_expiry = gBlock->arm_expiry;

@@ -37,6 +37,8 @@
 #include <Traps.h>
 
 #include "peek_table.h"
+#include "now_ext_build_identity.h"
+#include "now_ext_core_logic.h"
 
 /* Resident state. The relocated flat blob is at a fixed system-heap
    address (sysHeap+locked+detached), so these absolute pointers are
@@ -161,10 +163,12 @@ static void capture_cur_ap_name(unsigned char *dst)
    double-samples the stamp can tell a torn cross-update read from a
    stable one (peek_table.h documents the discipline). A5-aligned
    32-bit stores are atomic on the 68020+/PPC this ships to. */
-static void capture_anchor(void)
+static void capture_anchor(NowPeekU32 ticks)
 {
     NowPeekU32 a5 = (NowPeekU32)LMGetCurrentA5();
+    NowPeekU32 window_list;
     NowPeekAnchorSlot *slot;
+    NowExtAnchorDecision decision;
     short idx;
 
     if (a5 == 0) {
@@ -173,17 +177,25 @@ static void capture_anchor(void)
     if (a5 == gLastA5 && gLastSlot >= 0) {
         idx = gLastSlot;
     } else {
+        gNowExtTable->anchor_slot_scans++;
         idx = find_anchor_slot(a5);
         gLastA5 = a5;
         gLastSlot = idx;
     }
     slot = &gNowExtTable->anchors[idx];
+    window_list = (NowPeekU32)LMGetWindowList();
+    decision = now_ext_anchor_decide(ticks, slot->stamp_ticks,
+                                     a5, window_list,
+                                     slot->a5, slot->window_list);
+    if (decision == kNowExtAnchorSkip) {
+        return;
+    }
     if (slot->a5 == 0 && gAnchorCount < kNowPeekMaxAnchors) {
         gNowExtTable->anchor_count = ++gAnchorCount;
     }
     slot->stamp_ticks = 0;                          /* invalidate */
     slot->a5 = a5;
-    slot->window_list = (NowPeekU32)LMGetWindowList();
+    slot->window_list = window_list;
     slot->menu_list = (NowPeekU32)LMGetMenuList();
     /* V2. Sits AFTER the stamp in the struct and BEFORE it in the write,
        which is the whole point: the stamp is this seqlock's commit, so
@@ -200,7 +212,14 @@ static void capture_anchor(void)
     capture_cur_ap_name(slot->cur_ap_name);
     slot->psn_high = 0;               /* the extension never fills PSN; */
     slot->psn_low = 0;                /* the app correlates A5 to PSN */
-    slot->stamp_ticks = (NowPeekU32)LMGetTicks();   /* commit last */
+    slot->stamp_ticks = ticks;                     /* commit last */
+    gNowExtTable->anchor_full_publishes++;
+    if (decision == kNowExtAnchorChanged) {
+        gNowExtTable->anchor_change_publishes++;
+    } else {
+        gNowExtTable->anchor_cadence_publishes++;
+    }
+    gNowExtTable->anchor_last_publish_ticks = ticks;
 }
 
 /* Called from the shim on every GetNextEvent/WaitNextEvent, in whatever
@@ -213,13 +232,30 @@ static void capture_anchor(void)
 void now_ext_gne_apply(void)
 {
     NowPeekTable *table = gNowExtTable;
+    NowPeekU32 ticks;
+    NowPeekU32 request;
 
     if (table == NULL) {
         return;
     }
-    table->heartbeat = (NowPeekU32)LMGetTicks();
-    if (table->arm_request & kNowPeekTableCapAnchors) {
-        capture_anchor();
+    ticks = (NowPeekU32)LMGetTicks();
+    table->heartbeat = ticks;
+    if (now_ext_writer_lease_valid(table, ticks)) {
+        if (table->writer.resident_owner_epoch != table->writer.owner_epoch) {
+            /* One dark pass separates writers. Patches consult the echoed
+               epoch too, so the dead owner's request bypasses immediately. */
+            table->writer.resident_owner_epoch = 0;
+            request = 0;
+        } else {
+            request = table->arm_request;
+        }
+    } else {
+        table->writer.resident_owner_epoch = 0;
+        request = 0;
+    }
+    if (request & kNowPeekTableCapAnchors) {
+        table->anchor_event_passes++;
+        capture_anchor(ticks);
         table->arm_active |= kNowPeekTableCapAnchors;
     } else if (table->arm_active & kNowPeekTableCapAnchors) {
         table->arm_active &= ~(NowPeekU32)kNowPeekTableCapAnchors;
@@ -235,7 +271,7 @@ void now_ext_gne_apply(void)
        chain straight through. The patches themselves are installed on
        the first armed pass and never removed - a patch that vanishes
        while a caller is inside it is a jump into freed code. */
-    if (table->arm_request & kNowPeekTableCapAct) {
+    if (request & kNowPeekTableCapAct) {
         now_ext_act_apply(table);
         table->arm_active |= kNowPeekTableCapAct;
     } else if (table->arm_active & kNowPeekTableCapAct) {
@@ -248,6 +284,10 @@ void now_ext_gne_apply(void)
        this is the call that lets it run. Disarmed it is a load, a null
        check and a return. */
     now_content_gne(table);
+    if (request == 0 && now_ext_writer_lease_valid(table, ticks)
+        && table->writer.resident_owner_epoch == 0) {
+        table->writer.resident_owner_epoch = table->writer.owner_epoch;
+    }
 }
 
 /* Gestalt hands any caller the table's address. Uses a real UPP
@@ -319,6 +359,20 @@ void _start(void)
        system-heap block it did not size. */
     table->act_format = kNowPeekActFormatV1;
     table->act_text_max = (NowPeekU16)kNowPeekActTextMax;
+    table->identity_format = kNowPeekIdentityFormatV1;
+    table->identity_length = (NowPeekU16)sizeof table->identity;
+    table->identity.source_manifest[0] = NOW_EXT_SOURCE_MANIFEST_0;
+    table->identity.source_manifest[1] = NOW_EXT_SOURCE_MANIFEST_1;
+    table->identity.source_manifest[2] = NOW_EXT_SOURCE_MANIFEST_2;
+    table->identity.source_manifest[3] = NOW_EXT_SOURCE_MANIFEST_3;
+    table->identity.source_manifest[4] = NOW_EXT_SOURCE_MANIFEST_4;
+    table->identity.build_fingerprint[0] = NOW_EXT_BUILD_FINGERPRINT_0;
+    table->identity.build_fingerprint[1] = NOW_EXT_BUILD_FINGERPRINT_1;
+    table->identity.build_fingerprint[2] = NOW_EXT_BUILD_FINGERPRINT_2;
+    table->identity.build_fingerprint[3] = NOW_EXT_BUILD_FINGERPRINT_3;
+    table->identity.build_fingerprint[4] = NOW_EXT_BUILD_FINGERPRINT_4;
+    table->writer_format = kNowPeekWriterFormatV1;
+    table->writer_length = (NowPeekU16)sizeof table->writer;
     /* Magic last: a reader that somehow sees the address early finds it
        only once the table is fully formed. */
     table->magic = (NowPeekU32)kNowPeekTableMagic;

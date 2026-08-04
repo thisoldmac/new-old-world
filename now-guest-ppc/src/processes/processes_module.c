@@ -1347,6 +1347,11 @@ static void procs_idle(void)
     if (g_owner == NULL || !g_visible) {
         return;
     }
+    /* Visibility is the owner's lease. Idle is the page's guaranteed
+       cooperative pump; draw runs only after invalidation and therefore
+       cannot keep a quiet visible page alive. A crash or abandoned session
+       still expires without relying on its hide callback. */
+    now_peek_claim(kNowPeekOwnerProcesses, kNowPeekCapAnchors);
     /* Finish a deferred Front & Capture once the target has had time to
        come forward and redraw. Runs even while NOW is in the background,
        which is exactly when it must. */

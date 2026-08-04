@@ -15,3 +15,5 @@ type 'INIT' {
 resource 'INIT' (128, "NOW Extension", sysHeap, locked, preload) {
     dontBreakAtEntry, $$read("NowExt.flt");
 };
+
+#include "now_ext_identity.r"

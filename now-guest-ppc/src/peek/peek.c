@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 
+
 /* The application's probe of the NOW Extension (docs/resident-
    components.md). The extension registers Gestalt selector 'NWex' at
    boot and answers with its shared table's address; this reads it,
@@ -22,8 +23,16 @@
 #define NOW_EXT_FILE_TYPE NOW_PEEK_4CC('I', 'N', 'I', 'T')
 #define NOW_EXT_CREATOR NOW_PEEK_4CC('N', 'O', 'W', 'x')
 
+enum { kNowPeekOwnerLeaseTicks = 600 };
+
 static int g_file_checked;
 static Boolean g_file_present;
+static NowPeekLeaseSet g_leases;
+static int g_leases_ready;
+static NowPeekU32 g_session_nonce_hi;
+static NowPeekU32 g_session_nonce_lo;
+static NowPeekU32 g_session_epoch;
+static NowPeekU32 g_published_caps;
 
 /* Is a file of type INIT and creator 'NOWx' sitting in the Extensions
    folder? Identity is by type/creator, not by name, so a build deployed
@@ -72,7 +81,7 @@ static Boolean extension_file_present(void)
 
 /* The validated table, or NULL. Shared by the status probe and the
    arm/read paths so the acceptance rule lives in one place. */
-const NowPeekTable *now_peek_table(void)
+static NowPeekTable *raw_table(void)
 {
     long response = 0;
 
@@ -81,7 +90,7 @@ const NowPeekTable *now_peek_table(void)
         return NULL;
     }
     {
-        const NowPeekTable *table = (const NowPeekTable *)response;
+        NowPeekTable *table = (NowPeekTable *)response;
 
         if (table->magic != (NowPeekU32)kNowPeekTableMagic
             || table->ext_major != kNowPeekExtMajor
@@ -92,41 +101,132 @@ const NowPeekTable *now_peek_table(void)
     }
 }
 
-void now_peek_arm(unsigned long caps)
+static Boolean current_app_identity(ProcessSerialNumber *psn_out)
 {
-    NowPeekTable *table = (NowPeekTable *)now_peek_table();
+    ProcessSerialNumber psn;
+    ProcessInfoRec info;
+    Str31 name;
 
-    if (table != NULL) {
-        table->arm_request |= (NowPeekU32)caps;
+    if (GetCurrentProcess(&psn) != noErr) {
+        return false;
     }
+    memset(&info, 0, sizeof info);
+    info.processInfoLength = sizeof info;
+    info.processName = name;
+    name[0] = 0;
+    if (GetProcessInformation(&psn, &info) != noErr
+        || (NowPeekU32)info.processSignature
+               != (NowPeekU32)kNowPeekCanonicalAppCreator
+        || !EqualString(name, (ConstStr255Param)"\pNew Old World",
+                        false, false)) {
+        return false;
+    }
+    if (psn_out != NULL) {
+        *psn_out = psn;
+    }
+    return true;
 }
 
-void now_peek_disarm(unsigned long caps)
+static int writer_region_ready(const NowPeekTable *table)
 {
-    NowPeekTable *table = (NowPeekTable *)now_peek_table();
+    unsigned long need = (unsigned long)offsetof(NowPeekTable, writer)
+        + (unsigned long)sizeof table->writer;
 
-    if (table != NULL) {
-        table->arm_request &= ~(NowPeekU32)caps;
-    }
+    return table != NULL && table->length >= need
+        && table->writer_format == kNowPeekWriterFormatV1
+        && table->writer_length == sizeof table->writer;
 }
 
-/* The claims, one word per owner. See peek.h for what one shared bit
-   cost. */
-static unsigned long g_claims[kNowPeekOwnerCount];
+static int writer_current(const NowPeekTable *table, NowPeekU32 now)
+{
+    return writer_region_ready(table)
+        && (table->writer.session_nonce_hi != 0
+            || table->writer.session_nonce_lo != 0)
+        && table->writer.app_creator == kNowPeekCanonicalAppCreator
+        && table->writer.app_name == kNowPeekCanonicalAppName
+        && table->writer.heartbeat_ticks != 0
+        && now - table->writer.heartbeat_ticks
+               <= (NowPeekU32)kNowPeekWriterLeaseTicks;
+}
+
+static int maintain_writer(NowPeekTable *table, NowPeekU32 now)
+{
+    ProcessSerialNumber psn;
+    NowPeekWriterLease *writer;
+
+    if (!writer_region_ready(table) || !current_app_identity(&psn)) {
+        return 0;                    /* dev-named app: read-only NWex */
+    }
+    writer = &table->writer;
+    if (g_session_nonce_hi != 0 || g_session_nonce_lo != 0) {
+        if (writer->session_nonce_hi == g_session_nonce_hi
+            && writer->session_nonce_lo == g_session_nonce_lo
+            && writer->owner_epoch == g_session_epoch) {
+            writer->heartbeat_ticks = now;        /* renew, publish last */
+            return 1;                 /* resident independently gates use */
+        }
+    }
+    if (writer_current(table, now)) {
+        return 0;                    /* another current session owns it */
+    }
+
+    g_session_nonce_hi = (NowPeekU32)psn.highLongOfPSN ^ table->boot_ticks;
+    g_session_nonce_lo = (NowPeekU32)psn.lowLongOfPSN ^ now ^ 0x4E576578UL;
+    if (g_session_nonce_hi == 0 && g_session_nonce_lo == 0) {
+        g_session_nonce_lo = 1;
+    }
+    g_session_epoch = writer->owner_epoch + 1;
+    if (g_session_epoch == 0) {
+        g_session_epoch = 1;
+    }
+    writer->heartbeat_ticks = 0;     /* invalidate before replacement */
+    writer->session_nonce_hi = g_session_nonce_hi;
+    writer->session_nonce_lo = g_session_nonce_lo;
+    writer->psn_high = (NowPeekU32)psn.highLongOfPSN;
+    writer->psn_low = (NowPeekU32)psn.lowLongOfPSN;
+    writer->app_creator = (NowPeekU32)kNowPeekCanonicalAppCreator;
+    writer->app_name = (NowPeekU32)kNowPeekCanonicalAppName;
+    writer->owner_epoch = g_session_epoch;
+    writer->heartbeat_ticks = now;   /* commit */
+    now_peek_leases_begin_session(&g_leases, g_session_epoch);
+    g_leases_ready = 1;
+    g_published_caps = 0;
+    return 1;                        /* resident may settle echo next pass */
+}
+
+static void publish_claims_to(NowPeekTable *table, NowPeekU32 now)
+{
+    NowPeekU32 wanted = now_peek_leases_union(&g_leases, now);
+
+    if (wanted != g_published_caps || table->arm_request != wanted) {
+        table->arm_request = wanted;
+        g_published_caps = wanted;
+    }
+}
 
 static void publish_claims(void)
 {
-    NowPeekTable *table = (NowPeekTable *)now_peek_table();
-    unsigned long wanted = 0;
-    int i;
+    NowPeekTable *table = raw_table();
+    NowPeekU32 now = (NowPeekU32)TickCount();
 
-    if (table == NULL) {
+    if (table == NULL || !maintain_writer(table, now)) {
         return;
     }
-    for (i = 0; i < (int)kNowPeekOwnerCount; ++i) {
-        wanted |= g_claims[i];
+    publish_claims_to(table, now);
+}
+
+const NowPeekTable *now_peek_table(void)
+{
+    NowPeekTable *table = raw_table();
+
+    if (table != NULL) {
+        NowPeekU32 now = (NowPeekU32)TickCount();
+
+        if (maintain_writer(table, now) && g_leases_ready) {
+            publish_claims_to(table, now);
+        }
     }
-    table->arm_request = (NowPeekU32)wanted;
+    return table;
 }
 
 void now_peek_claim(NowPeekOwner owner, unsigned long caps)
@@ -134,7 +234,26 @@ void now_peek_claim(NowPeekOwner owner, unsigned long caps)
     if ((int)owner < 0 || (int)owner >= (int)kNowPeekOwnerCount) {
         return;
     }
-    g_claims[owner] |= caps;
+    now_peek_claim_until(owner, caps,
+                         (unsigned long)TickCount()
+                             + kNowPeekOwnerLeaseTicks);
+}
+
+void now_peek_claim_until(NowPeekOwner owner, unsigned long caps,
+                          unsigned long expiry_ticks)
+{
+    NowPeekU32 now = (NowPeekU32)TickCount();
+    NowPeekTable *table = raw_table();
+
+    if (table != NULL) {
+        (void)maintain_writer(table, now);
+    }
+    if (!g_leases_ready) {
+        now_peek_leases_init(&g_leases, g_session_epoch);
+        g_leases_ready = 1;
+    }
+    now_peek_leases_claim(&g_leases, owner, (NowPeekU32)caps, now,
+                          (NowPeekU32)expiry_ticks);
     publish_claims();
 }
 
@@ -143,8 +262,43 @@ void now_peek_release(NowPeekOwner owner, unsigned long caps)
     if ((int)owner < 0 || (int)owner >= (int)kNowPeekOwnerCount) {
         return;
     }
-    g_claims[owner] &= ~caps;
+    now_peek_leases_release(&g_leases, owner, (NowPeekU32)caps);
     publish_claims();
+}
+
+void now_peek_disconnect(void)
+{
+    now_peek_leases_disconnect(&g_leases);
+    publish_claims();
+}
+
+int now_peek_build_identity(NowPeekBuildIdentity *out)
+{
+    const NowPeekTable *table = now_peek_table();
+    unsigned long need;
+
+    if (table == NULL || out == NULL) {
+        return 0;
+    }
+    need = (unsigned long)offsetof(NowPeekTable, identity)
+        + (unsigned long)sizeof table->identity;
+    if (table->length < need
+        || table->identity_format != kNowPeekIdentityFormatV1
+        || table->identity_length != sizeof table->identity) {
+        return 0;
+    }
+    BlockMoveData((Ptr)&table->identity, (Ptr)out, (Size)sizeof *out);
+    return 1;
+}
+
+int now_peek_build_matches(
+    const NowPeekU32 expected[kNowPeekIdentityWordCount])
+{
+    NowPeekBuildIdentity identity;
+
+    return expected != NULL && now_peek_build_identity(&identity)
+        && memcmp(identity.build_fingerprint, expected,
+                  sizeof identity.build_fingerprint) == 0;
 }
 
 NowPeekState now_peek_status(unsigned long *caps)

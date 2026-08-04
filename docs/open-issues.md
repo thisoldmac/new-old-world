@@ -42,6 +42,25 @@ menubar geometry remain the regression floor; Apple content, Finder/Date & Time
 foreign content, direct controls, and truthful settlement remain red until the
 direct-input paired sweep proves them.
 
+### U2 source boundary implemented; resident runtime proof still open
+
+The appended resident ABI now carries deterministic source and embedded build
+identities, one canonical New Old World writer lease, named per-capability
+owners, extension echo of the accepted owner epoch, and P1 cadence counters.
+Content, interaction, scene, and Processes use the same owner union; the
+Processes renewal is intentionally in its cooperative `idle()` callback, not
+its repaint callback. Native layout, lease, resident-core, and guard tests pass,
+and both guest applications plus the extension cross-build with the real
+Retro68 toolchains.
+
+That is **tested at the native/source boundary and builds, not emulator-
+verified**. The generated INIT payload is about 59 KiB, above the INIT skill's
+conservative 32 KiB audit budget (the preceding extension was already in this
+size class and loaded on Mac OS 9). A disposable cold boot must still prove the
+new exact `NWid` fingerprint, table identity, writer handoff, callback chaining,
+and six-tick counters before any runtime row turns green. The stage image still
+contains the older resident and must not be used as evidence for this build.
+
 ## CYCLE 25 RED; SETUP CORRECTED BEFORE C26 (2026-08-03)
 
 Cycle 25 directly re-ran the sanity preflight through the uniquely identified

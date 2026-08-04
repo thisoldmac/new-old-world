@@ -38,13 +38,17 @@ NowActStatus now_act_ready(void)
     /* The act plane needs the ANCHOR plane too: without it there is no
        A5 for any process and nothing can be addressed. Arming both is
        one word, and it is the application's word to write. */
-    now_peek_arm((unsigned long)(kNowPeekCapAnchors | kNowPeekTableCapAct));
+    now_peek_claim(kNowPeekOwnerAct,
+                   (unsigned long)(kNowPeekCapAnchors
+                                   | kNowPeekTableCapAct));
     return kNowActOk;
 }
 
 void now_act_shutdown(void)
 {
-    now_peek_disarm((unsigned long)kNowPeekTableCapAct);
+    now_peek_release(kNowPeekOwnerAct,
+                     (unsigned long)(kNowPeekCapAnchors
+                                     | kNowPeekTableCapAct));
 }
 
 NowPeekActCell *now_act_cell(void)

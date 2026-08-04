@@ -43,11 +43,22 @@ int now_act_plane_state(const NowPeekTable *table)
 
 NowPeekActCell *now_act_armed_cell(NowPeekTable *table)
 {
+    unsigned long need;
+
     if (table == NULL || table->magic != (NowPeekU32)kNowPeekTableMagic) {
+        return NULL;
+    }
+    need = (unsigned long)offsetof(NowPeekTable, writer)
+        + (unsigned long)sizeof table->writer;
+    if (table->length < need) {
         return NULL;
     }
     if ((table->arm_request & (NowPeekU32)kNowPeekTableCapAct) == 0) {
         return NULL;                    /* bypassed: behave as if absent */
+    }
+    if (table->writer.resident_owner_epoch == 0
+        || table->writer.resident_owner_epoch != table->writer.owner_epoch) {
+        return NULL;                    /* expired/replaced writer: bypass */
     }
     return &table->act;
 }

@@ -560,6 +560,8 @@ static void test_plane_state(void)
                "no table is no table");
 
     memset(&table, 0, sizeof table);
+    table.writer.owner_epoch = 7;
+    table.writer.resident_owner_epoch = 7;
     table.magic = (NowPeekU32)kNowPeekTableMagic;
     table.ext_major = kNowPeekExtMajor;
     table.length = (NowPeekU32)sizeof table;
@@ -630,6 +632,9 @@ static void test_bypass(void)
 
     memset(&table, 0, sizeof table);
     table.magic = (NowPeekU32)kNowPeekTableMagic;
+    table.length = (NowPeekU32)sizeof table;
+    table.writer.owner_epoch = 7;
+    table.writer.resident_owner_epoch = 7;
     check(now_act_armed_cell(&table) == NULL,
           "a disarmed plane hands out nothing - every trap chains through");
 
@@ -640,6 +645,14 @@ static void test_bypass(void)
     table.arm_request = kNowPeekTableCapAnchors | kNowPeekTableCapAct;
     check(now_act_armed_cell(&table) == &table.act,
           "an armed plane hands out its cell");
+    table.length = (NowPeekU32)offsetof(NowPeekTable, writer);
+    check(now_act_armed_cell(&table) == NULL,
+          "an old short table cannot supply a writer echo");
+    table.length = (NowPeekU32)sizeof table;
+    table.writer.resident_owner_epoch = 0;
+    check(now_act_armed_cell(&table) == NULL,
+          "an expired writer bypasses an old armed request");
+    table.writer.resident_owner_epoch = 7;
 
     /* arm_request, not arm_active: turning the plane off must not wait
        for the target process to pump. */

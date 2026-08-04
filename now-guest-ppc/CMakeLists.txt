@@ -69,6 +69,7 @@ add_application(now-guest-ppc
     src/connection/conn_edit_dialog.c
     src/connection/connection_module.c
     src/peek/peek.c
+    src/peek/peek_lease.c
     src/peek/peek_validate.c
     src/peek/peek_oracle.c
     src/peek/peek_read.c

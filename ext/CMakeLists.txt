@@ -22,6 +22,19 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../contract)
 # resident component a native test can reach, and the guard it holds is
 # the plane's whole safety argument - see now_act_guard.h.
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../now-guest-shared/src)
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
+
+set(_identity_header ${CMAKE_CURRENT_BINARY_DIR}/now_ext_build_identity.h)
+set(_identity_rez ${CMAKE_CURRENT_BINARY_DIR}/now_ext_identity.r)
+add_custom_target(generate_now_ext_identity ALL
+    COMMAND ${CMAKE_COMMAND}
+            -DSRC_DIR=${CMAKE_CURRENT_SOURCE_DIR}/src
+            -DCONTRACT=${CMAKE_CURRENT_SOURCE_DIR}/../contract/peek_table.h
+            -DHEADER=${_identity_header}
+            -DREZ_OUT=${_identity_rez}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/build_identity.cmake
+    BYPRODUCTS ${_identity_header} ${_identity_rez}
+    VERBATIM)
 
 # The content plane (P3) is two translation units on purpose, and the
 # split is the charter's ("planes talk only through the core", and
@@ -32,6 +45,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../now-guest-shared/src)
 #                         in the file above.
 add_executable(NowExt
     src/now_ext.c
+    src/now_ext_core_logic.c
     src/now_ext_gne.S
     src/now_content.c
     src/now_content_logic.c
@@ -41,6 +55,9 @@ add_executable(NowExt
     src/now_ext_act.c
     src/now_ext_act_patch.S
     ../now-guest-shared/src/now_act_guard.c)
+add_dependencies(NowExt generate_now_ext_identity)
+set_source_files_properties(src/now_ext.c
+    PROPERTIES OBJECT_DEPENDS ${_identity_header})
 
 # -mcpu=68000: the extension must run on the whole 8.6-9.2.2 range,
 # including 68K-emulated PowerPC. Flat code resource, GC'd, with a map.
@@ -53,11 +70,11 @@ set_target_properties(NowExt PROPERTIES
 # distinct from the app's 'NOWo'). Rez reads the built flat blob.
 add_custom_command(
     OUTPUT NowExt.bin NowExt.dsk
-    COMMAND ${REZ} -I${REZ_INCLUDE_PATH}
+    COMMAND ${REZ} -I${REZ_INCLUDE_PATH} -I${CMAKE_CURRENT_BINARY_DIR}
                    ${CMAKE_CURRENT_SOURCE_DIR}/src/now_ext.r
                    -o NowExt.bin
                    --cc NowExt.dsk
                    -t INIT -c NOWx
-    DEPENDS NowExt src/now_ext.r)
+    DEPENDS NowExt src/now_ext.r ${_identity_rez})
 
 add_custom_target(NowExt_INIT ALL DEPENDS NowExt.dsk)

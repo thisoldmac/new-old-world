@@ -84,6 +84,22 @@ enum {
     kNowPeekAnchorNameSize = 32
 };
 
+enum {
+    kNowPeekIdentityFormatNone = 0,
+    kNowPeekIdentityFormatV1 = 1,
+    kNowPeekIdentityWordCount = 5,
+    kNowPeekWriterFormatNone = 0,
+    kNowPeekWriterFormatV1 = 1,
+    kNowPeekWriterLeaseTicks = 180,
+    kNowPeekAnchorCadenceTicks = 6,
+    kNowPeekCanonicalAppCreator =
+        (long)NOW_PEEK_4CC('N', 'O', 'W', 'o'),
+    /* A value, not a hash: only an app which has already compared its
+       process name with "New Old World" publishes this token. */
+    kNowPeekCanonicalAppName =
+        (long)NOW_PEEK_4CC('N', 'W', 'c', 'n')
+};
+
 /* Plane capability bits (caps, arm_request, arm_active). The guest's
    peek.h aliases these - state them once, here. */
 enum {
@@ -486,6 +502,30 @@ typedef struct {
     unsigned char cur_ap_name[kNowPeekAnchorNameSize];
 } NowPeekAnchorSlot;
 
+/* Source inputs and resident build are deliberately separate identities.
+   Both are SHA-1 values represented as five aligned words; the final
+   MacBinary digest is computed after Rez and never placed inside itself. */
+typedef struct {
+    NowPeekU32 source_manifest[kNowPeekIdentityWordCount];
+    NowPeekU32 build_fingerprint[kNowPeekIdentityWordCount];
+} NowPeekBuildIdentity;
+
+/* The only application writer's renewable session. heartbeat_ticks is the
+   publish-last commit word. The extension echoes owner_epoch only after the
+   lease validates, so a replacement can distinguish its own accepted request
+   from the dead writer's cells without taking ownership of arm_request. */
+typedef struct {
+    NowPeekU32 session_nonce_hi;
+    NowPeekU32 session_nonce_lo;
+    NowPeekU32 psn_high;
+    NowPeekU32 psn_low;
+    NowPeekU32 app_creator;
+    NowPeekU32 app_name;
+    NowPeekU32 heartbeat_ticks;
+    NowPeekU32 owner_epoch;
+    NowPeekU32 resident_owner_epoch;
+} NowPeekWriterLease;
+
 typedef struct {
     NowPeekU32 magic;         /* kNowPeekTableMagic */
     NowPeekU16 ext_major;     /* exact match required */
@@ -532,6 +572,21 @@ typedef struct {
        there and not here, because a ring in this table would be a ring
        every reader of every other plane has to carry past. */
     NowPeekU32 content_block;
+    /* U2. Everything below is appended. Old P0-P4 offsets above remain
+       byte-for-byte stable and old/short residents refuse these regions. */
+    NowPeekU16 identity_format;
+    NowPeekU16 identity_length;
+    NowPeekBuildIdentity identity;
+    NowPeekU16 writer_format;
+    NowPeekU16 writer_length;
+    NowPeekWriterLease writer;
+    /* P1 hot-path evidence. These are observations, resident-written. */
+    NowPeekU32 anchor_event_passes;
+    NowPeekU32 anchor_slot_scans;
+    NowPeekU32 anchor_full_publishes;
+    NowPeekU32 anchor_change_publishes;
+    NowPeekU32 anchor_cadence_publishes;
+    NowPeekU32 anchor_last_publish_ticks;
 } NowPeekTable;
 
 /* The offsets ARE the contract; a drift here is a defect on the other
@@ -600,8 +655,27 @@ _Static_assert(sizeof(((NowPeekActCell *)0)->text_buf) == kNowPeekActTextMax,
 _Static_assert(offsetof(NowPeekTable, content_block)
                    == offsetof(NowPeekTable, act) + sizeof(NowPeekActCell),
                "content block offset");
+_Static_assert(offsetof(NowPeekTable, identity_format)
+                   == offsetof(NowPeekTable, content_block) + 4,
+               "identity append offset");
+_Static_assert(offsetof(NowPeekTable, identity)
+                   == offsetof(NowPeekTable, identity_format) + 4,
+               "identity payload offset");
+_Static_assert(sizeof(NowPeekBuildIdentity) == 40,
+               "identity payload size");
+_Static_assert(offsetof(NowPeekTable, writer_format)
+                   == offsetof(NowPeekTable, identity) + 40,
+               "writer append offset");
+_Static_assert(offsetof(NowPeekTable, writer)
+                   == offsetof(NowPeekTable, writer_format) + 4,
+               "writer payload offset");
+_Static_assert(sizeof(NowPeekWriterLease) == 36,
+               "writer payload size");
+_Static_assert(offsetof(NowPeekTable, anchor_event_passes)
+                   == offsetof(NowPeekTable, writer) + 36,
+               "P1 counters append offset");
 _Static_assert(sizeof(NowPeekTable)
-                   == 44 + 60 * kNowPeekMaxAnchors + sizeof(NowPeekActCell),
+                   == offsetof(NowPeekTable, anchor_last_publish_ticks) + 4,
                "table size");
 
 #endif /* NOW_PEEK_TABLE_H */
