@@ -1,5 +1,10 @@
 import Foundation
 
+/* Legacy compatibility implementation retained as seed material until U7's
+   runtime-retirement slice. No active view or app-state route may present its
+   three-INIT, agent, forwarded-port, QMP, or external-launch model as product
+   readiness; MirrorControlView is guarded against that regression. */
+
 /// Everything the Mirror page decides that does not need a process, a
 /// socket or a view: where Mirror's binary is, what to launch it against,
 /// what the connected Mac is missing, and the sentence that says so.

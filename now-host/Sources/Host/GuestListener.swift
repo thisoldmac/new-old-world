@@ -2006,7 +2006,7 @@ final class GuestListener: ObservableObject {
     /// possible caller (a person today, an agent when the projection row
     /// exists), and a second caller silently orphaning the first one's
     /// completion is how a page waits forever.
-    func requestScene(staleAfterMs: Int? = nil,
+    func requestScene(staleAfterMs: Int? = nil, semantics: Bool = true,
                       tuning: CaptureTuning = .init(),
                       completion: @escaping (Result<SceneDelivery,
                                                     SceneFailure>) -> Void) {
@@ -2033,6 +2033,7 @@ final class GuestListener: ObservableObject {
             self?.deliverScene(.failure(.init(message: reason)))
         }
         session.sendSceneRequest(id: id, staleAfterMs: staleAfterMs,
+                                 semantics: semantics,
                                  tuning: tuning)
     }
 

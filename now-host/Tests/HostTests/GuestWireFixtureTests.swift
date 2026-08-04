@@ -1246,7 +1246,7 @@ enum Guest68KWire {
         return String(quoted)
     }()
 
-    static let hello = #"{"type":"hello","contract":1,"side":"guest","#
+    static let hello = #"{"type":"hello","contract":2,"side":"guest","#
         + #""version":"\#(appVersion)","name":"now-68k","os":"7.1","#
         + #""chunk":4096}"#
 

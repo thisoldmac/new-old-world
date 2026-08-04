@@ -195,7 +195,7 @@ plane's reader.
 | `script` | run one AppleScript | ✅ | ❌ |
 | `aesend` | send one of four core Apple Events | ✅ | ❌ |
 | `qdtrace` | what is drawing, from the content plane's ring | ✅ | ❌ |
-| `mirror` | Mirror's three residents, its agent, and the port beside it | ✅ | ❌ |
+| `mirror` | one NOW Extension: lifecycle/build and P1-P4 support, format, request, active, freshness, generation, degradation and refusal | ✅ | ❌ |
 
 Eleven of those seventeen — the act plane and the reference layer — are one
 mechanism and are served together or not at all. They are PowerPC-only
@@ -215,7 +215,7 @@ Macintosh**, so a `status` on any machine today answers
 `content-plane-absent`, correctly, and that is the whole of what it has
 been seen to do.
 
-**PPC serves 33 of 36.** `put` is console-only there and `cancel` is
+**PPC serves 36 of 39.** `put` is console-only there and `cancel` is
 not a verb at all, both deliberately: the host reaches those
 capabilities through the `file.*` families and that guest's own
 Workshop. `shotdiag` is the third, and the newest: it diagnoses a raw
@@ -288,23 +288,20 @@ exist here, and a host that asks for it by name gets
 `unknown-command`. A `gestalt` on NOW-68K is closer to a rendering job
 than a measurement one, which makes it the cheapest large gap left.
 
-### `mirror` — and why NOW-68K's ❌ is an answer, not a gap
+### `mirror` — one resident contract, and why NOW-68K's ❌ is an answer
 
-The PowerPC guest serves it; NOW-68K does not, and **should not**. This
-is a declared asymmetry rather than a debt, and the reason is not
-capability: the 68K guest could call Gestalt as easily as the Carbon one.
+The PowerPC guest serves it from the validated `NWex` table used by the
+Workshop page. The reply has schema 1 and names exactly one resident plus the
+four unified planes; it contains no AXPeek/QDPeek/Portal, agent, or forwarded-
+port inventory. The host and guest therefore cannot diagnose a valid unified
+boot as missing retired software.
 
-Mirror does not run on that machine. Its agent is a PowerPC/CFM
-application whose build **refuses** the 68K toolchain outright, because
-Open Transport cannot link under Retro68/68K
-(`mirror/guest/app/CMakeLists.txt`). Its three residents exist to serve
-that agent. So a `mirror` verb on NOW-68K would answer "absent, absent,
-absent, no agent" about a machine where absence is the only possible
-state — a row that reads as a finding and is a tautology.
-
-A host asking NOW-68K for it gets `unknown-command`, which is the honest
-answer: this Mac has nothing to say about Mirror. If Mirror is ever
-ported to 68K, the verb crosses with it and this paragraph goes.
+NOW-68K does not serve the command because the resident table and its P1-P4
+contracts are a PowerPC/Carbon guest capability today. A host asking that guest
+gets `unknown-command`, which the host must treat as unsupported rather than as
+evidence that an extension is absent. If the shared resident contract crosses
+to the 68K sibling, the verb crosses with it; until then a fabricated all-zero
+P1-P4 object would overstate what that guest observed.
 
 ### `census` — the hardware census, probe by probe
 
@@ -534,16 +531,18 @@ keeps Dialog Manager selection distinct from `ctlact`; emulator
 verification is recorded by the UX loop rather than inferred from this
 served count.
 
-Last re-derived: **2026-07-31**, on `claude/tbt-parity-slice`, by running
-the commands above. Every count in this file still checked out as it
-stood then — 37 and 23 inbound types, 19 verbs, 16 and 13 served, 14
-probes — and one
-grouped row did not: `file.list` / `file.listing` had been a single ✅/✅
-row, and NOW-68K handles no `file.listing` inbound. They are two rows
-now. What changed since the previous derivation is what each guest
-**sends** in `hello`, which is recorded at the top.
+Last re-derived: **2026-08-04**, on `codex/recover-ptolemy-ux-loop`, by
+running the commands above. The inbound dispatches contain 42 unique PowerPC
+types and 23 unique NOW-68K types. The command registry contains 39 verbs; the
+PowerPC dispatch serves 36 and NOW-68K remains the documented strict subset.
+The `mirror` row was also re-read from both the command and console dispatches
+after its schema-1 one-extension cut. The previous derivation also found one
+grouped row that did not match: `file.list` / `file.listing` had been a single
+✅/✅ row, and NOW-68K handles no `file.listing` inbound. They are two rows now.
+What changed since that derivation is what each guest **sends** in `hello`,
+which is recorded at the top.
 
-The previous derivation was 2026-07-28, at the merge of
+The earlier derivation was 2026-07-28, at the merge of
 `claude/68k-software-list-sw` and `claude/68k-census-probes`, which gave
 NOW-68K `sw` and the census section above. **Re-derived at the merge
 rather than taken from either side.** Each branch counted the roster

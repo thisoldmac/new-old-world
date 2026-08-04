@@ -1,32 +1,4 @@
-/* The `mirror` verb's reply, as the wire sees it.
- *
- *     cd now-guest-ppc/tests
- *     cc -Wall -Wextra -Werror -I ../src -I ../src/core -I ../src/mirror \
- *        mirror_json_test.c ../src/mirror/mirror_json.c \
- *        ../src/mirror/mirror_layout.c ../src/core/json.c -o /tmp/t && /tmp/t
- *
- * The sibling of mirror_layout_test.c, asking the other half of the same
- * question: that file checks what a state MEANS to a person, this one
- * checks how it is SPELLED to a caller. Both matter and they fail
- * separately - a page can say the right sentence while the wire says
- * `"state": 2`.
- *
- * THE THREE THINGS THIS EXISTS TO CATCH, each of which is silent:
- *
- *   1. A state spelled as its NUMBER. Every reader would then need a copy
- *      of the enum, which is the second-copy-of-a-contract failure this
- *      project has already paid for on the wire.
- *   2. A version or a port rendered when there is none. Zero is a number
- *      a reader believes: "port 0" reads as a listener, and a version on
- *      an absent extension reads as a version. Both must be ABSENT keys.
- *   3. A short extensions array. Three rows always, including absent
- *      ones - otherwise "not installed" and "not asked" are one answer.
- *
- * What this canNOT check, because it has no Macintosh: that Gestalt
- * answers at all, that the agent's creator is what the Process Manager
- * reports, or that mirror.port was read from the folder the catalog walk
- * resolved. mirror_probe.c owns all three and none is testable here.
- */
+/* The unified NOW Extension lifecycle reply, tested without a Macintosh. */
 
 #include <stdio.h>
 #include <string.h>
@@ -43,131 +15,108 @@ static void check(int ok, const char *what)
     }
 }
 
-/* A machine with everything Mirror needs; each test breaks one thing. */
 static void healthy(MirrorFacts *facts)
 {
     int i;
 
     memset(facts, 0, sizeof *facts);
-    for (i = 0; i < kMirrorExtCount; ++i) {
-        facts->ext_state[i] = kMirrorExtResident;
+    facts->lifecycle = kMirrorLifecycleActive;
+    facts->resident_major = 1;
+    facts->resident_minor = 7;
+    facts->table_length = 4096;
+    facts->capabilities = 15;
+    facts->requested_bits = 15;
+    facts->active_bits = 15;
+    facts->heartbeat = 1234;
+    facts->has_build_identity = 1;
+    for (i = 0; i < 5; ++i) {
+        facts->source_manifest[i] = (unsigned long)(i + 1);
+        facts->build_fingerprint[i] = (unsigned long)(0x10 + i);
     }
-    facts->ext_version[kMirrorExtAX] = 4;
-    facts->ext_version[kMirrorExtQD] = 1;
-    facts->ext_version[kMirrorExtPortal] = 4;
-    facts->agent = kMirrorAgentRunning;
-    strcpy(facts->agent_path, "Macintosh HD:Applications:mirror-agent");
-    strcpy(facts->agent_sig, "????");
-    facts->port_state = kMirrorPortNamed;
-    facts->port = kMirrorAgentPort;
-}
-
-static long render(const MirrorFacts *facts, char *out, long cap)
-{
-    return now_mirror_json(facts, 42, out, cap);
+    for (i = 0; i < kMirrorPlaneCount; ++i) {
+        MirrorPlaneFact *plane = &facts->planes[i];
+        plane->supported = 1;
+        plane->format = (unsigned long)(i + 1);
+        plane->requested = 1;
+        plane->active = 1;
+        plane->freshness = kMirrorFreshCurrent;
+        plane->state = kMirrorPlaneActiveCurrent;
+        plane->generation = (unsigned long)(100 + i);
+    }
 }
 
 int main(void)
 {
-    char buf[2048];
+    char buf[4096];
     MirrorFacts facts;
     long n;
 
     printf("mirror_json_test\n");
-
-    /* The healthy machine: every fact present, every one a word. */
     healthy(&facts);
-    n = render(&facts, buf, sizeof buf);
-    check(n > 0, "a healthy machine renders something");
-    check(strstr(buf, "\"type\":\"command.result\"") != NULL,
-          "the reply is a command.result");
-    check(strstr(buf, "\"id\":42") != NULL, "it answers the id it was given");
-    check(strstr(buf, "\"ok\":true") != NULL, "a probe that ran is ok");
-    check(strstr(buf, "\"state\":\"resident\"") != NULL,
-          "a loaded extension is the WORD resident, never its number");
-    check(strstr(buf, "\"selector\":\"TBax\"") != NULL,
-          "each row names the Gestalt selector it was read from");
-    check(strstr(buf, "\"selector\":\"TBqd\"") != NULL, "QDPeek's selector");
-    check(strstr(buf, "\"selector\":\"TBpt\"") != NULL, "the Portal's selector");
-    check(strstr(buf, "\"state\":\"running\"") != NULL, "the agent is running");
-    check(strstr(buf, "\"state\":\"named\"") != NULL, "the port state is named");
-    check(strstr(buf, "\"number\":1420") != NULL, "and the number is there");
-    check(strstr(buf, "\"source\":") != NULL,
-          "the number says where it came from - the running agent bound "
-          "what the file said at ITS launch, not what this read says");
+    n = now_mirror_json(&facts, 42, buf, (long)sizeof buf);
+    check(n > 0, "active facts render");
+    check(strstr(buf, "\"schema\":1") != NULL,
+          "the mirror object carries its explicit schema");
+    check(strstr(buf, "\"selector\":\"NWex\"") != NULL,
+          "the one resident component is NOW Extension");
+    check(strstr(buf, "\"lifecycle\":\"active\"") != NULL,
+          "active is spelled as a lifecycle word");
+    check(strstr(buf, "\"sourceManifest\":\"0000000100000002000000030000000400000005\"") != NULL,
+          "source identity is exact lowercase SHA-1 hex");
+    check(strstr(buf, "\"buildFingerprint\":\"0000001000000011000000120000001300000014\"") != NULL,
+          "resident build identity travels beside source identity");
+    check(strstr(buf, "\"id\":\"structure\"") != NULL,
+          "P1 structure is present");
+    check(strstr(buf, "\"id\":\"semantics\"") != NULL,
+          "P2 semantics is present");
+    check(strstr(buf, "\"id\":\"content\"") != NULL,
+          "P3 content is present");
+    check(strstr(buf, "\"id\":\"interaction\"") != NULL,
+          "P4 interaction is present");
+    check(strstr(buf, "\"state\":\"active-current\"") != NULL,
+          "current active planes are explicit");
+    check(strstr(buf, "AXPeek") == NULL && strstr(buf, "QDPeek") == NULL
+              && strstr(buf, "Portal") == NULL
+              && strstr(buf, "mirror-agent") == NULL,
+          "the retired three-extension and agent inventory cannot leak");
 
-    /* Three rows, always. A machine with nothing installed must still
-       answer three, or "not installed" and "not asked" become one fact. */
     memset(&facts, 0, sizeof facts);
-    n = render(&facts, buf, sizeof buf);
-    {
-        const char *p = buf;
-        int rows = 0;
-        while ((p = strstr(p, "\"name\":")) != NULL) {
-            ++rows;
-            ++p;
-        }
-        check(rows == kMirrorExtCount,
-              "a bare machine still renders every extension row");
-    }
-    check(strstr(buf, "\"state\":\"absent\"") != NULL,
-          "an extension that published nothing is absent");
-    check(strstr(buf, "\"version\":") == NULL,
-          "an ABSENT extension renders no version - a version there would "
-          "be an invented fact about a block nobody read");
-    check(strstr(buf, "\"state\":\"unknown\"") != NULL,
-          "a port nobody could look for is unknown, not absent");
-    check(strstr(buf, "\"number\":") == NULL,
-          "a port that is not named renders NO number - 0 is a number a "
-          "reader believes, and it would name a listener that is not there");
-    check(strstr(buf, "\"signature\":") == NULL,
-          "no signature without a running process to read it from");
+    facts.lifecycle = kMirrorLifecycleNeedsRestart;
+    now_mirror_json(&facts, 7, buf, (long)sizeof buf);
+    check(strstr(buf, "\"lifecycle\":\"needs-restart\"") != NULL,
+          "installed but unloaded is distinct from absent");
+    check(strstr(buf, "\"residentMajor\":") == NULL,
+          "an unloaded extension invents no resident version");
 
-    /* Other-version is not absence, and it keeps its version: that is the
-       whole reason the third state exists. */
     memset(&facts, 0, sizeof facts);
-    facts.ext_state[kMirrorExtPortal] = kMirrorExtOtherVersion;
-    facts.ext_version[kMirrorExtPortal] = 9;
-    n = render(&facts, buf, sizeof buf);
-    check(strstr(buf, "\"state\":\"other-version\"") != NULL,
-          "a block this build does not know is other-version, not absent");
-    check(strstr(buf, "\"version\":9") != NULL,
-          "and it reports the version it found, which is what tells "
-          "somebody not to reinstall a file that is already there");
+    facts.lifecycle = kMirrorLifecycleWrongVersion;
+    facts.resident_major = 9;
+    facts.resident_minor = 2;
+    now_mirror_json(&facts, 8, buf, (long)sizeof buf);
+    check(strstr(buf, "\"lifecycle\":\"wrong-version\"") != NULL,
+          "wrong-version is not absence");
+    check(strstr(buf, "\"residentMajor\":9") != NULL,
+          "wrong-version reports what answered");
 
-    /* The states that are NOT the healthy ones, each spelled its own way. */
-    memset(&facts, 0, sizeof facts);
-    facts.agent = kMirrorAgentStopped;
-    facts.port_state = kMirrorPortUnusable;
-    n = render(&facts, buf, sizeof buf);
-    check(strstr(buf, "\"state\":\"stopped\"") != NULL, "a stopped agent");
-    check(strstr(buf, "\"state\":\"unusable\"") != NULL,
-          "a file naming no usable port is unusable, which is not absent: "
-          "the file IS there and that is why the agent answers nobody");
-    check(strstr(buf, "\"number\":") == NULL,
-          "an unusable port names no number either");
+    healthy(&facts);
+    facts.lifecycle = kMirrorLifecycleDegraded;
+    facts.planes[kMirrorPlaneContent].state = kMirrorPlaneDegraded;
+    facts.planes[kMirrorPlaneContent].freshness = kMirrorFreshStale;
+    strcpy(facts.planes[kMirrorPlaneContent].reason,
+           "resident heartbeat is stale");
+    now_mirror_json(&facts, 9, buf, (long)sizeof buf);
+    check(strstr(buf, "\"lifecycle\":\"degraded\"") != NULL,
+          "degraded lifecycle is explicit");
+    check(strstr(buf, "\"freshness\":\"stale\"") != NULL,
+          "plane freshness is explicit");
+    check(strstr(buf, "resident heartbeat is stale") != NULL,
+          "plane degradation carries its proving reason");
 
-    /* A path with a character JSON must escape. The agent path comes off
-       a catalog walk, so a volume with a quote in its name is a machine
-       this could meet. */
-    memset(&facts, 0, sizeof facts);
-    facts.agent = kMirrorAgentStopped;
-    strcpy(facts.agent_path, "Macintosh \"HD\":Applications:mirror-agent");
-    n = render(&facts, buf, sizeof buf);
-    check(strstr(buf, "\\\"HD\\\"") != NULL,
-          "a quote in the path is escaped, not shipped raw into the JSON");
-
-    /* A buffer far too small must truncate rather than run past cap. The
-       return is the bytes used and must never reach cap. */
     healthy(&facts);
     {
         char small[64];
-        long used = now_mirror_json(&facts, 7, small, (long)sizeof small);
-        check(used < (long)sizeof small,
-              "a reply that does not fit stops inside the buffer");
-        check(small[sizeof small - 1] == '\0'
-              || used < (long)sizeof small - 1,
-              "and does not write past the end of it");
+        long used = now_mirror_json(&facts, 10, small, (long)sizeof small);
+        check(used < (long)sizeof small, "bounded output truncates safely");
     }
 
     if (failures) {

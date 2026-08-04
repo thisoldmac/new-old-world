@@ -84,31 +84,22 @@ final class HostAppState: ObservableObject {
         addressing: agentIntegration,
         select: { [weak self] key in self?.selectGuest(key) ?? false })
     private(set) lazy var console = ConsoleModel(listener: listener)
-    /// The Mirror page — the lifecycle of one Mirror instance, pointed at
-    /// the machine this window is driving.
-    ///
-    /// Guest-scoped, and that is a reversal worth stating. The page it
-    /// replaced deliberately took no listener, because it launched Mirror
-    /// against Mirror's OWN throwaway emulator session; the machine NOW was
-    /// talking to had nothing to do with it, and a person with a Mac
-    /// connected had no way to mirror THAT Mac. The connection is the
-    /// target now — the address Mirror dials, the extensions it needs and
-    /// the agent it talks to are all facts about the machine on this wire —
-    /// so the page moves with the picker like every other one.
+    /// The one NOW Extension lifecycle and host plane policy for this Mac.
+    /// It moves with the guest picker because every fact and policy claim is
+    /// scoped to the selected wire session.
     private(set) lazy var mirror = MirrorControlModel(
         guestProbe: MirrorGuestWireProbe(listener: listener))
-    /// The mirror NOW draws itself, over NOW's own wire — as opposed to
-    /// `mirror` above, which is the lifecycle of Mirror's separate binary
-    /// and its separate wire. Both exist while the fold is in progress and
-    /// they are not the same thing: one launches an application, this one
-    /// opens a window this app draws.
+    /// The native data-driven Mirror source. It reads the same policy model
+    /// the page renders, so the visible toggles are the claims this source
+    /// actually makes.
     private(set) lazy var mirrorSource = NOWMirrorSource(
         listener: listener,
         act: AgentIntegrationActControl(
             listener: listener,
             currentSessionID: { [unowned self] in
                 self.agentIntegration.connectedSessionID()
-            }))
+            }),
+        planePolicy: { [unowned self] in self.mirror.requestedPlaneIDs })
     private(set) lazy var mirrorWindow = NOWMirrorWindow(source: mirrorSource)
 
     /// What to put in the mirror window's title bar. A person may have

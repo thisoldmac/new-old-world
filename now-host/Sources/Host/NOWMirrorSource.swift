@@ -87,6 +87,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private let act: AgentIntegrationActControl
     private let content: NOWMirrorContentPlane
     private let interval: TimeInterval
+    private let planePolicy: @MainActor () -> Set<MirrorPlaneID>
     private var running = false
     private var pending = false
 
@@ -112,11 +113,15 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
     init(listener: GuestListener,
          act: AgentIntegrationActControl,
-         interval: TimeInterval = 0.75) {
+         interval: TimeInterval = 0.75,
+         planePolicy: @escaping @MainActor () -> Set<MirrorPlaneID> = {
+             Set(MirrorPlaneID.allCases)
+         }) {
         self.listener = listener
         self.act = act
         self.content = NOWMirrorContentPlane(listener: listener)
         self.interval = interval
+        self.planePolicy = planePolicy
     }
 
     // MARK: - The poll
@@ -131,7 +136,17 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
     func stop() {
         running = false
-        ambient = "stopped"
+        /* P1/P2 and P4 are application-owned claims with a ten-second
+           resident lease; stopping the poll stops renewing them, so they
+           retire without a foreign-context teardown command. P3 is different:
+           its content lease is deliberately long, so release it explicitly
+           and report a refusal instead of claiming the Mirror is clean. */
+        content.disable { [weak self] failure in
+            guard let self else { return }
+            self.ambient = failure.map {
+                "stopped; Content claim release refused: \($0)"
+            } ?? "stopped"
+        }
     }
 
     private func poll() {
@@ -142,7 +157,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
            request on it. */
         guard !listener.isScenePending else { return rearm() }
         pending = true
-        listener.requestScene { [weak self] result in
+        listener.requestScene(
+            semantics: planePolicy().contains(.semantics)) { [weak self] result in
             guard let self else { return }
             self.pending = false
             switch result {
@@ -173,6 +189,18 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             var decoded = try NOWMirrorSceneDecoder.decode(
                 irVersion: delivery.irVersion, document: delivery.document)
             decoded = withIcons(decoded)
+            if !planePolicy().contains(.content) {
+                content.disable { [weak self] failure in
+                    guard let self else { return }
+                    self.scene = decoded
+                    self.refreshIconsIfStale(decoded)
+                    self.ambient = "\(decoded.windows.count) windows · "
+                        + (failure.map { "content release refused: \($0)" }
+                           ?? "content off")
+                    completion()
+                }
+                return
+            }
             content.join(into: decoded) { [weak self] update in
                 guard let self else { return }
                 self.scene = update.scene
@@ -418,6 +446,14 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// no action case can name a file. `finderSelect` and `finderOpen`
     /// are the whole argument for objects, and they are served here.
     func perform(_ interaction: Interaction) {
+        guard planePolicy().contains(.interaction) else {
+            let label = InteractionBridge.label(for: interaction)
+            ActLog.note(action: label,
+                        outcome: "NOT DISPATCHED: Interaction policy is off",
+                        ms: 0)
+            report("\(label): Interaction is off; the Mirror is read-only.")
+            return
+        }
         let plan = InteractionPolicy.plan(for: interaction, planes: planes)
         switch plan {
         case .nothing(let why):
@@ -460,6 +496,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// MirrorKit still speaks. Nothing in NOW's own path uses it.
     func perform(_ actions: [MirrorAction], label: String) {
         guard !actions.isEmpty else { return }
+        guard planePolicy().contains(.interaction) else {
+            report("\(label): Interaction is off; the Mirror is read-only.")
+            return
+        }
         for action in actions {
             let verdict = ActionModel.availability(action, planes: planes)
             guard verdict == .available else {

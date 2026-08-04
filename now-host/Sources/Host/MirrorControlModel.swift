@@ -2,21 +2,10 @@ import Combine
 import Foundation
 import Network
 
-/// The Mirror page: the status of ONE Mirror host instance and of the
-/// machine it would draw.
-///
-/// Mirror is a separate application, vendored at `mirror/`. It has its own
-/// wire (line-JSON over Open Transport, not NOW's frame codec), its own
-/// resident 68K extensions, and its own agent that runs inside the classic
-/// Mac. None of that is NOW's, and this page does not reimplement any of
-/// it — the port that tried is archived at `archive/mirror-port-2026-08-01/`
-/// and is the mistake this module exists to record.
-///
-/// What it DOES own is a lifecycle and a verdict: is the connected Mac
-/// ready for Mirror, can a Mirror instance reach it, is one running, and
-/// what happened when it stopped. The old version of this page showed
-/// shell commands and a transcript, which made a script document out of an
-/// application; nothing here prints an argv.
+/// Unified NOW Extension lifecycle and host policy for the native Mirror.
+/// The legacy launcher implementation below remains internal seed material
+/// until U7 removes its runtime, but no product surface calls it or derives
+/// readiness from it.
 @MainActor
 final class MirrorControlModel: ObservableObject, GuestScopedModel {
 
@@ -34,6 +23,14 @@ final class MirrorControlModel: ObservableObject, GuestScopedModel {
         .unavailable(reason: "No Mac is connected.")
     @Published private(set) var reachability: MirrorReachability = .untried
     @Published private(set) var isChecking = false
+
+    // The unified NOW Extension lifecycle. This is the product surface U6
+    // adds; the legacy launcher state below remains internal until U7 retires
+    // its runtime, but is no longer rendered as readiness.
+    @Published private(set) var wireFacts: MirrorWireFacts?
+    @Published private(set) var lifecycleError: String?
+    @Published private(set) var isLifecycleChecking = false
+    @Published private(set) var policyGeneration = 0
 
     /// Where the launch would come from, recomputed whenever the settings
     /// that decide it change.
@@ -98,12 +95,16 @@ final class MirrorControlModel: ObservableObject, GuestScopedModel {
     private let endpointProbe: MirrorEndpointProbing
     private let spawner: MirrorSpawning
     private let defaults: UserDefaults
+    private let policyStore: MirrorPlanePolicyStore
     let checkout: MirrorCheckout?
 
     /// Guards a slow answer landing after the machine changed: each check
     /// takes a token and only the current one may publish.
     private var checkToken = 0
     private var childPID: Int32?
+    private var pendingSince: [MirrorPlaneID: Date] = [:]
+    private var pendingWake: Task<Void, Never>?
+    private static let pendingTimeout: TimeInterval = 5
 
     /// The two live collaborators default to nil rather than to instances
     /// of themselves: a default argument is evaluated outside this class's
@@ -119,6 +120,7 @@ final class MirrorControlModel: ObservableObject, GuestScopedModel {
         self.spawner = spawner ?? MirrorProcessSpawner()
         self.checkout = checkout
         self.defaults = defaults
+        self.policyStore = MirrorPlanePolicyStore(defaults: defaults)
         let stored = defaults.integer(forKey: Keys.forwardedPort)
         forwardedAgentPort = (1...65535).contains(stored)
             ? stored : MirrorEndpoint.defaultForwardedPort
@@ -127,6 +129,108 @@ final class MirrorControlModel: ObservableObject, GuestScopedModel {
         buildFromSource = defaults.bool(forKey: Keys.buildFromSource)
         resolveProduct()
         recomputeEndpoint()
+    }
+
+    // MARK: - Unified NOW Extension lifecycle
+
+    func refreshLifecycle() {
+        guard connection.canCapture else {
+            lifecycleError = "No Mac is connected."
+            return
+        }
+        isLifecycleChecking = true
+        lifecycleError = nil
+        let token = checkToken
+        guestProbe.readMirrorFacts { [weak self] result in
+            guard let self, token == self.checkToken else { return }
+            self.isLifecycleChecking = false
+            switch result {
+            case .success(let facts):
+                self.wireFacts = facts
+                self.updatePendingDeadlines(for: facts, now: Date())
+            case .failure(let failure):
+                self.lifecycleError = failure.reason
+            }
+        }
+    }
+
+    var planeFacts: [MirrorWirePlane] { wireFacts?.planes ?? [] }
+
+    func policyEnabled(_ plane: MirrorPlaneID) -> Bool {
+        guard let guest = guestProbe.activeGuest else { return true }
+        return policyStore.isEnabled(
+            plane, machineID: guest.id.slug,
+            identityAnchored: guest.idIsAnchored,
+            sessionID: guest.sessionID)
+    }
+
+    func setPolicy(_ enabled: Bool, for plane: MirrorPlaneID) {
+        guard plane.isUserPolicy, let guest = guestProbe.activeGuest else {
+            return
+        }
+        policyStore.set(enabled, plane: plane, machineID: guest.id.slug,
+                        identityAnchored: guest.idIsAnchored,
+                        sessionID: guest.sessionID)
+        policyGeneration &+= 1
+        refreshLifecycle()
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            self?.refreshLifecycle()
+        }
+    }
+
+    func presentation(for plane: MirrorWirePlane) -> MirrorPlanePresentation {
+        MirrorPlaneReducer.resolve(
+            plane: plane,
+            lifecycle: wireFacts?.resident.lifecycle ?? .absent,
+            connected: connection.canCapture,
+            policyEnabled: policyEnabled(plane.id),
+            pendingTimedOut: pendingSince[plane.id].map {
+                Date().timeIntervalSince($0) >= Self.pendingTimeout
+            } ?? false)
+    }
+
+    func canToggle(_ plane: MirrorWirePlane) -> Bool {
+        guard plane.id.isUserPolicy, plane.supported, connection.canCapture,
+              let lifecycle = wireFacts?.resident.lifecycle else { return false }
+        return lifecycle == .active || lifecycle == .degraded
+    }
+
+    var requestedPlaneIDs: Set<MirrorPlaneID> {
+        Set(planeFacts.compactMap { plane in
+            plane.supported && policyEnabled(plane.id) ? plane.id : nil
+        }).union([.structure])
+    }
+
+    private func updatePendingDeadlines(for facts: MirrorWireFacts, now: Date) {
+        let pending = Set<MirrorPlaneID>(facts.planes.compactMap { plane in
+            guard plane.supported, policyEnabled(plane.id),
+                  plane.state == .requested,
+                  facts.resident.lifecycle == .active
+                    || facts.resident.lifecycle == .degraded else { return nil }
+            return plane.id
+        })
+        pendingSince = pendingSince.filter { pending.contains($0.key) }
+        for plane in pending where pendingSince[plane] == nil {
+            pendingSince[plane] = now
+        }
+        schedulePendingWake(now: now)
+    }
+
+    private func schedulePendingWake(now: Date) {
+        pendingWake?.cancel()
+        let future = pendingSince.values
+            .map { $0.addingTimeInterval(Self.pendingTimeout) }
+            .filter { $0 > now }
+            .min()
+        guard let future else { return }
+        let delay = UInt64(max(0, future.timeIntervalSince(now)) * 1_000_000_000)
+        pendingWake = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: delay)
+            guard !Task.isCancelled, let self else { return }
+            self.policyGeneration &+= 1
+            self.refreshLifecycle()
+        }
     }
 
     // MARK: - Reading the machine
@@ -138,6 +242,8 @@ final class MirrorControlModel: ObservableObject, GuestScopedModel {
     /// while the wire is busy.
     func check() {
         checkToken += 1
+        pendingWake?.cancel()
+        pendingSince.removeAll()
         let token = checkToken
         recomputeEndpoint()
 
@@ -242,6 +348,10 @@ final class MirrorControlModel: ObservableObject, GuestScopedModel {
                 ? "Not checked yet." : "No Mac is connected.")
         agent = .untried
         reachability = .untried
+        if let newKey = connection.key, newKey != old.key {
+            wireFacts = nil
+            lifecycleError = nil
+        }
         recomputeEndpoint()
     }
 
@@ -460,6 +570,16 @@ protocol MirrorGuestProbing: AnyObject {
     /// The machine being driven, for the address the endpoint derives
     /// from and the handle Mirror is told to call it.
     var activeGuest: ConnectedGuest? { get }
+    func readMirrorFacts(
+        completion: @escaping (Result<MirrorWireFacts, MirrorProbeFailure>) -> Void)
+}
+
+extension MirrorGuestProbing {
+    func readMirrorFacts(
+        completion: @escaping (Result<MirrorWireFacts, MirrorProbeFailure>) -> Void) {
+        completion(.failure(MirrorProbeFailure(
+            "This probe does not implement unified NOW Extension facts.")))
+    }
 }
 
 /// Whether something is listening, without saying anything to it.
@@ -493,6 +613,31 @@ final class MirrorGuestWireProbe: MirrorGuestProbing {
 
     var activeGuest: ConnectedGuest? {
         listener.guests.first { $0.isActive }
+    }
+
+    func readMirrorFacts(
+        completion: @escaping (Result<MirrorWireFacts, MirrorProbeFailure>) -> Void) {
+        listener.runCommand("mirror") { result in
+            guard result.ok else {
+                completion(.failure(MirrorProbeFailure(
+                    result.error?.message ?? "The Mac refused mirror facts.")))
+                return
+            }
+            guard let value = result.outputObjects?["mirror"] else {
+                completion(.failure(MirrorProbeFailure(
+                    "The Mac returned no unified mirror object.")))
+                return
+            }
+            do {
+                let data = try JSONEncoder().encode(value)
+                let facts = try JSONDecoder().decode(MirrorWireFacts.self,
+                                                     from: data)
+                completion(.success(facts))
+            } catch {
+                completion(.failure(MirrorProbeFailure(
+                    "The Mac's mirror facts do not match schema 1: \(error)")))
+            }
+        }
     }
 
     func listExtensions(

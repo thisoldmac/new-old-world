@@ -83,6 +83,13 @@ capability:
 chances to drift, and the parity test compares them directly. The
 implementations live below both.
 
+`mirror` is the one-extension example. Both faces call `now_mirror_probe()`;
+the wire serializes its schema-1 facts while the Console and Workshop render
+the same lifecycle and P1-P4 rows. All three are read-only. Host plane policy
+is deliberately not a third guest face: it changes named claims through the
+native Mirror source, and the guest surfaces report what the resident actually
+requested and activated rather than echoing that policy.
+
 ## Deliberate asymmetries
 
 Kept in the test as data, not prose, so they cannot rot:

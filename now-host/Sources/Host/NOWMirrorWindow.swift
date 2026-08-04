@@ -17,9 +17,10 @@ import MirrorKitUI
 /// `LiveMirrorView`, and everything the machine answers lives in
 /// `NOWMirrorSource`; this owns a window and its lifetime.
 @MainActor
-final class NOWMirrorWindow: NSObject, NSWindowDelegate {
+final class NOWMirrorWindow: NSObject, ObservableObject, NSWindowDelegate {
 
     private var window: NSWindow?
+    @Published private(set) var isOpen = false
     private var didFit = false
     private let source: NOWMirrorSource
     private let screen: MirrorKit.Scene.ScreenSize
@@ -61,6 +62,7 @@ final class NOWMirrorWindow: NSObject, NSWindowDelegate {
            nothing". */
         if let w = window { Self.ensureOnScreen(w) }
         source.start()
+        isOpen = true
         /* NO NSApp.activate HERE, and that is the fix rather than an
            omission. Activating trips `applicationShouldHandleReopen`,
            whose job is to bring the MAIN window up - so asking for the
@@ -141,6 +143,7 @@ final class NOWMirrorWindow: NSObject, NSWindowDelegate {
     func close() {
         source.stop()
         window?.orderOut(nil)
+        isOpen = false
     }
 
     /// Closing the window stops the poll. A mirror nobody is looking at
@@ -149,5 +152,6 @@ final class NOWMirrorWindow: NSObject, NSWindowDelegate {
     /// what its user asked.
     func windowWillClose(_ notification: Notification) {
         source.stop()
+        isOpen = false
     }
 }

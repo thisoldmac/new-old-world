@@ -9,7 +9,7 @@ import NOWAgentIntegration
 /// control frame, discriminated by `type`.
 enum Contract {
     /// x-contract-revision from contract/asyncapi.yaml. Unequal => refuse.
-    static let revision = 1
+    static let revision = 2
     static let defaultChunk = 8192
 }
 
@@ -943,6 +943,8 @@ struct SceneRequest: Codable, Equatable, Sendable {
     /// older-but-otherwise-valid anchor is *reported* stale in
     /// `apps[].error`, never silently dropped and never a refusal.
     var staleAfterMs: Int?
+    /// Host policy for this scene owner's optional P2 claim. P1 remains on.
+    var semantics: Bool? = nil
 }
 
 struct SceneBegin: Codable, Equatable, Sendable {

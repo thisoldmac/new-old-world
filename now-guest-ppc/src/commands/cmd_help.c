@@ -324,17 +324,16 @@ static const char *const d_axtree[] = {
     NULL
 };
 static const char *const d_mirror[] = {
-    "  What this Mac can say about Mirror: whether each of its three",
-    "  resident extensions is loaded, whether its agent is running, and",
-    "  which port the file beside the agent names.",
+    "  What this Mac can prove about the one NOW Extension: lifecycle,",
+    "  exact resident build, and P1-P4 support, request, active, format,",
+    "  freshness, generation, refusal and degradation facts.",
     "",
-    "  Residency is a Gestalt answer and only this Mac can give it. A",
-    "  host reading the Extensions folder learns that a FILE is there,",
-    "  which cannot tell an installed extension from a loaded one.",
+    "  Residency is a Gestalt answer and only this Mac can give it. The",
+    "  command distinguishes absent, restart-required, wrong-version,",
+    "  active and degraded instead of inferring residence from a file.",
     "",
-    "  Running and serving are different facts. The agent binds the port",
-    "  named when IT launched; this reads the file now, so the row says",
-    "  where its number came from.",
+    "  Plane policy belongs to the host. This command and the Workshop",
+    "  page are read-only views over the same guest-observed facts.",
     NULL
 };
 static const char *const d_axsnap[] = {
@@ -499,7 +498,7 @@ const NowCommandDoc kNowCommandDocs[] = {
       "axtree [scope]", d_axtree },
     { "axsnap", 1, "who is front, and how many references are live",
       "axsnap", d_axsnap },
-    { "mirror", 1, "Mirror's extensions, its agent, and the port it serves",
+    { "mirror", 1, "NOW Extension lifecycle and P1-P4 plane facts",
       "mirror", d_mirror },
     { "help", 1, "list commands (\"help <cmd>\" for one)",
       "help [command]", d_help },

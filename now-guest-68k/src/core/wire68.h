@@ -1,7 +1,7 @@
 /*
  * wire68.h - the NOW protocol client for NOW-68K.
  *
- * Speaks a SUBSET of contract revision 1 over net.h: dial, hello handshake,
+ * Speaks a SUBSET of contract revision 2 over net.h: dial, hello handshake,
  * 30 s ping keepalive, frame read/write, the commands, process.list, and
  * the file family's push, pull and browse halves (file.offer/begin/end
  * both ways, and file.list). It does not implement capture, streams, the

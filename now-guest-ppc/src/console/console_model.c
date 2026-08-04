@@ -735,29 +735,21 @@ static void console_model_dispatch(const char *input)
         /* The same probe the Mirror page draws and the wire verb sends,
            rendered by the same layout half - three faces, one producer.
            A console that computed its own account of Mirror would be a
-           third answer to drift against, and this is a page whose whole
-           value is that its three rows are true. */
+           third answer to drift against. */
         memset(&facts, 0, sizeof facts);
         now_mirror_probe(&facts);
 
-        console_model_append("Extensions (loaded at boot; Gestalt answers)");
-        for (mi = 0; mi < (int)kMirrorExtCount; ++mi) {
-            now_mirror_ext_value(&facts, (MirrorExt)mi, value, sizeof value);
-            snprintf(line, sizeof line, "  %-10.10s %.60s",
-                     now_mirror_ext_name((MirrorExt)mi), value);
+        now_mirror_lifecycle_text(&facts, value, sizeof value);
+        console_model_append(value);
+        console_model_append("Planes (observed NOW Extension state)");
+        for (mi = 0; mi < (int)kMirrorPlaneCount; ++mi) {
+            now_mirror_plane_value(&facts, (MirrorPlane)mi,
+                                   value, sizeof value);
+            snprintf(line, sizeof line, "  %-12.12s %.60s",
+                     now_mirror_plane_name((MirrorPlane)mi), value);
             console_model_append(line);
         }
-        console_model_append("Agent");
-        for (mi = 0; mi < (int)kMirrorAgentRows; ++mi) {
-            char label[32];
-
-            if (!now_mirror_agent_row(&facts, mi, label, sizeof label,
-                                      value, sizeof value)) {
-                continue;
-            }
-            snprintf(line, sizeof line, "  %-10.10s %.60s", label, value);
-            console_model_append(line);
-        }
+        console_model_append("Policy belongs to the host; this view is read-only.");
         return;
     }
     if (strcmp(name, "census") == 0) {

@@ -161,7 +161,7 @@ asyncapi: 3.0.0
 info:
   title: New Old World wire contract
   version: 0.1.0
-  x-contract-revision: 1
+  x-contract-revision: 2
 
 defaultContentType: application/json
 
@@ -2289,6 +2289,14 @@ components:
             An older-but-otherwise-valid anchor is REPORTED stale
             (apps[].error "now_anchor_stale"), never silently dropped and
             never a refusal. 0 or absent disables the age gate.
+        semantics:
+          type: boolean
+          default: true
+          description: >
+            Whether this scene owner requests P2 semantic assist. False
+            releases only this owner's Tree claim; P1 Structure remains
+            required and armed. This is host policy carried to its named
+            claim, not a cached resident capability.
     SceneBegin:
       type: object
       required: [type, id, transfer, bytes, irVersion]
@@ -3991,107 +3999,97 @@ components:
                   capacity: { type: integer }
     mirror:
       description: >
-        What this Mac can say about MIRROR — a separate application that
-        happens to run on the same machine: three resident 68K extensions
-        (AXPeek, QDPeek, the Portal) and one faceless agent. NOW installs
-        none of it, patches none of it and speaks none of its wire; this
-        verb is a READER, and the guest is the only side that can read it.
+        The guest's read-only lifecycle view of the ONE optional NOW
+        Extension and its four data planes. The guest owns observed resident
+        facts: installation/load state, exact resident build, capability and
+        format words, application request bits, resident active bits,
+        generation/freshness, and any refusal or degradation it can prove.
+        It does not own host policy and therefore never reports a plane as
+        user-enabled or user-disabled.
 
-        WHY THE GUEST AND NOT THE HOST. Residency is a Gestalt answer,
-        published by an extension the system loaded at boot. A host can
-        list the Extensions FOLDER over the file plane and learn only that
-        a file exists — which is what NOW's Mirror page did until this
-        verb, and it cannot tell an installed-but-not-loaded extension
-        from a resident one. That distinction is the entire question
-        somebody asks this page.
-
-        RUNNING AND SERVING ARE DIFFERENT FACTS, and this reply keeps them
-        apart. The agent learns which TCP port to bind from a `mirror.port`
-        file read once at ITS launch; this verb can only read the file NOW.
-        The two agree on a machine nobody has restaged underneath, so
-        `port.source` says where the number came from rather than implying
-        the running process bound it.
-
-        A version this build does not know is NOT absence: "other-version"
-        means the extension is loaded and published a block whose shape
-        this reader does not recognise, and telling somebody to reinstall a
-        file that is already there is the error that distinction prevents.
+        The host joins these facts with its per-machine policy. Unsupported
+        planes remain unsupported even when an old preference says enabled;
+        an unanchored machine identity gets session-only safe defaults. The
+        unified shape deliberately replaces the old AXPeek/QDPeek/Portal and
+        mirror-agent inventory. A valid NOW Extension reply can never be
+        diagnosed as missing those retired components.
       args: {}
       x-line: >
-        Takes nothing. Every row is a fact about the machine a person is
-        sitting at, which is exactly what the console face shows.
+        Takes nothing. Every field is an observed guest fact and is the same
+        fact the Workshop page shows. Policy is host-only and absent here.
       output:
         type: object
         properties:
           mirror:
             type: object
-            required: [extensions, agent, port]
+            required: [schema, extension, planes]
             properties:
-              extensions:
+              schema:
+                type: integer
+                enum: [1]
+                description: Version of this mirror facts object.
+              extension:
+                type: object
+                required: [selector, lifecycle, expectedMajor]
+                properties:
+                  selector:
+                    type: string
+                    enum: [NWex]
+                  lifecycle:
+                    type: string
+                    enum: [absent, needs-restart, wrong-version, active, degraded]
+                  expectedMajor: { type: integer }
+                  residentMajor: { type: integer }
+                  residentMinor: { type: integer }
+                  tableLength: { type: integer }
+                  capabilities: { type: integer }
+                  requested: { type: integer }
+                  active: { type: integer }
+                  heartbeat: { type: integer }
+                  sourceManifest:
+                    type: string
+                    description: Forty lowercase hexadecimal SHA-1 digits.
+                  buildFingerprint:
+                    type: string
+                    description: Forty lowercase hexadecimal SHA-1 digits.
+                  reason:
+                    type: string
+                    description: Present only when the guest can prove degradation.
+              planes:
                 type: array
                 description: >
-                  One row per resident, in Mirror's own dependency order:
-                  AXPeek (what a scene is built from), QDPeek (what a
-                  drawing trace comes from), the Portal (what a click goes
-                  through). Always all three, including the absent ones —
-                  a shorter array would make "not installed" and "not
-                  asked" the same answer.
+                  Exactly four rows in dependency order: structure,
+                  semantics, content, interaction. Unsupported rows remain
+                  present so unsupported and unasked cannot collapse.
+                minItems: 4
+                maxItems: 4
                 items:
                   type: object
-                  required: [name, state]
+                  required:
+                    [id, purpose, capability, supported, format, requested,
+                     active, freshness, state]
                   properties:
-                    name: { type: string }
-                    selector:
+                    id:
                       type: string
-                      description: >
-                        The Gestalt selector this row was read from, as
-                        four characters — 'TBax', 'TBqd', 'TBpt'. Named so
-                        a reader can tell which question was asked.
+                      enum: [structure, semantics, content, interaction]
+                    purpose: { type: string }
+                    capability: { type: integer }
+                    supported: { type: boolean }
+                    format: { type: integer }
+                    requested: { type: boolean }
+                    active: { type: boolean }
+                    freshness:
+                      type: string
+                      enum: [unavailable, pending, stale, current]
                     state:
                       type: string
-                      enum: [absent, resident, other-version]
-                    version:
-                      type: integer
-                      description: >
-                        The version the block declares. Present only for
-                        resident and other-version; a version rendered for
-                        an absent extension would be inventing one.
-              agent:
-                type: object
-                required: [state]
-                properties:
-                  state:
-                    type: string
-                    enum: [no-file, stopped, running]
-                  path:
-                    type: string
-                    description: Where this Mac looked, always.
-                  signature:
-                    type: string
-                    description: >
-                      The running process's creator, when one is running.
-                      Retro68 stamps '????' on every build it makes,
-                      including the lab's own workers, so this identifies
-                      the FILE weakly and is reported rather than trusted.
-              port:
-                type: object
-                required: [state]
-                properties:
-                  state:
-                    type: string
-                    enum: [unknown, absent, unusable, named]
-                  number:
-                    type: integer
-                    description: >
-                      What `mirror.port` says, and only when the state is
-                      "named". Absent otherwise — a page that printed 0
-                      here would be inventing a listener.
-                  source:
-                    type: string
-                    description: >
-                      Where the number was read, so that the one case
-                      where the file and the running agent disagree is
-                      legible rather than invisible.
+                      enum:
+                        [unsupported, inactive, requested, refused, degraded,
+                         active-stale, active-current]
+                    generation: { type: integer }
+                    reason:
+                      type: string
+                      description: Present for refused or degraded states.
 
   # The census probe registry: the CLOSED, DECLARED set of probes a side may
   # be asked about, and the outcome vocabulary every report speaks. Adding a

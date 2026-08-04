@@ -1508,6 +1508,7 @@ static void serve_scene(const char *request)
     static char json[kNowMaxControl];
     long id = now_json_find_int(request, "id", 0);
     long stale_ms = now_json_find_int(request, "staleAfterMs", 0);
+    Boolean semantics = now_json_find_bool(request, "semantics", true);
     unsigned long stale_ticks;
     unsigned short xfer;
     long chunk;
@@ -1580,8 +1581,15 @@ static void serve_scene(const char *request)
        Held across requests, every application that pumps between two
        scenes gets one, which is what makes a mirror show the machine
        rather than this application. */
-    now_peek_claim(kNowPeekOwnerScene,
-                   (unsigned long)(kNowPeekCapAnchors | kNowPeekCapTree));
+    if (semantics) {
+        now_peek_claim(kNowPeekOwnerScene,
+                       (unsigned long)(kNowPeekCapAnchors | kNowPeekCapTree));
+    } else {
+        now_peek_release(kNowPeekOwnerScene,
+                         (unsigned long)kNowPeekCapTree);
+        now_peek_claim(kNowPeekOwnerScene,
+                       (unsigned long)kNowPeekCapAnchors);
+    }
 
     now_scene_collect(scene, ++g_scene_seq, stale_ticks);
     /* Correlate subsequent acts with the normal-context observation a

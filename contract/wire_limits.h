@@ -39,7 +39,7 @@
 /* contract/asyncapi.yaml, info.x-contract-revision. This gates the hello
    handshake: unequal revisions refuse, so a stale copy of this number on
    one side is a guest that cannot connect and cannot say why. */
-#define NOW_WIRE_CONTRACT_REVISION 1
+#define NOW_WIRE_CONTRACT_REVISION 2
 
 /* Frame header, big-endian, 8 bytes:
      offset  size  field     meaning

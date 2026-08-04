@@ -1,526 +1,264 @@
 #include "mirror_probe.h"
 
-#include <Carbon.h>
-
-#include <stdio.h>
+#include <Gestalt.h>
+#include <LowMem.h>
+#include <stddef.h>
 #include <string.h>
 
-#include "mirror_layout.h"
-#include "proc_actions.h"
+#include "content_table.h"
+#include "peek.h"
+#include "peek_validate.h"
 
-/* Each resident publishes ONE thing: the address of a block in the system
-   heap, under a Gestalt selector spelled the same as the block's own
-   magic. Read the selector, read the magic back out of the block, and the
-   answer is either "a Mirror resident of version N is loaded" or nothing.
+enum { kMirrorFreshTicks = 180 };
 
-   THE VALUES BELOW ARE READ FROM MIRROR'S HEADERS, NOT COPIED FROM THEM:
-
-     AXPeek   mirror/guest/extensions/axpeek/src/axshared.h
-              AX_GESTALT/AX_MAGIC 'TBax', AX_VERSION 4.
-              AXShared begins magic, version, seq, ...
-     QDPeek   mirror/guest/extensions/qdpeek/src/qdshared.h
-              QD_GESTALT/QD_MAGIC 'TBqd', QD_VERSION 1.
-              QDShared begins magic, version, seq, ...
-     Portal   mirror/guest/extensions/portal/src/ptshared.h
-              PT_GESTALT/PT_MAGIC 'TBpt', PT_VERSION 4.
-              PTShared begins SEQ, magic, version - the seqlock comes
-              first in this one and not in the other two, which is
-              exactly the sort of difference a second copy of the header
-              would eventually get wrong.
-
-   Only the first two or three longs are touched, so this reads no field
-   whose layout could move under it, and it never writes. Mirror's block
-   is Mirror's. */
-typedef struct {
-    unsigned long selector;
-    unsigned long magic;
-    short magic_at;            /* index into the block, counted in longs */
-    short version_at;
-    unsigned long known;       /* the version Mirror ships today */
-} MirrorExtSpec;
-
-static const MirrorExtSpec k_ext[kMirrorExtCount] = {
-    { 0x54426178UL, 0x54426178UL, 0, 1, 4UL },   /* 'TBax' */
-    { 0x54427164UL, 0x54427164UL, 0, 1, 1UL },   /* 'TBqd' */
-    { 0x54427074UL, 0x54427074UL, 1, 2, 4UL }    /* 'TBpt' */
-};
-
-/* Where Mirror's own tools stage the agent: mirror/tools/stage-agent.py
-   writes it to "Macintosh HD:TimBotTu:mirror-dev:mirror-agent". The
-   volume is resolved as the BOOT disk rather than taken from that string,
-   because "Macintosh HD" is one machine's disk name and this application
-   also runs on Macs whose disk is called something else. */
-static const char *k_dev_folder = "TimBotTu";
-static const char *k_agent_folder = "mirror-dev";
-static const char *k_agent_file = "mirror-agent";
-
-/* The other file in that folder, and the one this page was corrected for.
-   Mirror's agent reads it ONCE, at launch, from its own folder - it calls
-   HSetVol to that folder first and then a bare fopen("mirror.port"), so
-   the file is beside the application and nowhere else
-   (mirror/guest/app/src/main.c :: set_dir_to_app, read_port). Reading it
-   here answers what a launch WOULD serve, and what a running agent took
-   unless somebody restaged underneath it. NOW never writes it: this page
-   reads the machine, and Mirror's own tools install Mirror. */
-static const char *k_port_file = "mirror.port";
-
-/* Resolved once per probe and reused by the poll, which may not do file
-   I/O. Empty until a probe has run. */
-static FSSpec g_spec;
-static Boolean g_have_spec;
-static char g_path[kMirrorPathMax];
-
-static void p2c(ConstStr255Param p, char *out, long cap)
+static unsigned long read_be32(unsigned long address)
 {
-    long n = p[0];
-
-    if (n > cap - 1) {
-        n = cap - 1;
-    }
-    memcpy(out, p + 1, (size_t)n);
-    out[n] = '\0';
+    const unsigned char *p = (const unsigned char *)address;
+    return ((unsigned long)p[0] << 24) | ((unsigned long)p[1] << 16)
+        | ((unsigned long)p[2] << 8) | (unsigned long)p[3];
 }
 
-/* --- extensions ------------------------------------------------------ */
-
-static void probe_extension(int i, MirrorFacts *facts)
+static int system_range_contains(unsigned long address,
+                                 unsigned long required)
 {
-    const MirrorExtSpec *spec = &k_ext[i];
-    const unsigned long *block;
-    long response = 0;
+    unsigned long system_low;
+    unsigned long system_high;
+    THz system_zone = LMGetSysZone();
 
-    facts->ext_state[i] = kMirrorExtAbsent;
-    facts->ext_version[i] = 0;
-
-    /* A Gestalt failure IS the answer, and the truthful one: an extension
-       that did not load publishes nothing, and an extension that is not
-       installed did not load. The page's own words separate the two
-       causes, because this call cannot. */
-    if (Gestalt((OSType)spec->selector, &response) != noErr
-        || response == 0) {
-        return;
-    }
-    block = (const unsigned long *)response;
-    if (block[spec->magic_at] != spec->magic) {
-        /* The selector is answering with something that is not the block
-           it names. Not ours to interpret, and not a version question. */
-        return;
-    }
-    facts->ext_version[i] = block[spec->version_at];
-    facts->ext_state[i] = facts->ext_version[i] == spec->known
-                              ? kMirrorExtResident
-                              : kMirrorExtOtherVersion;
+    system_low = (unsigned long)system_zone;
+    system_high = system_zone != NULL ? read_be32(system_low) : 0;
+    return system_high > system_low
+        && now_peek_range_in_partition(address, required, system_low,
+                                        system_high - system_low);
 }
 
-/* --- where the agent lives ------------------------------------------- */
-
-/* The directory called `name` inside `dir`, by ID. PBGetCatInfo with
-   ioFDirIndex 0 looks a name up in ioDrDirID and answers with that item's
-   own ID - the documented way to walk a path one segment at a time, and
-   preferable here to handing FSMakeFSSpec a partial pathname, whose
-   colon rules are the kind of thing that is right on the machine or not
-   at all. */
-static Boolean dir_child(short vref, long dir, const char *name, long *out)
+static const NowContentBlock *content_block(const NowPeekTable *table)
 {
-    CInfoPBRec pb;
-    Str255 pname;
+    unsigned long field_end = (unsigned long)offsetof(NowPeekTable,
+                                                       content_block)
+        + sizeof table->content_block;
+    unsigned long address;
+    unsigned long required;
 
-    CopyCStringToPascal(name, pname);
-    memset(&pb, 0, sizeof pb);
-    pb.dirInfo.ioNamePtr = pname;
-    pb.dirInfo.ioVRefNum = vref;
-    pb.dirInfo.ioDrDirID = dir;
-    pb.dirInfo.ioFDirIndex = 0;
-    if (PBGetCatInfoSync(&pb) != noErr) {
-        return false;
+    if (table->length < field_end || table->content_block == 0) {
+        return NULL;
     }
-    if ((pb.hFileInfo.ioFlAttrib & ioDirMask) == 0) {
-        return false;                 /* a file by that name, not a folder */
+    address = table->content_block;
+    required = (unsigned long)offsetof(NowContentBlock, seq)
+        + sizeof(((NowContentBlock *)0)->seq);
+    if (!system_range_contains(address, required)) {
+        return NULL;
     }
-    *out = pb.dirInfo.ioDrDirID;
-    return true;
+    return (const NowContentBlock *)address;
 }
 
-static void volume_name(short vref, char *out, long cap)
+static int plane_format_compatible(const NowPeekTable *table,
+                                   MirrorPlane plane,
+                                   unsigned long format)
 {
-    HParamBlockRec pb;
-    Str63 name;
+    unsigned long need;
 
-    name[0] = 0;
-    memset(&pb, 0, sizeof pb);
-    pb.volumeParam.ioNamePtr = name;
-    pb.volumeParam.ioVRefNum = vref;
-    pb.volumeParam.ioVolIndex = 0;    /* by ioVRefNum, not by index */
-    if (PBHGetVInfoSync(&pb) != noErr) {
-        name[0] = 0;
+    switch (plane) {
+    case kMirrorPlaneStructure:
+        return format >= kNowPeekAnchorFormatV1
+            && format <= kNowPeekAnchorFormatV3;
+    case kMirrorPlaneSemantics:
+        return format == kNowPeekSemanticFormatV1;
+    case kMirrorPlaneContent:
+        return format == kNowContentFormatV2;
+    case kMirrorPlaneInteraction:
+        need = (unsigned long)offsetof(NowPeekTable, act_v2)
+            + sizeof table->act_v2;
+        return format == kNowPeekActFormatV2 && table->length >= need;
     }
-    p2c(name, out, cap);
+    return 0;
 }
 
-/* mirror.port, out of the agent's own folder. Its three answers are the
-   three the page draws: no file, a file naming nothing the agent would
-   take, or a port.
-
-   The range is Mirror's, not ours: read_port() ignores anything outside
-   1024..65535 and falls back to its compiled-in default, so a file naming
-   80 is a file that names no port AS FAR AS THE AGENT IS CONCERNED, and
-   reporting it as a port would be reporting a listener nobody will
-   open. */
-static void read_port_file(short vref, long agentdir, MirrorFacts *facts)
+static unsigned long plane_capability(MirrorPlane plane)
 {
-    FSSpec spec;
-    Str255 leaf;
-    short ref = 0;
-    char buf[32];
-    long count = (long)sizeof buf - 1;
-    long value = 0;
-    long i = 0;
-    Boolean digits = false;
-    OSErr err;
+    static const unsigned long values[kMirrorPlaneCount] = {
+        kNowPeekTableCapAnchors, kNowPeekTableCapTree,
+        kNowPeekTableCapContent, kNowPeekTableCapAct
+    };
+    return values[(int)plane];
+}
 
-    facts->port_state = kMirrorPortAbsent;
-    facts->port = 0;
+static unsigned long plane_format(const NowPeekTable *table,
+                                  MirrorPlane plane)
+{
+    unsigned long need;
 
-    CopyCStringToPascal(k_port_file, leaf);
-    if (FSMakeFSSpec(vref, agentdir, leaf, &spec) != noErr) {
-        return;                       /* fnfErr, and absence IS the answer */
-    }
-    if (FSpOpenDF(&spec, fsRdPerm, &ref) != noErr) {
-        /* The file is there and will not open - busy, or a permission the
-           agent will hit too. Not absent, and not a port. */
-        facts->port_state = kMirrorPortUnusable;
-        return;
-    }
-    err = FSRead(ref, &count, buf);
-    FSClose(ref);
-    /* eofErr with bytes in hand is the ordinary answer for a file shorter
-       than the buffer, which this file always is. It is not a failure and
-       must not be read as one. */
-    if ((err != noErr && err != eofErr) || count <= 0) {
-        facts->port_state = kMirrorPortUnusable;
-        return;
-    }
-    buf[count] = '\0';
-    while (buf[i] == ' ' || buf[i] == '\t') {
-        ++i;
-    }
-    while (buf[i] >= '0' && buf[i] <= '9') {
-        digits = true;
-        value = value * 10 + (buf[i] - '0');
-        if (value > (long)kMirrorPortHigh) {
-            value = (long)kMirrorPortHigh + 1;   /* saturate, don't wrap */
-            break;
+    switch (plane) {
+    case kMirrorPlaneStructure:
+        need = (unsigned long)offsetof(NowPeekTable, anchors);
+        return table->length >= need ? table->anchor_format : 0;
+    case kMirrorPlaneSemantics:
+        need = (unsigned long)offsetof(NowPeekTable, semantic)
+            + sizeof table->semantic;
+        return table->length >= need ? table->semantic_format : 0;
+    case kMirrorPlaneContent:
+    {
+        const NowContentBlock *block = content_block(table);
+        if (block != NULL) {
+            if (block->magic == (NowContentU32)kNowContentBlockMagic
+                && block->length >= offsetof(NowContentBlock, seq)
+                                      + sizeof block->seq) {
+                return block->format;
+            }
         }
-        ++i;
+        return 0;
     }
-    if (!digits || value < (long)kMirrorPortLow
-        || value > (long)kMirrorPortHigh) {
-        facts->port_state = kMirrorPortUnusable;
-        return;
+    case kMirrorPlaneInteraction:
+        need = (unsigned long)offsetof(NowPeekTable, act)
+            + sizeof table->act;
+        return table->length >= need ? table->act_format : 0;
     }
-    facts->port_state = kMirrorPortNamed;
-    facts->port = value;
+    return 0;
 }
 
-/* Resolves g_spec and g_path, and reads the port file beside them. The
-   PATH is written whether or not the file is there: "we looked here and
-   found nothing" is the useful half of a missing agent, and a page that
-   omits the location leaves the person guessing which of several
-   checkouts it meant. */
-/* Is `agentdir` on `vref` the folder holding the agent? If so, take it:
-   g_spec, g_path and the port file all come from there. */
-static Boolean take_agent_dir(short vref, long agentdir, MirrorFacts *facts)
+static unsigned long plane_generation(const NowPeekTable *table,
+                                      MirrorPlane plane)
 {
-    Str255 leaf;
-    char   vol[64];
+    unsigned long need;
 
-    CopyCStringToPascal(k_agent_file, leaf);
-    if (FSMakeFSSpec(vref, agentdir, leaf, &g_spec) != noErr) {
-        return false;
-    }
-    volume_name(vref, vol, (long)sizeof vol);
-    /* The folder's own name rather than the full chain: a path assembled
-       from ids we did not walk would be a guess, and this string is read
-       by a person deciding whether the right copy was found. */
-    snprintf(g_path, sizeof g_path, "%.31s:...:%s", vol, k_agent_file);
-    read_port_file(vref, agentdir, facts);
-    g_have_spec = true;
-    return true;
-}
-
-/* Where THIS application lives. The agent is looked for beside it first,
-   because "put the two files together" is the only placement rule a
-   person should have to know. */
-static Boolean app_folder(short *vref, long *dir)
-{
-    ProcessSerialNumber self;
-    ProcessInfoRec      info;
-    FSSpec              spec;
-    Str31               name;
-
-    memset(&info, 0, sizeof info);
-    info.processInfoLength = sizeof info;
-    info.processName = name;
-    info.processAppSpec = &spec;
-    if (GetCurrentProcess(&self) != noErr
-        || GetProcessInformation(&self, &info) != noErr) {
-        return false;
-    }
-    *vref = spec.vRefNum;
-    *dir = spec.parID;
-    return true;
-}
-
-/* Resolves g_spec and g_path, and reads the port file beside them. The
-   PATH is written whether or not the file is there: "we looked here and
-   found nothing" is the useful half of a missing agent, and a page that
-   omits the location leaves the person guessing which of several
-   checkouts it meant.
- *
- * THE PLACEMENT RULE IS "BESIDE THIS APPLICATION", and that is the whole
- * rule. This used to walk one hardcoded chain -
- * <boot>:TimBotTu:mirror-dev:mirror-agent - which is a lab convention
- * named after the parent project's scratch folder, written into product
- * code as law. An agent anywhere else was reported as absent while
- * sitting on the disk, and the only way to learn the rule was to read
- * this file. Nobody who installs two files next to each other should
- * have to.
- *
- * The old chain is still CHECKED, second, so a machine already staged by
- * mirror/tools/stage-agent.py keeps working - but it is a fallback, not
- * the definition, and nothing is required to live there.
- */
-static void resolve_agent(MirrorFacts *facts)
-{
-    short vref;
-    long  sysdir;
-    long  devdir;
-    long  agentdir;
-    char  vol[64];
-
-    g_have_spec = false;
-    g_path[0] = '\0';
-    facts->port_state = kMirrorPortUnknown;
-    facts->port = 0;
-
-    /* 1. Beside this application. */
-    if (app_folder(&vref, &agentdir)
-        && take_agent_dir(vref, agentdir, facts)) {
-        return;
-    }
-
-    /* 2. The staging tool's folder, kept so an already-staged machine is
-          not broken by this change. */
-    if (FindFolder(kOnSystemDisk, kSystemFolderType, kDontCreateFolder,
-                   &vref, &sysdir) == noErr) {
-        volume_name(vref, vol, (long)sizeof vol);
-        if (dir_child(vref, fsRtDirID, k_dev_folder, &devdir)
-            && dir_child(vref, devdir, k_agent_folder, &agentdir)
-            && take_agent_dir(vref, agentdir, facts)) {
-            snprintf(g_path, sizeof g_path, "%.31s:%s:%s:%s", vol,
-                     k_dev_folder, k_agent_folder, k_agent_file);
-            return;
+    switch (plane) {
+    case kMirrorPlaneStructure:
+        need = (unsigned long)offsetof(NowPeekTable, anchor_last_publish_ticks)
+            + sizeof table->anchor_last_publish_ticks;
+        return table->length >= need ? table->anchor_last_publish_ticks : 0;
+    case kMirrorPlaneSemantics:
+        need = (unsigned long)offsetof(NowPeekTable, semantic)
+            + sizeof table->semantic;
+        return table->length >= need ? table->semantic.response_generation : 0;
+    case kMirrorPlaneContent:
+    {
+        const NowContentBlock *block = content_block(table);
+        if (block != NULL) {
+            if (block->magic == (NowContentU32)kNowContentBlockMagic) {
+                return block->seq;
+            }
         }
+        return 0;
     }
-
-    /* Neither. Say where we looked FIRST, because that is where it
-       should go - not where the old tooling used to put it. */
-    snprintf(g_path, sizeof g_path, "beside this application (%s)",
-             k_agent_file);
+    case kMirrorPlaneInteraction:
+        need = (unsigned long)offsetof(NowPeekTable, act_v2)
+            + sizeof table->act_v2;
+        if (table->length >= need && table->act_format == kNowPeekActFormatV2) {
+            return table->act_v2.resident_generation;
+        }
+        need = (unsigned long)offsetof(NowPeekTable, act) + sizeof table->act;
+        return table->length >= need ? table->act.seq : 0;
+    }
+    return 0;
 }
 
-/* --- is it running --------------------------------------------------- */
-
-/* One file, two names for it, and the answer must be the same either way:
-   the Process Manager reports the application's own FSSpec, so identity
-   here is volume, parent directory and name - the file itself.
-
-   It is NOT the creator signature, and that is a finding rather than a
-   shortcut. Mirror's agent is built by Retro68 with no creator override,
-   so it carries the default '????' (verified in the MacBinary header of
-   mirror/guest/app/build/mirror-agent.bin). Every other Retro68 build on
-   the machine carries the same one, including the lab's own workers - so
-   a signature match would report "the Mirror agent is running" about
-   whatever else happened to be. The signature is still read and shown,
-   because it is a fact worth seeing beside the row. */
-static Boolean same_file(const FSSpec *a, const FSSpec *b)
+static void fill_planes(MirrorFacts *facts, const NowPeekTable *table,
+                        unsigned long now)
 {
-    return (Boolean)(a->vRefNum == b->vRefNum && a->parID == b->parID
-                     && EqualString(a->name, b->name, false, true));
-}
-
-static void signature_text(OSType sig, char *out, long cap)
-{
-    unsigned char raw[4];
     int i;
+    Boolean resident_fresh = table->heartbeat != 0
+        && now - table->heartbeat <= kMirrorFreshTicks;
 
-    if (cap < 5) {
-        if (cap > 0) {
-            out[0] = '\0';
-        }
-        return;
-    }
-    memcpy(raw, &sig, sizeof raw);
-    for (i = 0; i < 4; ++i) {
-        /* A creator is four bytes, not four characters; anything outside
-           printable ASCII is shown as a dot rather than sent to
-           DrawString, which would draw whatever MacRoman makes of it. */
-        out[i] = (raw[i] >= 0x20 && raw[i] < 0x7F) ? (char)raw[i] : '.';
-    }
-    out[4] = '\0';
-}
+    for (i = 0; i < kMirrorPlaneCount; ++i) {
+        MirrorPlaneFact *plane = &facts->planes[i];
+        unsigned long capability = plane_capability((MirrorPlane)i);
 
-static Boolean find_agent(ProcessSerialNumber *psn, char *sig, long sig_cap)
-{
-    ProcessSerialNumber walk;
-    ProcessInfoRec info;
-    FSSpec spec;
-    Str31 name;
-
-    if (!g_have_spec) {
-        return false;
+        plane->capability = capability;
+        plane->supported = (table->caps & capability) != 0;
+        plane->format = plane_format(table, (MirrorPlane)i);
+        plane->requested = (table->arm_request & capability) != 0;
+        plane->active = (table->arm_active & capability) != 0;
+        plane->generation = plane_generation(table, (MirrorPlane)i);
+        if (!plane->supported) {
+            plane->freshness = kMirrorFreshUnavailable;
+            plane->state = kMirrorPlaneUnsupported;
+        } else if (!plane_format_compatible(table, (MirrorPlane)i,
+                                            plane->format)) {
+            plane->freshness = kMirrorFreshUnavailable;
+            plane->state = kMirrorPlaneRefused;
+            strcpy(plane->reason,
+                   "resident capability has no compatible format");
+            facts->lifecycle = kMirrorLifecycleDegraded;
+        } else if (!plane->requested) {
+            plane->freshness = kMirrorFreshUnavailable;
+            plane->state = kMirrorPlaneInactive;
+        } else if (!plane->active) {
+            plane->freshness = kMirrorFreshPending;
+            plane->state = kMirrorPlaneRequested;
+        } else if (!resident_fresh) {
+            plane->freshness = kMirrorFreshStale;
+            plane->state = kMirrorPlaneActiveStale;
+            facts->lifecycle = kMirrorLifecycleDegraded;
+        } else {
+            plane->freshness = kMirrorFreshCurrent;
+            plane->state = kMirrorPlaneActiveCurrent;
+        }
     }
-    walk.highLongOfPSN = 0;
-    walk.lowLongOfPSN = kNoProcess;
-    while (GetNextProcess(&walk) == noErr) {
-        memset(&info, 0, sizeof info);
-        info.processInfoLength = sizeof info;
-        info.processName = name;
-        info.processAppSpec = &spec;
-        if (GetProcessInformation(&walk, &info) != noErr) {
-            continue;                 /* it went away mid-walk */
-        }
-        if (!same_file(&spec, &g_spec)) {
-            continue;
-        }
-        if (psn != NULL) {
-            *psn = walk;
-        }
-        if (sig != NULL) {
-            signature_text(info.processSignature, sig, sig_cap);
-        }
-        return true;
+    if (!resident_fresh) {
+        facts->lifecycle = kMirrorLifecycleDegraded;
+        strcpy(facts->reason, "resident heartbeat is stale");
     }
-    return false;
-}
-
-/* --- the published calls --------------------------------------------- */
-
-void now_mirror_poll_agent(MirrorFacts *facts)
-{
-    facts->agent_sig[0] = '\0';
-    if (!g_have_spec) {
-        facts->agent = kMirrorAgentNoFile;
-        return;
-    }
-    facts->agent = find_agent(NULL, facts->agent_sig,
-                              (long)sizeof facts->agent_sig)
-                       ? kMirrorAgentRunning
-                       : kMirrorAgentStopped;
 }
 
 void now_mirror_probe(MirrorFacts *facts)
 {
-    int i;
+    unsigned long caps = 0;
+    NowPeekState status;
+    const NowPeekTable *table;
 
-    for (i = 0; i < kMirrorExtCount; ++i) {
-        probe_extension(i, facts);
-    }
-    resolve_agent(facts);
-    strncpy(facts->agent_path, g_path, sizeof facts->agent_path - 1);
-    facts->agent_path[sizeof facts->agent_path - 1] = '\0';
-    now_mirror_poll_agent(facts);
-}
-
-void now_mirror_agent_start(MirrorFacts *facts)
-{
-    LaunchParamBlockRec lp;
-    OSErr err;
-
-    /* Re-resolve rather than trust the last probe: the usual way an agent
-       arrives on a machine is somebody staging it while this is running,
-       and refusing to look again would make "Enable" dead until relaunch. */
-    now_mirror_probe(facts);
-    if (facts->agent == kMirrorAgentRunning) {
-        snprintf(facts->note, sizeof facts->note,
-                 "The Mirror agent is already running.");
+    memset(facts, 0, sizeof *facts);
+    status = now_peek_status(&caps);
+    switch (status) {
+    case kNowPeekNeedsRestart:
+        facts->lifecycle = kMirrorLifecycleNeedsRestart;
+        return;
+    case kNowPeekWrongVersion: {
+        long response = 0;
+        facts->lifecycle = kMirrorLifecycleWrongVersion;
+        if (Gestalt((OSType)kNowPeekGestaltSelector, &response) == noErr
+            && response != 0
+            && system_range_contains((unsigned long)response,
+                                     (unsigned long)offsetof(NowPeekTable,
+                                                              caps))) {
+            const NowPeekTable *foreign = (const NowPeekTable *)response;
+            facts->resident_major = foreign->ext_major;
+            facts->resident_minor = foreign->ext_minor;
+            facts->table_length = foreign->length;
+        }
         return;
     }
-    if (!g_have_spec) {
-        snprintf(facts->note, sizeof facts->note,
-                 "There is no agent at %.100s. Mirror's own tools put it "
-                 "there; NOW does not install it.", g_path);
-        return;
-    }
-    /* Asked BEFORE LaunchApplication, and the answer is the launch not
-       happening. Starting an agent whose port nothing here can name puts
-       a process on the machine, turns this page's State row to "Running",
-       and leaves the host's connections being reset by a forward with
-       nothing behind it - which is the exact 2026-08-02 defect, only now
-       caused by the page that reports it. The words are
-       mirror_layout.c's, where the test can read them. */
-    if (now_mirror_enable_refusal(facts, facts->note,
-                                  (long)sizeof facts->note)) {
+    case kNowPeekActive:
+        facts->lifecycle = kMirrorLifecycleActive;
+        break;
+    case kNowPeekNotInstalled:
+    default:
+        facts->lifecycle = kMirrorLifecycleAbsent;
         return;
     }
 
-    memset(&lp, 0, sizeof lp);
-    lp.launchBlockID = extendedBlock;
-    lp.launchEPBLength = extendedBlockLen;
-    lp.launchControlFlags = launchContinue | launchNoFileFlags;
-    lp.launchAppSpec = (FSSpecPtr)&g_spec;
-    err = LaunchApplication(&lp);
-    if (err == memFullErr) {
-        snprintf(facts->note, sizeof facts->note,
-                 "Not enough free memory to start the Mirror agent. Quit "
-                 "something and try again.");
+    table = now_peek_table();
+    if (table == NULL) {
+        facts->lifecycle = kMirrorLifecycleDegraded;
+        strcpy(facts->reason, "resident table disappeared during snapshot");
         return;
     }
-    if (err != noErr) {
-        snprintf(facts->note, sizeof facts->note,
-                 "The Mirror agent would not start: LaunchApplication "
-                 "reported error %d.", err);
-        return;
+    facts->resident_major = table->ext_major;
+    facts->resident_minor = table->ext_minor;
+    facts->table_length = table->length;
+    facts->capabilities = table->caps;
+    facts->requested_bits = table->arm_request;
+    facts->active_bits = table->arm_active;
+    facts->heartbeat = table->heartbeat;
+    {
+        NowPeekBuildIdentity identity;
+        if (now_peek_build_identity(&identity)) {
+            int i;
+            facts->has_build_identity = 1;
+            for (i = 0; i < kMirrorIdentityWords; ++i) {
+                facts->source_manifest[i] = identity.source_manifest[i];
+                facts->build_fingerprint[i] = identity.build_fingerprint[i];
+            }
+        }
     }
-
-    /* noErr says the Process Manager accepted it, which is not the same
-       as a process existing. Ask, and say which one we got. */
-    now_mirror_poll_agent(facts);
-    if (facts->agent == kMirrorAgentRunning) {
-        snprintf(facts->note, sizeof facts->note,
-                 "Started the Mirror agent. It has no windows and no menus "
-                 "- it runs behind everything.");
-    } else {
-        snprintf(facts->note, sizeof facts->note,
-                 "The Mac accepted the launch, but no such process is "
-                 "running. The agent quit at once, or it is not the "
-                 "application it appears to be.");
-    }
-}
-
-void now_mirror_agent_stop(MirrorFacts *facts)
-{
-    ProcessSerialNumber psn;
-    OSErr err;
-
-    if (!find_agent(&psn, NULL, 0)) {
-        now_mirror_poll_agent(facts);
-        snprintf(facts->note, sizeof facts->note,
-                 "The Mirror agent is not running.");
-        return;
-    }
-    err = now_proc_ask_quit(&psn);
-    if (err != noErr) {
-        snprintf(facts->note, sizeof facts->note,
-                 "The Mac would not deliver a quit request to the Mirror "
-                 "agent: error %d.", err);
-        return;
-    }
-    /* Deliberately not "stopped". The event is queued; the agent quits
-       when the Process Manager next schedules it, and only the next poll
-       can say whether it did. Claiming the outcome here is how a page
-       ends up disagreeing with the machine it is describing. */
-    snprintf(facts->note, sizeof facts->note,
-             "Asked the Mirror agent to quit. This page says so when it "
-             "has.");
+    fill_planes(facts, table, (unsigned long)TickCount());
 }

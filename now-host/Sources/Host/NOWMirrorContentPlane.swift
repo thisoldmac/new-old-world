@@ -48,6 +48,24 @@ final class NOWMirrorContentPlane {
         armedAt = nil
     }
 
+    /// Withdraw this named owner's request before clearing its cached display.
+    /// qdtrace stop releases only kNowPeekOwnerContent; P1/P2/P4 are untouched.
+    func disable(completion: @escaping (String?) -> Void) {
+        guard armedAt != nil || targetPSN != nil else {
+            guestChanged()
+            completion(nil)
+            return
+        }
+        listener.runCommand("qdtrace", args: ["op": "stop"]) { [weak self] result in
+            guard result.ok else {
+                completion(Self.failure(result))
+                return
+            }
+            self?.guestChanged()
+            completion(nil)
+        }
+    }
+
     /// One bounded content ask after a scene transfer. There is no independent
     /// timer or poller; the structural scene remains the cadence owner.
     func join(into scene: MirrorKit.Scene,

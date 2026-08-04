@@ -77,6 +77,9 @@ final class WireLimitsAgreementTests: XCTestCase {
     /// which would just be a fourth copy.
     func testContractRevisionAgrees() throws {
         let text = try String(contentsOf: Self.headerURL, encoding: .utf8)
+        XCTAssertEqual(Contract.revision, 2,
+                       "the unified NOW Extension lifecycle is a breaking "
+                       + "mirror schema cut and must not ride revision 1")
         XCTAssertEqual(Contract.revision,
                        try define("NOW_WIRE_CONTRACT_REVISION", in: text),
                        "contract revision disagrees with contract/wire_limits.h")

@@ -175,6 +175,46 @@ families without a stated postcondition honestly remain dispatched-but-
 unconfirmed until that focused proof supplies one. The development stage image
 still contains an older application/extension pair and is not evidence for U5.
 
+### U6 one-extension lifecycle and plane policy built; runtime proof remains red
+
+The wire contract is revision 2 and the PowerPC `mirror` command now reports a
+schema-1 snapshot of only NOW Extension: exact lifecycle and build identity,
+resident capability/request/active bits, heartbeat freshness, and one row for
+each of Structure, Semantics, Content, and Interaction. The guest Console and
+read-only Workshop use the same probe. The host decodes that object into one
+plane domain, persists only optional-plane policy for an anchored machine,
+keeps unanchored emulator policy session-local, and presents one native
+Open/Close Mirror surface. No active UI asks for AXPeek, QDPeek, Portal,
+`mirror-agent`, forwarded port 1420, QMP, or an external Mirror binary.
+
+Policy now reaches named claims rather than stopping at toggles. Scene requests
+carry the Semantics choice; Content off sends the bounded stop and retains an
+explicit refusal if release fails; Interaction off refuses before dispatch and
+logs the refusal. Structure is always required. Unsupported, enabled but
+inactive, requested, refused, degraded, stale and active are distinct; an
+actual resident-requested row degrades after five seconds without activation,
+while a closed Mirror's legitimately inactive planes do not start that timer.
+P1/P2/P4 claims stop renewing on close and expire through their ten-second
+resident lease; P3 is released explicitly because its lease is much longer.
+
+Focused native JSON/layout/lease tests and host domain/content/contract tests
+pass, and the PowerPC guest, NOW-68K guest, and flat 68K extension cross-build
+with the real Retro68 toolchains. One complete `scripts/test-all` run passed,
+but two immediate primary-agent reruns exposed an unrelated nondeterministic
+host-gate red: local guest-listener tests timed out waiting for loopback
+connections in different cases (6 failures, then 8), while every named failure
+passed when filtered and rerun alone. A stale C26 host process that had held
+port 5250 since 20:25 was terminated before the second aggregate rerun, so that
+process was real contention but does not explain the remaining suite-level
+instability. Treat the focused U6 behavior as **tested and building** and the
+aggregate host gate as unresolved red until a clean rerun is repeatable. This
+is not emulator-verified. The revision-2 app/extension pair is not installed in the
+development image, no direct keyboard/mouse Mirror sweep has compared its
+pixels and mutations with a paired guest capture, and no metal claim is made.
+U7 still owns runtime/staging retirement and the cleanly shut-down updated VM;
+the old compatibility implementation remains internal seed material until
+that slice, guarded from the active product UI.
+
 ## CYCLE 25 RED; SETUP CORRECTED BEFORE C26 (2026-08-03)
 
 Cycle 25 directly re-ran the sanity preflight through the uniquely identified

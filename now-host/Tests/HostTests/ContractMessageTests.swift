@@ -3,8 +3,18 @@ import XCTest
 import NOWAgentIntegration
 
 final class ContractMessageTests: XCTestCase {
+    func testSceneRequestCarriesNamedSemanticsPolicy() throws {
+        let request = SceneRequest(id: 9, chunkKb: 8, paceMs: 0,
+                                   staleAfterMs: 500, semantics: false)
+        let data = try ControlMessageCodec.encode(.sceneRequest(request))
+        XCTAssertTrue(String(decoding: data, as: UTF8.self)
+            .contains("\"semantics\":false"))
+        XCTAssertEqual(try ControlMessageCodec.decode(data),
+                       .sceneRequest(request))
+    }
+
     func testHelloRoundTrip() throws {
-        let hello = Hello(contract: 1, side: "guest", version: "0.1.0",
+        let hello = Hello(contract: 2, side: "guest", version: "0.1.0",
                           name: "Power Mac G3", os: "9.1", chunk: 8192)
         let data = try ControlMessageCodec.encode(.hello(hello))
         XCTAssertEqual(try ControlMessageCodec.decode(data), .hello(hello))
@@ -12,7 +22,7 @@ final class ContractMessageTests: XCTestCase {
 
     func testDecodesGuestHelloJSONFromContractExample() throws {
         let json = """
-        {"type":"hello","contract":1,"side":"guest","version":"0.1.0",\
+        {"type":"hello","contract":2,"side":"guest","version":"0.1.0",\
         "name":"PowerBook 1400","os":"9.1"}
         """
         let message = try ControlMessageCodec.decode(Data(json.utf8))
@@ -39,7 +49,7 @@ final class ContractMessageTests: XCTestCase {
     func testTwoBuildsOfOneVersionAreDistinguishedByBuild() throws {
         func hello(build: String) throws -> Hello {
             let json = """
-            {"type":"hello","contract":1,"side":"guest","version":"0.1.0",\
+            {"type":"hello","contract":2,"side":"guest","version":"0.1.0",\
             "build":"\(build)","name":"PowerBook 1400","os":"9",\
             "chunk":8192}
             """
@@ -72,7 +82,7 @@ final class ContractMessageTests: XCTestCase {
     /// which is what a machine says when it actually means no.
     func testAHelloWithNoAgentFieldArrivesAsSilenceNotAnAnswer() throws {
         let json = """
-        {"type":"hello","contract":1,"side":"guest","version":"0.1.0",\
+        {"type":"hello","contract":2,"side":"guest","version":"0.1.0",\
         "name":"PowerBook 1400","os":"9.1"}
         """
         guard case .hello(let hello) =
@@ -95,7 +105,7 @@ final class ContractMessageTests: XCTestCase {
     func testEachAgentTokenDecodesToTheAnswerItNames() throws {
         func agent(_ token: String) throws -> AgentIntegrationGuestAccess? {
             let json = """
-            {"type":"hello","contract":1,"side":"guest","version":"0.1.0",\
+            {"type":"hello","contract":2,"side":"guest","version":"0.1.0",\
             "agent":"\(token)","name":"PowerBook 1400","os":"9"}
             """
             guard case .hello(let hello) =
@@ -121,7 +131,7 @@ final class ContractMessageTests: XCTestCase {
     /// a ceiling this build cannot even name.
     func testATierThisBuildDoesNotKnowDecodesAndIsNotConsent() throws {
         let json = """
-        {"type":"hello","contract":1,"side":"guest","version":"0.1.0",\
+        {"type":"hello","contract":2,"side":"guest","version":"0.1.0",\
         "agent":"below-the-line","name":"PowerBook 1400","os":"9"}
         """
         guard case .hello(let hello) =
@@ -221,7 +231,7 @@ final class ContractMessageTests: XCTestCase {
     }
 
     func testRefuseAndErrorRoundTrip() throws {
-        let refuse = Refuse(contract: 1, reason: "contract revision 2 != 1")
+        let refuse = Refuse(contract: 2, reason: "contract revision 3 != 2")
         let error = ErrorMessage(id: 3, code: "capture-no-memory",
                                  message: "Not enough memory for 32-bit")
         XCTAssertEqual(
