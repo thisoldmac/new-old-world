@@ -5,6 +5,17 @@ import MirrorKit
 /// legacy projection remains visible until direct preflight parity is proven.
 @MainActor
 final class MirrorStateEngine: ObservableObject {
+    private struct SemanticContribution: Equatable {
+        var controls: [String: Scene.Semantics] = [:]
+        var dialogItems: [String: Scene.Semantics] = [:]
+    }
+
+    private struct ContentContribution: Equatable {
+        var rect: Rect
+        var display: [DisplayOp]?
+        var island: PixelIsland?
+    }
+
     let guestKey: GuestKey
     let session: MirrorGuestSession
     let store: MirrorSnapshotStore
@@ -13,7 +24,14 @@ final class MirrorStateEngine: ObservableObject {
 
     @Published private(set) var snapshot: MirrorProjection?
     @Published private(set) var lastRejection: MirrorObservationRejection?
+    @Published private(set) var enabledPlanes = Set(MirrorPlaneID.allCases)
     private(set) var replica: MirrorReplica?
+    private var semantics: [MirrorWindowIdentity: SemanticContribution] = [:]
+    private var content: [MirrorWindowIdentity: ContentContribution] = [:]
+    private var publicationID = 0
+    private var digestScene: Scene?
+    private var digestPlanes: Set<MirrorPlaneID> = []
+    private var digestValue = ""
 
     init(guestKey: GuestKey, store: MirrorSnapshotStore? = nil,
          diagnostics: MirrorEngineDiagnostics? = nil) {
@@ -35,9 +53,12 @@ final class MirrorStateEngine: ObservableObject {
         switch result {
         case .accepted(let next):
             replica = next
-            snapshot = next.snapshot
+            let identities = windowIdentities(in: scene)
+            _ = retainSemantics(from: scene, identities: identities, in: next)
+            _ = retainContent(from: scene, identities: identities, in: next)
+            pruneContributions(to: next)
             lastRejection = nil
-            store.publish(next.snapshot, at: receivedAt)
+            publish(from: next.snapshot, at: receivedAt)
         case .rejected(let rejection):
             lastRejection = rejection
         }
@@ -53,16 +74,56 @@ final class MirrorStateEngine: ObservableObject {
     /// structural sequence. Returns true only when a new immutable projection
     /// was actually published.
     @discardableResult
-    func enrich(_ scene: Scene, receivedAt: Date = Date()) -> Bool {
-        guard let replica,
-              let next = MirrorReplicaReducer.enrich(scene,
-                                                      previous: replica) else {
+    func enrichContent(_ scene: Scene, receivedAt: Date = Date()) -> Bool {
+        enrich(scene, plane: .content, receivedAt: receivedAt)
+    }
+
+    func enrichSemantics(_ scene: Scene, receivedAt: Date = Date()) -> Bool {
+        enrich(scene, plane: .semantics, receivedAt: receivedAt)
+    }
+
+    func enrichFinder(_ scene: Scene, receivedAt: Date = Date()) -> Bool {
+        enrich(scene, plane: nil, receivedAt: receivedAt)
+    }
+
+    private func enrich(_ scene: Scene, plane: MirrorPlaneID?,
+                        receivedAt: Date) -> Bool {
+        guard let prior = replica, scene.seq == prior.lastSequence else {
             return false
         }
-        self.replica = next
-        snapshot = next.snapshot
-        store.publish(next.snapshot, at: receivedAt)
+        let reduced = MirrorReplicaReducer.enrich(scene, previous: prior)
+        let next = reduced ?? prior
+        var changed = reduced != nil
+        let identities = windowIdentities(in: scene)
+        if plane == .content {
+            changed = retainContent(from: scene, identities: identities,
+                                    in: next) || changed
+        } else if plane == .semantics {
+            changed = retainSemantics(from: scene, identities: identities,
+                                      in: next) || changed
+        }
+        guard changed else { return false }
+        replica = next
+        pruneContributions(to: next)
+        publish(from: next.snapshot, at: receivedAt)
         return true
+    }
+
+    /// Plane policy changes presentation, never ownership. Every contribution
+    /// remains in its session/window shelf so a diagnostic switch can hide or
+    /// reveal it immediately without another guest walk or draw drain.
+    @discardableResult
+    func setEnabledPlanes(_ planes: Set<MirrorPlaneID>,
+                          at date: Date = Date()) -> Bool {
+        let normalized = planes.union([.structure])
+        guard normalized != enabledPlanes else { return false }
+        enabledPlanes = normalized
+        if let replica { publish(from: replica.snapshot, at: date) }
+        return true
+    }
+
+    func isPlaneEnabled(_ plane: MirrorPlaneID) -> Bool {
+        enabledPlanes.contains(plane)
     }
 
     /// One typed settlement view per coverage claim. Retained stale entities
@@ -91,5 +152,190 @@ final class MirrorStateEngine: ObservableObject {
                   frontProcess: frontProcess, frontWindow: frontWindow,
                   windowTitles: titles)
         }
+    }
+
+    private func publish(from base: MirrorProjection, at date: Date) {
+        let scene = compose(base.scene)
+        publicationID += 1
+        let projection = MirrorProjection(
+            id: publicationID, session: base.session,
+            sequence: base.sequence,
+            digest: digest(scene, planes: enabledPlanes),
+            baseComplete: base.baseComplete,
+            sceneGeneration: base.sceneGeneration,
+            contentGeneration: base.contentGeneration,
+            scene: scene)
+        snapshot = projection
+        store.publish(projection, at: date)
+    }
+
+    private func compose(_ base: Scene) -> Scene {
+        var scene = base
+        let identities = windowIdentities(in: scene)
+        for index in scene.windows.indices {
+            if enabledPlanes.contains(.semantics),
+               let identity = identities[index],
+               let contribution = semantics[identity] {
+                for controlIndex in scene.windows[index].controls.indices {
+                    let ref = scene.windows[index].controls[controlIndex].ref
+                    if let semantic = contribution.controls[ref] {
+                        scene.windows[index].controls[controlIndex].semantic = semantic
+                    }
+                }
+                if scene.windows[index].dialogItems != nil {
+                    for itemIndex in scene.windows[index].dialogItems!.indices {
+                        let item = scene.windows[index].dialogItems![itemIndex]
+                        if let semantic = contribution.dialogItems[
+                            Self.dialogKey(item)] {
+                            scene.windows[index].dialogItems![itemIndex]
+                                .semantic = semantic
+                        }
+                    }
+                }
+            } else if !enabledPlanes.contains(.semantics) {
+                for controlIndex in scene.windows[index].controls.indices {
+                    scene.windows[index].controls[controlIndex].semantic = nil
+                }
+                if scene.windows[index].dialogItems != nil {
+                    for itemIndex in scene.windows[index].dialogItems!.indices {
+                        scene.windows[index].dialogItems![itemIndex].semantic =
+                            .init(knowledge: .unknown)
+                    }
+                }
+            }
+
+            if enabledPlanes.contains(.content),
+               let identity = identities[index],
+               let contribution = content[identity],
+               contribution.rect == scene.windows[index].rect {
+                scene.windows[index].display = contribution.display
+                scene.windows[index].island = contribution.island
+            } else if !enabledPlanes.contains(.content) {
+                scene.windows[index].display = nil
+                scene.windows[index].island = nil
+            }
+        }
+        return scene
+    }
+
+    @discardableResult
+    private func retainSemantics(from scene: Scene,
+                                 identities: [MirrorWindowIdentity?],
+                                 in replica: MirrorReplica) -> Bool {
+        var changed = false
+        for index in scene.windows.indices {
+            guard let identity = identities[index],
+                  replica.windows[identity] != nil else { continue }
+            var next = semantics[identity] ?? SemanticContribution()
+            for control in scene.windows[index].controls {
+                guard let semantic = control.semantic else { continue }
+                if next.controls[control.ref] != semantic {
+                    next.controls[control.ref] = semantic
+                    changed = true
+                }
+            }
+            for item in scene.windows[index].dialogItems ?? [] {
+                let key = Self.dialogKey(item)
+                if next.dialogItems[key] != item.semantic {
+                    next.dialogItems[key] = item.semantic
+                    changed = true
+                }
+            }
+            if !next.controls.isEmpty || !next.dialogItems.isEmpty {
+                semantics[identity] = next
+            }
+        }
+        return changed
+    }
+
+    @discardableResult
+    private func retainContent(from scene: Scene,
+                               identities: [MirrorWindowIdentity?],
+                               in replica: MirrorReplica) -> Bool {
+        var changed = false
+        for index in scene.windows.indices {
+            let window = scene.windows[index]
+            guard let identity = identities[index],
+                  replica.windows[identity]?.window.rect == window.rect,
+                  window.display != nil || window.island != nil else {
+                continue
+            }
+            var display = window.display
+            if let fresh = display, !Self.hasStructuredDrawing(fresh),
+               let retained = content[identity],
+               retained.rect == window.rect,
+               let prior = retained.display,
+               Self.hasStructuredDrawing(prior) {
+                display!.append(contentsOf: prior.filter { $0.op != "bits" })
+            }
+            let next = ContentContribution(
+                rect: window.rect, display: display, island: window.island)
+            if content[identity] != next {
+                content[identity] = next
+                changed = true
+            }
+        }
+        return changed
+    }
+
+    private func pruneContributions(to replica: MirrorReplica) {
+        let identities = Set(replica.windows.keys)
+        if semantics.keys.contains(where: { !identities.contains($0) }) {
+            semantics = semantics.filter { identities.contains($0.key) }
+        }
+        if content.contains(where: {
+            replica.windows[$0.key]?.window.rect != $0.value.rect
+        }) {
+            content = content.filter {
+                replica.windows[$0.key]?.window.rect == $0.value.rect
+            }
+        }
+    }
+
+    private func windowIdentities(in scene: Scene)
+        -> [MirrorWindowIdentity?] {
+        let processes = Dictionary(uniqueKeysWithValues:
+            (scene.processes ?? []).compactMap { process in
+                process.incarnation.map { (process.psn, $0) }
+            })
+        return scene.windows.map { window in
+            guard let process = processes[window.psn],
+                  let incarnation = window.incarnation else { return nil }
+            return MirrorWindowIdentity(
+                process: .init(session: session, incarnation: process),
+                incarnation: incarnation)
+        }
+    }
+
+    private static func dialogKey(_ item: Scene.DialogItem) -> String {
+        item.ref ?? "#\(item.number)"
+    }
+
+    private static func hasStructuredDrawing(_ operations: [DisplayOp])
+        -> Bool {
+        operations.contains { $0.op != "bits" && $0.op != "state" }
+    }
+
+    private func digest(_ scene: Scene,
+                        planes: Set<MirrorPlaneID>) -> String {
+        var stable = scene
+        stable.seq = 0
+        stable.capturedAt = 0
+        if stable == digestScene, planes == digestPlanes { return digestValue }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        var bytes = (try? encoder.encode(stable)) ?? Data()
+        bytes.append(contentsOf: planes.map(\.rawValue).sorted()
+            .joined(separator: ",").utf8)
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for byte in bytes {
+            hash ^= UInt64(byte)
+            hash &*= 1_099_511_628_211
+        }
+        let value = String(format: "%016llx", hash)
+        digestScene = stable
+        digestPlanes = planes
+        digestValue = value
+        return value
     }
 }

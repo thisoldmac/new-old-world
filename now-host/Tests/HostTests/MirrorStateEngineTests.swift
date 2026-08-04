@@ -116,7 +116,7 @@ final class MirrorStateEngineTests: XCTestCase {
 
         var enriched = structural
         enriched.windows[0].display = [.init(op: "frameRect", ticks: 7)]
-        XCTAssertTrue(engine.enrich(enriched))
+        XCTAssertTrue(engine.enrichContent(enriched))
 
         let contentSnapshot = try XCTUnwrap(engine.snapshot)
         XCTAssertEqual(contentSnapshot.scene.windows[0].display?.count, 1)
@@ -136,13 +136,13 @@ final class MirrorStateEngineTests: XCTestCase {
 
         var stale = try scene(seq: 1)
         stale.windows[0].display = [.init(op: "paintRect", ticks: 3)]
-        XCTAssertFalse(engine.enrich(stale))
+        XCTAssertFalse(engine.enrichContent(stale))
         XCTAssertEqual(engine.snapshot, snapshot)
 
         var wrongGeometry = structural
         wrongGeometry.windows[0].rect.r += 1
         wrongGeometry.windows[0].display = [.init(op: "paintRect", ticks: 4)]
-        XCTAssertFalse(engine.enrich(wrongGeometry))
+        XCTAssertFalse(engine.enrichContent(wrongGeometry))
         XCTAssertEqual(engine.snapshot, snapshot)
     }
 
@@ -151,9 +151,118 @@ final class MirrorStateEngineTests: XCTestCase {
         let structural = try scene(seq: 1)
         _ = engine.accept(structural)
 
-        XCTAssertFalse(engine.enrich(structural))
+        XCTAssertFalse(engine.enrichContent(structural))
         XCTAssertEqual(engine.store.entries.count, 1)
         XCTAssertEqual(engine.snapshot?.contentGeneration, 0)
+    }
+
+    func testPlaneTogglesReprojectRetainedContentAndSemanticsWithoutRefetch()
+        throws {
+        let engine = MirrorStateEngine(guestKey: key)
+        var observed = try scene(seq: 1)
+        observed.windows[0].controls = [
+            .init(ref: "control-ref", role: "control", title: "City",
+                  enabled: true, visible: true,
+                  semantic: .init(knowledge: .known, kind: "list",
+                                  action: "select",
+                                  provenance: "resident-p2",
+                                  completeness: .complete)),
+        ]
+        var observedText = DisplayOp(op: "text", ticks: 7)
+        observedText.text = "Abu Dhabi"
+        observed.windows[0].display = [observedText]
+        _ = engine.accept(observed)
+        let full = try XCTUnwrap(engine.snapshot)
+
+        XCTAssertTrue(engine.setEnabledPlanes([.structure, .interaction]))
+        let structureOnly = try XCTUnwrap(engine.snapshot)
+        XCTAssertNil(structureOnly.scene.windows[0].display)
+        XCTAssertNil(structureOnly.scene.windows[0].controls[0].semantic)
+        XCTAssertGreaterThan(structureOnly.id, full.id)
+
+        XCTAssertTrue(engine.setEnabledPlanes(Set(MirrorPlaneID.allCases)))
+        let restored = try XCTUnwrap(engine.snapshot)
+        XCTAssertEqual(restored.scene.windows[0].display,
+                       full.scene.windows[0].display)
+        XCTAssertEqual(restored.scene.windows[0].controls[0].semantic,
+                       full.scene.windows[0].controls[0].semantic)
+        XCTAssertEqual(restored.sequence, full.sequence,
+                       "a policy toggle must not masquerade as a guest poll")
+        XCTAssertEqual(restored.contentGeneration, full.contentGeneration,
+                       "reprojection does not mutate retained plane state")
+    }
+
+    func testBitmapOnlyContentCannotEraseRetainedStructuredDrawing() throws {
+        let engine = MirrorStateEngine(guestKey: key)
+        let structural = try scene(seq: 1)
+        _ = engine.accept(structural)
+
+        var structured = structural
+        var city = DisplayOp(op: "text", ticks: 7)
+        city.text = "City"
+        structured.windows[0].display = [
+            .init(op: "state", ticks: 6), city,
+        ]
+        XCTAssertTrue(engine.enrichContent(structured))
+
+        var bitmapOnly = structural
+        bitmapOnly.windows[0].display = [
+            .init(op: "bits", ticks: 8),
+        ]
+        XCTAssertTrue(engine.enrichContent(bitmapOnly))
+        XCTAssertEqual(engine.snapshot?.scene.windows[0].display?.map(\.op),
+                       ["bits", "state", "text"])
+        XCTAssertEqual(engine.snapshot?.scene.windows[0].display?.last?.text,
+                       "City")
+    }
+
+    func testDisabledPlaneStillAcceptsNewEvidenceForLaterInterleaving() throws {
+        let engine = MirrorStateEngine(guestKey: key)
+        let structural = try scene(seq: 1)
+        _ = engine.accept(structural)
+        _ = engine.setEnabledPlanes([.structure, .interaction])
+
+        var content = structural
+        content.windows[0].display = [
+            .init(op: "frameRect", ticks: 9),
+        ]
+        XCTAssertTrue(engine.enrichContent(content))
+        XCTAssertNil(engine.snapshot?.scene.windows[0].display,
+                     "disabled means hidden, not discarded")
+
+        _ = engine.setEnabledPlanes(Set(MirrorPlaneID.allCases))
+        XCTAssertEqual(engine.snapshot?.scene.windows[0].display?.map(\.op),
+                       ["frameRect"])
+    }
+
+    func testInteractionPolicyCannotEraseTheOperationJournal() throws {
+        let engine = MirrorStateEngine(guestKey: key)
+        _ = engine.accept(try scene(seq: 1))
+        let process = MirrorProcessIdentity(
+            session: engine.session, incarnation: "process-finder")
+        let operation = MirrorOperation(
+            id: "op-retained", source: .human,
+            displayedSnapshotID: try XCTUnwrap(engine.snapshot?.id),
+            displayedSequence: 1, target: .process(process),
+            postcondition: .processFront(process), enqueuedAt: Date())
+        XCTAssertTrue(engine.operations.append(operation))
+
+        _ = engine.setEnabledPlanes([.structure])
+        _ = engine.setEnabledPlanes(Set(MirrorPlaneID.allCases))
+
+        XCTAssertEqual(engine.operations.records, [operation],
+                       "P4 policy gates mutation, never retained history")
+    }
+
+    func testProjectionDigestIgnoresObservationSequenceAndCaptureTime() throws {
+        let engine = MirrorStateEngine(guestKey: key)
+        _ = engine.accept(try scene(seq: 1))
+        let first = try XCTUnwrap(engine.snapshot?.digest)
+
+        _ = engine.accept(try scene(seq: 2))
+
+        XCTAssertEqual(engine.snapshot?.digest, first,
+                       "stable guest state must survive the gate's stability sandwich")
     }
 
     func testEvidenceExporterWritesFrameAndCorrelatedState() throws {

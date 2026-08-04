@@ -57,6 +57,41 @@ enum NOWMirrorSceneContinuity {
     }
 }
 
+/// The asynchronous seams that make one scene/content cycle. Production
+/// binds these to the listener and content adapter; tests can hold each
+/// completion to prove lifecycle and cadence behavior without a live socket.
+@MainActor
+struct NOWMirrorCycleIO {
+    var activeKey: () -> GuestKey?
+    var isScenePending: () -> Bool
+    var requestScene: (
+        GuestKey, Bool, Bool,
+        @escaping (Result<GuestListener.SceneDelivery,
+                          GuestListener.SceneFailure>) -> Void
+    ) -> Void
+    var guestChanged: () -> Void
+    var disableContent: (@escaping (String?) -> Void) -> Void
+    var joinContent: (
+        MirrorKit.Scene,
+        @escaping (NOWMirrorContentPlane.Update) -> Void
+    ) -> Void
+
+    static func live(listener: GuestListener,
+                     content: NOWMirrorContentPlane) -> Self {
+        .init(
+            activeKey: { listener.activeKey },
+            isScenePending: { listener.isScenePending },
+            requestScene: { key, semantics, interaction, completion in
+                listener.requestScene(
+                    for: key, semantics: semantics,
+                    interaction: interaction, completion: completion)
+            },
+            guestChanged: { content.guestChanged() },
+            disableContent: { content.disable(completion: $0) },
+            joinContent: { content.join(into: $0, completion: $1) })
+    }
+}
+
 /// **Mirror's live view, driven by NOW's own wire.**
 ///
 /// The one object that makes `LiveMirrorView` — Mirror's gesture routing,
@@ -117,12 +152,16 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private let listener: GuestListener
     private let engineRegistry: MirrorStateEngineRegistry?
     private let act: AgentIntegrationActControl
-    private let content: NOWMirrorContentPlane
+    private let cycleIO: NOWMirrorCycleIO
     private let interval: TimeInterval
-    private let planePolicy: @MainActor () -> Set<MirrorPlaneID>
+    private let planePolicy: @MainActor (GuestKey) -> Set<MirrorPlaneID>
     private let lifecycleDidChange: @MainActor () -> Void
     private var running = false
-    private var pending = false
+    private var runGeneration = 0
+    private var cycleGeneration: Int?
+    private var pollRequestedAfterCycle = false
+    private var rearmTask: Task<Void, Never>?
+    private var pending: Bool { cycleGeneration != nil }
 
     /// Icons, per container, and the layout they were read for.
     ///
@@ -153,14 +192,17 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
          engineRegistry: MirrorStateEngineRegistry? = nil,
          act: AgentIntegrationActControl,
          interval: TimeInterval = 0.75,
-         planePolicy: @escaping @MainActor () -> Set<MirrorPlaneID> = {
+         planePolicy: @escaping @MainActor (GuestKey) -> Set<MirrorPlaneID> = {
+             _ in
              Set(MirrorPlaneID.allCases)
          },
+         cycleIO: NOWMirrorCycleIO? = nil,
          lifecycleDidChange: @escaping @MainActor () -> Void = {}) {
         self.listener = listener
         self.engineRegistry = engineRegistry
         self.act = act
-        self.content = NOWMirrorContentPlane(listener: listener)
+        let content = NOWMirrorContentPlane(listener: listener)
+        self.cycleIO = cycleIO ?? .live(listener: listener, content: content)
         self.interval = interval
         self.planePolicy = planePolicy
         self.lifecycleDidChange = lifecycleDidChange
@@ -170,26 +212,37 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
     func start() {
         guard !running else { return }
-        guard let key = listener.activeKey else {
+        runGeneration &+= 1
+        guard let key = cycleIO.activeKey() else {
             ambient = "no Mac is connected"
             return
         }
         pinnedGuestKey = key
         shadowEngine = engineRegistry?.engine(for: key)
+        _ = shadowEngine?.setEnabledPlanes(planePolicy(key))
+        scene = shadowEngine?.snapshot?.scene ?? scene
         mutationBroker = shadowEngine.map {
             MirrorMutationBroker(journal: $0.operations)
         }
         running = true
-        content.guestChanged()
+        cycleGeneration = nil
+        pollRequestedAfterCycle = false
+        cycleIO.guestChanged()
         ambient = "asking for a scene…"
         lifecycleDidChange()
         poll()
     }
 
     func stop() {
+        runGeneration &+= 1
+        let stoppingGeneration = runGeneration
         running = false
+        cycleGeneration = nil
+        pollRequestedAfterCycle = false
+        rearmTask?.cancel()
+        rearmTask = nil
         guard let stoppingKey = pinnedGuestKey,
-              stoppingKey == listener.activeKey else {
+              stoppingKey == cycleIO.activeKey() else {
             ambient = "stopped; pinned Mac was not active"
             pinnedGuestKey = nil
             shadowEngine = nil
@@ -203,12 +256,14 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
            retire without a foreign-context teardown command. P3 is different:
            its content lease is deliberately long, so release it explicitly
            and report a refusal instead of claiming the Mirror is clean. */
-        content.disable { [weak self] failure in
+        cycleIO.disableContent { [weak self] failure in
             guard let self else { return }
             /* A stop can settle after a person has started this source for a
                newer session. The old content release must not tear down or
                relabel that new binding. */
-            guard !self.running, self.pinnedGuestKey == stoppingKey else {
+            guard !self.running,
+                  self.runGeneration == stoppingGeneration,
+                  self.pinnedGuestKey == stoppingKey else {
                 return
             }
             self.ambient = failure.map {
@@ -227,7 +282,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     }
 
     private func poll() {
-        guard running, !pending else { return }
+        guard running, cycleGeneration == nil else { return }
         guard !mutationWaiting else { return rearm() }
         guard let pinnedGuestKey else {
             ambient = "the Mirror has no pinned Mac"
@@ -237,19 +292,20 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
            Asking while one holds it earns a refusal that says nothing
            about the Macintosh, so we wait a beat instead of spending a
            request on it. */
-        guard !listener.isScenePending else { return rearm() }
-        pending = true
-        listener.requestScene(
-            for: pinnedGuestKey,
-            semantics: planePolicy().contains(.semantics),
-            interaction: planePolicy().contains(.interaction)) { [weak self] result in
+        guard !cycleIO.isScenePending() else { return rearm() }
+        let generation = runGeneration
+        cycleGeneration = generation
+        let planes = planePolicy(pinnedGuestKey)
+        cycleIO.requestScene(
+            pinnedGuestKey, planes.contains(.semantics),
+            planes.contains(.interaction)) { [weak self] result in
             guard let self else { return }
-            self.pending = false
+            guard self.isCurrentCycle(generation) else { return }
             switch result {
             case .success(let delivery):
                 guard delivery.guestKey == self.pinnedGuestKey else {
                     self.ambient = "ignored a scene from a different Mac"
-                    self.rearm()
+                    self.finishCycle(generation)
                     return
                 }
                 /* Content is a bounded command answer issued only after the
@@ -257,7 +313,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                    would create a second cadence and race the one command
                    whose records belong to this exact scene. */
                 self.apply(delivery.settlements)
-                self.accept(delivery) { [weak self] in self?.rearm() }
+                self.accept(delivery, generation: generation)
                 return
             case .failure(let failure):
                 /* The last scene STANDS. A poll that failed is a gap in
@@ -268,15 +324,21 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                     ? "the Mac declined: \(failure.message)"
                     : failure.message
             }
-            self.rearm()
+            self.finishCycle(generation)
         }
     }
 
     private func accept(_ delivery: GuestListener.SceneDelivery,
-                        completion: @escaping () -> Void) {
+                        generation: Int) {
+        guard isCurrentCycle(generation) else { return }
         do {
             var decoded = try NOWMirrorSceneDecoder.decode(
                 irVersion: delivery.irVersion, document: delivery.document)
+            guard isCurrentCycle(generation), let key = pinnedGuestKey else {
+                return
+            }
+            let planes = planePolicy(key)
+            _ = shadowEngine?.setEnabledPlanes(planes)
             _ = shadowEngine?.accept(decoded)
             observeOperations()
             let sameGuest = delivery.guestKey != nil
@@ -286,36 +348,38 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             sceneGuestKey = delivery.guestKey
             decoded = continuity.scene
             decoded = withIcons(decoded)
-            _ = shadowEngine?.enrich(decoded)
+            _ = shadowEngine?.enrichFinder(decoded)
             let menuStatus = continuity.retainedAppleItems
                 ? " · Apple menu expected-stale" : ""
-            guard pinnedGuestKey == listener.activeKey else {
+            guard pinnedGuestKey == cycleIO.activeKey() else {
                 shadowEngine?.compareVisible(decoded)
                 scene = projectedScene(fallback: decoded)
                 ambient = "(decoded.windows.count) windows · pinned Mac "
                     + "is in the background; content and actions paused"
                     + menuStatus
-                completion()
+                finishCycle(generation)
                 lifecycleDidChange()
                 return
             }
-            if !planePolicy().contains(.content) {
-                content.disable { [weak self] failure in
+            if !planes.contains(.content) {
+                cycleIO.disableContent { [weak self] failure in
                     guard let self else { return }
+                    guard self.isCurrentCycle(generation) else { return }
                     self.shadowEngine?.compareVisible(decoded)
                     self.scene = self.projectedScene(fallback: decoded)
                     self.refreshIconsIfStale(decoded)
                     self.ambient = "\(decoded.windows.count) windows · "
                         + (failure.map { "content release refused: \($0)" }
                            ?? "content off") + menuStatus
-                    completion()
+                    self.finishCycle(generation)
                     self.lifecycleDidChange()
                 }
                 return
             }
-            content.join(into: decoded) { [weak self] update in
+            cycleIO.joinContent(decoded) { [weak self] update in
                 guard let self else { return }
-                _ = self.shadowEngine?.enrich(update.scene)
+                guard self.isCurrentCycle(generation) else { return }
+                _ = self.shadowEngine?.enrichContent(update.scene)
                 self.observeOperations()
                 self.shadowEngine?.compareVisible(update.scene)
                 self.scene = self.projectedScene(fallback: update.scene)
@@ -324,7 +388,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                     + "\(delivery.walkMs.map { "\($0)ms" } ?? "?") · transfer "
                     + "\(delivery.transferMs)ms · \(update.sentence)"
                     + menuStatus
-                completion()
+                self.finishCycle(generation)
                 self.lifecycleDidChange()
             }
             return
@@ -339,15 +403,39 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             ambient = "the scene did not decode as IR "
                 + "v\(delivery.irVersion): \(error)"
         }
-        completion()
+        finishCycle(generation)
+    }
+
+    private func isCurrentCycle(_ generation: Int) -> Bool {
+        running && runGeneration == generation
+            && cycleGeneration == generation
+    }
+
+    /// Drain one cycle exactly once. A policy toggle made while scene or
+    /// content was in flight earns one immediate follow-up; the ordinary
+    /// interval owns every other continuation.
+    private func finishCycle(_ generation: Int) {
+        guard isCurrentCycle(generation) else { return }
+        cycleGeneration = nil
+        if pollRequestedAfterCycle {
+            pollRequestedAfterCycle = false
+            poll()
+        } else {
+            rearm()
+        }
     }
 
     private func rearm() {
         guard running else { return }
-        Task { @MainActor [weak self] in
+        rearmTask?.cancel()
+        rearmTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            try? await Task.sleep(nanoseconds:
-                UInt64(self.interval * 1_000_000_000))
+            do {
+                try await Task.sleep(nanoseconds:
+                    UInt64(self.interval * 1_000_000_000))
+            } catch { return }
+            guard !Task.isCancelled else { return }
+            self.rearmTask = nil
             self.poll()
         }
     }
@@ -404,7 +492,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             self.fetchingIcons = false
             if let current = self.scene {
                 let enriched = self.withIcons(current)
-                _ = self.shadowEngine?.enrich(enriched)
+                _ = self.shadowEngine?.enrichFinder(enriched)
                 self.observeOperations()
                 self.shadowEngine?.compareVisible(enriched)
                 self.scene = self.projectedScene(fallback: enriched)
@@ -421,6 +509,23 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private func projectedScene(fallback: MirrorKit.Scene) -> MirrorKit.Scene {
         Self.projectedScene(snapshot: shadowEngine?.snapshot,
                             fallback: fallback)
+    }
+
+    /// Policy is a projection switch as well as a resident claim. The state
+    /// engine keeps every plane, so this can redraw immediately from retained
+    /// evidence while the next ordinary poll performs any guest arm/release.
+    func planePolicyDidChange() {
+        guard let key = pinnedGuestKey, let engine = shadowEngine else { return }
+        let changed = engine.setEnabledPlanes(planePolicy(key))
+        if changed, let projected = engine.snapshot?.scene { scene = projected }
+        guard running else { return }
+        if cycleGeneration != nil {
+            pollRequestedAfterCycle = true
+            return
+        }
+        rearmTask?.cancel()
+        rearmTask = nil
+        poll()
     }
 
     private func observeOperations() {
@@ -609,7 +714,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             report(refusal)
             return
         }
-        guard planePolicy().contains(.interaction) else {
+        guard currentPlanePolicy.contains(.interaction) else {
             let label = InteractionBridge.label(for: interaction)
             ActLog.note(action: label,
                         outcome: "NOT DISPATCHED: Interaction policy is off",
@@ -753,7 +858,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             report(refusal)
             return
         }
-        guard planePolicy().contains(.interaction) else {
+        guard currentPlanePolicy.contains(.interaction) else {
             report("\(label): Interaction is off; the Mirror is read-only.")
             return
         }
@@ -786,6 +891,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                         : "\(label) — \(self.planSettlement)")
             self.poll()
         }
+    }
+
+    private var currentPlanePolicy: Set<MirrorPlaneID> {
+        pinnedGuestKey.map(planePolicy) ?? [.structure]
     }
 
     // MARK: - Serving a plan

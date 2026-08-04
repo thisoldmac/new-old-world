@@ -93,16 +93,26 @@ final class HostAppState: ObservableObject {
     /// The native data-driven Mirror source. It reads the same policy model
     /// the page renders, so the visible toggles are the claims this source
     /// actually makes.
-    private(set) lazy var mirrorSource = NOWMirrorSource(
-        listener: listener,
-        engineRegistry: mirrorEngines,
-        act: AgentIntegrationActControl(
+    private(set) lazy var mirrorSource: NOWMirrorSource = {
+        let source = NOWMirrorSource(
             listener: listener,
-            currentSessionID: { [unowned self] in
-                self.agentIntegration.connectedSessionID()
-            }),
-        planePolicy: { [unowned self] in self.mirror.requestedPlaneIDs },
-        lifecycleDidChange: { [weak self] in self?.mirror.refreshLifecycle() })
+            engineRegistry: mirrorEngines,
+            act: AgentIntegrationActControl(
+                listener: listener,
+                currentSessionID: { [unowned self] in
+                    self.agentIntegration.connectedSessionID()
+                }),
+            planePolicy: { [unowned self] key in
+                self.mirror.requestedPlaneIDs(for: key)
+            },
+            lifecycleDidChange: {
+                [weak self] in self?.mirror.refreshLifecycle()
+            })
+        mirror.bindPolicyProjection { [weak source] in
+            source?.planePolicyDidChange()
+        }
+        return source
+    }()
     private(set) lazy var mirrorWindow = NOWMirrorWindow(source: mirrorSource)
 
     /// What to put in the mirror window's title bar. A person may have

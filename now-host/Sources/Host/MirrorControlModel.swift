@@ -16,15 +16,20 @@ final class MirrorControlModel: ObservableObject, GuestScopedModel {
 
     private let guestProbe: MirrorGuestProbing
     private let policyStore: MirrorPlanePolicyStore
+    private var policyDidChange: @MainActor () -> Void
     private var checkToken = 0
     private var pendingSince: [MirrorPlaneID: Date] = [:]
     private var pendingWake: Task<Void, Never>?
+    private var factsByGuest: [GuestKey: MirrorWireFacts] = [:]
+    private var guestsByKey: [GuestKey: ConnectedGuest] = [:]
     private static let pendingTimeout: TimeInterval = 5
 
     init(guestProbe: MirrorGuestProbing,
-         defaults: UserDefaults = .standard) {
+         defaults: UserDefaults = .standard,
+         policyDidChange: @escaping @MainActor () -> Void = {}) {
         self.guestProbe = guestProbe
         self.policyStore = MirrorPlanePolicyStore(defaults: defaults)
+        self.policyDidChange = policyDidChange
     }
 
     func refreshLifecycle() {
@@ -32,6 +37,8 @@ final class MirrorControlModel: ObservableObject, GuestScopedModel {
             lifecycleError = "No Mac is connected."
             return
         }
+        let requestedGuest = guestProbe.activeGuest
+        if let requestedGuest { guestsByKey[requestedGuest.key] = requestedGuest }
         isLifecycleChecking = true
         lifecycleError = nil
         let token = checkToken
@@ -41,6 +48,9 @@ final class MirrorControlModel: ObservableObject, GuestScopedModel {
             switch result {
             case .success(let facts):
                 self.wireFacts = facts
+                if let requestedGuest {
+                    self.factsByGuest[requestedGuest.key] = facts
+                }
                 self.updatePendingDeadlines(for: facts, now: Date())
             case .failure(let failure):
                 self.lifecycleError = failure.reason
@@ -52,6 +62,11 @@ final class MirrorControlModel: ObservableObject, GuestScopedModel {
 
     func policyEnabled(_ plane: MirrorPlaneID) -> Bool {
         guard let guest = guestProbe.activeGuest else { return true }
+        return policyEnabled(plane, for: guest)
+    }
+
+    private func policyEnabled(_ plane: MirrorPlaneID,
+                               for guest: ConnectedGuest) -> Bool {
         return policyStore.isEnabled(
             plane, machineID: guest.id.slug,
             identityAnchored: guest.idIsAnchored,
@@ -66,12 +81,17 @@ final class MirrorControlModel: ObservableObject, GuestScopedModel {
                         identityAnchored: guest.idIsAnchored,
                         sessionID: guest.sessionID)
         policyGeneration &+= 1
+        policyDidChange()
         refreshLifecycle()
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             guard !Task.isCancelled else { return }
             self?.refreshLifecycle()
         }
+    }
+
+    func bindPolicyProjection(_ callback: @escaping @MainActor () -> Void) {
+        policyDidChange = callback
     }
 
     func presentation(for plane: MirrorWirePlane) -> MirrorPlanePresentation {
@@ -92,8 +112,24 @@ final class MirrorControlModel: ObservableObject, GuestScopedModel {
     }
 
     var requestedPlaneIDs: Set<MirrorPlaneID> {
-        Set(planeFacts.compactMap { plane in
-            plane.supported && policyEnabled(plane.id) ? plane.id : nil
+        guard let key = guestProbe.activeGuest?.key else { return [.structure] }
+        return requestedPlaneIDs(for: key)
+    }
+
+    /// Policy follows the session pinned by the Mirror, not the guest picker.
+    /// The picker can move while a Mirror window remains open, so both the
+    /// support facts and preference identity are retained by exact GuestKey.
+    func requestedPlaneIDs(for key: GuestKey) -> Set<MirrorPlaneID> {
+        if let active = guestProbe.activeGuest, active.key == key {
+            guestsByKey[key] = active
+            if let wireFacts { factsByGuest[key] = wireFacts }
+        }
+        guard let guest = guestsByKey[key], let facts = factsByGuest[key] else {
+            return [.structure]
+        }
+        return Set(facts.planes.compactMap { plane in
+            plane.supported && policyEnabled(plane.id, for: guest)
+                ? plane.id : nil
         }).union([.structure])
     }
 

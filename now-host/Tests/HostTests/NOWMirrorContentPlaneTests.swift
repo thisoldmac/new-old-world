@@ -222,7 +222,7 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
         XCTAssertFalse(update.sentence.contains("renderer defers bits"))
     }
 
-    func testBitmapOnlyGenerationRetainsPriorStructuredDrawing() throws {
+    func testBitmapOnlyGenerationPublishesOnlyItsOwnSettledOps() throws {
         let model = plane()
         let first = model.apply(try drain("""
         {"cmd":"drain","ops":[
@@ -249,11 +249,9 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
          "nextCursor":160,"records":1}
         """), to: try scene())
 
-        XCTAssertEqual(bitmap.scene.windows[0].display?.map(\.op),
-                       ["bits", "state", "text"])
-        XCTAssertEqual(bitmap.scene.windows[0].display?.last?.text, "City")
-        XCTAssertTrue(bitmap.sentence.contains(
-            "retained 1 expected-stale structured draw op"))
+        XCTAssertEqual(bitmap.scene.windows[0].display?.map(\.op), ["bits"],
+                       "cross-generation retention belongs to the state engine")
+        XCTAssertFalse(bitmap.sentence.contains("expected-stale"))
     }
 
     func testProcessSerialParsesOnlyTheTwoPartWireShape() {

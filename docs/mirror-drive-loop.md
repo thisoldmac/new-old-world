@@ -107,6 +107,23 @@ functional, accurate mirror of the guest** — one a person can operate.
    read guest-pixel coordinates off a resized screenshot and send them back as
    host-window coordinates — that missed both a Finder title and Application
    menu rows on 2026-08-04 and produced observations of the wrong controls.
+2j. **Plane switches change projection, not memory.** The session-pinned state
+   engine owns four independently retained contributions: P1 structure, P2
+   semantics, P3 content, and P4's operation journal. P1 is always projected.
+   Turning P2 or P3 off hides its current contribution without deleting it;
+   turning it back on must recompose the cached snapshot immediately, without
+   waiting for another guest walk or draw-ring drain. Turning P4 off makes the
+   Mirror read-only but never clears attempts or settlements already recorded.
+   The content adapter owns transfer assembly and the newest complete guest
+   generation; only the engine may retain compatible expected-stale structured
+   drawing across later bitmap-only generations. This separation is what lets
+   a sweep interleave planes without making a diagnostic toggle destructive.
+2k. **A saved development image gets a shutdown preflight.** Before a shutdown
+   whose disk will become the next stage image, dismiss modal dialogs, close
+   guest applications and their windows, return to a Finder-only desktop, and
+   verify that state in both the Mirror and guest capture. Then use the guest's
+   Special > Shut Down path and wait for the VM to exit. A disconnected host,
+   black capture, or QMP `quit` is not proof of a clean filesystem shutdown.
 3. **If the mirror cannot do it, that IS the finding.** Record it. Do
    not reach past it to keep the run going.
 4. **Record, don't fix, during a sweep.** No edits, no builds, no

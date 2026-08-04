@@ -384,6 +384,47 @@ guest/build mismatch must be resolved by staging and proving the exact latest
 extension and guest before treating those runtime results as current
 implementation failures.
 
+### STATE ENGINE U4G: ALL FOUR PLANES ARE RETAINED; LIVE REPROJECTION OPEN (2026-08-04)
+
+Plane policy is no longer a destructive filter at the renderer adapters. The
+session-pinned engine retains P1 structure in its replica, P2 semantics per
+exact process/window/control or dialog-item identity, P3 content per exact
+window identity and geometry, and P4 operation history in the same engine's
+bounded journal. P1 cannot be disabled. Hiding P2 or P3 recomposes the current
+snapshot without those contributions; showing either immediately restores the
+cached contribution at the same guest sequence. Disabling P4 still gates
+mutation, but policy changes cannot erase previously recorded attempts or
+settlements. Evidence arriving while an optional plane is hidden is retained
+for the next composition rather than discarded.
+
+Cross-generation QuickDraw retention now belongs to the state owner rather
+than `NOWMirrorContentPlane`. The adapter publishes only the newest settled
+guest generation. If that generation is bitmap-only, the engine keeps
+compatible prior non-bitmap operations—including their QuickDraw `state`
+records—as expected-stale structured evidence. This addresses the observed
+Sherlock transition where structured controls appeared briefly and were then
+replaced by a CopyBits-unavailable overlay; it does not make bitmap pixels part
+of the product path or turn Sherlock green by itself.
+
+The focused state-engine, plane-domain, content-plane, and source suites pass.
+Two guards were mutation-watched: dropping retained `state` operations fails
+the structured-content test, and failing to cancel an old policy-refresh
+sleeper fails the single-poll-cadence test. This remains **tested, not
+emulator-verified** until the newly built host is directly driven through the
+full sanity preflight, its live toggles are exercised, and every assessment is
+paired with the authoritative guest capture.
+
+The shipping review caught two lifecycle races before this checkpoint. A
+pre-close scene completion could be accepted by a same-guest restart, and a
+policy toggle could begin another structural request after scene transfer but
+before that scene's content command settled. One run generation now invalidates
+late callbacks, one cycle token covers scene plus content, and toggles made in
+flight coalesce into one immediate follow-up. Policy lookup is also keyed by
+the Mirror's pinned `GuestKey`, so changing the selected Mac cannot reproject
+another session. The source tests now hold real scene/content completions and
+count requests instead of inspecting source strings. Both lifecycle guards
+were mutation-watched; the four focused suites pass 62 tests.
+
 The same sweep exposed a separate outcome-classification defect. Several
 actions whose effects later appeared in authoritative pixels or scenes kept an
 immediate `act-refused`, `outcome-unknown`, or

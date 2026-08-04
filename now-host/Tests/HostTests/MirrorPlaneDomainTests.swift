@@ -4,9 +4,12 @@ import XCTest
 final class MirrorPlaneDomainTests: XCTestCase {
     @MainActor
     private final class LifecycleProbe: MirrorGuestProbing {
-        let facts: MirrorWireFacts
-        init(facts: MirrorWireFacts) { self.facts = facts }
-        var activeGuest: ConnectedGuest? { nil }
+        var facts: MirrorWireFacts
+        var activeGuest: ConnectedGuest?
+        init(facts: MirrorWireFacts, activeGuest: ConnectedGuest? = nil) {
+            self.facts = facts
+            self.activeGuest = activeGuest
+        }
         func readMirrorFacts(completion: @escaping (Result<MirrorWireFacts, MirrorProbeFailure>) -> Void) {
             completion(.success(facts))
         }
@@ -142,6 +145,110 @@ final class MirrorPlaneDomainTests: XCTestCase {
                                       identityAnchored: true, sessionID: "s"))
     }
 
+    @MainActor
+    func testPolicyToggleImmediatelyNotifiesTheProjectionOwner() {
+        let resident = MirrorWireExtension(
+            selector: "NWex", lifecycle: .active, expectedMajor: 1,
+            residentMajor: 1, residentMinor: 0, tableLength: 10,
+            capabilities: 15, requested: 15, active: 15, heartbeat: 1,
+            sourceManifest: nil, buildFingerprint: nil, reason: nil)
+        let planes = MirrorPlaneID.allCases.map {
+            plane($0)
+        }
+        let key = GuestKey.synthetic("projection-owner")
+        let guest = ConnectedGuest(
+            key: key, id: key.machine, idIsAutoAssigned: false,
+            idIsAnchored: true, name: "Test Mac",
+            address: GuestAddress(text: "127.0.0.1"), version: nil,
+            operatingSystem: "9.1", connectedAt: Date(), isActive: true)
+        var notifications = 0
+        let model = MirrorControlModel(
+            guestProbe: LifecycleProbe(
+                facts: .init(schema: 1, resident: resident, planes: planes),
+                activeGuest: guest),
+            defaults: UserDefaults(suiteName: "MirrorImmediate-\(UUID())")!,
+            policyDidChange: { notifications += 1 })
+
+        model.setPolicy(false, for: .content)
+
+        XCTAssertEqual(notifications, 1)
+        XCTAssertFalse(model.policyEnabled(.content))
+        XCTAssertTrue(model.policyEnabled(.semantics),
+                      "one live toggle cannot disturb another plane")
+    }
+
+    @MainActor
+    func testOtherGuestToggleCannotReprojectPinnedMirrorPolicy() throws {
+        let resident = MirrorWireExtension(
+            selector: "NWex", lifecycle: .active, expectedMajor: 1,
+            residentMajor: 1, residentMinor: 0, tableLength: 10,
+            capabilities: 15, requested: 15, active: 15, heartbeat: 1,
+            sourceManifest: nil, buildFingerprint: nil, reason: nil)
+        let facts = MirrorWireFacts(
+            schema: 1, resident: resident,
+            planes: MirrorPlaneID.allCases.map { plane($0) })
+        let keyA = GuestKey.synthetic("pinned-a")
+        let keyB = GuestKey.synthetic("selected-b")
+        func guest(_ key: GuestKey, active: Bool) -> ConnectedGuest {
+            ConnectedGuest(
+                key: key, id: key.machine, idIsAutoAssigned: false,
+                idIsAnchored: false, name: key.machine.slug,
+                address: GuestAddress(text: "127.0.0.1"), version: nil,
+                operatingSystem: "9.1", connectedAt: Date(),
+                isActive: active)
+        }
+        let guestA = guest(keyA, active: true)
+        let guestB = guest(keyB, active: true)
+        let probe = LifecycleProbe(facts: facts, activeGuest: guestA)
+        let model = MirrorControlModel(
+            guestProbe: probe,
+            defaults: UserDefaults(suiteName: "MirrorPinned-\(UUID())")!)
+        model.connection = .connected(name: guestA.name, key: keyA)
+
+        let fixture = try XCTUnwrap(
+            Bundle.module.url(forResource: "now-scene-ir-v1",
+                              withExtension: "json",
+                              subdirectory: "Fixtures"))
+        let scene = try NOWMirrorSceneDecoder.decode(
+            irVersion: 1, document: Data(contentsOf: fixture))
+        let registry = MirrorStateEngineRegistry()
+        let engineA = registry.engine(for: keyA)
+        _ = engineA.accept(scene)
+        let before = try XCTUnwrap(engineA.snapshot)
+
+        let listener = GuestListener(
+            identity: .init(version: "test", name: "Test Host"))
+        var heldScene: ((Result<GuestListener.SceneDelivery,
+                                GuestListener.SceneFailure>) -> Void)?
+        let io = NOWMirrorCycleIO(
+            activeKey: { keyA }, isScenePending: { heldScene != nil },
+            requestScene: { _, _, _, completion in heldScene = completion },
+            guestChanged: {},
+            disableContent: { $0(nil) },
+            joinContent: { scene, completion in
+                completion(.init(scene: scene, sentence: "test"))
+            })
+        let source = NOWMirrorSource(
+            listener: listener, engineRegistry: registry,
+            act: AgentIntegrationActControl(
+                listener: listener, currentSessionID: { nil }),
+            interval: 3_600,
+            planePolicy: { model.requestedPlaneIDs(for: $0) },
+            cycleIO: io)
+        model.bindPolicyProjection { source.planePolicyDidChange() }
+        source.start()
+
+        probe.activeGuest = guestB
+        model.connection = .connected(name: guestB.name, key: keyB)
+        model.setPolicy(false, for: .content)
+
+        XCTAssertTrue(engineA.isPlaneEnabled(.content))
+        XCTAssertEqual(engineA.snapshot?.id, before.id,
+                       "guest B policy cannot republish pinned guest A")
+        XCTAssertFalse(model.requestedPlaneIDs(for: keyB).contains(.content))
+        XCTAssertTrue(model.requestedPlaneIDs(for: keyA).contains(.content))
+    }
+
     func testUnifiedWireFactsDecodeWithoutLegacyInventory() throws {
         let json = #"{"schema":1,"extension":{"selector":"NWex","lifecycle":"active","expectedMajor":1,"residentMajor":1,"residentMinor":7,"tableLength":4096,"capabilities":15,"requested":15,"active":15,"heartbeat":99,"sourceManifest":"0000000100000002000000030000000400000005","buildFingerprint":"0000001000000011000000120000001300000014"},"planes":[{"id":"structure","purpose":"Window structure","capability":1,"supported":true,"format":3,"requested":true,"active":true,"freshness":"current","state":"active-current","generation":8},{"id":"semantics","purpose":"Meaning","capability":2,"supported":false,"format":0,"requested":false,"active":false,"freshness":"unavailable","state":"unsupported","generation":0},{"id":"content","purpose":"Content","capability":8,"supported":true,"format":2,"requested":true,"active":true,"freshness":"current","state":"active-current","generation":9},{"id":"interaction","purpose":"Input","capability":4,"supported":true,"format":2,"requested":true,"active":true,"freshness":"current","state":"active-current","generation":10}]}"#
         let facts = try JSONDecoder().decode(MirrorWireFacts.self,
@@ -179,7 +286,7 @@ final class MirrorPlaneDomainTests: XCTestCase {
         let poll = try XCTUnwrap(source.range(of: "private func poll()",
                                               range: stop.upperBound..<source.endIndex))
         let stopBody = source[stop.lowerBound..<poll.lowerBound]
-        XCTAssertTrue(stopBody.contains("content.disable"))
+        XCTAssertTrue(stopBody.contains("cycleIO.disableContent"))
         XCTAssertTrue(stopBody.contains("Content claim release refused"),
                       "close must not call a refused P3 release clean")
 
@@ -190,7 +297,7 @@ final class MirrorPlaneDomainTests: XCTestCase {
             range: direct.upperBound..<source.endIndex))
         let directBody = source[direct.lowerBound..<legacy.lowerBound]
         let policy = try XCTUnwrap(directBody.range(
-            of: "guard planePolicy().contains(.interaction)"))
+            of: "guard currentPlanePolicy.contains(.interaction)"))
         let dispatch = try XCTUnwrap(directBody.range(of: "Task {"))
         XCTAssertLessThan(policy.lowerBound, dispatch.lowerBound,
                           "P4 policy must refuse before asynchronous dispatch")

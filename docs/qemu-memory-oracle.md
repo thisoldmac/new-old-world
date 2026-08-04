@@ -109,6 +109,19 @@ overlay, but it is not running until a clean cold reboot. No QEMU address,
 Date & Time resource ID, or private control-data offset entered the product
 path.
 
+**Later cold-load result.** The extension at `cad8e57` was cold-loaded with
+fingerprint `67d5ef434db7def800d4ba35690c43b2434ccf32`. The public List Manager
+probe still did not surface Set Time Zone rows in the Mirror. In that VM, the
+oracle located the list control at `0x1e621e2c` and its non-null data handle at
+`0x1e621a68`; those addresses are disposable evidence, not product inputs.
+The resident request cell repeatedly named a Finder target while its completed
+response remained an older Set Time Zone `UnsupportedCustom` result. That led
+to a front-process-first/pending-lease scheduler patch (`891c74a`), which is
+built as a checkpoint but not yet cold-loaded or UX-verified. The useful
+conclusion is narrower than an application special case: public control data
+exists, but the single resident cell can starve the front surface before its
+class-specific producer gets a chance to answer.
+
 ## First cross-application inventory
 
 The same live run captured three surfaces before any further extension patch.

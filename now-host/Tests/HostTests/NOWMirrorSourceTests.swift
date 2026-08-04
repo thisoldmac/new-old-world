@@ -15,6 +15,69 @@ import NOWAgentIntegration
 @MainActor
 final class NOWMirrorSourceTests: XCTestCase {
 
+    private final class CycleHarness {
+        var activeKey: GuestKey?
+        var globalScenePending = false
+        var sceneRequests: [(GuestKey, Bool, Bool)] = []
+        var sceneCompletions: [
+            (Result<GuestListener.SceneDelivery,
+                    GuestListener.SceneFailure>) -> Void
+        ] = []
+        var joinedScenes: [Scene] = []
+        var joinCompletions: [(NOWMirrorContentPlane.Update) -> Void] = []
+
+        init(activeKey: GuestKey) { self.activeKey = activeKey }
+
+        var io: NOWMirrorCycleIO {
+            .init(
+                activeKey: { self.activeKey },
+                isScenePending: { self.globalScenePending },
+                requestScene: { key, semantics, interaction, completion in
+                    self.globalScenePending = true
+                    self.sceneRequests.append((key, semantics, interaction))
+                    self.sceneCompletions.append(completion)
+                },
+                guestChanged: {},
+                disableContent: { completion in completion(nil) },
+                joinContent: { scene, completion in
+                    self.joinedScenes.append(scene)
+                    self.joinCompletions.append(completion)
+                })
+        }
+
+        func completeScene(
+            _ index: Int,
+            with result: Result<GuestListener.SceneDelivery,
+                                GuestListener.SceneFailure>
+        ) {
+            globalScenePending = false
+            sceneCompletions[index](result)
+        }
+    }
+
+    private func testListener() -> GuestListener {
+        GuestListener(identity: .init(version: "test", name: "Test Host"))
+    }
+
+    private func testAct(_ listener: GuestListener)
+        -> AgentIntegrationActControl {
+        AgentIntegrationActControl(
+            listener: listener, currentSessionID: { nil })
+    }
+
+    private func fixtureDelivery(for key: GuestKey) throws
+        -> GuestListener.SceneDelivery {
+        let fixture = try XCTUnwrap(
+            Bundle.module.url(forResource: "now-scene-ir-v1",
+                              withExtension: "json",
+                              subdirectory: "Fixtures"))
+        return .init(
+            document: try Data(contentsOf: fixture), irVersion: 1,
+            seq: 1, capturedAt: 1, source: "test", walkMs: 1,
+            settlements: nil, transferMs: 1,
+            guestName: "Test Mac", guestKey: key)
+    }
+
     // MARK: - The live window's IR gate
 
     func testTheLiveMirrorReadsEveryMajorMirrorKitSupports() throws {
@@ -170,6 +233,66 @@ final class NOWMirrorSourceTests: XCTestCase {
         XCTAssertEqual(NOWMirrorSource.projectedScene(
             snapshot: nil, fallback: legacy), legacy,
             "registry-free source fixtures retain their explicit fallback")
+    }
+
+    func testPolicyRefreshWaitsForHeldSceneAndContentBeforeOneFollowUp() throws {
+        let key = GuestKey.synthetic("held-cycle")
+        let harness = CycleHarness(activeKey: key)
+        let listener = testListener()
+        let registry = MirrorStateEngineRegistry()
+        var planes = Set(MirrorPlaneID.allCases)
+        let source = NOWMirrorSource(
+            listener: listener, engineRegistry: registry,
+            act: testAct(listener), interval: 3_600,
+            planePolicy: { _ in planes }, cycleIO: harness.io)
+
+        source.start()
+        XCTAssertEqual(harness.sceneRequests.count, 1)
+
+        planes.remove(.semantics)
+        source.planePolicyDidChange()
+        XCTAssertEqual(harness.sceneRequests.count, 1,
+                       "a held scene still owns the cycle")
+
+        harness.completeScene(0, with: .success(try fixtureDelivery(for: key)))
+        XCTAssertEqual(harness.joinedScenes.count, 1)
+        planes.insert(.semantics)
+        source.planePolicyDidChange()
+        XCTAssertEqual(harness.sceneRequests.count, 1,
+                       "content completion is part of the same cycle")
+
+        let joined = try XCTUnwrap(harness.joinedScenes.first)
+        harness.joinCompletions[0](.init(scene: joined,
+                                         sentence: "content held then done"))
+        XCTAssertEqual(harness.sceneRequests.count, 2,
+                       "all toggles coalesce into one follow-up scene")
+    }
+
+    func testSceneFromStoppedLifetimeCannotSettleRestartedSameGuest() throws {
+        let key = GuestKey.synthetic("same-guest-restart")
+        let harness = CycleHarness(activeKey: key)
+        let listener = testListener()
+        let source = NOWMirrorSource(
+            listener: listener, engineRegistry: MirrorStateEngineRegistry(),
+            act: testAct(listener), interval: 3_600,
+            cycleIO: harness.io)
+
+        source.start()
+        XCTAssertEqual(harness.sceneRequests.count, 1)
+        source.stop()
+        source.start()
+        XCTAssertEqual(harness.sceneRequests.count, 1,
+                       "the listener's old global request remains pending")
+
+        harness.completeScene(0, with: .success(try fixtureDelivery(for: key)))
+        XCTAssertTrue(harness.joinedScenes.isEmpty,
+                      "the old run cannot process content in the new run")
+        XCTAssertNil(source.scene,
+                     "the old delivery cannot publish into the new lifetime")
+
+        source.planePolicyDidChange()
+        XCTAssertEqual(harness.sceneRequests.count, 2,
+                       "the restarted run can poll after the old lane drains")
     }
 
     func testOnlyConfirmedSettlementEarnsTheGreenCheckmark() {
