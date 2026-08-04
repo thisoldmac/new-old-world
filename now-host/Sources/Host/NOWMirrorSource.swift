@@ -279,8 +279,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             let menuStatus = continuity.retainedAppleItems
                 ? " · Apple menu expected-stale" : ""
             guard pinnedGuestKey == listener.activeKey else {
-                scene = decoded
                 shadowEngine?.compareVisible(decoded)
+                scene = projectedScene(fallback: decoded)
                 ambient = "(decoded.windows.count) windows · pinned Mac "
                     + "is in the background; content and actions paused"
                     + menuStatus
@@ -291,8 +291,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             if !planePolicy().contains(.content) {
                 content.disable { [weak self] failure in
                     guard let self else { return }
-                    self.scene = decoded
                     self.shadowEngine?.compareVisible(decoded)
+                    self.scene = self.projectedScene(fallback: decoded)
                     self.refreshIconsIfStale(decoded)
                     self.ambient = "\(decoded.windows.count) windows · "
                         + (failure.map { "content release refused: \($0)" }
@@ -304,9 +304,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             }
             content.join(into: decoded) { [weak self] update in
                 guard let self else { return }
-                self.scene = update.scene
                 _ = self.shadowEngine?.enrich(update.scene)
                 self.shadowEngine?.compareVisible(update.scene)
+                self.scene = self.projectedScene(fallback: update.scene)
                 self.refreshIconsIfStale(update.scene)
                 self.ambient = "\(update.scene.windows.count) windows · walk "
                     + "\(delivery.walkMs.map { "\($0)ms" } ?? "?") · transfer "
@@ -392,11 +392,27 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             self.fetchingIcons = false
             if let current = self.scene {
                 let enriched = self.withIcons(current)
-                self.scene = enriched
                 _ = self.shadowEngine?.enrich(enriched)
                 self.shadowEngine?.compareVisible(enriched)
+                self.scene = self.projectedScene(fallback: enriched)
             }
         }
+    }
+
+    /// The session engine is the visible replica owner once it exists. The
+    /// fallback keeps isolated source fixtures usable when they deliberately
+    /// construct no registry; production always installs one in HostAppState.
+    /// Diagnostics still compare the legacy candidate before this projection
+    /// is selected, so cutover drift remains inspectable without two owners
+    /// competing to draw the window.
+    private func projectedScene(fallback: MirrorKit.Scene) -> MirrorKit.Scene {
+        Self.projectedScene(snapshot: shadowEngine?.snapshot,
+                            fallback: fallback)
+    }
+
+    static func projectedScene(snapshot: MirrorProjection?,
+                               fallback: MirrorKit.Scene) -> MirrorKit.Scene {
+        snapshot?.scene ?? fallback
     }
 
     /// Three vectorised Apple events, not three per icon. Asking for

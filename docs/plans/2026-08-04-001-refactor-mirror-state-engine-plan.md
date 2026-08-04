@@ -477,6 +477,28 @@ evidence across the complete preflight.
 
 **Cleanup gate:** Remove the legacy read projection, rollback switch, Apple-only continuity, and controller cache in one reviewable commit only after the new path passes the preflight. Never leave two visible replica owners.
 
+**2026-08-04 U5 read-cutover checkpoint.** Production `HostAppState` now
+installs one session engine and `NOWMirrorSource` publishes that engine's
+immutable scene. The pre-reduction candidate remains diagnostic comparison
+input only; registry-free source fixtures retain an explicit fallback. A
+watched mutation that returned the fallback after a snapshot existed made
+`testVisibleSceneComesFromTheSessionEngineAfterCutover` fail, then the engine
+selection was restored. All 21 source tests and all 10 engine tests pass, and
+the Xcode Debug app target builds.
+
+The rebuilt app replaced exactly one host while retaining the same VM. Direct
+mouse input verified the complete Apple menu, application activation, exact
+window fronting as far as the stale guest permits it, and Date & Time content
+acquisition. The engine retained Date & Time's 162 structured operations after
+Finder became front. The cold-host run also made an existing coverage hole
+plain: already-open Finder windows initially have their structure but no item
+content, and the stale guest still refuses `winact select`; those rows remain
+red. Workshop was already closed, so application selection correctly did not
+recreate it; only `Windows > Workshop` is the reopen failure. U6 owns truthful
+operation classification; U8 owns staging the current guest that serves
+`select`. This checkpoint is directly exercised and tested, not a green full
+preflight and not metal-verified.
+
 ### U6. Route direct human mutations through the serialized broker
 
 **Goal:** Make native mouse and keyboard actions settle truthfully against the same engine that rendered their targets.

@@ -149,6 +149,29 @@ final class NOWMirrorSourceTests: XCTestCase {
                        "the host must never invent Apple-menu rows")
     }
 
+    func testVisibleSceneComesFromTheSessionEngineAfterCutover() throws {
+        let fixture = try XCTUnwrap(
+            Bundle.module.url(forResource: "now-scene-ir-v1",
+                              withExtension: "json",
+                              subdirectory: "Fixtures"))
+        let legacy = try NOWMirrorSceneDecoder.decode(
+            irVersion: 1, document: Data(contentsOf: fixture))
+        var reduced = legacy
+        reduced.seq += 1
+        reduced.windows.removeAll()
+        let projection = MirrorProjection(
+            id: 7,
+            session: .init(guest: "maxbook", incarnation: "session-a"),
+            sequence: reduced.seq, digest: "engine", baseComplete: true,
+            scene: reduced)
+
+        XCTAssertEqual(NOWMirrorSource.projectedScene(
+            snapshot: projection, fallback: legacy), reduced)
+        XCTAssertEqual(NOWMirrorSource.projectedScene(
+            snapshot: nil, fallback: legacy), legacy,
+            "registry-free source fixtures retain their explicit fallback")
+    }
+
     func testOnlyConfirmedSettlementEarnsTheGreenCheckmark() {
         XCTAssertTrue(NOWMirrorSource.isConfirmedSettlement("confirmed"))
         for status in [nil, "unknown", "dispatched-but-unconfirmed",
