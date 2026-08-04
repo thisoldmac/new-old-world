@@ -147,6 +147,39 @@ static void test_produced_fields(void)
     check_present(out, "\"visible\":true");
 }
 
+static void test_coverage_and_incarnation_reach_the_wire(void)
+{
+    NowScene s;
+    char out[8192];
+    int p;
+
+    now_scene_begin(&s, 41, 0.0, "peek", 640, 480, 0, 0);
+    now_scene_set_processes_coverage(&s, kNowSceneCoverageComplete);
+    p = now_scene_add_process(&s, 0, 9, "Finder", 0x4D414353UL, 1,
+                              kNowSceneAnchorOk, 0);
+    now_scene_set_process_incarnation(&s, p, 0x89abcdefUL);
+    now_scene_set_windows_coverage(&s, p, kNowSceneCoverageComplete);
+    (void)now_scene_add_window(&s, p, "Macintosh HD", 20, 0, 300, 400, 1);
+    now_scene_set_window_addr(&s, 0, 0x12345678UL);
+    (void)now_scene_open_menubar(&s, p);
+    now_scene_retract_menubar(&s);
+
+    check(now_scene_encode(&s, out, sizeof out, NULL) == kNowSceneEncodeOk,
+          "the covered scene encodes");
+    check_present(out, "\"incarnation\":\"process-89abcdef\"");
+    check_present(out,
+                  "\"incarnation\":\"process-89abcdef/window-12345678\"");
+    check_present(out,
+                  "\"coverage\":[{\"scope\":\"processes\","
+                  "\"status\":\"complete\"}");
+    check_present(out,
+                  "\"scope\":\"windows\",\"owner\":"
+                  "\"process-89abcdef\",\"status\":\"complete\"");
+    check_present(out,
+                  "\"scope\":\"menubar\",\"owner\":"
+                  "\"process-89abcdef\",\"status\":\"retracted\"");
+}
+
 static void test_unproduced_planes_are_absent(void)
 {
     NowScene s;
@@ -173,8 +206,8 @@ static void test_unproduced_planes_are_absent(void)
        not read as "none" but as unparseable. They are now emitted
        empty, and what the absence used to convey lives in meta's
        truncation note. See SceneIRDecodeTests. */
-    check_absent(out, "menubar");
-    check_absent(out, "menus");
+    check_absent(out, "\"menubar\":");
+    check_absent(out, "\"menus\":");
     check_absent(out, "\"text\"");
     check_absent(out, "\"kind\"");
     /* meta.bytes is the encoded size, and the encode is what is
@@ -991,6 +1024,7 @@ static void test_dialog_items_carry_v2_semantics(void)
 
 int main(void)
 {
+    test_coverage_and_incarnation_reach_the_wire();
     test_proven_control_roles_keep_their_semantics();
     test_unproven_controls_are_unknown_and_unactionable();
     test_dialog_items_carry_v2_semantics();

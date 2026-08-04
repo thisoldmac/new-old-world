@@ -1,7 +1,7 @@
 # The scene producer
 
-**Date:** 2026-07-31 · **Status:** built and natively tested; **never run on a
-Macintosh** · **Code of record:** `now-guest-ppc/src/scene/`, gates in
+**Date:** 2026-07-31 · **Status:** IR v2 coverage/identity built and natively
+tested; latest change not guest-built or emulator-verified · **Code of record:** `now-guest-ppc/src/scene/`, gates in
 `now-guest-ppc/tests/scene_build_test.c`, `scene_json_test.c` and
 `scene_walk_test.c`
 
@@ -20,8 +20,11 @@ travel; this note records what was built and what it refuses to claim.
 | `apps[].{psn,name,front}` | produced |
 | `apps[].error` | produced — this is where the anchor verdicts surface |
 | `processes[].{psn,name,front,signature}` | produced (Process Manager) |
+| `apps[].incarnation`, `processes[].incarnation` | produced from PSN, creator, launch tick, partition and name |
 | `windows[].{id,app,psn,title,rect,front,z,visible}` | produced (validated anchor walk) |
+| `windows[].incarnation` | conditional — process incarnation plus exact WindowRecord address |
 | `meta.{errors,plane,latencyMs}` | produced; `meta.bytes` absent |
+| `meta.coverage[]` | produced — typed process census, per-process windows, and front menubar authority |
 | `menubar.{app,menus[]}`, `menus[].items[]` | **conditional** — the front process only, when its bind and its menu list both succeeded |
 | `windows[].controls[]`, `.text`, `.kind` | **conditional** — per window, when that window's walk ran and completed |
 | `windows[].ref`, `windows[].controls[].ref` | **conditional** — per element, when the reference layer could name it |
@@ -42,6 +45,27 @@ shipped `"controls":[]` and taught every consumer a false fact.
 `meta.errors` is the one array emitted even when empty, because it is not an
 unreported plane: it is the list of things that went wrong during a walk that
 did happen, and zero of them is a real answer.
+
+### Coverage is what permits deletion
+
+IR v2 no longer asks a reducer to infer collection authority from an empty
+array or from English in `meta.errors`. The Process Manager census and each
+process's window membership carry independent typed claims. Reaching the end
+without a cap or read failure earns `complete`; a bound earns `partial`; a
+stale anchor earns `stale`; a read failure earns `failed`; and a plane that was
+not observable remains `unavailable`. Menu validation that retracts a
+previously opened plane is `retracted`.
+
+Only `complete` permits a same-session reducer to delete a missing member. All
+other states retain compatible prior members as expected-stale and inert. This
+is a wire rule, not a host heuristic; `scene_json_test.c` proves the typed
+shape and MirrorKit's freeze/decode tests prove the other half reads it.
+
+Process incarnation is a 32-bit change detector over the Process Manager
+lifetime facts already used by the observation registry. Window incarnation
+adds the exact WindowRecord address. A self-described Carbon window has no
+classic WindowRecord address and therefore honestly omits window incarnation.
+Neither incarnation is an act reference or authorizes a mutation.
 
 ### Conditional is a third state, and it is the hard one
 

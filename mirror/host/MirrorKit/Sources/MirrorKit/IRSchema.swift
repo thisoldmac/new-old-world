@@ -244,6 +244,14 @@ public enum IRSchema {
     // MARK: - IR v2 semantic evidence
 
     public static let v2Additions: Set<String> = [
+        "apps[].incarnation",
+        "processes[].incarnation",
+        "windows[].incarnation",
+        "meta.coverage",
+        "meta.coverage[].scope",
+        "meta.coverage[].owner",
+        "meta.coverage[].status",
+        "meta.coverage[].reason",
         "windows[].controls[].semantic",
         "windows[].controls[].semantic.knowledge",
         "windows[].controls[].semantic.kind",
@@ -284,6 +292,12 @@ public enum IRSchema {
     ]
 
     public static let v2AdditionalProperties: Set<String> = [
+        "Scene.AppRef.incarnation",
+        "Scene.ProcessRef.incarnation",
+        "Scene.Window.incarnation",
+        "Scene.Meta.coverage",
+        "Scene.CoverageClaim.scope", "Scene.CoverageClaim.owner",
+        "Scene.CoverageClaim.status", "Scene.CoverageClaim.reason",
         "Scene.Window.dialogItems",
         "Scene.Control.semantic",
         "Scene.DialogItem.number", "Scene.DialogItem.title",

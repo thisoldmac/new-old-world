@@ -8,6 +8,7 @@
 #include "axprocess.h"
 #include "axwalk.h"
 #include "observe.h"
+#include "obsref.h"
 #include "peek_read.h"
 #include "scene_self.h"
 #include "scene_walk.h"
@@ -92,6 +93,9 @@ static void collect_process(NowScene *s, int row,
     NowAxContext ctx;
     int bound;
     short i;
+    int windows_truncated_before = s->windows_truncated;
+
+    now_scene_set_windows_coverage(s, row, kNowSceneCoverageUnavailable);
 
     /* THE BIND COMES FIRST, and it used to come after a gate that
        returned before it.
@@ -123,9 +127,14 @@ static void collect_process(NowScene *s, int row,
        is what a person sees first. See scene_self.c. */
     if (is_self) {
         now_scene_collect_self(s, row, psn, refs);
+        now_scene_set_windows_coverage(
+            s, row, s->windows_truncated != windows_truncated_before
+                ? kNowSceneCoveragePartial : kNowSceneCoverageComplete);
         return;
     }
     if (!bound && !now_scene_anchor_admits_windows(s->procs[row].anchor)) {
+        now_scene_set_windows_coverage(s, row,
+                                       kNowSceneCoverageUnavailable);
         return;
     }
     if (bound) {
@@ -149,6 +158,7 @@ static void collect_process(NowScene *s, int row,
     if (bound && ctx.window_list != 0) {
         unsigned long addr = ctx.window_list;
         int hops;
+        int partial = 0;
 
         now_scene_set_process_stamp(s, row, ctx.stamp_ticks);
         for (hops = 0; addr != 0 && hops < kSceneCollectMaxWindowHops;
@@ -161,6 +171,7 @@ static void collect_process(NowScene *s, int row,
                    What stands is a PREFIX, and saying so is the
                    difference between a short list and a wrong one. */
                 s->windows_truncated = 1;
+                partial = 1;
                 break;
             }
             /* THE BOX, not the content region. now_ax_read_window reads
@@ -187,7 +198,17 @@ static void collect_process(NowScene *s, int row,
         }
         if (addr != 0) {
             s->windows_truncated = 1;   /* longer than a scene carries */
+            partial = 1;
         }
+        now_scene_set_windows_coverage(
+            s, row, s->procs[row].stale ? kNowSceneCoverageStale
+                    : partial ? kNowSceneCoveragePartial
+                    : kNowSceneCoverageComplete);
+    } else if (bound) {
+        /* A validated empty chain is a complete observation of no windows. */
+        now_scene_set_windows_coverage(
+            s, row, s->procs[row].stale
+                ? kNowSceneCoverageStale : kNowSceneCoverageComplete);
     } else if ((memset(&list, 0, sizeof list), 1)
                && now_peek_windows_for_psn(psn, &list) == kNowPeekReadOk) {
         /* The stamp arrives WITH the walk, not before it - the reader
@@ -214,6 +235,14 @@ static void collect_process(NowScene *s, int row,
         if (list.more) {
             s->windows_truncated = 1;
         }
+        now_scene_set_windows_coverage(
+            s, row, s->procs[row].stale ? kNowSceneCoverageStale
+                    : list.more ? kNowSceneCoveragePartial
+                    : kNowSceneCoverageComplete);
+    } else if (s->procs[row].anchor == kNowSceneAnchorNoWindows) {
+        now_scene_set_windows_coverage(s, row, kNowSceneCoverageComplete);
+    } else {
+        now_scene_set_windows_coverage(s, row, kNowSceneCoverageFailed);
     }
     /* One menu bar per machine, and it is the front process's. A back
        process's MenuList is real but is not what the screen shows, so
@@ -240,6 +269,7 @@ void now_scene_collect(NowScene *out, long seq,
     int rows = 0;
     int i;
     int pass;
+    int process_info_failed = 0;
 
     if (out == NULL) {
         return;
@@ -275,6 +305,7 @@ void now_scene_collect(NowScene *out, long seq,
         info.processAppSpec = NULL;
         name[0] = 0;
         if (GetProcessInformation(&psn, &info) != noErr) {
+            process_info_failed = 1;
             continue;
         }
         len = name[0];
@@ -309,10 +340,23 @@ void now_scene_collect(NowScene *out, long seq,
         if (row < 0) {
             break;                    /* assembly recorded the truncation */
         }
+        now_scene_set_process_incarnation(
+            out, row,
+            now_obs_process_fingerprint(
+                (unsigned long)psn.highLongOfPSN,
+                (unsigned long)psn.lowLongOfPSN,
+                (unsigned long)info.processSignature,
+                (unsigned long)info.processLaunchDate,
+                (unsigned long)info.processLocation,
+                (unsigned long)info.processSize, name));
         psns[row] = psn;
         selves[row] = is_self;
         ++rows;
     }
+    now_scene_set_processes_coverage(
+        out, (process_info_failed || rows >= kSceneCollectMaxPsns
+              || out->procs_truncated)
+            ? kNowSceneCoveragePartial : kNowSceneCoverageComplete);
     /* Windows front process first, then the rest in Process Manager
        order. Within a process the chain IS the stacking order and z says
        so; ACROSS processes only the front app's position is knowable

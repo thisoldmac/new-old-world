@@ -62,6 +62,7 @@ final class IRFreezeTests: XCTestCase {
             controls: [control], dialogItems: [dialogItem],
             ref: "now-window-probe",
             addr: 0x1EA2D3E0,
+            incarnation: "process-12345678/window-1ea2d3e0",
             text: .init(content: "c", active: true),
             items: [item],
             display: [op],
@@ -72,9 +73,11 @@ final class IRFreezeTests: XCTestCase {
         return Scene(
             version: IR.version, seq: 1, source: "axtree", capturedAt: 1,
             screen: .init(w: 800, h: 600),
-            apps: [.init(psn: "0.1", name: "A", front: true, error: "e")],
+            apps: [.init(psn: "0.1", name: "A", front: true,
+                         incarnation: "process-12345678", error: "e")],
             processes: [.init(psn: "0.1", name: "A", front: true,
-                              signature: "MACS")],
+                              signature: "MACS",
+                              incarnation: "process-12345678")],
             menubar: .init(app: "A", menus: [
                 .init(title: "File", apple: false, left: 40, id: 128, items: [
                     .init(title: "New", index: 1, separator: false,
@@ -83,7 +86,15 @@ final class IRFreezeTests: XCTestCase {
             ]),
             windows: [window],
             desktopItems: [item],
-            meta: .init(latencyMs: 1, bytes: 2, errors: ["e"], plane: "p"))
+            meta: .init(
+                latencyMs: 1, bytes: 2, errors: ["e"], plane: "p",
+                coverage: [
+                    .init(scope: "processes", status: .complete),
+                    .init(scope: "windows", owner: "process-12345678",
+                          status: .complete),
+                    .init(scope: "menubar", owner: "process-12345678",
+                          status: .retracted, reason: "validation"),
+                ]))
     }
 
     // MARK: - 1. The shape does not drift

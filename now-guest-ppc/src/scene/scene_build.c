@@ -132,6 +132,32 @@ int now_scene_add_process(NowScene *s, long psn_hi, unsigned long psn_lo,
     return s->proc_count++;
 }
 
+void now_scene_set_processes_coverage(NowScene *s,
+                                      NowSceneCoverage coverage)
+{
+    if (s != NULL) {
+        s->processes_coverage = coverage;
+    }
+}
+
+void now_scene_set_process_incarnation(NowScene *s, int proc,
+                                       unsigned long incarnation)
+{
+    if (s == NULL || proc < 0 || proc >= s->proc_count) {
+        return;
+    }
+    s->procs[proc].incarnation = incarnation;
+}
+
+void now_scene_set_windows_coverage(NowScene *s, int proc,
+                                    NowSceneCoverage coverage)
+{
+    if (s == NULL || proc < 0 || proc >= s->proc_count) {
+        return;
+    }
+    s->procs[proc].windows_coverage = coverage;
+}
+
 void now_scene_set_process_stamp(NowScene *s, int proc,
                                  unsigned long stamp_ticks)
 {

@@ -77,6 +77,15 @@ static void put_psn(Sink *k, const NowScenePsn *psn)
     put(k, buf);
 }
 
+static void put_process_incarnation(Sink *k, unsigned long incarnation)
+{
+    char buf[40];
+
+    snprintf(buf, sizeof buf, "\"process-%08lx\"",
+             incarnation & 0xffffffffUL);
+    put(k, buf);
+}
+
 /* The creator OSType as its four MacRoman characters. IR v1 promoted
    `processes[].signature` because the creator is the only app identity
    besides a display name; a process whose signature we could not read
@@ -125,6 +134,10 @@ static void put_apps(Sink *k, const NowScene *s)
         put_str(k, p->name);
         put(k, ",\"front\":");
         put(k, p->front ? "true" : "false");
+        if (p->incarnation != 0) {
+            put(k, ",\"incarnation\":");
+            put_process_incarnation(k, p->incarnation);
+        }
         /* `error` is ABSENT when there is nothing wrong, not null: the
            key says something happened, and its absence says nothing
            did. */
@@ -153,6 +166,10 @@ static void put_processes(Sink *k, const NowScene *s)
         put(k, p->front ? "true" : "false");
         put(k, ",\"signature\":");
         put_signature(k, p->signature);
+        if (p->incarnation != 0) {
+            put(k, ",\"incarnation\":");
+            put_process_incarnation(k, p->incarnation);
+        }
         put(k, "}");
     }
     put(k, "]");
@@ -610,6 +627,15 @@ static void put_windows(Sink *k, const NowScene *s)
                      (unsigned long)w->addr);
             put(k, addr);
         }
+        if (p->incarnation != 0 && w->addr != 0) {
+            char incarnation[80];
+
+            snprintf(incarnation, sizeof incarnation,
+                     ",\"incarnation\":\"process-%08lx/window-%08lx\"",
+                     p->incarnation & 0xffffffffUL,
+                     w->addr & 0xffffffffUL);
+            put(k, incarnation);
+        }
         /* The walked sub-planes, each present only for the rows whose
            walk ran and completed. `display` and `items` are still absent
            everywhere: this producer does not report them at all, and an
@@ -638,6 +664,81 @@ static void put_windows(Sink *k, const NowScene *s)
         }
         put(k, "}");
     }
+    put(k, "]");
+}
+
+static const char *coverage_status(NowSceneCoverage coverage)
+{
+    switch (coverage) {
+    case kNowSceneCoverageComplete: return "complete";
+    case kNowSceneCoveragePartial: return "partial";
+    case kNowSceneCoverageRetracted: return "retracted";
+    case kNowSceneCoverageFailed: return "failed";
+    case kNowSceneCoverageStale: return "stale";
+    default: return "unavailable";
+    }
+}
+
+static const char *coverage_reason(NowSceneCoverage coverage)
+{
+    switch (coverage) {
+    case kNowSceneCoveragePartial: return "bounded";
+    case kNowSceneCoverageRetracted: return "validation";
+    case kNowSceneCoverageFailed: return "read-failed";
+    case kNowSceneCoverageStale: return "stale-anchor";
+    case kNowSceneCoverageUnavailable: return "not-observed";
+    default: return NULL;
+    }
+}
+
+static void put_coverage_claim(Sink *k, const char *scope,
+                               const NowSceneProc *owner,
+                               NowSceneCoverage coverage, int first)
+{
+    const char *reason = coverage_reason(coverage);
+
+    put(k, first ? "{\"scope\":" : ",{\"scope\":");
+    put_str(k, scope);
+    if (owner != NULL && owner->incarnation != 0) {
+        put(k, ",\"owner\":");
+        put_process_incarnation(k, owner->incarnation);
+    }
+    put(k, ",\"status\":");
+    put_str(k, coverage_status(coverage));
+    if (reason != NULL) {
+        put(k, ",\"reason\":");
+        put_str(k, reason);
+    }
+    put(k, "}");
+}
+
+static void put_coverage(Sink *k, const NowScene *s)
+{
+    short i;
+    const NowSceneProc *front = NULL;
+    NowSceneCoverage menubar_coverage;
+
+    put(k, ",\"coverage\":[");
+    put_coverage_claim(k, "processes", NULL, s->processes_coverage, 1);
+    for (i = 0; i < s->proc_count; ++i) {
+        const NowSceneProc *p = &s->procs[i];
+
+        put_coverage_claim(k, "windows", p, p->windows_coverage, 0);
+        if (p->front) {
+            front = p;
+        }
+    }
+    if (s->menubar_refused) {
+        menubar_coverage = kNowSceneCoverageRetracted;
+    } else if (s->menubar_present
+               && (s->menus_truncated || s->menu_items_truncated)) {
+        menubar_coverage = kNowSceneCoveragePartial;
+    } else if (s->menubar_present) {
+        menubar_coverage = kNowSceneCoverageComplete;
+    } else {
+        menubar_coverage = kNowSceneCoverageUnavailable;
+    }
+    put_coverage_claim(k, "menubar", front, menubar_coverage, 0);
     put(k, "]");
 }
 
@@ -720,6 +821,7 @@ static void put_meta(Sink *k, const NowScene *s)
         first = 0;
     }
     put(k, "]");
+    put_coverage(k, s);
     if (s->plane[0] != '\0') {
         put(k, ",\"plane\":");
         put_str(k, s->plane);

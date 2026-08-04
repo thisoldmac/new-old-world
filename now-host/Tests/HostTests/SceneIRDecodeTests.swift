@@ -47,6 +47,56 @@ final class SceneIRDecodeTests: XCTestCase {
         return try Data(contentsOf: url)
     }
 
+    func testV2DecodesTypedCoverageAndDurableIncarnations() throws {
+        let data = Data(#"""
+        {
+          "version": 2,
+          "seq": 41,
+          "capturedAt": 0,
+          "source": "peek",
+          "screen": {"w": 640, "h": 480},
+          "apps": [{
+            "psn": "0.9", "name": "Finder", "front": true,
+            "incarnation": "process-89abcdef"
+          }],
+          "processes": [{
+            "psn": "0.9", "name": "Finder", "front": true,
+            "signature": "MACS", "incarnation": "process-89abcdef"
+          }],
+          "windows": [{
+            "id": "0.9/Macintosh HD#0", "app": "Finder", "psn": "0.9",
+            "title": "Macintosh HD", "rect": {"l": 0, "t": 20,
+            "r": 400, "b": 300}, "front": true, "z": 0,
+            "visible": true, "controls": [],
+            "incarnation": "process-89abcdef/window-12345678"
+          }],
+          "meta": {
+            "errors": [],
+            "coverage": [
+              {"scope": "processes", "status": "complete"},
+              {"scope": "windows", "owner": "process-89abcdef",
+               "status": "complete"},
+              {"scope": "menubar", "owner": "process-89abcdef",
+               "status": "retracted", "reason": "validation"}
+            ]
+          }
+        }
+        """#.utf8)
+
+        let scene = try JSONDecoder().decode(MirrorKit.Scene.self, from: data)
+        XCTAssertEqual(scene.apps.first?.incarnation, "process-89abcdef")
+        XCTAssertEqual(scene.processes?.first?.incarnation,
+                       "process-89abcdef")
+        XCTAssertEqual(scene.windows.first?.incarnation,
+                       "process-89abcdef/window-12345678")
+        XCTAssertEqual(scene.meta.coverage?.map(\.scope),
+                       ["processes", "windows", "menubar"])
+        XCTAssertEqual(scene.meta.coverage?[0].status, .complete)
+        XCTAssertEqual(scene.meta.coverage?[1].owner, "process-89abcdef")
+        XCTAssertEqual(scene.meta.coverage?[2].status, .retracted)
+        XCTAssertEqual(scene.meta.coverage?[2].reason, "validation")
+    }
+
     /// The gate. If NOW's producer drops a field the IR requires, this
     /// fails here rather than on a Macintosh.
     func testANowSceneDecodesAsMirrorKitScene() throws {

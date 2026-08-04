@@ -343,6 +343,17 @@ operations:
       Absent means NOT MINTED. The empty string is never sent and must
       not be treated as one: it is the consumer's own vocabulary for "the
       producer has no reference layer", which is a different claim.
+      IR V2 COLLECTION AUTHORITY. meta.coverage[] carries a typed scope,
+      optional process-incarnation owner, status, and optional reason.
+      Status is complete, partial, retracted, failed, stale, or unavailable.
+      Only a fresh complete claim for the exact parent scope and owner may
+      prove deletion; every other status preserves compatible prior members
+      as expected-stale and non-actionable. Human-readable meta.errors must
+      not drive this decision. apps[].incarnation and
+      processes[].incarnation identify a Process Manager lifetime;
+      windows[].incarnation combines it with the exact WindowRecord address
+      when known. These durable reducer identities are distinct from opaque
+      short-lived act refs.
   hostControlsStream:
     action: receive
     channel: { $ref: "#/channels/control" }

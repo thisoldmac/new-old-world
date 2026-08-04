@@ -187,15 +187,30 @@ typedef struct {
     short t, l, b, r;
 } NowSceneRect;
 
+/* Collection-level authority for IR v2. Only COMPLETE permits a consumer
+   to remove previously observed members that are absent from this scene.
+   The other values preserve distinct failure modes instead of collapsing
+   them into an empty array. */
+typedef enum {
+    kNowSceneCoverageUnavailable = 0,
+    kNowSceneCoverageComplete = 1,
+    kNowSceneCoveragePartial = 2,
+    kNowSceneCoverageRetracted = 3,
+    kNowSceneCoverageFailed = 4,
+    kNowSceneCoverageStale = 5
+} NowSceneCoverage;
+
 typedef struct {
     NowScenePsn psn;
     char name[kNowSceneNameMax];
     unsigned long signature;      /* creator OSType; 0 = unknown */
+    unsigned long incarnation;    /* process fingerprint; 0 = unknown */
     int front;                    /* the frontmost process */
     NowSceneAnchor anchor;        /* the verdict for this partition */
     unsigned long stamp_ticks;    /* the anchor's capture tick */
     int stale;                    /* Ok, but older than the caller's window */
     short window_count;           /* windows admitted for this process */
+    NowSceneCoverage windows_coverage;
 } NowSceneProc;
 
 /* One control, already in GLOBAL coordinates: axwalk translates a
@@ -362,6 +377,7 @@ typedef struct {
     NowSceneProc procs[kNowSceneMaxProcs];
     short proc_count;
     int procs_truncated;
+    NowSceneCoverage processes_coverage;
 
     NowSceneWindow windows[kNowSceneMaxWindows];
     short window_count;
@@ -416,6 +432,15 @@ int now_scene_add_process(NowScene *s, long psn_hi, unsigned long psn_lo,
                           const char *name, unsigned long signature,
                           int front, NowSceneAnchor anchor,
                           unsigned long stamp_ticks);
+
+/* Typed IR v2 collection authority and durable process identity. A zero
+   incarnation is unknown and stays absent from the wire. */
+void now_scene_set_processes_coverage(NowScene *s,
+                                      NowSceneCoverage coverage);
+void now_scene_set_process_incarnation(NowScene *s, int proc,
+                                       unsigned long incarnation);
+void now_scene_set_windows_coverage(NowScene *s, int proc,
+                                    NowSceneCoverage coverage);
 
 /* Adds a window to a process already added. Returns 1 on success, 0 when
    the scene is full (sets windows_truncated) or when `proc` is out of

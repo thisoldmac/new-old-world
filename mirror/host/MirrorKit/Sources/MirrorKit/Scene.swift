@@ -57,6 +57,37 @@ public struct Scene: Codable, Equatable, Sendable {
         case partial
     }
 
+    /// Whether a collection in this capture is authoritative enough to
+    /// replace prior state. Only `complete` authorizes deletion of members
+    /// that are absent from the new capture; every other value preserves the
+    /// last complete observation and records why it could not be refreshed.
+    public enum CoverageStatus: String, Codable, Equatable, Sendable {
+        case complete
+        case partial
+        case retracted
+        case failed
+        case stale
+        case unavailable
+    }
+
+    /// A typed collection-level observation claim. `owner` is a durable
+    /// incarnation when the collection belongs to a process (for example its
+    /// windows or menu bar), and is absent for machine-wide collections.
+    public struct CoverageClaim: Codable, Equatable, Sendable {
+        public var scope: String
+        public var owner: String?
+        public var status: CoverageStatus
+        public var reason: String?
+
+        public init(scope: String, owner: String? = nil,
+                    status: CoverageStatus, reason: String? = nil) {
+            self.scope = scope
+            self.owner = owner
+            self.status = status
+            self.reason = reason
+        }
+    }
+
     public struct Selection: Codable, Equatable, Sendable {
         public var start: Int
         public var end: Int
@@ -118,6 +149,9 @@ public struct Scene: Codable, Equatable, Sendable {
         public var psn: String
         public var name: String
         public var front: Bool
+        /// Process identity across captures. A PSN alone can be reused after
+        /// an application quits, so reducers key continuity from this token.
+        public var incarnation: String? = nil
         /// Per-app oracle error (`ax_oracle_*`), surfaced honestly.
         public var error: String?
     }
@@ -127,6 +161,7 @@ public struct Scene: Codable, Equatable, Sendable {
         public var name: String
         public var front: Bool
         public var signature: String
+        public var incarnation: String? = nil
     }
 
     public struct Menubar: Codable, Equatable, Sendable {
@@ -207,6 +242,10 @@ public struct Scene: Codable, Equatable, Sendable {
         /// mismatch. Nothing renders from this; it exists so a harness can
         /// say *which* window it is comparing.
         public var addr: UInt32? = nil
+        /// Process incarnation plus the exact WindowRecord address. Absent
+        /// for windows the guest cannot identify exactly (notably a Carbon
+        /// application describing its own window through the Toolbox).
+        public var incarnation: String? = nil
         /// Dialog TextEdit content (`kind==2` windows only today).
         public var text: TextContent?
         /// Icon-view items for a Finder window, in WINDOW-LOCAL content
@@ -256,6 +295,7 @@ public struct Scene: Codable, Equatable, Sendable {
             case items          // additive in v1 — see the declaration
             case ref            // additive in v1 — see the declaration
             case addr           // additive in v1 — see the declaration
+            case incarnation    // IR v2 durable reducer identity
         }
     }
 
@@ -399,6 +439,9 @@ public struct Scene: Codable, Equatable, Sendable {
         public var errors: [String]
         /// Plane annotation (the observe plane marks itself pre-AXPeek).
         public var plane: String?
+        /// Typed collection authority. Human-readable `errors` remains for
+        /// diagnostics; reducers make replacement/deletion decisions here.
+        public var coverage: [CoverageClaim]? = nil
     }
 }
 

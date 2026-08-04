@@ -31,6 +31,37 @@ Manager identity and popup/edit acts do not share a button's execution path. A
 renderer suppresses a structural control when a dialog item carries the same
 reference, preventing one live dialog control from being drawn twice.
 
+## Collection coverage and lifetime identity
+
+IR v2 carries collection authority in `meta.coverage[]`. Each claim has a
+machine-readable `scope`, optional process-incarnation `owner`, `status`, and
+optional diagnostic `reason`. Status is one of `complete`, `partial`,
+`retracted`, `failed`, `stale`, or `unavailable`.
+
+Only a fresh `complete` claim authorizes a reducer to remove previously known
+members that are absent from the new collection. Every other status retains
+compatible same-session members as expected-stale and makes them
+non-actionable. An empty array with complete coverage proves emptiness; an
+empty or absent array under weaker coverage does not. `meta.errors` remains a
+human diagnostic surface and must never be parsed to decide deletion.
+
+`apps[].incarnation` and `processes[].incarnation` identify one Process Manager
+lifetime as `process-<fingerprint>`. The fingerprint includes the PSN, creator,
+launch tick, partition bounds, and process name. `windows[].incarnation`
+combines that process incarnation with the exact WindowRecord address. It is
+absent when the producer cannot prove that address. These are reducer keys,
+not action capabilities: opaque `ref` values remain short-lived leases and are
+revalidated on every mutation.
+
+The deletion rule is normative:
+
+| parent coverage | child absent | reducer result |
+|---|---:|---|
+| fresh `complete` for the exact scope and owner | yes | tombstone |
+| `partial`, `retracted`, `failed`, `stale`, `unavailable`, or absent | yes | retain expected-stale and inert |
+| any claim from another guest session | either | reject; never merge |
+| no prior child and coverage is not complete | yes | remain unknown; invent nothing |
+
 ## Knowledge-state table
 
 | State | JSON representation | Applies to | Decoder | Actionable | v1 mapping |

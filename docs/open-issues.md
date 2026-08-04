@@ -43,6 +43,24 @@ act-log evidence, paired images, and resume instructions are in
 for the host state-engine plan; no later implementation may trade these passes
 for progress elsewhere.
 
+### STATE ENGINE U1A: TYPED COVERAGE AND LIFETIME IDENTITY BUILT (2026-08-04)
+
+The IR v2 producer and MirrorKit consumer now agree on typed collection
+coverage and durable process/window incarnation fields. Process census,
+per-process window membership, and front-menubar coverage reach the wire as
+`complete`, `partial`, `retracted`, `failed`, `stale`, or `unavailable` rather
+than requiring a reducer to parse English diagnostics. The normative rule is
+now explicit: only fresh complete parent coverage may prove deletion; weaker
+coverage retains compatible state expected-stale and inert.
+
+Native `scene_json_test`, MirrorKit IR-freeze tests, and host scene decode tests
+pass. The test was first observed failing on both sides before the contract was
+implemented. The cross-guest build gate skipped because Retro68 was unavailable
+on this shell path, so this checkpoint is **tested, not guest-built and not
+emulator-verified**. U1 remains open for exact Finder-item and application
+visibility capability identities plus forced collector-exit coverage guards;
+those must not be replaced with title/name matching merely to advance U2.
+
 ## CONTRACT FROZEN; UNIFICATION IMPLEMENTATION STILL OPEN (2026-08-03)
 
 The unified NOW Extension prerequisite now starts from a source-derived
