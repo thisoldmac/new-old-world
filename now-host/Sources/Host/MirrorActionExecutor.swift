@@ -1,0 +1,99 @@
+import Foundation
+import MirrorKit
+
+/// Resolves a direct gesture against the exact immutable projection it was
+/// drawn from. If this cannot mint a stable entity and observable
+/// postcondition, the caller must keep the action non-green.
+enum MirrorActionExecutor {
+    /// These plans mutate entities whose success can only be established from
+    /// a later guest observation. They must never fall through to the legacy
+    /// dispatch-and-label path merely because the displayed scene lacks a
+    /// stable identity.
+    static func requiresTypedSettlement(for interaction: Interaction,
+                                        plan: InteractionPlan) -> Bool {
+        switch plan {
+        case .activateApp, .activateWindow, .finderOpen:
+            return true
+        case .windowAct(_, let act):
+            if case .close = act { return true }
+            return false
+        case .menuCommand:
+            if case .menuItem(let item) = interaction.object {
+                return item.title == "Workshop"
+            }
+            return false
+        default:
+            return false
+        }
+    }
+
+    @MainActor
+    static func operation(for interaction: Interaction,
+                          plan: InteractionPlan,
+                          engine: MirrorStateEngine,
+                          id: String = UUID().uuidString.lowercased(),
+                          at date: Date = Date()) -> MirrorOperation? {
+        guard let snapshot = engine.snapshot, let replica = engine.replica else {
+            return nil
+        }
+
+        func process(_ psn: String) -> MirrorProcessIdentity? {
+            replica.applications.values.first { $0.app.psn == psn }?.identity
+        }
+        func namedProcess(_ name: String) -> MirrorProcessIdentity? {
+            replica.applications.values.first { $0.app.name == name }?.identity
+        }
+        func window(_ ref: String) -> MirrorWindowIdentity? {
+            replica.windows.values.first { $0.window.ref == ref }?.identity
+        }
+        func make(target: MirrorEntityIdentity,
+                  postcondition: MirrorOperationPostcondition)
+            -> MirrorOperation {
+            .init(id: id, source: .human,
+                  displayedSnapshotID: snapshot.id,
+                  displayedSequence: snapshot.sequence,
+                  target: target, postcondition: postcondition,
+                  enqueuedAt: date)
+        }
+        func presentOrCreated(owner: MirrorProcessIdentity, title: String)
+            -> MirrorOperation {
+            if let existing = replica.windows.values.first(where: {
+                $0.identity.process == owner && $0.window.title == title
+            })?.identity {
+                return make(target: .window(existing),
+                            postcondition: .windowFront(existing))
+            }
+            return make(target: .process(owner), postcondition:
+                .windowNamedPresent(owner: owner, title: title))
+        }
+
+        switch plan {
+        case .activateApp(let psn):
+            guard let identity = process(psn) else { return nil }
+            return make(target: .process(identity),
+                        postcondition: .processFront(identity))
+        case .activateWindow(_, let ref):
+            guard let identity = window(ref) else { return nil }
+            return make(target: .window(identity),
+                        postcondition: .windowFront(identity))
+        case .windowAct(let ref, let act):
+            guard case .close = act, let identity = window(ref) else {
+                return nil
+            }
+            return make(target: .window(identity),
+                        postcondition: .windowAbsent(identity))
+        case .finderOpen(let item, _):
+            guard let finder = namedProcess("Finder") else { return nil }
+            return presentOrCreated(owner: finder, title: item)
+        case .menuCommand:
+            guard case .menuItem(let item) = interaction.object,
+                  item.title == "Workshop",
+                  let front = replica.applications.values.first(where: {
+                      $0.app.front
+                  })?.identity else { return nil }
+            return presentOrCreated(owner: front, title: "New Old World")
+        default:
+            return nil
+        }
+    }
+}

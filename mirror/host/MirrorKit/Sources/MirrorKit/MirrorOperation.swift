@@ -7,6 +7,8 @@ public enum MirrorOperationSource: String, Codable, Equatable, Sendable {
 
 public enum MirrorOperationPostcondition: Equatable, Sendable {
     case windowAbsent(MirrorWindowIdentity)
+    case windowFront(MirrorWindowIdentity)
+    case windowNamedPresent(owner: MirrorProcessIdentity, title: String)
     case processAbsent(MirrorProcessIdentity)
     case processFront(MirrorProcessIdentity)
 }
@@ -78,13 +80,17 @@ public struct MirrorSettlementEvidence: Equatable, Sendable {
     public var presentProcesses: Set<MirrorProcessIdentity>
     public var presentWindows: Set<MirrorWindowIdentity>
     public var frontProcess: MirrorProcessIdentity?
+    public var frontWindow: MirrorWindowIdentity?
+    public var windowTitles: [MirrorWindowIdentity: String]
 
     public init(session: MirrorGuestSession, sequence: Int,
                 coverage: Scene.CoverageClaim,
                 receivedAt: Date? = nil,
                 presentProcesses: Set<MirrorProcessIdentity> = [],
                 presentWindows: Set<MirrorWindowIdentity> = [],
-                frontProcess: MirrorProcessIdentity? = nil) {
+                frontProcess: MirrorProcessIdentity? = nil,
+                frontWindow: MirrorWindowIdentity? = nil,
+                windowTitles: [MirrorWindowIdentity: String] = [:]) {
         self.session = session
         self.sequence = sequence
         self.coverage = coverage
@@ -92,6 +98,8 @@ public struct MirrorSettlementEvidence: Equatable, Sendable {
         self.presentProcesses = presentProcesses
         self.presentWindows = presentWindows
         self.frontProcess = frontProcess
+        self.frontWindow = frontWindow
+        self.windowTitles = windowTitles
     }
 }
 

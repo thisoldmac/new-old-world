@@ -9,6 +9,7 @@ final class MirrorStateEngine: ObservableObject {
     let session: MirrorGuestSession
     let store: MirrorSnapshotStore
     let diagnostics: MirrorEngineDiagnostics
+    let operations: MirrorOperationJournal
 
     @Published private(set) var snapshot: MirrorProjection?
     @Published private(set) var lastRejection: MirrorObservationRejection?
@@ -22,6 +23,7 @@ final class MirrorStateEngine: ObservableObject {
             incarnation: guestKey.session.uuidString.lowercased())
         self.store = store ?? MirrorSnapshotStore()
         self.diagnostics = diagnostics ?? MirrorEngineDiagnostics()
+        operations = MirrorOperationJournal()
     }
 
     @discardableResult
@@ -61,5 +63,33 @@ final class MirrorStateEngine: ObservableObject {
         snapshot = next.snapshot
         store.publish(next.snapshot, at: receivedAt)
         return true
+    }
+
+    /// One typed settlement view per coverage claim. Retained stale entities
+    /// remain in the replica, but only a claim whose own scope is complete can
+    /// satisfy the pure reducer's postcondition.
+    func settlementEvidence(receivedAt: Date = Date())
+        -> [MirrorSettlementEvidence] {
+        guard let replica, let claims = snapshot?.scene.meta.coverage else {
+            return []
+        }
+        let processes = Set(replica.applications.keys)
+        let windows = Set(replica.windows.keys)
+        let frontProcess = replica.applications.values.first {
+            $0.app.front
+        }?.identity
+        let frontWindow = replica.windows.values.first {
+            $0.window.front
+        }?.identity
+        let titles = Dictionary(uniqueKeysWithValues: replica.windows.map {
+            ($0.key, $0.value.window.title)
+        })
+        return claims.map {
+            .init(session: session, sequence: replica.lastSequence,
+                  coverage: $0, receivedAt: receivedAt,
+                  presentProcesses: processes, presentWindows: windows,
+                  frontProcess: frontProcess, frontWindow: frontWindow,
+                  windowTitles: titles)
+        }
     }
 }

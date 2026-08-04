@@ -151,4 +151,50 @@ final class MirrorOperationReducerTests: XCTestCase {
         XCTAssertEqual(MirrorOperationReducer.reduce(
             operation, event: .observation(old)), operation)
     }
+
+    func testExactWindowFrontAndNamedCreationNeedOwnerCompleteCoverage() {
+        let session = MirrorGuestSession(guest: "maxbook",
+                                         incarnation: "session-a")
+        let process = MirrorProcessIdentity(session: session,
+                                            incarnation: "process-now")
+        let old = MirrorWindowIdentity(process: process,
+                                       incarnation: "window-old")
+        let workshop = MirrorWindowIdentity(process: process,
+                                            incarnation: "window-workshop")
+        let coverage = Scene.CoverageClaim(
+            scope: "windows", owner: process.incarnation, status: .complete)
+        let evidence = MirrorSettlementEvidence(
+            session: session, sequence: 2, coverage: coverage,
+            presentWindows: [old, workshop], frontWindow: workshop,
+            windowTitles: [old: "Other", workshop: "New Old World"])
+
+        for (id, target, postcondition) in [
+            ("front", MirrorEntityIdentity.window(workshop),
+             MirrorOperationPostcondition.windowFront(workshop)),
+            ("create", MirrorEntityIdentity.process(process),
+             MirrorOperationPostcondition.windowNamedPresent(
+                owner: process, title: "New Old World")),
+        ] {
+            var operation = MirrorOperation(
+                id: id, source: .human, displayedSnapshotID: 1,
+                displayedSequence: 1, target: target,
+                postcondition: postcondition, enqueuedAt: Date())
+            operation = MirrorOperationReducer.reduce(
+                operation, event: .dispatched(at: Date()))
+            operation = MirrorOperationReducer.reduce(
+                operation, event: .observation(evidence))
+            XCTAssertEqual(operation.outcome, .confirmed, id)
+        }
+
+        var wrongOwner = evidence
+        wrongOwner.coverage.owner = "some-other-process"
+        var pending = MirrorOperation(
+            id: "wrong-owner", source: .human, displayedSnapshotID: 1,
+            displayedSequence: 1, target: .window(workshop),
+            postcondition: .windowFront(workshop), enqueuedAt: Date())
+        pending = MirrorOperationReducer.reduce(
+            pending, event: .dispatched(at: Date()))
+        XCTAssertEqual(MirrorOperationReducer.reduce(
+            pending, event: .observation(wrongOwner)), pending)
+    }
 }

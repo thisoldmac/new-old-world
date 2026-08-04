@@ -257,6 +257,44 @@ authoritative observation may confirm that same operation; it must not erase
 the earlier contradictory evidence or be attributed across another queued
 operation.
 
+### STATE ENGINE U6A: DIRECT OPERATIONS ARE SERIALIZED; CURRENT VM LACKS LIVE IDENTITY PROOF (2026-08-04)
+
+The first direct-mutation state-engine slice is built and focused-tested. One
+session-pinned FIFO now owns modeled native gestures and does not dispatch the
+next gesture until the active one confirms or times out. Its operation journal
+keeps displayed snapshot/sequence, exact entity, typed postcondition, attempt
+reply, and later authoritative outcome separate. A post-dispatch
+`act-refused` is therefore contradictory attempt evidence rather than a false
+terminal verdict. Late complete scene evidence may confirm it; timeout remains
+non-green and can later confirm only while no active retry makes attribution
+ambiguous.
+
+The direct run also exposed an unsafe bridge that is now closed. The running VM
+can supply a compatibility scene that is drawable while the new replica cannot
+mint stable identities for its windows/processes. The initial U6 code quietly
+fell back to the legacy dispatcher in that case, recreating the raw
+`act-refused` labels the broker was meant to replace. Modeled plans now refuse
+before dispatch when identity is unavailable. The VM must be updated with the
+current guest and extension before positive broker settlement can be scored.
+
+After correcting two missed Computer Use targets, the live results were:
+
+- Finder was selected first; the exposed `System Folder` title bar resolved to
+  that exact second Finder window, but the stale guest refused `winact select`
+  and the window did not come front.
+- Selecting `New Old World` through the guest Application menu activated NOW
+  and did not reopen its closed Workshop, which is correct.
+- `Windows > Workshop` is the independent failing operation. It must create a
+  named NOW window; the current guest does not call `MenuSelect`, so it remains
+  red rather than borrowing success from application activation.
+
+The focused gate currently covers FIFO serialization, contradictory refusal
+then confirmation, timeout and late confirmation, same-postcondition retry
+ambiguity, exact same-app window identity, Workshop named-window creation, and
+the no-legacy-bypass rule. Mutation-checking removal of the FIFO guard made the
+two-click test fail. This checkpoint is **tested and directly characterized,
+not a green emulator sweep and not metal-verified**.
+
 ## CONTRACT FROZEN; UNIFICATION IMPLEMENTATION STILL OPEN (2026-08-03)
 
 The unified NOW Extension prerequisite now starts from a source-derived

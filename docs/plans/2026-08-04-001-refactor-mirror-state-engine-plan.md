@@ -547,6 +547,37 @@ preflight and not metal-verified.
 
 **Cleanup gate:** Direct interactions may not bypass the broker after cutover. Remove old dispatch branches only after the full preflight has exercised each typed action class.
 
+**2026-08-04 U6 vertical checkpoint.** The host now owns one bounded
+operation journal and one settlement-serial FIFO per pinned guest session.
+Application activation, exact-window activation, close, Finder open, and
+`Windows > Workshop` mint typed postconditions from the immutable engine
+snapshot that was displayed. Attempt replies are recorded separately: a
+post-dispatch refusal remains pending, a later complete same-session scene can
+confirm it without erasing the contradiction, and a timeout can still become
+late-confirmed unless an active retry makes attribution ambiguous. A second
+gesture cannot dispatch until the active operation confirms or times out.
+
+The cleanup rule is now enforced for those modeled plans: failure to resolve a
+stable process/window identity is an explicit non-dispatch, not a silent fall
+through to the old `serve(plan)` label path. The current development VM made
+that guard necessary: its visible scene can render compatibility windows while
+the engine has no stable identity for them, so the pre-checkpoint host emitted
+only `act-refused` even for state changes observed later.
+
+The corrected direct drive established two separate facts. With Finder first
+selected, clicking the exposed `System Folder` title bar targeted that exact
+Finder window and the stale guest refused `winact select`; it did not come
+front. Selecting `New Old World` in the Application menu activated NOW and did
+not recreate the already-closed Workshop, which is correct. The distinct
+`Windows > Workshop` operation remains red: it is named-window creation and
+times out when the guest never calls `MenuSelect`. These observations are not a
+green U6 sweep; the latest identity-producing guest and extension still have to
+be staged before the broker's positive live path can be proven.
+
+Focused source, engine, executor, and broker tests pass. Removing the FIFO's
+`active == nil` guard made the rapid-two-click test dispatch both operations
+and fail; restoring it returned the gate to green.
+
 ### U7. Add MCP reads and conditional mutation as a thin state-engine client
 
 **Goal:** Bring mandatory MCP reads into parity without creating another observer or state cache, then add mutation parity only for native equivalents that are already proven.

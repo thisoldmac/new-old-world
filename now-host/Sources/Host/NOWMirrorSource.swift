@@ -143,6 +143,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private var settlementTracker = MirrorSettlementTracker()
     private var planCorrelation: String?
     private var planSettlement = "unknown"
+    private var mutationBroker: MirrorMutationBroker?
+    private var mutationWaiting = false
     private var sceneGuestKey: GuestKey?
     private(set) var pinnedGuestKey: GuestKey?
     private(set) var shadowEngine: MirrorStateEngine?
@@ -174,6 +176,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         }
         pinnedGuestKey = key
         shadowEngine = engineRegistry?.engine(for: key)
+        mutationBroker = shadowEngine.map {
+            MirrorMutationBroker(journal: $0.operations)
+        }
         running = true
         content.guestChanged()
         ambient = "asking for a scene…"
@@ -188,6 +193,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             ambient = "stopped; pinned Mac was not active"
             pinnedGuestKey = nil
             shadowEngine = nil
+            mutationBroker?.sessionChanged()
+            mutationBroker = nil
             lifecycleDidChange()
             return
         }
@@ -209,6 +216,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             } ?? "stopped"
             self.pinnedGuestKey = nil
             self.shadowEngine = nil
+            self.mutationBroker?.sessionChanged()
+            self.mutationBroker = nil
             self.lifecycleDidChange()
             Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: 11_000_000_000)
@@ -219,6 +228,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
     private func poll() {
         guard running, !pending else { return }
+        guard !mutationWaiting else { return rearm() }
         guard let pinnedGuestKey else {
             ambient = "the Mirror has no pinned Mac"
             return
@@ -268,6 +278,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             var decoded = try NOWMirrorSceneDecoder.decode(
                 irVersion: delivery.irVersion, document: delivery.document)
             _ = shadowEngine?.accept(decoded)
+            observeOperations()
             let sameGuest = delivery.guestKey != nil
                 && delivery.guestKey == sceneGuestKey
             let continuity = NOWMirrorSceneContinuity.accept(
@@ -305,6 +316,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             content.join(into: decoded) { [weak self] update in
                 guard let self else { return }
                 _ = self.shadowEngine?.enrich(update.scene)
+                self.observeOperations()
                 self.shadowEngine?.compareVisible(update.scene)
                 self.scene = self.projectedScene(fallback: update.scene)
                 self.refreshIconsIfStale(update.scene)
@@ -393,6 +405,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             if let current = self.scene {
                 let enriched = self.withIcons(current)
                 _ = self.shadowEngine?.enrich(enriched)
+                self.observeOperations()
                 self.shadowEngine?.compareVisible(enriched)
                 self.scene = self.projectedScene(fallback: enriched)
             }
@@ -408,6 +421,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private func projectedScene(fallback: MirrorKit.Scene) -> MirrorKit.Scene {
         Self.projectedScene(snapshot: shadowEngine?.snapshot,
                             fallback: fallback)
+    }
+
+    private func observeOperations() {
+        guard let engine = shadowEngine else { return }
+        mutationBroker?.observe(engine.settlementEvidence())
     }
 
     static func projectedScene(snapshot: MirrorProjection?,
@@ -614,6 +632,59 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             report("\(InteractionBridge.label(for: interaction)): \(why)")
         default:
             let label = InteractionBridge.label(for: interaction)
+            if let engine = shadowEngine,
+               let operation = MirrorActionExecutor.operation(
+                    for: interaction, plan: plan, engine: engine),
+               let mutationBroker {
+                if pending {
+                    mutationWaiting = true
+                    report(label + " — queued behind the current observation")
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        while self.pending {
+                            try? await Task.sleep(nanoseconds: 25_000_000)
+                        }
+                        self.mutationWaiting = false
+                        self.perform(interaction)
+                    }
+                    return
+                }
+                report(label + " — queued")
+                let accepted = mutationBroker.enqueue(operation, execute: {
+                    [weak self] in
+                    guard let self else {
+                        return .init(complaint: "the Mirror closed",
+                                     effectMayHaveLanded: false)
+                    }
+                    let started = Date()
+                    let complaint = await self.serve(plan)
+                    ActLog.note(action: "attempt \(label)  plan=\(plan)",
+                                outcome: complaint ?? self.planSettlement,
+                                ms: Int(Date().timeIntervalSince(started)
+                                    * 1000))
+                    return .init(
+                        complaint: complaint,
+                        effectMayHaveLanded: complaint?.contains(
+                            "was not sent") != true)
+                }, report: { [weak self] operation, complaint in
+                    self?.reportOperation(operation, label: label,
+                                          complaint: complaint)
+                })
+                if !accepted {
+                    report(label + " — not dispatched: operation journal full")
+                }
+                return
+            }
+            if shadowEngine != nil,
+               MirrorActionExecutor.requiresTypedSettlement(
+                    for: interaction, plan: plan) {
+                let reason = "the displayed guest state has no stable identity "
+                    + "for this operation; it was not sent"
+                ActLog.note(action: "unresolved \(label)  plan=\(plan)",
+                            outcome: "NOT DISPATCHED: \(reason)", ms: 0)
+                report(label + " — " + reason)
+                return
+            }
             report(label + "…")
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -635,6 +706,41 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 self.poll()                  // show the effect now
             }
         }
+    }
+
+    private func reportOperation(_ operation: MirrorOperation,
+                                 label: String, complaint: String?) {
+        let outcome: String
+        switch operation.outcome {
+        case .queued:
+            outcome = "queued"
+        case .dispatched:
+            outcome = "awaiting guest confirmation"
+        case .awaitingEvidenceAfterRefusal:
+            outcome = "awaiting guest confirmation; attempt reported: "
+                + (complaint ?? operation.reason ?? "refused")
+        case .refused:
+            outcome = operation.reason ?? complaint ?? "refused"
+        case .timedOut:
+            outcome = "timed out without authoritative confirmation"
+        case .confirmed:
+            outcome = "confirmed by a later guest scene"
+        case .confirmedAfterTimeout:
+            outcome = "confirmed by a later guest scene after timeout"
+        case .confirmedAfterRefusal:
+            outcome = "confirmed by a later guest scene; attempt had reported: "
+                + (operation.reason ?? "refused")
+        case .sessionChanged:
+            outcome = "cancelled because the guest session changed"
+        }
+        ActLog.note(action: "operation \(operation.id) \(label)",
+                    outcome: operation.outcome.rawValue, ms: 0)
+        report(operation.outcome == .confirmed
+               || operation.outcome == .confirmedAfterTimeout
+               || operation.outcome == .confirmedAfterRefusal
+               ? label + " ✓ — " + outcome
+               : label + " — " + outcome)
+        poll()
     }
 
     /// Kept for the action vocabulary, which the agent-shaped half of
