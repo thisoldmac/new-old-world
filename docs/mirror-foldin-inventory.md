@@ -157,6 +157,7 @@ look dead.
 | `setText` | canonical broker primitive |
 | `activateApp` | canonical broker primitive |
 | `applicationVisibility` | canonical broker primitive |
+| `openAppleMenuItem` | canonical broker primitive |
 | `finderSelect` | canonical broker primitive |
 | `finderOpen` | canonical broker primitive |
 | `finderDeselect` | canonical broker primitive |
