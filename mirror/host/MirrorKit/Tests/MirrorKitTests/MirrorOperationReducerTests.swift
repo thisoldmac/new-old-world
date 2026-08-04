@@ -56,6 +56,63 @@ final class MirrorOperationReducerTests: XCTestCase {
             refused, event: .sessionChanged(at: Date())), refused)
     }
 
+    func testPostDispatchRefusalCanBeCorrectedByLaterAuthoritativeEvidence() {
+        let session = MirrorGuestSession(guest: "maxbook",
+                                         incarnation: "session-a")
+        let process = MirrorProcessIdentity(session: session,
+                                            incarnation: "process-finder")
+        var operation = MirrorOperation(
+            id: "op-refused-late", source: .human, displayedSnapshotID: 3,
+            displayedSequence: 3, target: .process(process),
+            postcondition: .processFront(process), enqueuedAt: Date())
+        operation = MirrorOperationReducer.reduce(
+            operation, event: .dispatched(at: Date(timeIntervalSince1970: 2)))
+        operation = MirrorOperationReducer.reduce(
+            operation, event: .refused(
+                reason: "a later composite stage was refused",
+                at: Date(timeIntervalSince1970: 3),
+                effectMayHaveLanded: true))
+
+        XCTAssertEqual(operation.outcome, .awaitingEvidenceAfterRefusal)
+        XCTAssertNil(operation.settledAt)
+        XCTAssertEqual(operation.reason,
+                       "a later composite stage was refused")
+
+        let complete = MirrorSettlementEvidence(
+            session: session, sequence: 4,
+            coverage: .init(scope: "processes", status: .complete),
+            receivedAt: Date(timeIntervalSince1970: 4),
+            frontProcess: process)
+        operation = MirrorOperationReducer.reduce(
+            operation, event: .observation(complete))
+
+        XCTAssertEqual(operation.outcome, .confirmedAfterRefusal)
+        XCTAssertEqual(operation.settledSequence, 4)
+        XCTAssertEqual(operation.reason,
+                       "a later composite stage was refused",
+                       "contradictory dispatch evidence remains inspectable")
+    }
+
+    func testPreDispatchRefusalCannotBeOverriddenByMatchingScene() {
+        let session = MirrorGuestSession(guest: "maxbook",
+                                         incarnation: "session-a")
+        let process = MirrorProcessIdentity(session: session,
+                                            incarnation: "process-finder")
+        var operation = MirrorOperation(
+            id: "op-safety-refused", source: .human, displayedSnapshotID: 1,
+            displayedSequence: 1, target: .process(process),
+            postcondition: .processFront(process), enqueuedAt: Date())
+        operation = MirrorOperationReducer.reduce(
+            operation, event: .refused(reason: "stale capability", at: Date()))
+        let matching = MirrorSettlementEvidence(
+            session: session, sequence: 2,
+            coverage: .init(scope: "processes", status: .complete),
+            frontProcess: process)
+
+        XCTAssertEqual(MirrorOperationReducer.reduce(
+            operation, event: .observation(matching)), operation)
+    }
+
     func testQueuedOperationCannotBeConfirmedByObservation() {
         let session = MirrorGuestSession(guest: "maxbook",
                                          incarnation: "session-a")

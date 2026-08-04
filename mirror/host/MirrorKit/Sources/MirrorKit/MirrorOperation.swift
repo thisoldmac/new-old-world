@@ -14,17 +14,20 @@ public enum MirrorOperationPostcondition: Equatable, Sendable {
 public enum MirrorOperationOutcome: String, Codable, Equatable, Sendable {
     case queued
     case dispatched
+    case awaitingEvidenceAfterRefusal
     case refused
     case timedOut
     case confirmed
     case confirmedAfterTimeout
+    case confirmedAfterRefusal
     case sessionChanged
 
     public var isTerminal: Bool {
         switch self {
-        case .refused, .confirmed, .confirmedAfterTimeout, .sessionChanged:
+        case .refused, .confirmed, .confirmedAfterTimeout,
+             .confirmedAfterRefusal, .sessionChanged:
             return true
-        case .queued, .dispatched, .timedOut:
+        case .queued, .dispatched, .awaitingEvidenceAfterRefusal, .timedOut:
             return false
         }
     }
@@ -94,7 +97,11 @@ public struct MirrorSettlementEvidence: Equatable, Sendable {
 
 public enum MirrorOperationEvent: Equatable, Sendable {
     case dispatched(at: Date)
-    case refused(reason: String, at: Date)
+    /// A refusal before any part of the operation could mutate the guest is
+    /// terminal. A refusal after dispatch (including a later stage of a
+    /// composite operation) is contradictory attempt evidence and remains
+    /// eligible for an authoritative postcondition observation.
+    case refused(reason: String, at: Date, effectMayHaveLanded: Bool = false)
     case timedOut(at: Date)
     case observation(MirrorSettlementEvidence)
     case sessionChanged(at: Date)

@@ -12,10 +12,11 @@ public enum MirrorOperationReducer {
             guard operation.outcome == .queued else { return current }
             operation.outcome = .dispatched
             operation.dispatchedAt = at
-        case .refused(let reason, let at):
-            operation.outcome = .refused
+        case .refused(let reason, let at, let effectMayHaveLanded):
+            operation.outcome = effectMayHaveLanded
+                ? .awaitingEvidenceAfterRefusal : .refused
             operation.reason = reason
-            operation.settledAt = at
+            operation.settledAt = effectMayHaveLanded ? nil : at
         case .timedOut(let at):
             guard operation.outcome == .dispatched else { return current }
             operation.outcome = .timedOut
@@ -26,14 +27,21 @@ public enum MirrorOperationReducer {
             operation.settledAt = at
         case .observation(let evidence):
             guard operation.outcome == .dispatched
-                    || operation.outcome == .timedOut,
+                    || operation.outcome == .timedOut
+                    || operation.outcome == .awaitingEvidenceAfterRefusal,
                   evidence.session == operation.session,
                   evidence.sequence > operation.displayedSequence,
                   confirms(operation.postcondition, with: evidence) else {
                 return current
             }
-            operation.outcome = operation.outcome == .timedOut
-                ? .confirmedAfterTimeout : .confirmed
+            switch operation.outcome {
+            case .timedOut:
+                operation.outcome = .confirmedAfterTimeout
+            case .awaitingEvidenceAfterRefusal:
+                operation.outcome = .confirmedAfterRefusal
+            default:
+                operation.outcome = .confirmed
+            }
             operation.settledSequence = evidence.sequence
             operation.settledAt = evidence.receivedAt
                 ?? operation.settledAt ?? operation.dispatchedAt

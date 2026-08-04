@@ -236,13 +236,26 @@ through the complete preflight.
 
 That sweep also recorded action reds rather than hiding them: the Apple menu
 and native Application menu rows rendered correctly; selecting New Old World
-did not raise Workshop; `Windows > Workshop` did not surface it; clicking the
-inactive Finder window was refused because the running guest accepted no
-`select` window act; Hide Finder and Date & Time open were dispatched but did
-not visibly settle. The source tree already carries `winact select`, so the
-guest/build mismatch must be resolved by staging and proving the exact
-latest extension and guest before treating those runtime results as current
+correctly activated only the application because its Workshop window was
+closed, while `Windows > Workshop` failed to reopen it; clicking the inactive
+Finder window was refused because the running guest accepted no `select`
+window act; Hide Finder and Date & Time open were dispatched but did not
+visibly settle. The source tree already carries `winact select`, so the
+guest/build mismatch must be resolved by staging and proving the exact latest
+extension and guest before treating those runtime results as current
 implementation failures.
+
+The same sweep exposed a separate outcome-classification defect. Several
+actions whose effects later appeared in authoritative pixels or scenes kept an
+immediate `act-refused`, `outcome-unknown`, or
+`dispatched-but-unconfirmed` label. A transport or resident-act answer is
+attempt evidence, not the terminal verdict for the person's composite
+operation. A refusal before any dispatch remains terminal; once any part of an
+operation may have reached the guest, the operation stays non-green and
+eligible for later same-session postcondition evidence. A later complete
+authoritative observation may confirm that same operation; it must not erase
+the earlier contradictory evidence or be attributed across another queued
+operation.
 
 ## CONTRACT FROZEN; UNIFICATION IMPLEMENTATION STILL OPEN (2026-08-03)
 
