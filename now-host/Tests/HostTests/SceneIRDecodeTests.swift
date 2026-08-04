@@ -169,4 +169,30 @@ final class SceneIRDecodeTests: XCTestCase {
             XCTAssertEqual($0 as? IR.CompatError, .unknownMajor(3))
         }
     }
+
+    func testV2DecodesBoundedListSelectionAsPartialPresentation() throws {
+        var body = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try fixture())
+                as? [String: Any])
+        body["version"] = 2
+        var windows = try XCTUnwrap(body["windows"] as? [[String: Any]])
+        var window = try XCTUnwrap(windows.first)
+        var controls = try XCTUnwrap(window["controls"] as? [[String: Any]])
+        var control = try XCTUnwrap(controls.first)
+        control["role"] = "listBox"
+        control["semantic"] = [
+            "knowledge": "known", "kind": "listBox", "value": "Rome",
+            "provenance": "guest-semantic-assist",
+            "completeness": "partial",
+        ]
+        controls[0] = control; window["controls"] = controls
+        windows[0] = window; body["windows"] = windows
+        let scene = try MirrorScene.decode(result: ["irVersion": 2,
+                                                     "scene": body])
+        let list = try XCTUnwrap(scene.windows.first?.controls.first)
+        XCTAssertEqual(list.semantic?.kind, "listBox")
+        XCTAssertEqual(list.semantic?.value, "Rome")
+        XCTAssertEqual(list.semantic?.completeness, .partial)
+        XCTAssertFalse(list.semantic?.authorizesAction ?? true)
+    }
 }

@@ -78,6 +78,24 @@ resolvers, request publication, scene joining, disabled-P2 degradation, and
 the direct Date & Time/Apple UX proof all remain red. The ABI's ability to
 represent those facts is not evidence that the guest has produced them.
 
+**Update 2026-08-03: bounded partial P2 behavior is implemented, but the UX
+rows remain red.** NOW Extension now advertises the plane and serves exact
+standard List Manager state plus exact nonempty menu rows. The application
+publishes at most one request per scene, joins only an owner/scene/object match,
+retains bounded terminal facts across scenes, and resets them on owner change or
+scene regression. Mirror renders a standard list as an explicitly partial,
+selected-value-only list surface; it does not invent the unretained rows.
+Native mutation fixtures and the real PPC, 68K, and flat-INIT cross-builds cover
+this slice.
+
+The Mac OS 9 system-root Apple submenu is still broken. The flat 68K INIT
+cannot link the CarbonLib/CFM root-menu calls that expose the child behind the
+empty Apple shell, and no undocumented trap or unproven Mixed Mode bridge was
+substituted. That exact shell therefore returns `unsupported`. Direct Mirror
+input against Date & Time and the Apple menu has not yet proved this partial
+plane in the running guest, so neither case is green. The development stage
+image also still contains the preceding resident build.
+
 ## CYCLE 25 RED; SETUP CORRECTED BEFORE C26 (2026-08-03)
 
 Cycle 25 directly re-ran the sanity preflight through the uniquely identified

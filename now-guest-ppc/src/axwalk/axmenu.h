@@ -43,6 +43,7 @@ typedef struct {
 } NowAxMenuList;
 
 typedef struct {
+    unsigned long handle;         /* exact MenuHandle from the MenuList */
     unsigned long record;         /* the dereferenced MenuInfo */
     unsigned long items;          /* first item, just past the title */
     unsigned long enable_flags;   /* bit 0 = the menu, bits 1..31 = items */

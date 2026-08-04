@@ -225,4 +225,26 @@ final class IslandRenderTests: XCTestCase {
         XCTAssertLessThan(try XCTUnwrap(squareCorner.min()), 200,
                           "a popup has a square dark frame, unlike a pill")
     }
+
+    func testBoundedListSelectionRendersAsARecessedList() throws {
+        let r = Rect(l: 100, t: 100, r: 500, b: 400)
+        var w = window(title: "Date & Time", front: true, z: 0, rect: r,
+                       island: nil)
+        w.display = []
+        w.controls = [.init(
+            ref: "cities", role: "listBox", title: "",
+            rect: Rect(l: 20, t: 40, r: 220, b: 120), enabled: true,
+            visible: true,
+            semantic: .init(knowledge: .known, kind: "listBox",
+                            value: "Rome",
+                            provenance: "guest-semantic-assist",
+                            completeness: .partial))]
+        let png = try RenderShot.png(scene: scene([w]))
+        let x = r.l + 1 + 20
+        let y = r.t + Int(Platinum.contentTop) + 40
+        let border = try XCTUnwrap(pixel(png, x: x, y: y))
+        let selected = try XCTUnwrap(pixel(png, x: x + 5, y: y + 5))
+        XCTAssertLessThan(border.0, 100, "list has a recessed dark boundary")
+        XCTAssertLessThan(selected.0, 255, "bounded selected row is visibly filled")
+    }
 }

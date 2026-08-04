@@ -845,6 +845,9 @@ public struct SceneRenderer {
         case "disclosureTriangle":
             drawDisclosure(ctx, ctl, frame)
             return
+        case "listBox":
+            drawListSelection(ctx, ctl, frame)
+            return
         default:
             break
         }
@@ -1143,6 +1146,29 @@ public struct SceneRenderer {
         let w = CGFloat(FontBook.small?.width(ctl.title) ?? 0)
         appText(ctl.title, clipped, x: frame.midX - w / 2,
                 baselineY: frame.midY + 4, color: Platinum.g4, small: true)
+    }
+
+    /// P2 currently retains only the selected cell, not the complete row set.
+    /// Draw a truthful recessed list surface with that one bounded fact; the
+    /// text explicitly says unavailable when no selected value was retained.
+    private func drawListSelection(_ ctx: GraphicsContext,
+                                   _ ctl: MirrorKit.Scene.Control,
+                                   _ frame: CGRect) {
+        ctx.fill(Path(frame), with: .color(Platinum.g0))
+        ctx.stroke(Path(frame), with: .color(Platinum.g6), lineWidth: 1)
+        bevel(ctx, frame.insetBy(dx: 1, dy: 1),
+              light: Platinum.g4, shadow: Platinum.g1)
+        let row = frame.insetBy(dx: 3, dy: 3)
+        ctx.fill(Path(CGRect(x: row.minX, y: row.minY,
+                             width: row.width,
+                             height: Swift.min(16, row.height))),
+                 with: .color(Platinum.g2))
+        let value = ctl.semantic?.value ?? "Selected value unavailable"
+        var clipped = ctx
+        clipped.clip(to: Path(row))
+        appText(value, clipped, x: row.minX + 3,
+                baselineY: row.minY + 12,
+                color: ctl.enabled ? Platinum.g6 : Platinum.g3, small: true)
     }
 
     private func drawScrollbar(_ ctx: GraphicsContext, _ frame: CGRect,

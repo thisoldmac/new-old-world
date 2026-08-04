@@ -770,7 +770,8 @@ static void test_proven_control_roles_keep_their_semantics(void)
         { "scrollbar", "scrollBar", "scroll", 4 },
         { "group", "groupBox", NULL, 0 },
         { "progress", "progressIndicator", NULL, 35 },
-        { "triangle", "disclosureTriangle", "press", 1 }
+        { "triangle", "disclosureTriangle", "press", 1 },
+        { "listBox", "listBox", NULL, 0 }
     };
     NowScene s;
     char out[16384];
@@ -792,6 +793,8 @@ static void test_proven_control_roles_keep_their_semantics(void)
         now_scene_set_control_role(&s, 0, index, cases[i].role);
         if (strcmp(cases[i].role, "popup") == 0) {
             now_scene_set_control_semantic_value(&s, 0, index, "8-bit");
+        } else if (strcmp(cases[i].role, "listBox") == 0) {
+            now_scene_set_control_semantic_value(&s, 0, index, "Rome");
         }
         check(index >= 0, "the proven control was added");
     }
@@ -818,6 +821,9 @@ static void test_proven_control_roles_keep_their_semantics(void)
                        "\"value\":\"8-bit\"");
     check_present(out, "\"kind\":\"progressIndicator\","
                        "\"value\":\"35\"");
+    check_present(out, "\"kind\":\"listBox\",\"value\":\"Rome\","
+                       "\"provenance\":\"guest-semantic-assist\","
+                       "\"completeness\":\"partial\"");
 }
 
 /* The role a walk may claim, pinned against a MEASUREMENT.

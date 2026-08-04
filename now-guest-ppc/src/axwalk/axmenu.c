@@ -105,6 +105,7 @@ int now_ax_read_menu(const NowAxMemory *memory, const NowAxMenuList *list,
         return rc;
     }
     handle = be32(entry);
+    out->handle = handle;
     rc = now_ax_read_handle(memory, handle, &record);
     if (rc != kNowAxOk) {
         return rc;

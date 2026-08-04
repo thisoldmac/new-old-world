@@ -328,6 +328,7 @@ static const char *control_kind(const char *role)
     if (strcmp(role, "group") == 0) return "groupBox";
     if (strcmp(role, "progress") == 0) return "progressIndicator";
     if (strcmp(role, "triangle") == 0) return "disclosureTriangle";
+    if (strcmp(role, "listBox") == 0) return "listBox";
     return "unknown";
 }
 
@@ -355,7 +356,8 @@ static int control_has_value(const char *role)
 {
     return strcmp(role, "popup") == 0
         || strcmp(role, "scrollbar") == 0
-        || strcmp(role, "progress") == 0;
+        || strcmp(role, "progress") == 0
+        || strcmp(role, "listBox") == 0;
 }
 
 /* A window's controls, and only for a window whose whole chain was
@@ -445,8 +447,13 @@ static void put_controls(Sink *k, const NowScene *s, const NowSceneWindow *w)
                 }
             }
         }
-        put(k, ",\"provenance\":\"guest-control-manager\","
-               "\"completeness\":\"complete\"}");
+        if (strcmp(c->role, "listBox") == 0) {
+            put(k, ",\"provenance\":\"guest-semantic-assist\","
+                   "\"completeness\":\"partial\"}");
+        } else {
+            put(k, ",\"provenance\":\"guest-control-manager\","
+                   "\"completeness\":\"complete\"}");
+        }
         put(k, "}");
     }
     put(k, "]");

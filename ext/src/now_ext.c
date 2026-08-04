@@ -65,6 +65,7 @@ extern void now_ext_act_apply(NowPeekTable *table);
    and never to each other. */
 extern void now_content_boot(NowPeekTable *table);
 extern void now_content_gne(NowPeekTable *table);
+extern void now_semantic_apply(NowPeekTable *table, NowPeekU32 ticks);
 
 /* Fast-path cache: consecutive GetNextEvent calls are usually the same
    front app, so an A5 match skips the slot scan. Lives in the resident
@@ -260,6 +261,12 @@ void now_ext_gne_apply(void)
     } else if (table->arm_active & kNowPeekTableCapAnchors) {
         table->arm_active &= ~(NowPeekU32)kNowPeekTableCapAnchors;
     }
+    if (request & kNowPeekTableCapTree) {
+        table->arm_active |= kNowPeekTableCapTree;
+        now_semantic_apply(table, ticks);
+    } else if (table->arm_active & kNowPeekTableCapTree) {
+        table->arm_active &= ~(NowPeekU32)kNowPeekTableCapTree;
+    }
     /* P4, the act plane. Its own translation unit, reached only from
        here - planes talk through the core and never to each other
        (docs/resident-components.md). Disarmed, this costs the same load
@@ -336,7 +343,8 @@ void _start(void)
        Capabilities are bits and never inferred from a version, which is
        what lets a plane ship in a binary before it has earned metal
        verification - and P4 has not. */
-    table->caps = kNowPeekTableCapAnchors | kNowPeekTableCapAct;
+    table->caps = kNowPeekTableCapAnchors | kNowPeekTableCapTree
+                | kNowPeekTableCapAct;
     table->boot_ticks = (NowPeekU32)LMGetTicks();
     table->heartbeat = table->boot_ticks;
     table->arm_request = 0;
@@ -373,6 +381,8 @@ void _start(void)
     table->identity.build_fingerprint[4] = NOW_EXT_BUILD_FINGERPRINT_4;
     table->writer_format = kNowPeekWriterFormatV1;
     table->writer_length = (NowPeekU16)sizeof table->writer;
+    table->semantic_format = kNowPeekSemanticFormatV1;
+    table->semantic_length = (NowPeekU16)sizeof table->semantic;
     /* Magic last: a reader that somehow sees the address early finds it
        only once the table is fully formed. */
     table->magic = (NowPeekU32)kNowPeekTableMagic;

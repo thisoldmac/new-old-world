@@ -51,7 +51,9 @@ reported value.
 Kinds are `pushButton`, `checkBox`, `radioButton`, `popupMenu`, `editText`,
 `staticText`, `scrollBar`, `groupBox`, `progressIndicator`,
 `disclosureTriangle`, `panel`, `placard`, `selectionBand`, `separator`,
-`icon`, `picture`, `userItem`, and `unknown`. The structural kinds let an
+`icon`, `picture`, `userItem`, `listBox`, and `unknown`. A P2 `listBox` is
+currently partial and non-actionable: it may carry one selected value, while
+unretained rows remain an explicit presentation gap. The structural kinds let an
 application describe manually drawn layout as data: a renderer does not need
 the guest framebuffer merely to reproduce a sidebar, header, divider, or
 selection. `icon` and `picture` may carry geometry without bitmap content; the

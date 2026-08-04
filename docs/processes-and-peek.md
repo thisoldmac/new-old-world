@@ -324,8 +324,15 @@ Users see one file; experiments get isolated blast radius.
   (partial VRAM reads scale linearly — the crop is also the fast
   path).
 - **P2 — semantic assist.** Whatever the tree walk needs beyond
-  anchors. May be empty: tbt's Worker built full trees from anchors
-  alone.
+  anchors. The first bounded slice is now implemented: one exact-target
+  request/reply cell classifies resource controls, reads standard List Manager
+  cells, and reads exact nonempty menu rows. The application retains only two
+  terminal menus and eight control facts, with owner/scene/object freshness.
+  Mirror currently exposes a list's selected value only and marks it partial.
+  The Mac OS 9 system-owned child behind an empty Apple shell remains red:
+  the flat INIT cannot import CarbonLib's root-menu CFM entry points, so it
+  refuses that shell instead of guessing. See
+  [p2-semantic-evidence.md](p2-semantic-evidence.md).
 - **P3 — content.** QuickDraw bottleneck hooks, the full Timbuktu
   move. The riskiest code class here; it ships dark, arms per-port on
   request, and does not exist until the mirror needs interiors better

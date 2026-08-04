@@ -1579,7 +1579,8 @@ static void serve_scene(const char *request)
        Held across requests, every application that pumps between two
        scenes gets one, which is what makes a mirror show the machine
        rather than this application. */
-    now_peek_claim(kNowPeekOwnerScene, (unsigned long)kNowPeekCapAnchors);
+    now_peek_claim(kNowPeekOwnerScene,
+                   (unsigned long)(kNowPeekCapAnchors | kNowPeekCapTree));
 
     now_scene_collect(scene, ++g_scene_seq, stale_ticks);
 

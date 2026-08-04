@@ -7,6 +7,7 @@
 
 #include "axmenu.h"
 #include "axtext.h"
+#include "semantic_client.h"
 
 /* The one file that sees both a scene's reference buffer and the
    reference layer's own token size, pinned at compile time exactly as
@@ -211,6 +212,12 @@ static void walk_dialog_items(NowScene *s, int window,
         item = &s->dialog_items[s->dialog_item_count - 1];
         control = control_for_handle(s, window, source.handle);
         if (control != NULL) {
+            if (source.kind == kNowAxDialogResourceControl) {
+                int control_index = (int)(control
+                    - &s->controls[s->windows[window].first_control]);
+                now_semantic_client_join_control(s, window, control_index,
+                                                  address, source.handle);
+            }
             /* DITL's disable bit is the resource default. The live
                ControlRecord is authoritative after creation. Date & Time
                disables two checkboxes at runtime while their DITL rows stay
@@ -375,5 +382,8 @@ void now_scene_walk_menubar(NowScene *s, int proc,
             return;                   /* assembly set menus_truncated */
         }
         walk_items(s, row, memory, &menu);
+        if (s->menus[row].item_count == 0) {
+            now_semantic_client_join_menu(s, row, menu.handle, menu.id);
+        }
     }
 }

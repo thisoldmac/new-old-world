@@ -11,6 +11,7 @@
 #include "peek_read.h"
 #include "scene_self.h"
 #include "scene_walk.h"
+#include "semantic_client.h"
 
 /* The one file that sees both the reader's verdict enum and the scene's
    copy of it. peek_read.h cannot be included by scene.h - it pulls in
@@ -128,6 +129,7 @@ static void collect_process(NowScene *s, int row,
         return;
     }
     if (bound) {
+        now_semantic_client_aim(ctx.a5);
         /* The minting seam is aimed at THIS process before anything is
            read from it, because a reference names its own target: the
            chain it counts occurrences along and the fingerprint it is
@@ -252,6 +254,7 @@ void now_scene_collect(NowScene *out, long seq,
                     (unsigned long)TickCount(), stale_after_ticks);
     now_scene_set_plane(out, "peek anchors: processes, windows, controls, "
                         "dialog text, and the front app's menu bar");
+    now_semantic_client_begin((unsigned long)seq);
 
     have_front = GetFrontProcess(&front) == noErr;
     have_self = GetCurrentProcess(&self) == noErr;
@@ -322,6 +325,7 @@ void now_scene_collect(NowScene *out, long seq,
             }
         }
     }
+    now_semantic_client_end();
     now_observe_walk_end(&refs);
     out->latency_ms = (long)((TickCount() - t_start) * 1000UL / 60UL);
 }

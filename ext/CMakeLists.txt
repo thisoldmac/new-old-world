@@ -46,6 +46,8 @@ add_custom_target(generate_now_ext_identity ALL
 add_executable(NowExt
     src/now_ext.c
     src/now_ext_core_logic.c
+    src/now_semantic.c
+    src/now_semantic_logic.c
     src/now_ext_gne.S
     src/now_content.c
     src/now_content_logic.c
@@ -54,7 +56,8 @@ add_executable(NowExt
     # what tbt's sibling INIT binaries used to.
     src/now_ext_act.c
     src/now_ext_act_patch.S
-    ../now-guest-shared/src/now_act_guard.c)
+    ../now-guest-shared/src/now_act_guard.c
+    ../now-guest-shared/src/now_semantic_guard.c)
 add_dependencies(NowExt generate_now_ext_identity)
 set_source_files_properties(src/now_ext.c
     PROPERTIES OBJECT_DEPENDS ${_identity_header})

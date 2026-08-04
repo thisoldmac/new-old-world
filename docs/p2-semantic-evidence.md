@@ -46,15 +46,48 @@ when P2 is absent, disabled, or refuses a request.
 As of 2026-08-03 the appended cell, portable exact-target request validation,
 and application-side committed copy are implemented and native-tested. The
 tests mutate stale/wrong identity, partial publication, overflow, record-kind
-classification, clipped-text completeness, and freshness. The 68K extension
-deliberately does **not** advertise or arm P2 yet: its Toolbox resolvers and the
-normal-context scene join are not implemented, so Date & Time and the Apple
-menu are not considered resolved merely because the ABI can represent their
-facts.
+classification, clipped-text completeness, and freshness. That ABI-only
+checkpoint did not advertise P2; the bounded partial implementation below now
+does. Date & Time and the Apple menu are still not considered resolved merely
+because the ABI and standard-list slice can represent their facts.
 
-The next implementation must add three separate resident entry points, first
-with invalid-handle and custom-definition fixtures: exact control
-classification, exact standard-list cells, and exact system-menu rows. It must
-then copy through `now_semantic_copy_response` and join only matching guest
-facts into the existing structural scene. P1-only output must remain intact
-when the extension refuses, truncates, or has P2 disabled.
+The bounded resolver policy and 68K adapter now prove exact window/control
+membership through the live Window Manager root and a 64-entry iterative
+Appearance control hierarchy walk. Standard list-box data is accepted only
+when both `kControlListBoxLDEFTag` and `kControlListBoxListHandleTag` succeed
+and the LDEF is zero; custom/legacy definitions refuse explicitly. Native
+fixtures cover a Date & Time-shaped list, custom classification, overflow,
+and an 18-row Finder Apple menu.
+
+The system-menu adapter is blocked at the flat-INIT ABI boundary. Universal
+Interfaces declares `AcquireRootMenu`, `GetMenuItemHierarchicalMenu`, and
+`ReleaseMenu`, but the actual `--mac-flat` Retro68 link reports unresolved
+CarbonLib/CFM symbols for all three. The same is true of
+`IsMenuItemEnabled`; the adapter can derive ordinary menu enable flags from
+validated Menu Manager data, but it cannot reach the system-owned root child
+behind Mac OS 9's empty Apple shell. An undocumented trap selector or an
+unproven Mixed Mode bridge is not an acceptable resident dependency. The
+adapter therefore reports an empty exact shell as `unsupported`. P2 is
+advertised as a partial plane because the exact standard-list and ordinary
+nonempty-menu paths are real; support remains a per-operation result.
+
+The scene collector copies one prior committed response, joins only an exact
+identity match, and publishes at most one cache miss for the next target event
+pass. Its bounded cross-scene policy retains two terminal menus (each capped
+at the ABI's 32 fixed records) and eight control facts (classification/status
+and at most one 32-byte selected cell), resetting on writer-owner epoch change
+or scene regression. Terminal
+menu results suppress only that exact menu; standard classification advances
+to list cells, a completed list advances to the next resource control, and
+facts expire after four or eight scenes rather than becoming capability truth.
+Unknown custom controls remain visible with an unsupported placeholder;
+an unsupported empty system shell gains a disabled placeholder row instead of
+becoming an empty menu. P1-only output remains intact when P2 is off. Resolving
+the root-menu ABI boundary is still prerequisite to Apple-menu acceptance and
+direct Date & Time/Apple-menu proof.
+
+List rendering is intentionally selected-value-only. The wire identifies the
+control as `listBox`, carries the bounded selected value when one was retained,
+and marks semantics `partial`; Mirror draws a recessed list placeholder rather
+than inventing unretained rows. When no selected cell was retained it says
+`Selected value unavailable` explicitly.

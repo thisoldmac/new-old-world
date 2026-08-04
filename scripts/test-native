@@ -186,6 +186,7 @@ run_py now-guest-shared act_error_vocabulary_source_test.py
 run_py now-guest-shared act_install_reentrant_source_test.py
 run_py now-guest-shared arg_shadow_source_test.py
 run_py now-guest-shared control_kind_source_test.py
+run_py now-guest-shared semantic_flat_init_source_test.py
 
 echo "== Mirror UX gate =="
 run_py_path tools/mirror-gate-tests/test_mirror_gate_evidence.py
@@ -210,6 +211,10 @@ run_c now-guest-ppc now_ext_core_logic_test.c \
       ../ext/src/now_ext_core_logic.c
 run_c now-guest-ppc now_semantic_guard_test.c \
       "-DNOW_PEEK_TABLE_HOST" ../now-guest-shared/src/now_semantic_guard.c
+run_c now-guest-ppc now_semantic_logic_test.c \
+      "-DNOW_PEEK_TABLE_HOST -I $repo_root/ext/src" ../ext/src/now_semantic_logic.c
+run_c now-guest-ppc semantic_policy_test.c \
+      "-DNOW_PEEK_TABLE_HOST" src/peek/semantic_policy.c
 # The act plane's ABI selftest, read. The plane has SERVED
 # kNowPeekActOpSelfTest since it landed and had no caller; this is the
 # reading half of the verb that calls it. It is here rather than beside
@@ -277,7 +282,9 @@ run_py now-guest-ppc scene_self_menubar_source_test.py
 run_c now-guest-ppc scene_walk_test.c        ""  src/scene/scene_walk.c \
       src/scene/scene_build.c src/axwalk/axwalk.c src/axwalk/axmenu.c \
       src/axwalk/axtext.c src/peek/peek_validate.c src/axwalk/axresolve.c \
-      src/observe/obsmint.c src/observe/obsref.c src/observe/obsresolve.c
+      src/observe/obsmint.c src/observe/obsref.c src/observe/obsresolve.c \
+      tests/semantic_client_stub.c
+run_py now-guest-ppc semantic_client_source_test.py
 # The ported foreign-memory walk (src/axwalk/, from timbottu/mirror). The
 # first automated coverage this archaeology has ever had: upstream proved
 # the offsets on a real machine and had no host test, so these pin the
