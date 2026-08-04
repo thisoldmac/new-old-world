@@ -4,7 +4,7 @@
 #include "scene.h"
 
 void now_semantic_client_begin(unsigned long scene_generation);
-void now_semantic_client_aim(unsigned long a5);
+void now_semantic_client_aim(unsigned long a5, int requestable);
 void now_semantic_client_end(void);
 void now_semantic_client_join_control(NowScene *scene, int window, int index,
                                       unsigned long window_ptr,

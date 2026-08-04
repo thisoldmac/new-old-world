@@ -19,6 +19,7 @@ static unsigned long g_window;
 static unsigned long g_object;
 static unsigned long g_candidate_a5;
 static long g_aux;
+static int g_requestable;
 
 void now_semantic_client_begin(unsigned long scene_generation)
 {
@@ -28,6 +29,7 @@ void now_semantic_client_begin(unsigned long scene_generation)
 
     g_scene = scene_generation;
     g_a5 = 0;
+    g_requestable = 0;
     g_scheduled = 0;
     g_priority = 0;
     now_semantic_policy_begin(&g_policy, owner_epoch,
@@ -42,15 +44,16 @@ void now_semantic_client_begin(unsigned long scene_generation)
     }
 }
 
-void now_semantic_client_aim(unsigned long a5)
+void now_semantic_client_aim(unsigned long a5, int requestable)
 {
     g_a5 = a5;
+    g_requestable = requestable;
 }
 
 static void offer(int priority, unsigned long op, unsigned long window,
                   unsigned long object, long aux)
 {
-    if (g_a5 == 0 || priority <= g_priority) {
+    if (g_a5 == 0 || !g_requestable || priority <= g_priority) {
         return;
     }
     g_priority = priority;
@@ -69,6 +72,14 @@ void now_semantic_client_end(void)
 
     if (!g_scheduled || !now_semantic_table_ready(table)
         || table->writer.resident_owner_epoch == 0) {
+        return;
+    }
+    /* One resident cell means one lease. Rewriting the same unserved
+       background request every scene advanced its generation forever and
+       prevented the target from ever answering the generation the client
+       was waiting for. The target either answers this request or its bounded
+       lease expires before another one replaces it. */
+    if (now_semantic_request_pending(table, TickCount())) {
         return;
     }
     commit = &table->semantic.request_generation;

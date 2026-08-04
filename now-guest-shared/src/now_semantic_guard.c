@@ -24,6 +24,22 @@ int now_semantic_table_ready(volatile const NowPeekTable *table)
         && table->semantic_length == sizeof(NowPeekSemanticCell);
 }
 
+int now_semantic_request_pending(volatile const NowPeekTable *table,
+                                 NowPeekU32 ticks)
+{
+    volatile const NowPeekSemanticCell *cell;
+
+    if (!now_semantic_table_ready(table)
+        || table->writer.resident_owner_epoch == 0) {
+        return 0;
+    }
+    cell = &table->semantic;
+    return cell->request_generation != 0
+        && cell->request_writer_epoch == table->writer.resident_owner_epoch
+        && cell->response_request_generation != cell->request_generation
+        && !expired(ticks, cell->request_deadline_ticks);
+}
+
 NowSemanticRequestVerdict now_semantic_request_verdict(
     volatile const NowPeekTable *table, NowPeekU32 current_a5,
     NowPeekU32 ticks)

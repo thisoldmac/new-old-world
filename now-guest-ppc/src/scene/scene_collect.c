@@ -138,7 +138,11 @@ static void collect_process(NowScene *s, int row,
         return;
     }
     if (bound) {
-        now_semantic_client_aim(ctx.a5);
+        /* Every process is still joined against retained semantic facts, but
+           only the front process may spend the single resident request cell.
+           When an app loses focus its last guest-provided facts become
+           expected-stale instead of competing with the app a person is using. */
+        now_semantic_client_aim(ctx.a5, s->procs[row].front != 0);
         /* The minting seam is aimed at THIS process before anything is
            read from it, because a reference names its own target: the
            chain it counts occurrences along and the fingerprint it is

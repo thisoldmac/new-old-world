@@ -84,6 +84,10 @@ int main(void)
     check(now_semantic_request_verdict(&table, 0x10000, 1000)
               == kNowSemanticAccept,
           "exact live target accepted");
+    check(now_semantic_request_pending(&table, 1000),
+          "unanswered request keeps its one-cell lease");
+    check(!now_semantic_request_pending(&table, 1121),
+          "expired request releases the one-cell lease");
 
     table.length = offsetof(NowPeekTable, semantic)
                  + sizeof(NowPeekSemanticCell) - 1;
@@ -105,6 +109,8 @@ int main(void)
 
     ready_table(&table);
     committed_reply(&table);
+    check(!now_semantic_request_pending(&table, 1000),
+          "matching response releases the one-cell lease");
     check(now_semantic_copy_response(&table, 1120, &copy)
               == kNowSemanticCopyOk
               && copy.records[0].text_copied == 4

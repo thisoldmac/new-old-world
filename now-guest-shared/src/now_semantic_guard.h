@@ -27,5 +27,7 @@ NowSemanticRequestVerdict now_semantic_request_verdict(
 NowSemanticCopyVerdict now_semantic_copy_response(
     volatile const NowPeekTable *table, NowPeekU32 ticks,
     NowPeekSemanticCell *out);
+int now_semantic_request_pending(volatile const NowPeekTable *table,
+                                 NowPeekU32 ticks);
 
 #endif
