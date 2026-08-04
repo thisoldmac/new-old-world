@@ -108,14 +108,17 @@ functional, accurate mirror of the guest** — one a person can operate.
    root cause" was said twice before a drive proved it wrong.
 7. **No regressions.** A pass that adds one feature and breaks three is
    worse than no pass. Rungs already polished are re-swept every drive.
-8. **Every sweep begins with the same five-step sanity preflight, in
+8. **Every sweep begins with the same eight-step sanity preflight, in
    order.** First visually compare NOW's Workshop against the guest. Then
-   resize it. Then close it. Then double-click Macintosh HD. Then visually
-   compare the Finder window against the guest. Only after all five pass
-   may the sweep enter its current slice — Date & Time in the present
-   control-panel campaign. A failure closes the sweep at the baseline and
-   becomes the patch target; later rows do not turn green around it. The
-   gate emits these rows before every rung and refuses out-of-order scoring.
+   compare the menubar, open the Apple menu, and validate its guest-provided
+   items. Resize the Workshop, close it, and double-click Macintosh HD.
+   Visually compare the Finder window against the guest, then hide Finder
+   through the app switcher and verify that it disappeared. Only after all
+   eight pass may the sweep enter its current slice — Date & Time in the
+   present control-panel campaign. A failure closes the sweep at the
+   baseline and becomes the patch target; later rows do not turn green
+   around it. The gate emits these rows before every rung and refuses
+   out-of-order scoring.
 
 ---
 

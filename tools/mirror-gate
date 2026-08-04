@@ -62,10 +62,14 @@ MAX_FRUITLESS_BLOCKS = 5
 
 PREFLIGHT = [
     ("p.workshop-fidelity", "visually compare NOW Workshop with the guest"),
+    ("p.menubar-fidelity", "visually compare the menubar with the guest"),
+    ("p.apple-menu",
+     "open the Apple menu and validate its guest-provided items"),
     ("p.workshop-resize", "resize NOW Workshop from the mirror"),
     ("p.workshop-close", "close NOW Workshop from the mirror"),
     ("p.hd-open", "double-click Macintosh HD from the mirror"),
     ("p.finder-fidelity", "visually compare the Finder window with the guest"),
+    ("p.finder-hide", "hide Finder through the mirror app switcher"),
 ]
 
 RUNGS = {

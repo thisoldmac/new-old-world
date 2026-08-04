@@ -183,6 +183,27 @@ class MirrorGateEvidenceTests(unittest.TestCase):
         result = self.run_gate("row", "r1.move", "blocked", "not yet")
         self.assert_refused(result, "sanity preflight must pass")
 
+    def test_every_cycle_begins_with_the_complete_ordered_preflight(self):
+        value = json.loads(self.state.read_text())
+        value["cycles"] = []
+        self.state.write_text(json.dumps(value, indent=2))
+
+        opened = self.run_gate(
+            "begin", "25", "--rungs", "1,2,3", "--app", "Date & Time")
+        self.assertEqual(opened.returncode, 0, opened.stderr)
+        rows = json.loads(self.state.read_text())["cycles"][0]["rows"]
+        self.assertEqual([row["id"] for row in rows[:8]], [
+            "p.workshop-fidelity",
+            "p.menubar-fidelity",
+            "p.apple-menu",
+            "p.workshop-resize",
+            "p.workshop-close",
+            "p.hd-open",
+            "p.finder-fidelity",
+            "p.finder-hide",
+        ])
+        self.assertEqual(rows[8]["id"], "r1.hide")
+
     def test_failed_preflight_closes_without_pretending_slice_coverage(self):
         value = json.loads(self.state.read_text())
         value["cycles"][0]["rows"] = [
