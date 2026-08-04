@@ -16,6 +16,8 @@ for unavailable in (
 assert "return kNowPeekSemanticStatusUnsupported;" in adapter
 assert "kControlKindTag" in adapter
 assert "kControlListBoxListHandleTag" in adapter
+assert adapter.count("kControlListBoxListHandleTag") >= 3
+assert "The capability is the evidence" in adapter
 assert "kControlListBoxLDEFTag" not in adapter
 assert "ldef !=" not in adapter
 assert "kNowPeekTableCapAnchors | kNowPeekTableCapTree" in core

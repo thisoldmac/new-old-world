@@ -57,19 +57,29 @@ static NowPeekU32 list_for_control(NowPeekU32 window, NowPeekU32 control,
     ControlKind kind;
     Size actual = 0;
     OSErr err;
+    int apple_list;
     if (!live_control(window, control)) return kNowPeekSemanticStatusInvalid;
     err = GetControlData((ControlRef)control, kControlEntireControl,
                          kControlKindTag, sizeof(kind), &kind, &actual);
-    if (err != noErr || actual != sizeof(kind)
-        || kind.signature != kControlKindSignatureApple
-        || kind.kind != kControlKindListBox)
-        return kNowPeekSemanticStatusUnsupportedCustom;
+    if (err == noErr && actual == sizeof(kind)
+        && kind.signature == kControlKindSignatureApple
+        && kind.kind != kControlKindListBox)
+        return kNowPeekSemanticStatusUnsupported;
+    apple_list = err == noErr && actual == sizeof(kind)
+        && kind.signature == kControlKindSignatureApple
+        && kind.kind == kControlKindListBox;
     actual = 0; *list = NULL;
     err = GetControlData((ControlRef)control, kControlEntireControl,
                          kControlListBoxListHandleTag, sizeof(*list),
                          list, &actual);
-    if (err != noErr || actual != sizeof(*list) || *list == NULL)
-        return kNowPeekSemanticStatusInvalid;
+    if (err != noErr || actual != sizeof(*list) || *list == NULL) {
+        /* An Apple list which withholds its documented ListHandle is
+           internally inconsistent. A custom control which simply declines
+           the tag remains explicitly custom instead. */
+        return err == noErr || apple_list
+                ? kNowPeekSemanticStatusInvalid
+                : kNowPeekSemanticStatusUnsupportedCustom;
+    }
     return kNowPeekSemanticStatusOk;
 }
 
@@ -171,6 +181,21 @@ static NowPeekU32 classify(void *ctx, NowPeekU32 window, NowPeekU32 control,
                          &actual);
     if (err != noErr || actual != sizeof(system_kind)
         || system_kind.signature != kControlKindSignatureApple) {
+        ListHandle list = NULL;
+        Size list_actual = 0;
+        OSErr list_err = GetControlData(
+            (ControlRef)control, kControlEntireControl,
+            kControlListBoxListHandleTag, sizeof(list), &list, &list_actual);
+
+        /* Some Appearance-era controls use an application/CDEF signature
+           while still publishing the standard List Manager handle through
+           the public Control Manager tag. The capability is the evidence:
+           exact success, exact size, non-null handle. No resource ID or
+           private contrlData layout participates. */
+        if (list_err == noErr && list_actual == sizeof(list) && list != NULL) {
+            *kind = kNowPeekSemanticControlListBox;
+            return kNowPeekSemanticStatusOk;
+        }
         *kind = kNowPeekSemanticControlCustom;
         return kNowPeekSemanticStatusUnsupportedCustom;
     }

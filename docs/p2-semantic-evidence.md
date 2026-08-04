@@ -135,3 +135,14 @@ background annotation and suppresses an unknown DITL resource shell once P2
 has typed the same control; both guards were mutation-watched. Those changes
 preserve structured evidence when it exists, but the UX rows remain red until
 P2 settles the front modal's exact list request and returns its data.
+
+The next bounded producer experiment is staged but not resident. When
+`kControlKindTag` is absent or non-Apple, the extension now asks the exact
+control for the public `kControlListBoxListHandleTag`. Only `noErr`, the exact
+handle width, and a non-null result classify the control as a list; Apple-owned
+non-list kinds are refused before this fallback and a custom control that
+declines the tag remains `UnsupportedCustom`. The ordinary Apple list path is
+unchanged. This uses no private `contrlData`, resource ID, or emulator-only
+state. The native semantic slice and real flat-INIT/68K cross-build pass, and
+removing the fallback made its source guard fail under mutation. A clean cold
+reboot and direct Mirror/guest comparison are still required.

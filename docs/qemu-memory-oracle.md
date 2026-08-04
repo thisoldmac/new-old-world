@@ -95,13 +95,19 @@ never completed that exact request. It does prove that the one-cell producer
 can spend repeated front-window scenes waiting on a background-process target
 and leave the live modal without a current semantic answer.
 
-The next producer patch must therefore address scheduling/settlement as well
-as classification. A capability probe using the public
-`kControlListBoxListHandleTag` is a valid generic fallback when a custom
-signature still exposes a standard List Manager handle; it must remain an
-exact live-control request, and failure remains explicit custom/unsupported.
-No QEMU address, Date & Time resource ID, or private control-data offset may
-enter the product path.
+The samples do not distinguish an unsatisfied front-control request from a
+front-control refusal already cached in the application, so they do not by
+themselves justify a scheduler rewrite. They do identify the next bounded
+classification experiment: a capability probe using the public
+`kControlListBoxListHandleTag` when a custom signature still exposes a
+standard List Manager handle. That fallback is now implemented as an exact
+live-control request. An Apple-owned non-list refuses before the probe;
+success requires `noErr`, the exact handle size, and a non-null handle; failure
+remains explicit custom/unsupported. The flat INIT cross-build passes, its
+source guard was mutation-watched, and the file is staged on the development
+overlay, but it is not running until a clean cold reboot. No QEMU address,
+Date & Time resource ID, or private control-data offset entered the product
+path.
 
 ## First cross-application inventory
 

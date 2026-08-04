@@ -168,11 +168,19 @@ showed Date & Time as the fresh front process while the live P2 request kept
 naming one Finder control and the last completed response remained an older
 `UnsupportedCustom` Date & Time base-control answer. The sample did not reach
 the exact Set Time Zone list, so it neither verifies nor refutes the public
-list-kind hypothesis. It does establish a second producer defect: the
-single-cell scheduler can lag the front modal behind a background target. The
+list-kind hypothesis and does not alone justify a scheduler rewrite. The
 renderer now keeps unavailable CopyBits geometry behind structured ops and
 lets a typed incomplete list suppress only its unknown DITL shell; both tests
 were mutation-watched, but neither row is green without current P2 data.
+
+A generic follow-up is now built and staged: a custom-signature control may
+prove that it is List Manager-backed by successfully returning the public
+`kControlListBoxListHandleTag` with the exact handle size. Apple-owned
+non-lists are not probed, and a declined/malformed custom result stays
+explicitly unsupported or invalid. The native semantic slice and real 68K
+guest/flat-INIT cross-build pass; deleting the fallback fails its source guard.
+The running VM still contains the prior resident code until a clean cold
+reboot, so no UX claim has changed yet.
 
 ### STATE ENGINE U1A: TYPED COVERAGE AND LIFETIME IDENTITY BUILT (2026-08-04)
 
