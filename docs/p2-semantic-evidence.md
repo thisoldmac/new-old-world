@@ -73,10 +73,11 @@ nonempty-menu paths are real; support remains a per-operation result.
 
 The scene collector copies one prior committed response, joins only an exact
 identity match, and publishes at most one cache miss for the next target event
-pass. Its bounded cross-scene policy retains two terminal menus (each capped
-at the ABI's 32 fixed records) and eight control facts (classification/status
-and at most one 32-byte selected cell), resetting on writer-owner epoch change
-or scene regression. Terminal
+pass. Its bounded cross-scene policy retains two terminal menus and eight
+control facts, each capped at the ABI's 32 fixed records, resetting on
+writer-owner epoch change or scene regression. A list fact retains every
+bounded row/column/text/selection record plus the true total count; it does not
+collapse the response to one selected string. Terminal
 menu results suppress only that exact menu; standard classification advances
 to list cells, a completed list advances to the next resource control, and
 facts expire after four or eight scenes rather than becoming capability truth.
@@ -86,8 +87,11 @@ becoming an empty menu. P1-only output remains intact when P2 is off. Resolving
 the root-menu ABI boundary is still prerequisite to Apple-menu acceptance and
 direct Date & Time/Apple-menu proof.
 
-List rendering is intentionally selected-value-only. The wire identifies the
-control as `listBox`, carries the bounded selected value when one was retained,
-and marks semantics `partial`; Mirror draws a recessed list placeholder rather
-than inventing unretained rows. When no selected cell was retained it says
-`Selected value unavailable` explicitly.
+The scene IR carries those records as `semantic.listCells[]`, preserving the
+List Manager's 1-based row and 0-based column, plus `listTotalCount`. A result
+is complete only when status is `ok`, every record says its text is complete,
+and the bounded record count equals the total. Otherwise the retained prefix is
+explicitly partial and presentation-only. Mirror groups the reported cells by
+row and column inside the real control rectangle; it does not invent missing
+rows. When an older guest supplies only the selected value, the existing
+recessed partial placeholder remains the honest fallback.

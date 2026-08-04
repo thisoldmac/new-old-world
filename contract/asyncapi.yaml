@@ -2283,6 +2283,11 @@ components:
     # walk has no such cost to amortise. If a metal measurement ever says
     # otherwise, the bracket gains a subject at stream.start — it does not
     # gain a second ownership model.
+    # IR v2 listBox semantics may carry a bounded `listCells` array. Each cell
+    # preserves the guest List Manager's 1-based row, 0-based column, text and
+    # selected flag, plus `listTotalCount`; `completeness` is complete only
+    # when every guest cell reached the scene. A bounded prefix remains useful
+    # presentation data but never becomes action authority.
     SceneRequest:
       type: object
       required: [type, id]

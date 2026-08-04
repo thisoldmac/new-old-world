@@ -102,10 +102,12 @@ void now_semantic_policy_ingest(NowSemanticPolicy *policy,
             cell->response_object_aux);
 
         fact->status = cell->response_status;
-        fact->record_count = cell->response_record_count;
+        fact->record_count = cell->response_record_count
+            > kNowPeekSemanticMaxRecords
+            ? kNowPeekSemanticMaxRecords : cell->response_record_count;
         fact->total_count = cell->response_total_count;
         memcpy(fact->records, cell->records,
-               cell->response_record_count * sizeof(cell->records[0]));
+               fact->record_count * sizeof(cell->records[0]));
         fact->expires_scene = policy->scene + 8;
     } else if (cell->request_op == kNowPeekSemanticOpControlClass) {
         NowSemanticControlFact *fact = control_slot(
@@ -116,6 +118,8 @@ void now_semantic_policy_ingest(NowSemanticPolicy *policy,
         fact->class_kind = kNowPeekSemanticControlUnknown;
         fact->list_status = kNowPeekSemanticStatusNone;
         fact->selected_length = 0;
+        fact->record_count = 0;
+        fact->total_count = 0;
         if (cell->response_record_count != 0) {
             fact->class_kind = cell->records[0].aux;
         }
@@ -127,6 +131,10 @@ void now_semantic_policy_ingest(NowSemanticPolicy *policy,
 
         fact->list_status = cell->response_status;
         fact->selected_length = 0;
+        fact->record_count = cell->response_record_count;
+        fact->total_count = cell->response_total_count;
+        memcpy(fact->records, cell->records,
+               cell->response_record_count * sizeof(cell->records[0]));
         fact->expires_scene = policy->scene + 4;
         for (i = 0; i < cell->response_record_count; ++i) {
             if ((cell->records[i].flags

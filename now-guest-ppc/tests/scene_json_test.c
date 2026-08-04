@@ -828,6 +828,11 @@ static void test_proven_control_roles_keep_their_semantics(void)
             now_scene_set_control_semantic_value(&s, 0, index, "8-bit");
         } else if (strcmp(cases[i].role, "listBox") == 0) {
             now_scene_set_control_semantic_value(&s, 0, index, "Rome");
+            now_scene_begin_control_list(&s, 0, index, 2, 1);
+            (void)now_scene_add_control_list_cell(
+                &s, 0, index, 1, 0, "Rome", 1);
+            (void)now_scene_add_control_list_cell(
+                &s, 0, index, 1, 1, "Italy", 0);
         }
         check(index >= 0, "the proven control was added");
     }
@@ -855,8 +860,12 @@ static void test_proven_control_roles_keep_their_semantics(void)
     check_present(out, "\"kind\":\"progressIndicator\","
                        "\"value\":\"35\"");
     check_present(out, "\"kind\":\"listBox\",\"value\":\"Rome\","
+                       "\"listCells\":[{\"row\":1,\"column\":0,"
+                       "\"text\":\"Rome\",\"selected\":true},"
+                       "{\"row\":1,\"column\":1,\"text\":\"Italy\","
+                       "\"selected\":false}],\"listTotalCount\":2,"
                        "\"provenance\":\"guest-semantic-assist\","
-                       "\"completeness\":\"partial\"");
+                       "\"completeness\":\"complete\"");
 }
 
 /* The role a walk may claim, pinned against a MEASUREMENT.

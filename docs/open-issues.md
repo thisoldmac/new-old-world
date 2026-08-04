@@ -82,6 +82,48 @@ unaddressable. MCP mutation parity also remains off until a direct native
 equivalent is proven against the exact staged guest. Neither API reach nor MCP
 success can satisfy a direct-input/pixel gate.
 
+### STRUCTURED LIST CONTENT PRESERVED; BROAD PANEL FIDELITY STILL RED (2026-08-04)
+
+The Date & Time city/country failure was not an absent guest capability. The
+NOW Extension already returned every List Manager cell as bounded row, column,
+text, and selection records, but the application bridge collapsed the answer
+to selected text before scene publication. The renderer then compounded the
+loss by giving an unclassified DITL resource-control shell precedence over the
+same live control after P2 had classified it as a list. The scene contract now
+retains bounded `listCells` plus the guest's total count, marks the payload
+complete only when every reported record is valid and present, and lets a
+classified semantic control supersede only its matching unknown resource
+shell. Focused native, IR decode/freeze, and renderer tests pass, and both PPC
+guests plus the extension cross-build with the real Retro68 toolchains.
+
+This is **built and tested, not emulator-verified**. The running VM disconnected
+before the rebuilt extension could be cold-loaded, so no direct Mirror drive,
+authoritative guest capture, or pixel comparison has yet proven the city and
+country rows. Set Time Zone is currently known to be a titled Dialog Manager
+window (`kind == 2`) with DITL items and stacking; the scene does not prove
+whether the application is inside `ModalDialog`, so the host must not invent a
+stronger alert/modal-loop claim.
+
+The wider application/control-panel content problem remains red. P3
+deliberately refuses to replace an application's existing custom QuickDraw
+`grafProcs`; that is a safety boundary, not evidence that a blank interior is
+acceptable. The next cold-boot sweep must collect multiple application and
+control-panel surfaces in one pass, separating structured P2/DITL content,
+settled P3 replay, and explicit unavailable placeholders before another shared
+producer/renderer patch. A guest-side action performed outside the Mirror while
+the connection was failing also demonstrated the expected-stale case: retained
+same-session state is useful for continuity but must not be driven or scored as
+current.
+
+The same session ended with the guest showing the system bomb dialog
+`“Finder” error type 10` after an earlier alert was dismissed, before reaching
+a black powered-down framebuffer. The host log proves only that its Special >
+Shut Down menu action was dispatched and the guest disconnected one second
+later; it does not attribute the Finder crash to that action, P3, or the
+unbooted list patch. Treat this as a blocking crash sentinel for the next cold
+boot: record the resident extension identity, arm content conservatively, and
+stop the sweep if Finder faults again.
+
 ### STATE ENGINE U1A: TYPED COVERAGE AND LIFETIME IDENTITY BUILT (2026-08-04)
 
 The IR v2 producer and MirrorKit consumer now agree on typed collection

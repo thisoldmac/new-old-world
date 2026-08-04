@@ -350,4 +350,39 @@ final class IslandRenderTests: XCTestCase {
         XCTAssertLessThan(border.0, 100, "list has a recessed dark boundary")
         XCTAssertLessThan(selected.0, 255, "bounded selected row is visibly filled")
     }
+
+    func testBoundedListCellsSupersedeTheUnknownResourceDialogItem() throws {
+        let r = Rect(l: 100, t: 100, r: 500, b: 400)
+        let list = Scene.Control(
+            ref: "cities", role: "listBox", title: "",
+            rect: Rect(l: 20, t: 40, r: 260, b: 140), enabled: true,
+            visible: true,
+            semantic: .init(
+                knowledge: .known, kind: "listBox", value: "Abu Dhabi",
+                listCells: [
+                    .init(row: 1, column: 0, text: "Abu Dhabi", selected: true),
+                    .init(row: 1, column: 1, text: "U.A.E.", selected: true),
+                    .init(row: 2, column: 0, text: "Accra", selected: false),
+                    .init(row: 2, column: 1, text: "Ghana", selected: false),
+                ],
+                listTotalCount: 4,
+                provenance: "guest-semantic-assist",
+                completeness: .complete))
+        var expected = window(title: "Set Time Zone", front: true, z: 0,
+                              rect: r, island: nil)
+        expected.display = []
+        expected.controls = [list]
+
+        var withResourceItem = expected
+        withResourceItem.dialogItems = [Scene.DialogItem(
+            number: 1, title: "", rect: Rect(l: 20, t: 40, r: 260, b: 140),
+            enabled: true, visible: true, ref: "cities",
+            semantic: .init(knowledge: .unknown,
+                            provenance: "guest-ditl",
+                            completeness: .complete))]
+
+        XCTAssertEqual(try RenderShot.png(scene: scene([withResourceItem])),
+                       try RenderShot.png(scene: scene([expected])),
+                       "a proven list must replace its unknown DITL resource shell")
+    }
 }

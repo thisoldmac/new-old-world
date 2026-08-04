@@ -415,6 +415,58 @@ void now_scene_set_control_semantic_value(NowScene *s, int window, int index,
                  value != NULL ? value : "");
 }
 
+void now_scene_begin_control_list(NowScene *s, int window, int index,
+                                  unsigned short total_count, int complete)
+{
+    NowSceneWindow *w = window_at(s, window);
+    NowSceneControl *c;
+
+    if (w == NULL || !w->controls_present
+        || index < 0 || index >= (int)w->control_count) {
+        return;
+    }
+    c = &s->controls[w->first_control + index];
+    c->list_cells_present = 1;
+    c->first_list_cell = s->list_cell_count;
+    c->list_cell_count = 0;
+    c->list_total_count = total_count;
+    c->list_cells_complete = complete ? 1 : 0;
+}
+
+int now_scene_add_control_list_cell(NowScene *s, int window, int index,
+                                    short row, short column,
+                                    const char *text, int selected)
+{
+    NowSceneWindow *w = window_at(s, window);
+    NowSceneControl *c;
+    NowSceneListCell *cell;
+
+    if (w == NULL || !w->controls_present
+        || index < 0 || index >= (int)w->control_count) {
+        return 0;
+    }
+    c = &s->controls[w->first_control + index];
+    if (!c->list_cells_present
+        || !block_is_tail(c->first_list_cell, c->list_cell_count,
+                          s->list_cell_count)) {
+        return 0;
+    }
+    if (s->list_cell_count >= kNowSceneMaxListCells) {
+        s->list_cells_truncated = 1;
+        c->list_cells_complete = 0;
+        return 0;
+    }
+    cell = &s->list_cells[s->list_cell_count];
+    memset(cell, 0, sizeof *cell);
+    cell->row = row;
+    cell->column = column;
+    cell->selected = selected ? 1 : 0;
+    copy_bounded(cell->text, (long)sizeof cell->text, text);
+    ++c->list_cell_count;
+    ++s->list_cell_count;
+    return 1;
+}
+
 void now_scene_set_control_ref(NowScene *s, int window, int index,
                                const char *ref)
 {

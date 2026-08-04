@@ -95,6 +95,8 @@ void now_semantic_client_join_control(NowScene *scene, int window, int index,
                                       unsigned long control)
 {
     NowSemanticControlFact fact;
+    unsigned int i;
+    int complete;
 
     if (!now_semantic_policy_control(
             &g_policy, g_a5, window_ptr, control, &fact)) {
@@ -117,7 +119,8 @@ void now_semantic_client_join_control(NowScene *scene, int window, int index,
     now_scene_set_control_role(scene, window, index, "listBox");
     if (fact.list_status == kNowPeekSemanticStatusNone) {
         offer(20, kNowPeekSemanticOpListCells, window_ptr, control, 0);
-    } else {
+    } else if (fact.list_status == kNowPeekSemanticStatusOk
+               || fact.list_status == kNowPeekSemanticStatusTruncated) {
         char value[kNowPeekSemanticTextMax + 1];
         unsigned int length = fact.selected_length;
 
@@ -126,6 +129,43 @@ void now_semantic_client_join_control(NowScene *scene, int window, int index,
         now_scene_set_control_semantic_value(
             scene, window, index,
             length != 0 ? value : "Selected value unavailable");
+        complete = fact.list_status == kNowPeekSemanticStatusOk
+            && fact.record_count == fact.total_count;
+        for (i = 0; i < fact.record_count; ++i) {
+            const NowPeekSemanticRecord *record = &fact.records[i];
+
+            if (record->kind != kNowPeekSemanticRecordListCell
+                || record->status != kNowPeekSemanticStatusOk
+                || (record->flags
+                    & kNowPeekSemanticRecordTextComplete) == 0) {
+                complete = 0;
+            }
+        }
+        now_scene_begin_control_list(scene, window, index,
+                                     fact.total_count, complete);
+        for (i = 0; i < fact.record_count; ++i) {
+            const NowPeekSemanticRecord *record = &fact.records[i];
+            char text[kNowPeekSemanticTextMax + 1];
+
+            if (record->kind != kNowPeekSemanticRecordListCell
+                || record->status != kNowPeekSemanticStatusOk
+                || (record->flags
+                    & kNowPeekSemanticRecordTextComplete) == 0) {
+                continue;
+            }
+            memcpy(text, record->text, record->text_copied);
+            text[record->text_copied] = '\0';
+            if (!now_scene_add_control_list_cell(
+                    scene, window, index, (short)record->index,
+                    (short)record->aux, text,
+                    (record->flags
+                     & kNowPeekSemanticRecordSelected) != 0)) {
+                break;
+            }
+        }
+    } else {
+        now_scene_set_control_semantic_value(
+            scene, window, index, "List content unavailable");
     }
 }
 

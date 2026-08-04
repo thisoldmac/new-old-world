@@ -16,8 +16,9 @@ and read-only: a v1 `role` never authorizes a mutation.
 ## Semantic evidence
 
 `controls[].semantic` and `dialogItems[].semantic` carry independently optional
-facts: semantic kind, advertised action, state, value, selection, focus,
-defaultness, provenance, and completeness.
+facts: semantic kind, advertised action, state, value, bounded list cells and
+their true total count, text selection, focus, defaultness, provenance, and
+completeness.
 
 An element is actionable only when `knowledge` is `known`, `completeness` is
 `complete`, an action is advertised, provenance is not
@@ -28,8 +29,12 @@ presentation only.
 Structural Control Manager controls remain in `controls`. Dialog Manager items
 remain in `dialogItems`, because static and edit text do not have Control
 Manager identity and popup/edit acts do not share a button's execution path. A
-renderer suppresses a structural control when a dialog item carries the same
-reference, preventing one live dialog control from being drawn twice.
+renderer normally suppresses a structural control when a dialog item carries
+the same reference, preventing one live dialog control from being drawn twice.
+When that DITL row is only an unknown resource shell and P2 later proves the
+same live ControlRecord's drawable semantics, the more specific guest fact
+wins and the shell is suppressed instead. This is the Date & Time list case;
+unconditional DITL precedence painted an unavailable hatch over real cells.
 
 ## Collection coverage and lifetime identity
 
@@ -82,9 +87,11 @@ reported value.
 Kinds are `pushButton`, `checkBox`, `radioButton`, `popupMenu`, `editText`,
 `staticText`, `scrollBar`, `groupBox`, `progressIndicator`,
 `disclosureTriangle`, `panel`, `placard`, `selectionBand`, `separator`,
-`icon`, `picture`, `userItem`, `listBox`, and `unknown`. A P2 `listBox` is
-currently partial and non-actionable: it may carry one selected value, while
-unretained rows remain an explicit presentation gap. The structural kinds let an
+`icon`, `picture`, `userItem`, `listBox`, and `unknown`. A P2 `listBox` may
+carry `listCells[]` with `{row,column,text,selected}` and `listTotalCount`.
+It is complete only when every guest cell reached the scene; a bounded prefix
+remains explicitly partial and non-actionable while still rendering its real
+rows. The structural kinds let an
 application describe manually drawn layout as data: a renderer does not need
 the guest framebuffer merely to reproduce a sidebar, header, divider, or
 selection. `icon` and `picture` may carry geometry without bitmap content; the

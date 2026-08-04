@@ -43,6 +43,9 @@ final class IRFreezeTests: XCTestCase {
             semantic: .init(
                 knowledge: .known, kind: "scrollBar", action: "scroll",
                 state: "on", value: "1",
+                listCells: [.init(row: 1, column: 0, text: "Cell",
+                                       selected: true)],
+                listTotalCount: 1,
                 selection: .init(start: 0, end: 1), focused: true,
                 isDefault: false, provenance: "guest-control-manager",
                 completeness: .complete))

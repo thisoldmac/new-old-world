@@ -138,8 +138,9 @@ enum {
        and a per-window array of thirty would cost 64 x 30 entries to
        serve the same scene.
 
-       The scene struct they size is ~27 KB measured on the host (a
-       little less on the guest, where `long` is 32-bit), up from ~11 KB
+       The scene struct they size is heap-resident and deliberately bounded
+       (larger than the earlier ~27 KB after structured list cells were added;
+       a little smaller on the guest, where `long` is 32-bit), up from ~11 KB
        before the walk. It is heap-allocated by its caller for that
        reason - a classic Mac stack is 24-32 KB - and a caller that
        cannot get the block says so rather than walking a smaller
@@ -148,6 +149,7 @@ enum {
     kNowSceneMaxMenuItems = 96,   /* menu items, pooled across menus */
     kNowSceneMaxControls = 96,    /* controls, pooled across windows */
     kNowSceneMaxDialogItems = 96, /* Dialog Manager items, separately */
+    kNowSceneMaxListCells = 256,  /* bounded P2 cells across list controls */
     kNowSceneMaxTexts = 4,        /* windows carrying TextEdit content */
     kNowSceneMenuTitleMax = 32,
     kNowSceneItemTitleMax = 40,
@@ -243,6 +245,11 @@ typedef struct {
     char role[16];
     int semantic_value_known;
     char semantic_value[kNowSceneTextMax];
+    int list_cells_present;
+    short first_list_cell;
+    short list_cell_count;
+    unsigned short list_total_count;
+    int list_cells_complete;
     unsigned long handle;         /* internal join to a DITL item */
 } NowSceneControl;
 
@@ -256,6 +263,15 @@ typedef struct {
     short selection_start;
     short selection_end;
 } NowSceneText;
+
+/* One guest-provided semantic list cell. Row is 1-based to match List
+   Manager presentation and column is 0-based to match Cell.h. */
+typedef struct {
+    short row;
+    short column;
+    int selected;
+    char text[kNowSceneTextMax];
+} NowSceneListCell;
 
 enum {
     kNowSceneSemanticUnknown = 0,
@@ -401,6 +417,10 @@ typedef struct {
     short control_count;
     int controls_truncated;       /* a window's controls were dropped */
 
+    NowSceneListCell list_cells[kNowSceneMaxListCells];
+    short list_cell_count;
+    int list_cells_truncated;
+
     NowSceneDialogItem dialog_items[kNowSceneMaxDialogItems];
     short dialog_item_count;
     int dialog_items_truncated;
@@ -523,6 +543,14 @@ void now_scene_set_control_role(NowScene *s, int window, int index,
                                 const char *role);
 void now_scene_set_control_semantic_value(NowScene *s, int window, int index,
                                           const char *value);
+/* Attaches a bounded guest-provided list payload to one control. `complete`
+   says the record count equals the List Manager's total cell count; a prefix
+   stays useful for presentation but never becomes a complete claim. */
+void now_scene_begin_control_list(NowScene *s, int window, int index,
+                                  unsigned short total_count, int complete);
+int now_scene_add_control_list_cell(NowScene *s, int window, int index,
+                                    short row, short column,
+                                    const char *text, int selected);
 
 void now_scene_set_control_ref(NowScene *s, int window, int index,
                                const char *ref);

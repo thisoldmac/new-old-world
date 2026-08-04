@@ -220,7 +220,7 @@ final class SceneIRDecodeTests: XCTestCase {
         }
     }
 
-    func testV2DecodesBoundedListSelectionAsPartialPresentation() throws {
+    func testV2DecodesBoundedListCellsAndCompleteness() throws {
         var body = try XCTUnwrap(
             JSONSerialization.jsonObject(with: try fixture())
                 as? [String: Any])
@@ -232,8 +232,15 @@ final class SceneIRDecodeTests: XCTestCase {
         control["role"] = "listBox"
         control["semantic"] = [
             "knowledge": "known", "kind": "listBox", "value": "Rome",
+            "listCells": [
+                ["row": 1, "column": 0, "text": "Rome",
+                 "selected": true] as [String: Any],
+                ["row": 1, "column": 1, "text": "Italy",
+                 "selected": false] as [String: Any],
+            ],
+            "listTotalCount": 2,
             "provenance": "guest-semantic-assist",
-            "completeness": "partial",
+            "completeness": "complete",
         ]
         controls[0] = control; window["controls"] = controls
         windows[0] = window; body["windows"] = windows
@@ -242,7 +249,10 @@ final class SceneIRDecodeTests: XCTestCase {
         let list = try XCTUnwrap(scene.windows.first?.controls.first)
         XCTAssertEqual(list.semantic?.kind, "listBox")
         XCTAssertEqual(list.semantic?.value, "Rome")
-        XCTAssertEqual(list.semantic?.completeness, .partial)
+        XCTAssertEqual(list.semantic?.listCells?.map(\.text), ["Rome", "Italy"])
+        XCTAssertEqual(list.semantic?.listCells?.map(\.column), [0, 1])
+        XCTAssertEqual(list.semantic?.listTotalCount, 2)
+        XCTAssertEqual(list.semantic?.completeness, .complete)
         XCTAssertFalse(list.semantic?.authorizesAction ?? true)
     }
 }

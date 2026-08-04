@@ -463,10 +463,36 @@ static void put_controls(Sink *k, const NowScene *s, const NowSceneWindow *w)
                     put_str(k, value);
                 }
             }
+            if (strcmp(c->role, "listBox") == 0
+                && c->list_cells_present) {
+                short cell_index;
+
+                put(k, ",\"listCells\":[");
+                for (cell_index = 0;
+                     cell_index < c->list_cell_count; ++cell_index) {
+                    const NowSceneListCell *cell =
+                        &s->list_cells[c->first_list_cell + cell_index];
+
+                    put(k, cell_index == 0 ? "{\"row\":"
+                                           : ",{\"row\":");
+                    put_num(k, cell->row);
+                    put(k, ",\"column\":");
+                    put_num(k, cell->column);
+                    put(k, ",\"text\":");
+                    put_str(k, cell->text);
+                    put(k, ",\"selected\":");
+                    put(k, cell->selected ? "true}" : "false}");
+                }
+                put(k, "],\"listTotalCount\":");
+                put_num(k, c->list_total_count);
+            }
         }
         if (strcmp(c->role, "listBox") == 0) {
             put(k, ",\"provenance\":\"guest-semantic-assist\","
-                   "\"completeness\":\"partial\"}");
+                   "\"completeness\":");
+            put_str(k, c->list_cells_present && c->list_cells_complete
+                       ? "complete" : "partial");
+            put(k, "}");
         } else {
             put(k, ",\"provenance\":\"guest-control-manager\","
                    "\"completeness\":\"complete\"}");
@@ -799,6 +825,12 @@ static void put_meta(Sink *k, const NowScene *s)
         put_str(k, "controls omitted: a window's control list hit a bound "
                 "or failed validation, so that window reports no controls "
                 "rather than some of them");
+        first = 0;
+    }
+    if (s->list_cells_truncated) {
+        put(k, first ? "" : ",");
+        put_str(k, "list cells truncated: structured list content exceeded "
+                "the scene pool and remains partial");
         first = 0;
     }
     if (s->dialog_items_truncated) {

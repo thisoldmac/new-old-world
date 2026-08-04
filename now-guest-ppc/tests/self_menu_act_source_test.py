@@ -19,8 +19,11 @@ def main() -> None:
     if not service < dispatch < idle:
         raise SystemExit("the queued menu choice must run immediately after "
                          "the wire callback returns to the main loop")
-    branch_start = ACT.index("if (act_target_is_self(want)")
+    branch_start = ACT.index("if (!visibility && act_target_is_self(want)")
     branch = ACT[branch_start:ACT.index("st = now_act_ready();", branch_start)]
+    if "!visibility" not in branch.split("{")[0]:
+        raise SystemExit("Application-menu visibility acts must reach the "
+                         "resident target context, even when NOW is front")
     if 'row_add(&rows, "Dispatch", "dispatched")' not in branch:
         raise SystemExit("a queued self menu act must report dispatched")
     if 'row_add(&rows, "Dispatch", "performed")' in branch:

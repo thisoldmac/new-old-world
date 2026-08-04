@@ -97,6 +97,24 @@ public struct Scene: Codable, Equatable, Sendable {
         }
     }
 
+    /// One bounded List Manager cell reported by the guest semantic plane.
+    /// Rows are 1-based and columns 0-based, preserving the resident table's
+    /// native coordinate conventions instead of flattening a multi-column
+    /// list into one lossy string.
+    public struct ListCell: Codable, Equatable, Sendable {
+        public var row: Int
+        public var column: Int
+        public var text: String
+        public var selected: Bool
+
+        public init(row: Int, column: Int, text: String, selected: Bool) {
+            self.row = row
+            self.column = column
+            self.text = text
+            self.selected = selected
+        }
+    }
+
     /// Evidence carried by IR v2. Every semantic field is independently
     /// optional; absence never means false. `knowledge` describes the whole
     /// observation, while `completeness` prevents a bounded prefix from
@@ -107,6 +125,8 @@ public struct Scene: Codable, Equatable, Sendable {
         public var action: String?
         public var state: String?
         public var value: String?
+        public var listCells: [ListCell]?
+        public var listTotalCount: Int?
         public var selection: Selection?
         public var focused: Bool?
         public var isDefault: Bool?
@@ -115,7 +135,10 @@ public struct Scene: Codable, Equatable, Sendable {
 
         public init(knowledge: Knowledge, kind: String? = nil,
                     action: String? = nil, state: String? = nil,
-                    value: String? = nil, selection: Selection? = nil,
+                    value: String? = nil,
+                    listCells: [ListCell]? = nil,
+                    listTotalCount: Int? = nil,
+                    selection: Selection? = nil,
                     focused: Bool? = nil, isDefault: Bool? = nil,
                     provenance: String? = nil,
                     completeness: Completeness? = nil) {
@@ -124,6 +147,8 @@ public struct Scene: Codable, Equatable, Sendable {
             self.action = action
             self.state = state
             self.value = value
+            self.listCells = listCells
+            self.listTotalCount = listTotalCount
             self.selection = selection
             self.focused = focused
             self.isDefault = isDefault

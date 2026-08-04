@@ -70,16 +70,29 @@ int main(void)
 
     make_response(&cell, 3, kNowPeekSemanticOpListCells, 3);
     cell.response_status = kNowPeekSemanticStatusOk;
-    cell.response_record_count = 1;
+    cell.response_record_count = 2;
+    cell.response_total_count = 2;
+    cell.records[0].kind = kNowPeekSemanticRecordListCell;
+    cell.records[0].index = 1;
+    cell.records[0].aux = 0;
     cell.records[0].flags = kNowPeekSemanticRecordSelected;
     cell.records[0].text_copied = 4;
     memcpy(cell.records[0].text, "Rome", 4);
+    cell.records[1].kind = kNowPeekSemanticRecordListCell;
+    cell.records[1].index = 1;
+    cell.records[1].aux = 1;
+    cell.records[1].text_copied = 5;
+    memcpy(cell.records[1].text, "Italy", 5);
     now_semantic_policy_begin(&policy, 7, 4);
     now_semantic_policy_ingest(&policy, &cell);
     check(now_semantic_policy_control(&policy, 1, 2, 3, &control) &&
               control.list_status == kNowPeekSemanticStatusOk &&
-              control.selected_length == 4,
-          "scene 4 retains bounded selected result");
+              control.selected_length == 4 && control.record_count == 2
+              && control.total_count == 2
+              && control.records[1].index == 1
+              && control.records[1].aux == 1
+              && memcmp(control.records[1].text, "Italy", 5) == 0,
+          "scene 4 retains the complete bounded list result");
     check(!now_semantic_policy_control(&policy, 1, 2, 4, &control),
           "scene 4 advances to next control, not control 1 again");
 

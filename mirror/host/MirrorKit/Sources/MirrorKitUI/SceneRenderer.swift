@@ -665,14 +665,30 @@ public struct SceneRenderer {
         // still carries whole-window background erases through those regions;
         // only control-local CopyBits/text/shapes yield to guest semantics.
         let displayOwnsVisuals = !(win.display?.isEmpty ?? true)
-        let dialogRefs = Set((win.dialogItems ?? []).compactMap(\.ref))
+        /* A DITL resource-control row and its live ControlRecord share one
+           ref. The DITL can only say "unknown resource", while P2 may later
+           prove that exact control is a list or another drawable control.
+           Prefer the more specific guest fact; the old unconditional DITL
+           precedence painted a hatch over Date & Time's real list payload. */
+        let semanticControlRefs: Set<String> = Set(win.controls.compactMap {
+            control -> String? in
+            Self.semanticOwnsDisplay(control) ? control.ref : nil
+        })
+        let dialogRefs: Set<String> = Set((win.dialogItems ?? []).compactMap {
+            item -> String? in
+            guard let ref = item.ref,
+                  !semanticControlRefs.contains(ref) else { return nil }
+            return ref
+        })
         let semanticFrames = win.controls.compactMap { control -> CGRect? in
             guard control.visible, Self.semanticOwnsDisplay(control),
                   !dialogRefs.contains(control.ref),
                   let local = control.rect else { return nil }
             return rect(local).offsetBy(dx: content.minX, dy: content.minY)
         } + (win.dialogItems ?? []).compactMap { item -> CGRect? in
-            guard item.visible else { return nil }
+            guard item.visible,
+                  item.ref.map({ !semanticControlRefs.contains($0) }) ?? true
+            else { return nil }
             return rect(item.rect).offsetBy(dx: content.minX, dy: content.minY)
         }
         if let display = win.display {
@@ -688,7 +704,9 @@ public struct SceneRenderer {
             drawControl(contentCtx, control, contentOrigin: content.origin,
                         isDefault: control.semantic?.isDefault == true)
         }
-        for item in win.dialogItems ?? [] where item.visible {
+        for item in win.dialogItems ?? [] where item.visible
+                && (item.ref.map { !semanticControlRefs.contains($0) }
+                    ?? true) {
             drawDialogItem(contentCtx, item, contentOrigin: content.origin)
         }
         // Finder icon-view items, in window-local content coords — the
@@ -842,7 +860,9 @@ public struct SceneRenderer {
             return ctl.semantic?.state != nil
         case "scrollBar":
             return ctl.min != nil && ctl.max != nil && ctl.value != nil
-        case "groupBox", "listBox":
+        case "listBox":
+            return !(ctl.semantic?.listCells?.isEmpty ?? true)
+        case "groupBox":
             return false
         default:
             return false
@@ -1184,9 +1204,9 @@ public struct SceneRenderer {
                 baselineY: frame.midY + 4, color: Platinum.g4, small: true)
     }
 
-    /// P2 currently retains only the selected cell, not the complete row set.
-    /// Draw a truthful recessed list surface with that one bounded fact; the
-    /// text explicitly says unavailable when no selected value was retained.
+    /// Draw the bounded cells P2 read from the guest's List Manager. A partial
+    /// prefix is still useful presentation evidence, while `completeness`
+    /// remains available to policy and prevents it authorizing an action.
     private func drawListSelection(_ ctx: GraphicsContext,
                                    _ ctl: MirrorKit.Scene.Control,
                                    _ frame: CGRect) {
@@ -1194,17 +1214,61 @@ public struct SceneRenderer {
         ctx.stroke(Path(frame), with: .color(Platinum.g6), lineWidth: 1)
         bevel(ctx, frame.insetBy(dx: 1, dy: 1),
               light: Platinum.g4, shadow: Platinum.g1)
-        let row = frame.insetBy(dx: 3, dy: 3)
-        ctx.fill(Path(CGRect(x: row.minX, y: row.minY,
-                             width: row.width,
-                             height: Swift.min(16, row.height))),
-                 with: .color(Platinum.g2))
-        let value = ctl.semantic?.value ?? "Selected value unavailable"
+        let body = frame.insetBy(dx: 3, dy: 3)
+        let cells = ctl.semantic?.listCells ?? []
+        if cells.isEmpty {
+            let first = CGRect(x: body.minX, y: body.minY,
+                               width: body.width,
+                               height: Swift.min(16, body.height))
+            ctx.fill(Path(first), with: .color(Platinum.g2))
+            var clipped = ctx
+            clipped.clip(to: Path(body))
+            appText(ctl.semantic?.value ?? "Selected value unavailable",
+                    clipped, x: body.minX + 3, baselineY: body.minY + 12,
+                    color: ctl.enabled ? Platinum.g6 : Platinum.g3,
+                    small: true)
+            return
+        }
+
+        let rows = Dictionary(grouping: cells, by: \.row)
+            .sorted { $0.key < $1.key }
+        let columnCount = Swift.max(1, (cells.map(\.column).max() ?? 0) + 1)
+        let rowHeight: CGFloat = 18
+        let visibleCount = Swift.min(rows.count,
+                                     Int(body.height / rowHeight))
         var clipped = ctx
-        clipped.clip(to: Path(row))
-        appText(value, clipped, x: row.minX + 3,
-                baselineY: row.minY + 12,
-                color: ctl.enabled ? Platinum.g6 : Platinum.g3, small: true)
+        clipped.clip(to: Path(body))
+        for rowIndex in 0..<visibleCount {
+            let rowCells = rows[rowIndex].value.sorted { $0.column < $1.column }
+            let rowFrame = CGRect(x: body.minX,
+                                  y: body.minY + CGFloat(rowIndex) * rowHeight,
+                                  width: body.width, height: rowHeight)
+            if rowCells.contains(where: \.selected) {
+                clipped.fill(Path(rowFrame), with: .color(Platinum.g2))
+            }
+            for column in 0..<columnCount {
+                let cellWidth = body.width / CGFloat(columnCount)
+                let cellFrame = CGRect(x: body.minX
+                                           + CGFloat(column) * cellWidth,
+                                       y: rowFrame.minY,
+                                       width: cellWidth,
+                                       height: rowHeight)
+                if column > 0 {
+                    clipped.fill(Path(CGRect(x: cellFrame.minX,
+                                             y: cellFrame.minY,
+                                             width: 1,
+                                             height: cellFrame.height)),
+                                 with: .color(Platinum.g2))
+                }
+                guard let cell = rowCells.first(where: {
+                    $0.column == column
+                }) else { continue }
+                appText(cell.text, clipped, x: cellFrame.minX + 3,
+                        baselineY: cellFrame.minY + 13,
+                        color: ctl.enabled ? Platinum.g6 : Platinum.g3,
+                        small: true)
+            }
+        }
     }
 
     private func drawScrollbar(_ ctx: GraphicsContext, _ frame: CGRect,

@@ -18,6 +18,9 @@ typedef struct {
     NowPeekU16 class_kind;
     NowPeekU16 selected_length;
     unsigned char selected[kNowPeekSemanticTextMax];
+    NowPeekU16 record_count;
+    NowPeekU16 total_count;
+    NowPeekSemanticRecord records[kNowPeekSemanticMaxRecords];
 } NowSemanticControlFact;
 
 typedef struct {
