@@ -453,19 +453,32 @@ final class NOWMirrorSourceTests: XCTestCase {
     }
 
     func testApplicationVisibilityUsesTypedTargetAndFinderShowAll() {
-        XCTAssertEqual(NOWMirrorSource.processSerial("0.7"),
-                       .init(high: 0, low: 7))
-        XCTAssertNil(NOWMirrorSource.processSerial("Finder"))
+        let hide = NOWMirrorSource.hideFrontApplicationScript
+        XCTAssertTrue(hide.contains(
+            "first application process whose frontmost is true"))
+        XCTAssertFalse(hide.contains("keystroke"))
+        let others = NOWMirrorSource.hideOtherApplicationsScript
+        XCTAssertTrue(others.contains("if not (frontmost of candidate)"))
+        XCTAssertTrue(others.contains("set visible of candidate to false"))
         let show = NOWMirrorSource.showAllApplicationsScript
         XCTAssertTrue(show.contains("set visible of every application "
                                     + "process to true"))
-        XCTAssertTrue(show.contains("if not (visible of candidate)"))
-        XCTAssertNil(NOWMirrorSource.visibilityOutcome("\"confirmed\""))
-        XCTAssertEqual(NOWMirrorSource.visibilityOutcome(
+        XCTAssertNil(NOWMirrorSource.visibilityDispatchOutcome(
+            "\"dispatched\""))
+        XCTAssertEqual(NOWMirrorSource.visibilityDispatchOutcome(
             "\"dispatched-but-unconfirmed\""),
             "dispatched-but-unconfirmed")
-        XCTAssertEqual(NOWMirrorSource.visibilityOutcome(nil),
-                       "visibility outcome unavailable")
+        XCTAssertEqual(NOWMirrorSource.visibilityDispatchOutcome(nil),
+                       "visibility dispatch outcome unavailable")
+    }
+
+    func testKeyCapsIsOpenedFromTheGuestsAppleMenuItemsFolder() {
+        let script = NOWMirrorSource.appleMenuItemScript("Key Caps")
+        XCTAssertTrue(script.contains("tell application \"Finder\""))
+        XCTAssertTrue(script.contains(
+            "open item \"Key Caps\" of folder \"Apple Menu Items\" "
+            + "of system folder"))
+        XCTAssertTrue(script.contains("return \"dispatched\""))
     }
 
     /// The guest states the key rule and this asserts against THAT, not

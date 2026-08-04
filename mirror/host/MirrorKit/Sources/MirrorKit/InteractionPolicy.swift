@@ -46,6 +46,10 @@ public enum InteractionPlan: Equatable, Sendable {
     /// the route that reported success without changing the machine.
     case applicationVisibility(ApplicationVisibility)
 
+    /// Open one system-owned Apple Menu Items entry through the guest
+    /// Finder. CarbonLib does not expose OpenDeskAcc to the guest app.
+    case openAppleMenuItem(name: String)
+
     /// Ask the Finder to select or open an item BY NAME. This is the
     /// case the whole object-first shape exists for: an icon has no
     /// control reference and no window of its own, so a gesture-first
@@ -289,6 +293,9 @@ public enum InteractionPolicy {
         if i.isSeparator { return .nothing(why: "that is a separator") }
         guard i.isEnabled else {
             return .nothing(why: "\"\(i.title)\" is disabled")
+        }
+        if i.menu.isApple, i.title == "Key Caps" {
+            return .openAppleMenuItem(name: i.title)
         }
         /* A ⌘ item goes as a keystroke ONLY where a keystroke can carry
            the ⌘. NOW's Carbon guest cannot post one - PPostEvent is not

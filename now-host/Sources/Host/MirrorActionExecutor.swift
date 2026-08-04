@@ -13,6 +13,7 @@ enum MirrorActionExecutor {
                                         plan: InteractionPlan) -> Bool {
         switch plan {
         case .activateApp, .activateWindow, .applicationVisibility,
+             .openAppleMenuItem,
              .finderOpen:
             return true
         case .windowAct(_, let act):
@@ -110,6 +111,12 @@ enum MirrorActionExecutor {
                 return make(target: .process(front),
                             postcondition: .processVisibility(expected))
             }
+        case .openAppleMenuItem(let name):
+            guard let front = replica.applications.values.first(where: {
+                $0.app.front
+            })?.identity else { return nil }
+            return make(target: .process(front),
+                        postcondition: .processNamedPresent(name))
         case .windowAct(let ref, let act):
             guard case .close = act, let identity = window(ref) else {
                 return nil

@@ -339,6 +339,19 @@ final class InteractionPolicyTests: XCTestCase {
         }
     }
 
+    func testKeyCapsUsesGuestFinderInsteadOfCarbonDeskAccessoryAPI() {
+        let apple = MirrorObject.Menu(id: 256, title: "", left: 0,
+                                      isApple: true)
+        let keyCaps = Interaction(
+            object: .menuItem(.init(
+                menu: apple, index: 9, title: "Key Caps", cmd: "",
+                isEnabled: true, isSeparator: false)),
+            gesture: tap)
+        XCTAssertEqual(InteractionPolicy.plan(
+            for: keyCaps, planes: .residentActPlane),
+            .openAppleMenuItem(name: "Key Caps"))
+    }
+
     // MARK: - Nothing is ever a silent drop
 
     /// Every plan either does something, or explains itself. A case that

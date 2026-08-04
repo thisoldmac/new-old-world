@@ -235,4 +235,27 @@ final class MirrorOperationReducerTests: XCTestCase {
         XCTAssertEqual(MirrorOperationReducer.reduce(
             operation, event: .observation(exact)).outcome, .confirmed)
     }
+
+    func testNamedProcessLaunchNeedsLaterCompleteProcessCensus() {
+        let session = MirrorGuestSession(guest: "maxbook",
+                                         incarnation: "session-a")
+        let now = MirrorProcessIdentity(session: session,
+                                        incarnation: "now")
+        let keyCaps = MirrorProcessIdentity(session: session,
+                                            incarnation: "key-caps")
+        var operation = MirrorOperation(
+            id: "key-caps", source: .human, displayedSnapshotID: 1,
+            displayedSequence: 1, target: .process(now),
+            postcondition: .processNamedPresent("Key Caps"),
+            enqueuedAt: Date())
+        operation = MirrorOperationReducer.reduce(
+            operation, event: .dispatched(at: Date()))
+        let evidence = MirrorSettlementEvidence(
+            session: session, sequence: 2,
+            coverage: .init(scope: "processes", status: .complete),
+            processNames: [now: "New Old World", keyCaps: "Key Caps"])
+
+        XCTAssertEqual(MirrorOperationReducer.reduce(
+            operation, event: .observation(evidence)).outcome, .confirmed)
+    }
 }

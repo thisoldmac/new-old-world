@@ -201,12 +201,15 @@ final class MirrorStateEngine: ObservableObject {
         let titles = Dictionary(uniqueKeysWithValues: replica.windows.map {
             ($0.key, $0.value.window.title)
         })
+        let processNames = Dictionary(uniqueKeysWithValues:
+            replica.applications.map { ($0.key, $0.value.app.name) })
         return claims.map {
             .init(session: session, sequence: replica.lastSequence,
                   coverage: $0, receivedAt: receivedAt,
                   presentProcesses: processes, presentWindows: windows,
                   frontProcess: frontProcess, frontWindow: frontWindow,
-                  windowTitles: titles, processVisibility: visibility)
+                  windowTitles: titles, processVisibility: visibility,
+                  processNames: processNames)
         }
     }
 

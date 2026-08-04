@@ -53,11 +53,11 @@ public enum InteractionBridge {
         case .activateWindow(let psn, let ref):
             return [.activate(psn: psn), .windowAct(ref: ref, act: .select)]
 
-        case .applicationVisibility:
+        case .applicationVisibility, .openAppleMenuItem:
             /* The old action vocabulary has no system Application-menu
-               visibility operation. NOW's direct driver serves this typed
-               plan through the guest; emitting menuInvoke would restore the
-               route that reported success without changing the machine. */
+               system operation. NOW's direct driver serves these typed
+               plans through the guest; emitting menuInvoke would restore
+               routes that reported success without changing the machine. */
             return []
 
         case .finderSelect, .finderOpen, .finderDeselect:

@@ -11,6 +11,7 @@ public enum MirrorOperationPostcondition: Equatable, Sendable {
     case windowNamedPresent(owner: MirrorProcessIdentity, title: String)
     case processAbsent(MirrorProcessIdentity)
     case processFront(MirrorProcessIdentity)
+    case processNamedPresent(String)
     /// Exact visibility expectations for the processes affected by one
     /// Application-menu command. Dispatch cannot satisfy this condition;
     /// only a later complete guest observation can.
@@ -87,6 +88,7 @@ public struct MirrorSettlementEvidence: Equatable, Sendable {
     public var frontWindow: MirrorWindowIdentity?
     public var windowTitles: [MirrorWindowIdentity: String]
     public var processVisibility: [MirrorProcessIdentity: Bool]
+    public var processNames: [MirrorProcessIdentity: String]
 
     public init(session: MirrorGuestSession, sequence: Int,
                 coverage: Scene.CoverageClaim,
@@ -96,7 +98,8 @@ public struct MirrorSettlementEvidence: Equatable, Sendable {
                 frontProcess: MirrorProcessIdentity? = nil,
                 frontWindow: MirrorWindowIdentity? = nil,
                 windowTitles: [MirrorWindowIdentity: String] = [:],
-                processVisibility: [MirrorProcessIdentity: Bool] = [:]) {
+                processVisibility: [MirrorProcessIdentity: Bool] = [:],
+                processNames: [MirrorProcessIdentity: String] = [:]) {
         self.session = session
         self.sequence = sequence
         self.coverage = coverage
@@ -107,6 +110,7 @@ public struct MirrorSettlementEvidence: Equatable, Sendable {
         self.frontWindow = frontWindow
         self.windowTitles = windowTitles
         self.processVisibility = processVisibility
+        self.processNames = processNames
     }
 }
 

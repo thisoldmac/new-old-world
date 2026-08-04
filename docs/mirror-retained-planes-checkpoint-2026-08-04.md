@@ -128,8 +128,10 @@ sweep before any red row changes status:
   controls;
 - Finder item rosters are read in bounded pages carrying a stable total, so a
   later Control Panels item such as Date & Time cannot be silently truncated;
-- self-targeted Apple-menu commands now reach the guest application's normal
-  Apple-menu handler, including desk accessories such as Key Caps;
+- Key Caps is now a typed Mirror interaction served by the guest Finder from
+  the System Folder's Apple Menu Items directory. CarbonLib excludes
+  `OpenDeskAcc`, so this keeps the mutation on a public, metal-safe guest OS
+  path and settles only when a later process census contains Key Caps;
 - process visibility is now a retained P1 shelf with `complete`, `partial`, and
   expected-`stale` coverage. Hide, Hide Others, and Show All carry exact typed
   postconditions and cannot turn green until a later complete guest census
@@ -141,3 +143,9 @@ The Finder paging, Sherlock structured-retention, and visibility matching
 guards were each watched fail under deliberate mutation and pass after the
 implementation was restored. Focused host suites are green; this is not yet a
 direct-input or emulator-visual result.
+
+The extension was deliberately not changed for visibility. Its synthetic
+Command-H implementation remains present but is no longer selected by the
+Mirror interaction path; the selected Retro68 headers expose neither
+`ShowHideProcess` nor Carbon `OpenDeskAcc`. The host depends only on guest OS
+scripts and later guest observations, not on QEMU facilities.

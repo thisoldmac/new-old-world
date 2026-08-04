@@ -122,6 +122,24 @@ final class MirrorActionExecutorTests: XCTestCase {
                        .processVisibility([finder: true, now: true]))
     }
 
+    func testKeyCapsLaunchCarriesNamedProcessPostcondition() throws {
+        let engine = try makeEngine()
+        let menu = MirrorObject.Menu(id: 256, title: "", left: 0,
+                                     isApple: true)
+        let item = MirrorObject.MenuItem(
+            menu: menu, index: 9, title: "Key Caps", cmd: "",
+            isEnabled: true, isSeparator: false)
+        let interaction = Interaction(
+            object: .menuItem(item),
+            gesture: .click(count: 1, mods: 0, at: .init(x: 10, y: 100)))
+        let operation = try XCTUnwrap(MirrorActionExecutor.operation(
+            for: interaction, plan: .openAppleMenuItem(name: "Key Caps"),
+            engine: engine, id: "key-caps"))
+
+        XCTAssertEqual(operation.postcondition,
+                       .processNamedPresent("Key Caps"))
+    }
+
     private func makeEngine() throws -> MirrorStateEngine {
         let engine = MirrorStateEngine(guestKey: .synthetic("maxbook"))
         let data = Data(#"""
