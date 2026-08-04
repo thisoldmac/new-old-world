@@ -318,6 +318,10 @@ public final class AgentIntegrationLocalServer {
                 response = .init(
                     requestID: request.requestID,
                     diagnosticsResult: result)
+            case .mirrorRead(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    mirrorReadResult: result)
             case .stream(let result):
                 response = .init(
                     requestID: request.requestID,

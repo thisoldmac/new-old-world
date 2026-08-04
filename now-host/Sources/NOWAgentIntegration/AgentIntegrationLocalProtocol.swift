@@ -1,6 +1,12 @@
 import Foundation
 
 public enum AgentIntegrationLocalProtocol {
+    /// Version 9 adds one read-only lane over the native Mirror's immutable
+    /// state engine. Status, snapshot, find and wait are intentions on that
+    /// lane rather than four transports, and none of them polls the guest.
+    /// A v8 host refuses the new shape instead of letting a companion mistake
+    /// an independently-observed process list for the Mirror's own state.
+    ///
     /// Version 8 makes an agent call VISIBLE to the person at the machine.
     /// The shape changed because the surface gained an operation that asks
     /// the host for nothing: the companion reports what it was asked to do
@@ -19,7 +25,7 @@ public enum AgentIntegrationLocalProtocol {
     /// asked about another.
     ///
     /// Version 6 added the read-only session capability report.
-    public static let version = 8
+    public static let version = 9
     public static let maximumMessageBytes = 16 * 1024
 }
 
@@ -94,6 +100,10 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         /// of them takes an argument, all three answer rows, and they have
         /// a single home.
         case diagnostics = "diagnostics"
+        /// Read the native Mirror's already-published immutable state. Four
+        /// intentions share one operation because they are renderings of one
+        /// engine lane, not four observers.
+        case mirrorRead = "mirror_read"
         /// Open the live-stream bracket, read a frame off it, or close it.
         ///
         /// One operation for the same reason `capture` folded take, page and
@@ -216,6 +226,9 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
     public var revealTarget: String? = nil
     /// Which diagnostic.
     public var diagnosticProbe: AgentIntegrationDiagnosticProbe? = nil
+    /// Which rendering of the native Mirror state engine to read. Present
+    /// only on `mirror_read`; its own grammar pins each intention's fields.
+    public var mirrorReadRequest: AgentIntegrationMirrorReadRequest? = nil
 
     /* The bracket's fields. Which of the three intentions is always
        explicit, unlike `capture`'s three shapes — a bracket's intentions
@@ -700,6 +713,15 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         return request
     }
 
+    public static func mirrorRead(
+        _ read: AgentIntegrationMirrorReadRequest,
+        requestID: UUID = UUID()
+    ) -> Self {
+        var request = projected(.mirrorRead, requestID: requestID)
+        request.mirrorReadRequest = read
+        return request
+    }
+
     // MARK: - The live-stream bracket
 
     /// Open the bracket. The pace is not optional here even though the
@@ -843,6 +865,7 @@ public enum AgentIntegrationLocalResult: Equatable, Sendable {
     case catalogSearch(AgentIntegrationGuestRowReportResult)
     case revealItem(AgentIntegrationGuestRowReportResult)
     case diagnostics(AgentIntegrationGuestRowReportResult)
+    case mirrorRead(AgentIntegrationMirrorReadResult)
     /// The bracket's state, or one page of one frame off it.
     case stream(AgentIntegrationStreamResult)
     /* The act lane's five, one case each — for the reason the five
@@ -930,6 +953,7 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         AgentIntegrationGuestRowReportResult? = nil
     public var diagnosticsResult:
         AgentIntegrationGuestRowReportResult? = nil
+    public var mirrorReadResult: AgentIntegrationMirrorReadResult? = nil
     /// The bracket, or one page of a frame off it. Sized like the capture
     /// field beside it, and for the same reason — a frame IS a capture, so
     /// a full page still leaves the response inside the 16 KiB cap.
@@ -1300,6 +1324,12 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
     }
 
     public init(requestID: UUID,
+                mirrorReadResult: AgentIntegrationMirrorReadResult) {
+        self.init(empty: requestID)
+        self.mirrorReadResult = mirrorReadResult
+    }
+
+    public init(requestID: UUID,
                 streamResult: AgentIntegrationStreamResult) {
         self.init(empty: requestID)
         self.streamResult = streamResult
@@ -1371,7 +1401,7 @@ public enum AgentIntegrationLocalCodec {
         "guestFileMutationResult", "transferCancelResult",
         "guestLogTailResult", "machineFactsResult",
         "catalogSearchResult", "revealItemResult",
-        "diagnosticsResult", "streamResult",
+        "diagnosticsResult", "mirrorReadResult", "streamResult",
         // The act lane's five, in both gates from the day they landed.
         "windowActResult", "controlActResult", "menuActResult",
         "textGetResult", "textSetResult",
@@ -1418,6 +1448,7 @@ public enum AgentIntegrationLocalCodec {
             "softwareCursor", "guestFileMutation",
             "guestFileDestinationPath", "guestFileTrashName",
             "logLineCount", "revealTarget", "diagnosticProbe",
+            "mirrorReadRequest",
             // The bracket's fields, clearing the same two gates.
             "streamIntention", "streamDepth", "streamMinIntervalMs",
             "streamFrameID", "streamFrameOffset",
@@ -1863,6 +1894,15 @@ public enum AgentIntegrationLocalCodec {
             guard request.diagnosticProbe != nil else {
                 throw AgentIntegrationLocalTransportError.invalidMessage(
                     "Diagnostics request names no probe")
+            }
+        case .mirrorRead:
+            expectedKeys = [
+                "version", "requestID", "operation", "mirrorReadRequest",
+            ]
+            guard let read = request.mirrorReadRequest,
+                  read.isWellFormed else {
+                throw AgentIntegrationLocalTransportError.invalidMessage(
+                    "Mirror read request does not match its intention")
             }
         case .stream:
             /* The intention is REQUIRED and carries the shape, unlike

@@ -1,0 +1,163 @@
+import Foundation
+
+public enum AgentIntegrationMirrorReadIntention: String, Codable, Sendable {
+    case status
+    case snapshot
+    case find
+    case wait
+}
+
+public struct AgentIntegrationMirrorReadRequest:
+    Codable, Equatable, Sendable {
+    public let intention: AgentIntegrationMirrorReadIntention
+    public let query: String?
+    public let afterSnapshotID: Int?
+    public let timeoutMs: Int?
+
+    public init(intention: AgentIntegrationMirrorReadIntention,
+                query: String? = nil, afterSnapshotID: Int? = nil,
+                timeoutMs: Int? = nil) {
+        self.intention = intention
+        self.query = query
+        self.afterSnapshotID = afterSnapshotID
+        self.timeoutMs = timeoutMs
+    }
+
+    public var isWellFormed: Bool {
+        switch intention {
+        case .status, .snapshot:
+            return query == nil && afterSnapshotID == nil && timeoutMs == nil
+        case .find:
+            return query?.isEmpty == false && query!.count <= 128
+                && afterSnapshotID == nil && timeoutMs == nil
+        case .wait:
+            return query == nil && (afterSnapshotID ?? 0) > 0
+                && (1...15_000).contains(timeoutMs ?? 5_000)
+        }
+    }
+}
+
+public struct AgentIntegrationMirrorSnapshotMetadata:
+    Codable, Equatable, Sendable {
+    public let guest: String
+    public let session: String
+    public let snapshotID: Int
+    public let sequence: Int
+    public let digest: String
+    public let baseComplete: Bool
+    public let sceneGeneration: Int
+    public let contentGeneration: Int
+
+    public init(guest: String, session: String, snapshotID: Int,
+                sequence: Int, digest: String, baseComplete: Bool,
+                sceneGeneration: Int, contentGeneration: Int) {
+        self.guest = guest
+        self.session = session
+        self.snapshotID = snapshotID
+        self.sequence = sequence
+        self.digest = digest
+        self.baseComplete = baseComplete
+        self.sceneGeneration = sceneGeneration
+        self.contentGeneration = contentGeneration
+    }
+}
+
+public struct AgentIntegrationMirrorCoverage:
+    Codable, Equatable, Sendable {
+    public let scope: String
+    public let owner: String?
+    public let status: String
+    public let reason: String?
+
+    public init(scope: String, owner: String?, status: String,
+                reason: String?) {
+        self.scope = scope
+        self.owner = owner
+        self.status = status
+        self.reason = reason
+    }
+}
+
+public struct AgentIntegrationMirrorEntity:
+    Codable, Equatable, Sendable {
+    public enum Kind: String, Codable, Sendable { case process, window }
+
+    public let id: String
+    public let kind: Kind
+    public let ownerID: String?
+    public let name: String
+    public let title: String?
+    public let front: Bool
+    public let visible: Bool
+    public let freshness: String
+    public let actionable: Bool
+
+    public init(id: String, kind: Kind, ownerID: String?, name: String,
+                title: String?, front: Bool, visible: Bool,
+                freshness: String, actionable: Bool) {
+        self.id = id
+        self.kind = kind
+        self.ownerID = ownerID
+        self.name = name
+        self.title = title
+        self.front = front
+        self.visible = visible
+        self.freshness = freshness
+        self.actionable = actionable
+    }
+}
+
+public struct AgentIntegrationMirrorSnapshot:
+    Codable, Equatable, Sendable {
+    public let metadata: AgentIntegrationMirrorSnapshotMetadata
+    public let coverage: [AgentIntegrationMirrorCoverage]
+    public let entities: [AgentIntegrationMirrorEntity]
+
+    public init(metadata: AgentIntegrationMirrorSnapshotMetadata,
+                coverage: [AgentIntegrationMirrorCoverage],
+                entities: [AgentIntegrationMirrorEntity]) {
+        self.metadata = metadata
+        self.coverage = coverage
+        self.entities = entities
+    }
+}
+
+public struct AgentIntegrationMirrorReadValue:
+    Codable, Equatable, Sendable {
+    public let intention: AgentIntegrationMirrorReadIntention
+    public let current: AgentIntegrationMirrorSnapshotMetadata?
+    public let snapshot: AgentIntegrationMirrorSnapshot?
+    public let matches: [AgentIntegrationMirrorEntity]?
+    public let timedOut: Bool
+
+    public init(intention: AgentIntegrationMirrorReadIntention,
+                current: AgentIntegrationMirrorSnapshotMetadata?,
+                snapshot: AgentIntegrationMirrorSnapshot? = nil,
+                matches: [AgentIntegrationMirrorEntity]? = nil,
+                timedOut: Bool = false) {
+        self.intention = intention
+        self.current = current
+        self.snapshot = snapshot
+        self.matches = matches
+        self.timedOut = timedOut
+    }
+}
+
+public struct AgentIntegrationMirrorReadResult:
+    Codable, Equatable, Sendable {
+    public let available: Bool
+    public let value: AgentIntegrationMirrorReadValue?
+    public let unavailable: AgentIntegrationUnavailable?
+
+    public init(value: AgentIntegrationMirrorReadValue) {
+        available = true
+        self.value = value
+        unavailable = nil
+    }
+
+    public init(unavailable: AgentIntegrationUnavailable) {
+        available = false
+        value = nil
+        self.unavailable = unavailable
+    }
+}

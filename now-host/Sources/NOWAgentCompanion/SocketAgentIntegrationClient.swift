@@ -138,6 +138,18 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    func mirrorRead(_ request: AgentIntegrationMirrorReadRequest) async
+        -> AgentIntegrationMirrorReadResult {
+        guard let client else {
+            return .init(unavailable: unavailable(for: startupError))
+        }
+        do {
+            return try await client.mirrorRead(request)
+        } catch {
+            return .init(unavailable: unavailable(for: error))
+        }
+    }
+
     /* THE ACT LANE, overriding the five protocol defaults that answered
        `noActLane`. That sentence — "this host carries no act lane yet" — was
        true of every client that could reach them and stopped being true the

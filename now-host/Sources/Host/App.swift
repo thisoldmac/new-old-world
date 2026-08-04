@@ -769,6 +769,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     }
                     return .diagnostics(
                         await agentIntegration.runDiagnostic(probe))
+                case .mirrorRead:
+                    /* A read of state the Mirror engine has already
+                       published. The codec owns the intention grammar; the
+                       adapter owns session selection. This branch sends no
+                       guest request and creates no observer. */
+                    guard let read = request.mirrorReadRequest else {
+                        return .mirrorRead(.init(unavailable: .init(
+                            code: "now-mirror-read-invalid",
+                            message:
+                                "The Mirror read request named no intention")))
+                    }
+                    return .mirrorRead(
+                        await agentIntegration.mirrorRead(read))
                 case .stream:
                     /* The bracket. The codec has already refused every
                        crossed shape — a stop carrying a depth, a page

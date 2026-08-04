@@ -290,6 +290,8 @@ public struct AgentIntegrationLocalClient: Sendable {
             preconditionFailure("A reveal requires a target")
         case .diagnostics:
             preconditionFailure("A diagnostics request names its probe")
+        case .mirrorRead:
+            preconditionFailure("A Mirror read names its intention")
         case .stream:
             preconditionFailure(
                 "A stream request says which of its three intentions it is")
@@ -480,6 +482,16 @@ public struct AgentIntegrationLocalClient: Sendable {
         return result
     }
 
+    public func mirrorRead(_ request: AgentIntegrationMirrorReadRequest)
+        async throws -> AgentIntegrationMirrorReadResult {
+        let response = try await send(.mirrorRead(request))
+        guard let result = response.mirrorReadResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no Mirror read result")
+        }
+        return result
+    }
+
     // MARK: - The act lane
 
     public func windowAct(_ act: AgentIntegrationWindowActRequest)
@@ -648,6 +660,13 @@ public struct AgentIntegrationLocalClient: Sendable {
                    "the guest is busy for seconds"; the read-only two would
                    time out locally on a call that was going to succeed,
                    which teaches its caller nothing. */
+                timeout = captureReceiveTimeout
+            case .mirrorRead:
+                /* `wait` may hold for the request's bounded 15 seconds;
+                   status, snapshot and find are immediate reads of the same
+                   lane. One operation has one socket budget, so use the
+                   existing long read window and let the typed timeout remain
+                   the result rather than turning it into a transport error. */
                 timeout = captureReceiveTimeout
             }
             let response = try sendRaw(

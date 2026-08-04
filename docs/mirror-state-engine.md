@@ -1,9 +1,10 @@
 # Mirror state engine
 
-**Status:** pure reducer, first host shadow slice, render enrichment, evidence
-export, and production/oracle isolation are built and focused-tested. Typed
-producer completion, native cutover, direct-input parity, guest build, VM
-staging, and metal proof remain open.
+**Status:** pure reduction, host session ownership, render enrichment, evidence
+export, production/oracle isolation, visible read cutover, the direct-input
+operation FIFO, and read-only MCP projections are built and focused-tested.
+Exact guest/extension staging, the full direct campaign, remaining structured
+producers, live MCP parity proof, and metal proof remain open.
 
 The Mirror is a client of a guest-authoritative replica. A scene is an
 observation to reduce, not a replacement document to install wholesale. This
@@ -60,7 +61,7 @@ producer-specific content epochs and generations where those exist. A torn,
 overwritten, or partial content drain may never replace the last settled
 display.
 
-## Host shadow boundary
+## Host state owner
 
 `MirrorStateEngineRegistry` owns exactly one engine for one `GuestKey`, which
 already includes the connection-session UUID. A successor connection therefore
@@ -76,15 +77,13 @@ one conservative host-wide pending scene slot, and a second caller is refused
 rather than overwriting the first callback. This is coalescing, not yet the
 final per-session observation scheduler.
 
-The visible scene is still the C26 legacy path, including Apple-menu continuity
-and its current content join. Every decoded structural scene is also reduced by
-the shadow engine and compared with the scene the legacy path displays. Shadow
-state never authorizes an action. While the pinned Mac is not the active Mac,
-the Mirror may continue its addressed structural observations but pauses the
-legacy active-only content and action paths. A gesture receives a named refusal
-until the person selects that exact Mac. This prevents cross-guest mutation;
-the later operation broker must replace the limitation with session-addressed
-dispatch rather than weakening the check.
+The visible scene now reads the engine projection. Every decoded structural
+scene is reduced there first; QuickDraw/Finder enrichments publish through the
+same owner. While the pinned Mac is not the active Mac, the Mirror may continue
+its addressed structural observations but pauses active-only content and
+mutation paths. A gesture receives a named refusal until the person selects
+that exact Mac. This prevents cross-guest mutation without silently repointing
+the host.
 
 QuickDraw and Finder results now enter the shadow engine as same-sequence
 enrichments after the structural observation is accepted. The enrichment
@@ -126,16 +125,39 @@ to expire honestly.
 ## Operations
 
 `MirrorOperationReducer` keeps queued intent separate from canonical guest
-state. Dispatch advances an operation only to `dispatched`. Later complete,
-same-session evidence may confirm its typed postcondition. Missing-window and
-missing-process postconditions require complete parent coverage; a partial
-absence proves nothing. Timeout stays eligible for a later
-`confirmedAfterTimeout`; refusal and session change are terminal.
+state. The host has one FIFO and bounded journal per pinned session. Native
+mouse/keyboard interactions submit typed process-front, window-front,
+window-absent, and named-window-present postconditions only after revalidating
+current actionable identities. Dispatch advances an operation only to
+`dispatched`; later complete same-session evidence confirms its postcondition.
+Missing-window and missing-process postconditions require complete parent
+coverage; a partial absence proves nothing.
 
-The host-side FIFO, capability revalidation, journal bounds, and native UI
-feedback are not implemented by the pure reducer. They belong to the shadow
-engine and cutover units and must use these operation records rather than
-inventing a parallel settlement model.
+An immediate `act-refused` does not outrank later guest state when the effect
+could already have landed. Such an attempt remains pending. Timeout is non-green
+and stays eligible for `confirmedAfterTimeout`; a second operation with the
+same postcondition makes late attribution ambiguous. Session change and a
+definitive not-sent refusal are terminal. Operations lacking stable identity
+are explicitly not dispatched rather than falling through to the legacy act
+path.
+
+## MCP read client
+
+Protocol v9 carries one `mirror_read` operation with status, snapshot, find,
+and wait intentions. The four registered MCP tools read immutable DTOs from the
+existing active-session engine: they expose the engine's exact snapshot ID,
+semantic digest, process/window entity IDs, freshness, coverage, and generation
+counters. Find is capped at 64 matches. Wait observes the engine store and has
+a 15-second maximum; it starts no guest request and owns no cache.
+
+The legacy `now_observe_elements` row remains separate for now because the
+engine snapshot does not yet contain the control-element reference tree.
+Removing it would make existing act-plane controls unaddressable, not unify
+observation. It must move behind an engine-owned structured-element producer in
+the broader Mirror completion plan. MCP mutation parity is also deferred: no
+direct native equivalent is green against the exact staged guest yet, so there
+is no proven semantic reference to expose. MCP reads and API reach remain
+ineligible to satisfy the direct-input/pixel UX gate.
 
 ## Digest
 
@@ -163,16 +185,16 @@ version-expectation failure: its seven v1 golden scenes are rebuilt with the
 current v2 stamp and compared against bodies stamped v1. Focused state-engine
 tests pass; the full package is not green and must not be reported as such.
 
-Open before visible cutover:
+Open before the state-engine campaign can close:
 
 - exact guest-minted Finder-item and application-visibility capabilities;
 - typed producer coverage beyond census/windows/menubar, especially Finder
   enrichment, content epochs, and global layer order;
-- bounded tombstone/snapshot/journal retention tied to pending operations;
+- bounded tombstone retention tied to pending operations;
 - a per-session observation scheduler beyond the conservative global pending
-  slot, complete shadow parity, and content/evidence integration;
+  slot;
 - guest-authored content epochs/generations and typed Finder/content coverage;
-- native FIFO and direct keyboard/mouse acceptance campaign;
+- direct keyboard/mouse acceptance campaign and live MCP read-parity capture;
 - guest cross-build, staged VM update, and clean saved shutdown.
 
 ## Development oracle boundary

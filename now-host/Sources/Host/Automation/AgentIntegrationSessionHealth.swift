@@ -18,6 +18,7 @@ final class AgentIntegrationHostAdapter {
     /// bound is the ONLY watchdog on a `vprobe`, since the guest has none.
     private let diagnosticsTimeout: TimeInterval
     private let artifactApprovals: AgentIntegrationArtifactApprovalStore?
+    private let mirrorEngines: MirrorStateEngineRegistry?
     private lazy var processControl = AgentIntegrationProcessControl(
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() },
@@ -85,6 +86,11 @@ final class AgentIntegrationHostAdapter {
         listener: listener,
         approvals: artifactApprovals,
         currentSessionID: { [unowned self] in connectedSessionID() })
+    private lazy var mirrorState = mirrorEngines.map { engines in
+        MirrorStateProjectionService(
+            engines: engines,
+            currentGuest: { [unowned self] in self.listener.activeKey })
+    }
     private var sessionID: UUID?
     private var sessionConnectedAt: Date?
 
@@ -95,13 +101,15 @@ final class AgentIntegrationHostAdapter {
             AgentIntegrationCatalogSearchPolicy.commandTimeout,
         diagnosticsTimeout: TimeInterval =
             AgentIntegrationDiagnosticsPolicy.commandTimeout,
-        artifactApprovals: AgentIntegrationArtifactApprovalStore? = nil
+        artifactApprovals: AgentIntegrationArtifactApprovalStore? = nil,
+        mirrorEngines: MirrorStateEngineRegistry? = nil
     ) {
         self.listener = listener
         self.launchCommandTimeout = launchCommandTimeout
         self.catalogSearchTimeout = catalogSearchTimeout
         self.diagnosticsTimeout = diagnosticsTimeout
         self.artifactApprovals = artifactApprovals
+        self.mirrorEngines = mirrorEngines
     }
 
     func sessionHealth(observedAt: Date = Date())
@@ -179,6 +187,16 @@ final class AgentIntegrationHostAdapter {
     func sessionCapabilities(probeCostly: Bool = false) async
         -> AgentIntegrationSessionCapabilitiesResult {
         await capabilityLedger.report(probeCostly: probeCostly)
+    }
+
+    func mirrorRead(_ request: AgentIntegrationMirrorReadRequest) async
+        -> AgentIntegrationMirrorReadResult {
+        guard let mirrorState else {
+            return .init(unavailable: .init(
+                code: "now-mirror-state-lane-absent",
+                message: "This host adapter has no Mirror state engine"))
+        }
+        return await mirrorState.read(request)
     }
 
     func requestQuit(reference: String, requestedAt: Date = Date()) async

@@ -43,6 +43,30 @@ act-log evidence, paired images, and resume instructions are in
 for the host state-engine plan; no later implementation may trade these passes
 for progress elsewhere.
 
+### STATE ENGINE U7 READ PARITY BUILT; LIVE STAGING STILL OPEN (2026-08-04)
+
+The native Mirror and MCP now have one state owner rather than parallel
+observers. Local protocol v9 exposes status, snapshot, find, and wait as four
+read-only projections over the existing session-pinned engine. They carry the
+same snapshot ID, digest, stable process/window identities, freshness,
+coverage, and generation counters the native renderer/evidence path reads.
+Find is locally bounded and wait observes publication without polling the
+guest or creating another cache.
+
+Seven focused service/projection/codec tests pass. The derived MCP coverage
+gate was watched failing because all four newly registered tools were absent
+from `docs/mcp-coverage.md`, then passed after the rows were documented. This
+is **tested, not yet live-parity verified**: the running host predates protocol
+v9 and the development VM still has a stale guest application despite the
+current NOW Extension.
+
+Two items remain explicitly deferred. The old `now_observe_elements` call
+cannot be removed until the state engine owns structured control elements and
+their capability references; removing it now would make the existing act rows
+unaddressable. MCP mutation parity also remains off until a direct native
+equivalent is proven against the exact staged guest. Neither API reach nor MCP
+success can satisfy a direct-input/pixel gate.
+
 ### STATE ENGINE U1A: TYPED COVERAGE AND LIFETIME IDENTITY BUILT (2026-08-04)
 
 The IR v2 producer and MirrorKit consumer now agree on typed collection

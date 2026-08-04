@@ -14,5 +14,6 @@ final class MirrorStateEngineRegistry {
     }
 
     func remove(_ key: GuestKey) { engines.removeValue(forKey: key) }
+    func existing(for key: GuestKey) -> MirrorStateEngine? { engines[key] }
     var count: Int { engines.count }
 }

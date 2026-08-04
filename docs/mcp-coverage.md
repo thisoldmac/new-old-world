@@ -103,6 +103,10 @@ The test compares both against the code literally.
 | `now_machine_facts` | `gestalt` | `gestalt` | command |
 | `now_list_processes` | `process.list` | `process.list` | message family |
 | `now_observe_elements` | `elements` | `elements` | command |
+| `now_mirror_status` | — | — | none; reads the native Mirror state engine without another guest request |
+| `now_mirror_snapshot` | — | — | none; reads the native Mirror state engine without another guest request |
+| `now_mirror_find` | — | — | none; queries the native Mirror state engine without another guest request |
+| `now_mirror_wait` | — | — | none; waits for the native Mirror state engine without another guest request |
 | `now_guest_log_tail` | `tail` | `tail` | command |
 | `now_capture_screen` | `capture.request` | `capture.request` | message family |
 | `now_stream_screen` | `stream.start`, `stream.stop`, `stream.refresh` | `stream.start`, `stream.stop`, `stream.refresh` | message family |

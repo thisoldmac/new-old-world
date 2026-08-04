@@ -179,7 +179,8 @@ final class HostAppState: ObservableObject {
         artifactApprovals = try? AgentIntegrationArtifactApprovalStore()
         let integration = AgentIntegrationHostAdapter(
             listener: listener,
-            artifactApprovals: artifactApprovals)
+            artifactApprovals: artifactApprovals,
+            mirrorEngines: mirrorEngines)
         agentIntegration = integration
         guestFiles = GuestFilesCommandService(
             listener: listener,

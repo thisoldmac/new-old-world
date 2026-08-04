@@ -32,6 +32,16 @@ public enum HostProjectionCatalog {
            order, the observations go from the machine, to its processes, to
            the elements of one of them. */
         ObserveElementsProjection.self,
+        /* Four views of the SAME immutable lane the native Mirror renders.
+           Kept together immediately after the legacy element walk so the
+           distinction is visible: these rows do not ask the guest again,
+           mint a second cache, or substitute for the direct-input/pixel
+           gate. Status is the cheap identity, snapshot the full projection,
+           find a bounded local query, and wait the next published snapshot. */
+        MirrorStatusProjection.self,
+        MirrorSnapshotProjection.self,
+        MirrorFindProjection.self,
+        MirrorWaitProjection.self,
         /* With the observations rather than beside the Files family: it
            reads what the guest wrote about itself, changes nothing, and
            names no file — the nearest neighbour of a process listing, not

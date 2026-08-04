@@ -618,6 +618,27 @@ and fail; restoring it returned the gate to green.
 
 **Cleanup gate:** Remove the old direct guest observe/act projection only after derived coverage proves every retained method has an engine disposition.
 
+**Checkpoint 2026-08-04:** Mandatory read parity is implemented through local
+protocol v9 as one `mirror_read` lane with four registered read-only tools:
+`now_mirror_status`, `now_mirror_snapshot`, `now_mirror_find`, and
+`now_mirror_wait`. They return the existing engine's exact snapshot identity,
+digest, stable process/window entities, freshness, coverage, and generations.
+Find is bounded to 64 entities; wait watches engine publication and creates no
+guest request or cache. Focused service/projection/codec tests pass, including a
+wait that advances only when the test publishes a new authoritative scene. The
+derived MCP coverage gate was first observed failing on all four undocumented
+rows, then returned green after the catalog table was updated.
+
+Two conditional U7 items are explicitly deferred rather than smuggled through
+as parity. `now_observe_elements` still asks the guest because the engine does
+not yet own its control-element/reference tree; deleting it now would regress
+every element-addressed act. It moves only after that structured producer has
+an engine disposition. No MCP mutation row is enabled because the direct native
+equivalent has not passed against the exact current staged guest; MCP mutation
+therefore has no proven semantic reference and cannot block mandatory read
+parity. Live socket parity remains for U8 after the exact guest/extension image
+is staged.
+
 ### U8. Run the full direct campaign and promote the development image
 
 **Goal:** Prove the state-engine cutover, preserve findings, and hand control back to the broader completion plan on a clean exact guest image.

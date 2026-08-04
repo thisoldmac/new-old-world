@@ -194,6 +194,11 @@ public protocol AgentIntegrationClient: Sendable {
     /// `ObserveElementsProjection`.
     func observeElements(process: AgentIntegrationProcessSerial?) async
         -> AgentIntegrationElementObservationResult
+    /// Read the immutable state already owned by the native Mirror. All four
+    /// MCP projections share this one transport-neutral lane; none may start
+    /// another guest observer or maintain another cache.
+    func mirrorRead(_ request: AgentIntegrationMirrorReadRequest) async
+        -> AgentIntegrationMirrorReadResult
 }
 
 extension AgentIntegrationClient {
@@ -440,6 +445,13 @@ extension AgentIntegrationClient {
     ) async -> AgentIntegrationElementObservationResult {
         .unavailable(.noObservationLane(
             AgentIntegrationCapabilityNames.elementsCommand))
+    }
+
+    public func mirrorRead(_ request: AgentIntegrationMirrorReadRequest) async
+        -> AgentIntegrationMirrorReadResult {
+        .init(unavailable: .init(
+            code: "now-mirror-state-lane-absent",
+            message: "This client cannot read the host Mirror state engine"))
     }
 
     /// Nothing to address: this client answers "no host" to everything.
