@@ -75,6 +75,80 @@ final class NOWMirrorSourceTests: XCTestCase {
                      "two front rows must refuse rather than guess")
     }
 
+    func testAnEmptyAppleShellCannotEraseTheLastCompleteGuestMenu() throws {
+        let fixture = try XCTUnwrap(
+            Bundle.module.url(forResource: "now-scene-ir-v1",
+                              withExtension: "json",
+                              subdirectory: "Fixtures"))
+        let complete = try NOWMirrorSceneDecoder.decode(
+            irVersion: 1, document: Data(contentsOf: fixture))
+        let completeApple = try XCTUnwrap(
+            complete.menubar?.menus.first(where: \.apple))
+        XCTAssertFalse(completeApple.items.isEmpty,
+                       "the captured guest fixture must exercise real rows")
+
+        var delayed = complete
+        let appleIndex = try XCTUnwrap(
+            delayed.menubar?.menus.firstIndex(where: \.apple))
+        delayed.menubar?.app = "New Old World"
+        delayed.menubar?.menus[appleIndex].id = 512
+        delayed.menubar?.menus[appleIndex].left = 7
+        delayed.menubar?.menus[appleIndex].items = []
+
+        let merged = NOWMirrorSceneContinuity.accept(
+            delayed, after: complete)
+        let apple = try XCTUnwrap(
+            merged.scene.menubar?.menus.first(where: \.apple))
+
+        XCTAssertEqual(apple.items, completeApple.items,
+                       "a delayed empty shell is expected-stale, not deletion")
+        XCTAssertEqual(apple.id, 512,
+                       "identity still comes from the newest guest scene")
+        XCTAssertEqual(apple.left, 7,
+                       "geometry still comes from the newest guest scene")
+        XCTAssertTrue(merged.retainedAppleItems)
+    }
+
+    func testACompleteAppleRefreshAlwaysReplacesRetainedRows() throws {
+        let fixture = try XCTUnwrap(
+            Bundle.module.url(forResource: "now-scene-ir-v1",
+                              withExtension: "json",
+                              subdirectory: "Fixtures"))
+        var previous = try NOWMirrorSceneDecoder.decode(
+            irVersion: 1, document: Data(contentsOf: fixture))
+        var incoming = previous
+        let appleIndex = try XCTUnwrap(
+            incoming.menubar?.menus.firstIndex(where: \.apple))
+        previous.menubar?.menus[appleIndex].items[0].title = "Stale row"
+        incoming.menubar?.menus[appleIndex].items[0].title = "Fresh row"
+
+        let merged = NOWMirrorSceneContinuity.accept(
+            incoming, after: previous)
+
+        XCTAssertEqual(merged.scene.menubar?.menus[appleIndex].items[0].title,
+                       "Fresh row")
+        XCTAssertFalse(merged.retainedAppleItems)
+    }
+
+    func testAnInitiallyEmptyAppleMenuStaysHonestlyEmpty() throws {
+        let fixture = try XCTUnwrap(
+            Bundle.module.url(forResource: "now-scene-ir-v1",
+                              withExtension: "json",
+                              subdirectory: "Fixtures"))
+        var incoming = try NOWMirrorSceneDecoder.decode(
+            irVersion: 1, document: Data(contentsOf: fixture))
+        let appleIndex = try XCTUnwrap(
+            incoming.menubar?.menus.firstIndex(where: \.apple))
+        incoming.menubar?.menus[appleIndex].items = []
+
+        let merged = NOWMirrorSceneContinuity.accept(incoming, after: nil)
+
+        XCTAssertTrue(merged.scene.menubar?.menus[appleIndex].items.isEmpty
+                      == true)
+        XCTAssertFalse(merged.retainedAppleItems,
+                       "the host must never invent Apple-menu rows")
+    }
+
     func testOnlyConfirmedSettlementEarnsTheGreenCheckmark() {
         XCTAssertTrue(NOWMirrorSource.isConfirmedSettlement("confirmed"))
         for status in [nil, "unknown", "dispatched-but-unconfirmed",

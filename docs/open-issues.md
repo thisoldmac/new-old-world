@@ -14,6 +14,35 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## CYCLE 26 HIGH-WATER CHECKPOINT; APPLE REPAIRED, STATE MODEL OPEN (2026-08-04)
+
+The exact C26 native host was driven through its Mirror and compared with QMP
+guest captures. A later scene's empty Apple shell no longer erases complete
+same-guest rows: the host retains only previously observed guest rows, keeps
+the newest identity/geometry, marks the projection `expected-stale`, and never
+invents an initial menu. The regression guard was watched fail under mutation
+and pass after restoration. The full native/host gate passes; the cross-guest
+build step skipped because Retro68 was unavailable on this shell path. This is
+tested and emulator-observed, not metal-verified.
+
+The direct sweep also fixes the verdict on several earlier reports. Macintosh
+HD opens from Mirror input and Finder contents render. Date & Time opens, Set
+Time Zone appears within 25 seconds, and Cancel works. Their fidelity remains
+red: Date & Time lacks authoritative field values and explanatory text, and
+the modal's guest city/country rows are blank in Mirror. Workshop structure
+renders but its authoritative detail content is blank after the content ring
+reports earlier bytes overwritten. Hide Finder briefly removes then restores
+the window without changing the front application. `Windows > Workshop` is
+refused because the guest never calls `MenuSelect`, so the window does not
+reopen.
+
+C26 is paused rather than falsely scored green: the strict evidence manifests
+were not complete for every row. The durable build identities, direct sweep,
+act-log evidence, paired images, and resume instructions are in
+`docs/mirror-high-water-checkpoint-2026-08-04.md`. This checkpoint is the floor
+for the host state-engine plan; no later implementation may trade these passes
+for progress elsewhere.
+
 ## CONTRACT FROZEN; UNIFICATION IMPLEMENTATION STILL OPEN (2026-08-03)
 
 The unified NOW Extension prerequisite now starts from a source-derived

@@ -26,6 +26,37 @@ enum NOWMirrorSceneDecoder {
     }
 }
 
+/// The smallest continuity rule needed before the full state engine exists.
+///
+/// A scene is a bounded observation, not a deletion transaction. In
+/// particular, Carbon may publish the system Apple menu's live identity and
+/// geometry before its dynamic rows are available. Replacing a complete
+/// guest-provided menu with that empty shell made the dropdown flash between
+/// correct and blank as applications changed focus. Keep only the last rows
+/// the guest actually supplied; all identity and geometry continue to come
+/// from the newest scene, and the caller surfaces the expected-stale state.
+enum NOWMirrorSceneContinuity {
+    struct Acceptance {
+        var scene: MirrorKit.Scene
+        var retainedAppleItems: Bool
+    }
+
+    static func accept(_ incoming: MirrorKit.Scene,
+                       after previous: MirrorKit.Scene?) -> Acceptance {
+        var scene = incoming
+        guard let index = scene.menubar?.menus.firstIndex(where: \.apple),
+              scene.menubar?.menus[index].items.isEmpty == true,
+              let retained = previous?.menubar?.menus.first(where: {
+                  $0.apple && !$0.items.isEmpty
+              }) else {
+            return .init(scene: scene, retainedAppleItems: false)
+        }
+
+        scene.menubar?.menus[index].items = retained.items
+        return .init(scene: scene, retainedAppleItems: true)
+    }
+}
+
 /// **Mirror's live view, driven by NOW's own wire.**
 ///
 /// The one object that makes `LiveMirrorView` — Mirror's gesture routing,
@@ -111,6 +142,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private var settlementTracker = MirrorSettlementTracker()
     private var planCorrelation: String?
     private var planSettlement = "unknown"
+    private var sceneGuestKey: GuestKey?
 
     init(listener: GuestListener,
          act: AgentIntegrationActControl,
@@ -198,7 +230,15 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         do {
             var decoded = try NOWMirrorSceneDecoder.decode(
                 irVersion: delivery.irVersion, document: delivery.document)
+            let sameGuest = delivery.guestKey != nil
+                && delivery.guestKey == sceneGuestKey
+            let continuity = NOWMirrorSceneContinuity.accept(
+                decoded, after: sameGuest ? scene : nil)
+            sceneGuestKey = delivery.guestKey
+            decoded = continuity.scene
             decoded = withIcons(decoded)
+            let menuStatus = continuity.retainedAppleItems
+                ? " · Apple menu expected-stale" : ""
             if !planePolicy().contains(.content) {
                 content.disable { [weak self] failure in
                     guard let self else { return }
@@ -206,7 +246,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                     self.refreshIconsIfStale(decoded)
                     self.ambient = "\(decoded.windows.count) windows · "
                         + (failure.map { "content release refused: \($0)" }
-                           ?? "content off")
+                           ?? "content off") + menuStatus
                     completion()
                     self.lifecycleDidChange()
                 }
@@ -219,6 +259,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 self.ambient = "\(update.scene.windows.count) windows · walk "
                     + "\(delivery.walkMs.map { "\($0)ms" } ?? "?") · transfer "
                     + "\(delivery.transferMs)ms · \(update.sentence)"
+                    + menuStatus
                 completion()
                 self.lifecycleDidChange()
             }

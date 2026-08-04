@@ -149,6 +149,7 @@ look dead.
 |---|---|
 | `controlPart` | canonical broker primitive |
 | `dialogItem` | canonical broker primitive |
+| `activateWindow` | canonical broker primitive |
 | `windowAct` | canonical broker primitive |
 | `menuCommand` | canonical broker primitive |
 | `keystroke` | canonical broker primitive |
