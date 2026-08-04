@@ -120,6 +120,7 @@ add_application(now-guest-ppc
     # what lets the host cc test the guard that runs inside other
     # people's applications.
     src/act/act_args.c
+    src/act/act_settlement.c
     src/act/act_client.c
     src/act/act_cmds.c
     ../now-guest-shared/src/now_act_guard.c

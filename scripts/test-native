@@ -177,6 +177,7 @@ run_py now-guest-shared content_stamp_order_source_test.py
 # actselftest was reporting an unexplained act-refused against every
 # foreign application.
 run_py now-guest-shared act_error_vocabulary_source_test.py
+run_py now-guest-shared act_correlation_source_test.py
 # Installing the six trap patches more than once must be survivable. The
 # one-shot that used to make it unreachable was removed 2026-08-02 (it
 # confined the patches to whichever process pumped first), so the safety
@@ -224,6 +225,8 @@ run_c now-guest-ppc semantic_policy_test.c \
 # mismatch, a cleared `fired`, or an unreached request up to agreement.
 run_c now-guest-ppc mach_selftest_report_test.c \
       "-DNOW_PEEK_TABLE_HOST" src/machine/mach_selftest_report.c
+run_c now-guest-ppc act_settlement_test.c \
+      "-DNOW_PEEK_TABLE_HOST" src/act/act_settlement.c
 # `activate` - fronting a process by IDENTITY rather than by name. The
 # parse is here because half a PSN, or one wider than 32 bits, names a
 # DIFFERENT live process rather than nothing; the verdict is here

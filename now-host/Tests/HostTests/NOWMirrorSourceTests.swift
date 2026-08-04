@@ -59,6 +59,118 @@ final class NOWMirrorSourceTests: XCTestCase {
         }
     }
 
+    func testMenuTargetComesFromTheSceneFrontProcess() throws {
+        let fixture = try XCTUnwrap(
+            Bundle.module.url(forResource: "now-scene-ir-v1",
+                              withExtension: "json",
+                              subdirectory: "Fixtures"))
+        let scene = try NOWMirrorSceneDecoder.decode(
+            irVersion: 1, document: Data(contentsOf: fixture))
+        XCTAssertEqual(NOWMirrorSource.frontProcess(in: scene),
+                       .init(high: 0, low: 29_949_953))
+
+        var ambiguous = scene
+        ambiguous.processes?[0].front = true
+        XCTAssertNil(NOWMirrorSource.frontProcess(in: ambiguous),
+                     "two front rows must refuse rather than guess")
+    }
+
+    func testOnlyConfirmedSettlementEarnsTheGreenCheckmark() {
+        XCTAssertTrue(NOWMirrorSource.isConfirmedSettlement("confirmed"))
+        for status in [nil, "unknown", "dispatched-but-unconfirmed",
+                       "timed-out", "refused", "session-changed"] {
+            XCTAssertFalse(NOWMirrorSource.isConfirmedSettlement(status),
+                           "\(status ?? "absent") must not render green")
+        }
+    }
+
+    func testSuccessfulInputDispatchIsExplicitlyUnconfirmed() {
+        XCTAssertEqual(NOWMirrorSource.dispatchOnlySettlement(
+            ifSuccessful: nil), "dispatched-but-unconfirmed")
+        XCTAssertNil(NOWMirrorSource.dispatchOnlySettlement(
+            ifSuccessful: "guest refused"),
+            "a refusal keeps its own complaint rather than a dispatch word")
+    }
+
+    func testActivationRequiresTheGuestsFrontProcessReread() {
+        XCTAssertNil(NOWMirrorSource.activationOutcome(
+            "\"yes, re-read from the machine\""))
+        XCTAssertNotNil(NOWMirrorSource.activationOutcome(nil))
+        XCTAssertNotNil(NOWMirrorSource.activationOutcome("fronted"),
+                        "an ok/accepted word is not the guest's re-read")
+    }
+
+    func testSettlementTimeoutReportsOnceThenLateConfirmationWins() {
+        var tracker = MirrorSettlementTracker()
+        XCTAssertTrue(tracker.track("A5A50001-00000007",
+                                    label: "move").isEmpty)
+        let timedOut = settlement(lo: 7, status: "timed-out",
+                                  timedOut: 120)
+        XCTAssertEqual(tracker.apply([timedOut]), [
+            .init(label: "move", outcome: "timed-out", confirmed: false),
+        ])
+        XCTAssertTrue(tracker.apply([timedOut]).isEmpty,
+                      "polling the same timeout must not report it again")
+        XCTAssertEqual(tracker.apply([
+            settlement(lo: 7, status: "confirmed", timedOut: 120),
+        ]), [
+            .init(label: "move", outcome: "confirmed after timing out",
+                  confirmed: true),
+        ])
+        XCTAssertEqual(tracker.pendingCount, 0)
+    }
+
+    func testTerminalRefusalAndSessionChangeNeverConfirm() {
+        for (lo, status) in [(8, "refused"), (9, "session-changed")] {
+            var tracker = MirrorSettlementTracker()
+            _ = tracker.track(String(format: "A5A50001-%08X", lo),
+                              label: status)
+            XCTAssertEqual(tracker.apply([
+                settlement(lo: UInt32(lo), status: status),
+            ]), [
+                .init(label: status, outcome: status, confirmed: false),
+            ])
+            XCTAssertEqual(tracker.pendingCount, 0)
+        }
+    }
+
+    func testAbsentSettlementListNeverInventsConfirmation() {
+        var tracker = MirrorSettlementTracker()
+        _ = tracker.track("A5A50001-0000000A", label: "close")
+        XCTAssertTrue(tracker.apply(nil).isEmpty)
+        XCTAssertEqual(tracker.pendingCount, 1,
+                       "an older guest supplies no settlement evidence")
+    }
+
+    func testFullGuestRingMakesAMissingCorrelationExplicitlyUnknown() {
+        var tracker = MirrorSettlementTracker()
+        _ = tracker.track("A5A50001-00000063", label: "old act")
+        let fullRing = (0..<MirrorSettlementTracker.capacity).map {
+            settlement(lo: UInt32($0), status: "dispatched-but-unconfirmed")
+        }
+        XCTAssertEqual(tracker.apply(fullRing), [
+            .init(label: "old act",
+                  outcome: "unknown (guest settlement evicted)",
+                  confirmed: false),
+        ])
+        XCTAssertEqual(tracker.pendingCount, 0)
+    }
+
+    func testHostSettlementTrackingEvictsOldestInsertion() {
+        var tracker = MirrorSettlementTracker()
+        _ = tracker.track("FFFFFFFF-FFFFFFFF", label: "oldest")
+        for value in 0..<(MirrorSettlementTracker.capacity - 1) {
+            _ = tracker.track(String(format: "00000000-%08X", value),
+                              label: "later \(value)")
+        }
+        XCTAssertEqual(tracker.track("AAAAAAAA-AAAAAAAA", label: "new"), [
+            .init(label: "oldest",
+                  outcome: "unknown (host settlement tracking evicted)",
+                  confirmed: false),
+        ], "eviction follows insertion age, not correlation sort order")
+        XCTAssertEqual(tracker.pendingCount, MirrorSettlementTracker.capacity)
+    }
+
     // MARK: - Window acts carry exactly their own geometry
 
     func testEachWindowActCarriesTheKeysItTakes() {
@@ -105,15 +217,15 @@ final class NOWMirrorSourceTests: XCTestCase {
     // MARK: - System Application-menu visibility
 
     func testApplicationVisibilityUsesClassicFinderSemantics() {
-        XCTAssertEqual(
-            NOWMirrorSource.applicationVisibilityScript(
-                .hide(name: "New Old World")),
-            "tell application \"Finder\" to set visible of application "
-                + "process \"New Old World\" to false")
-        XCTAssertEqual(
-            NOWMirrorSource.applicationVisibilityScript(.showAll),
-            "tell application \"Finder\" to set visible of every "
-                + "application process to true")
+        let hide = NOWMirrorSource.applicationVisibilityScript(
+            .hide(name: "New Old World"))
+        XCTAssertTrue(hide.contains("set visible of application process "
+                                    + "\"New Old World\" to false"))
+        XCTAssertTrue(hide.contains("if observed then return \"confirmed\""))
+        let show = NOWMirrorSource.applicationVisibilityScript(.showAll)
+        XCTAssertTrue(show.contains("set visible of every application "
+                                    + "process to true"))
+        XCTAssertTrue(show.contains("if not (visible of candidate)"))
 
         let others = NOWMirrorSource.applicationVisibilityScript(
             .hideOthers(except: "New \"Old\" World"))
@@ -124,6 +236,12 @@ final class NOWMirrorSourceTests: XCTestCase {
             others)
         XCTAssertTrue(others.contains("set visible of candidate to false"),
                       others)
+        XCTAssertNil(NOWMirrorSource.visibilityOutcome("\"confirmed\""))
+        XCTAssertEqual(NOWMirrorSource.visibilityOutcome(
+            "\"dispatched-but-unconfirmed\""),
+            "dispatched-but-unconfirmed")
+        XCTAssertEqual(NOWMirrorSource.visibilityOutcome(nil),
+                       "visibility outcome unavailable")
     }
 
     /// The guest states the key rule and this asserts against THAT, not
@@ -149,6 +267,14 @@ final class NOWMirrorSourceTests: XCTestCase {
                        + "takes \(expected); a surplus key is not a "
                        + "slightly-wrong act, it is a refused one",
                        file: file, line: line)
+    }
+
+    private func settlement(lo: UInt32, status: String,
+                            timedOut: UInt32 = 0) -> ActSettlement {
+        .init(correlationHi: 0xA5A5_0001, correlationLo: lo,
+              status: status, residentStage: 4, createdTicks: 100,
+              timedOutTicks: timedOut, terminalTicks: 140,
+              confirmedScene: status == "confirmed" ? 12 : 0)
     }
 
     // MARK: - What this driver declares

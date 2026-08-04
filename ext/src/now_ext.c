@@ -365,7 +365,7 @@ void _start(void)
        an extension that predates the plane reports a shorter `length`,
        and the application refuses rather than writing off the end of a
        system-heap block it did not size. */
-    table->act_format = kNowPeekActFormatV1;
+    table->act_format = kNowPeekActFormatV2;
     table->act_text_max = (NowPeekU16)kNowPeekActTextMax;
     table->identity_format = kNowPeekIdentityFormatV1;
     table->identity_length = (NowPeekU16)sizeof table->identity;

@@ -198,7 +198,41 @@ enum {
 
 enum {
     kNowPeekActFormatNone = 0,  /* plane P4 absent */
-    kNowPeekActFormatV1 = 1     /* the cell below, exactly */
+    kNowPeekActFormatV1 = 1,    /* the original cell below, exactly */
+    /* V1 stays byte-for-byte in place. V2 is its continuation at the
+       tail of NowPeekTable, so adding identity cannot move P3 or U2/U3. */
+    kNowPeekActFormatV2 = 2
+};
+
+/* Resident evidence only moves forward for one correlation. It is not the
+   application settlement outcome: requested/armed/fired prove mechanism,
+   never the guest-visible effect. Expired and refused are terminal resident
+   evidence, while the application may still retain a timed-out correlation
+   and later confirm its effect from a newer scene. */
+enum {
+    kNowPeekActStageNone = 0,
+    kNowPeekActStageRequested = 1,
+    kNowPeekActStageAccepted = 2,
+    kNowPeekActStageArmed = 3,
+    kNowPeekActStageFired = 4,
+    kNowPeekActStageRefused = 5,
+    kNowPeekActStageExpired = 6
+};
+
+/* Typed operation families for identity and settlement. Existing P4 op codes
+   remain unchanged; this vocabulary distinguishes controls that happen to
+   share a Toolbox mechanism but have different observable postconditions. */
+enum {
+    kNowPeekActKindNone = 0,
+    kNowPeekActKindPopup = 1,
+    kNowPeekActKindDialogItem = 2,
+    kNowPeekActKindList = 3,
+    kNowPeekActKindText = 4,
+    kNowPeekActKindControl = 5,
+    kNowPeekActKindMenu = 6,
+    kNowPeekActKindActivation = 7,
+    kNowPeekActKindVisibility = 8,
+    kNowPeekActKindWindow = 9
 };
 
 /* What a request asks for. */
@@ -321,7 +355,10 @@ enum {
     kNowPeekActErrPostFailed = 12,
     kNowPeekActErrNotControlItem = 13,
     kNowPeekActErrItemMismatch = 14,
-    kNowPeekActErrItemDisabled = 15
+    kNowPeekActErrItemDisabled = 15,
+    kNowPeekActErrIdentity = 16,
+    kNowPeekActErrExpired = 17,
+    kNowPeekActErrSessionChanged = 18
 };
 
 /* How a text request names its object. Every kind requires text_window,
@@ -624,6 +661,51 @@ typedef struct {
     NowPeekSemanticRecord records[kNowPeekSemanticMaxRecords];
 } NowPeekSemanticCell;
 
+/* V2 continuation of NowPeekActCell. It lives at the END of NowPeekTable:
+   growing the embedded V1 cell would move content_block and every U2/U3
+   field, silently breaking an older reader. The request identity is written
+   by the one application writer and published by request_generation LAST.
+   The resident echoes the entire tuple before advancing resident_stage.
+
+   PSN is correlation, not resident authority. The resident safety boundary
+   remains target_a5 plus the operation-specific object guards in the V1
+   cell; Process Manager calls are not introduced into foreign context. */
+typedef struct {
+    NowPeekU32 request_generation;
+    NowPeekU32 correlation_hi;
+    NowPeekU32 correlation_lo;
+    NowPeekU32 writer_epoch;
+    NowPeekU32 target_a5;
+    NowPeekU32 target_psn_high;
+    NowPeekU32 target_psn_low;
+    NowPeekU32 scene_generation;
+    NowPeekU32 operation_kind;
+    NowPeekU32 operation_code;
+    NowPeekU32 operation_object;
+    NowPeekI32 operation_aux;
+    NowPeekU32 deadline_ticks;
+
+    NowPeekU32 resident_generation;
+    NowPeekU32 resident_request_generation;
+    NowPeekU32 resident_correlation_hi;
+    NowPeekU32 resident_correlation_lo;
+    NowPeekU32 resident_writer_epoch;
+    NowPeekU32 resident_target_a5;
+    NowPeekU32 resident_target_psn_high;
+    NowPeekU32 resident_target_psn_low;
+    NowPeekU32 resident_scene_generation;
+    NowPeekU32 resident_operation_kind;
+    NowPeekU32 resident_operation_code;
+    NowPeekU32 resident_operation_object;
+    NowPeekI32 resident_operation_aux;
+    NowPeekU32 resident_stage;
+    NowPeekU32 resident_requested_ticks;
+    NowPeekU32 resident_accepted_ticks;
+    NowPeekU32 resident_armed_ticks;
+    NowPeekU32 resident_fired_ticks;
+    NowPeekU32 resident_terminal_ticks;
+} NowPeekActV2Cell;
+
 typedef struct {
     NowPeekU32 magic;         /* kNowPeekTableMagic */
     NowPeekU16 ext_major;     /* exact match required */
@@ -689,6 +771,9 @@ typedef struct {
     NowPeekU16 semantic_format;
     NowPeekU16 semantic_length;
     NowPeekSemanticCell semantic;
+    /* U5 P4 V2 append. This is the continuation of `act`, not a second
+       channel. Everything above retains its historic offset. */
+    NowPeekActV2Cell act_v2;
 } NowPeekTable;
 
 /* The offsets ARE the contract; a drift here is a defect on the other
@@ -776,9 +861,15 @@ _Static_assert(sizeof(NowPeekWriterLease) == 36,
 _Static_assert(offsetof(NowPeekTable, anchor_event_passes)
                    == offsetof(NowPeekTable, writer) + 36,
                "P1 counters append offset");
-_Static_assert(sizeof(NowPeekTable)
+_Static_assert(offsetof(NowPeekTable, act_v2)
                    == offsetof(NowPeekTable, semantic)
                     + sizeof(NowPeekSemanticCell),
+               "act v2 append offset");
+_Static_assert(sizeof(NowPeekActV2Cell) == 32 * 4,
+               "act v2 cell size");
+_Static_assert(sizeof(NowPeekTable)
+                   == offsetof(NowPeekTable, act_v2)
+                    + sizeof(NowPeekActV2Cell),
                "table size");
 _Static_assert(sizeof(NowPeekSemanticRecord) == 48,
                "semantic record size");

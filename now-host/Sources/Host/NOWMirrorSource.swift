@@ -106,6 +106,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private var iconLayout: String = "<none>"
     private var fetchingIcons = false
     private var actGeneration = 0
+    private var settlementTracker = MirrorSettlementTracker()
+    private var planCorrelation: String?
+    private var planSettlement = "unknown"
 
     init(listener: GuestListener,
          act: AgentIntegrationActControl,
@@ -148,6 +151,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                    scene transfer settles. Rearming the structural poll here
                    would create a second cadence and race the one command
                    whose records belong to this exact scene. */
+                self.apply(delivery.settlements)
                 self.accept(delivery) { [weak self] in self?.rearm() }
                 return
             case .failure(let failure):
@@ -434,11 +438,16 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 guard let self else { return }
                 let started = Date()
                 let complaint = await self.serve(plan)
+                if let correlation = self.planCorrelation {
+                    self.track(correlation, label: label)
+                }
                 ActLog.note(action: "\(label)  plan=\(plan)",
-                            outcome: complaint ?? "dispatched",
+                            outcome: complaint ?? self.planSettlement,
                             ms: Int(Date().timeIntervalSince(started) * 1000))
                 if let complaint {
                     self.report("\(label) — \(complaint)")
+                } else if !Self.isConfirmedSettlement(self.planSettlement) {
+                    self.report("\(label) — \(self.planSettlement)")
                 } else {
                     self.report(label + " ✓")
                 }
@@ -461,13 +470,23 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         report(label + "…")
         Task { @MainActor [weak self] in
             guard let self else { return }
+            self.planCorrelation = nil
+            self.planSettlement = "unknown"
             for action in actions {
                 if let outcome = await self.send(action) {
+                    if let correlation = self.planCorrelation {
+                        self.track(correlation, label: label)
+                    }
                     self.report("\(label) — \(outcome)")
                     return
                 }
             }
-            self.report(label + " ✓")
+            if let correlation = self.planCorrelation {
+                self.track(correlation, label: label)
+            }
+            self.report(Self.isConfirmedSettlement(self.planSettlement)
+                        ? label + " ✓"
+                        : "\(label) — \(self.planSettlement)")
             self.poll()
         }
     }
@@ -477,32 +496,44 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// Returns nil when it went, or a sentence for a person when it did
     /// not. Every branch answers one or the other; none stays quiet.
     private func serve(_ plan: InteractionPlan) async -> String? {
+        planCorrelation = nil
+        planSettlement = "unknown"
         switch plan {
         case .controlPart(let ref, let part, _):
-            return reading(await act.controlAct(.init(element: ref,
-                                                      part: part)))
+            return readingResident(await act.controlAct(.init(element: ref,
+                                                              part: part)))
 
         case .dialogItem(let ref, let item):
             /* Direct human-input path first. The broker vocabulary keeps this
                distinct from ctlact, and the guest revalidates the DITL item
                against the observation-minted backing control. */
             return await run("ditemact", ["element": .text(ref),
-                                          "item": .number(item)])
+                                          "item": .number(item)], act: true)
 
         case .windowAct(let ref, let what):
-            return reading(await act.windowAct(Self.request(ref, what)))
+            return readingResident(await act.windowAct(Self.request(ref, what)))
 
         case .menuCommand(let menuID, let index, let left):
-            return reading(await act.menuAct(
+            guard let process = Self.frontProcess(in: scene) else {
+                return "the current scene has no unique front process; "
+                    + "the menu act was not sent"
+            }
+            return readingResident(await act.menuAct(
                 .init(menu: menuID, item: index,
-                      titleLeft: left, process: nil)))
+                      titleLeft: left, process: process)))
 
         case .keystroke(let code, let char, let mods):
-            return reading(await act.key(
+            let complaint = reading(await act.key(
                 .init(code: code, char: char, mods: mods)))
+            if let settlement = Self.dispatchOnlySettlement(
+                ifSuccessful: complaint) {
+                planSettlement = settlement
+            }
+            return complaint
 
         case .setText(let ref, let text):
-            return reading(await act.setElementText(element: ref, text: text))
+            return readingResident(await act.setElementText(element: ref,
+                                                             text: text))
 
         case .typeText(let text):
             /* NOW has no `type` verb: text reaches the guest as the
@@ -516,15 +547,18 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                     return complaint
                 }
             }
+            planSettlement = "dispatched-but-unconfirmed"
             return nil
 
         case .activateApp(let psn):
-            return await activate(psn)
+            let result = await activate(psn)
+            if result == nil { planSettlement = "confirmed" }
+            return result
 
         case .applicationVisibility(let visibility):
-            return await run("script", [
-                "source": .text(Self.applicationVisibilityScript(visibility)),
-            ])
+            let result = await applicationVisibility(visibility)
+            if result == nil { planSettlement = "confirmed" }
+            return result
 
         case .finderSelect(let item, let container):
             return await finder(
@@ -568,7 +602,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
     private func finder(_ phrase: String) async -> String? {
         let source = "tell application \"Finder\" to \(phrase)"
-        return await run("script", ["source": .text(source)])
+        let complaint = await run("script", ["source": .text(source)])
+        if let settlement = Self.dispatchOnlySettlement(
+            ifSuccessful: complaint) {
+            planSettlement = settlement
+        }
+        return complaint
     }
 
     private func activate(_ psn: String) async -> String? {
@@ -577,8 +616,18 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         else { return "that process reference is not a PSN" }
         /* NUMBERS. As strings these crossed as "0"-parsing zeros and
            `activate` fronted process 0.0 - see CommandArg. */
-        return await run("activate", ["serialHi": .number(hi),
-                                      "serialLo": .number(lo)])
+        let read = await readingOutput(
+            "activate", ["serialHi": .number(hi), "serialLo": .number(lo)],
+            row: "Frontmost")
+        if let error = read.error { return error }
+        return Self.activationOutcome(read.value)
+    }
+
+    static func activationOutcome(_ raw: String?) -> String? {
+        guard raw.map(unquote) == "yes, re-read from the machine" else {
+            return "activation was not confirmed by a front-process re-read"
+        }
+        return nil
     }
 
     /// Classic Finder owns the Application menu's visibility semantics.
@@ -594,20 +643,55 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         }
         switch action {
         case .hide(let name):
-            return "tell application \"Finder\" to set visible of "
-                + "application process \"\(quoted(name))\" to false"
+            return """
+            tell application "Finder"
+            set visible of application process "\(quoted(name))" to false
+            set observed to not (visible of application process "\(quoted(name))")
+            end tell
+            if observed then return "confirmed"
+            return "dispatched-but-unconfirmed"
+            """
         case .hideOthers(let except):
             return """
             tell application "Finder"
             repeat with candidate in every application process
             if name of candidate is not "\(quoted(except))" then set visible of candidate to false
             end repeat
+            set observed to true
+            repeat with candidate in every application process
+            if name of candidate is not "\(quoted(except))" and visible of candidate then set observed to false
+            end repeat
             end tell
+            if observed then return "confirmed"
+            return "dispatched-but-unconfirmed"
             """
         case .showAll:
-            return "tell application \"Finder\" to set visible of every "
-                + "application process to true"
+            return """
+            tell application "Finder"
+            set visible of every application process to true
+            set observed to true
+            repeat with candidate in every application process
+            if not (visible of candidate) then set observed to false
+            end repeat
+            end tell
+            if observed then return "confirmed"
+            return "dispatched-but-unconfirmed"
+            """
         }
+    }
+
+    private func applicationVisibility(
+        _ action: InteractionPlan.ApplicationVisibility) async -> String? {
+        let read = await readingOutput(
+            "script", ["source": .text(Self.applicationVisibilityScript(action))])
+        if let error = read.error { return error }
+        return Self.visibilityOutcome(read.value)
+    }
+
+    static func visibilityOutcome(_ raw: String?) -> String? {
+        guard let raw else { return "visibility outcome unavailable" }
+        let observed = unquote(raw)
+        return observed == "confirmed" ? nil : observed
     }
 
     /// Runs a verb and returns one labelled row from its own reply, or
@@ -648,11 +732,24 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// The verbs with no typed projection on this host yet. Reads the
     /// guest's own reply rather than assuming a send is a success.
     private func run(_ verb: String,
-                     _ args: [String: CommandArg]) async -> String? {
+                     _ args: [String: CommandArg], act isAct: Bool = false)
+        async -> String? {
         await withCheckedContinuation { continuation in
             listener.runCommand(verb, typed: args) { result in
-                if result.ok { return continuation.resume(returning: nil) }
+                if result.ok {
+                    if isAct {
+                        let rows = AgentIntegrationActControl.rows(
+                            from: result, verb: verb)
+                        self.planCorrelation = rows["Correlation"]
+                        self.planSettlement = rows["Settlement"] ?? "unknown"
+                    }
+                    return continuation.resume(returning: nil)
+                }
                 let error = result.error
+                if isAct {
+                    self.planCorrelation = error?.correlation
+                    self.planSettlement = error?.settlement ?? "unknown"
+                }
                 continuation.resume(returning:
                     "\(error?.code ?? "error"): \(error?.message ?? "")")
             }
@@ -679,7 +776,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         let started = Date()
         let outcome = await dispatch(action)
         ActLog.note(action: "\(action)",
-                    outcome: outcome ?? "dispatched",
+                    outcome: outcome ?? planSettlement,
                     ms: Int(Date().timeIntervalSince(started) * 1000))
         return outcome
     }
@@ -687,31 +784,40 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private func dispatch(_ action: MirrorAction) async -> String? {
         switch action {
         case .controlPart(let ref, let part, _):
-            return reading(await act.controlAct(
+            return readingResident(await act.controlAct(
                 .init(element: ref, part: part)))
 
         case .axdo(let ref, _, _, let text):
             if let text {
-                return reading(await act.setElementText(element: ref,
-                                                        text: text))
+                return readingResident(await act.setElementText(element: ref,
+                                                                text: text))
             }
             /* A plain control click is part 10, the Control Manager's
                button part - the same number `ctlact` names first in its
                own refusal text. */
-            return reading(await act.controlAct(.init(element: ref,
-                                                      part: 10)))
+            return readingResident(await act.controlAct(.init(element: ref,
+                                                              part: 10)))
 
         case .windowAct(let ref, let what):
-            return reading(await act.windowAct(Self.request(ref, what)))
+            return readingResident(await act.windowAct(Self.request(ref, what)))
 
         case .menuInvoke(let menuID, let itemIndex, let titleLeft):
-            return reading(await act.menuAct(
+            guard let process = Self.frontProcess(in: scene) else {
+                return "the current scene has no unique front process; "
+                    + "the menu act was not sent"
+            }
+            return readingResident(await act.menuAct(
                 .init(menu: menuID, item: itemIndex,
-                      titleLeft: titleLeft, process: nil)))
+                      titleLeft: titleLeft, process: process)))
 
         case .key(let code, let char, let mods):
-            return reading(await act.key(
+            let complaint = reading(await act.key(
                 .init(code: code, char: char, mods: mods)))
+            if let settlement = Self.dispatchOnlySettlement(
+                ifSuccessful: complaint) {
+                planSettlement = settlement
+            }
+            return complaint
 
         default:
             /* Everything left is an act this driver declared it cannot
@@ -747,6 +853,31 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         }
     }
 
+    static func frontProcess(in scene: MirrorKit.Scene?)
+        -> AgentIntegrationProcessSerial? {
+        guard let front = scene?.processes?.filter(\.front),
+              front.count == 1 else { return nil }
+        let halves = front[0].psn.split(separator: ".")
+        guard halves.count == 2,
+              let high = Int(halves[0]), let low = Int(halves[1]) else {
+            return nil
+        }
+        return .init(high: high, low: low)
+    }
+
+    /// The one presentation gate for the green checkmark. A resident firing
+    /// a patch, a command returning `ok`, and a timeout that later settles
+    /// are all useful evidence, but only the application-owned settlement
+    /// record can say the effect was observed in a later scene.
+    static func isConfirmedSettlement(_ settlement: String?) -> Bool {
+        settlement == "confirmed"
+    }
+
+    static func dispatchOnlySettlement(ifSuccessful complaint: String?)
+        -> String? {
+        complaint == nil ? "dispatched-but-unconfirmed" : nil
+    }
+
     /// The guest's own answer, or nil when it dispatched. Never a
     /// paraphrase: a refusal is the most useful thing this surface
     /// produces, because the alternative is a person clicking and
@@ -760,6 +891,40 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             return "\(failure.code): \(failure.message)"
         case .unavailable(let why):
             return "\(why)"
+        }
+    }
+
+    private func readingResident<Value: AgentIntegrationSettledActReceipt &
+        Codable & Equatable & Sendable>(
+        _ result: AgentIntegrationProjectedResult<Value>) -> String? {
+        switch result {
+        case .completed(let receipt):
+            planCorrelation = receipt.correlation
+            planSettlement = receipt.settlement
+            return nil
+        case .refused(let failure):
+            planCorrelation = failure.correlation
+            planSettlement = failure.settlement ?? "unknown"
+            return "\(failure.code): \(failure.message)"
+        case .unavailable(let unavailable):
+            return unavailable.message
+        }
+    }
+
+    private func apply(_ settlements: [ActSettlement]?) {
+        render(settlementTracker.apply(settlements))
+    }
+
+    private func track(_ correlation: String, label: String) {
+        render(settlementTracker.track(correlation, label: label))
+    }
+
+    private func render(_ notices: [MirrorSettlementNotice]) {
+        for notice in notices {
+            ActLog.note(action: notice.label, outcome: notice.outcome, ms: 0)
+            report(notice.confirmed
+                   ? notice.label + " ✓"
+                   : "\(notice.label) — \(notice.outcome)")
         }
     }
 

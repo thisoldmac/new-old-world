@@ -357,21 +357,26 @@ public struct AgentIntegrationWindowActRequest:
 /// just handed — the one failure the projection seam exists to make visible.
 /// Where the window is, is a question for an observation.
 public struct AgentIntegrationWindowActReceipt:
-    Codable, Equatable, Sendable {
+    Codable, Equatable, Sendable, AgentIntegrationSettledActReceipt {
     public let window: String
     public let action: AgentIntegrationWindowAction
     public let dispatch: AgentIntegrationActDispatch
     /// When the guest reported the event handed off.
     public let dispatchedAt: Date
+    public let correlation: String?
+    public let settlement: String
 
     public init(window: String,
                 action: AgentIntegrationWindowAction,
                 dispatch: AgentIntegrationActDispatch,
-                dispatchedAt: Date) {
+                dispatchedAt: Date, correlation: String? = nil,
+                settlement: String = "unknown") {
         self.window = window
         self.action = action
         self.dispatch = dispatch
         self.dispatchedAt = dispatchedAt
+        self.correlation = correlation
+        self.settlement = settlement
     }
 }
 
@@ -402,19 +407,24 @@ public struct AgentIntegrationTextReading: Codable, Equatable, Sendable {
 /// purpose: it is not "what the element now holds", which only a reading
 /// could say.
 public struct AgentIntegrationTextSetReceipt:
-    Codable, Equatable, Sendable {
+    Codable, Equatable, Sendable, AgentIntegrationSettledActReceipt {
     public let element: String
     public let requestedScalars: Int
     public let dispatch: AgentIntegrationActDispatch
     public let dispatchedAt: Date
+    public let correlation: String?
+    public let settlement: String
 
     public init(element: String, requestedScalars: Int,
                 dispatch: AgentIntegrationActDispatch,
-                dispatchedAt: Date) {
+                dispatchedAt: Date, correlation: String? = nil,
+                settlement: String = "unknown") {
         self.element = element
         self.requestedScalars = requestedScalars
         self.dispatch = dispatch
         self.dispatchedAt = dispatchedAt
+        self.correlation = correlation
+        self.settlement = settlement
     }
 }
 

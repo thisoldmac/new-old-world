@@ -420,19 +420,24 @@ public struct AgentIntegrationMenuActRequest:
 /// host lane exists to carry it, it arrives as its own dated reading rather
 /// than as a field on this dispatch.
 public struct AgentIntegrationControlActReceipt:
-    Codable, Equatable, Sendable {
+    Codable, Equatable, Sendable, AgentIntegrationSettledActReceipt {
     public let element: String
     public let part: Int
     public let dispatch: AgentIntegrationActDispatch
     public let dispatchedAt: Date
+    public let correlation: String?
+    public let settlement: String
 
     public init(element: String, part: Int,
                 dispatch: AgentIntegrationActDispatch,
-                dispatchedAt: Date) {
+                dispatchedAt: Date, correlation: String? = nil,
+                settlement: String = "unknown") {
         self.element = element
         self.part = part
         self.dispatch = dispatch
         self.dispatchedAt = dispatchedAt
+        self.correlation = correlation
+        self.settlement = settlement
     }
 }
 
@@ -444,7 +449,7 @@ public struct AgentIntegrationControlActReceipt:
 /// dialog, or do nothing at all, and none of that is visible from the
 /// dispatch.
 public struct AgentIntegrationMenuActReceipt:
-    Codable, Equatable, Sendable {
+    Codable, Equatable, Sendable, AgentIntegrationSettledActReceipt {
     public let menu: Int
     public let item: Int
     /// Echoed back because it is the identity that was checked, not a
@@ -454,15 +459,20 @@ public struct AgentIntegrationMenuActReceipt:
     public let titleLeft: Int
     public let dispatch: AgentIntegrationActDispatch
     public let dispatchedAt: Date
+    public let correlation: String?
+    public let settlement: String
 
     public init(menu: Int, item: Int, titleLeft: Int,
                 dispatch: AgentIntegrationActDispatch,
-                dispatchedAt: Date) {
+                dispatchedAt: Date, correlation: String? = nil,
+                settlement: String = "unknown") {
         self.menu = menu
         self.item = item
         self.titleLeft = titleLeft
         self.dispatch = dispatch
         self.dispatchedAt = dispatchedAt
+        self.correlation = correlation
+        self.settlement = settlement
     }
 }
 

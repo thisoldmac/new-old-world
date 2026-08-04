@@ -7,6 +7,7 @@
 #include <Processes.h>
 
 #include "agent_access.h"
+#include "act_client.h"
 #include "build_stamp.h"
 #include "capture.h"
 #include "fileshare.h"
@@ -1504,7 +1505,7 @@ static void scene_fail(long id, unsigned short xfer, const char *reason)
 static void serve_scene(const char *request)
 {
     NowPrefs prefs;
-    char json[512];
+    static char json[kNowMaxControl];
     long id = now_json_find_int(request, "id", 0);
     long stale_ms = now_json_find_int(request, "staleAfterMs", 0);
     unsigned long stale_ticks;
@@ -1583,6 +1584,11 @@ static void serve_scene(const char *request)
                    (unsigned long)(kNowPeekCapAnchors | kNowPeekCapTree));
 
     now_scene_collect(scene, ++g_scene_seq, stale_ticks);
+    /* Correlate subsequent acts with the normal-context observation a
+       person actually saw. This is evidence only; resident guards do not
+       trust the scene sequence. */
+    now_act_note_scene_generation((unsigned long)scene->seq);
+    now_act_observe_scene(scene);
 
     /* Size, then allocate, then encode. One walk, two answers: the
        encoder counts always and writes only while it fits, so asking for
@@ -1610,12 +1616,33 @@ static void serve_scene(const char *request)
 
     /* The terminator is NOT sent: `bytes` is the document, and a JSON
        parser wants a length rather than a C string. needed counts it. */
-    snprintf(json, sizeof json,
+    {
+    long json_used;
+    long settlement_used;
+    json_used = snprintf(json, sizeof json,
              "{\"type\":\"scene.begin\",\"id\":%ld,\"transfer\":%u,"
              "\"bytes\":%ld,\"irVersion\":%d,\"seq\":%ld,"
-             "\"capturedAt\":%.1f,\"source\":\"%s\",\"walkMs\":%ld}",
+             "\"capturedAt\":%.1f,\"source\":\"%s\",\"walkMs\":%ld,",
              id, xfer, needed - 1, NOW_SCENE_IR_VERSION, scene->seq,
              scene->captured_at, scene->source, walk_ms);
+    if (json_used < 0 || json_used >= (long)sizeof json) {
+        DisposePtr((Ptr)scene);
+        DisposeHandle(doc);
+        scene_fail(id, xfer, "the scene envelope did not fit");
+        return;
+    }
+    settlement_used = now_act_encode_settlements(
+        json + json_used, (long)sizeof json - json_used - 1);
+    if (settlement_used < 0
+        || json_used + settlement_used + 1 >= (long)sizeof json) {
+        DisposePtr((Ptr)scene);
+        DisposeHandle(doc);
+        scene_fail(id, xfer, "the settlement envelope did not fit");
+        return;
+    }
+    json[json_used + settlement_used] = '}';
+    json[json_used + settlement_used + 1] = '\0';
+    }
     DisposePtr((Ptr)scene);
     if (!send_control(json)
         || !arm_blob_transfer(id, xfer, doc, needed - 1, chunk, pace_ms,

@@ -1295,6 +1295,14 @@ components:
               type: string
               description: Stable slug, e.g. "unknown-command".
             message: { type: string }
+            correlation:
+              type: string
+              description: >
+                Optional P4 correlation after a request was registered. It is
+                absent for validation failures that never entered the plane.
+            settlement:
+              enum: [confirmed, dispatched-but-unconfirmed, refused,
+                     timed-out, session-changed, unknown]
     ExecRequest:
       type: object
       required: [type, id, line]
@@ -2327,6 +2335,34 @@ components:
         walkMs:
           type: integer
           description: Guest-side time spent walking and encoding, for tuning.
+        settlements:
+          type: array
+          maxItems: 16
+          description: >
+            Application-owned action settlements, reconciled against this
+            normal-context scene before scene.begin is sent. Optional for
+            compatibility with older guests. Resident stage is mechanism
+            evidence only; status confirmed is the only success state.
+          items: { $ref: "#/components/schemas/ActSettlement" }
+    ActSettlement:
+      type: object
+      required: [correlationHi, correlationLo, status, residentStage,
+                 createdTicks, timedOutTicks, terminalTicks, confirmedScene]
+      additionalProperties: false
+      properties:
+        correlationHi: { type: integer, minimum: 0 }
+        correlationLo: { type: integer, minimum: 0 }
+        status:
+          enum: [confirmed, dispatched-but-unconfirmed, refused, timed-out,
+                 session-changed, unknown]
+        residentStage: { type: integer, minimum: 0, maximum: 6 }
+        createdTicks: { type: integer, minimum: 0 }
+        timedOutTicks:
+          type: integer
+          minimum: 0
+          description: Retained after a timed-out correlation later confirms.
+        terminalTicks: { type: integer, minimum: 0 }
+        confirmedScene: { type: integer, minimum: 0 }
     SceneEnd:
       type: object
       required: [type, id, transfer, ok]

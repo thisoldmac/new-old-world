@@ -34,6 +34,28 @@ final class GuestWireFixtureTests: XCTestCase {
         }
     }
 
+    /// serve_scene() appends the application-owned settlement records after
+    /// its fixed scene.begin prefix. This fixture is independent of the
+    /// Swift encoder and pins the exact guest-written optional tail.
+    func testSceneBeginSettlementsAsTheGuestWritesIt() throws {
+        let json = """
+        {"type":"scene.begin","id":4,"transfer":9,"bytes":9214,\
+        "irVersion":2,"seq":11,"capturedAt":712345.5,"source":"native",\
+        "walkMs":18,"settlements":[{"correlationHi":2779054081,\
+        "correlationLo":7,"status":"confirmed","residentStage":4,\
+        "createdTicks":100,"timedOutTicks":90,"terminalTicks":140,\
+        "confirmedScene":11}]}
+        """
+        guard case .sceneBegin(let begin) = try decode(json) else {
+            return XCTFail("not a scene begin")
+        }
+        let settlement = try XCTUnwrap(begin.settlements?.first)
+        XCTAssertEqual(settlement.correlationHi, 0xA5A5_0001)
+        XCTAssertEqual(settlement.status, "confirmed")
+        XCTAssertEqual(settlement.timedOutTicks, 90,
+                       "late confirmation keeps its earlier timeout")
+    }
+
     /// run_help() in now-guest-ppc/src/commands/commands.c, listing what that Mac serves.
     ///
     /// This reply is discovery: the host console keeps no command list, so

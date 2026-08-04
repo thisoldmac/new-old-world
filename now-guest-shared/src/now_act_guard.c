@@ -27,15 +27,15 @@ int now_act_plane_state(const NowPeekTable *table)
        past the anchor region, so on a resident half that predates the
        plane the read itself is off the end of the block. A gate whose
        first act is the unsafe read is not a gate. */
-    need = (unsigned long)offsetof(NowPeekTable, act)
-           + (unsigned long)sizeof(NowPeekActCell);
+    need = (unsigned long)offsetof(NowPeekTable, act_v2)
+           + (unsigned long)sizeof(NowPeekActV2Cell);
     if ((unsigned long)table->length < need) {
         return kNowActPlaneStale;
     }
     if ((table->caps & (NowPeekU32)kNowPeekTableCapAct) == 0) {
         return kNowActPlaneAbsent;
     }
-    if (table->act_format != kNowPeekActFormatV1) {
+    if (table->act_format != kNowPeekActFormatV2) {
         return kNowActPlaneWrongFormat;
     }
     return kNowActPlaneReady;
@@ -61,6 +61,148 @@ NowPeekActCell *now_act_armed_cell(NowPeekTable *table)
         return NULL;                    /* expired/replaced writer: bypass */
     }
     return &table->act;
+}
+
+static int v2_identity_matches(const NowPeekTable *table)
+{
+    const NowPeekActCell   *cell = &table->act;
+    const NowPeekActV2Cell *v2 = &table->act_v2;
+    NowPeekU32 object = 0;
+    NowPeekI32 aux = 0;
+
+    if (v2->request_generation == 0
+        || v2->writer_epoch == 0
+        || v2->writer_epoch != table->writer.resident_owner_epoch
+        || v2->target_a5 == 0 || v2->target_a5 != cell->target_a5
+        || v2->operation_code != cell->op) {
+        return 0;
+    }
+    switch (v2->operation_kind) {
+    case kNowPeekActKindMenu:
+        if (cell->op != kNowPeekActOpMenu) return 0;
+        object = ((NowPeekU32)cell->menu_id & 0xFFFFUL) << 16;
+        object |= (NowPeekU32)cell->item_index & 0xFFFFUL;
+        break;
+    case kNowPeekActKindPopup:
+    case kNowPeekActKindList:
+    case kNowPeekActKindControl:
+        if (cell->op != kNowPeekActOpControl) return 0;
+        object = cell->control_handle;
+        aux = cell->part_code;
+        break;
+    case kNowPeekActKindWindow:
+        if (cell->op != kNowPeekActOpWindow) return 0;
+        object = cell->window_ptr;
+        aux = cell->window_op;
+        break;
+    case kNowPeekActKindText:
+        if (cell->op != kNowPeekActOpTextGet
+            && cell->op != kNowPeekActOpTextSet) return 0;
+        object = cell->text_handle != 0 ? cell->text_handle : cell->text_window;
+        aux = cell->text_kind;
+        break;
+    case kNowPeekActKindDialogItem:
+        if (cell->op != kNowPeekActOpDialogItem) return 0;
+        object = cell->control_handle;
+        aux = cell->text_item;
+        break;
+    case kNowPeekActKindNone:
+        /* The ABI selftest has no guest object, but still has an exact op. */
+        if (cell->op != kNowPeekActOpSelfTest) return 0;
+        break;
+    default:
+        /* Activation and visibility are normal-context operations. They
+           never enter this resident channel. */
+        return 0;
+    }
+    return v2->operation_object == object && v2->operation_aux == aux;
+}
+
+static void v2_echo_request(NowPeekActV2Cell *v2, unsigned long ticks)
+{
+    v2->resident_generation++;       /* odd while publishing */
+    v2->resident_request_generation = v2->request_generation;
+    v2->resident_correlation_hi = v2->correlation_hi;
+    v2->resident_correlation_lo = v2->correlation_lo;
+    v2->resident_writer_epoch = v2->writer_epoch;
+    v2->resident_target_a5 = v2->target_a5;
+    v2->resident_target_psn_high = v2->target_psn_high;
+    v2->resident_target_psn_low = v2->target_psn_low;
+    v2->resident_scene_generation = v2->scene_generation;
+    v2->resident_operation_kind = v2->operation_kind;
+    v2->resident_operation_code = v2->operation_code;
+    v2->resident_operation_object = v2->operation_object;
+    v2->resident_operation_aux = v2->operation_aux;
+    v2->resident_stage = kNowPeekActStageRequested;
+    v2->resident_requested_ticks = (NowPeekU32)ticks;
+    v2->resident_accepted_ticks = 0;
+    v2->resident_armed_ticks = 0;
+    v2->resident_fired_ticks = 0;
+    v2->resident_terminal_ticks = 0;
+    v2->resident_generation++;       /* even commit */
+}
+
+void now_act_v2_note(NowPeekTable *table, unsigned long stage,
+                     unsigned long ticks)
+{
+    NowPeekActV2Cell *v2;
+
+    if (table == NULL || now_act_plane_state(table) != kNowActPlaneReady) {
+        return;
+    }
+    v2 = &table->act_v2;
+    if (v2->resident_request_generation != v2->request_generation
+        || v2->resident_correlation_hi != v2->correlation_hi
+        || v2->resident_correlation_lo != v2->correlation_lo
+        || stage <= v2->resident_stage
+        || v2->resident_stage == kNowPeekActStageRefused
+        || v2->resident_stage == kNowPeekActStageExpired) {
+        return;
+    }
+    v2->resident_generation++;
+    v2->resident_stage = (NowPeekU32)stage;
+    if (stage == kNowPeekActStageAccepted && v2->resident_accepted_ticks == 0)
+        v2->resident_accepted_ticks = (NowPeekU32)ticks;
+    else if (stage == kNowPeekActStageArmed && v2->resident_armed_ticks == 0)
+        v2->resident_armed_ticks = (NowPeekU32)ticks;
+    else if (stage == kNowPeekActStageFired && v2->resident_fired_ticks == 0)
+        v2->resident_fired_ticks = (NowPeekU32)ticks;
+    else if ((stage == kNowPeekActStageRefused
+              || stage == kNowPeekActStageExpired)
+             && v2->resident_terminal_ticks == 0)
+        v2->resident_terminal_ticks = (NowPeekU32)ticks;
+    v2->resident_generation++;
+}
+
+int now_act_v2_begin(NowPeekTable *table, unsigned long current_a5,
+                     unsigned long ticks)
+{
+    NowPeekActCell *cell;
+    NowPeekActV2Cell *v2;
+
+    if (now_act_plane_state(table) != kNowActPlaneReady) return 0;
+    cell = &table->act;
+    v2 = &table->act_v2;
+    if (cell->status != kNowPeekActStatusPending
+        || cell->target_a5 != (NowPeekU32)current_a5) return 0;
+    if (v2->request_generation != v2->resident_request_generation
+        || v2->correlation_hi != v2->resident_correlation_hi
+        || v2->correlation_lo != v2->resident_correlation_lo) {
+        v2_echo_request(v2, ticks);
+    }
+    if ((NowPeekI32)((NowPeekU32)ticks - v2->deadline_ticks) > 0) {
+        cell->error = kNowPeekActErrExpired;
+        now_act_v2_note(table, kNowPeekActStageExpired, ticks);
+        return -1;
+    }
+    if (!v2_identity_matches(table)) {
+        cell->error = (v2->writer_epoch != table->writer.resident_owner_epoch)
+                    ? kNowPeekActErrSessionChanged : kNowPeekActErrIdentity;
+        now_act_v2_note(table, kNowPeekActStageRefused, ticks);
+        return -1;
+    }
+    now_act_v2_note(table, kNowPeekActStageAccepted, ticks);
+    return 1;
 }
 
 /* Does the cell name a patch that exists? A sub-op whose patch was never

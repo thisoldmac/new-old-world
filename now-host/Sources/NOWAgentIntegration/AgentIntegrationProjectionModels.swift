@@ -1,5 +1,10 @@
 import Foundation
 
+public protocol AgentIntegrationSettledActReceipt {
+    var correlation: String? { get }
+    var settlement: String { get }
+}
+
 /// The shared shapes the eleven projected capabilities answer in.
 ///
 /// They live in one file because they are one decision, not eleven: the
@@ -19,10 +24,15 @@ public struct AgentIntegrationProjectionFailure:
     Codable, Equatable, Sendable {
     public let code: String
     public let message: String
+    public let correlation: String?
+    public let settlement: String?
 
-    public init(code: String, message: String) {
+    public init(code: String, message: String,
+                correlation: String? = nil, settlement: String? = nil) {
         self.code = code
         self.message = message
+        self.correlation = correlation
+        self.settlement = settlement
     }
 }
 

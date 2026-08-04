@@ -136,6 +136,45 @@ the embedded source manifest is `ffe26237 08404b43 c9ae73ce c44e25aa
 bb1c11a3` and build fingerprint is `707560f7 d034f202 a01a4a83 faa2c1c4
 576c0239`.
 
+### U5 P4 settlement is effect-owned; focused runtime proof remains red
+
+P4 format v2 is appended after the original act cell, so the V1 act bytes and
+every P1-P3 offset remain fixed. A request now carries one correlation,
+canonical-writer epoch, exact A5 and PSN echo, source scene generation, typed
+operation/object identity, and deadline. The resident may advance only its
+monotonic requested/accepted/armed/fired/refused/expired evidence for that
+tuple. PSN is correlation rather than resident authority: the foreign-context
+safety boundary remains the exact A5 plus the operation-specific object guard.
+
+That evidence is deliberately not the outcome. New Old World owns a bounded
+16-record settlement history and reconciles a fired action against a later
+normal-context scene and an operation-specific postcondition. Timeout remains
+recorded if a later scene confirms the effect; writer replacement terminates
+open records as session-changed. The host joins by correlation and renders a
+checkmark only for `confirmed`. Refused, timed-out, session-changed, unknown,
+and dispatched-but-unconfirmed remain visibly non-green. Successful keyboard,
+typed-text, and Finder dispatches without a postcondition are explicitly
+unconfirmed; activation requires the guest's own front-process reread, and
+application visibility requires a Finder visibility reread. Menu acts require
+the unique front PSN from the same scene rather than guessing the current app.
+
+Native guard/settlement tests pass 100/100. The final host tree passes 1,289
+tests with 54 opt-in skips; focused settlement presentation passes 17/17. The
+real PPC, NOW-68K, and flat-INIT cross-builds pass. The final U5 extension is a
+64,994-byte `INIT 128` in a 65,402-byte resource fork (65,536-byte MacBinary),
+SHA-256
+`76439badc2ef9499502592c4a3b533e657a768a6c7d89772a76e9bc36758fa7c`.
+Its source manifest is `0fc7296f 1fd60fa0 4e7e5b68 b4a60944 a6174813` and
+embedded build fingerprint is `b1e5890e 8cba499f 25c092c9 45d9e7c1
+f54951b3`.
+
+This is **tested and builds, not emulator-verified**. No direct-input sweep has
+yet proved a menu, standard list, Date & Time Cancel, application visibility,
+or window operation against its paired guest pixels and settlement. Operation
+families without a stated postcondition honestly remain dispatched-but-
+unconfirmed until that focused proof supplies one. The development stage image
+still contains an older application/extension pair and is not evidence for U5.
+
 ## CYCLE 25 RED; SETUP CORRECTED BEFORE C26 (2026-08-03)
 
 Cycle 25 directly re-ran the sanity preflight through the uniquely identified

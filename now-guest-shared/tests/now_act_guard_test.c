@@ -566,7 +566,7 @@ static void test_plane_state(void)
     table.ext_major = kNowPeekExtMajor;
     table.length = (NowPeekU32)sizeof table;
     table.caps = kNowPeekTableCapAnchors | kNowPeekTableCapAct;
-    table.act_format = kNowPeekActFormatV1;
+    table.act_format = kNowPeekActFormatV2;
     check_long(now_act_plane_state(&table), kNowActPlaneReady,
                "a current extension is ready");
 
@@ -597,8 +597,8 @@ static void test_plane_state(void)
        spelling was accidentally making: a block that covers the cell but
        stops before a LATER plane's field is Ready for this one. Planes
        are gated separately, by design - that is what accretive means. */
-    table.length = (NowPeekU32)(offsetof(NowPeekTable, act)
-                                + sizeof(NowPeekActCell));
+    table.length = (NowPeekU32)(offsetof(NowPeekTable, act_v2)
+                                 + sizeof(NowPeekActV2Cell));
     check_long(now_act_plane_state(&table), kNowActPlaneReady,
                "a block that covers the act cell and no more is ready");
 
@@ -608,7 +608,7 @@ static void test_plane_state(void)
                "a binary that ships the plane dark says absent, not ready");
 
     table.caps = kNowPeekTableCapAnchors | kNowPeekTableCapAct;
-    table.act_format = kNowPeekActFormatV1 + 1;
+    table.act_format = kNowPeekActFormatV2 + 1;
     check_long(now_act_plane_state(&table), kNowActPlaneWrongFormat,
                "a format this build does not know is refused, not guessed");
 
@@ -616,10 +616,92 @@ static void test_plane_state(void)
     check_long(now_act_plane_state(&table), kNowActPlaneWrongFormat,
                "format zero is not a format");
 
-    table.act_format = kNowPeekActFormatV1;
+    table.act_format = kNowPeekActFormatV2;
     table.ext_major = kNowPeekExtMajor + 1;
     check_long(now_act_plane_state(&table), kNowActPlaneNoTable,
                "a different major is never partially trusted");
+}
+
+/* ---- V2 correlation: positive control before every refusal ----------- */
+
+static void v2_menu_request(NowPeekTable *table)
+{
+    memset(table, 0, sizeof *table);
+    table->magic = kNowPeekTableMagic;
+    table->ext_major = kNowPeekExtMajor;
+    table->length = (NowPeekU32)sizeof *table;
+    table->caps = kNowPeekTableCapAct;
+    table->act_format = kNowPeekActFormatV2;
+    table->writer.owner_epoch = 7;
+    table->writer.resident_owner_epoch = 7;
+    table->act.status = kNowPeekActStatusPending;
+    table->act.op = kNowPeekActOpMenu;
+    table->act.target_a5 = (NowPeekU32)kTargetA5;
+    table->act.menu_id = 130;
+    table->act.item_index = 3;
+    table->act_v2.request_generation = 11;
+    table->act_v2.correlation_hi = 0xAABBCCDDUL;
+    table->act_v2.correlation_lo = 11;
+    table->act_v2.writer_epoch = 7;
+    table->act_v2.target_a5 = (NowPeekU32)kTargetA5;
+    table->act_v2.target_psn_high = 4;
+    table->act_v2.target_psn_low = 9;
+    table->act_v2.scene_generation = 41;
+    table->act_v2.operation_kind = kNowPeekActKindMenu;
+    table->act_v2.operation_code = kNowPeekActOpMenu;
+    table->act_v2.operation_object = (130UL << 16) | 3UL;
+    table->act_v2.deadline_ticks = 500;
+}
+
+static void test_v2_identity(void)
+{
+    NowPeekTable table;
+
+    /* Positive control first: a no-hijack result is meaningless until the
+       legitimate tuple has been proved capable of passing the same gate. */
+    v2_menu_request(&table);
+    check_long(now_act_v2_begin(&table, kTargetA5, 100), 1,
+               "the exact correlation and target are accepted");
+    check_long((long)table.act_v2.resident_stage,
+               kNowPeekActStageAccepted, "resident stage advances");
+    check(table.act_v2.resident_target_psn_high == 4
+          && table.act_v2.resident_target_psn_low == 9,
+          "PSN is echoed as correlation evidence");
+    now_act_v2_note(&table, kNowPeekActStageArmed, 101);
+    now_act_v2_note(&table, kNowPeekActStageFired, 102);
+    now_act_v2_note(&table, kNowPeekActStageArmed, 103);
+    check_long((long)table.act_v2.resident_stage, kNowPeekActStageFired,
+               "a resident stage never moves backwards");
+    check_long((long)table.act_v2.resident_armed_ticks, 101,
+               "the first armed timestamp is retained");
+
+    v2_menu_request(&table);
+    check_long(now_act_v2_begin(&table, kOtherA5, 100), 0,
+               "another A5 cannot claim the request");
+    check_long((long)table.act_v2.resident_stage, kNowPeekActStageNone,
+               "a wrong target leaves no false evidence");
+
+    v2_menu_request(&table);
+    table.act_v2.operation_object++;
+    check_long(now_act_v2_begin(&table, kTargetA5, 100), -1,
+               "a stale operation identity is refused");
+    check_long((long)table.act.error, kNowPeekActErrIdentity,
+               "the identity refusal names itself");
+    check_long((long)table.act_v2.resident_stage, kNowPeekActStageRefused,
+               "refusal is terminal resident evidence");
+
+    v2_menu_request(&table);
+    table.writer.resident_owner_epoch = 8;
+    check_long(now_act_v2_begin(&table, kTargetA5, 100), -1,
+               "a replacement writer refuses the old request");
+    check_long((long)table.act.error, kNowPeekActErrSessionChanged,
+               "session replacement is not rounded to stale target");
+
+    v2_menu_request(&table);
+    check_long(now_act_v2_begin(&table, kTargetA5, 501), -1,
+               "an expired request cannot arm");
+    check_long((long)table.act_v2.resident_stage, kNowPeekActStageExpired,
+               "expiry is durable resident evidence");
 }
 
 /* ---- the bypass switch ----------------------------------------------- */
@@ -786,6 +868,7 @@ int main(void)
     test_trap_hits();
     test_serve_begin();
     test_plane_state();
+    test_v2_identity();
     test_bypass();
     test_window_is_ours();
     test_handle_bounds();

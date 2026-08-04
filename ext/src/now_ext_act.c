@@ -634,7 +634,9 @@ void now_ext_act_apply(NowPeekTable *table)
     NowPeekActCell *cell = now_act_armed_cell(table);
     unsigned long   a5;
     unsigned long   error = kNowPeekActErrNone;
+    unsigned long   ticks;
     int             verdict;
+    int             identity;
 
     if (cell == NULL) {
         return;
@@ -646,7 +648,17 @@ void now_ext_act_apply(NowPeekTable *table)
     act_install(cell);
 
     a5 = (unsigned long)LMGetCurrentA5();
-    verdict = now_act_serve_begin(cell, a5, (unsigned long)LMGetTicks());
+    ticks = (unsigned long)LMGetTicks();
+    identity = now_act_v2_begin(table, a5, ticks);
+    if (identity == 0) {
+        return;
+    }
+    if (identity < 0) {
+        cell->seq++;
+        now_act_serve_commit(cell, cell->error);
+        return;
+    }
+    verdict = now_act_serve_begin(cell, a5, ticks);
     switch (verdict) {
     case kNowActServeSkip:
         return;
@@ -669,12 +681,22 @@ void now_ext_act_apply(NowPeekTable *table)
         cell->fired = 1;
         cell->armed = kNowPeekActArmNone;
         cell->find_window_fired = 0;    /* no patch was involved */
+        now_act_v2_note(table, kNowPeekActStageFired,
+                        (unsigned long)LMGetTicks());
         break;
     case kNowActServeText:
         error = act_serve_text(cell, cell->op == kNowPeekActOpTextSet);
+        if (error == kNowPeekActErrNone) {
+            now_act_v2_note(table, kNowPeekActStageFired,
+                            (unsigned long)LMGetTicks());
+        }
         break;
     case kNowActServeSelfTest:
         error = act_serve_selftest(cell);
+        if (error == kNowPeekActErrNone) {
+            now_act_v2_note(table, kNowPeekActStageFired,
+                            (unsigned long)LMGetTicks());
+        }
         break;
     case kNowActServeDialogItem:
         error = act_prepare_ditem_press(cell);
@@ -686,10 +708,14 @@ void now_ext_act_apply(NowPeekTable *table)
                    consumes the queued mouseDown in the application. */
                 cell->fired = 1;
                 cell->armed = kNowPeekActArmNone;
+                now_act_v2_note(table, kNowPeekActStageFired,
+                                (unsigned long)LMGetTicks());
             }
         }
         break;
     case kNowActServeArmed:
+        now_act_v2_note(table, kNowPeekActStageArmed,
+                        (unsigned long)LMGetTicks());
         /* Armed in the target's own context, which proves the target is
            alive and pumping before any patch goes live. Then the click
            that makes the application call the patched trap. */
@@ -706,6 +732,10 @@ void now_ext_act_apply(NowPeekTable *table)
         break;
     }
     now_act_serve_commit(cell, error);
+    if (error != kNowPeekActErrNone) {
+        now_act_v2_note(table, kNowPeekActStageRefused,
+                        (unsigned long)LMGetTicks());
+    }
 }
 
 /* ---- the six patch answers --------------------------------------------
@@ -724,9 +754,15 @@ short now_act_patch_trackgoaway(void *window, unsigned long point);
 long now_act_patch_menuselect(long start_pt)
 {
     NowPeekActCell *cell = now_act_armed_cell(gNowActTable);
+    long answer;
 
-    return now_act_menu_answer(cell, (unsigned long)LMGetCurrentA5(),
-                               start_pt, (unsigned long)LMGetTicks());
+    answer = now_act_menu_answer(cell, (unsigned long)LMGetCurrentA5(),
+                                 start_pt, (unsigned long)LMGetTicks());
+    if (answer != 0) {
+        now_act_v2_note(gNowActTable, kNowPeekActStageFired,
+                        (unsigned long)LMGetTicks());
+    }
+    return answer;
 }
 
 short now_act_patch_trackcontrol(void *control, void *action_proc)
@@ -742,6 +778,8 @@ short now_act_patch_trackcontrol(void *control, void *action_proc)
     if (part == 0) {
         return 0;
     }
+    now_act_v2_note(gNowActTable, kNowPeekActStageFired,
+                    (unsigned long)LMGetTicks());
     /* TrackControl has TWO halves and only one is the return value. A
        push button does its work AFTER TrackControl returns, from the
        part code, so answering is enough. A scroll bar does its work
@@ -790,8 +828,15 @@ long now_act_patch_growwindow(void *window, unsigned long point)
                                            size; GrowWindow's start point
                                            is the application's, not ours */
     now_act_trap_hit(cell, 1, a5);
-    return now_act_grow_answer(cell, a5, (unsigned long)window,
-                               (unsigned long)LMGetTicks());
+    {
+        long answer = now_act_grow_answer(cell, a5, (unsigned long)window,
+                                          (unsigned long)LMGetTicks());
+        if (answer != 0) {
+            now_act_v2_note(gNowActTable, kNowPeekActStageFired,
+                            (unsigned long)LMGetTicks());
+        }
+        return answer;
+    }
 }
 
 short now_act_patch_trackbox(void *window, long part)
@@ -800,9 +845,16 @@ short now_act_patch_trackbox(void *window, long part)
     unsigned long   a5 = (unsigned long)LMGetCurrentA5();
 
     now_act_trap_hit(cell, 2, a5);
-    return (short)now_act_trackbox_answer(cell, a5,
-                                               (unsigned long)window, part,
-                                               (unsigned long)LMGetTicks());
+    {
+        short answer = (short)now_act_trackbox_answer(
+            cell, a5, (unsigned long)window, part,
+            (unsigned long)LMGetTicks());
+        if (answer != 0) {
+            now_act_v2_note(gNowActTable, kNowPeekActStageFired,
+                            (unsigned long)LMGetTicks());
+        }
+        return answer;
+    }
 }
 
 short now_act_patch_trackgoaway(void *window, unsigned long point)
@@ -812,6 +864,13 @@ short now_act_patch_trackgoaway(void *window, unsigned long point)
 
     (void)point;
     now_act_trap_hit(cell, 3, a5);
-    return (short)now_act_goaway_answer(cell, a5, (unsigned long)window,
-                                        (unsigned long)LMGetTicks());
+    {
+        short answer = (short)now_act_goaway_answer(
+            cell, a5, (unsigned long)window, (unsigned long)LMGetTicks());
+        if (answer != 0) {
+            now_act_v2_note(gNowActTable, kNowPeekActStageFired,
+                            (unsigned long)LMGetTicks());
+        }
+        return answer;
+    }
 }

@@ -11,6 +11,56 @@
    that a suspended one says so instead of hanging the wire. */
 #define kNowActDeadlineTicks 300UL
 
+static NowPeekU32 g_act_generation;
+static NowPeekU32 g_scene_generation;
+static NowActSettlementStore g_settlements;
+static NowPeekU32 g_last_correlation_hi;
+static NowPeekU32 g_last_correlation_lo;
+static int g_last_correlation_valid;
+
+static NowPeekTable *act_table(void);
+
+void now_act_begin_command(void)
+{
+    g_last_correlation_valid = 0;
+}
+
+void now_act_note_scene_generation(unsigned long generation)
+{
+    g_scene_generation = (NowPeekU32)generation;
+}
+
+void now_act_observe_scene(const NowScene *scene)
+{
+    NowPeekTable *table = act_table();
+    NowPeekU32 epoch = table != NULL ? table->writer.owner_epoch : 0;
+    if (table != NULL
+        && table->act_v2.resident_request_generation
+             == table->act_v2.request_generation
+        && table->act_v2.resident_correlation_hi
+             == table->act_v2.correlation_hi
+        && table->act_v2.resident_correlation_lo
+             == table->act_v2.correlation_lo) {
+        now_act_settlement_note_resident(
+            &g_settlements, table->act_v2.resident_correlation_hi,
+            table->act_v2.resident_correlation_lo,
+            table->act_v2.resident_stage);
+    }
+    now_act_settlement_observe_scene(&g_settlements, scene, epoch);
+}
+
+const NowActSettlementRecord *now_act_last_settlement(void)
+{
+    if (!g_last_correlation_valid) return NULL;
+    return now_act_settlement_find(&g_settlements, g_last_correlation_hi,
+                                   g_last_correlation_lo);
+}
+
+long now_act_encode_settlements(char *out, long cap)
+{
+    return now_act_settlement_encode(&g_settlements, out, cap);
+}
+
 static NowPeekTable *act_table(void)
 {
     /* now_peek_table() already gates on magic and an exact major; the
@@ -141,15 +191,107 @@ static void act_snapshot(const NowPeekActCell *cell, NowPeekActCell *out)
        field speak for itself rather than looping forever. */
 }
 
-NowActStatus now_act_submit(unsigned long target_a5, NowPeekActCell *snapshot)
+static void act_v2_describe(NowPeekTable *table, const NowActTarget *target,
+                            unsigned long deadline)
+{
+    NowPeekActCell *cell = &table->act;
+    NowPeekActV2Cell *v2 = &table->act_v2;
+    NowPeekU32 generation = ++g_act_generation;
+    NowActSettlementSpec spec;
+
+    if (generation == 0) generation = ++g_act_generation;
+    v2->correlation_hi = table->writer.session_nonce_lo;
+    v2->correlation_lo = generation;
+    v2->writer_epoch = table->writer.owner_epoch;
+    v2->target_a5 = (NowPeekU32)target->a5;
+    v2->target_psn_high = (NowPeekU32)target->psn.highLongOfPSN;
+    v2->target_psn_low = (NowPeekU32)target->psn.lowLongOfPSN;
+    v2->scene_generation = g_scene_generation;
+    v2->operation_code = cell->op;
+    v2->operation_object = 0;
+    v2->operation_aux = 0;
+    switch (cell->op) {
+    case kNowPeekActOpMenu:
+        v2->operation_kind = kNowPeekActKindMenu;
+        v2->operation_object = ((NowPeekU32)cell->menu_id & 0xFFFFUL) << 16;
+        v2->operation_object |= (NowPeekU32)cell->item_index & 0xFFFFUL;
+        break;
+    case kNowPeekActOpControl:
+        v2->operation_kind = kNowPeekActKindControl;
+        v2->operation_object = cell->control_handle;
+        v2->operation_aux = cell->part_code;
+        break;
+    case kNowPeekActOpWindow:
+        v2->operation_kind = kNowPeekActKindWindow;
+        v2->operation_object = cell->window_ptr;
+        v2->operation_aux = cell->window_op;
+        break;
+    case kNowPeekActOpTextGet:
+    case kNowPeekActOpTextSet:
+        v2->operation_kind = kNowPeekActKindText;
+        v2->operation_object = cell->text_handle != 0
+                             ? cell->text_handle : cell->text_window;
+        v2->operation_aux = cell->text_kind;
+        break;
+    case kNowPeekActOpDialogItem:
+        v2->operation_kind = kNowPeekActKindDialogItem;
+        v2->operation_object = cell->control_handle;
+        v2->operation_aux = cell->text_item;
+        break;
+    default:
+        v2->operation_kind = kNowPeekActKindNone;
+        break;
+    }
+    v2->deadline_ticks = (NowPeekU32)deadline;
+    v2->request_generation = generation; /* publish last */
+
+    now_act_settlement_change_session(&g_settlements,
+                                      table->writer.owner_epoch,
+                                      (NowPeekU32)TickCount());
+    memset(&spec, 0, sizeof spec);
+    spec.correlation_hi = v2->correlation_hi;
+    spec.correlation_lo = v2->correlation_lo;
+    spec.writer_epoch = v2->writer_epoch;
+    spec.target_psn_high = v2->target_psn_high;
+    spec.target_psn_low = v2->target_psn_low;
+    spec.request_scene = v2->scene_generation;
+    spec.kind = v2->operation_kind;
+    spec.operation = v2->operation_code;
+    spec.object = v2->operation_object;
+    spec.post_object = v2->operation_object;
+    spec.aux = v2->operation_aux;
+    if (cell->op == kNowPeekActOpWindow) {
+        spec.postcondition = (cell->window_op == kNowPeekActWinZoom)
+                           ? kNowActPostNone : kNowActPostWindow;
+        spec.expected_a = cell->win_h;
+        spec.expected_b = cell->win_v;
+    } else if (cell->op == kNowPeekActOpTextSet) {
+        spec.postcondition = kNowActPostText;
+        spec.post_object = cell->text_window;
+        spec.text_length = (NowPeekU16)cell->text_length;
+        if (spec.text_length > kNowPeekActTextMax)
+            spec.text_length = kNowPeekActTextMax;
+        if (spec.text_length != 0)
+            BlockMoveData(cell->text_buf, spec.text, spec.text_length);
+    }
+    now_act_settlement_begin(&g_settlements, &spec,
+                             (NowPeekU32)TickCount());
+    g_last_correlation_hi = spec.correlation_hi;
+    g_last_correlation_lo = spec.correlation_lo;
+    g_last_correlation_valid = 1;
+}
+
+NowActStatus now_act_submit(const NowActTarget *target,
+                            NowPeekActCell *snapshot)
 {
     NowPeekActCell *cell = now_act_cell();
+    NowPeekTable   *table = act_table();
     unsigned long   deadline;
 
-    if (cell == NULL) {
+    if (cell == NULL || target == NULL || target->a5 == 0) {
         return kNowActNoExtension;
     }
-    cell->target_a5 = (NowPeekU32)target_a5;
+    cell->target_a5 = (NowPeekU32)target->a5;
     cell->error = kNowPeekActErrNone;
     cell->fired = 0;
     cell->armed = kNowPeekActArmNone;
@@ -162,22 +304,37 @@ NowActStatus now_act_submit(unsigned long target_a5, NowPeekActCell *snapshot)
     cell->trap_hits_target[1] = 0;
     cell->trap_hits_target[2] = 0;
     cell->trap_hits_target[3] = 0;
-    cell->status = kNowPeekActStatusPending;   /* the commit, written last */
-
     deadline = (unsigned long)TickCount() + kNowActDeadlineTicks;
+    act_v2_describe(table, target, deadline);
+    cell->status = kNowPeekActStatusPending;   /* the commit, written last */
     while (cell->status == kNowPeekActStatusPending
            && (unsigned long)TickCount() < deadline) {
         act_yield();
     }
     if (cell->status == kNowPeekActStatusPending) {
+        now_act_settlement_note(&g_settlements, g_last_correlation_hi,
+                                g_last_correlation_lo,
+                                kNowActSettleTimedOut,
+                                (NowPeekU32)TickCount());
         now_act_withdraw();
         return kNowActTimeout;
     }
     act_snapshot(cell, snapshot);
     if (snapshot->status != kNowPeekActStatusDone) {
+        now_act_settlement_note(&g_settlements, g_last_correlation_hi,
+                                g_last_correlation_lo,
+                                kNowActSettleRefused,
+                                (NowPeekU32)TickCount());
         now_act_withdraw();
         return kNowActRefused;
     }
+    now_act_settlement_note_resident(&g_settlements, g_last_correlation_hi,
+                                     g_last_correlation_lo,
+                                     table->act_v2.resident_stage);
+    now_act_settlement_note(&g_settlements, g_last_correlation_hi,
+                            g_last_correlation_lo,
+                            kNowActSettleDispatchedUnconfirmed,
+                            (NowPeekU32)TickCount());
     return kNowActOk;
 }
 
@@ -195,9 +352,16 @@ NowActStatus now_act_await_fired(NowPeekActCell *snapshot)
     }
     act_snapshot(cell, snapshot);
     if (!snapshot->fired) {
+        now_act_settlement_note(&g_settlements, g_last_correlation_hi,
+                                g_last_correlation_lo,
+                                kNowActSettleTimedOut,
+                                (NowPeekU32)TickCount());
         now_act_withdraw();
         return kNowActNotTaken;
     }
+    now_act_settlement_note_resident(&g_settlements, g_last_correlation_hi,
+                                     g_last_correlation_lo,
+                                     act_table()->act_v2.resident_stage);
     now_act_withdraw();
     return kNowActOk;
 }
@@ -232,6 +396,9 @@ const char *now_act_error_code(unsigned long plane_error)
     case kNowPeekActErrNotControlItem: return "not-a-control-item";
     case kNowPeekActErrItemMismatch: return "element-mismatch";
     case kNowPeekActErrItemDisabled: return "item-disabled";
+    case kNowPeekActErrIdentity: return "act-identity-mismatch";
+    case kNowPeekActErrExpired: return "act-expired";
+    case kNowPeekActErrSessionChanged: return "act-session-changed";
     default:                        return "act-refused";
     }
 }
@@ -277,6 +444,13 @@ const char *now_act_error_message(unsigned long plane_error)
                "observation, so the request is stale";
     case kNowPeekActErrItemDisabled:
         return "that dialog item is disabled or no longer visible";
+    case kNowPeekActErrIdentity:
+        return "the request identity no longer matches its exact operation";
+    case kNowPeekActErrExpired:
+        return "the request expired before its target could accept it";
+    case kNowPeekActErrSessionChanged:
+        return "the application writer session changed before the request "
+               "could be served";
     default:
         return "the target refused the request";
     }

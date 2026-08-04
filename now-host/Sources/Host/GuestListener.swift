@@ -1928,6 +1928,9 @@ final class GuestListener: ObservableObject {
         var source: String?
         /// How long the guest spent walking, by its own clock.
         var walkMs: Int?
+        /// Guest application-owned settlements reconciled against this scene.
+        /// nil means an older guest, never an implicit success.
+        var settlements: [ActSettlement]?
         var transferMs: Int
         var guestName: String = Session.unnamedGuest
         var guestKey: GuestKey?

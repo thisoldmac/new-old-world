@@ -76,6 +76,19 @@ int now_act_plane_state(const NowPeekTable *table);
  * every one of them chain through instead. */
 NowPeekActCell *now_act_armed_cell(NowPeekTable *table);
 
+/* Validate and echo the V2 correlation before the V1 effect decision. PSN is
+ * carried and echoed, never used as resident authority; the exact A5/object
+ * checks remain the safety gate. Returns 1 when V1 may proceed, 0 when this
+ * is not the target's pass, and -1 after publishing a refusal. */
+int now_act_v2_begin(NowPeekTable *table, unsigned long current_a5,
+                     unsigned long ticks);
+
+/* Advance the matching correlation from accepted to armed/fired/refused.
+ * A stage never moves backwards within a generation, and each transition's
+ * first timestamp is retained. */
+void now_act_v2_note(NowPeekTable *table, unsigned long stage,
+                     unsigned long ticks);
+
 /* ---- the serve decision -----------------------------------------------
  *
  * What the filter should do about the pending request, decided before it

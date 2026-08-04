@@ -91,7 +91,7 @@ void now_mach_run_actselftest(const char *request_json, long id,
        exists to break. */
     cell->op = kNowPeekActOpSelfTest;
 
-    st = now_act_submit(g_target.a5, &g_snap);
+    st = now_act_submit(&g_target, &g_snap);
     now_act_withdraw();
 
     now_mach_selftest_read(st == kNowActOk ? &g_snap : NULL, (int)st,

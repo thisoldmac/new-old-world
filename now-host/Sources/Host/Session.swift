@@ -1354,6 +1354,7 @@ final class Session {
             capturedAt: begin.capturedAt,
             source: begin.source,
             walkMs: begin.walkMs,
+            settlements: begin.settlements,
             transferMs: Int(Date().timeIntervalSince(sceneStart) * 1000),
             guestName: guestName, guestKey: guestKey)))
     }

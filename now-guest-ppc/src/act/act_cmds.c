@@ -77,6 +77,25 @@ static void row_addf(ActRows *r, const char *label, const char *fmt, long v)
     row_add(r, label, value);
 }
 
+static void settlement_rows(ActRows *rows)
+{
+    const NowActSettlementRecord *record = now_act_last_settlement();
+    char correlation[40];
+
+    if (record == NULL) {
+        row_add(rows, "Settlement", "unknown");
+        return;
+    }
+    row_add(rows, "Settlement",
+            now_act_settlement_status_code(record->status));
+    snprintf(correlation, sizeof correlation, "%08lX-%08lX",
+             (unsigned long)record->spec.correlation_hi,
+             (unsigned long)record->spec.correlation_lo);
+    row_add(rows, "Correlation", correlation);
+    row_addf(rows, "Resident stage", "%ld",
+             (long)record->resident_stage);
+}
+
 static void reply_rows(char *out, long cap, long id, const char *name,
                        const ActRows *r)
 {
@@ -97,10 +116,36 @@ static void reply_error(char *out, long cap, long id, const char *code,
              id, code, esc);
 }
 
+/* Only after THIS command registered a correlation. Validation and resolve
+   errors use reply_error above and can never inherit a previous action. */
+static void reply_registered_error(char *out, long cap, long id,
+                                   const char *code, const char *message)
+{
+    char esc[512];
+    const NowActSettlementRecord *record = now_act_last_settlement();
+    if (record == NULL) { reply_error(out, cap, id, code, message); return; }
+    now_json_escape(message, esc, (long)sizeof esc);
+    snprintf(out, (size_t)cap,
+             "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+             "\"error\":{\"code\":\"%s\",\"message\":\"%s\","
+             "\"correlation\":\"%08lX-%08lX\",\"settlement\":\"%s\"}}",
+             id, code, esc,
+             (unsigned long)record->spec.correlation_hi,
+             (unsigned long)record->spec.correlation_lo,
+             now_act_settlement_status_code(record->status));
+}
+
 static void reply_status(char *out, long cap, long id, NowActStatus st)
 {
     reply_error(out, cap, id, now_act_status_code(st),
                 now_act_status_message(st));
+}
+
+static void reply_registered_status(char *out, long cap, long id,
+                                    NowActStatus st)
+{
+    reply_registered_error(out, cap, id, now_act_status_code(st),
+                           now_act_status_message(st));
 }
 
 /* Did the request reach the machine at all?
@@ -132,8 +177,8 @@ static int act_reached_the_machine(const NowPeekActCell *snap)
 static void reply_plane_error(char *out, long cap, long id,
                               const NowPeekActCell *snap)
 {
-    reply_error(out, cap, id, now_act_error_code(snap->error),
-                now_act_error_message(snap->error));
+    reply_registered_error(out, cap, id, now_act_error_code(snap->error),
+                           now_act_error_message(snap->error));
 }
 
 /* ---- arguments -------------------------------------------------------- */
@@ -390,6 +435,7 @@ void now_act_run_winact(const char *request_json, long id, char *out, long cap)
     int                 click_h;
     int                 click_v;
 
+    now_act_begin_command();
     memset(&args, 0, sizeof args);
     if (!arg_str(request_json, "action", action, (long)sizeof action)) {
         reply_error(out, cap, id, "bad-request",
@@ -472,13 +518,13 @@ void now_act_run_winact(const char *request_json, long id, char *out, long cap)
         cell->win_v = (NowPeekI32)args.height;  /* GrowWindow's high word */
     }
 
-    st = now_act_submit(g_target.a5, &g_snap);
+    st = now_act_submit(&g_target, &g_snap);
     if (st == kNowActRefused) {
         reply_plane_error(out, cap, id, &g_snap);
         return;
     }
     if (st != kNowActOk) {
-        reply_status(out, cap, id, st);
+        reply_registered_status(out, cap, id, st);
         return;
     }
 
@@ -489,7 +535,7 @@ void now_act_run_winact(const char *request_json, long id, char *out, long cap)
     if (args.action != kNowActWinMove) {
         if (!act_reached_the_machine(&g_snap)) {
             now_act_withdraw();
-            reply_status(out, cap, id, kNowActNotArmed);
+            reply_registered_status(out, cap, id, kNowActNotArmed);
             return;
         }
         /* The press was queued by the resident plane, in the target's
@@ -517,7 +563,7 @@ void now_act_run_winact(const char *request_json, long id, char *out, long cap)
                      (unsigned long)g_snap.trap_hits_target[2],
                      (unsigned long)g_snap.trap_hits_target[3],
                      (unsigned long)g_snap.trap_hits[0]);
-            reply_error(out, cap, id, "act-not-taken", detail);
+            reply_registered_error(out, cap, id, "act-not-taken", detail);
             return;
         }
     }
@@ -557,6 +603,7 @@ void now_act_run_winact(const char *request_json, long id, char *out, long cap)
         row_add(&rows, "Re-read", now_obs_why_text(after.why));
     }
     now_log(kLogInfo, "act", "#%ld winact %s dispatched", id, action);
+    settlement_rows(&rows);
     reply_rows(out, cap, id, "winact", &rows);
 }
 
@@ -598,6 +645,7 @@ static void text_exchange(const char *request_json, long id, char *out,
     NowActStatus          st;
     long                  body_len = 0;
 
+    now_act_begin_command();
     if (is_set) {
         if (!now_json_find_text(request_json, "text", body,
                                 (long)sizeof body)) {
@@ -646,13 +694,13 @@ static void text_exchange(const char *request_json, long id, char *out,
         memcpy(cell->text_buf, body, (size_t)body_len);
     }
 
-    st = now_act_submit(g_target.a5, &g_snap);
+    st = now_act_submit(&g_target, &g_snap);
     if (st == kNowActRefused) {
         reply_plane_error(out, cap, id, &g_snap);
         return;
     }
     if (st != kNowActOk) {
-        reply_status(out, cap, id, st);
+        reply_registered_status(out, cap, id, st);
         return;
     }
     now_act_withdraw();
@@ -667,6 +715,7 @@ static void text_exchange(const char *request_json, long id, char *out,
            the object read back at the moment of the write, which is a
            different claim from "the element now holds this". */
         row_add(&rows, "Dispatch", "dispatched");
+        settlement_rows(&rows);
     } else {
         row_addf(&rows, "Observed at", "tick %ld",
                  (long)g_snap.served_ticks);
@@ -698,6 +747,7 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
     NowActStatus        st;
     long                part = 0;
 
+    now_act_begin_command();
     if (arg_int_malformed(request_json, "part")) {
         /* Named separately because it is a CALLER's encoding bug, not a
            missing argument, and the two send someone looking in
@@ -762,18 +812,18 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
     cell->click_v = (NowPeekI32)((handle.detail.control.top
                                   + handle.detail.control.bottom) / 2);
 
-    st = now_act_submit(g_target.a5, &g_snap);
+    st = now_act_submit(&g_target, &g_snap);
     if (st == kNowActRefused) {
         reply_plane_error(out, cap, id, &g_snap);
         return;
     }
     if (st != kNowActOk) {
-        reply_status(out, cap, id, st);
+        reply_registered_status(out, cap, id, st);
         return;
     }
     if (!act_reached_the_machine(&g_snap)) {
         now_act_withdraw();
-        reply_status(out, cap, id, kNowActNotArmed);
+        reply_registered_status(out, cap, id, kNowActNotArmed);
         return;
     }
 
@@ -784,8 +834,9 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
        refuses any control but this one. */
     st = now_act_await_fired(&g_snap);
     if (st != kNowActOk) {
-        reply_error(out, cap, id, "act-not-taken",
-                    "armed, and the application never called TrackControl");
+        reply_registered_error(
+            out, cap, id, "act-not-taken",
+            "armed, and the application never called TrackControl");
         return;
     }
     now_act_withdraw();
@@ -814,6 +865,7 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
         row_add(&rows, "Re-read value", now_obs_why_text(after.why));
     }
     now_log(kLogInfo, "act", "#%ld ctlact part %ld dispatched", id, part);
+    settlement_rows(&rows);
     reply_rows(out, cap, id, "ctlact", &rows);
 }
 
@@ -829,6 +881,7 @@ void now_act_run_ditemact(const char *request_json, long id,
     NowActStatus    st;
     long            item = 0;
 
+    now_act_begin_command();
     if (arg_int_malformed(request_json, "item")) {
         reply_error(out, cap, id, "bad-request",
                     "ditemact's item is present but is not a JSON number");
@@ -863,18 +916,19 @@ void now_act_run_ditemact(const char *request_json, long id,
     cell->text_item = (NowPeekI32)item;
     cell->text_item_type = 0;
 
-    st = now_act_submit(g_target.a5, &g_snap);
+    st = now_act_submit(&g_target, &g_snap);
     if (st == kNowActRefused) {
         reply_plane_error(out, cap, id, &g_snap);
         return;
     }
     if (st != kNowActOk) {
-        reply_status(out, cap, id, st);
+        reply_registered_status(out, cap, id, st);
         return;
     }
     if (!g_snap.fired) {
-        reply_error(out, cap, id, "act-not-taken",
-                    "the resident plane did not queue the dialog press");
+        reply_registered_error(
+            out, cap, id, "act-not-taken",
+            "the resident plane did not queue the dialog press");
         return;
     }
     now_act_withdraw();
@@ -886,6 +940,7 @@ void now_act_run_ditemact(const char *request_json, long id,
     row_add(&rows, "Mechanism", "the application's Dialog Manager path");
     now_log(kLogInfo, "act", "#%ld ditemact item %ld dispatched", id,
             item);
+    settlement_rows(&rows);
     reply_rows(out, cap, id, "ditemact", &rows);
 }
 
@@ -906,6 +961,7 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
     int                 h;
     int                 v;
 
+    now_act_begin_command();
     st = now_act_ready();
     if (st != kNowActOk) {
         reply_status(out, cap, id, st);
@@ -932,12 +988,18 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
                     "so the point has to be one we can state");
         return;
     }
-    if (arg_int(request_json, "serialHi", &hi)
-        && arg_int(request_json, "serialLo", &lo)) {
-        psn.highLongOfPSN = hi;
-        psn.lowLongOfPSN = (unsigned long)lo;
-        want = &psn;
+    if (!arg_int(request_json, "serialHi", &hi)
+        || !arg_int(request_json, "serialLo", &lo)) {
+        reply_error(out, cap, id, "bad-request",
+                    "menuact requires serialHi and serialLo from the scene's "
+                    "front process. A menu bar belongs to that exact process; "
+                    "falling back to whichever app is front now can invoke a "
+                    "different application's item");
+        return;
     }
+    psn.highLongOfPSN = hi;
+    psn.lowLongOfPSN = (unsigned long)lo;
+    want = &psn;
     st = now_act_open(want, &g_target);
     if (st != kNowActOk) {
         reply_status(out, cap, id, st);
@@ -958,24 +1020,25 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
     cell->arm_point_h = (NowPeekI32)h;
     cell->arm_point_v = (NowPeekI32)v;
 
-    st = now_act_submit(g_target.a5, &g_snap);
+    st = now_act_submit(&g_target, &g_snap);
     if (st == kNowActRefused) {
         reply_plane_error(out, cap, id, &g_snap);
         return;
     }
     if (st != kNowActOk) {
-        reply_status(out, cap, id, st);
+        reply_registered_status(out, cap, id, st);
         return;
     }
     if (!act_reached_the_machine(&g_snap)) {
         now_act_withdraw();
-        reply_status(out, cap, id, kNowActNotArmed);
+        reply_registered_status(out, cap, id, kNowActNotArmed);
         return;
     }
     st = now_act_await_fired(&g_snap);
     if (st != kNowActOk) {
-        reply_error(out, cap, id, "act-not-taken",
-                    "armed, and the application never called MenuSelect");
+        reply_registered_error(
+            out, cap, id, "act-not-taken",
+            "armed, and the application never called MenuSelect");
         return;
     }
     now_act_withdraw();
@@ -990,5 +1053,6 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
     row_add(&rows, "Dispatch", "dispatched");
     row_add(&rows, "Mechanism", "the application's own MenuSelect");
     now_log(kLogInfo, "act", "#%ld menuact %ld/%ld dispatched", id, menu, item);
+    settlement_rows(&rows);
     reply_rows(out, cap, id, "menuact", &rows);
 }

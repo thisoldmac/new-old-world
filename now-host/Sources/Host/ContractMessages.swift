@@ -337,6 +337,8 @@ struct CommandResult: Codable, Equatable, Sendable {
     struct CommandError: Codable, Equatable, Sendable {
         var code: String
         var message: String
+        var correlation: String?
+        var settlement: String?
     }
 
     var id: Int
@@ -958,6 +960,20 @@ struct SceneBegin: Codable, Equatable, Sendable {
     var capturedAt: Double?
     var source: String?
     var walkMs: Int?
+    /// Optional/accretive: older guests omit it. Only `confirmed` is green;
+    /// residentStage is mechanism evidence, not an effect verdict.
+    var settlements: [ActSettlement]?
+}
+
+struct ActSettlement: Codable, Equatable, Sendable {
+    var correlationHi: UInt32
+    var correlationLo: UInt32
+    var status: String
+    var residentStage: Int
+    var createdTicks: UInt32
+    var timedOutTicks: UInt32
+    var terminalTicks: UInt32
+    var confirmedScene: UInt32
 }
 
 struct SceneEnd: Codable, Equatable, Sendable {

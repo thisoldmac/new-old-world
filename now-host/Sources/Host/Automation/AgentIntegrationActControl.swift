@@ -131,7 +131,8 @@ final class AgentIntegrationActControl {
             .init(window: request.window,
                   action: request.action,
                   dispatch: claim.dispatch,
-                  dispatchedAt: claim.at)
+                  dispatchedAt: claim.at, correlation: claim.correlation,
+                  settlement: claim.settlement)
         }
     }
 
@@ -162,7 +163,8 @@ final class AgentIntegrationActControl {
             .init(element: request.element,
                   part: request.part,
                   dispatch: claim.dispatch,
-                  dispatchedAt: claim.at)
+                  dispatchedAt: claim.at, correlation: claim.correlation,
+                  settlement: claim.settlement)
         }
     }
 
@@ -197,7 +199,8 @@ final class AgentIntegrationActControl {
                   item: request.item,
                   titleLeft: request.titleLeft,
                   dispatch: claim.dispatch,
-                  dispatchedAt: claim.at)
+                  dispatchedAt: claim.at, correlation: claim.correlation,
+                  settlement: claim.settlement)
         }
     }
 
@@ -389,7 +392,8 @@ final class AgentIntegrationActControl {
             .init(element: element,
                   requestedScalars: requested,
                   dispatch: claim.dispatch,
-                  dispatchedAt: claim.at)
+                  dispatchedAt: claim.at, correlation: claim.correlation,
+                  settlement: claim.settlement)
         }
     }
 
@@ -399,6 +403,8 @@ final class AgentIntegrationActControl {
     struct DispatchClaim {
         let dispatch: AgentIntegrationActDispatch
         let at: Date
+        let correlation: String?
+        let settlement: String
     }
 
     /// The four dispatching acts, as one path.
@@ -457,9 +463,13 @@ final class AgentIntegrationActControl {
             return .refused(Self.failure(
                 refusedCode,
                 Self.bounded(result.error?.message
-                    ?? "The paired guest refused the act")))
+                    ?? "The paired guest refused the act"),
+                correlation: result.error?.correlation,
+                settlement: result.error?.settlement))
         case .result(let result):
             let rows = Self.rows(from: result, verb: verb)
+            let correlation = rows["Correlation"]
+            let settlement = rows["Settlement"] ?? "unknown"
             guard let claimed = rows["Dispatch"],
                   let dispatch = AgentIntegrationActDispatch(
                     rawValue: claimed) else {
@@ -475,11 +485,12 @@ final class AgentIntegrationActControl {
                     "The paired guest answered the act without saying the "
                         + "event was dispatched"))
             }
-            audit(.info, "\(description) dispatched (the event was handed "
-                      + "to the application; nothing here confirms what it "
-                      + "then did)")
+            audit(.info, "\(description) settlement=\(settlement)"
+                      + (correlation.map { " correlation=\($0)" } ?? "")
+                      + " (dispatch is not guest-visible effect)")
             return .completed(make(
-                .init(dispatch: dispatch, at: clock())))
+                .init(dispatch: dispatch, at: clock(),
+                      correlation: correlation, settlement: settlement)))
         }
     }
 
@@ -527,9 +538,12 @@ final class AgentIntegrationActControl {
         return out
     }
 
-    private static func failure(_ code: String, _ message: String)
+    private static func failure(_ code: String, _ message: String,
+                                correlation: String? = nil,
+                                settlement: String? = nil)
         -> AgentIntegrationProjectionFailure {
-        .init(code: code, message: bounded(message))
+        .init(code: code, message: bounded(message),
+              correlation: correlation, settlement: settlement)
     }
 
     private static func bounded(_ value: String) -> String {

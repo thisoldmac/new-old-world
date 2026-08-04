@@ -302,6 +302,23 @@ final class SceneWireTests: XCTestCase {
         XCTAssertEqual(b.bytes, 9214)
         XCTAssertEqual(b.irVersion, 1)
         XCTAssertEqual(b.source, "peek")
+        XCTAssertNil(b.settlements,
+                     "an older guest's absent field is unknown, never green")
+
+        let settled = """
+            {"type":"scene.begin","id":4,"transfer":9,"bytes":9214,
+            "irVersion":1,"settlements":[{"correlationHi":7,
+            "correlationLo":11,"status":"confirmed","residentStage":4,
+            "createdTicks":100,"timedOutTicks":120,"terminalTicks":180,
+            "confirmedScene":9}]}
+            """
+        guard case .sceneBegin(let withSettlement) =
+                try ControlMessageCodec.decode(Data(settled.utf8)) else {
+            return XCTFail("settled scene.begin did not decode")
+        }
+        XCTAssertEqual(withSettlement.settlements?.first?.status, "confirmed")
+        XCTAssertEqual(withSettlement.settlements?.first?.timedOutTicks, 120,
+                       "late success must retain the earlier timeout")
 
         let end = """
             {"type":"scene.end","id":4,"transfer":9,"ok":false,\

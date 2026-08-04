@@ -19,6 +19,7 @@
 #include <Carbon.h>
 
 #include "axprocess.h"
+#include "act_settlement.h"
 #include "peek_table.h"
 
 typedef enum {
@@ -93,7 +94,16 @@ NowPeekActCell *now_act_cell(void);
    rather than hidden: it belongs with MenuSelect, DragWindow and
    GrowWindow on pump.h's "what cannot be pumped" list, and the bound is
    far inside the host's 75-second idle timeout. */
-NowActStatus now_act_submit(unsigned long target_a5, NowPeekActCell *snapshot);
+NowActStatus now_act_submit(const NowActTarget *target,
+                            NowPeekActCell *snapshot);
+
+/* The latest normal-context scene generation available when a request is
+   created. It is correlation evidence, not a resident safety authority. */
+void now_act_note_scene_generation(unsigned long generation);
+void now_act_observe_scene(const NowScene *scene);
+const NowActSettlementRecord *now_act_last_settlement(void);
+void now_act_begin_command(void);
+long now_act_encode_settlements(char *out, long cap);
 
 /* NOTE: there is deliberately NO post-a-click entry point here.
    The RESIDENT plane queues its own press, inside the target process, at

@@ -572,6 +572,7 @@ final class GuestWireConformanceTests: XCTestCase {
         "process.listing": "testProcessListingAsTheGuestWritesIt",
         "software.listing": "testSoftwareListingAsTheGuestWritesIt",
         "command.result": nil,
+        "scene.begin": "testSceneBeginSettlementsAsTheGuestWritesIt",
         "hello": "test68KHelloAsTheGuestWritesIt",
         "ping": "test68KPingAsTheGuestWritesIt",
         "error": "test68KErrorReplyAsTheGuestWritesIt",

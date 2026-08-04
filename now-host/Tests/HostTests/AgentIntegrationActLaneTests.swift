@@ -85,6 +85,8 @@ final class AgentIntegrationActLaneTests: XCTestCase {
             ["Window", window],
             ["Action", "move"],
             ["Dispatch", "dispatched"],
+            ["Correlation", "A5A50001-00000007"],
+            ["Settlement", "dispatched-but-unconfirmed"],
             ["Mechanism",
              "the window manager, in the application's own context"],
             ["Re-read", "40, 60 to 440, 360"],
@@ -131,6 +133,8 @@ final class AgentIntegrationActLaneTests: XCTestCase {
         XCTAssertEqual(receipt.window, Self.window)
         XCTAssertEqual(receipt.action, .move)
         XCTAssertEqual(receipt.dispatch, .dispatched)
+        XCTAssertEqual(receipt.correlation, "A5A50001-00000007")
+        XCTAssertEqual(receipt.settlement, "dispatched-but-unconfirmed")
 
         let text = String(
             decoding: try JSONEncoder().encode(result), as: UTF8.self)
@@ -393,7 +397,9 @@ final class AgentIntegrationActLaneTests: XCTestCase {
                   error: .init(
                     code: "act-not-taken",
                     message: "armed, and the application never called "
-                        + "TrackControl"))
+                        + "TrackControl",
+                    correlation: "A5A50001-00000008",
+                    settlement: "timed-out"))
         }
 
         let result = await adapter(listener).controlAct(
@@ -403,6 +409,8 @@ final class AgentIntegrationActLaneTests: XCTestCase {
             return XCTFail("a guest that said no is a refusal: \(result)")
         }
         XCTAssertEqual(failure.code, "now-control-act-refused")
+        XCTAssertEqual(failure.correlation, "A5A50001-00000008")
+        XCTAssertEqual(failure.settlement, "timed-out")
         XCTAssertTrue(failure.message.contains("never called TrackControl"),
                       "the guest's own sentence is the distinction; a host "
                           + "that replaced it would delete the answer")

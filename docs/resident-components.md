@@ -290,6 +290,17 @@ gets at least one deliberate boot before "verified" is claimed.
   `act_format` plus `length` covering the cell, checked in that order,
   because a gate whose first act is the unsafe read is not a gate.
 
+  *Amended 2026-08-04.* P4 format v2 appends correlation and identity after
+  the original cell rather than moving it. The resident owns only monotonic
+  mechanism evidence: requested, accepted, armed, fired, refused, or expired.
+  The normal-context application owns the outcome. It retains sixteen
+  correlations, joins a fired request to a later scene and an exact
+  postcondition, and preserves a timeout when the effect appears later. The
+  host may display success only for that application-owned `confirmed` state;
+  a trap firing or command reply is never promoted on its own. PSN remains an
+  echoed correlation field. Resident safety still comes from the canonical
+  writer epoch, target A5, deadline, and operation-specific object guard.
+
   **Attend the first metal boot, and more so than for P1.** This is the
   first plane that can *write* into another process rather than only
   read low memory in its context.
