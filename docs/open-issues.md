@@ -14,6 +14,41 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## CYCLE 27 RETAINED-STATE CHECKPOINT; TWO ADVANCES, TWO BLOCKERS (2026-08-04)
+
+The exact `d0a3e1a` host was driven through native Mirror mouse input and
+compared with the explicitly identified QMP framebuffer oracle. Before that
+drive, `scripts/test-all` passed 103 native tests, the PowerPC, 68K, and NOW
+Extension cross-builds with their real Retro68 toolchains, and the full host
+gate. This is tested and emulator-observed, not metal-verified and not a green
+Mirror sweep.
+
+Two earlier red cases advanced. Macintosh HD now opens with its item roster in
+the first settled Finder scene instead of remaining blank until an unrelated
+action. Key Caps now launches through a typed guest-Finder operation and comes
+frontmost. Workshop resize and close also continued to mutate both surfaces,
+and Workshop's structured content no longer disappeared during the observed
+poll sequence.
+
+Two blocking families remain. `Hide Finder` timed out without changing the
+authoritative guest and produced no visibility-action line in the host log;
+the retained visibility census correctly refused to confirm it, but dispatch
+and observability are still broken. Key Caps is a successful launch with a
+completely empty Mirror body: QMP shows the full keyboard while Mirror shows a
+hatched unavailable region. That application has no standard controls, so its
+draw-owned content needs an explicit structured placeholder until deferred
+pixel transport is undertaken. Finder fidelity also remains partial, and
+Sherlock was not re-driven in this continuation.
+
+The apparent Apple-row count changed with the front application: NOW-front
+began at AirPort, while Finder-front additionally exposed `About This
+Computer`. Do not treat that contextual difference as destructive row loss
+without an authoritative same-context comparison. Strict C27 rows remain
+blocked because the captures do not include the complete correlated
+operation/settlement/host-log/guest-log manifest. Exact identities, evidence
+paths, and the bounded verdict are in
+`docs/mirror-retained-planes-checkpoint-2026-08-04.md`.
+
 ## CYCLE 26 HIGH-WATER CHECKPOINT; APPLE REPAIRED, STATE MODEL OPEN (2026-08-04)
 
 The exact C26 native host was driven through its Mirror and compared with QMP

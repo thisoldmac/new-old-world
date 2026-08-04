@@ -149,3 +149,67 @@ Command-H implementation remains present but is no longer selected by the
 Mirror interaction path; the selected Retro68 headers expose neither
 `ShowHideProcess` nor Carbon `OpenDeskAcc`. The host depends only on guest OS
 scripts and later guest observations, not on QEMU facilities.
+
+## Cycle 27 verification checkpoint
+
+Cycle 27 directly drove the implementation through the native Mirror after the
+follow-up commits `1de856e` and `d0a3e1a`. The exact disposable host came from
+`d0a3e1aeef627d185bd3e1509330d3b7f8864cc6`, used bundle identifier
+`dev.newoldworld.now.verify.d0a3e1a`, and launched with `--mirror-scale 0.9`.
+Its signed executable SHA-256 was
+`a64cbb147a7e52bb2b21031657bf3713c06a30e2c8a3fd4a874aba2fea0f6f08`.
+The identified oracle remained `guest-2`, session
+`2cc462d9-a285-419d-b2b5-3ad19f4528ad`, guest build `a4a59d37d100`, VM name
+`NOW U8 cad8e57 public list probe`, and explicit QMP socket
+`/private/tmp/now-u7-extension-only/qmp.sock`. QMP supplied screendumps only;
+every mutation below began as mouse or keyboard input in the Mirror.
+
+Before the drive, `scripts/test-all` passed 103 native tests, all three real
+Retro68 cross-builds (PowerPC, 68K, and the NOW Extension), and the complete
+host gate. The new Key Caps routing guard was also mutation-watched: disabling
+the typed Finder route made its policy test fail with the legacy
+`menuCommand`; restoring the route passed.
+
+The direct result is an advance, not a green sweep:
+
+- Workshop content remained present across later polls instead of collapsing
+  to an empty body. The menubar geometry matched the paired guest. Whole-frame
+  fidelity is still red because selection treatment and several structured
+  layout details differ; bitmap art remains deferred and explicitly
+  unscored.
+- A measured grow-box drag resized Workshop in both surfaces, and its close
+  box removed it in both surfaces. Resize and close still logged
+  `settlement=unknown`, so visible success is not being promoted into false
+  authoritative confirmation.
+- A direct Macintosh HD double-click brought Finder frontmost and the first
+  settled Mirror scene already contained the visible item roster. It no
+  longer waited for an unrelated switcher action. Finder status/count/scroll
+  details remain incomplete, and bitmap icons remain placeholders.
+- Apple menus were nonempty in both contexts. NOW-front showed the system rows
+  from AirPort through Stickies; Finder-front additionally showed `About This
+  Computer`. The context-dependent count must not be mistaken for destructive
+  row loss, although the strict menu row still lacks a complete correlated
+  evidence manifest.
+- `Hide Finder` remained red. The direct switcher action timed out, Finder
+  stayed visible and frontmost in the paired guest capture, and the host log
+  contained no visibility-action entry for that attempt. The retained
+  visibility shelf therefore did the right thing by refusing to confirm an
+  effect it never observed, but the mutation route and its observability are
+  still broken.
+- Key Caps routing advanced: clicking the Mirror's Apple-menu row launched Key
+  Caps and made it frontmost. The guest framebuffer showed the complete
+  keyboard, while Mirror showed an empty hatched window. Launch is repaired;
+  content remains red. Key Caps has no standard controls, so this is the known
+  draw-owned surface and needs an honest structured placeholder until deferred
+  pixel work begins.
+- Sherlock was not re-driven in this bounded continuation, so the retained
+  structured-content repair remains automated-only for that application.
+
+The strict C27 gate rows remain blocked rather than green because the available
+paired captures do not form the full operation, settlement, host-log, and
+guest-log manifest required by `tools/mirror-gate`. The sweep was paused at the
+user's request when usage credits became tight. At preservation time the exact
+host (PID `96539`) and VM (PID `49971`) were deliberately left alive for manual
+inspection; those PIDs are diagnostic only. The host log is
+`~/Library/Logs/now-logs/2026-08-04 194035.log`, and local paired captures are
+under `docs/local/evidence/c27/`.
