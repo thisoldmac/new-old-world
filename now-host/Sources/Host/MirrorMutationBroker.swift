@@ -249,8 +249,50 @@ final class MirrorMutationBroker {
         work.report(work.operation, complaint)
         if work.operation.outcome == .timedOut {
             awaitingLateEvidence.append(work)
+            shedQueue(behind: work)
         }
         drain()
+    }
+
+    /// **A timeout ends the acts queued behind it, not just its own.**
+    ///
+    /// This is what bounds the QUEUE: the 15 s timeout bounds one act, and
+    /// seven of them stacked to 87.5 s on 2026-08-05 because each queued
+    /// act waited its turn to spend its own deadline against the same
+    /// wedged guest. The guest is serial — one blocked callee deafens all
+    /// of it — so an act queued behind a timeout was overwhelmingly going
+    /// to time out too, and dispatching it anyway costs a person fifteen
+    /// silent seconds per gesture they stacked.
+    ///
+    /// (That serial fact is also why the bound is a shed and not a second
+    /// lane: 009 asked whether the FIFO should be one lane per target, and
+    /// parallel lanes into a machine that can only answer one at a time
+    /// would buy attribution ambiguity and no throughput.)
+    ///
+    /// A shed act was provably never sent, so `refused` is its honest
+    /// outcome — but the refusal must say it GAVE UP, or the record reads
+    /// as the machine declining rather than this side declining to wait.
+    /// A fresh act enqueued after the shed dispatches immediately and
+    /// earns its own answer.
+    private func shedQueue(behind timedOut: Work) {
+        guard !queue.isEmpty else { return }
+        let ahead = timedOut.label.isEmpty
+            ? "the act ahead of it" : "\"\(timedOut.label)\""
+        let waiting = queue
+        queue.removeAll()
+        for var work in waiting {
+            work.operation = MirrorOperationReducer.reduce(
+                work.operation,
+                event: .refused(
+                    reason: "not sent: \(ahead) timed out and the guest "
+                        + "may be wedged; re-send this if it is still "
+                        + "wanted",
+                    at: now(), effectMayHaveLanded: false))
+            work.releasedAt = now()
+            journal.replace(work.operation)
+            record(work, kind: .released)
+            work.report(work.operation, nil)
+        }
     }
 
     /// One measurement per lane release, and one more if a late

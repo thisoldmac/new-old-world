@@ -255,6 +255,93 @@ final class MirrorMutationBrokerTests: XCTestCase {
                        .confirmed)
     }
 
+    /// **A timeout bounds the QUEUE, not just its own act.** Seven acts
+    /// stacked to 87.5 s on 2026-08-05 because each waited its turn to
+    /// spend its own 15 s against the same wedged serial guest. An act
+    /// queued behind a timeout is shed — never dispatched, refused with a
+    /// reason that says this side gave up — so a wedge costs one timeout,
+    /// not one per gesture a person stacked.
+    func testATimedOutActShedsTheQueueBehindIt() async {
+        let process = MirrorProcessIdentity(session: session,
+                                            incarnation: "finder")
+        let broker = MirrorMutationBroker(timeout: 0.01)
+        var laterDispatched = false
+        XCTAssertTrue(broker.enqueue(operation(id: "wedged", process: process),
+          label: "open harness.log",
+          execute: { .init(complaint: nil, effectMayHaveLanded: true) },
+          report: { _, _ in }))
+        for id in ["behind-1", "behind-2"] {
+            XCTAssertTrue(broker.enqueue(operation(id: id, process: process),
+              execute: {
+                laterDispatched = true
+                return .init(complaint: nil, effectMayHaveLanded: true)
+              }, report: { _, _ in }))
+        }
+        try? await Task.sleep(nanoseconds: 40_000_000)
+
+        XCTAssertEqual(broker.journal.operation(id: "wedged")?.outcome,
+                       .timedOut)
+        XCTAssertFalse(laterDispatched,
+                       "a shed act must never reach the guest")
+        XCTAssertEqual(broker.depth, 0, "the lane is free at once")
+        for id in ["behind-1", "behind-2"] {
+            let shed = broker.journal.operation(id: id)
+            XCTAssertEqual(shed?.outcome, .refused)
+            XCTAssertTrue(shed?.reason?.contains(
+                "\"open harness.log\" timed out") == true,
+                shed?.reason ?? "(no reason)")
+            XCTAssertTrue(shed?.reason?.contains("re-send") == true,
+                          "a shed must tell the caller the way back")
+        }
+    }
+
+    /// The shed is provably-unsent, so later evidence that satisfies its
+    /// postcondition — produced by whatever eventually unwedged the guest
+    /// — cannot turn it green.
+    func testAShedActIsNeverConfirmedByLaterEvidence() async {
+        let process = MirrorProcessIdentity(session: session,
+                                            incarnation: "finder")
+        let broker = MirrorMutationBroker(timeout: 0.01)
+        XCTAssertTrue(broker.enqueue(operation(id: "wedged", process: process),
+          execute: { .init(complaint: nil, effectMayHaveLanded: true) },
+          report: { _, _ in }))
+        XCTAssertTrue(broker.enqueue(operation(id: "shed", process: process),
+          execute: { .init(complaint: nil, effectMayHaveLanded: true) },
+          report: { _, _ in }))
+        try? await Task.sleep(nanoseconds: 40_000_000)
+
+        broker.observe([processEvidence(process, sequence: 2)])
+
+        XCTAssertEqual(broker.journal.operation(id: "shed")?.outcome,
+                       .refused)
+    }
+
+    /// The guard against over-shedding: an act that settles normally hands
+    /// the lane to its successor exactly as before. Only a timeout sheds.
+    func testANormalSettlementDoesNotShedTheQueue() async {
+        let process = MirrorProcessIdentity(session: session,
+                                            incarnation: "finder")
+        let broker = MirrorMutationBroker(timeout: 1)
+        var dispatched: [String] = []
+        XCTAssertTrue(broker.enqueue(operation(id: "first", process: process),
+          execute: {
+            dispatched.append("first")
+            return .init(complaint: nil, effectMayHaveLanded: true)
+          }, report: { _, _ in }))
+        XCTAssertTrue(broker.enqueue(operation(id: "second", process: process),
+          execute: {
+            dispatched.append("second")
+            return .init(complaint: nil, effectMayHaveLanded: true)
+          }, report: { _, _ in }))
+        await Task.yield()
+
+        broker.observe([processEvidence(process, sequence: 2)])
+        try? await Task.sleep(nanoseconds: 20_000_000)
+
+        XCTAssertEqual(dispatched, ["first", "second"],
+                       "a confirmed act must not shed its successor")
+    }
+
     private func operation(id: String, process: MirrorProcessIdentity)
         -> MirrorOperation {
         .init(id: id, source: .human, displayedSnapshotID: 1,
