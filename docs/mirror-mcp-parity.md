@@ -61,9 +61,23 @@ Every `InteractionPlan` case, against the MCP row that comes closest.
 | `openAppleMenuItem` | none | **missing** |
 | `finderSelect` / `finderOpen` | `now_reveal_item` is adjacent, not equivalent | **missing** |
 | `finderDeselect` | none | **missing** |
+| *(not a plan)* **cancel the mutation lane** | `now_mirror_drive --gesture cancel` | **at parity, 2026-08-05** — the Mirror's status-line cancel and the MCP gesture are one call on `MirrorMutationBroker.cancelAll` |
 
 Mirror-window controls with no MCP equivalent at all: opening and closing
-the Mirror, its scale, and the four plane switches.
+the Mirror, its scale, and the four plane switches. **Cancelling the lane
+used to be on that list and is not any more** — it is the row above, and
+it is the first control this table has ever been able to move.
+
+**2026-08-05: this table's left column is a stale frame.** It compares
+`InteractionPlan` cases against the pre-`now_mirror_drive` per-verb rows
+(`now_control_act`, `now_window_act`, …), and item 1 of "What to close"
+below — *one executor behind both faces* — has since been done:
+`MirrorDriveService` builds an `Interaction`, goes through
+`MirrorActionExecutor` and the broker, and settles from an observation,
+which is the same path a click takes. Most of the **missing** rows above
+are therefore served today through one door with a `gesture` argument.
+Re-derive the whole table against `AgentIntegrationMirrorDriveGesture`
+before quoting any row from it.
 
 ## What to close, in order
 

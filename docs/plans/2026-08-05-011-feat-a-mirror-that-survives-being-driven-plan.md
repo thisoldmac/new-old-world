@@ -212,7 +212,7 @@ it can be measured on.
 
 ## The work
 
-### A — the lane must not be able to kill the session · **FIRST**
+### A — the lane must not be able to kill the session · **DONE 2026-08-05, except its own done-when**
 
 Three separable pieces, and the first is most of the value:
 
@@ -246,6 +246,24 @@ is what turns it fatal.
 creator application — it reproduces on demand) costs the acts behind it
 nothing, and the session survives.
 
+**Status 2026-08-05: all three built and unit-verified by mutation; the
+done-when is HALF met and the failing half belongs to C′.** Driving the
+wedge: five acts across it answered in 2.1 s total, nothing blocked, and
+the wedged act's ceiling was 30.3 s — so *the acts behind it cost
+nothing* holds. *The session survives* does not: it died at the host's
+75 s idle timeout because the guest could not answer anyone, which is not
+a lane defect and cannot be fixed in the lane. Also unproven live: the
+shed (nothing reached the lane behind the wedge — the acts issued after it
+were `held` upstream of the broker), a cancel of a genuinely in-flight
+act, and the dead-guest notice ending a non-empty lane.
+
+**A fourth item this drive exposed, unowned:** a `held` act — one that
+arrives while an observation is in flight — waited **two minutes** without
+producing a journal record or an act clock, having told MCP that a record
+was coming. It was answered honestly in the end (*"the Mirror is pinned to
+guest-1"*), so nothing was lost, but the held door is a second unbounded
+wait sitting upstream of everything A bounds.
+
 ### B — anchor the process you are about to act on
 
 The walk names foreign controls correctly and cannot act on them. The
@@ -278,6 +296,36 @@ icons" rather than "we could not ask".
 **Done when:** a blocked Finder costs the guest its Finder reads and
 nothing else — the wire stays live, the heartbeat is answered, and other
 applications remain drivable.
+
+### C′ — the done-when above is UNREACHABLE by C alone (measured 2026-08-05)
+
+The wedge was reproduced deliberately rather than waited for, and it
+falsifies the scoping this section assumed. The Finder's alert starved
+**every process on the guest**, including `tbt-worker` — a background-only
+application on its own port with no code in common with NOW — for over
+**90 seconds**. The host's `idleTimeout` is **75 s** and the host never
+pings by contract, so the wire died of "no traffic" against a healthy
+machine holding an open socket.
+
+So "the wire stays live" is not something a shorter poll deadline can
+deliver. C bounds how long **we** wait; this is the guest being unable to
+answer **anybody**. Both are real and C is still worth doing — it stops
+NOW spending 15 s per poll on a blocked callee — but it must stop being
+described as the fix for the dropped connection.
+
+Two consequences for how C gets specified:
+
+- **Its deadline is not free to choose.** Any bound on deafness is only
+  meaningful relative to `GuestListener.Timing.idleTimeout`. State the two
+  numbers in one place, per the "state a limit once" rule, or they will
+  drift into contradiction the way the control-frame cap did.
+- **The liveness signal must move below the application**, because a
+  modal is exactly what takes the application away. The candidates — TCP
+  keepalive answered by the guest's stack, a resident component answering
+  at interrupt time, or re-pinning across a redial so a lost wire costs a
+  reconnect rather than a session — are laid out in
+  [open-issues.md](../open-issues.md)'s top entry. **This is now the
+  binding survivability question, ahead of the rest of C.**
 
 ### D — capture the alert three ways before fixing what it renders
 

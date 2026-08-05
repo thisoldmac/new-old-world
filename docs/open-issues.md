@@ -14,6 +14,72 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## BROKEN: the guest's deafness OUTLIVES the host's liveness window, so an ordinary modal kills the session (2026-08-05, second drive)
+
+**This is the one that makes the other deafness entries conditional**, and
+it was found by deliberately reproducing the wedge rather than waiting to
+be surprised by it again.
+
+A document with a creator no application owns (`Zz!9`) was pushed to the
+guest desktop and opened from the Mirror. The Finder raised its *"Could
+not find the application program that created the document named 'wedge
+doc'"* alert — reproducible on demand, which is what makes this
+measurable at all. Then:
+
+- **The alert deafened EVERY process on the guest**, not merely the
+  Finder. `tbt-worker` — a background-only application on its own TCP
+  port, sharing nothing with NOW but the machine — stopped answering
+  `hello` for **more than 90 seconds**, and refused four posted-click
+  attempts across the six minutes after that. NOW went silent for the
+  same span.
+- **The host's idle timeout is 75 s** (`GuestListener.Timing.idleTimeout`,
+  and the host never pings by contract). So the wire died of *"Connection
+  lost (no traffic)"* while the Macintosh was perfectly healthy and its
+  socket perfectly open.
+
+**One ordinary Macintosh event therefore ends the wire session**, and no
+amount of host-side patience is the answer: a modal waits for a person,
+so the deafness is unbounded. A larger `idleTimeout` moves the cliff and
+makes real death slower to notice; it does not remove the cliff.
+
+**What this falsifies.** The entry below (*"a blocked callee deafens NOW
+for 15 s per script"*) proposes short poll deadlines as "the cheapest real
+fix". That fix is still right and is still worth doing — it stops NOW
+spending fifteen seconds per poll on a blocked callee — but it **cannot
+reach this**: our own deadline governs how long WE wait, and this is the
+guest being unable to answer anybody at all. 011 § C's done-when (*"a
+blocked Finder costs the guest its Finder reads and nothing else — the
+wire stays live"*) is unreachable by that mechanism alone, because the
+blocked Finder costs a **separate background application** its wire too.
+
+**Where the answer has to live.** Liveness is being answered by the
+application, and a modal is precisely what takes the application away. So
+the signal must come from **below** it. Two layers can speak while every
+application is starved, and both are unproven here:
+
+- **The TCP stack.** A wedged guest's kernel still holds the connection;
+  a dead machine's does not. Host-side keepalive would be answered by the
+  guest's OT stack with no application involvement, which is exactly the
+  distinction the idle timer cannot make. Unverified on OS 9's Open
+  Transport, and it must be checked on metal before it is believed —
+  MacTCP on the 68K side is a second question again.
+- **A resident component.** The NOW Extension runs at interrupt time and
+  is not subject to cooperative starvation. This is what
+  [resident-components.md](resident-components.md) exists for, and it is
+  the larger move.
+
+There is also a third answer that does not try to keep the session alive:
+**make a redial cost a reconnect rather than a session.** `GuestKey` is
+per dial-in, so the same machine returning gets a new key and the Mirror's
+pinned engine, journal and act clocks are all invalidated — which is why
+the four acts in flight came back *"the Mirror is pinned to guest-1"*.
+Re-pinning across a redial of the same MACHINE would make an unbounded
+modal survivable without pretending the wire survived it.
+
+Recorded from the drive whose notes are in `docs/local/`, with QMP
+screendumps of the alert and of the machine unchanged after the posted
+click.
+
 ## UNVERIFIED: MCP can see the drawing now, but nobody has read one live (2026-08-05)
 
 `now_mirror_snapshot` claims to carry the renderer's whole input and three
@@ -93,6 +159,15 @@ back rather than hold it for fifteen. A user-initiated act can keep the
 long deadline, because a person is waiting for that one on purpose. The
 argument already exists on the verb; nobody passes it.
 
+**2026-08-05, later: "the cheapest real fix" is still worth doing and is
+no longer sufficient.** Measured by reproducing the wedge: the deafness is
+not scoped to NOW's own script call. A Finder modal starved a separate
+background application (`tbt-worker`, its own port, no code in common)
+for over 90 seconds. A short `timeoutMs` bounds how long WE wait for an
+answer; it cannot make a starved machine able to answer. See the new
+entry at the top of this page for where the liveness signal has to come
+from instead.
+
 ## The host's dispatch path has no test seam, and it cost three times today (2026-08-05)
 
 Not a defect in the product; a gap in how the product can be checked, and
@@ -125,6 +200,15 @@ gives the scene cycle: one injectable "send this command" function, so a
 test can assert WHICH command a plan produces. That is a small refactor
 with a large blast radius on confidence, and it is the highest-value
 testing work in this arc.
+
+**2026-08-05, later: CLOSED, and by exactly that.** `GuestCommandSend` is
+the injectable door, defaulting to `GuestListener.runCommand` and held by
+both `NOWMirrorSource`'s `run`/`readingOutput` and
+`AgentIntegrationActControl`'s single wire call.
+`MirrorServeSeamTests` drives `perform` through it and reads the composed
+command. The mutation named above is the proof it works: `activate:
+!ownApp` → `activate: true` now fails exactly the control-panel test and
+nothing else, where it used to leave nine tests green.
 
 ## BROKEN: one modal wedges the whole Mirror, and the lane turns it into 90 seconds (2026-08-05, from Michelle's drive)
 
@@ -180,6 +264,30 @@ it is the thing that converts any single stuck act into a dead session.
 throughout this session — desktop icons rendered fine, per the operator.
 So the intermittency recorded above is real and this session is a case
 where it worked.
+
+**2026-08-05, later: item 1 is done, and the re-measurement is much
+better — but it did not test the part that matters most.** The lane is now
+bounded and cancellable: an act can be cancelled from the Mirror's status
+line and from `now_mirror_drive --gesture cancel`; a timed-out act sheds
+everything queued behind it with an attributable refusal; and a failed
+cycle that finds the pinned session disconnected ends the lane at once
+rather than letting each act spend its own deadline. Driving the same
+wedge deliberately: **five acts issued across it answered in 2.1 s
+total**, no caller blocked, and the wedged act's own ceiling was 30.3 s
+(the guest's 15.3 s script deadline, then the broker's 15 s). No 87.5 s
+wait recurred.
+
+**That is consistent with the fixes and is not proof of them.** Nothing
+reached the lane *behind* the wedge in that run — the four acts issued
+after it were `held` at the observation door, upstream of the broker — so
+the shed had nothing to shed. The shed, a cancel of a genuinely in-flight
+act, and the dead-guest notice ending a non-empty lane are verified by
+unit mutation only.
+
+Item 2 is unchanged and got harder: the posted click that dismissed this
+modal on 2026-08-05 was refused four times on the second drive, because
+the anchor worker is itself starved by the alert (top entry). Item 3 is
+untouched.
 
 ## BROKEN: the host face can HIDE and cannot SHOW (2026-08-05)
 
