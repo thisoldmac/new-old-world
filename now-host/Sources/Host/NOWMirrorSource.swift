@@ -1111,7 +1111,18 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                             try? await Task.sleep(nanoseconds: 25_000_000)
                         }
                         self.mutationWaiting = false
-                        self.perform(interaction)
+                        /* **Carry the face through the wait.** This called
+                           the one-argument overload, which defaults to
+                           `.human` — so an MCP act that happened to arrive
+                           while an observation was in flight was journalled
+                           as a person's, undoing the 2026-08-05 fix by a
+                           path older than it. Caught live the same day: an
+                           `finderOpen` driven entirely over the agent
+                           socket settled `confirmed` and recorded
+                           `source: human`. The journal is what tells a
+                           hand-driven act from an agent-driven one after
+                           the fact, and this was the only act in it. */
+                        _ = self.perform(interaction, source: source)
                     }
                     /* Held, not refused — it re-enters this door when the
                        observation clears, and the caller has an operation

@@ -396,8 +396,56 @@ Where each one is:
   The refusal now names the Finder route, keeps the osaErr, and names the
   act-plane click as untried.
 
-**Not yet driven live in that session** — see the next heading for what
-the live run then showed.
+### What driving it live then showed (2026-08-05, second session)
+
+A guest was stood up from scratch — `scripts/build-guests`,
+`scripts/spin-up-ppc`, a cold boot, resident `fc6e0946bde9271…` at
+`cap 31`, `lifecycle: active`, all four planes requested and active — and
+driven headless through `tools/now-agent`. It cost more than the fixes
+did, and it earned more:
+
+**Proven live.** A `finderOpen` of a disk settled **`confirmed`** on
+`windowNamedPresent(owner: Finder, title: "Macintosh HD")`, from
+observation, at `settledSequence 27`. That is the half of item 1 the old
+prediction was right about, still right.
+
+**Found live, fixed, and re-driven.** `now_mirror_drive` answered
+`{"outcome": "dispatched"}` for an act the host had explicitly declined —
+`acts.log` carried `NOT DISPATCHED: Interaction policy is off` for the
+same call. `perform` reported its decline only to the Mirror's status
+line, which a headless caller cannot read, and the drive service inferred
+the outcome from the ABSENCE of a broker record, a signal that "refused
+before dispatch" and "took the direct path" both produce. Fixed; the same
+call now answers `refused` with the reason, verified against the live
+host. `MirrorDriveService` had no tests at all, which is the finding
+under the finding.
+
+**Found live, half-fixed, NOT proven.** The journal recorded that
+confirmed act as `source: human` — and it was driven entirely over the
+agent socket. An act arriving while an observation is in flight is
+deferred and re-enters through the one-argument `perform`, whose `source`
+defaults to `.human`, so the 2026-08-05 attribution fix is undone by a
+path older than it. The argument is now passed through. **The test for it
+is owed**: a harnessed `NOWMirrorSource` never reached the broker at all
+in the shape the case needs, which may be the same reason the live drive
+answered `id: "direct"` — `shadowEngine` nil on the MCP path — and that
+is a second question this session could not close. Both are in the
+ledger.
+
+**What blocked the rest, and it is not the change.** Item 1's control-panel
+half was never exercised: `desktopItems` stayed nil for the whole run, so
+the classifier's positive branch never fired. Chasing it further was not
+possible with confidence, because another session was driving its own
+guest on this Mac at the same time and `acts.log` is shared across host
+instances with no instance marker — lines cannot be attributed by
+timestamp. `mirror_read --intention journal` is per-instance and is the
+reliable read; prefer it.
+
+Three rig facts, all costly to rediscover, now in
+[open-issues](../open-issues.md): a worktree path is too long for a QMP
+socket; `spin-up-ppc` cannot complete its clean shutdown because the
+canonical anchor worker has no `script` verb; and mac99 rejects `abs`
+input events entirely, so QMP mouse injection there is relative-only.
 
 **1. A Finder-open predicts the wrong owner, so every control panel times
 out while succeeding.** `MirrorActionExecutor` builds

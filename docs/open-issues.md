@@ -122,6 +122,79 @@ Still open from this:
   attaches the PREVIOUS command's correlation. It is conservative for the
   host rule above — a stale correlation reads as "may have landed", which
   only costs a wait — but it is wrong.
+## BROKEN: an agent-driven act is journalled as a person's when it waits (2026-08-05)
+
+An act that arrives while an observation is in flight is deferred and
+re-enters `NOWMirrorSource.perform` when the cycle clears — through the
+**one-argument overload**, whose `source` defaults to `.human`. So an MCP
+act unlucky enough to land mid-cycle is recorded as a hand-driven one.
+This undoes the 2026-08-05 attribution fix by a path older than it, and
+the journal is the only thing that can tell the two faces apart after the
+fact.
+
+Measured: a `finderOpen` driven entirely over the agent socket settled
+`confirmed` and recorded `source: human`. It was the only record in that
+host's journal, so there was nothing to confuse it with.
+
+The argument is now passed through. **The regression test is owed and is
+not written** — a harnessed `NOWMirrorSource` never reached the broker in
+the shape the case needs, which is its own open question below. Until
+that test exists this fix is code review, not verification.
+
+## BROKEN (suspected): the MCP drive path may hold no engine (2026-08-05)
+
+Two observations that fit one cause and are not yet proven to share it.
+Live, `now_mirror_drive` answered `id: "direct"` for a `finderOpen` while
+the Mirror page was cycling normally against the same guest — the direct
+path is taken when `shadowEngine` is nil. In a unit harness, a
+`NOWMirrorSource` built with an engine registry never produced a broker
+record for the same gesture.
+
+If `HostAppState.mirrorSource` hands the drive service a source whose
+`shadowEngine` is nil, then **every MCP act takes the direct path and can
+never settle**, which contradicts slice 3's central claim that both faces
+run through one executor. That claim WAS demonstrated on 2026-08-05
+(an MCP `activate` settled `confirmed`), so this is not simply broken —
+it is conditional on something not yet identified, most likely whether a
+guest key has been bound at drive time.
+
+Worth settling before any further headless measurement is believed: a
+measurement taken through the direct path describes a different product
+from the one a person drives, which is the exact defect this whole arc
+exists to remove.
+
+## Three rig facts that each read as something else (2026-08-05)
+
+None of these is a defect in NOW; all three cost time because they
+present as a hang or as a broken change.
+
+- **A worktree is too deep to host a VM.** A UNIX socket path is capped
+  at 104 bytes and `now/.claude/worktrees/<branch>/run/<pid>/qmp-ui.sock`
+  spends 108. QEMU refuses to start and says so only in
+  `run/<pid>/qemu.log`; `spin-up-ppc`'s own output ends after "boot a
+  fresh, session-private clone" with no error, which reads as a boot that
+  hung. This is the DEFAULT path for every agent, because agents work in
+  worktrees. `scripts/spin-up-ppc` now checks and names the cure
+  (`NOW_SPIN_RUN=/private/tmp/nowvm-$$`).
+- **`spin-up-ppc` cannot finish its clean shutdown.** Rule 1 requires the
+  guest to shut itself down through the Finder, via the anchor worker's
+  `script` verb — and the canonical worker build does not have one
+  (`tools:` lists put/get/list/launch/observe/click/key/type and no
+  `script`). It stops with "the agent refused the script verb" and leaves
+  the VM running, so **the INIT never loads** and every plane reports
+  `unsupported/gen0`. Worked around by hand: quit the guest app with
+  Cmd-Q through the worker's `key`, drive Special > Shut Down, then
+  relaunch QEMU on the same disk. The middle step is the hard one —
+- **mac99 rejects `abs` input events.** QMP `input-send-event` answers
+  "Input handler not found for event type abs": the machine is started
+  with `-device usb-kbd` and no pointing device, so the mouse is the
+  ADB one and only `rel` is handled. Relative moves carry OS 9's pointer
+  acceleration, so counted steps do not land where they are aimed — a
+  menu drag needs the closed-loop `mouseloc` convergence, which is not
+  wired here. The worker's own `click` verb closes a menu without
+  selecting from it (cooperative tracking-loop starvation). Net: an agent
+  currently has no reliable route to a menu selection on this rig.
+
 ## BROKEN: a Finder-open predicts the wrong owner, so panels time out having worked (2026-08-05)
 
 `MirrorActionExecutor` builds `windowNamedPresent(owner: Finder, title:
