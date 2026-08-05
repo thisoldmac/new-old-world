@@ -15,46 +15,6 @@ import NOWAgentIntegration
 @MainActor
 final class NOWMirrorSourceTests: XCTestCase {
 
-    private final class CycleHarness {
-        var activeKey: GuestKey?
-        var globalScenePending = false
-        var sceneRequests: [(GuestKey, Bool, Bool)] = []
-        var sceneCompletions: [
-            (Result<GuestListener.SceneDelivery,
-                    GuestListener.SceneFailure>) -> Void
-        ] = []
-        var joinedScenes: [Scene] = []
-        var joinCompletions: [(NOWMirrorContentPlane.Update) -> Void] = []
-
-        init(activeKey: GuestKey) { self.activeKey = activeKey }
-
-        var io: NOWMirrorCycleIO {
-            .init(
-                activeKey: { self.activeKey },
-                isScenePending: { self.globalScenePending },
-                requestScene: { key, semantics, interaction, completion in
-                    self.globalScenePending = true
-                    self.sceneRequests.append((key, semantics, interaction))
-                    self.sceneCompletions.append(completion)
-                },
-                guestChanged: {},
-                disableContent: { completion in completion(nil) },
-                joinContent: { scene, completion in
-                    self.joinedScenes.append(scene)
-                    self.joinCompletions.append(completion)
-                })
-        }
-
-        func completeScene(
-            _ index: Int,
-            with result: Result<GuestListener.SceneDelivery,
-                                GuestListener.SceneFailure>
-        ) {
-            globalScenePending = false
-            sceneCompletions[index](result)
-        }
-    }
-
     private func testListener() -> GuestListener {
         GuestListener(identity: .init(version: "test", name: "Test Host"))
     }
@@ -237,7 +197,7 @@ final class NOWMirrorSourceTests: XCTestCase {
 
     func testPolicyRefreshWaitsForHeldSceneAndContentBeforeOneFollowUp() throws {
         let key = GuestKey.synthetic("held-cycle")
-        let harness = CycleHarness(activeKey: key)
+        let harness = MirrorCycleHarness(activeKey: key)
         let listener = testListener()
         let registry = MirrorStateEngineRegistry()
         var planes = Set(MirrorPlaneID.allCases)
@@ -275,7 +235,7 @@ final class NOWMirrorSourceTests: XCTestCase {
     /// reads, so it says when a gesture is waiting on the lane rather than
     /// on the Macintosh — and stays quiet when nothing is.
     func testStatusNamesAWaitingLaneAndIsSilentWhenNothingWaits() {
-        let harness = CycleHarness(activeKey: .synthetic("status"))
+        let harness = MirrorCycleHarness(activeKey: .synthetic("status"))
         let listener = testListener()
         let source = NOWMirrorSource(
             listener: listener, engineRegistry: MirrorStateEngineRegistry(),
@@ -291,7 +251,7 @@ final class NOWMirrorSourceTests: XCTestCase {
 
     func testSceneFromStoppedLifetimeCannotSettleRestartedSameGuest() throws {
         let key = GuestKey.synthetic("same-guest-restart")
-        let harness = CycleHarness(activeKey: key)
+        let harness = MirrorCycleHarness(activeKey: key)
         let listener = testListener()
         let source = NOWMirrorSource(
             listener: listener, engineRegistry: MirrorStateEngineRegistry(),
@@ -828,7 +788,7 @@ final class NOWMirrorSourceTests: XCTestCase {
             listener.activeKey != nil
         }
         let key = try XCTUnwrap(listener.activeKey)
-        let harness = CycleHarness(activeKey: key)
+        let harness = MirrorCycleHarness(activeKey: key)
         let source = NOWMirrorSource(
             listener: listener, engineRegistry: MirrorStateEngineRegistry(),
             act: testAct(listener), interval: 3_600,
@@ -873,78 +833,6 @@ final class NOWMirrorSourceTests: XCTestCase {
     /// than recapture (a guest and a person), the identities are stamped
     /// on deterministically — the values are opaque to everything under
     /// test, which only ever compares them for equality.
-    private func identifiedScene(seq: Int, without absent: String? = nil)
-        throws -> Data {
-        let fixture = try XCTUnwrap(
-            Bundle.module.url(forResource: "now-scene-ir-v1",
-                              withExtension: "json",
-                              subdirectory: "Fixtures"))
-        var scene = try XCTUnwrap(JSONSerialization.jsonObject(
-            with: try Data(contentsOf: fixture)) as? [String: Any])
-        scene["seq"] = seq
-        /* IR v2, because v1 is `isApproximateReadOnly` — identities and
-           coverage are what v2 added, and they are the whole point here. */
-        scene["version"] = 2
-
-        func incarnation(_ psn: String) -> String {
-            "process-" + psn.replacingOccurrences(of: ".", with: "-")
-        }
-        /* Both rosters, and that is not belt-and-braces: the replica's
-           applications come from `apps` while the window/owner join reads
-           `processes`, so stamping one leaves every window ownerless and
-           nothing can ever be proven absent. */
-        for roster in ["apps", "processes"] {
-            var rows = try XCTUnwrap(scene[roster] as? [[String: Any]])
-            for index in rows.indices {
-                let psn = try XCTUnwrap(rows[index]["psn"] as? String)
-                rows[index]["incarnation"] = incarnation(psn)
-            }
-            scene[roster] = rows
-        }
-
-        var windows = try XCTUnwrap(scene["windows"] as? [[String: Any]])
-        if let absent {
-            windows.removeAll { $0["title"] as? String == absent }
-        }
-        var owners = Set<String>()
-        for index in windows.indices {
-            let psn = try XCTUnwrap(windows[index]["psn"] as? String)
-            let id = try XCTUnwrap(windows[index]["id"] as? String)
-            windows[index]["incarnation"] = "window-" + id
-            owners.insert(incarnation(psn))
-        }
-        scene["windows"] = windows
-
-        /* A settlement needs a claim whose scope is COMPLETE: retained
-           stale state must never settle a mutation, so an absent window in
-           a scene that does not claim to have walked that process proves
-           nothing. Every owner that had windows in the FULL scene claims
-           one, including the owner whose last window this scene drops —
-           that claim is exactly the evidence the close is waiting for. */
-        var meta = try XCTUnwrap(scene["meta"] as? [String: Any])
-        let full = try XCTUnwrap(
-            (try JSONSerialization.jsonObject(with: try Data(
-                contentsOf: fixture)) as? [String: Any])?["windows"]
-                as? [[String: Any]])
-        for window in full {
-            owners.insert(incarnation(
-                try XCTUnwrap(window["psn"] as? String)))
-        }
-        meta["coverage"] = owners.sorted().map {
-            ["scope": "windows", "owner": $0, "status": "complete"]
-        } + [["scope": "processes", "status": "complete"]]
-        scene["meta"] = meta
-
-        return try JSONSerialization.data(withJSONObject: scene)
-    }
-
-    private func delivery(_ document: Data, seq: Int, for key: GuestKey)
-        -> GuestListener.SceneDelivery {
-        .init(document: document, irVersion: 2, seq: seq, capturedAt: 1,
-              source: "test", walkMs: 1, settlements: nil, transferMs: 1,
-              guestName: "Test Mac", guestKey: key)
-    }
-
     /// **The incident, reproduced: a queued close whose window closes
     /// while it waits.**
     ///
@@ -967,7 +855,7 @@ final class NOWMirrorSourceTests: XCTestCase {
             listener.activeKey != nil
         }
         let key = try XCTUnwrap(listener.activeKey)
-        let harness = CycleHarness(activeKey: key)
+        let harness = MirrorCycleHarness(activeKey: key)
         /* A guest that takes the act and never answers, which is what
            holds the lane here — the same thing a real slow Macintosh
            does, and the only honest way to have a second act still be
@@ -988,7 +876,7 @@ final class NOWMirrorSourceTests: XCTestCase {
         // The scene a person is looking at, with the window still open.
         source.start()
         harness.completeScene(0, with: .success(
-            delivery(try identifiedScene(seq: 1), seq: 1, for: key)))
+            sceneDelivery(try identifiedSceneDocument(seq: 1), seq: 1, for: key)))
         harness.joinCompletions[0](.init(
             scene: try XCTUnwrap(harness.joinedScenes.first),
             sentence: "content"))
@@ -1025,8 +913,8 @@ final class NOWMirrorSourceTests: XCTestCase {
 
         // The machine moves on: a newer scene, without that window.
         source.planePolicyDidChange()          // the test's way to ask for one
-        harness.completeScene(1, with: .success(delivery(
-            try identifiedScene(seq: 2, without: "System Folder"),
+        harness.completeScene(1, with: .success(sceneDelivery(
+            try identifiedSceneDocument(seq: 2, without: "System Folder"),
             seq: 2, for: key)))
         harness.joinCompletions[1](.init(
             scene: try XCTUnwrap(harness.joinedScenes.last),

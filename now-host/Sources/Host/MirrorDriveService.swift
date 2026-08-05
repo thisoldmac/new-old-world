@@ -18,8 +18,12 @@ import NOWAgentIntegration
 @MainActor
 struct MirrorDriveService {
     let scene: () -> MirrorKit.Scene?
-    /// Answers a sentence when the act never left, and nil when it did.
-    let perform: (Interaction) -> String?
+    /// Says which of its four endings the act reached. This used to answer
+    /// `String?` and everything but a refusal came back `nil`, so the two
+    /// endings a headless caller most needs to tell apart — *held, a
+    /// record is coming* and *direct, nothing will ever settle* — were
+    /// the same value here.
+    let perform: (Interaction) -> MirrorPerformDisposition
     /// The journal the broker writes into, so the reply can carry the same
     /// record the Mirror page shows rather than a second account of it.
     let journal: () -> MirrorOperationJournal?
@@ -36,41 +40,66 @@ struct MirrorDriveService {
                 code: "now-mirror-snapshot-unavailable",
                 message: "The Mirror has published no scene to act against"))
         }
-        let before = Set((journal()?.records ?? []).map(\.id))
         let interaction: Interaction
         switch resolve(request, in: scene) {
         case .resolved(let value): interaction = value
         case .refused(let refusal): return .init(unavailable: refusal)
         }
-        /* **A refusal is not a dispatch, and this face used to say it
-           was.** `perform` reports a decline to the Mirror's status line,
-           which a headless caller cannot read; the absence of a broker
-           record was then read as "took the direct path" and answered
-           `dispatched`. Measured live 2026-08-05 against a guest whose
-           interaction plane had never armed: the host logged `NOT
-           DISPATCHED: Interaction policy is off` and told MCP the act
-           dispatched — the opposite of what it knew, to the only face
-           that had no other way to find out. */
-        if let refusal = perform(interaction) {
+        /* **Every one of these used to be inferred, and two of the
+           inferences were wrong.** The old code asked `perform` for a
+           refusal sentence, then diffed the journal, and read "no new
+           record" as "took the direct path". That signal is produced by
+           three different endings:
+
+           - a refusal — measured live 2026-08-05 against a guest whose
+             interaction plane had never armed: the host logged `NOT
+             DISPATCHED: Interaction policy is off` and told MCP the act
+             `dispatched`;
+           - a HELD act, waiting for the observation in flight — measured
+             the same day: a `finderOpen` was answered `id: "direct"`,
+             which says *nothing will ever settle this*, and it settled
+             `confirmed` from observation a few seconds later;
+           - and the direct path itself, the only one the reading was
+             ever true of.
+
+           `perform` knows which. Ask it. */
+        switch perform(interaction) {
+        case .refused(let refusal):
             return .init(operation: .init(
                 id: "not-dispatched", outcome: "refused", reason: refusal,
                 settled: true, awaitsObservation: false))
-        }
 
-        /* The broker appends synchronously inside `perform`, so a record
-           that is going to exist exists now. Its absence NOW means only
-           one thing: this gesture took the direct path, which carries no
-           typed postcondition and can never be confirmed by observation.
-           Saying so is the difference between a caller polling once and a
-           caller waiting forever for a settlement that cannot come. */
-        guard let record = (journal()?.records ?? []).last(where: {
-            !before.contains($0.id)
-        }) else {
+        case .held:
+            /* No id yet — the operation is minted when it re-enters the
+               dispatch door, against whichever scene is newest then. What
+               the caller needs now is that one is coming and that it will
+               settle by observation, so it polls the journal instead of
+               giving up on a settlement that is on its way. */
+            return .init(operation: .init(
+                id: "held", outcome: "queued",
+                reason: "held behind the observation in flight; it enters "
+                    + "the lane when the cycle clears. Read "
+                    + "now_mirror_read --intention journal for its record.",
+                settled: false, awaitsObservation: true))
+
+        case .direct:
             return .init(operation: .init(
                 id: "direct", outcome: "dispatched", reason: nil,
                 settled: false, awaitsObservation: false))
+
+        case .brokered(let id):
+            /* By id, not by diffing the journal for something that looks
+               like what we asked for. The broker appended synchronously
+               inside `perform`, so it is there. */
+            guard let record = (journal()?.records ?? []).first(where: {
+                $0.id == id
+            }) else {
+                return .init(operation: .init(
+                    id: id, outcome: "queued", reason: nil,
+                    settled: false, awaitsObservation: true))
+            }
+            return .init(operation: Self.projected(record))
         }
-        return .init(operation: Self.projected(record))
     }
 
     static func projected(_ record: MirrorOperation)

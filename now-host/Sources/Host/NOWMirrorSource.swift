@@ -123,6 +123,47 @@ struct NOWMirrorCycleIO {
 /// it, so a free-running timer would spend its failures on "a transfer is
 /// already in progress" — noise that reads exactly like a broken guest.
 /// The next request is armed when the last one lands.
+
+/// **What `perform` did with an interaction.**
+///
+/// Four endings, and for a year three of them were the same value. The
+/// Mirror window never needed to tell them apart — a person reads the
+/// status line and then looks at the screen — so `perform` answered
+/// `String?`, a sentence when the act never left and `nil` otherwise.
+/// `MirrorDriveService` had to serve a caller with no screen and no
+/// status line, and reconstructed the missing distinction by checking
+/// whether a broker record had appeared. It was wrong twice on
+/// 2026-08-05, both times in the same direction: **the host knew, and
+/// told the agent something else.**
+///
+/// The distinction is only recoverable at the point that made it, which
+/// is why it is a return value rather than a second opinion computed
+/// downstream.
+enum MirrorPerformDisposition: Equatable {
+    /// Declined this side. Nothing reached the guest and nothing is
+    /// coming; the sentence is the one a person would have read.
+    case refused(String)
+    /// In the broker's lane under this id, with a typed postcondition. A
+    /// record for it exists in the journal already.
+    case brokered(String)
+    /// Arrived while an observation was in flight, so it is held: no
+    /// record yet, and one is coming through this same door when the
+    /// cycle clears. Indistinguishable from `.direct` by journal
+    /// inspection alone, which is exactly the 2026-08-05 defect.
+    case held
+    /// Dispatched with no typed postcondition. Seven of the fourteen
+    /// plans are like this by construction, and nothing will ever settle
+    /// them — a caller that mistook a `.held` act for one of these would
+    /// stop waiting for a settlement that was on its way.
+    case direct
+
+    /// The sentence, for the callers that only ever wanted that.
+    var refusal: String? {
+        if case .refused(let why) = self { return why }
+        return nil
+    }
+}
+
 @MainActor
 final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
@@ -1050,26 +1091,31 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// `MirrorSceneSource` conformance above is the gesture door; this is the
     /// same door with the caller named.
     ///
-    /// **Returns the sentence when the act never left**, because the two
-    /// faces do not hear a refusal the same way. A person reads `report`
-    /// on the Mirror's status line; a headless caller gets only the
-    /// return value, and until 2026-08-05 that was nothing — so
-    /// `MirrorDriveService` inferred "dispatched" from the absence of a
-    /// broker record and could not tell a direct-path act from one this
-    /// side had explicitly declined. Measured live the same day: driving
-    /// `finderOpen` at a guest whose interaction plane was never armed
-    /// logged `NOT DISPATCHED: Interaction policy is off` and answered
-    /// MCP `outcome: dispatched`. The host had the reason in its hand and
-    /// told the agent the opposite of it.
+    /// **It answers what it DID, because the two faces do not hear the
+    /// same things.** A person reads `report` on the Mirror's status line
+    /// and watches the screen; a headless caller has neither and gets only
+    /// this value. It used to be `String?` — a sentence when the act never
+    /// left, and `nil` otherwise — and `nil` covered three unrelated
+    /// endings that `MirrorDriveService` then had to guess between by
+    /// looking for a broker record. Both faces' 2026-08-05 defects were
+    /// that guess being wrong:
+    ///
+    /// - `finderOpen` at a guest whose interaction plane had never armed
+    ///   logged `NOT DISPATCHED: Interaction policy is off` and answered
+    ///   MCP `dispatched`. Fixed by returning the sentence at all.
+    /// - A `finderOpen` that arrived mid-observation was HELD, so no
+    ///   record existed yet, and the same absence was read as the direct
+    ///   path: MCP was told `id: "direct"` — never settles, stop waiting —
+    ///   for an act that went on to settle `confirmed`. That is this type.
     @discardableResult
     func perform(_ interaction: Interaction,
-                 source: MirrorOperationSource) -> String? {
+                 source: MirrorOperationSource) -> MirrorPerformDisposition {
         if let refusal = pinnedActionRefusal() {
             let label = InteractionBridge.label(for: interaction)
             ActLog.note(action: label,
                         outcome: "NOT DISPATCHED: \(refusal)", ms: 0)
             report(refusal)
-            return refusal
+            return .refused(refusal)
         }
         guard currentPlanePolicy.contains(.interaction) else {
             let label = InteractionBridge.label(for: interaction)
@@ -1078,7 +1124,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                         outcome: "NOT DISPATCHED: Interaction policy is off",
                         ms: 0)
             report("\(label): \(why)")
-            return why
+            return .refused(why)
         }
         let plan = InteractionPolicy.plan(for: interaction, planes: planes)
         switch plan {
@@ -1089,12 +1135,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             ActLog.note(action: InteractionBridge.label(for: interaction),
                         outcome: "NOT DISPATCHED (nothing): \(why)", ms: 0)
             report(why)
-            return why
+            return .refused(why)
         case .unsupported(let why):
             ActLog.note(action: InteractionBridge.label(for: interaction),
                         outcome: "NOT DISPATCHED (unsupported): \(why)", ms: 0)
             report("\(InteractionBridge.label(for: interaction)): \(why)")
-            return why
+            return .refused(why)
         default:
             let label = InteractionBridge.label(for: interaction)
             if let engine = shadowEngine,
@@ -1126,8 +1172,14 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                     }
                     /* Held, not refused — it re-enters this door when the
                        observation clears, and the caller has an operation
-                       coming. */
-                    return nil
+                       coming. **Saying so is the whole of the second
+                       2026-08-05 defect.** This returned `nil`, which the
+                       drive service could only read as "no record
+                       appeared, so it took the direct path" — and told MCP
+                       `id: "direct"`, meaning *nothing will ever settle
+                       this, stop waiting*. The act it said that about
+                       settled `confirmed` a few seconds later. */
+                    return .held
                 }
                 report(label + " — queued")
                 let accepted = mutationBroker.enqueue(operation,
@@ -1173,9 +1225,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 if !accepted {
                     let full = "not dispatched: operation journal full"
                     report(label + " — " + full)
-                    return full
+                    return .refused(full)
                 }
-                return nil
+                /* The broker appended synchronously, so this id is already
+                   in the journal — the caller can read the record rather
+                   than search for one that resembles what it asked for. */
+                return .brokered(operation.id)
             }
             if shadowEngine != nil,
                MirrorActionExecutor.requiresTypedSettlement(
@@ -1185,7 +1240,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 ActLog.note(action: "unresolved \(label)  plan=\(plan)",
                             outcome: "NOT DISPATCHED: \(reason)", ms: 0)
                 report(label + " — " + reason)
-                return reason
+                return .refused(reason)
             }
             /* The same re-read the brokered path makes, for the acts that
                never queue. Their staleness is only the poll's own lag
@@ -1195,7 +1250,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 ActLog.note(action: "\(label)  plan=\(plan)",
                             outcome: "NOT DISPATCHED: \(stale)", ms: 0)
                 report("\(label) — \(stale)")
-                return stale
+                return .refused(stale)
             }
             report(label + "…")
             Task { @MainActor [weak self] in
@@ -1238,8 +1293,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             /* The direct path's own answer arrives asynchronously and is
                NOT a refusal to dispatch — the act left. A complaint from
                the guest is settlement news, and this return says only
-               whether the act got out of the door. */
-            return nil
+               whether the act got out of the door. Nothing will ever
+               settle it: these plans carry no typed postcondition, which
+               is a property of the PLAN and not of how busy the cycle
+               was. */
+            return .direct
         }
     }
 

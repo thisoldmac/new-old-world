@@ -24,7 +24,7 @@ final class MirrorDriveServiceTests: XCTestCase {
             scene: { try? self.makeScene() },
             perform: { interaction in
                 asked.append(interaction)
-                return "Interaction is off; the Mirror is read-only."
+                return .refused("Interaction is off; the Mirror is read-only.")
             },
             journal: { nil })
 
@@ -51,7 +51,7 @@ final class MirrorDriveServiceTests: XCTestCase {
     func testAnActThatLeftByTheDirectPathStillReadsAsDispatched() throws {
         let service = MirrorDriveService(
             scene: { try? self.makeScene() },
-            perform: { _ in nil },
+            perform: { _ in .direct },
             journal: { nil })
 
         let reply = service.drive(.init(gesture: .finderSelect,
@@ -66,6 +66,56 @@ final class MirrorDriveServiceTests: XCTestCase {
                        "the direct path can never be confirmed by observation")
     }
 
+    /// **The third ending that used to be `nil` too**, and the one that
+    /// cost a live drive: an act arriving while an observation is in
+    /// flight is HELD, so no record exists yet. The old service diffed
+    /// the journal, found nothing, and answered `id: "direct",
+    /// awaitsObservation: false` — *stop waiting, this can never settle*
+    /// — about the exact act that went on to settle `confirmed`
+    /// (2026-08-05).
+    func testAHeldActIsNotReportedAsTheDirectPath() throws {
+        let service = MirrorDriveService(
+            scene: { try? self.makeScene() },
+            perform: { _ in .held },
+            journal: { MirrorOperationJournal() })   // empty, as it is then
+
+        let reply = service.drive(.init(gesture: .finderOpen,
+                                        itemName: "Macintosh HD",
+                                        container: "desktop"))
+        let operation = try XCTUnwrap(reply.operation)
+
+        XCTAssertNotEqual(operation.id, "direct",
+                          "a held act is not the direct path; the absence "
+                              + "of a record is what makes them look alike")
+        XCTAssertEqual(operation.outcome, "queued")
+        XCTAssertFalse(operation.settled)
+        XCTAssertTrue(operation.awaitsObservation,
+                      "the record is coming and it settles by observation; "
+                          + "false here is what tells a caller to give up")
+    }
+
+    /// And a brokered act is fetched by the id `perform` returned, rather
+    /// than by looking for a record that resembles the request. The old
+    /// code took `records.last { !before.contains($0.id) }`, which is a
+    /// guess whenever anything else appended concurrently.
+    func testABrokeredActIsFetchedByItsOwnID() throws {
+        let journal = MirrorOperationJournal()
+        let wanted = try makeOperation(id: "wanted")
+        _ = journal.append(try makeOperation(id: "someone-elses"))
+        _ = journal.append(wanted)
+
+        let service = MirrorDriveService(
+            scene: { try? self.makeScene() },
+            perform: { _ in .brokered("wanted") },
+            journal: { journal })
+
+        let reply = service.drive(.init(gesture: .finderOpen,
+                                        itemName: "Macintosh HD",
+                                        container: "desktop"))
+
+        XCTAssertEqual(try XCTUnwrap(reply.operation).id, "wanted")
+    }
+
     /// A refusal that happens BEFORE the dispatch door — an unresolvable
     /// name — still answers the older shape, and must not be turned into
     /// an operation record by the change above.
@@ -73,7 +123,7 @@ final class MirrorDriveServiceTests: XCTestCase {
         var performed = false
         let service = MirrorDriveService(
             scene: { try? self.makeScene() },
-            perform: { _ in performed = true; return nil },
+            perform: { _ in performed = true; return .direct },
             journal: { nil })
 
         let reply = service.drive(.init(gesture: .select,
@@ -84,6 +134,16 @@ final class MirrorDriveServiceTests: XCTestCase {
         XCTAssertFalse(performed,
                        "a name the snapshot does not carry never reaches "
                            + "the dispatch door")
+    }
+
+    private func makeOperation(id: String) throws -> MirrorOperation {
+        let process = MirrorProcessIdentity(
+            session: .init(guest: "test", incarnation: "boot-1"),
+            incarnation: "finder")
+        return .init(id: id, source: .mcp, displayedSnapshotID: 1,
+                     displayedSequence: 1, target: .process(process),
+                     postcondition: .processFront(process),
+                     enqueuedAt: Date(timeIntervalSince1970: 0))
     }
 
     private func makeScene() throws -> MirrorKit.Scene {
