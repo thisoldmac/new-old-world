@@ -159,7 +159,7 @@ final class MirrorStateProjectionService {
             menus: menus,
             screen: .init(w: projection.scene.screen.w,
                           h: projection.scene.screen.h),
-            surfaces: surfaces(projection.scene, records: windowRecords))
+            surfaces: surfaces(projection.scene))
     }
 
     /// **What the renderer draws, for the client that draws nothing.**
@@ -172,8 +172,7 @@ final class MirrorStateProjectionService {
     /// the workflow this arc exists for, confirm the state is there and
     /// only then implement the drawing, could not be run for anything but
     /// windows and menus.
-    private func surfaces(_ scene: MirrorKit.Scene,
-                          records: [MirrorWindowRecord])
+    private func surfaces(_ scene: MirrorKit.Scene)
         -> [AgentIntegrationMirrorSurface] {
         /* Bounded because the protocol caps one message at 64 KB and a
            Finder window can hold hundreds of rows. The cap is stated in
@@ -211,9 +210,8 @@ final class MirrorStateProjectionService {
             }
             let all = controls + dialogItems
             return .init(
-                entityID: records.first {
-                    $0.window.id == window.id
-                }.map { windowID($0.identity) } ?? window.id,
+                entityID: MirrorEntityID.window(window, in: scene)
+                    ?? window.id,
                 title: window.title,
                 rect: Self.rect(window.rect), z: window.z,
                 front: window.front, visible: window.visible,
@@ -238,11 +236,13 @@ final class MirrorStateProjectionService {
     }
 
     private func processID(_ identity: MirrorProcessIdentity) -> String {
-        "process:" + identity.incarnation
+        MirrorEntityID.process(identity.incarnation)
     }
 
     private func windowID(_ identity: MirrorWindowIdentity) -> String {
-        "window:" + identity.process.incarnation + ":" + identity.incarnation
+        MirrorEntityID.window(
+            processIncarnation: identity.process.incarnation,
+            windowIncarnation: identity.incarnation)
     }
 
     private func unavailable(_ code: String, _ message: String)

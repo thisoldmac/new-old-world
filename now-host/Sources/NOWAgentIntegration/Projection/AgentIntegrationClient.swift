@@ -199,6 +199,11 @@ public protocol AgentIntegrationClient: Sendable {
     /// another guest observer or maintain another cache.
     func mirrorRead(_ request: AgentIntegrationMirrorReadRequest) async
         -> AgentIntegrationMirrorReadResult
+    /// Drive the native Mirror through its own executor. The one mutation
+    /// lane that shares the window's path; the act-lane five remain
+    /// separate and address a different reference vocabulary.
+    func mirrorDrive(_ request: AgentIntegrationMirrorDriveRequest) async
+        -> AgentIntegrationMirrorDriveResult
 }
 
 extension AgentIntegrationClient {
@@ -452,6 +457,14 @@ extension AgentIntegrationClient {
         .init(unavailable: .init(
             code: "now-mirror-state-lane-absent",
             message: "This client cannot read the host Mirror state engine"))
+    }
+
+    public func mirrorDrive(
+        _ request: AgentIntegrationMirrorDriveRequest) async
+        -> AgentIntegrationMirrorDriveResult {
+        .init(unavailable: .init(
+            code: "now-mirror-state-lane-absent",
+            message: "This client cannot drive the host Mirror"))
     }
 
     /// Nothing to address: this client answers "no host" to everything.

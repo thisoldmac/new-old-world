@@ -782,6 +782,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     }
                     return .mirrorRead(
                         await agentIntegration.mirrorRead(read))
+                case .mirrorDrive:
+                    /* The mutation half, through the SAME executor a click
+                       uses. Not beside the act lane's five: those address
+                       an observation-minted element and settle for
+                       nothing. */
+                    guard let drive = request.mirrorDriveRequest else {
+                        return .mirrorDrive(.init(unavailable: .init(
+                            code: "now-mirror-drive-invalid",
+                            message:
+                                "The Mirror drive request named no gesture")))
+                    }
+                    return .mirrorDrive(
+                        agentIntegration.driveMirror(drive))
                 case .stream:
                     /* The bracket. The codec has already refused every
                        crossed shape — a stop carrying a depth, a page

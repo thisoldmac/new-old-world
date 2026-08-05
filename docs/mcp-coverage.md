@@ -108,6 +108,7 @@ The test compares both against the code literally.
 | `now_mirror_find` | — | — | none; queries the native Mirror state engine without another guest request |
 | `now_mirror_wait` | — | — | none; waits for the native Mirror state engine without another guest request |
 | `now_mirror_metrics` | — | — | none; reads the host's own act and scene-cycle clocks, and asks the Mac nothing |
+| `now_mirror_drive` | — | — | command; the verb depends on the gesture the plan resolves to (`winact`, `menuact`, `key`, or a Finder script), so the row declares no requirement: demanding all four would make a keystroke unavailable on a guest that serves `key` and not `script`. The executor's own refusal names the missing half. |
 | `now_guest_log_tail` | `tail` | `tail` | command |
 | `now_capture_screen` | `capture.request` | `capture.request` | message family |
 | `now_stream_screen` | `stream.start`, `stream.stop`, `stream.refresh` | `stream.start`, `stream.stop`, `stream.refresh` | message family |

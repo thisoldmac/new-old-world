@@ -109,6 +109,12 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         /// intentions share one operation because they are renderings of one
         /// engine lane, not four observers.
         case mirrorRead = "mirror_read"
+        /// Drive the native Mirror through the SAME executor a gesture
+        /// uses. Not a sibling of the act lane's five: those address an
+        /// observation-minted element and settle for nothing, and this
+        /// addresses a published scene entity and settles the way a click
+        /// does. Two mutation paths would be two products.
+        case mirrorDrive = "mirror_drive"
         /// Open the live-stream bracket, read a frame off it, or close it.
         ///
         /// One operation for the same reason `capture` folded take, page and
@@ -234,6 +240,8 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
     /// Which rendering of the native Mirror state engine to read. Present
     /// only on `mirror_read`; its own grammar pins each intention's fields.
     public var mirrorReadRequest: AgentIntegrationMirrorReadRequest? = nil
+    /// Which gesture to run against the published Mirror snapshot.
+    public var mirrorDriveRequest: AgentIntegrationMirrorDriveRequest? = nil
 
     /* The bracket's fields. Which of the three intentions is always
        explicit, unlike `capture`'s three shapes — a bracket's intentions
@@ -727,6 +735,15 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         return request
     }
 
+    public static func mirrorDrive(
+        _ drive: AgentIntegrationMirrorDriveRequest,
+        requestID: UUID = UUID()
+    ) -> Self {
+        var request = projected(.mirrorDrive, requestID: requestID)
+        request.mirrorDriveRequest = drive
+        return request
+    }
+
     // MARK: - The live-stream bracket
 
     /// Open the bracket. The pace is not optional here even though the
@@ -871,6 +888,7 @@ public enum AgentIntegrationLocalResult: Equatable, Sendable {
     case revealItem(AgentIntegrationGuestRowReportResult)
     case diagnostics(AgentIntegrationGuestRowReportResult)
     case mirrorRead(AgentIntegrationMirrorReadResult)
+    case mirrorDrive(AgentIntegrationMirrorDriveResult)
     /// The bracket's state, or one page of one frame off it.
     case stream(AgentIntegrationStreamResult)
     /* The act lane's five, one case each — for the reason the five
@@ -959,6 +977,7 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
     public var diagnosticsResult:
         AgentIntegrationGuestRowReportResult? = nil
     public var mirrorReadResult: AgentIntegrationMirrorReadResult? = nil
+    public var mirrorDriveResult: AgentIntegrationMirrorDriveResult? = nil
     /// The bracket, or one page of a frame off it. Sized like the capture
     /// field beside it, and for the same reason — a frame IS a capture, so
     /// a full page still leaves the response inside the 16 KiB cap.
@@ -1335,6 +1354,12 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
     }
 
     public init(requestID: UUID,
+                mirrorDriveResult: AgentIntegrationMirrorDriveResult) {
+        self.init(empty: requestID)
+        self.mirrorDriveResult = mirrorDriveResult
+    }
+
+    public init(requestID: UUID,
                 streamResult: AgentIntegrationStreamResult) {
         self.init(empty: requestID)
         self.streamResult = streamResult
@@ -1406,7 +1431,8 @@ public enum AgentIntegrationLocalCodec {
         "guestFileMutationResult", "transferCancelResult",
         "guestLogTailResult", "machineFactsResult",
         "catalogSearchResult", "revealItemResult",
-        "diagnosticsResult", "mirrorReadResult", "streamResult",
+        "diagnosticsResult", "mirrorReadResult", "mirrorDriveResult",
+        "streamResult",
         // The act lane's five, in both gates from the day they landed.
         "windowActResult", "controlActResult", "menuActResult",
         "textGetResult", "textSetResult",
@@ -1454,6 +1480,7 @@ public enum AgentIntegrationLocalCodec {
             "guestFileDestinationPath", "guestFileTrashName",
             "logLineCount", "revealTarget", "diagnosticProbe",
             "mirrorReadRequest",
+            "mirrorDriveRequest",
             // The bracket's fields, clearing the same two gates.
             "streamIntention", "streamDepth", "streamMinIntervalMs",
             "streamFrameID", "streamFrameOffset",
@@ -1899,6 +1926,15 @@ public enum AgentIntegrationLocalCodec {
             guard request.diagnosticProbe != nil else {
                 throw AgentIntegrationLocalTransportError.invalidMessage(
                     "Diagnostics request names no probe")
+            }
+        case .mirrorDrive:
+            expectedKeys = [
+                "version", "requestID", "operation", "mirrorDriveRequest",
+            ]
+            guard let drive = request.mirrorDriveRequest,
+                  drive.isWellFormed else {
+                throw AgentIntegrationLocalTransportError.invalidMessage(
+                    "Mirror drive request does not match its gesture")
             }
         case .mirrorRead:
             expectedKeys = [

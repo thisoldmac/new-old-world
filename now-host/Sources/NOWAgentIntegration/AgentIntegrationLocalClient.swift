@@ -292,6 +292,8 @@ public struct AgentIntegrationLocalClient: Sendable {
             preconditionFailure("A diagnostics request names its probe")
         case .mirrorRead:
             preconditionFailure("A Mirror read names its intention")
+        case .mirrorDrive:
+            preconditionFailure("A Mirror drive names its gesture")
         case .stream:
             preconditionFailure(
                 "A stream request says which of its three intentions it is")
@@ -492,6 +494,16 @@ public struct AgentIntegrationLocalClient: Sendable {
         return result
     }
 
+    public func mirrorDrive(_ request: AgentIntegrationMirrorDriveRequest)
+        async throws -> AgentIntegrationMirrorDriveResult {
+        let response = try await send(.mirrorDrive(request))
+        guard let result = response.mirrorDriveResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no Mirror drive result")
+        }
+        return result
+    }
+
     // MARK: - The act lane
 
     public func windowAct(_ act: AgentIntegrationWindowActRequest)
@@ -660,6 +672,13 @@ public struct AgentIntegrationLocalClient: Sendable {
                    "the guest is busy for seconds"; the read-only two would
                    time out locally on a call that was going to succeed,
                    which teaches its caller nothing. */
+                timeout = captureReceiveTimeout
+            case .mirrorDrive:
+                /* A drive returns as soon as the broker has taken the
+                   gesture; it does not wait for settlement, which arrives
+                   in a later observation. The act budget is the right one
+                   because the executor may still make a bounded guest
+                   call before the broker records anything. */
                 timeout = captureReceiveTimeout
             case .mirrorRead:
                 /* `wait` may hold for the request's bounded 15 seconds;

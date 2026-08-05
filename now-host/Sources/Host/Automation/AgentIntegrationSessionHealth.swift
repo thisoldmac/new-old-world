@@ -100,6 +100,31 @@ final class AgentIntegrationHostAdapter {
         _ read: @escaping () -> AgentIntegrationMirrorMetrics?) {
         mirrorMetrics = read
     }
+
+    /// Bound the same way and for the same reason as the metrics reader:
+    /// the Mirror source is made lazily and owns the executor, and this
+    /// service only asks it to run the gesture a click would have run.
+    private var mirrorDriver:
+        ((AgentIntegrationMirrorDriveRequest)
+            -> AgentIntegrationMirrorDriveResult)?
+
+    func bindMirrorDriver(
+        _ drive: @escaping (AgentIntegrationMirrorDriveRequest)
+            -> AgentIntegrationMirrorDriveResult) {
+        mirrorDriver = drive
+    }
+
+    func driveMirror(_ request: AgentIntegrationMirrorDriveRequest)
+        -> AgentIntegrationMirrorDriveResult {
+        guard let mirrorDriver else {
+            return .init(unavailable: .init(
+                code: "now-mirror-drive-unavailable",
+                message: "The Mirror is not running, so nothing can be "
+                    + "driven through it. Launch with --open-mirror, or "
+                    + "open it from NOW's Mirror page."))
+        }
+        return mirrorDriver(request)
+    }
     private var sessionID: UUID?
     private var sessionConnectedAt: Date?
 

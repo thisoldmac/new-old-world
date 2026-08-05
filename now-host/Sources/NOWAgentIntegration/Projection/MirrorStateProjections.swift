@@ -11,9 +11,12 @@ private enum MirrorStateProjectionSchema {
         "required": ["available"],
     ]
 
-    static func descriptor(title: String, description: String,
-                           properties: [String: Any],
-                           required: [String] = []) -> [String: Any] {
+    static func descriptor(
+        title: String, description: String,
+        properties: [String: Any], required: [String] = [],
+        annotations: [String: Any] =
+            HostProjectionSchema.readOnlyAnnotations
+    ) -> [String: Any] {
         [
             "title": title,
             "description": description,
@@ -24,7 +27,7 @@ private enum MirrorStateProjectionSchema {
                 "additionalProperties": false,
             ],
             "outputSchema": output,
-            "annotations": HostProjectionSchema.readOnlyAnnotations,
+            "annotations": annotations,
         ]
     }
 }
@@ -94,6 +97,95 @@ public enum MirrorMetricsProjection: HostProjection {
         }
         return .value(.init(await client.mirrorRead(.init(
             intention: .metrics))))
+    }
+}
+
+/// **Driving the Mirror by the same path a hand takes.**
+///
+/// The one mutation row that goes through `MirrorActionExecutor` and the
+/// mutation broker, addressing entities the snapshot published. The act
+/// lane's five older rows remain, and remain a different thing: they take
+/// an `now_observe_elements` ref straight to the guest's command dispatch
+/// and settle for nothing, which is a path no person can take.
+///
+/// A reply is an OPERATION RECORD, not an effect. `dispatched` means the
+/// request reached the Mac; only a `confirmed*` outcome says a later
+/// observation saw the postcondition hold. Poll `now_mirror_metrics` for
+/// the operation's id to watch it settle — the same record the Mirror
+/// page's Acts card is showing.
+public enum MirrorDriveProjection: HostProjection {
+    public static let capability = HostCapabilityID("now_mirror_drive")
+    public static let requires: [String] = []
+    public static let exposes: [String] = []
+    public static let acceptedArguments: Set<String> = [
+        "gesture", "entityID", "menuID", "itemIndex", "keyCode", "keyChar",
+        "modifiers", "text", "itemName", "container",
+    ]
+    public static let faces = MirrorStateProjectionReach.faces
+    public static let availabilityNote =
+        "Runs the gesture through the native Mirror's own action executor "
+        + "and mutation broker, exactly as a click in the Mirror window "
+        + "does; settlement comes from a later guest observation."
+    public static var mcpDescriptor: [String: Any] {
+        MirrorStateProjectionSchema.descriptor(
+            title: "New Old World Mirror Drive",
+            description: "Drives the connected classic Mac through the native Mirror's own executor: window select/close/zoom by published entity id, process activate, a menu item by menu and index, Hide/Hide Others/Show All, a keystroke, typed text, or a Finder item opened or selected by name. Returns the operation record; a dispatch is not an effect.",
+            properties: [
+                "gesture": ["type": "string"],
+                "entityID": ["type": "string"],
+                "menuID": ["type": "integer"],
+                "itemIndex": ["type": "integer"],
+                "keyCode": ["type": "integer"],
+                "keyChar": ["type": "integer"],
+                "modifiers": ["type": "integer"],
+                "text": ["type": "string"],
+                "itemName": ["type": "string"],
+                "container": ["type": "string"],
+            ],
+            required: ["gesture"],
+            /* The one row in this file that changes the machine, so it
+               must not inherit the read-only annotations its neighbours
+               share. Destructive because `close` is in the gesture set and
+               a window can hold unsaved work; not idempotent because
+               driving the same gesture twice is two acts on the Mac. */
+            annotations: [
+                "readOnlyHint": false,
+                "destructiveHint": true,
+                "idempotentHint": false,
+                "openWorldHint": false,
+            ])
+    }
+    public static func invoke(_ arguments: HostProjectionArguments,
+                              through client: AgentIntegrationClient) async
+        -> HostProjectionOutcome {
+        if let refusal = arguments.refusalForUnknownMembers(
+            tool: capability, accepting: acceptedArguments) {
+            return .invalidArguments(refusal)
+        }
+        let fields = arguments.object ?? [:]
+        func text(_ key: String) -> String? { fields[key] as? String }
+        func number(_ key: String) -> Int? {
+            if let value = fields[key] as? Int { return value }
+            if let value = fields[key] as? Double { return Int(value) }
+            return nil
+        }
+        guard let raw = text("gesture"),
+              let gesture = AgentIntegrationMirrorDriveGesture(
+                rawValue: raw) else {
+            return .invalidArguments(
+                "now_mirror_drive requires a known gesture")
+        }
+        return .value(.init(await client.mirrorDrive(.init(
+            gesture: gesture,
+            entityID: text("entityID"),
+            menuID: number("menuID"),
+            itemIndex: number("itemIndex"),
+            keyCode: number("keyCode"),
+            keyChar: number("keyChar"),
+            modifiers: number("modifiers"),
+            text: text("text"),
+            itemName: text("itemName"),
+            container: text("container")))))
     }
 }
 

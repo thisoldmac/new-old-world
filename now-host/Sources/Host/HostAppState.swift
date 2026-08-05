@@ -258,6 +258,24 @@ final class HostAppState: ObservableObject {
            the Mirror — an agent asking what has been measured would then
            create the measurer and get an empty answer that reads exactly
            like a quiet machine. */
+        integration.bindMirrorDriver { [weak self] request in
+            guard let self else {
+                return .init(unavailable: .init(
+                    code: "now-mirror-drive-unavailable",
+                    message: "The host is shutting down"))
+            }
+            /* Reading `mirrorSource` here DOES make it, unlike the metrics
+               reader. That is the difference between asking what has been
+               measured and asking for something to be done: a drive is a
+               request to act, and refusing it because nobody had opened a
+               window yet would be refusing the thing that was asked for. */
+            let source = self.mirrorSource
+            return MirrorDriveService(
+                scene: { source.scene },
+                perform: { source.perform($0) },
+                journal: { source.shadowEngine?.operations })
+                .drive(request)
+        }
         integration.bindMirrorMetrics { [weak self] in
             guard let self, self.madeMirrorSource else { return nil }
             return self.mirrorSource.actTimeline.projected(

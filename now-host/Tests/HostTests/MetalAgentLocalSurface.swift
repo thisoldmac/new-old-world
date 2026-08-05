@@ -256,7 +256,7 @@ final class MetalAgentLocalSurface {
              .census, .softwareInventory, .guestFileDownload,
              .bringToFront, .guestFileMutation, .transferCancel,
              .guestLogTail, .machineFacts, .catalogSearch, .revealItem,
-             .diagnostics, .mirrorRead,
+             .diagnostics, .mirrorRead, .mirrorDrive,
              /* And the bracket, refused for a reason of its own on TOP of
                 those: it is the one operation that would not end when the
                 gate did. A rig that opened a stream on the person's
