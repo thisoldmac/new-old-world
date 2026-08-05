@@ -15,6 +15,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                          NSMenuDelegate {
     private let registry = ModuleRegistry.standard
     private lazy var state = HostAppState(registry: registry)
+    /* The same preferences suite the rest of the app writes to, so the
+       sidebar's shape travels with the port, the share and the selected
+       module rather than landing in the generic domain. */
+    private lazy var sidebarPreferences = SidebarPreferences(
+        defaults: UserDefaults(suiteName: ProductIdentity.preferencesSuite)
+            ?? .standard,
+        registry: registry)
     private var statusItem: NSStatusItem?
     private var window: NSWindow?
     private var flash: StatusItemFlash?
@@ -346,7 +353,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
 
     @objc func openMainWindow() {
         if window == nil {
-            let root = HostRootView(registry: registry, state: state)
+            let root = HostRootView(registry: registry, state: state,
+                                    sidebar: sidebarPreferences)
             let controller = NSHostingController(rootView: root)
             /* The WINDOW owns its size, not whichever pane is showing.
                NSHostingController defaults to .preferredContentSize, which

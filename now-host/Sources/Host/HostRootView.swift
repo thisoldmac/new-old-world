@@ -3,29 +3,28 @@ import SwiftUI
 struct HostRootView: View {
     let registry: ModuleRegistry
     @ObservedObject var state: HostAppState
+    @ObservedObject var sidebar: SidebarPreferences
+
+    /// The list in the person's arrangement, which is what every part of
+    /// the sidebar reads — the drag, the rows, and the icons.
+    private var listModules: [ModuleDescriptor] {
+        sidebar.ordered(registry.listModules)
+    }
 
     var body: some View {
         NavigationSplitView {
-            List(registry.listModules, selection: listSelection) { module in
-                Label {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(module.title)
-                        Text(module.summary)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                } icon: {
-                    Image(systemName: module.symbol)
-                }
-                .tag(module.id)
-                .padding(.vertical, 4)
-            }
-            .navigationTitle("Modules")
-            .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 300)
-            // An inset rather than a VStack around the List, so the footer
-            // sits inside the sidebar's material instead of on top of it.
-            .safeAreaInset(edge: .bottom, spacing: 0) { footer }
+            sidebarList
+                .navigationTitle("Modules")
+                /* Folded down, the column is exactly wide enough for the
+                   icons; it is not resizable there, because there is
+                   nothing in it whose width is a matter of taste. */
+                .modifier(SidebarWidth(collapsed: sidebar.collapsed))
+                // An inset rather than a VStack around the List, so the
+                // header and footer sit inside the sidebar's material
+                // instead of on top of it.
+                .safeAreaInset(edge: .top, spacing: 0) { sidebarHeader }
+                .safeAreaInset(edge: .bottom, spacing: 0) { footer }
+                .contextMenu { sidebarMenu }
         } detail: {
             // The sidebar declares its own ideal width one line above; the
             // detail never declared anything, and that asymmetry is what let
@@ -48,16 +47,93 @@ struct HostRootView: View {
         }
     }
 
+    /// The rows. A `ForEach` rather than `List(data:)` because `.onMove` is
+    /// what makes the list draggable on macOS, and it only attaches to a
+    /// ForEach.
+    @ViewBuilder
+    private var sidebarList: some View {
+        List(selection: listSelection) {
+            ForEach(listModules) { module in
+                SidebarModuleRow(module: module,
+                                 compact: sidebar.compact,
+                                 collapsed: sidebar.collapsed)
+                    .tag(module.id)
+            }
+            .onMove { source, destination in
+                sidebar.move(registry.listModules,
+                             from: source, to: destination)
+            }
+        }
+    }
+
+    /// The fold control, and nothing else. Modern apps put this in a
+    /// toolbar; this window has no toolbar, so it sits at the top of the
+    /// sidebar itself — the next most familiar place, and the one that
+    /// keeps it attached to the thing it folds.
+    @ViewBuilder
+    private var sidebarHeader: some View {
+        HStack(spacing: 0) {
+            Button {
+                sidebar.collapsed.toggle()
+            } label: {
+                Image(systemName: "sidebar.leading")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .help(sidebar.collapsed
+                  ? "Show module names"
+                  : "Collapse the sidebar to icons")
+            .accessibilityLabel(sidebar.collapsed
+                                ? "Show module names"
+                                : "Collapse sidebar to icons")
+            if !sidebar.collapsed {
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(.horizontal, sidebar.collapsed ? 0 : 12)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity)
+        // Opaque for the same reason the footer is: rows scroll UNDER a
+        // safe-area inset, and an inset with nothing behind it renders on
+        // top of whatever is passing beneath.
+        .background(.bar)
+    }
+
+    /// Right-click anywhere in the sidebar. The density and the reset live
+    /// here rather than in a preferences window, which this app does not
+    /// have on purpose — a setting belongs next to the thing it changes.
+    @ViewBuilder
+    private var sidebarMenu: some View {
+        Picker("Rows", selection: $sidebar.compact) {
+            Text("Full").tag(false)
+            Text("Compact").tag(true)
+        }
+        .pickerStyle(.inline)
+        Divider()
+        Button(sidebar.collapsed ? "Show Module Names" : "Collapse to Icons") {
+            sidebar.collapsed.toggle()
+        }
+        Button("Reset Order") {
+            sidebar.resetOrder(registry.listModules)
+        }
+    }
+
     @ViewBuilder
     private var footer: some View {
         VStack(spacing: 0) {
-            GuestPicker(listener: state.listener) { key in
-                state.selectGuest(key)
+            /* Folded, there is no room for a popup and its label. The
+               picker is not lost - it is one click away, and the footer's
+               Connections page names the driven Mac in full. */
+            if !sidebar.collapsed {
+                GuestPicker(listener: state.listener) { key in
+                    state.selectGuest(key)
+                }
             }
             if !registry.footerModules.isEmpty {
                 SidebarFooter(modules: registry.footerModules,
                               monitor: state.guestStatus,
-                              selectedID: state.selectedModuleID) { id in
+                              selectedID: state.selectedModuleID,
+                              collapsed: sidebar.collapsed) { id in
                     state.selectedModuleID = id
                 }
             }
@@ -200,12 +276,75 @@ struct GuestPicker: View {
     }
 }
 
+/// One module in the sidebar, in whichever of the three shapes the person
+/// has asked for: icon and two lines, icon and one line, or the icon alone.
+///
+/// Collapsed rows carry a tooltip, and that is not a nicety — an icon with
+/// no name is a guess, and the tooltip is the only thing that makes the
+/// folded rail readable to someone who has not memorised it.
+struct SidebarModuleRow: View {
+    let module: ModuleDescriptor
+    let compact: Bool
+    let collapsed: Bool
+
+    var body: some View {
+        if collapsed {
+            HStack {
+                Spacer(minLength: 0)
+                Image(systemName: module.symbol)
+                    .frame(width: 18, height: 18)
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 2)
+            .help(module.title)
+            .accessibilityLabel(module.title)
+        } else {
+            Label {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(module.title)
+                    // Compact gives up the summary — that IS the density.
+                    if !compact {
+                        Text(module.summary)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+            } icon: {
+                Image(systemName: module.symbol)
+            }
+            .padding(.vertical, compact ? 1 : 4)
+            // The summary is the tooltip when compact has taken it off the
+            // row, so nothing is simply lost by choosing the denser one.
+            .help(compact ? module.summary : "")
+        }
+    }
+}
+
+/// The sidebar column's width, which is a fixed number when folded and a
+/// range when not. Two `navigationSplitViewColumnWidth` calls cannot both
+/// be applied conditionally in one expression — they return different
+/// opaque types — so the choice lives in a modifier.
+private struct SidebarWidth: ViewModifier {
+    let collapsed: Bool
+
+    func body(content: Content) -> some View {
+        if collapsed {
+            content.navigationSplitViewColumnWidth(64)
+        } else {
+            content.navigationSplitViewColumnWidth(min: 220, ideal: 250,
+                                                  max: 300)
+        }
+    }
+}
+
 /// Holds the one subscription the footer needs, so the rows below stay pure
 /// values — cheap to render anywhere, including a snapshot test.
 struct SidebarFooter: View {
     let modules: [ModuleDescriptor]
     @ObservedObject var monitor: GuestStatusMonitor
     let selectedID: String
+    var collapsed: Bool = false
     let select: (String) -> Void
 
     var body: some View {
@@ -215,12 +354,13 @@ struct SidebarFooter: View {
                 ForEach(modules) { module in
                     FooterModuleRow(module: module,
                                     status: monitor.status,
-                                    isSelected: selectedID == module.id) {
+                                    isSelected: selectedID == module.id,
+                                    collapsed: collapsed) {
                         select(module.id)
                     }
                 }
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, collapsed ? 4 : 10)
             .padding(.vertical, 8)
         }
         .onAppear { monitor.refresh() }
@@ -233,9 +373,49 @@ struct FooterModuleRow: View {
     let module: ModuleDescriptor
     let status: GuestStatus
     let isSelected: Bool
+    var collapsed: Bool = false
     let select: () -> Void
 
     var body: some View {
+        if collapsed {
+            collapsedBody
+        } else {
+            fullBody
+        }
+    }
+
+    /// Folded: the icon, and - for the link's own row - the status dot
+    /// still riding on it. Whether the wire is up is the one thing the
+    /// footer must be able to say with no words at all.
+    private var collapsedBody: some View {
+        Button(action: select) {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: module.symbol)
+                    .frame(width: 18, height: 18)
+                if module.showsLinkStatus {
+                    Image(systemName: indicator.symbol)
+                        .font(.system(size: 7))
+                        .foregroundStyle(indicator.tint)
+                        .offset(x: 5, y: -3)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 5)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.accentColor.opacity(isSelected ? 0.18 : 0))
+        )
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityLabel(module.title)
+        .help(module.showsLinkStatus
+              ? "\(module.title) - \(status.menuLine)"
+              : module.title)
+    }
+
+    private var fullBody: some View {
         Button(action: select) {
             HStack(spacing: 8) {
                 Image(systemName: module.symbol)
