@@ -1958,6 +1958,16 @@ The address must be laundered through a `volatile` local so the compiler
 must load the TOC word CFM actually wrote. Any other weak-import guard in
 this tree written the obvious way is not a guard.
 
+**Swept 2026-08-05, and there are none — this worry is closed, not
+open.** `kUnresolvedCFragSymbolAddress` appears in exactly one file
+(`proc_actions.c`, the guard above, correctly laundered), and no other
+guest or extension source compares a Toolbox function's address against
+zero or NULL by any spelling. So the rule stands as a rule for the NEXT
+weak import rather than as a defect anyone still has to go and find. It
+is worth re-running that sweep the first time a second weak import
+appears, because the failure is silent in both directions: the guard
+compiles, the tests pass, and the binary simply does not contain it.
+
 ## "Agent: Running" was true and useless (2026-08-02)
 
 **Fixed on the guest, unverified on a machine.** Measured on a live
