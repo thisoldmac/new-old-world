@@ -26,18 +26,23 @@ Browser and the Browser repaints clean when it goes. A true fresh
 install - prefs file deleted - starts expanded with rich rows, which is
 the default that matters.
 
+One note on reading a shared VM, because it cost a paragraph of wrong
+suspicion: a first launch appeared to open COLLAPSED, and the cause was
+the human clicking the collapse button in the seconds between the launch
+and the screendump. The evidence was all there and pointed the right way
+once anyone thought to ask - nothing writes that prefs file at launch,
+only a quit or a toggle does, and its created and modified stamps were
+seconds apart and dated that day rather than inherited from the base
+image. **When a VM has a display, a person may be using it**, and a
+screendump is a sample of a machine somebody else is also touching, not
+a readout of what the code did.
+
 **Host: confirmed working by the human at the desk**, not by me: screen
 access was declined, so I have never seen it. `swift test` and the Xcode
 target in both configurations are all I can speak to directly.
 
 Open, and worth knowing:
 
-- **A first launch showed the rail COLLAPSED on a disk whose prefs file
-  predated the run**, and I did not trace who wrote that file. Deleting
-  it gave the correct expanded default, so this is not a bad default -
-  but "a saved preference from somewhere I did not identify" is the
-  honest description, and if a fresh machine ever opens folded, start
-  here rather than at the defaults.
 - **Carbon help tags do not display under Mac OS 9.** This toolchain's
   MacHelp.h carries only the help-tag API (`HMSetControlHelpContent`,
   `HMDisplayTag`) - classic `HMShowBalloon` is not in these headers at
