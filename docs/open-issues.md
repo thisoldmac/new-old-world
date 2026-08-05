@@ -57,6 +57,74 @@ Three things worth keeping regardless of how that goes:
   Item and content families now hold separate stated byte shares of one
   ceiling. **Anything further added to this payload must take a share
   rather than assume room; there is none.**
+## BROKEN: the control classifier gets one shot per scene, and 121 controls never got one (2026-08-05)
+
+Slice 6's opening measurement was supposed to size how much of the 190
+undetermined corpus items are genuinely custom-drawn. It found something
+else: **of 122 Control Manager controls in the ten-panel corpus, exactly
+one carries a determined kind** — Monitors' resolution list. All 117
+other determined items came from the DITL item-type byte and never
+involved a CDEF at all.
+
+The classifier is not missing. `ext/src/now_semantic.c :: classify()`
+reads the Appearance Manager's public `kControlKindTag` through
+`GetControlData`, inside the target process's own context via the
+resident's jGNE patch, and resolves fourteen control families; its
+`signature != kControlKindSignatureApple` branch is an authoritative
+standard-versus-custom verdict. The plane was armed and serving during
+the capture (`capabilities: 15, requested: 7, active: 7` in every
+`manifest.json`).
+
+It starved on transport. `contract/peek_table.h` carries a **single**
+`NowPeekSemanticCell semantic;` — one request per scene, for one
+control. In `now-guest-ppc/src/peek/semantic_client.c`, control
+classification is the lowest-priority claimant on that cell
+(`offer(10, …ControlClass)` against `offer(20, …ListCells)` and
+`offer(30, …SystemMenu)`), and only the front process may spend it.
+Date & Time's window carries 21 controls and was front for one scene.
+
+**Why it matters beyond the count:** the Date & Time "radios drawn as
+push buttons" red has been read as a knowledge gap that slice 6 would
+close by replaying draw ops. It is not. The right fix is a batched or
+multi-control request op and a priority that reflects what the answer is
+worth — a transport change, not a drawing one. How much is *genuinely*
+custom is still unknown, bounded by the `UnsupportedCustom` branch, which
+has been exercised 1/122 times.
+
+Recorded in full, with the derivation, in
+[the gap ledger](mirror-element-coverage.md#splitting-the-190--row-2-opened-up-2026-08-05).
+`docs/open-issues.md` already carried the adjacent symptom under "P4's
+plane is intact; the reason named for its silence was wrong" — this is
+the second, independent measurement of the same shape.
+
+## UNVERIFIED: `semantic.definition` ships, and its histogram has never been taken (2026-08-05)
+
+The walk now reads `contrlDefProc` (offset 24) and reports which heap the
+handle came from — `system`, `application` or `indeterminate` — as
+`Scene.Semantics.definition`, IR v2 additive. It is a resident-free
+answer to the same standard-versus-custom split, with no per-scene
+budget: it classifies every control in one walk.
+
+**Nothing has run it against a Macintosh, or against an emulated guest.**
+Status is: PPC cross-build green, `scripts/test-native` 110/110 green
+(including the new `axdefproc_test`, watched failing under three separate
+mutations), `IRFreezeTests` green and watched failing when the addition
+is unrecorded. That is *tested*, not *metal-verified*, and the whole
+point of the field is a number nobody has yet obtained.
+
+Two things to check on first live contact, in this order:
+
+1. **How large the `indeterminate` column is.** The classic Control
+   Manager keeps a variation code per control. If it rides in this
+   field's high byte, the raw longword lands in neither zone and lands
+   there. A large `indeterminate` column is evidence about the field's
+   layout, not a failed read — and nothing is masked on a guess, because
+   a 24-bit mask on a 32-bit-clean machine would manufacture a clean
+   histogram out of a real question. `axdefproc_test` pins that case.
+2. **Whether `system` and the resident's `kControlKindSignatureApple`
+   verdict ever disagree.** They answer the same question by independent
+   routes; a disagreement names which one is wrong. There is currently
+   one control in the corpus where both could be asked.
 
 ## THE STALE-REF REFUSAL NO LONGER HOLDS THE LANE (2026-08-05)
 

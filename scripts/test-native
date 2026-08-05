@@ -302,6 +302,13 @@ run_py now-guest-ppc semantic_client_source_test.py
 # numbers and exercise the boundary the walk refuses to cross.
 run_c now-guest-ppc axwalk_test.c            ""  src/axwalk/axwalk.c \
       src/peek/peek_validate.c
+# Which HEAP a control's definition function came from - the standard-
+# versus-custom split slice 6 is sized against. It is a compare, never a
+# dereference, and the branch that says nothing is the one under the most
+# pressure: if a variation code rides in the high byte of contrlDefProc,
+# the honest answer is Indeterminate rather than a stripped byte.
+run_c now-guest-ppc axdefproc_test.c         ""  src/axwalk/axwalk.c \
+      src/peek/peek_validate.c
 # The Menu Manager layout in particular: its header size and entry stride
 # are in NO header this toolchain ships, so before this test the only
 # thing that could catch a wrong one was a Macintosh.

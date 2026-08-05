@@ -219,12 +219,19 @@ typedef struct {
    control's local rect by its window's content origin, so a consumer
    never has to know the local frame.
 
-   `role` and `checked` are NOT here and are not emitted. The walk
-   reads a ControlRecord's fields; it does not read contrlDefProc, so it
-   cannot say whether a control is a button, a checkbox or a scroll bar -
-   and `checked` is meaningless without knowing which. Inventing a role
-   from a value range would be exactly the guess the absent-key rule
-   exists to prevent.
+   `checked` is NOT here and is not emitted, because it is meaningless
+   without knowing WHICH kind of control this is, and a walk of a foreign
+   ControlRecord cannot say. Inventing a role from a value range would be
+   exactly the guess the absent-key rule exists to prevent - and was the
+   2026-08-03 defect that drew Mail's alert buttons as scroll bars.
+
+   `role` IS here: empty for a foreign control until the resident's
+   semantic plane names one, and procID-derived for a control this
+   application made itself (scene_self.c).
+
+   As of 2026-08-05 the walk DOES read contrlDefProc - see `definition`
+   below - but that answers a strictly weaker question, which heap the
+   definition function came from, and never becomes a role.
 
    `ref` IS here, as of 2026-08-01, and an empty one is an absent key
    rather than an empty string on the wire. It is a copy of a token the
@@ -243,6 +250,14 @@ typedef struct {
        from checkbox; an application asking the Control Manager about its
        OWN control can, and does. */
     char role[16];
+    /* WHERE the control's definition came from, when the role is still
+       empty. A `NowAxDefProcOrigin`, and deliberately NOT a kind: it
+       separates a definition the Toolbox supplied from one the
+       application supplied, which is the split that decides whether a
+       documented answer exists to go looking for. Zero (Absent) is the
+       nothing-to-say value, and self-observed controls leave it there -
+       they already have a procID-derived role, which is strictly more. */
+    short definition;
     int semantic_value_known;
     char semantic_value[kNowSceneTextMax];
     int list_cells_present;
@@ -293,6 +308,11 @@ enum {
 typedef struct {
     short number;
     short kind;
+    /* As on a control, and it reaches a dialog item by the same join. A
+       `resCtrl` DITL row is the one item type whose kind the item list
+       cannot name - it says only that a ControlRecord exists - so this is
+       precisely where the weaker answer has something to add. */
+    short definition;
     char title[kNowSceneDialogTitleMax];
     NowSceneRect rect;
     int enabled;
@@ -541,6 +561,9 @@ int now_scene_last_control(const NowScene *s, int window);
 
 void now_scene_set_control_role(NowScene *s, int window, int index,
                                 const char *role);
+/* `origin` is a NowAxDefProcOrigin. Setting it never implies a kind. */
+void now_scene_set_control_definition(NowScene *s, int window, int index,
+                                      short origin);
 void now_scene_set_control_semantic_value(NowScene *s, int window, int index,
                                           const char *value);
 /* Attaches a bounded guest-provided list payload to one control. `complete`

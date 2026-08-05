@@ -2483,6 +2483,13 @@ components:
     # selected flag, plus `listTotalCount`; `completeness` is complete only
     # when every guest cell reached the scene. A bounded prefix remains useful
     # presentation data but never becomes action authority.
+    # IR v2 also carries `semantic.definition` — `system`, `application` or
+    # `indeterminate` — and ONLY where `semantic.kind` is absent. It says
+    # which heap the control's definition function came from, read from
+    # contrlDefProc, and it is a strictly weaker claim than `kind`: `system`
+    # means a documented answer exists somewhere, never that this is a push
+    # button. It can never authorise an act, and a receiver that promotes it
+    # to a kind is reading a key that does not say that.
     SceneRequest:
       type: object
       required: [type, id]

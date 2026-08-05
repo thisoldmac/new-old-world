@@ -211,6 +211,14 @@ public struct AgentIntegrationMirrorSurfaceItem:
     /// and which no entity-level projection could ever have shown.
     public let text: String?
     public let knowledge: String?
+    /// Where the control's definition function came from — `system`,
+    /// `application` or `indeterminate` — carried only where `kind` is
+    /// absent. A strictly weaker claim than `kind`: `system` says a
+    /// documented answer exists somewhere, never that this is a push
+    /// button, so it can never authorise an act. It is here because
+    /// splitting the undetermined population is a measurement an agent
+    /// has to be able to take, and the face that takes it is this one.
+    public let definition: String?
     /// 1-based DITL number, for a dialog item.
     public let number: Int?
 
@@ -218,6 +226,7 @@ public struct AgentIntegrationMirrorSurfaceItem:
                 rect: AgentIntegrationMirrorRect?, enabled: Bool,
                 visible: Bool, value: Int?, checked: Bool?, kind: String?,
                 state: String?, text: String?, knowledge: String?,
+                definition: String? = nil,
                 number: Int?) {
         self.source = source
         self.ref = ref
@@ -232,6 +241,7 @@ public struct AgentIntegrationMirrorSurfaceItem:
         self.state = state
         self.text = text
         self.knowledge = knowledge
+        self.definition = definition
         self.number = number
     }
 }

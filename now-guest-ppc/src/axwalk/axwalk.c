@@ -42,6 +42,7 @@ enum {
     kNowAxCtlValue = 18,
     kNowAxCtlMin = 20,
     kNowAxCtlMax = 22,
+    kNowAxCtlDefProc = 24,        /* Controls.h: Handle contrlDefProc */
     kNowAxCtlTitle = 40
 };
 
@@ -86,6 +87,44 @@ static int range_ok(const NowAxMemory *memory, unsigned long addr, size_t len)
         return 1;
     }
     return 0;
+}
+
+/* range_ok answers "either zone"; this answers WHICH, and that is the
+   whole of the standard-versus-custom split. Same half-open convention
+   and the same validator, so a zone that is unset (hi == lo) claims
+   nothing rather than claiming everything. */
+static int in_zone(unsigned long lo, unsigned long hi,
+                   unsigned long addr, size_t len)
+{
+    return hi > lo
+        && now_peek_range_in_partition(addr, (unsigned long)len, lo, hi - lo);
+}
+
+/* The classification, kept pure and away from the Toolbox so the native
+   test can drive every branch. Order matters: the system heap is tested
+   FIRST, because a target partition is carved out of the same address
+   space and an overlap would otherwise silently relabel a shared CDEF as
+   the application's own. */
+static short def_proc_origin(const NowAxMemory *memory, unsigned long handle)
+{
+    if (memory == NULL) {
+        return (short)kNowAxDefProcIndeterminate;
+    }
+    if (handle == 0) {
+        return (short)kNowAxDefProcAbsent;
+    }
+    /* A handle is a master pointer slot: even, and inside a zone. An odd
+       value is not a handle at all, whatever else it may be. */
+    if ((handle & 1UL) != 0) {
+        return (short)kNowAxDefProcIndeterminate;
+    }
+    if (in_zone(memory->system_lo, memory->system_hi, handle, 4)) {
+        return (short)kNowAxDefProcSystem;
+    }
+    if (in_zone(memory->target_lo, memory->target_hi, handle, 4)) {
+        return (short)kNowAxDefProcApplication;
+    }
+    return (short)kNowAxDefProcIndeterminate;
 }
 
 int now_ax_read_bytes(const NowAxMemory *memory, unsigned long addr,
@@ -258,6 +297,11 @@ int now_ax_read_control(const NowAxMemory *memory, const NowAxWindow *window,
     out->value = bes16(control + kNowAxCtlValue);
     out->min = bes16(control + kNowAxCtlMin);
     out->max = bes16(control + kNowAxCtlMax);
+    /* Inside the record already read and validated, so no second range
+       check - and the classification only COMPARES the value, it never
+       follows it. Nothing here dereferences a foreign CDEF. */
+    out->def_proc = be32(control + kNowAxCtlDefProc);
+    out->def_proc_origin = def_proc_origin(memory, out->def_proc);
     if (out->next_control != 0
         && !pointer_ok(memory, out->next_control, 4)) {
         return kNowAxInvalid;

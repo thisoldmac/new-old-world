@@ -41,7 +41,8 @@ final class IRFreezeTests: XCTestCase {
             enabled: true, visible: true, value: 1, min: 0, max: 2,
             checked: false,
             semantic: .init(
-                knowledge: .known, kind: "scrollBar", action: "scroll",
+                knowledge: .known, kind: "scrollBar",
+                definition: "system", action: "scroll",
                 state: "on", value: "1",
                 listCells: [.init(row: 1, column: 0, text: "Cell",
                                        selected: true)],
@@ -53,7 +54,8 @@ final class IRFreezeTests: XCTestCase {
             number: 1, title: "OK", rect: rect, enabled: true,
             visible: true, ref: "r",
             semantic: .init(
-                knowledge: .known, kind: "pushButton", action: "press",
+                knowledge: .known, kind: "pushButton",
+                definition: "application", action: "press",
                 state: "off", value: "OK",
                 selection: .init(start: 0, end: 2), focused: false,
                 isDefault: true, provenance: "guest-ditl",
