@@ -4228,6 +4228,26 @@ components:
                   knows its own shape and shadows nothing. Renaming this
                   too would be a second wire change with no defect behind
                   it.
+              count:
+                type: integer
+                description: >
+                  drain only. How many records the `records` array below
+                  actually holds, which is not `pending` and not
+                  `maxRecords`: a reply says `more` rather than
+                  truncating, so a bounded drain is normal.
+
+                  IT IS `count` AND NOT `records`, and that is the second
+                  key collision this verb has paid for. The tail emitted
+                  `"records": <n>` beside the `"records": [...]` array in
+                  the same object, so every conforming parser kept the
+                  LAST one and the array vanished - the records were on
+                  the wire, 2853 bytes of them, and unreachable to any
+                  client. Measured on a live Power Mac G4 2026-08-05, on
+                  the first drain this plane has ever served. `qdtrace`
+                  avoids it by naming its array `ops`; this one named
+                  both the same thing. A duplicate key is legal JSON and
+                  silently lossy, which is the worst pair of properties a
+                  wire field can have.
               records:
                 type: array
                 description: >

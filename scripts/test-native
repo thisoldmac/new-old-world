@@ -237,6 +237,13 @@ run_c now-guest-ppc transitions_args_test.c \
 # have now broken it - `launch` on metal, `transitions` on an emulator -
 # so it is executable over all 41 rather than prose one more time.
 run_py now-guest-ppc contract_arg_key_source_test.py
+# The same lesson in the REPLY direction, found on this plane's first ever
+# live drain: the tail emitted `"records": 22` beside the
+# `"records": [...]` array, so every conforming parser kept the integer
+# and 22 real records went out unreadable. A duplicate key is legal JSON
+# and silently lossy. Source text because run_drain assembles one object
+# across two snprintfs above <Carbon.h>, where no host compiler reaches.
+run_py now-guest-ppc transitions_reply_source_test.py
 run_c now-guest-ppc now_event_logic_test.c \
       "-DNOW_EVENT_LOGIC_STANDALONE -I $repo_root/ext/src" \
       ../ext/src/now_event_logic.c

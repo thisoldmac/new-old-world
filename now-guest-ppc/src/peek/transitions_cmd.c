@@ -502,8 +502,15 @@ static void run_drain(const char *json, long id, char *out, long cap)
        to get wrong. */
     next = (NowEventU32)(next - (NowEventU32)(got - i));
 
+    /* `count`, NOT `records`. This tail sat beside a `"records":[...]`
+       array in the same object, so a conforming parser kept the last of
+       the two and the array vanished: 2853 bytes of real records on the
+       wire and nothing able to read them (measured live, 2026-08-05, on
+       this plane's first ever drain). A duplicate key is legal JSON and
+       silently lossy. `qdtrace` names its array `ops` and never met
+       this; the same rule as the arg keys, in the reply direction. */
     snprintf(out + pos, (size_t)(cap - pos),
-             "],\"cursor\":%lu,\"nextCursor\":%lu,\"records\":%lu,"
+             "],\"cursor\":%lu,\"nextCursor\":%lu,\"count\":%lu,"
              "\"lost\":%lu,\"dropped\":%lu,\"pending\":%lu,"
              "\"writeCursor\":%lu,\"more\":%s}}}",
              cursor, (unsigned long)next, i, lost,
