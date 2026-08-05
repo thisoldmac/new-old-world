@@ -1982,10 +1982,10 @@ ephemeral range, each leaving ~150 sockets open.
 
 **What is NOT proven, and it matters.** The five timeouts stopped
 reproducing on this Mac partway through the investigation, with the
-ORIGINAL code: two concurrent full runs of the unfixed tests are now
-green, as is a single one. The most likely reason is simply that the
-other session's `xctest` finished. So the before/after A/B that would
-settle it cannot be run any more. Defect 1 is verified by observation
+ORIGINAL code: a full run of the unfixed tests is green. The most
+likely reason is simply that the other session's `xctest` finished. So
+the before/after A/B that would settle it cannot be run any more.
+Defect 1 is verified by observation
 (the `lsof` above, watched by mutation: `xctest ... TCP *:5250
 (LISTEN)` with the old code, nothing with the new). Defect 2 is
 verified by the failures in the trace logs (`listener -> failed(...48...)`
@@ -2002,16 +2002,53 @@ test, so there is no guard here. If the five ever come back, the way in
 is `FakeGuest`'s state handler: log `state`, `currentPath?.localEndpoint`
 and `remoteEndpoint`, and look for `.waiting(EADDRINUSE)`.
 
-**What is still missing.** `scripts/spin-up-ppc` checks 5250 now, but
-the host gate itself does not: nothing in `scripts/test-host` looks at
-the port, or for another session's `xctest`, before it binds. With the
-three defects above gone the suite no longer manufactures the
-contention, but a person's own running app still can, and it would say
-so with the same unhelpful timeout. Two things this entry has taught
-twice, worth keeping whichever way you come at it next time: a FIXED
-failing subset does not rule contention out, so subset stability is not
-a signal to reason from; and the only check that has ever given a
-straight answer is `lsof` on the port.
+**The guard now exists** (`HostMachineGuardTests`, 2026-08-05). It is a
+TEST rather than a line in `scripts/test-host`, because the person who
+reproduced this ran `cd now-host && swift test`, which no script wraps
+— a guard that only fires through the gate script is absent exactly
+when somebody is narrowing a failure by hand. It fails naming the
+process holding the wire port (watched by mutation: holding 5250 from
+another process produces `python3.12 [pid 68233] *:5250 (LISTEN)` in
+the failure text), takes `NOW_ALLOW_BUSY_MACHINE=1` to proceed and
+label the result unattributable, and reports — without failing — any
+other copy of this suite running beside it. It reuses
+`MetalMachineGuard`'s `lsof` reader rather than adding a second one.
+
+Adding it turned up a fourth instance of defect 1, the worst one: a
+bare `AppDelegate()` builds its `HostAppState` on the PRODUCT's
+preference domain, so eight tests were reading a person's own saved
+settings and binding 5250 with them. `AppDelegate` takes an injectable
+`defaults` now (shipping behaviour unchanged) and the tests use
+`quietAppDelegate()`.
+
+Two things this entry has taught twice, worth keeping whichever way you
+come at it next time: a FIXED failing subset does not rule contention
+out, so subset stability is not a signal to reason from; and the only
+check that has ever given a straight answer is `lsof` on the port.
+
+### Still open: two more things the suite shares across processes
+
+Found on 2026-08-05 by running two suites at once — which is NOT what
+`swift test` twice gives you, because SwiftPM locks `.build` and the
+second invocation waits. Invoke `xctest` on the built bundle directly,
+or run from two worktrees. Both of these are unfixed and neither is
+about ports:
+
+- **`HostLog.shared` is one file per LAUNCH SECOND, not per process.**
+  `HostProjectionAuditTests testTheEventReachesTheHostLogInTheSpecFormat`
+  failed reading `a line worth keeping` — a string belonging to
+  `HostLogTests` in the OTHER process. Two runs starting in the same
+  second share `now-logs/<yyyy-MM-dd HHmmss>.log` and read each other's
+  lines. Two NOW apps launched together would do the same, so this is
+  arguably a product defect and not only a test one; the fix (a pid in
+  the name) is product-visible, which is why it is recorded here rather
+  than taken.
+- **`HostServingTests testGuestCanSendAFileAndItLandsInTheShare` fails
+  under concurrency**, in both runs, on its own temporary share
+  directory: `".now-<uuid>.convert" couldn't be moved ... an item with
+  the same name already exists`, and in the other run the arrival is
+  never announced. Not yet diagnosed — it may be cross-process or it
+  may be a race inside one run that only load exposes.
 
 ## Photo sizes became long-edge stops; three metal defects fixed, none re-verified on metal (2026-08-02, latest)
 
