@@ -171,10 +171,27 @@ wrong histogram. `axdefproc_test` pins that case.
 **Not measured.** The recorded corpus predates this field, so it carries
 no `definition` for any of the 190, and the resident's own verdict exists
 for 1 of 122. Producing it needs one live guest scene with a
-`definition`-bearing build; no VM was stood up for this measurement (the
-cold boot cannot complete unattended today). Until then the honest
-statement is: **the 190 splits 121/69 by source, and how it splits by
-definition origin is unknown.**
+`definition`-bearing build.
+
+**First live reading, 2026-08-05 — one panel, and it is unanimous.** A
+guest was stood up and Date & Time opened so a FOREIGN window with
+undetermined controls was actually in view. Of its 41 items, 29 carry no
+determined kind, and **all 29 report `definition: system`** — standard
+Toolbox CDEFs out of the System file, not app-owned drawing. The other 12
+were already `known` from the DITL type byte and never involved a CDEF.
+
+So for this panel the genuinely-custom population is **zero**, which
+points the same way the transport finding did: the information was
+recoverable all along. Three limits keep it from being the histogram:
+it is one panel at one moment; the extension on that image PREDATES the
+batched-classification fix, so it is the one-cell transport's behaviour;
+and one panel cannot speak for Extensions Manager, whose 24 `userItem`s
+are ledger row 3 and the case most likely to differ.
+
+Until the corpus is recaptured against a batched build, the honest
+statement is: **the 190 splits 121/69 by source; one panel's 29
+undetermined controls are all `system`; and the corpus-wide split by
+definition origin is still unknown.**
 
 ### The starvation is fixed in code; this table is the baseline (2026-08-05)
 
