@@ -1043,28 +1043,42 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// no action case can name a file. `finderSelect` and `finderOpen`
     /// are the whole argument for objects, and they are served here.
     func perform(_ interaction: Interaction) {
-        perform(interaction, source: .human)
+        _ = perform(interaction, source: .human)
     }
 
     /// The one dispatch path, with the face that asked for it. `MirrorKit`'s
     /// `MirrorSceneSource` conformance above is the gesture door; this is the
     /// same door with the caller named.
+    ///
+    /// **Returns the sentence when the act never left**, because the two
+    /// faces do not hear a refusal the same way. A person reads `report`
+    /// on the Mirror's status line; a headless caller gets only the
+    /// return value, and until 2026-08-05 that was nothing — so
+    /// `MirrorDriveService` inferred "dispatched" from the absence of a
+    /// broker record and could not tell a direct-path act from one this
+    /// side had explicitly declined. Measured live the same day: driving
+    /// `finderOpen` at a guest whose interaction plane was never armed
+    /// logged `NOT DISPATCHED: Interaction policy is off` and answered
+    /// MCP `outcome: dispatched`. The host had the reason in its hand and
+    /// told the agent the opposite of it.
+    @discardableResult
     func perform(_ interaction: Interaction,
-                 source: MirrorOperationSource) {
+                 source: MirrorOperationSource) -> String? {
         if let refusal = pinnedActionRefusal() {
             let label = InteractionBridge.label(for: interaction)
             ActLog.note(action: label,
                         outcome: "NOT DISPATCHED: \(refusal)", ms: 0)
             report(refusal)
-            return
+            return refusal
         }
         guard currentPlanePolicy.contains(.interaction) else {
             let label = InteractionBridge.label(for: interaction)
+            let why = "Interaction is off; the Mirror is read-only."
             ActLog.note(action: label,
                         outcome: "NOT DISPATCHED: Interaction policy is off",
                         ms: 0)
-            report("\(label): Interaction is off; the Mirror is read-only.")
-            return
+            report("\(label): \(why)")
+            return why
         }
         let plan = InteractionPolicy.plan(for: interaction, planes: planes)
         switch plan {
@@ -1075,10 +1089,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             ActLog.note(action: InteractionBridge.label(for: interaction),
                         outcome: "NOT DISPATCHED (nothing): \(why)", ms: 0)
             report(why)
+            return why
         case .unsupported(let why):
             ActLog.note(action: InteractionBridge.label(for: interaction),
                         outcome: "NOT DISPATCHED (unsupported): \(why)", ms: 0)
             report("\(InteractionBridge.label(for: interaction)): \(why)")
+            return why
         default:
             let label = InteractionBridge.label(for: interaction)
             if let engine = shadowEngine,
@@ -1097,7 +1113,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                         self.mutationWaiting = false
                         self.perform(interaction)
                     }
-                    return
+                    /* Held, not refused — it re-enters this door when the
+                       observation clears, and the caller has an operation
+                       coming. */
+                    return nil
                 }
                 report(label + " — queued")
                 let accepted = mutationBroker.enqueue(operation,
@@ -1141,9 +1160,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 })
                 actTimeline.depth = mutationBroker.depth
                 if !accepted {
-                    report(label + " — not dispatched: operation journal full")
+                    let full = "not dispatched: operation journal full"
+                    report(label + " — " + full)
+                    return full
                 }
-                return
+                return nil
             }
             if shadowEngine != nil,
                MirrorActionExecutor.requiresTypedSettlement(
@@ -1153,7 +1174,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 ActLog.note(action: "unresolved \(label)  plan=\(plan)",
                             outcome: "NOT DISPATCHED: \(reason)", ms: 0)
                 report(label + " — " + reason)
-                return
+                return reason
             }
             /* The same re-read the brokered path makes, for the acts that
                never queue. Their staleness is only the poll's own lag
@@ -1163,7 +1184,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 ActLog.note(action: "\(label)  plan=\(plan)",
                             outcome: "NOT DISPATCHED: \(stale)", ms: 0)
                 report("\(label) — \(stale)")
-                return
+                return stale
             }
             report(label + "…")
             Task { @MainActor [weak self] in
@@ -1203,6 +1224,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 }
                 self.poll()                  // show the effect now
             }
+            /* The direct path's own answer arrives asynchronously and is
+               NOT a refusal to dispatch — the act left. A complaint from
+               the guest is settlement news, and this return says only
+               whether the act got out of the door. */
+            return nil
         }
     }
 

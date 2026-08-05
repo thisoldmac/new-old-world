@@ -18,7 +18,8 @@ import NOWAgentIntegration
 @MainActor
 struct MirrorDriveService {
     let scene: () -> MirrorKit.Scene?
-    let perform: (Interaction) -> Void
+    /// Answers a sentence when the act never left, and nil when it did.
+    let perform: (Interaction) -> String?
     /// The journal the broker writes into, so the reply can carry the same
     /// record the Mirror page shows rather than a second account of it.
     let journal: () -> MirrorOperationJournal?
@@ -41,14 +42,27 @@ struct MirrorDriveService {
         case .resolved(let value): interaction = value
         case .refused(let refusal): return .init(unavailable: refusal)
         }
-        perform(interaction)
+        /* **A refusal is not a dispatch, and this face used to say it
+           was.** `perform` reports a decline to the Mirror's status line,
+           which a headless caller cannot read; the absence of a broker
+           record was then read as "took the direct path" and answered
+           `dispatched`. Measured live 2026-08-05 against a guest whose
+           interaction plane had never armed: the host logged `NOT
+           DISPATCHED: Interaction policy is off` and told MCP the act
+           dispatched — the opposite of what it knew, to the only face
+           that had no other way to find out. */
+        if let refusal = perform(interaction) {
+            return .init(operation: .init(
+                id: "not-dispatched", outcome: "refused", reason: refusal,
+                settled: true, awaitsObservation: false))
+        }
 
         /* The broker appends synchronously inside `perform`, so a record
-           that is going to exist exists now. Its absence is meaningful:
-           this gesture took the direct path, which carries no typed
-           postcondition and can never be confirmed by observation. Saying
-           so is the difference between a caller polling once and a caller
-           waiting forever for a settlement that cannot come. */
+           that is going to exist exists now. Its absence NOW means only
+           one thing: this gesture took the direct path, which carries no
+           typed postcondition and can never be confirmed by observation.
+           Saying so is the difference between a caller polling once and a
+           caller waiting forever for a settlement that cannot come. */
         guard let record = (journal()?.records ?? []).last(where: {
             !before.contains($0.id)
         }) else {
