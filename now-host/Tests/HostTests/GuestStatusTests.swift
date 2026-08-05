@@ -203,16 +203,18 @@ final class GuestStatusTests: XCTestCase {
     /// promises, proven together rather than each in isolation.
     func testARealGuestFlipsBothTheStatusAndTheCommand() async throws {
         let suite = "GuestStatusE2E.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
+        /* This test is about the menu bar, not about listening at launch, so
+           it starts the listener itself on port 0 rather than naming a port
+           through settings. 52983 was "unlikely to be taken" and sat inside
+           the ephemeral range every other listener and dial in this process
+           is allocated from, so this process took it from itself and the
+           bind failed (docs/open-issues.md, 2026-08-05). */
+        let defaults = UserDefaults(suiteName: suite)!.offTheWire()
         defer { defaults.removePersistentDomain(forName: suite) }
-        /* Port 0, not a fixed number. 52983 was "unlikely to be taken" and
-           sat inside the ephemeral range every other listener and dial in
-           this suite is allocated from, so this process took it from itself
-           and the bind failed (docs/open-issues.md, 2026-08-05). */
-        defaults.set(0, forKey: "listenPort")
-        defaults.set(true, forKey: "listenAtLaunch")
 
         let state = HostAppState(registry: .standard, defaults: defaults)
+        defer { state.stopListening() }
+        state.listener.start(port: 0)
         let deadline = Date().addingTimeInterval(8)
         func wait(_ cond: @escaping () -> Bool) async throws {
             while !cond(), Date() < deadline {

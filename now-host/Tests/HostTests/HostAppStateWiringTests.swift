@@ -11,16 +11,19 @@ final class HostAppStateWiringTests: XCTestCase {
         let suite = "HostAppStateWiring.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
-        /* Port 0, and the bound port is read back below. A fixed number is
-           what this used to do — 52981, "a specific, unlikely-taken port" —
-           and it is inside the ephemeral range (49152–65535) every other
-           test in this suite draws its listeners and its dials from, so it
-           was intermittently taken by this very process and the bind failed
-           with EADDRINUSE (docs/open-issues.md, 2026-08-05). */
-        defaults.set(0, forKey: "listenPort")
+        /* The one place that still listens AT LAUNCH, which is why it is the
+           one place that has to name a port: settings read 0 as unset. The
+           number comes from `testListenPort`, not from a constant — 52981
+           was "a specific, unlikely-taken port" and sat inside the ephemeral
+           range this process hands to its own port-0 listeners, so it took
+           the port from itself (docs/open-issues.md, 2026-08-05). */
+        defaults.set(Int(testListenPort()), forKey: "listenPort")
         defaults.set(true, forKey: "listenAtLaunch")
 
         let state = HostAppState(registry: .standard, defaults: defaults)
+        /* Not just at the end: a failure below must not leave the port held
+           for whatever runs next. */
+        defer { state.stopListening() }
 
         let deadline = Date().addingTimeInterval(8)
         func wait(_ cond: @escaping () -> Bool) async throws {
@@ -61,7 +64,5 @@ final class HostAppStateWiringTests: XCTestCase {
                                   key: try XCTUnwrap(
                                     state.listener.activeKey)),
                        "Screenshots badge must mirror the connection")
-
-        state.stopListening()
     }
 }

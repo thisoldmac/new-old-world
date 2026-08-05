@@ -7,23 +7,46 @@ import NOWAgentIntegration
 /// A scripted guest: dials the listener over loopback, sends frames, and
 /// collects decoded control replies.
 ///
-/// **Why the dial can be refused, and why it is retried.** Every listener in
-/// this suite binds port 0 and every fake guest dials from a source port the
-/// kernel picks, so both ends of every test connection come out of the one
-/// ephemeral range this Mac has (49152–65535). A full run makes ~400 of
-/// them. When the kernel picks a source port that reproduces the 4-tuple of
-/// a connection still on the machine, `connect` is refused with EADDRINUSE
-/// — and Network.framework does not fail such a connection, it parks it in
+/// **It names its own source port, and that is the fix for a whole class of
+/// failure.** Left to itself the kernel chooses one, and on macOS it does so
+/// by hashing the DESTINATION (RFC 6056): the same listener port is offered
+/// the same source port every time. A full run makes ~400 of these dials and
+/// leaves most of the sockets open — a test that stops the listener but
+/// never cancels its guest leaves one in CLOSE_WAIT for the rest of the
+/// process — so when a later listener is handed a port that has been used
+/// before, the kernel proposes the source port that goes with it, the
+/// 4-tuple already exists, and `connect` is refused with EADDRINUSE.
+/// Network.framework does not fail such a connection: it parks it in
 /// `.waiting` and leaves it there, which reads at the test as a guest that
-/// never arrived. That is the whole of the five fixed timeouts recorded in
-/// docs/open-issues.md on 2026-08-05: nothing about the code under test,
-/// and nothing a contributor could quit to clear.
+/// never arrived. Measured: twelve retries in a row, every one from source
+/// port 55961 to port 55963, then a 5 s timeout.
 ///
-/// So a refused dial is retried on a fresh socket, replaying what was
-/// queued. A replay is the whole of the recovery because a connection that
-/// never reached `.ready` never delivered a byte.
+/// That is the whole of the five fixed timeouts in docs/open-issues.md
+/// (2026-08-05) — nothing about the code under test, and nothing a
+/// contributor could quit to clear. Retrying cannot fix it, because the
+/// kernel's answer is a function of the destination and does not change.
+/// Choosing the source port here does: `sourcePorts` never repeats a number
+/// in the life of the process, so no 4-tuple can repeat either, and the
+/// range sits below the ephemeral floor so the kernel's own picks for
+/// everything else in this process can never land on one of ours.
 @MainActor
 final class FakeGuest {
+    /// Source ports for the fake guests, handed out once each.
+    ///
+    /// Above 1024 and below the ephemeral floor of 49152. Keyed to the
+    /// process, because two `swift test` runs in two worktrees at once is
+    /// ordinary on this desk and a fixed start would have them fighting.
+    private enum SourcePorts {
+        private static var next = 20_000 + (Int(getpid()) % 18_000)
+
+        static func take() -> UInt16 {
+            let port = next
+            next += 1
+            if next >= 49_000 { next = 20_000 }
+            return UInt16(port)
+        }
+    }
+
     /// The current socket. Replaced by `redial()`, so read it rather than
     /// holding it — `guest.connection.cancel()` at the end of a test is
     /// still correct, it just may be cancelling the second one.
@@ -35,9 +58,11 @@ final class FakeGuest {
     /// which sends are real deliveries and a replay would double them.
     private var queued: [Data] = []
     private var isReady = false
-    /// Bounded so a dial that is refused for some other reason still fails
-    /// at the test's own timeout rather than spinning forever.
-    private var redialsLeft = 20
+    /// A source port of ours can still be taken — by the other worktree's
+    /// run, or by anything else on this Mac — so a refusal takes the next
+    /// one. Bounded, so a dial refused for some other reason still fails at
+    /// the test's own timeout rather than spinning.
+    private var redialsLeft = 8
     private(set) var received: [ControlMessage] = []
     /// Bulk payload the host has sent us — the guest side of a put.
     private(set) var bulkReceived = Data()
@@ -51,8 +76,17 @@ final class FakeGuest {
     }
 
     private static func dial(_ port: UInt16) -> NWConnection {
-        NWConnection(host: .ipv4(.loopback),
-                     port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
+        let parameters = NWParameters.tcp
+        parameters.requiredLocalEndpoint = .hostPort(
+            host: .ipv4(.loopback),
+            port: NWEndpoint.Port(rawValue: SourcePorts.take())!)
+        /* The port may still be in TIME_WAIT from an earlier dial of ours;
+           SO_REUSEADDR is what lets us take it back rather than wait out
+           2 MSL for a socket whose peer is long gone. */
+        parameters.allowLocalEndpointReuse = true
+        return NWConnection(
+            host: .ipv4(.loopback),
+            port: NWEndpoint.Port(rawValue: port)!, using: parameters)
     }
 
     func start() {
@@ -87,8 +121,10 @@ final class FakeGuest {
         return code == .EADDRINUSE
     }
 
-    /// Throws the refused socket away and dials again from a new source
-    /// port, replaying everything queued.
+    /// Throws the refused socket away and dials again from the NEXT source
+    /// port, replaying everything queued. A replay is the whole of the
+    /// recovery because a connection that never reached `.ready` never
+    /// delivered a byte.
     private func redial() {
         guard redialsLeft > 0 else { return }
         redialsLeft -= 1
@@ -108,12 +144,6 @@ final class FakeGuest {
     private func markClosed() {
         guard !wasClosed else { return }
         wasClosed = true
-        /* A guest hangs up when the host does. Without this the socket sits
-           in CLOSE_WAIT holding its port pair for the rest of the process —
-           about 150 of the ~400 dials in a full run were never cancelled by
-           hand — which is what makes the collision above likely enough to
-           be reproducible. */
-        connection.cancel()
         onClose?()
     }
 
