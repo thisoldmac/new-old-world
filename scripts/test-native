@@ -220,7 +220,23 @@ run_c now-guest-ppc event_read_test.c \
 # and the console line's grammar.
 run_c now-guest-ppc transitions_logic_test.c \
       "-DNOW_PEEK_TABLE_HOST" src/peek/transitions_logic.c \
-      src/peek/event_read.c
+      src/peek/event_read.c src/core/json.c
+# `transitions start`, parsed from a WHOLE request frame - the gate that
+# was missing when the verb shipped unable to arm by any route. Its args
+# lived inline in transitions_cmd.c above <Carbon.h>, so no host compiler
+# could reach them and every test entered the plane BELOW the parse with a
+# hand-filled Req. The key `name` shadowed the envelope's own
+# `"name":"transitions"`, the flat scan matched that first, and the
+# by-name route being tried first short-circuited serial, front and a5 as
+# well. Every fixture here carries a real envelope: with the args object
+# alone the collision is invisible, which is precisely how it shipped.
+run_c now-guest-ppc transitions_args_test.c \
+      "-DNOW_PEEK_TABLE_HOST" src/peek/transitions_logic.c \
+      src/peek/event_read.c src/core/json.c
+# The same rule for the whole family, from the contract itself. Two verbs
+# have now broken it - `launch` on metal, `transitions` on an emulator -
+# so it is executable over all 41 rather than prose one more time.
+run_py now-guest-ppc contract_arg_key_source_test.py
 run_c now-guest-ppc now_event_logic_test.c \
       "-DNOW_EVENT_LOGIC_STANDALONE -I $repo_root/ext/src" \
       ../ext/src/now_event_logic.c

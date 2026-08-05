@@ -141,8 +141,8 @@ int now_transitions_start(const NowTransitionsStartReq *req,
        A person at the machine has a name and no way to read a
        ProcessSerialNumber off this guest - nothing it prints carries
        one. */
-    if (req->name != NULL && req->name[0] != '\0') {
-        switch (now_proc_find_by_name(req->name, &psn)) {
+    if (req->target != NULL && req->target[0] != '\0') {
+        switch (now_proc_find_by_name(req->target, &psn)) {
         case kProcFindOne:
             break;
         case kProcFindNotRunning:
@@ -364,39 +364,19 @@ static void run_start(const char *json, long id, char *out, long cap)
     NowTransitionsArm arm;
     const char *code = "unreadable";
     const char *message = "";
-    unsigned long v = 0;
-    char name[64];
+    NowTransitionsArgsResult parsed;
+    char target[64];
 
-    memset(&req, 0, sizeof req);
-    if (!now_json_find_wide_u32(json, "a5", &v, &req.has_a5)) {
-        error_json(id, "bad-a5", "a5 must be a decimal or 0x string",
-                   out, cap);
+    /* The grammar is in transitions_logic.c so a host compiler can reach
+       it. It was inline here, under <Carbon.h>, when it shipped a target
+       key that shadowed the envelope and armed nothing. */
+    parsed = now_transitions_start_args(json, &req, target,
+                                        (long)sizeof target);
+    if (parsed != kNowTransitionsArgsOK) {
+        error_json(id, now_transitions_args_code(parsed),
+                   now_transitions_args_message(parsed), out, cap);
         return;
     }
-    req.a5 = (NowEventU32)v;
-    if (!now_json_find_wide_u32(json, "serialHi", &v, &req.has_serial_hi)) {
-        error_json(id, "bad-serial",
-                   "serialHi and serialLo must be decimal or 0x strings",
-                   out, cap);
-        return;
-    }
-    req.serial_hi = (NowEventU32)v;
-    if (!now_json_find_wide_u32(json, "serialLo", &v, &req.has_serial_lo)) {
-        error_json(id, "bad-serial",
-                   "serialHi and serialLo must be decimal or 0x strings",
-                   out, cap);
-        return;
-    }
-    req.serial_lo = (NowEventU32)v;
-    if (!now_json_find_wide_bool(json, "front", &req.front_true,
-                                 &req.has_front)) {
-        error_json(id, "bad-front", "front must be true or false", out, cap);
-        return;
-    }
-    if (now_json_find_string(json, "name", name, (long)sizeof name)) {
-        req.name = name;
-    }
-    req.ttl_ticks = now_json_find_int(json, "ttlTicks", 0);
 
     if (!now_transitions_start(&req, &arm, &code, &message)) {
         error_json(id, code, message, out, cap);

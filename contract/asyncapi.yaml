@@ -4129,7 +4129,7 @@ components:
               start only. When true and no serial is supplied, target the
               process that is frontmost when the guest reads the request.
               Serial identity takes precedence; false is not a selector.
-          name:
+          target:
             type: string
             description: >
               start only, and the CONSOLE's route to a target. A person
@@ -4138,6 +4138,18 @@ components:
               prints carries one. Resolved by the same walk `quit` and
               `front` resolve a name with; several matches are refused
               rather than guessed. A serial takes precedence over it.
+
+              "target" and not "name" — see the arg-key rule in the
+              preamble above. This one is not advice; it is the bug this
+              key already shipped. Declared "name" until 2026-08-05, it
+              shadowed the envelope's own `"name": "transitions"`, the
+              guest's flat scan matched that first, and every start
+              resolved the literal string `transitions` — which is never
+              a running process. Because the name route is tried BEFORE
+              the serial/front/a5 selector, it also short-circuited the
+              other three, so `transitions start` could not arm by ANY
+              route and P5's plane could never publish. `launch` paid for
+              this rule once on metal; this verb paid for it again.
           ttlTicks:
             type: integer
             description: >
@@ -4206,6 +4218,16 @@ components:
                 description: >
                   start only. Which selector actually resolved the target;
                   never inferred from other fields the caller also sent.
+
+                  `name` here is the RESOLUTION MECHANISM - a walk of the
+                  process list by name - and deliberately keeps its word
+                  after the argument that feeds it was renamed `target`
+                  for the arg-key rule. That rule governs what a caller
+                  SENDS, because only a request is scanned flat by the
+                  classic guest; a reply is decoded by a reader that
+                  knows its own shape and shadows nothing. Renaming this
+                  too would be a second wire change with no defect behind
+                  it.
               records:
                 type: array
                 description: >

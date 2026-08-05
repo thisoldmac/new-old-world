@@ -5,7 +5,10 @@
 
 #include "transitions_logic.h"
 
+#include <stddef.h>
 #include <string.h>
+
+#include "json.h"
 
 void now_transitions_fill_status(const NowEventBlock *block,
                                  NowEventU32 cursor, NowEventU32 now_ticks,
@@ -118,6 +121,83 @@ const char *now_transitions_parse_line(const char *args,
         ++args;
     }
     return args;
+}
+
+NowTransitionsArgsResult now_transitions_start_args(const char *request_json,
+                                                    NowTransitionsStartReq *req,
+                                                    char *target_buf,
+                                                    long target_cap)
+{
+    unsigned long v = 0;
+
+    if (req == NULL) {
+        return kNowTransitionsArgsUnreadable;
+    }
+    memset(req, 0, sizeof *req);
+    if (target_buf != NULL && target_cap > 0) {
+        target_buf[0] = '\0';
+    }
+
+    if (!now_json_find_wide_u32(request_json, "a5", &v, &req->has_a5)) {
+        return kNowTransitionsArgsBadA5;
+    }
+    req->a5 = (NowEventU32)v;
+    if (!now_json_find_wide_u32(request_json, "serialHi", &v,
+                                &req->has_serial_hi)) {
+        return kNowTransitionsArgsBadSerial;
+    }
+    req->serial_hi = (NowEventU32)v;
+    if (!now_json_find_wide_u32(request_json, "serialLo", &v,
+                                &req->has_serial_lo)) {
+        return kNowTransitionsArgsBadSerial;
+    }
+    req->serial_lo = (NowEventU32)v;
+    if (!now_json_find_wide_bool(request_json, "front", &req->front_true,
+                                 &req->has_front)) {
+        return kNowTransitionsArgsBadFront;
+    }
+    /* `target`, and never `name`. The envelope carries `"name"` already —
+       the verb's own — and this scan is FLAT, so reading `name` here read
+       the verb back and armed nothing, by any route. The whole frame is
+       deliberately what is scanned; see the header. */
+    if (target_buf != NULL && target_cap > 0
+        && now_json_find_string(request_json, "target", target_buf,
+                                target_cap)) {
+        req->target = target_buf;
+    }
+    req->ttl_ticks = now_json_find_int(request_json, "ttlTicks", 0);
+    return kNowTransitionsArgsOK;
+}
+
+const char *now_transitions_args_code(NowTransitionsArgsResult r)
+{
+    switch (r) {
+    case kNowTransitionsArgsOK:        return "ok";
+    case kNowTransitionsArgsBadA5:     return "bad-a5";
+    case kNowTransitionsArgsBadSerial: return "bad-serial";
+    case kNowTransitionsArgsBadFront:  return "bad-front";
+    case kNowTransitionsArgsUnreadable:
+    default:                           break;
+    }
+    return "unreadable";
+}
+
+const char *now_transitions_args_message(NowTransitionsArgsResult r)
+{
+    switch (r) {
+    case kNowTransitionsArgsOK:
+        return "";
+    case kNowTransitionsArgsBadA5:
+        return "a5 must be a decimal or 0x string";
+    case kNowTransitionsArgsBadSerial:
+        return "serialHi and serialLo must be decimal or 0x strings";
+    case kNowTransitionsArgsBadFront:
+        return "front must be true or false";
+    case kNowTransitionsArgsUnreadable:
+    default:
+        break;
+    }
+    return "this request cannot be served";
 }
 
 const char *now_transitions_kind_name(NowEventU32 kind)
