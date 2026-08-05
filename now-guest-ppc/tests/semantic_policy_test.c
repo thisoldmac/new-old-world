@@ -172,6 +172,150 @@ int main(void)
     check(now_semantic_policy_control(&policy, 1, 2, 134, &control),
           "35-control window reaches its last typed control");
 
+    /* ---- P2's second cell: one reply fills many facts ---- */
+    {
+        NowPeekSemanticBatchCell batch;
+        NowPeekU32 start = 99;
+        int i;
+
+        memset(&policy, 0, sizeof(policy));
+        now_semantic_policy_begin(&policy, 7, 1);
+
+        /* Before anything is known, a window is worth asking about from
+           the top. This is what replaces 122 separate requests. */
+        check(now_semantic_policy_batch_plan(&policy, 1, 2, &start)
+                  && start == 0,
+              "an unknown window is planned from ordinal 0");
+
+        /* A full reply: twelve controls typed in one pass. */
+        memset(&batch, 0, sizeof(batch));
+        batch.response_writer_epoch = 7;
+        batch.response_scene_generation = 1;
+        batch.response_target_a5 = 1;
+        batch.response_window = 2;
+        batch.response_start = 0;
+        batch.response_status = kNowPeekSemanticStatusOk;
+        batch.response_record_count = 12;
+        batch.response_total_count = 12;
+        for (i = 0; i < 12; ++i) {
+            batch.records[i].control = (NowPeekU32)(0x500 + i * 8);
+            batch.records[i].kind = kNowPeekSemanticControlPushButton;
+            batch.records[i].status = kNowPeekSemanticStatusOk;
+        }
+        batch.records[3].kind = kNowPeekSemanticControlListBox;
+        now_semantic_policy_ingest_batch(&policy, &batch);
+
+        for (i = 0; i < 12; ++i) {
+            check(now_semantic_policy_control(&policy, 1, 2,
+                                              (NowPeekU32)(0x500 + i * 8),
+                                              &control),
+                  "every control in the reply gained a fact");
+        }
+        check(now_semantic_policy_control(&policy, 1, 2, 0x500 + 3 * 8,
+                                          &control)
+                  && control.class_kind == kNowPeekSemanticControlListBox,
+              "a fact is joined by the control its record named, not by order");
+        check(!now_semantic_policy_control(&policy, 1, 2, 0x4444, &control),
+              "a control the reply did not name gains nothing");
+        check(!now_semantic_policy_control(&policy, 9, 2, 0x500, &control),
+              "another process does not inherit these facts");
+
+        /* A drained window stops being asked about - otherwise a control
+           the walk cannot reach would re-request it forever. */
+        check(!now_semantic_policy_batch_plan(&policy, 1, 2, &start),
+              "a drained window is not asked again");
+        check(now_semantic_policy_batch_plan(&policy, 1, 3, &start),
+              "a different window is still worth asking about");
+    }
+
+    /* ---- a window larger than one reply is drained, not truncated ---- */
+    {
+        NowPeekSemanticBatchCell batch;
+        NowPeekU32 start = 0;
+        int i;
+
+        memset(&policy, 0, sizeof(policy));
+        now_semantic_policy_begin(&policy, 7, 1);
+
+        memset(&batch, 0, sizeof(batch));
+        batch.response_writer_epoch = 7;
+        batch.response_scene_generation = 1;
+        batch.response_target_a5 = 1;
+        batch.response_window = 2;
+        batch.response_start = 0;
+        batch.response_status = kNowPeekSemanticStatusTruncated;
+        batch.response_record_count = kNowPeekSemanticMaxRecords;
+        batch.response_total_count = 40;
+        for (i = 0; i < kNowPeekSemanticMaxRecords; ++i) {
+            batch.records[i].control = (NowPeekU32)(0x800 + i * 8);
+            batch.records[i].kind = kNowPeekSemanticControlCheckBox;
+            batch.records[i].status = kNowPeekSemanticStatusOk;
+        }
+        now_semantic_policy_ingest_batch(&policy, &batch);
+
+        check(now_semantic_policy_batch_plan(&policy, 1, 2, &start)
+                  && start == kNowPeekSemanticMaxRecords,
+              "a truncated window resumes where the page ended");
+
+        /* The second page completes it. */
+        memset(&batch, 0, sizeof(batch));
+        batch.response_writer_epoch = 7;
+        batch.response_scene_generation = 1;
+        batch.response_target_a5 = 1;
+        batch.response_window = 2;
+        batch.response_start = kNowPeekSemanticMaxRecords;
+        batch.response_status = kNowPeekSemanticStatusOk;
+        batch.response_record_count = 8;
+        batch.response_total_count = 40;
+        for (i = 0; i < 8; ++i) {
+            batch.records[i].control = (NowPeekU32)(0x900 + i * 8);
+            batch.records[i].kind = kNowPeekSemanticControlRadioButton;
+            batch.records[i].status = kNowPeekSemanticStatusOk;
+        }
+        now_semantic_policy_ingest_batch(&policy, &batch);
+        check(!now_semantic_policy_batch_plan(&policy, 1, 2, &start),
+              "the drained window stops asking");
+        check(now_semantic_policy_control(&policy, 1, 2, 0x900, &control)
+                  && control.class_kind
+                        == kNowPeekSemanticControlRadioButton,
+              "the second page's facts are kept too");
+        check(now_semantic_policy_control(&policy, 1, 2, 0x800, &control),
+              "and the first page's facts survive it");
+    }
+
+    /* ---- a reply the guard would not have passed is still not trusted ---- */
+    {
+        NowPeekSemanticBatchCell batch;
+
+        memset(&policy, 0, sizeof(policy));
+        now_semantic_policy_begin(&policy, 7, 5);
+        memset(&batch, 0, sizeof(batch));
+        batch.response_writer_epoch = 6;   /* a previous writer */
+        batch.response_scene_generation = 5;
+        batch.response_target_a5 = 1;
+        batch.response_window = 2;
+        batch.response_status = kNowPeekSemanticStatusOk;
+        batch.response_record_count = 1;
+        batch.response_total_count = 1;
+        batch.records[0].control = 0x700;
+        batch.records[0].kind = kNowPeekSemanticControlPushButton;
+        now_semantic_policy_ingest_batch(&policy, &batch);
+        check(!now_semantic_policy_control(&policy, 1, 2, 0x700, &control),
+              "a reply from a previous writer is not ingested");
+
+        batch.response_writer_epoch = 7;
+        batch.response_scene_generation = 1;   /* older than two scenes */
+        now_semantic_policy_ingest_batch(&policy, &batch);
+        check(!now_semantic_policy_control(&policy, 1, 2, 0x700, &control),
+              "a reply older than the freshness window is not ingested");
+
+        batch.response_scene_generation = 5;
+        batch.response_status = kNowPeekSemanticStatusInvalid;
+        now_semantic_policy_ingest_batch(&policy, &batch);
+        check(!now_semantic_policy_control(&policy, 1, 2, 0x700, &control),
+              "a refused reply leaves no facts behind");
+    }
+
     if (g_failures != 0) return 1;
     puts("semantic policy: terminal menu -> class -> list -> next control");
     return 0;
