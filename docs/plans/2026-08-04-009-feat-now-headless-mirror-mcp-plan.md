@@ -27,9 +27,15 @@ date: 2026-08-04
 - **Tail ownership:** With MCP present or absent, the Mirror window behaves
   identically. Every projection added here reads or drives what the window
   already reads or drives.
-- **Handoff status:** Slice 0 (metrics) is implemented, tested and gate-green
-  at `cafa61e`; it has **not** been proven over a live socket. Slices 1–4 are
-  unstarted.
+- **Handoff status:** Slices 0–3 are implemented, gate-green and proven over
+  a live socket against an emulated Power Mac G4. The first MCP-driven act,
+  2026-08-05: `activate` against the published `process:process-ffc0941c`
+  settled `confirmed` — waited 0 ms, dispatch 112 ms, settle 46 ms — and the
+  Finder came front with its Macintosh HD window. It appears in
+  `now_mirror_metrics` as `click Finder`, the same label and the same clocks
+  the Mirror page's Acts card shows, which is the invariant this arc exists
+  to establish. Still owed: the paired hand-versus-MCP comparison (§
+  Verification), and slice 4.
 
 ---
 

@@ -90,6 +90,19 @@ def summarise(operation: str, reply: dict) -> str:
     """A few lines a person can read mid-drive. Never a substitute for the
     reply: `--json` is always available and the summary says when it has
     nothing to add."""
+    drive = reply.get("mirrorDriveResult") or {}
+    if operation == "mirror_drive" and drive:
+        if not drive.get("available", False):
+            bad = drive.get("unavailable") or {}
+            return (f"refused: {bad.get('code', '?')}\n"
+                    f"  {bad.get('message', '')}")
+        op = drive.get("operation") or {}
+        return ("operation {id}\n  outcome {outcome}{reason}\n"
+                "  settled {settled}, awaits observation {awaits}".format(
+                    id=op.get("id"), outcome=op.get("outcome"),
+                    reason=f" ({op['reason']})" if op.get("reason") else "",
+                    settled=op.get("settled"),
+                    awaits=op.get("awaitsObservation")))
     result = reply.get("mirrorReadResult") or {}
     if operation != "mirror_read" or not result:
         return json.dumps(reply, indent=2, sort_keys=True)
@@ -168,6 +181,20 @@ def main() -> int:
                         help="mirror_read wait: afterSnapshotID")
     parser.add_argument("--timeout-ms", type=int,
                         help="mirror_read wait: timeoutMs")
+    parser.add_argument("--gesture",
+                        help="mirror_drive: select|close|zoom|activate|"
+                             "menuItem|hide|hideOthers|showAll|key|type|"
+                             "finderOpen|finderSelect")
+    parser.add_argument("--entity", help="mirror_drive: published entity id")
+    parser.add_argument("--menu", type=int, help="mirror_drive: menu id")
+    parser.add_argument("--item", type=int, help="mirror_drive: 1-based item")
+    parser.add_argument("--code", type=int, help="mirror_drive: virtual keycode")
+    parser.add_argument("--char", type=int, help="mirror_drive: character code")
+    parser.add_argument("--mods", type=int, help="mirror_drive: modifier bits")
+    parser.add_argument("--text-arg", help="mirror_drive: text to type")
+    parser.add_argument("--name", help="mirror_drive: Finder item name")
+    parser.add_argument("--in", dest="container",
+                        help="mirror_drive: desktop, or a window entity id")
     parser.add_argument("--json", action="store_true",
                         help="print the reply verbatim")
     parser.add_argument("--timeout", type=float, default=30.0,
@@ -188,6 +215,16 @@ def main() -> int:
         if args.timeout_ms is not None:
             mirror["timeoutMs"] = args.timeout_ms
         request["mirrorReadRequest"] = mirror
+    if args.gesture:
+        drive = {"gesture": args.gesture}
+        for key, value in (("entityID", args.entity), ("menuID", args.menu),
+                           ("itemIndex", args.item), ("keyCode", args.code),
+                           ("keyChar", args.char), ("modifiers", args.mods),
+                           ("text", args.text_arg), ("itemName", args.name),
+                           ("container", args.container)):
+            if value is not None:
+                drive[key] = value
+        request["mirrorDriveRequest"] = drive
 
     reply = call(request, timeout=args.timeout)
     if args.json:
