@@ -235,7 +235,31 @@ final class MirrorStateProjectionService {
                     knowledge: item.semantic.knowledge.rawValue,
                     number: item.number)
             }
-            let all = controls + dialogItems
+            /* **The Finder's own items, and the omission that hid them.**
+               Desktop icons and a folder window's file rows are neither
+               controls nor dialog items — they are files the Finder draws,
+               carried in `window.items`. Projecting only the first two
+               reported the desktop as a window with zero elements while
+               the machine was showing seventeen icons, which is exactly
+               the "we cannot capture this class" wall this arc exists to
+               remove. Found on 2026-08-05 by pairing a live snapshot
+               against a screendump. */
+            let finderItems = (window.items ?? []).map { item in
+                AgentIntegrationMirrorSurfaceItem(
+                    source: "finderItem",
+                    /* Addressed BY NAME, which is how the Finder itself
+                       addresses them and why `finderOpen` takes a name
+                       rather than a reference. */
+                    ref: nil, role: item.kind, title: item.name,
+                    rect: .init(l: item.x, t: item.y,
+                                r: item.x, b: item.y),
+                    enabled: true, visible: !item.invisible,
+                    value: nil, checked: nil,
+                    kind: item.alias ? "alias" : item.kind,
+                    state: item.placed ? "placed" : "unplaced",
+                    text: item.type, knowledge: nil, number: nil)
+            }
+            let all = controls + dialogItems + finderItems
             return .init(
                 entityID: MirrorEntityID.window(window, in: scene)
                     ?? window.id,

@@ -519,11 +519,16 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             interaction: asked.interaction,
             outcome: cycleOutcome,
             windows: scene?.windows.count,
-            /* Controls plus reported dialog items: the two together are
-               what a walk actually had to enumerate, and a rewalk's cost
-               tracks this far better than the window count does. */
+            /* Controls, dialog items AND the Finder's own items: what a
+               walk actually had to enumerate. The third term was missing
+               until 2026-08-05, so a whole drive against a desktop showing
+               seventeen icons measured 60 cycles of `elements 0` — the
+               same omission the snapshot projection had, found in the same
+               pairing. An instrument with the producer's blind spot
+               cannot measure the blind spot. */
             elements: scene?.windows.reduce(0) {
                 $0 + $1.controls.count + ($1.dialogItems?.count ?? 0)
+                    + ($1.items?.count ?? 0)
             }))
         lastCyclePublishedAt = published
         cycleAsked = nil

@@ -236,6 +236,60 @@ final class MirrorStateProjectionServiceTests: XCTestCase {
         XCTAssertEqual(field.text, "/")
     }
 
+    func testDesktopIconsAreCarriedAndNotReportedAsAnEmptyWindow()
+        async throws {
+        let document = #"""
+        {
+          "version":2,"seq":4,"capturedAt":4,"source":"peek",
+          "screen":{"w":800,"h":600},
+          "apps":[{"psn":"0.3","name":"Finder","front":true,
+                   "incarnation":"process-finder"}],
+          "processes":[{"psn":"0.3","name":"Finder","front":true,
+                        "signature":"MACS",
+                        "incarnation":"process-finder"}],
+          "menubar":{"app":"Finder","menus":[]},
+          "windows":[{
+            "id":"0.3/Desktop#0","app":"Finder","psn":"0.3",
+            "title":"Desktop",
+            "rect":{"l":0,"t":0,"r":800,"b":600},
+            "front":true,"z":0,"visible":true,"controls":[],
+            "ref":"desktop-ref",
+            "items":[
+              {"name":"Macintosh HD","kind":"folder","type":null,
+               "creator":null,"x":700,"y":40,"placed":true,
+               "alias":false,"invisible":false},
+              {"name":"Trash","kind":"folder","type":null,"creator":null,
+               "x":700,"y":520,"placed":true,"alias":false,
+               "invisible":false}
+            ],
+            "incarnation":"process-finder/window-desktop"
+          }],
+          "meta":{"errors":[],"coverage":[]}
+        }
+        """#
+        let registry = MirrorStateEngineRegistry()
+        let engine = registry.engine(for: key)
+        _ = engine.accept(try JSONDecoder().decode(
+            Scene.self, from: Data(document.utf8)))
+
+        let result = await service(registry).read(.init(intention: .snapshot))
+        let surface = try XCTUnwrap(result.value?.snapshot?.surfaces.first)
+
+        /* Reported 0/0 while the machine drew seventeen icons, because the
+           projection carried controls and dialog items and nothing else.
+           A Finder item is neither: it is a file the Finder draws. */
+        XCTAssertEqual(surface.itemTotal, 2)
+        let disk = try XCTUnwrap(surface.items.first {
+            $0.title == "Macintosh HD"
+        })
+        XCTAssertEqual(disk.source, "finderItem")
+        XCTAssertEqual(disk.kind, "folder")
+        /* Addressed by NAME — a Finder icon has no reference, which is why
+           `finderOpen` takes one. Absent rather than an empty string, so a
+           caller sees it cannot be addressed by ref. */
+        XCTAssertNil(disk.ref)
+    }
+
     // MARK: - the journal: which face drove it
 
     func testJournalTellsAnAgentDrivenActFromAHandDrivenOne() async throws {
