@@ -6,10 +6,38 @@ import NOWAgentIntegration
 
 /// A scripted guest: dials the listener over loopback, sends frames, and
 /// collects decoded control replies.
+///
+/// **Why the dial can be refused, and why it is retried.** Every listener in
+/// this suite binds port 0 and every fake guest dials from a source port the
+/// kernel picks, so both ends of every test connection come out of the one
+/// ephemeral range this Mac has (49152–65535). A full run makes ~400 of
+/// them. When the kernel picks a source port that reproduces the 4-tuple of
+/// a connection still on the machine, `connect` is refused with EADDRINUSE
+/// — and Network.framework does not fail such a connection, it parks it in
+/// `.waiting` and leaves it there, which reads at the test as a guest that
+/// never arrived. That is the whole of the five fixed timeouts recorded in
+/// docs/open-issues.md on 2026-08-05: nothing about the code under test,
+/// and nothing a contributor could quit to clear.
+///
+/// So a refused dial is retried on a fresh socket, replaying what was
+/// queued. A replay is the whole of the recovery because a connection that
+/// never reached `.ready` never delivered a byte.
 @MainActor
 final class FakeGuest {
-    let connection: NWConnection
-    private let decoder = FrameDecoder()
+    /// The current socket. Replaced by `redial()`, so read it rather than
+    /// holding it — `guest.connection.cancel()` at the end of a test is
+    /// still correct, it just may be cancelling the second one.
+    private(set) var connection: NWConnection
+    private let port: UInt16
+    private var decoder = FrameDecoder()
+    /// Bytes handed over before the connection went `.ready`, kept so a
+    /// redial can put them on the new socket. Dropped at `.ready`, after
+    /// which sends are real deliveries and a replay would double them.
+    private var queued: [Data] = []
+    private var isReady = false
+    /// Bounded so a dial that is refused for some other reason still fails
+    /// at the test's own timeout rather than spinning forever.
+    private var redialsLeft = 20
     private(set) var received: [ControlMessage] = []
     /// Bulk payload the host has sent us — the guest side of a put.
     private(set) var bulkReceived = Data()
@@ -18,43 +46,93 @@ final class FakeGuest {
     var onClose: (() -> Void)?
 
     init(port: UInt16) {
-        connection = NWConnection(
-            host: .ipv4(.loopback),
-            port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
+        self.port = port
+        connection = Self.dial(port)
+    }
+
+    private static func dial(_ port: UInt16) -> NWConnection {
+        NWConnection(host: .ipv4(.loopback),
+                     port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
     }
 
     func start() {
-        connection.stateUpdateHandler = { [weak self] state in
+        attach(connection)
+    }
+
+    private func attach(_ conn: NWConnection) {
+        conn.stateUpdateHandler = { [weak self] state in
             Task { @MainActor in
-                if case .failed = state { self?.markClosed() }
-                if case .cancelled = state { self?.markClosed() }
+                /* A socket we have already replaced still delivers its last
+                   callbacks; they belong to nobody. */
+                guard let self, conn === self.connection else { return }
+                switch state {
+                case .ready:
+                    self.isReady = true
+                    self.queued.removeAll()
+                case .waiting(let error) where Self.isAddressInUse(error):
+                    self.redial()
+                case .failed, .cancelled:
+                    self.markClosed()
+                default:
+                    break
+                }
             }
         }
-        connection.start(queue: .main)
-        receiveLoop()
+        conn.start(queue: .main)
+        receiveLoop(on: conn)
+    }
+
+    private static func isAddressInUse(_ error: NWError) -> Bool {
+        guard case .posix(let code) = error else { return false }
+        return code == .EADDRINUSE
+    }
+
+    /// Throws the refused socket away and dials again from a new source
+    /// port, replaying everything queued.
+    private func redial() {
+        guard redialsLeft > 0 else { return }
+        redialsLeft -= 1
+        let refused = connection
+        /* Detached before cancelling, so our own teardown does not arrive
+           at the test as the host hanging up. */
+        refused.stateUpdateHandler = nil
+        refused.cancel()
+        connection = Self.dial(port)
+        decoder = FrameDecoder()
+        attach(connection)
+        for data in queued {
+            connection.send(content: data, completion: .idempotent)
+        }
     }
 
     private func markClosed() {
         guard !wasClosed else { return }
         wasClosed = true
+        /* A guest hangs up when the host does. Without this the socket sits
+           in CLOSE_WAIT holding its port pair for the rest of the process —
+           about 150 of the ~400 dials in a full run were never cancelled by
+           hand — which is what makes the collision above likely enough to
+           be reproducible. */
+        connection.cancel()
         onClose?()
     }
 
     func send(_ message: ControlMessage) throws {
         let payload = try ControlMessageCodec.encode(message)
         let frame = try FrameCodec.encode(channel: .control, payload: payload)
-        connection.send(content: frame, completion: .idempotent)
+        sendRaw(frame)
     }
 
     func sendRaw(_ data: Data) {
+        if !isReady { queued.append(data) }
         connection.send(content: data, completion: .idempotent)
     }
 
-    private func receiveLoop() {
-        connection.receive(minimumIncompleteLength: 1,
-                           maximumLength: 65536) { [weak self] data, _, done, _ in
+    private func receiveLoop(on conn: NWConnection) {
+        conn.receive(minimumIncompleteLength: 1,
+                     maximumLength: 65536) { [weak self] data, _, done, _ in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, conn === self.connection else { return }
                 if let data, !data.isEmpty,
                    let frames = try? self.decoder.feed(data) {
                     for frame in frames {
@@ -69,7 +147,8 @@ final class FakeGuest {
                         }
                     }
                 }
-                if done { self.markClosed() } else { self.receiveLoop() }
+                if done { self.markClosed() }
+                else { self.receiveLoop(on: conn) }
             }
         }
     }

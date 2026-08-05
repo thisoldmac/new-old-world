@@ -11,8 +11,13 @@ final class HostAppStateWiringTests: XCTestCase {
         let suite = "HostAppStateWiring.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
-        // A specific, unlikely-taken port; listen at launch.
-        defaults.set(52981, forKey: "listenPort")
+        /* Port 0, and the bound port is read back below. A fixed number is
+           what this used to do — 52981, "a specific, unlikely-taken port" —
+           and it is inside the ephemeral range (49152–65535) every other
+           test in this suite draws its listeners and its dials from, so it
+           was intermittently taken by this very process and the bind failed
+           with EADDRINUSE (docs/open-issues.md, 2026-08-05). */
+        defaults.set(0, forKey: "listenPort")
         defaults.set(true, forKey: "listenAtLaunch")
 
         let state = HostAppState(registry: .standard, defaults: defaults)
@@ -31,16 +36,12 @@ final class HostAppStateWiringTests: XCTestCase {
             return XCTFail("listener never became ready: \(state.listener.state)")
         }
 
-        let guest = NWConnection(host: .ipv4(.loopback),
-                                 port: NWEndpoint.Port(rawValue: 52981)!,
-                                 using: .tcp)
-        defer { guest.cancel() }
-        guest.start(queue: .main)
-        let hello = try ControlMessageCodec.encode(.hello(
+        let guest = FakeGuest(port: try XCTUnwrap(state.listener.boundPort))
+        defer { guest.connection.cancel() }
+        guest.start()
+        try guest.send(.hello(
             Hello(contract: Contract.revision, side: "guest", version: "0.1.0",
                   name: "PowerBook 1400", os: "9.1", chunk: 8192)))
-        let frame = try FrameCodec.encode(channel: .control, payload: hello)
-        guest.send(content: frame, completion: .idempotent)
 
         try await wait {
             if case .connected = state.listener.state { return true }
