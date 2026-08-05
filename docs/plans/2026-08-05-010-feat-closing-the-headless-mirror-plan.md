@@ -84,6 +84,36 @@ decides how much of slice 6 exists. It needs no new mechanism, it is a
 lookup rather than an inference, and it may collapse most of the number. Do
 it before building anything, including before #3.
 
+## Who is doing what (2026-08-05)
+
+Five workstreams were fanned out in parallel, each in its own worktree and
+branch, because they touch disjoint file sets. The ordering argument above
+still holds — A gates the INTERPRETATION of live measurements, not the
+other work, so nothing had to wait on it.
+
+| | workstream | branch | touches |
+|---|---|---|---|
+| A | the executor question, the record-diff gate, the owed attribution test | `claude/mirror-executor-parity` | `NOWMirrorSource`, `MirrorDriveService`, `HostAppState` |
+| B | slice 6 rung zero — split the 190 | `claude/slice6-split-the-190` | guest `src/scene/`, the gap ledger |
+| C | the Process Manager selector, for Hide | *(read-only research, no branch)* | nothing |
+| D | `window.display`, and the omission-class test | `claude/mirror-window-display` | `MirrorStateProjectionService` |
+| F | 5b's delivery half, guest side only | `claude/p5-transitions-delivery` | `contract/`, guest `src/peek/`, `commands.c` |
+
+Two deliberate splits. **C is research with no code**: the selector number
+it is looking for is the one thing the whole Hide route rests on, and a
+phantom constant shipped into a resident that runs in every application's
+context is not a mistake this project can afford — so finding it and using
+it are separate acts. **F stops at the guest's wire and console faces**:
+the host consumer would collide with A and D, and it is a later slice.
+
+Known collision risk to watch when landing: B and F may both edit
+`scripts/test-native`'s manifest, and both add a native test.
+
+Not fanned out, and why: the lane amplifier (#8) and modal alerts (#10)
+both need a live guest to measure before they can be designed, and the VM
+stand-up cannot complete its cold boot unattended — that is its own task,
+in flight. Designing either against the old numbers would be guessing.
+
 ## The work
 
 ### A — Settle whether both faces really share one executor · **FIRST**
