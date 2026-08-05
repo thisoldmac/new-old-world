@@ -176,6 +176,126 @@ void now_semantic_policy_ingest(NowSemanticPolicy *policy,
     }
 }
 
+static NowSemanticWindowFact *window_slot(NowSemanticPolicy *policy,
+    NowPeekU32 a5, NowPeekU32 window)
+{
+    int i;
+    int empty = -1;
+
+    for (i = 0; i < kNowSemanticPolicyMaxWindows; ++i) {
+        NowSemanticWindowFact *fact = &policy->windows[i];
+
+        if (fact->a5 == a5 && fact->window == window) {
+            return fact;
+        }
+        if (empty < 0 && !alive(policy->scene, fact->expires_scene)) {
+            empty = i;
+        }
+    }
+    if (empty < 0) {
+        empty = 0;
+    }
+    memset(&policy->windows[empty], 0, sizeof(policy->windows[empty]));
+    policy->windows[empty].a5 = a5;
+    policy->windows[empty].window = window;
+    return &policy->windows[empty];
+}
+
+void now_semantic_policy_ingest_batch(NowSemanticPolicy *policy,
+                                      const NowPeekSemanticBatchCell *cell)
+{
+    NowSemanticWindowFact *window;
+    NowPeekU32 served;
+    unsigned int i, count;
+
+    if (policy == NULL || cell == NULL
+        || cell->response_writer_epoch != policy->owner_epoch
+        || !response_scene_is_current(cell->response_scene_generation,
+                                      policy->scene)) {
+        return;
+    }
+    if (cell->response_status != kNowPeekSemanticStatusOk
+        && cell->response_status != kNowPeekSemanticStatusTruncated) {
+        return;
+    }
+    count = cell->response_record_count;
+    if (count > kNowPeekSemanticMaxRecords) {
+        count = kNowPeekSemanticMaxRecords;
+    }
+    for (i = 0; i < count; ++i) {
+        const NowPeekSemanticClassRecord *record = &cell->records[i];
+        NowSemanticControlClassFact *fact;
+
+        /* The record NAMES its control; nothing here infers identity from
+           position. A record with no name was already refused by the
+           guard, and is skipped rather than trusted if one arrives. */
+        if (record->control == 0) {
+            continue;
+        }
+        fact = control_slot(policy, cell->response_target_a5,
+                            cell->response_window, record->control);
+        fact->status = record->status;
+        fact->kind = record->kind;
+        fact->value_length = record->text_copied;
+        memcpy(fact->value, record->text, fact->value_length);
+        /* The same retention the single-control op earns: a class is
+           tied to exact handles and a writer epoch, and is worth keeping
+           far longer than a list's contents. */
+        fact->expires_scene = policy->scene + 128;
+    }
+
+    window = window_slot(policy, cell->response_target_a5,
+                         cell->response_window);
+    served = cell->response_start + count;
+    window->total = cell->response_total_count;
+    window->next_start = served;
+    /* Complete means the walk has nothing further to offer - not that
+       every control gained a usable kind. A control the resident refused
+       still holds a fact saying so, and asking again would get the same
+       refusal. */
+    window->complete = (cell->response_status == kNowPeekSemanticStatusOk
+                        || served >= cell->response_total_count) ? 1 : 0;
+    if (window->complete) {
+        window->next_start = 0;
+        /* Outlive the classes it produced, or the window would be re-
+           walked while its own facts are still good. */
+        window->expires_scene = policy->scene + 128;
+    } else {
+        /* A partial drain is retried soon; it is the only state that
+           still owes work. */
+        window->expires_scene = policy->scene + 8;
+    }
+}
+
+int now_semantic_policy_batch_plan(const NowSemanticPolicy *policy,
+                                   NowPeekU32 a5, NowPeekU32 window,
+                                   NowPeekU32 *start)
+{
+    int i;
+
+    if (policy == NULL || a5 == 0 || window == 0) {
+        return 0;
+    }
+    for (i = 0; i < kNowSemanticPolicyMaxWindows; ++i) {
+        const NowSemanticWindowFact *fact = &policy->windows[i];
+
+        if (alive(policy->scene, fact->expires_scene)
+            && fact->a5 == a5 && fact->window == window) {
+            if (fact->complete) {
+                return 0;
+            }
+            if (start != NULL) {
+                *start = fact->next_start;
+            }
+            return 1;
+        }
+    }
+    if (start != NULL) {
+        *start = 0;
+    }
+    return 1;
+}
+
 int now_semantic_policy_menu_terminal(const NowSemanticPolicy *policy,
     NowPeekU32 a5, NowPeekU32 menu, NowPeekI32 id,
     NowSemanticMenuFact *out)
