@@ -728,7 +728,16 @@ typedef struct {
    back to the single-control op with no loss of correctness. */
 enum {
     kNowPeekSemanticBatchFormatNone = 0,
-    kNowPeekSemanticBatchFormatV1 = 1
+    kNowPeekSemanticBatchFormatV1 = 1,
+    /* The ceiling on the resident's bounded control walk, and therefore
+       the largest number of controls one window can ever report. It is
+       stated HERE because three parties now depend on it: the resident
+       bounds its walk array by it, the guard refuses a start ordinal at
+       or beyond it, and the application stops paging at it. This is the
+       limit that used to live only in the resident's own translation
+       unit - the same shape as the control-frame cap that was fine until
+       one of its three copies disagreed. */
+    kNowPeekSemanticBatchWalkMax = 64
 };
 
 /* Same 48 bytes as NowPeekSemanticRecord, and deliberately NOT that

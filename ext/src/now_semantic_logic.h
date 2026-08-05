@@ -31,4 +31,27 @@ void now_semantic_resolve(NowPeekSemanticCell *cell, NowPeekU32 ticks,
 void now_semantic_refuse(NowPeekSemanticCell *cell, NowPeekU32 ticks,
                          NowPeekU32 status);
 
+/* The batch source is two calls, not one, and the split is the point.
+   `collect` performs the ONE bounded hierarchy walk that serving any
+   control request already pays for, and hands back the controls it
+   enumerated. `classify_member` then types a control the walk itself
+   produced, so it must NOT re-prove membership - re-proving it per
+   control is what would turn one walk into thirty-two. */
+typedef struct {
+    void *ctx;
+    NowPeekU16 (*collect)(void *ctx, NowPeekU32 window, NowPeekU32 *out,
+                          NowPeekU16 cap);
+    NowPeekU32 (*classify_member)(void *ctx, NowPeekU32 window,
+                                  NowPeekU32 control, NowPeekU16 *kind,
+                                  unsigned char *text, NowPeekU16 cap,
+                                  NowPeekU16 *true_length,
+                                  NowPeekU32 *flags);
+} NowSemanticBatchSource;
+
+void now_semantic_batch_resolve(NowPeekSemanticBatchCell *cell,
+                                NowPeekU32 ticks,
+                                const NowSemanticBatchSource *source);
+void now_semantic_batch_refuse(NowPeekSemanticBatchCell *cell,
+                               NowPeekU32 ticks, NowPeekU32 status);
+
 #endif
