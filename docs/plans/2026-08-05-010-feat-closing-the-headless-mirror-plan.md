@@ -160,6 +160,49 @@ both need a live guest to measure before they can be designed, and the VM
 stand-up cannot complete its cold boot unattended — that is its own task,
 in flight. Designing either against the old numbers would be guessing.
 
+### All six landed, and what they cost each other (2026-08-05)
+
+Every workstream merged, full gate green. Three things the fan-out itself
+taught, which are about running agents in parallel rather than about the
+Mirror:
+
+- **A worktree's HEAD is not the branch you are continuing.** All five
+  code agents were handed worktrees parked on a commit up to 292 behind
+  the arc's head — one that contained neither the plan nor the files
+  named in the brief. **All five noticed and re-cut** off the parent,
+  citing the AGENTS.md rule. That the rule held five times out of five is
+  the good news; that every agent had to spend its opening moves on it is
+  the cost. **Name the fork point in the brief.**
+- **A derived number is only true at the moment it is derived.** Two
+  workstreams each re-derived `contract-coverage.md` while the other's
+  verb did not yet exist, so both were honest and both were stale on
+  arrival — 40/37/13 against 38/35/13. Re-derived at the merge: **41
+  declared, 38 PPC, 13 68K.** That file's "derive it, do not remember it"
+  rule needs a companion: **re-derive at the MERGE**, not only at the
+  edit. This is a new failure mode for it — not drift, concurrency.
+- **A brief's premise is worth stating as a premise.** Two of the six
+  briefs carried a claim that turned out false (the CDEF lookup, and
+  `ShowHideProcess` being absent). Both agents tested the premise instead
+  of building on it, and both said so first. Briefs that assert are
+  cheaper to write and more expensive to be wrong in; the ones here that
+  said "settle this with evidence, do not assume it either way" got the
+  better answers.
+
+### The live queue
+
+Nothing in this document has been driven against a machine. Five things
+now wait on one boot, which is why the cold-boot task mattered more than
+its size suggested:
+
+1. **`desktopItems`** — nil for the whole 2026-08-05 drive, which is why
+   item 1's control-panel half has never been exercised.
+2. **The split-the-190 histogram** — the corpus predates the field that
+   would carry it.
+3. **`window.display` content** — the shape is proven, the content is not.
+4. **P5's ring** — the reader and the writer have never met, on any
+   machine.
+5. **Hide** — it compiles, which is not one of the three levels.
+
 ## The work
 
 ### A — Settle whether both faces really share one executor · **DONE (tested), 2026-08-05**
