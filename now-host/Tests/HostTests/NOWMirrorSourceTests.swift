@@ -755,6 +755,19 @@ final class NOWMirrorIconParsingTests: XCTestCase {
                      + "\"Finder\")` = 0 on the same machine")
     }
 
+    /// A guest that raises answers `ok: true` with an empty output row, so
+    /// only `osaErr` distinguishes a refusal from an empty answer. An older
+    /// guest omits the row entirely, and that silence must not be promoted
+    /// into a failure it never reported.
+    func testOnlyAReportedNonZeroOSACodeCountsAsAFailure() {
+        XCTAssertTrue(NOWMirrorSource.isOSAFailure("-1753"))
+        XCTAssertTrue(NOWMirrorSource.isOSAFailure(" -1700 "))
+        XCTAssertFalse(NOWMirrorSource.isOSAFailure("0"))
+        XCTAssertFalse(NOWMirrorSource.isOSAFailure(""),
+                       "a guest that reports no code reported no failure")
+        XCTAssertFalse(NOWMirrorSource.isOSAFailure("nonsense"))
+    }
+
     /// The two passes are two scripts now, and their results are joined.
     /// Each arrives in SOURCE form carrying its OWN quotes, so joining
     /// them raw would leave a `""` inside a line and eat the rows on

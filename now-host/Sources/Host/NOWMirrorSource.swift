@@ -892,7 +892,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             while expectedTotal == nil || offset < expectedTotal! {
                 let read = await self.readingOutput(
                     "script", ["source": .text(Self.visibilityScript(
-                        offset: offset))])
+                        offset: offset))],
+                    osaFailureIsAnError: true)
+                if let error = read.error {
+                    self.note("visibility census refused at offset "
+                              + "\(offset): \(error)")
+                }
                 let page = read.value.map(Self.parseVisibility)
                 guard !read.truncated, read.error == nil,
                       let page, let total = page.total,
@@ -1473,13 +1478,15 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 source = Self.hideOtherApplicationsScript
             }
             let read = await readingOutput(
-                "script", ["source": .text(source)])
+                "script", ["source": .text(source)],
+                osaFailureIsAnError: true)
             if let error = read.error { return error }
             return Self.visibilityDispatchOutcome(read.value)
 
         case .showAll:
             let read = await readingOutput(
-                "script", ["source": .text(Self.showAllApplicationsScript)])
+                "script", ["source": .text(Self.showAllApplicationsScript)],
+                osaFailureIsAnError: true)
             if let error = read.error { return error }
             return Self.visibilityDispatchOutcome(read.value)
         }
@@ -1505,9 +1512,23 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// Macintosh HD window rendered as an empty box for an hour and the
     /// mirror had nothing to say about why, because "the script failed"
     /// and "nobody asked" were the same value.
+    /// `osaFailureIsAnError` extends that lesson to the guest's OTHER
+    /// refusal. A script that raises returns `ok: true` with an empty
+    /// `output` row and its reason in `osaErr`, so a caller reading only
+    /// `output` cannot tell "the Finder refused the question" from "the
+    /// answer is empty" — the same collapse, one label further in. It cost
+    /// the visibility census entirely: every row failed, the read looked
+    /// like an empty success, and the coverage claim blamed name ambiguity
+    /// (measured Mac OS 9.1, 2026-08-05).
+    ///
+    /// It is opt-in because one caller is built on a script that is EXPECTED
+    /// to raise: the Finder art pass is split from the item pass precisely so
+    /// its error takes down only the types, and promoting that to an error
+    /// would refetch every roster forever.
     private func readingOutput(_ verb: String,
                                _ args: [String: CommandArg],
-                               row: String = "output")
+                               row: String = "output",
+                               osaFailureIsAnError: Bool = false)
         async -> (value: String?, error: String?, truncated: Bool) {
         await withCheckedContinuation { continuation in
             listener.runCommand(verb, typed: args) { result in
@@ -1520,6 +1541,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 }
                 var value: String?
                 var truncated = false
+                var osaErr: String?
                 for cells in result.output?[verb] ?? [] where cells.first == row {
                     value = cells.count > 1 ? cells.last : ""
                 }
@@ -1527,9 +1549,30 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 where cells.first == "truncated" {
                     truncated = cells.last?.lowercased() == "true"
                 }
+                for cells in result.output?[verb] ?? []
+                where cells.first == "osaErr" {
+                    osaErr = cells.count > 1 ? cells.last : nil
+                }
+                if osaFailureIsAnError, let osaErr,
+                   Self.isOSAFailure(osaErr) {
+                    return continuation.resume(returning: (
+                        nil, "the guest's AppleScript raised osaErr \(osaErr)",
+                        truncated))
+                }
                 continuation.resume(returning: (value, nil, truncated))
             }
         }
+    }
+
+    /// Absent means an older guest that does not report the row at all, and
+    /// an unreported error must not read as a reported success — but neither
+    /// may a missing row invent one, so only a value that parses and is
+    /// non-zero counts as a failure.
+    static func isOSAFailure(_ raw: String) -> Bool {
+        guard let code = Int(raw.trimmingCharacters(in: .whitespaces)) else {
+            return false
+        }
+        return code != 0
     }
 
     /// The verbs with no typed projection on this host yet. Reads the
