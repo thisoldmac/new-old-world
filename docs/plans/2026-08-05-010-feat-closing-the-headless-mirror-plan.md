@@ -43,11 +43,11 @@ is. Slices 0–5 are done. What is NOT:
 
 | # | owed | from | state |
 |---|---|---|---|
-| 1 | a field-by-field DIFF of the operation record between faces | 009 § Verification, narrowed 2026-08-05 | the ceremony is done — both faces have been driven live many times and both settle. The **diff** has never been run, and it is where the two defects found on 2026-08-05 actually lived |
+| 1 | a field-by-field DIFF of the operation record between faces | 009 § Verification, narrowed 2026-08-05 | **DONE (tested).** `MirrorFaceParityTests` drives one interaction through `perform` twice against one engine and diffs the records by reflection, so a field added later cannot escape it. Watched failing on both 2026-08-05 defects and on a synthetic third |
 | 2 | slice 1's page-versus-reply check | slice 1 | compared against a log sharing the same source; testing one half twice. **This is the part that needs the screen** |
 | 3 | `window.display` — per-window QuickDraw ops in the snapshot | slice 2 | **not projected.** The content plane is live (generation 384 on the 2026-08-05 guest), so the drawing IS captured and MCP simply cannot see it |
-| 4 | does the MCP drive path hold an engine? | 2026-08-05 | **suspected broken.** If `shadowEngine` is nil there, every MCP act takes the direct path and can never settle — which would contradict slice 3's central claim |
-| 5 | source attribution through a held act | 2026-08-05 | fixed, **test owed**; a harnessed source never reached the broker, which may be #4 |
+| 4 | does the MCP drive path hold an engine? | 2026-08-05 | **ANSWERED: yes, always.** `shadowEngine` and `pinnedGuestKey` are set and cleared together, and a nil pin is refused BEFORE the engine is read — so a nil engine cannot produce `id: "direct"`. The cause was the deferred branch reporting a HELD act as the direct path. Fixed. **No measurement needs re-reading** |
+| 5 | source attribution through a held act | 2026-08-05 | **DONE (tested).** The harness needed the content join left OPEN — that is the deferred case. Green, and watched failing by reverting the argument |
 | 6 | `finderDeselect`; a `dialogItem` that does something | slice 4 | never driven live (the one exercised was a separator) |
 | 7 | item 1's control-panel half | 5c | fixed and unit-tested; **never exercised live** — `desktopItems` was nil for the whole 2026-08-05 drive |
 | 8 | the lane amplifier | 5c item 2 | untouched |
@@ -71,6 +71,14 @@ look finished — describes the direct path rather than the shared one. That
 would not be a bug to fix later; it would mean the numbers already recorded
 need re-reading. Everything else in this document is measured through that
 path, so nothing measured after it is worth more than the answer to it.
+
+> **Answered 2026-08-05, and the feared outcome did not happen.** The
+> engine is always bound on the MCP path — see A below. The recorded
+> numbers stand: an act reported `id: "direct"` still went through the
+> executor, the broker and its typed postcondition, so what was wrong
+> was the reply to the caller and not the path the act took. Read the
+> rest of this ordering with that settled; it was written when it was
+> not.
 
 **`window.display` (#3) is a slice 6 prerequisite, not a loose end.** Slice
 6's own rule is *to render a custom control, do not classify it — replay its
@@ -116,29 +124,52 @@ in flight. Designing either against the old numbers would be guessing.
 
 ## The work
 
-### A — Settle whether both faces really share one executor · **FIRST**
+### A — Settle whether both faces really share one executor · **DONE (tested), 2026-08-05**
 
 `now_mirror_drive` answered `id: "direct"` on 2026-08-05 while the Mirror
 page was cycling normally against the same guest, and a harnessed
 `NOWMirrorSource` never produced a broker record for the same gesture. The
 direct path is what runs when `shadowEngine` is nil.
 
-Find out which of these is true, in this order:
+Three candidates were named: (1) the drive service is handed a source with
+a nil `shadowEngine`; (2) it binds only after a guest key is selected and
+the drive arrived first; (3) something else, the two observations not
+sharing a cause.
 
-1. `HostAppState.mirrorSource` hands the drive service a source whose
-   `shadowEngine` is nil at drive time — every MCP act is unsettleable.
-2. It is bound but only after a guest key is selected, and the drive
-   arrived first — a timing hole with a narrow fix.
-3. Something else entirely, and the two observations do not share a cause.
+**The answer is (3) in form and better than any of them in substance: the
+engine is ALWAYS bound on this path, and the two observations DO share a
+cause — the deferred branch.** `shadowEngine` and `pinnedGuestKey` are
+written together in `start()` and cleared together in both of `stop()`'s
+branches, and `pinnedActionRefusal()` refuses by name whenever the pin is
+nil, before the engine is read. A nil engine therefore produces a
+refusal with a sentence and can never produce `id: "direct"`. (1) and (2)
+are structurally impossible rather than merely absent.
 
-An MCP `activate` DID settle `confirmed` on 2026-08-05, so this is not
-simply broken. That is what makes it worth an hour: a conditional defect in
-the measurement path is worse than a constant one, because half the readings
-are right.
+The live evidence had already refuted them and nobody had put the two
+halves together: the act that answered `id: "direct"` settled `confirmed`
+on a typed `windowNamedPresent` postcondition — a nil engine cannot mint
+one — and recorded `source: human`, which only the deferred branch
+produces. Same act, both facts.
 
-**Done when:** an MCP-driven act produces a broker record with
-`source: mcp` in a test that fails when the engine is unbound, and the
-2026-08-05 attribution fix (#5) has the regression test it is owed.
+What produces the answer is that a HELD act returns without enqueuing, so
+no record exists yet, and the service read that absence as the direct
+path. It is the third instance of one defect, not a new one: **the drive
+service reconstructing a distinction it was never given.** `perform` now
+answers `MirrorPerformDisposition` and the service reports what it is
+told.
+
+**The consequence for this document's Ordering section: the feared
+outcome did not happen.** No headless measurement recorded in this arc
+needs re-reading. Every act reported `id: "direct"` still went through
+`MirrorActionExecutor`, the broker and the typed postcondition — the
+REPLY was wrong, not the path. Slice 3's claim stands and now has a gate.
+
+**Done:** `MirrorFaceParityTests` (the record diff, the executor-level
+total diff, the held-act reply, and the owed attribution regression with
+its human twin) and three new `MirrorDriveServiceTests` cases. Each
+watched failing by mutation. **Not driven live** — no VM was stood up,
+so the reply an agent now gets for a held act has never been seen by a
+real MCP client.
 
 ### B — Slice 6 rung zero: split the 190 · **the measurement that sizes slice 6**
 
