@@ -63,9 +63,18 @@ is. Slices 0–5 are done. What is NOT:
 | 11 | the event tail's delivery half | 5b | guest half built and gate-green — and **`start` cannot arm by any route**, proven live: it reads its target with `now_json_find_string(json, "name")` over the whole request, and every envelope already carries `"name"` as the verb's own name. So the plane can never publish. `status` and `drain` answer correctly; one refusal was unparseable JSON and is fixed and re-driven. Arg-key fix handed off |
 | 12 | all of slice 6 | 6 | **rung zero ran and reframed it** — the 121 is a transport number, not a count of custom-drawn controls. The one-cell starvation is fixed in code (batched class resolution, 32 walks per window down to 1) and **nothing has watched it classify a real panel**. Slice 6's actual question — how much is genuinely custom — is still open, asked of one control |
 
-Two rig facts bound everything below: `scripts/spin-up-ppc` cannot complete
-its cold boot unattended (dispatched as its own task), and the interaction
-plane has never published a generation.
+One rig fact still bounds everything below: the interaction plane has
+never published a generation. The other — that `scripts/spin-up-ppc`
+cannot cold-boot unattended — was **fixed 2026-08-05** and is nearly
+closed: the guest now shuts ITSELF down through a 68K applet whose body
+is `ShutDwnPower()` (68K because the Shutdown Manager is
+`CALL_NOT_IN_CARBON`, and self-shutdown because nothing outside can reach
+this machine — QMP keyboard events never arrive, `mac99,via=pmu` reports
+`has-adb=false`, there is no absolute pointer, and a posted click cannot
+select from a menu). What remains is a wait condition: the script waits
+for QEMU to EXIT, and the emulated power-off never terminates it, so it
+hangs on a machine that has already shut down cleanly. Proven by quitting
+at that point and cold-booting — clean boot, 156 s, no repair modal.
 
 ## Ordering, and why it is not the obvious one
 
