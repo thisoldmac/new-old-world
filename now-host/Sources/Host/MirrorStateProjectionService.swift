@@ -208,6 +208,8 @@ final class MirrorStateProjectionService {
            Mac is drawing, which is the defect the Finder's own roster
            paging already had to learn. */
         let perWindow = 64
+        let budget = 240
+        var spent = 0
         return scene.windows.map { window in
             let controls = window.controls.map { control in
                 AgentIntegrationMirrorSurfaceItem(
@@ -260,13 +262,15 @@ final class MirrorStateProjectionService {
                     text: item.type, knowledge: nil, number: nil)
             }
             let all = controls + dialogItems + finderItems
+            let room = max(0, min(perWindow, budget - spent))
+            spent += min(all.count, room)
             return .init(
                 entityID: MirrorEntityID.window(window, in: scene)
                     ?? window.id,
                 title: window.title,
                 rect: Self.rect(window.rect), z: window.z,
                 front: window.front, visible: window.visible,
-                items: Array(all.prefix(perWindow)), itemTotal: all.count)
+                items: Array(all.prefix(room)), itemTotal: all.count)
         }
     }
 
