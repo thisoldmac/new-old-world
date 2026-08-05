@@ -213,6 +213,8 @@ run_py now-guest-ppc peek_owner_source_test.py
 run_c now-guest-ppc now_ext_core_logic_test.c \
       "-DNOW_PEEK_TABLE_HOST -I $repo_root/ext/src" \
       ../ext/src/now_ext_core_logic.c
+run_c now-guest-ppc event_read_test.c \
+      "-DNOW_PEEK_TABLE_HOST" src/peek/event_read.c
 run_c now-guest-ppc now_event_logic_test.c \
       "-DNOW_EVENT_LOGIC_STANDALONE -I $repo_root/ext/src" \
       ../ext/src/now_event_logic.c
