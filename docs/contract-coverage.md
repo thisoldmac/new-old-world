@@ -131,7 +131,7 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 
 PPC handles 39 inbound types; NOW-68K handles 23. **That count
 understates the difference** — see the next two sections, where two of
-these rows open into 36 command verbs and 14 hardware probes.
+these rows open into 41 command verbs and 14 hardware probes.
 
 (An earlier version of this file said 33 for the PowerPC guest and was
 wrong: the number had been hand-counted. It is derived now, and that is
@@ -151,7 +151,7 @@ hides most of what a machine can be asked — the hardware, network, RAM
 and ROM facts do not have message types of their own. They live behind
 `gestalt` and `census`, one row each above and a whole subsystem below.
 
-The registry is `x-commands` in the contract: **40 verbs.** Sixteen of
+The registry is `x-commands` in the contract: **41 verbs.** Sixteen of
 them landed on 2026-07-31 and are grouped at the foot of the table; the
 Dialog Manager act joined that group on 2026-08-03: the
 act plane, the reference layer that mints what it addresses, two verbs
@@ -163,6 +163,13 @@ it already said 39, which is this file's own rule failing in the small:
 a number nobody re-derived went stale beside numbers that had been.
 Re-derived from the greps at the foot, all three of them, rather than
 adjusted by one.)
+
+**Three of those 38 were missing from this table when `hide` was added on
+2026-08-05**, and the count read 35. `key` and `net` had landed without a
+row; `hide` is the third. That is the drift this file's own opening
+paragraph warns about — no test gates these tables — and it is worth
+recording rather than quietly correcting, because it is the second time a
+number here has been found wrong by re-deriving it.
 
 | Verb | What it asks the machine | PPC | 68K |
 |---|---|:--:|:--:|
@@ -182,6 +189,9 @@ adjusted by one.)
 | `launch` | open an application | ✅ | ✅ |
 | `quit` | ask an application to quit | ✅ | ✅ |
 | `front` | bring an application forward | ✅ | ✅ |
+| `hide` | hide or show an application, and read its visibility back | ✅ | ❌ — declared asymmetry, see below |
+| `key` | post one keystroke, with no modifiers | ✅ | ❌ |
+| `net` | this Mac's link, address and network hardware | ✅ | ❌ |
 | `put` | send a file from the guest | console only | ✅ |
 | `cancel` | stop the transfer in flight, either way | via UI / `file.cancel` | ✅ |
 | `putstat` | transfer diagnostics | ✅ | ❌ |
@@ -237,16 +247,16 @@ answers, a `start` writes a request; whether the resident then agrees
 inside the target is what `activity.passes` exists to say, and nobody
 has read it yet.
 
-**PPC serves 37 of 40.** `put` is console-only there and `cancel` is
+**PPC serves 38 of 41.** `put` is console-only there and `cancel` is
 not a verb at all, both deliberately: the host reaches those
 capabilities through the `file.*` families and that guest's own
 Workshop. `shotdiag` is the third, and the newest: it diagnoses a raw
 framebuffer walk the PowerPC guest does not have.
 
-**NOW-68K serves 13 of 40** — `help`, `ls`, `sw`, `census`, `put`,
+**NOW-68K serves 13 of 41** — `help`, `ls`, `sw`, `census`, `put`,
 `cancel`, `vprobe`, `screenshot`, `shotdiag`, `ps`, `launch`, `quit`,
-`front`. The twenty-seven it does not: `gestalt`, `catsearch`, `tail`,
-`reveal`, `vers`, `putstat`, `key`, `net`, `mirror`, the eleven of the
+`front`. The twenty-eight it does not: `gestalt`, `catsearch`, `tail`,
+`reveal`, `vers`, `putstat`, `key`, `net`, `mirror`, `hide`, the eleven of the
 act plane and the reference layer, the six registered on 2026-07-31 —
 `activate`, `actselftest`, `mouseloc`, `script`, `aesend`, `qdtrace` —
 and `transitions`.
@@ -266,6 +276,36 @@ and no one has asked for them there.
 
 Every asymmetry is argued in [command-parity.md](command-parity.md) and
 named with its reason in `CommandRegistryTests.notOnThePowerPCGuest`.
+
+### `hide` is PowerPC-only, and the reason is not "Carbon"
+
+The lazy version of this row would say the call is a Carbon one and the
+68K guest is not Carbon. That is true and it is not the reason, so it is
+worth stating what is.
+
+`ShowHideProcess` (Process Manager, selector `0x0060` under `_OSDispatch`,
+`$A88F`) is declared in Universal Interfaces 3.4.1 as **CarbonLib 1.5 and
+later, Non-Carbon CFM: not available**. The PowerPC guest reaches it as a
+weak CFM import from CarbonLib. NOW-68K cannot: there is no CarbonLib on a
+System 7.1 machine, so the only route from a 68K application is the trap
+inline the same header carries — a raw `_OSDispatch` with selector
+`0x0060`.
+
+**That route is refused rather than untried, and the refusal is the
+finding.** Apple's `_OSDispatch` does no bounds check on the selector: an
+unimplemented one does not return an error, it `rts`es into whatever
+follows the dispatch table, and there is no way to probe first. Nobody
+here knows whether System 7.1's Process Manager implements `0x0060` — the
+capability plainly existed, since 7.1's own Application menu hides
+applications, but whether the SELECTOR was public then is exactly the fact
+the CarbonLib-1.5 availability line makes doubtful. Calling it to find out
+risks a jump into arbitrary code on a 4 MB machine, to learn something a
+document could tell us.
+
+So the asymmetry is: **the PowerPC guest serves `hide`, NOW-68K does not,
+and it stays that way until the selector's presence under System 7.1 comes
+from a document rather than from an experiment.** That is a decision with a
+reason, not a to-do.
 
 ### `software.list` — one message, two amounts of answer
 
@@ -483,6 +523,19 @@ specific paths. The **exec console plane is the exception**: built and
 tested, never run on the 1400c, and not yet on a PowerPC emulator
 either — only NOW-68K's half of it has faced a live guest.
 
+**`hide` is the weakest row on this page and is listed so it cannot be
+mistaken for one of the arcs above.** It COMPILES, and that is not one of
+the three levels. Its argument grammar and its outcome vocabulary are
+native-tested; the weak-import guard is verified only as far as the
+generated PowerPC and the PEF loader section — the two symbols are import
+class `0x82` (weak) in a `0x40` (weak) CarbonLib entry, and the guard
+loads the TOC word CFM fills and compares it against zero. **No Macintosh,
+emulated or metal, has been watched hiding anything**, so nothing is known
+about the two questions only a machine can answer: whether
+`ShowHideProcess` accepts the frontmost process, and what it returns for
+the ones it is documented to decline. Until that is watched, Hide is
+UNBUILT in the ledger rather than fixed.
+
 **NOW-68K:**
 
 | Area | Status |
@@ -548,6 +601,19 @@ They are fixed or documented; the audit, and what a text scan can never
 catch, is [source-text-gates.md](source-text-gates.md). It is the reason
 this file's own future gate should be planned as a bounded check with its
 blind spots written down rather than as a guarantee.
+
+Last re-derived: **2026-08-05**, on `claude/hide-showhideprocess`, by
+running the commands above while adding `hide`. The verb registry was
+**35 in this file and 38 in the contract** — `key` and `net` had each
+landed without a row, and neither the counts nor the roster paragraphs
+had been re-derived since. Both are rows now, the counts are 38 / 35 /
+13, and the 68K roster is unchanged. Everything else checked out.
+
+That is the second consecutive derivation to find the same class of
+error, and both times it was a verb count that had been *maintained* — by
+hand, at the moment a verb landed — rather than derived. The counts have
+never been wrong in the direction that flatters the project; they have
+been wrong in the direction of the last person who edited them.
 
 Updated **2026-07-31** on `thread/p2-unify-refs`, by hand and not by
 re-derivation: the act plane and the reference layer took the verb count

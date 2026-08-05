@@ -383,6 +383,21 @@ static const char *const d_front[] = {
     NULL
 };
 
+static const char *const d_hide[] = {
+    "  What the Application menu does, through the Process",
+    "  Manager call that menu ends up in. The name is the",
+    "  rest of the line; --show puts it back, --status only",
+    "  reads. Flags LEAD, because names have spaces.",
+    "  It reads the flag back before answering, so it says",
+    "  \"is now hidden\" only when it saw that - never",
+    "  \"asked and assume\". Nothing by that name is a",
+    "  FAILURE, like \"front\" and unlike \"quit\".",
+    "  NOW itself is a fair target; a hidden application is",
+    "  still scheduled, so the wire keeps being served.",
+    "  Needs CarbonLib 1.5 or later and says so if not.",
+    NULL
+};
+
 static const char *const d_reveal[] = {
     "  Selects the item in its Finder window and brings",
     "  the Finder forward. Opens nothing, so any item",
@@ -483,6 +498,8 @@ const NowCommandDoc kNowCommandDocs[] = {
       "quit [--all] [--wait N | --no-wait] <name>", d_quit },
     { "front", 1, "bring an application on this Mac forward",
       "front <name>", d_front },
+    { "hide", 1, "hide or show an application on this Mac",
+      "hide [--show | --status] <name>", d_hide },
     { "reveal", 1, "show an item in this Mac's Finder",
       "reveal <name | full path | #n>", d_reveal },
     { "vers", 1, "one file's version resources",

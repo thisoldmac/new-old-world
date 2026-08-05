@@ -3127,6 +3127,93 @@ components:
         type: object
         properties:
           front: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    hide:
+      description: >
+        Hide or show a RUNNING application on the receiver, named the way
+        a person names it, and report what its visibility actually is
+        afterwards. This is the Application menu's own effect — Hide,
+        and the Show that puts it back — reached through the Process
+        Manager's ShowHideProcess rather than through anything that
+        imitates it.
+
+        IT EXISTS BECAUSE THE TWO OBVIOUS ROUTES ARE MEASURED DEAD, and
+        naming them here is cheaper than a third session rediscovering
+        one. Setting `visible` through the Finder's AppleScript object
+        model is refused (-10000, -10006, osaErr -1753): the property is
+        readable and read-only there. Commanding the Application menu
+        (menu -16489) dispatches and changes nothing, because that menu
+        is SYSTEM-owned — MenuSelect calls SystemMenu, and the Process
+        Manager's patch on that trap is what performs the hide, so
+        arming a patch on the front application's own MenuSelect skips
+        the only code that acts. Both are written up in
+        docs/open-issues.md.
+
+        VISIBILITY IS ONLY READABLE THROUGH IsProcessVisible.
+        ProcessInfoRec carries no visibility field, so nothing else on
+        a classic Mac can answer "is this hidden?" — and the flag that
+        call reads is the same one the system's own Application menu
+        tests when it decides whether Hide is enabled. One flag, both
+        readers. The receiver therefore serves the READ as well as the
+        write, and reports it as a row rather than only in prose: a
+        mutation whose effect cannot be observed cannot settle.
+
+          hidden        asked to hide, and the read-back says hidden
+          shown         asked to show, and the read-back says visible
+          is-hidden     --status: it is hidden. Nothing was changed
+          is-visible    --status: it is visible. Nothing was changed
+          unconfirmed   the call was accepted and the flag did not move
+          not-running   nothing of that name was running
+          ambiguous     several processes share the name
+          refused       ShowHideProcess returned an OSErr, which is in
+                        the message: it is documented to decline for
+                        some processes and the code is the evidence
+          unavailable   the receiver's CarbonLib does not export the
+                        call (it needs 1.5 or later), or its build has
+                        no import for it. Refused BY NAME, never a
+                        silent no-op
+          bad-args      the argument line did not parse
+
+        `ok` is true for the four outcomes the receiver OBSERVED —
+        hidden, shown, is-hidden, is-visible — and false for everything
+        else. `not-running` is ok:FALSE, following `front` rather than
+        `quit`: a process that is not there cannot be hidden, and a
+        caller whose next step assumes a hidden application must not
+        read "nothing by that name" as done.
+
+        The receiver's OWN process is a legitimate target, as it is for
+        `front` and unlike `quit`. A hidden application is still
+        scheduled on classic Mac OS, so the receiver keeps serving this
+        connection after hiding itself, and `hide --show` puts it back.
+
+        Matching is by exact process name, case-insensitive
+        (EqualString, diacritic-sensitive), against live processes only,
+        and several matches refuse rather than pick one — the same walk
+        and the same refusal as `quit` and `front`, below the same seam.
+      args:
+        type: object
+        properties:
+          target:
+            type: string
+            description: >
+              "[--show | --status] NAME", where NAME is the whole
+              remainder of the line — process names contain spaces, so
+              flags are LEADING and quotes are unnecessary (a fully
+              quoted name is accepted). No flag hides. "target" and not
+              "name" — see the arg-key rule in the preamble above.
+      x-line: >
+        The whole line, flags first: the name is the rest of it and may
+        contain spaces, so --show / --status must precede it. Parsed
+        guest-side, once, for both faces.
+      output:
+        type: object
+        description: >
+          Three rows. The third, ["Visible", "yes" | "no" | "unknown"],
+          is the read-back as a datum rather than as prose — and
+          "unknown" is a real answer, sent whenever the receiver
+          observed nothing (an unconfirmed call included). A caller must
+          not read "not seen visible" as "hidden".
+        properties:
+          hide: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
     reveal:
       description: >
         Show an installed item in the RECEIVER's own Finder, selected in

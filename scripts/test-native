@@ -448,6 +448,7 @@ run_c now-guest-ppc cloud_card_cache_test.c "" \
 # at the root/path join whichever spelling of root arrived.
 run_c now-guest-ppc files_path_label_test.c  ""  src/files/files_path_label.c
 run_c now-guest-ppc proc_quit_args_test.c    ""  src/processes/proc_quit_args.c
+run_c now-guest-ppc proc_hide_args_test.c    ""  src/processes/proc_hide_args.c
 run_c now-guest-ppc processes_layout_test.c  ""  src/processes/processes_layout.c
 run_c now-guest-ppc software_layout_test.c   ""  src/software/software_layout.c
 run_c now-guest-ppc sw_vers_parse_test.c     ""  src/software/sw_vers_parse.c

@@ -1788,6 +1788,62 @@ on a build that was already correct.
   STRUCTURE region, which is a third convention again. It has not been
   measured and no consumer has complained, because the windows that
   matter come from the bound path.
+## UNVERIFIED: Hide has a route now, and nothing has watched it (2026-08-05)
+
+**This amends an entry that is not in this file yet.** The branch this was
+written on forked before "BROKEN: both Hide routes fail, each in its own
+way" landed; when the two meet, fold this into that entry rather than
+leaving two. What follows is written to stand alone either way.
+
+**The route is real and it is the Process Manager's own.** `ShowHideProcess`
+(selector `0x0060` under `_OSDispatch`, `$A88F`) and `IsProcessVisible`
+(`0x005F`) — Universal Interfaces 3.4.1, **CarbonLib 1.5 and later**, and
+our floor is 1.6, so they exist across the whole target range. The PowerPC
+guest now serves them as one `hide` verb on both faces
+(`hide [--show | --status] <name>`), and the contract declares it.
+
+**Two things had to be true first, and each had closed this route once
+before.** The headers on the toolchain's include path are Universal
+Interfaces 3.4 and both calls arrived in 3.4.1, so the guest declares them
+itself. And Retro68 ships **two CarbonLib import libraries that differ**:
+the default `-lCarbonLib` resolves to
+`toolchain/universal/libppc/libCarbonLib.a`, which does not export them,
+while `toolchain/multiversal/libppc/libCarbonLib.a` (3.4.1-derived, byte
+identical to Retro68's own `ImportLibraries/`) does. The earlier finding
+that "the Process Manager's visibility call is absent from the toolchain
+under any spelling" was measured against the archive that lacks it. **A
+sweep of a toolchain is only as good as the copy it swept.**
+
+**What is proven, and it is less than it sounds.** The verb cross-compiles;
+its argument grammar and its outcome vocabulary are native-tested
+(`proc_hide_args_test.c`); and the weak import is verified as far as the
+build products — the two symbols appear in the guest's PEF loader section
+as import class `0x82` (weak) inside a `0x40` (weak) CarbonLib entry, and
+the generated PowerPC for the guard loads the TOC word CFM fills and
+compares it against zero. Pointing the build at the archive without the
+symbols still links, and produces a guest that answers `unavailable`
+naming `ShowHideProcess` instead of one that will not build.
+
+**What is NOT proven is whether Hide works.** No Macintosh, emulated or
+metal, has been watched hiding anything. **Hide is UNBUILT in this ledger,
+not fixed.** Two questions only a machine can answer are open:
+
+- Whether `ShowHideProcess` accepts the FRONTMOST process. The Application
+  menu hides the front application, so the Process Manager plainly can —
+  but whether this entry point declines it is not known here.
+- What it returns for the processes it is documented to decline, and
+  whether a background-only application behaves differently. The verb
+  reports the `OSErr` rather than swallowing it, so the first run answers
+  this.
+
+**One trap found while building it, worth more than the verb.** A CFM weak
+import is checked by comparing the symbol's address against
+`kUnresolvedCFragSymbolAddress` (zero) — and **GCC deletes that comparison
+at `-O1` and above**, because a function designator is never null in
+standard C. Read in the generated assembly: the guard simply was not there.
+The address must be laundered through a `volatile` local so the compiler
+must load the TOC word CFM actually wrote. Any other weak-import guard in
+this tree written the obvious way is not a guard.
 
 ## "Agent: Running" was true and useless (2026-08-02)
 

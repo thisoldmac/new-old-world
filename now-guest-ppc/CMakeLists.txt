@@ -88,6 +88,7 @@ add_application(now-guest-ppc
     src/peek/semantic_policy.c
     ../now-guest-shared/src/now_semantic_guard.c
     src/processes/proc_actions.c
+    src/processes/proc_hide_args.c
     src/processes/proc_quit_args.c
     src/processes/processes_layout.c
     src/processes/processes_module.c
@@ -198,6 +199,76 @@ target_include_directories(now-guest-ppc PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 # The probe times tight read loops; at -O0 loop overhead pollutes the
 # bandwidth numbers.
 set_source_files_properties(src/census/vprobe.c PROPERTIES COMPILE_OPTIONS "-O2")
+
+# --- ShowHideProcess: one import library the default link cannot see -------
+#
+# `hide` needs ShowHideProcess and IsProcessVisible (Process Manager,
+# CarbonLib 1.5 and later). Our floor is CarbonLib 1.6, so they exist on
+# every machine we target - and this TOOLCHAIN cannot reach them, for two
+# separate reasons that have each closed this route once:
+#
+#   1. The headers on the include path are Universal Interfaces 3.4. Both
+#      calls arrived in 3.4.1. proc_actions.c declares them itself, with
+#      the 3.4.1 text and the selector, rather than waiting for a header.
+#   2. Retro68 ships TWO CarbonLib import libraries and they differ:
+#
+#        toolchain/multiversal/libppc/libCarbonLib.a   3.4.1-derived, HAS them
+#        toolchain/universal/libppc/libCarbonLib.a     locally generated, does not
+#        toolchain/powerpc-apple-macos/lib/libCarbonLib.a  -> symlink to `universal`
+#
+#      The default `-lCarbonLib` therefore resolves against the archive
+#      WITHOUT the symbols, and the first check of this route reported "the
+#      Process Manager's visibility call is absent from the toolchain under
+#      any spelling" from exactly that archive.
+#
+# So the 3.4.1 archive is named explicitly, by absolute path, and nothing
+# else about the link changes. Deliberately NOT a `-L` onto that directory:
+# a search path applies to every `-l` on the line (-lgcc, -lc,
+# -lretrocrt-carbon), and shadowing one of those by accident is a far worse
+# failure than the one being fixed. Archive members load on demand, so the
+# 3.4.1 archive answers first and the default one supplies whatever it does
+# not have - the resulting PEF carries exactly two CarbonLib import entries,
+# one strong and one weak, the same as before.
+#
+# ABSENT, THE BUILD STILL SUCCEEDS AND THE VERB REFUSES BY NAME. A
+# contributor whose Retro68 has only the locally generated archive is not
+# failing a gate; they get a guest that says "this Mac's CarbonLib does not
+# export ShowHideProcess" instead of one that will not link. The runtime
+# guard in proc_actions.c is the second, independent gate: the import is
+# WEAK, so a CarbonLib older than 1.5 resolves it to zero at load and the
+# same refusal is printed by a binary that built with the symbol present.
+#
+# The string search is not the proof - the LINK is. If it hits on an archive
+# that does not really define the symbols, the link fails naming them, which
+# is loud. It only decides which of the two shapes to compile.
+set(NOW_CARBONLIB_341 "${RETRO68_ROOT}/multiversal/libppc/libCarbonLib.a"
+    CACHE FILEPATH
+    "CarbonLib import library derived from Universal Interfaces 3.4.1")
+set(_now_have_showhide 0)
+if(EXISTS "${NOW_CARBONLIB_341}")
+    file(STRINGS "${NOW_CARBONLIB_341}" _now_shp LIMIT_COUNT 1
+         REGEX "ShowHideProcess")
+    file(STRINGS "${NOW_CARBONLIB_341}" _now_ipv LIMIT_COUNT 1
+         REGEX "IsProcessVisible")
+    if(_now_shp AND _now_ipv)
+        set(_now_have_showhide 1)
+    endif()
+endif()
+
+if(_now_have_showhide)
+    target_link_libraries(now-guest-ppc PRIVATE "${NOW_CARBONLIB_341}")
+    target_compile_definitions(now-guest-ppc PRIVATE
+        NOW_HAVE_SHOWHIDEPROCESS=1)
+    message(STATUS "hide: linking ShowHideProcess from ${NOW_CARBONLIB_341}")
+else()
+    target_compile_definitions(now-guest-ppc PRIVATE
+        NOW_HAVE_SHOWHIDEPROCESS=0)
+    message(STATUS
+        "hide: no CarbonLib import library with ShowHideProcess at "
+        "${NOW_CARBONLIB_341} - the `hide` verb will refuse by name. "
+        "Point -DNOW_CARBONLIB_341=... at a 3.4.1-derived libCarbonLib.a "
+        "(Retro68 ships one in ImportLibraries/) to build it in.")
+endif()
 
 # Generate the build stamp on every build. The buildstamp.cmake script hashes
 # all sources and produces a header with NOW_SRC_HASH and NOW_BUILT_AT. The

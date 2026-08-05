@@ -1190,6 +1190,45 @@ static void run_front(const char *request_json, long id, char *out, long cap)
              "[\"Outcome\",\"%s\"]]}}", id, esc, state);
 }
 
+/* hide: the Application menu's own effect, reached through the Process
+   Manager call that menu ends up in. Three rows rather than front's two,
+   and the third is the point — a caller reads what IsProcessVisible said
+   instead of parsing the sentence, and an outcome that observed nothing
+   answers "unknown" rather than the state it asked for. The ok/state/code
+   decision is proc_hide_args.c's, in one place, so this renderer cannot
+   invent a reply that carries an error code and ok:true. */
+static void run_hide(const char *request_json, long id, char *out, long cap)
+{
+    char arg[256];
+    char msg[240];
+    char esc[480];
+    NowProcHideOutcome outcome;
+    const char *code;
+
+    /* "target", never "name" — see run_vers. The whole line is the name,
+       flags leading, because process names have spaces. */
+    now_cmd_arg_rest(request_json, "target", arg, sizeof arg);
+    outcome = now_proc_hide_by_name(arg, msg, sizeof msg);
+    code = now_proc_hide_error(outcome);
+
+    now_json_escape(msg, esc, sizeof esc);
+    now_log(code == NULL ? kLogInfo : kLogWarn, "proc",
+            "#%ld hide [%s] %.80s", id, now_proc_hide_state(outcome), msg);
+    if (code != NULL) {
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                 "\"error\":{\"code\":\"%s\",\"message\":\"%s\"}}",
+                 id, code, esc);
+        return;
+    }
+    snprintf(out, (size_t)cap,
+             "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+             "\"output\":{\"hide\":[[\"Hide\",\"%s\"],"
+             "[\"Outcome\",\"%s\"],[\"Visible\",\"%s\"]]}}",
+             id, esc, now_proc_hide_state(outcome),
+             now_proc_hide_visible_word(outcome));
+}
+
 /* reveal: launch's read-only twin — it shows a selection in this Mac's
    Finder and mutates nothing, so it logs at info either way. */
 static void run_reveal(const char *request_json, long id, char *out,
@@ -1409,6 +1448,10 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "front") == 0) {
         run_front(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "hide") == 0) {
+        run_hide(request_json, id, out, cap);
         return;
     }
     if (strcmp(name, "reveal") == 0) {

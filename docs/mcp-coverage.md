@@ -607,6 +607,7 @@ to exist:
 | `cancel` | command | 68k | deliberate | The 68K guest's console spelling of transfer cancel, and `now_transfer_cancel` needs the `file.cancel` **message** rather than this verb: the message is what both guests dispatch, and requiring the verb would make a capability both guests serve read as 68K-only — rule 4 of the [parity slice plan](plans/2026-07-29-004-feat-now-tbt-classic-parity-slice-plan.md). The verb exists so a person at a PowerBook whose host has stopped answering can still end a transfer, which is a reason for the GUEST to have two faces, not a second mechanism for the host to pick between — [command-parity.md](command-parity.md). |
 | `census` | command | both | deliberate | The console spelling of `census.request`, which is projected as `now_hardware_census`. `now_hardware_census` needs the **family** and not this verb, for the reason `front` and `quit` give: the verb is the flat single-page read a person types at the machine, and the family is the one that paginates and carries a per-probe outcome — which is the whole capability. One capability, one route per face — [command-parity.md](command-parity.md). |
 | `front` | command | both | deliberate | `now_bring_to_front` needs the `process.front` **family**, not this command, for the reason `quit` gives below: the command takes a NAME, and the opaque-reference and PSN-revalidation model the tool stands on has nothing to stand on without the message. The name form is the console's, by contract — one capability, one route per face ([command-parity.md](command-parity.md)). |
+| `hide` | command | ppc | unnoticed | Hide or show a running application, and read back whether it is visible — the Application menu's own effect, through the Process Manager's `ShowHideProcess`. It landed 2026-08-05 with no projection, deliberately: the arc that built it stops at the guest's two faces. Nobody has decided whether an agent should get it. What a row would have to settle first, and none of it is settled by the verb existing: **the target is a NAME**, so a row would face `front`'s and `quit`'s question — the opaque-reference and PSN-revalidation model has nothing to stand on without a `process.*` family message, and there is no `process.hide` on the wire, so a row here means either relaxing that model or adding the family first. **Availability is per-machine rather than per-guest**: the call needs CarbonLib 1.5, and a guest whose CarbonLib is older answers `unavailable` at runtime — which a capability report built from `help` cannot see, because `help` lists the verb either way. And **the read half may be the more useful one**: `--status` is the only route on a classic Mac to whether an application is hidden at all, since `ProcessInfoRec` carries no visibility field, so a row might reasonably project the read and refuse the write. Three questions, one verb; deciding it means deciding them separately. |
 | `help` | command | both | deliberate | Already sent, once per connection, to build the capability report — its answer *is* `now_session_capabilities` ([agent-integration.md](agent-integration.md)). A second route would be the same answer twice. |
 | `ls` | command | both | deliberate | The console spelling of `file.list`, which is projected. One capability, one route — [command-parity.md](command-parity.md) ("two ways to name a target is not two faces"). |
 | `ps` | command | both | deliberate | The console spelling of `process.list`, which is projected — same rule as `ls`, [command-parity.md](command-parity.md). |
@@ -629,6 +630,15 @@ same Macintosh, so the question a row must answer first is whether NOW
 should describe a neighbour to a caller at all. Its pane face is owed the
 same decision and has not had it either — the host's Mirror page still
 reads a folder listing — so this is currently a verb both faces ignore.
+**`axsnap`, `handle`, `actselftest`, `aesend`, `hide`, `net` and `script`**
+— all served by the PowerPC guest, none decided either way. Their rows above
+say what a decision would have to settle.
+
+`hide` joined on 2026-08-05, the day the verb landed, and it is the one here
+whose undecidedness is partly about the MACHINE rather than about the
+capability: the call it rides on needs CarbonLib 1.5, so availability varies
+between guests that answer `help` identically — a shape no row on this
+surface has had to carry before.
 
 `net` joined on 2026-08-01 with the networking spike, and it is the only
 one here whose undecidedness is about SHAPE rather than about risk: almost
