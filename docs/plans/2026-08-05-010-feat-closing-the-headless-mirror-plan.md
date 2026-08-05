@@ -6,6 +6,14 @@ date: 2026-08-05
 
 # Closing the headless Mirror — the remaining scope - Plan
 
+> **The remaining scope moved again on 2026-08-05, to
+> [011, A Mirror that survives being driven](2026-08-05-011-feat-a-mirror-that-survives-being-driven-plan.md).**
+> This plan was organised around what the Mirror can SEE. A hand drive the
+> same evening showed it dying under one ordinary Macintosh event, and
+> everything here is measured through that — so the ordering inverted and
+> reliability came first. Read this one for the seeing work and what it
+> found; read 011 for what is left.
+
 Continues [the headless-Mirror plan](2026-08-04-009-feat-now-headless-mirror-mcp-plan.md),
 which carries the invariant, the reasoning behind the slice ordering, and
 slices 0–5. **That document keeps its history; this one owns what is
