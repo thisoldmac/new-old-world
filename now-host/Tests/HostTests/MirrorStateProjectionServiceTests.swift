@@ -290,6 +290,67 @@ final class MirrorStateProjectionServiceTests: XCTestCase {
         XCTAssertNil(disk.ref)
     }
 
+    func testAWholeSceneOfWindowsStaysInsideOneMessage() async throws {
+        /* The per-window cap alone let several open panels plus a desktop
+           of icons exceed the protocol's 64 KB ceiling, past which the
+           writer throws and the connection closes with NO reply — so
+           `snapshot` stopped answering while `status` still did, which
+           reads as a broken host rather than an oversized payload. */
+        var windows: [String] = []
+        for w in 0..<12 {
+            var controls: [String] = []
+            for c in 0..<80 {
+                controls.append("""
+                {"ref":"r\(w)-\(c)","role":"control","title":"Item \(c)",
+                 "rect":{"l":1,"t":1,"r":2,"b":2},"enabled":true,
+                 "visible":true,
+                 "semantic":{"knowledge":"known","kind":"pushButton",
+                             "value":"a value long enough to matter"}}
+                """)
+            }
+            windows.append("""
+            {"id":"0.9/W\(w)#0","app":"Many","psn":"0.9","title":"W\(w)",
+             "rect":{"l":0,"t":0,"r":300,"b":200},"front":\(w == 0),
+             "z":\(w),"visible":true,"ref":"win\(w)",
+             "controls":[\(controls.joined(separator: ","))],
+             "incarnation":"process-many/window-\(w)"}
+            """)
+        }
+        let document = """
+        {"version":2,"seq":9,"capturedAt":9,"source":"peek",
+         "screen":{"w":800,"h":600},
+         "apps":[{"psn":"0.9","name":"Many","front":true,
+                  "incarnation":"process-many"}],
+         "processes":[{"psn":"0.9","name":"Many","front":true,
+                       "signature":"many","incarnation":"process-many"}],
+         "menubar":{"app":"Many","menus":[]},
+         "windows":[\(windows.joined(separator: ","))],
+         "meta":{"errors":[],"coverage":[]}}
+        """
+        let registry = MirrorStateEngineRegistry()
+        let engine = registry.engine(for: key)
+        _ = engine.accept(try JSONDecoder().decode(
+            Scene.self, from: Data(document.utf8)))
+
+        let result = await service(registry).read(.init(intention: .snapshot))
+        let snapshot = try XCTUnwrap(result.value?.snapshot)
+        let encoded = try JSONEncoder().encode(snapshot)
+        XCTAssertLessThan(encoded.count, 64 * 1024,
+                          "a whole scene must fit one protocol message")
+
+        /* Truncation is stated, never silent: every window reports its
+           TRUE total even when it returned nothing, so a caller can see
+           what it did not get and ask for that window alone. */
+        XCTAssertEqual(snapshot.surfaces.count, 12)
+        for surface in snapshot.surfaces {
+            XCTAssertEqual(surface.itemTotal, 80)
+        }
+        XCTAssertTrue(snapshot.surfaces.contains { $0.items.isEmpty },
+                      "a window past the budget returns no items")
+        XCTAssertFalse(snapshot.surfaces[0].items.isEmpty,
+                       "the front window is served first and is not starved")
+    }
+
     // MARK: - the journal: which face drove it
 
     func testJournalTellsAnAgentDrivenActFromAHandDrivenOne() async throws {
