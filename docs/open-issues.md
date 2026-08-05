@@ -1911,10 +1911,11 @@ the host gate binds. Until it does, a red host gate with a NOW app
 running should be re-run with the app quit before it is believed —
 in either direction.
 
-**2026-08-05: the contention story is not the whole story — but read
-the next paragraph before quoting this one.** The same red gate
-reproduced on this Mac with no `New Old World` process and no agent
-socket in `$TMPDIR`. Five cases fail (`AgentIntegrationQuitTests
+**2026-08-05: RESOLVED, and it was contention after all — the check was
+wrong, not the diagnosis.** Skip to the resolution three paragraphs down
+before acting on anything here. The gate went red on this Mac with no
+`New Old World` process and no agent socket in `$TMPDIR`. Five cases
+failed (`AgentIntegrationQuitTests
 testReconnectInvalidatesPriorProcessReference`, `GuestIdentityTests
 testAddressingABackgroundMachineIsRefusedRatherThanRedirected`,
 `GuestListenerTests testAGuestThatNeverAnswersLeavesAgentAccessAbsent`,
@@ -1930,24 +1931,34 @@ the advice above — quit the app and re-run — no longer clears the gate,
 and `scripts/test-all` cannot go green here by any action a contributor
 can take. Anything landing while this is true carries an
 honestly-labelled red gate, and the two halves must be told apart by
-running the touched suites alone. This one is worth fixing before it
-teaches everybody to read a red host gate as noise.
+running the touched suites alone.
 
-**And the check that was NOT made, recorded because it is the whole
-lesson of this entry.** "Nothing else was running" rested on
-`ps | grep` for `New Old World`, `swift build`, `swift test` and
-`xcodebuild` — none of which matches a bare `xctest`, which is what a
-SwiftPM suite actually runs as. Nobody looked at port 5250 itself. Half
-an hour later `lsof -nP -iTCP:5250` found exactly that: an `xctest` from
-another worktree's session holding the port, which also blocked
-`scripts/spin-up-ppc` with a much clearer message than any test failure
-gave. So the deterministic-subset finding above may still be
-in-suite interference, or may be a second session's suite — the
-evidence recorded cannot tell them apart, and it should have been
-`lsof` on the port from the start. **Check the PORT, not the process
-name**: `lsof -nP -iTCP:5250 -sTCP:LISTEN` before believing any host
-gate, red or green. That is the host-side twin of `MetalMachineGuard`
-this entry has been asking for, and it is one line.
+**The check that was not made, and the resolution it produced.**
+"Nothing else was running" rested on `ps | grep` for `New Old World`,
+`swift build`, `swift test` and `xcodebuild` — none of which matches a
+bare `xctest`, which is what a SwiftPM suite actually runs as. Nobody
+looked at port 5250 itself. Half an hour later `lsof -nP -iTCP:5250`
+found precisely that: an `xctest` from ANOTHER WORKTREE's session
+holding the port. It surfaced not through any test failure but through
+`scripts/spin-up-ppc`, which checks the port and says so in one line.
+
+**With 5250 verified free, the same suite ran 1408 tests with 0
+failures.** So the 2026-08-02 diagnosis stands unchanged and the
+"deterministic subset with an idle machine" reading was an artefact of
+looking for the wrong thing: the machine was never idle. The refinement
+that survives is only that a *fixed* failing subset does not rule
+contention out, so subset stability is not the signal to reason from.
+
+**Check the PORT, not the process name**:
+
+```
+lsof -nP -iTCP:5250 -sTCP:LISTEN
+```
+
+before believing any host gate, red or green. That is the host-side
+twin of `MetalMachineGuard` this entry has been asking for, it is one
+line, and it is the only check here that has ever given a straight
+answer.
 
 ## Photo sizes became long-edge stops; three metal defects fixed, none re-verified on metal (2026-08-02, latest)
 
