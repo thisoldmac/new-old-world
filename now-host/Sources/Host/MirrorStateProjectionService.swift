@@ -210,6 +210,16 @@ final class MirrorStateProjectionService {
         let perWindow = 64
         let budget = 240
         var spent = 0
+        /* Draw ops get their OWN budget, and it is counted in bytes rather
+           than in ops, because unlike a control an op's encoded size is
+           unbounded: a `text` op carries an arbitrary DrawString. A count
+           that comfortably fits three hundred short `rect` ops overflows
+           the same ceiling on three hundred long strings — and overflowing
+           it is not a truncated reply, it is the writer throwing and the
+           connection closing with NO reply, which reads as a broken host
+           (open-issues, 2026-08-05). The producer already caps its own
+           accumulator at 600 ops, so this bounds a bounded list. */
+        var displayBudget = Self.displayBudgetBytes
         return scene.windows.map { window in
             let controls = window.controls.map { control in
                 AgentIntegrationMirrorSurfaceItem(
@@ -261,6 +271,19 @@ final class MirrorStateProjectionService {
                     state: item.placed ? "placed" : "unplaced",
                     text: item.type, knowledge: nil, number: nil)
             }
+            /* **The drawing itself, which only the Mirror window could
+               see.** `Scene.Window.display` has carried the content
+               plane's QuickDraw ops since slice 2 and this projection
+               never read it, so the one face that draws nothing was also
+               the one face that could not be told what was drawn. That
+               makes slice 6's render rule — replay the ops rather than
+               classify the control — available to a headless caller for
+               the first time. Third instance of the same omission shape;
+               `testEveryWindowFieldIsCarriedOrConsciouslyDeclined` is the
+               guard that is meant to end it. */
+            let display = window.display.map {
+                Self.bounded($0, within: &displayBudget)
+            }
             let all = controls + dialogItems + finderItems
             let room = max(0, min(perWindow, budget - spent))
             spent += min(all.count, room)
@@ -270,8 +293,56 @@ final class MirrorStateProjectionService {
                 title: window.title,
                 rect: Self.rect(window.rect), z: window.z,
                 front: window.front, visible: window.visible,
-                items: Array(all.prefix(room)), itemTotal: all.count)
+                items: Array(all.prefix(room)), itemTotal: all.count,
+                display: display,
+                /* The TRUE count, always — `display.count` short of this
+                   is a bounded tail and the caller can see exactly that. */
+                displayTotal: window.display?.count)
         }
+    }
+
+    /// The scene-wide byte budget for replayable draw ops.
+    ///
+    /// Sized against the protocol's one-message ceiling with the item
+    /// budget already spent, and pinned by
+    /// `testAWholeSceneOfWindowsAndDrawOpsStaysInsideOneMessage` rather
+    /// than reasoned about here: the number that matters is what the
+    /// encoder produces for a worst case, not what an estimate says.
+    private static let displayBudgetBytes = 12 * 1024
+
+    /// The ops that fit, **newest last and oldest dropped first**.
+    ///
+    /// Dropping the oldest is the producer's own rule when its 600-op
+    /// accumulator overflows, and it is the one that survives replay:
+    /// later ops paint over earlier, so a tail still reaches the state the
+    /// window is in, where a head stops partway through a redraw that has
+    /// since been painted over.
+    private static func bounded(_ ops: [MirrorKit.DisplayOp],
+                                within budget: inout Int)
+        -> [AgentIntegrationMirrorDisplayOp] {
+        let encoder = JSONEncoder()
+        var kept: [AgentIntegrationMirrorDisplayOp] = []
+        for op in ops.reversed() {
+            let projected = displayOp(op)
+            /* Measured rather than estimated. An op's cost is dominated by
+               a string whose length nothing here controls, and the failure
+               this bound exists to prevent is counted in real bytes. The
+               +1 is the array's own separator. */
+            let size = ((try? encoder.encode(projected).count) ?? 0) + 1
+            guard size <= budget else { break }
+            budget -= size
+            kept.append(projected)
+        }
+        return Array(kept.reversed())
+    }
+
+    private static func displayOp(_ op: MirrorKit.DisplayOp)
+        -> AgentIntegrationMirrorDisplayOp {
+        .init(op: op.op, ticks: op.ticks, text: op.text, pen: op.pen,
+              font: op.font, size: op.size, face: op.face, verb: op.verb,
+              rect: op.rect, ext: op.ext, from: op.from, to: op.to,
+              kind: op.kind, origin: op.origin, rgb: op.rgb, src: op.src,
+              dst: op.dst)
     }
 
     /// The journal's own record, rendered. `target` and `postcondition`

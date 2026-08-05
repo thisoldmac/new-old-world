@@ -236,6 +236,80 @@ public struct AgentIntegrationMirrorSurfaceItem:
     }
 }
 
+/// One QuickDraw operation from a window's content plane, carried verbatim
+/// from the IR's `DisplayOp` so a headless caller can REPLAY it.
+///
+/// The vocabulary is deliberately untranslated. Slice 6's rule is *to render
+/// a custom control, do not classify it — replay its ops*, and a replay is
+/// only faithful if it receives what the guest actually drew: the same op
+/// names, the same GrafVerb, the same port-local coordinate arrays. A
+/// projection that helpfully reshaped `rect` into a named rectangle type
+/// would also have to decide what `pen`, `from`, `to` and `origin` mean,
+/// and every one of those decisions is a place for the drawing to become a
+/// classification — which is the thing the rule exists to avoid.
+///
+/// Coordinates are port-local (window content space); a `state` op with
+/// kind `origin` shifts them. Later ops paint over earlier ones.
+public struct AgentIntegrationMirrorDisplayOp:
+    Codable, Equatable, Sendable {
+    /// `text` | `line` | `rect` | `rrect` | `oval` | `arc` | `poly` | `rgn`
+    /// | `bits` | `state`.
+    public let op: String
+    /// TickCount at capture — the ordering key within a frame.
+    public let ticks: Int
+    public let text: String?
+    /// `[h, v]`.
+    public let pen: [Int]?
+    public let font: Int?
+    public let size: Int?
+    public let face: Int?
+    /// GrafVerb: 0 frame, 1 paint, 2 erase, 3 invert, 4 fill.
+    public let verb: Int?
+    /// `[l, t, r, b]`.
+    public let rect: [Int]?
+    /// ovalW/H for a rounded rect, or the angles for an arc.
+    public let ext: [Int]?
+    /// `[h, v]`.
+    public let from: [Int]?
+    /// `[h, v]`.
+    public let to: [Int]?
+    /// For a `state` op: `origin` | `clip` | `fg` | `bg`.
+    public let kind: String?
+    /// `[h, v]`.
+    public let origin: [Int]?
+    /// `[r, g, b]`, 0–65535.
+    public let rgb: [Int]?
+    /// `[l, t, r, b]` — a `bits` op's source, geometry only.
+    public let src: [Int]?
+    /// `[l, t, r, b]` — a `bits` op's destination, geometry only.
+    public let dst: [Int]?
+
+    public init(op: String, ticks: Int, text: String? = nil,
+                pen: [Int]? = nil, font: Int? = nil, size: Int? = nil,
+                face: Int? = nil, verb: Int? = nil, rect: [Int]? = nil,
+                ext: [Int]? = nil, from: [Int]? = nil, to: [Int]? = nil,
+                kind: String? = nil, origin: [Int]? = nil,
+                rgb: [Int]? = nil, src: [Int]? = nil, dst: [Int]? = nil) {
+        self.op = op
+        self.ticks = ticks
+        self.text = text
+        self.pen = pen
+        self.font = font
+        self.size = size
+        self.face = face
+        self.verb = verb
+        self.rect = rect
+        self.ext = ext
+        self.from = from
+        self.to = to
+        self.kind = kind
+        self.origin = origin
+        self.rgb = rgb
+        self.src = src
+        self.dst = dst
+    }
+}
+
 /// A window's render-relevant detail, keyed to the entity of the same id.
 public struct AgentIntegrationMirrorSurface:
     Codable, Equatable, Sendable {
@@ -251,11 +325,26 @@ public struct AgentIntegrationMirrorSurface:
     /// Mac is drawing — the silent-truncation defect this project has
     /// already paid for once in the Finder's item roster.
     public let itemTotal: Int
+    /// The window's captured content plane, newest ops last.
+    ///
+    /// **nil means the plane was not traced for this window**, which is a
+    /// different fact from `[]` — traced and proven to have drawn nothing.
+    /// The IR keeps that distinction and so does this: today only the front
+    /// window is traced at all, so collapsing the two would report every
+    /// background window as a window that draws nothing.
+    public let display: [AgentIntegrationMirrorDisplayOp]?
+    /// How many ops the window's plane actually holds, when it was traced.
+    /// `display.count` short of this is a bounded tail, not the whole
+    /// drawing — the same rule `itemTotal` carries, for a list whose
+    /// element size is unbounded.
+    public let displayTotal: Int?
 
     public init(entityID: String, title: String,
                 rect: AgentIntegrationMirrorRect?, z: Int, front: Bool,
                 visible: Bool, items: [AgentIntegrationMirrorSurfaceItem],
-                itemTotal: Int) {
+                itemTotal: Int,
+                display: [AgentIntegrationMirrorDisplayOp]? = nil,
+                displayTotal: Int? = nil) {
         self.entityID = entityID
         self.title = title
         self.rect = rect
@@ -264,6 +353,8 @@ public struct AgentIntegrationMirrorSurface:
         self.visible = visible
         self.items = items
         self.itemTotal = itemTotal
+        self.display = display
+        self.displayTotal = displayTotal
     }
 }
 
