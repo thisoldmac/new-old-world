@@ -219,12 +219,19 @@ typedef struct {
    control's local rect by its window's content origin, so a consumer
    never has to know the local frame.
 
-   `role` and `checked` are NOT here and are not emitted. The walk
-   reads a ControlRecord's fields; it does not read contrlDefProc, so it
-   cannot say whether a control is a button, a checkbox or a scroll bar -
-   and `checked` is meaningless without knowing which. Inventing a role
-   from a value range would be exactly the guess the absent-key rule
-   exists to prevent.
+   `checked` is NOT here and is not emitted, because it is meaningless
+   without knowing WHICH kind of control this is, and a walk of a foreign
+   ControlRecord cannot say. Inventing a role from a value range would be
+   exactly the guess the absent-key rule exists to prevent - and was the
+   2026-08-03 defect that drew Mail's alert buttons as scroll bars.
+
+   `role` IS here: empty for a foreign control until the resident's
+   semantic plane names one, and procID-derived for a control this
+   application made itself (scene_self.c).
+
+   As of 2026-08-05 the walk DOES read contrlDefProc - see `definition`
+   below - but that answers a strictly weaker question, which heap the
+   definition function came from, and never becomes a role.
 
    `ref` IS here, as of 2026-08-01, and an empty one is an absent key
    rather than an empty string on the wire. It is a copy of a token the
