@@ -58,6 +58,30 @@ date: 2026-08-04
   panel opens as its own application — so every panel open times out for
   15 s having worked, and those timeouts stacked into a 51.8 s wait.
 
+  ### Picking this up cold
+
+  **Start at slice 5c item 1** — the Finder-open owner prediction. It is
+  small, it is the root of the loudest symptom, and until panel opens stop
+  timing out while succeeding, every drive after it is harder to read than
+  it needs to be. `MirrorActionExecutor.swift` line ~133 predicts
+  `windowNamedPresent(owner: Finder, title: item)`; a control panel opens
+  as its OWN application, and `finderItem.kind` in the snapshot already
+  says folder-or-file, which is the information the prediction needs.
+
+  **Running when this session ended** (2026-08-05, ~04:30): VM `qemu pid
+  54638` on `/Users/michelle/Lab/Code/timbottu/run`, booted from the saved
+  stage image `/private/tmp/now-p5-stage-20260805/session.qcow2`
+  (sha256 `e2d46809394f7b93…`) which carries the P5 extension and the
+  merged guest app. Host `NOW verify 7f07b11` on port 5250 with
+  `--open-mirror`. Resident `fc6e0946bde92715`, `cap 31` — P5 published.
+  Drive it headlessly with `tools/now-agent`; capture three ways with
+  `tools/mirror-corpus`.
+
+  **Merged from the four chips:** taussig (stale refs), satoshi (visibility
+  census), dhawan (P4 diagnosis). `claude/mirror-press-selection` is
+  deliberately NOT merged — self-declared unverified with a mutation pass
+  it never ran.
+
   **Still owed:** the paired hand-versus-MCP comparison (§ Verification);
   slice 1's page-versus-reply check, which was compared against a log sharing
   the same source; slice 2's `window.display` debt; and slices 5b and 6. Not

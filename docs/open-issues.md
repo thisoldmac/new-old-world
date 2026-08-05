@@ -122,6 +122,54 @@ Still open from this:
   attaches the PREVIOUS command's correlation. It is conservative for the
   host rule above — a stale correlation reads as "may have landed", which
   only costs a wait — but it is wrong.
+## BROKEN: a Finder-open predicts the wrong owner, so panels time out having worked (2026-08-05)
+
+`MirrorActionExecutor` builds `windowNamedPresent(owner: Finder, title:
+item)` for every Finder-open. A control panel opens **as its own
+application**: a live snapshot taken while Date & Time was up shows that
+window owned by a process named `Date & Time`, not by the Finder. The
+postcondition is unsatisfiable, so the act burns its full 15 s timeout
+having succeeded. It holds only for FOLDERS, whose windows the Finder does
+own.
+
+Measured in Michelle's drive: four `open "AppleTalk"` attempts, 15 s each,
+and because the mutation FIFO is one lane those timeouts stacked — waits of
+15 611, 22 207, 22 106, 37 391, 51 786 and 49 281 ms behind the lane. One
+click waited **51.8 seconds**. This one defect is most of the queueing
+that drive complained about.
+
+`finderItem.kind` in the snapshot already carries folder-or-file, so a fix
+can predict a window for a folder and a PROCESS for an application instead
+of guessing one shape for both.
+
+Related, and separate: **an act that legitimately does nothing costs the
+same 15 s.** Driving `finderOpen "Date & Time"` against the desktop (where
+it does not live) correctly opened nothing, and still burned the timeout
+rather than the Finder answering "no such item".
+
+## BROKEN: both Hide routes fail, each in its own way (2026-08-05)
+
+Hiding an application works on a Macintosh; a person does it from the
+Application menu. Neither route NOW has reproduces it.
+
+- **AppleScript** — setting `visible` through the Finder's object model is
+  refused: `-10000`, `-10006`, and in the 2026-08-05 drive `osaErr -1753`.
+  Read-only there.
+- **The Application menu, commanded** — the menu is read correctly (`Hide
+  Date & Time`, `Hide Others`, `Show All`, present and enabled at menu
+  `-16489`), and driving row 1 through `now_mirror_drive --gesture
+  menuItem` returns `dispatched` and changes nothing. The paired screendump
+  shows the application still frontmost. `InteractionPolicy` already
+  records this: visibility is kept typed so it "cannot fall back to
+  commanding menu -16489, the route that reported success without changing
+  the machine".
+
+**Untried:** delivering a real CLICK to that menu through the act plane
+rather than a `MenuSelect` command — the one thing a person does that
+neither route reproduces. Until something is watched working, Hide is
+UNBUILT rather than broken, and a route already known to fail should refuse
+by name instead of holding the shared lane for 15 s.
+
 ## P5, THE TRANSITION TAIL: RESIDENT WRITES, NOTHING DELIVERS YET (2026-08-05)
 
 **Built and gated; never executed on a machine.** A ~2.2 s scene cycle
