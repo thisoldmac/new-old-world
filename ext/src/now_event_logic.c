@@ -25,6 +25,15 @@ int now_event_should_record(const NowEventArm *arm, NowEventU32 ticks,
     if (arm->commit == 0 || arm->target_a5 == 0) {
         return 0;
     }
+    /* THIS is the clause that enforces "naming no target names nothing":
+       `a5` is non-zero by the guard above, so a zero target can never
+       match it. The `target_a5 == 0` test just above is redundant today
+       and was watched NOT failing under mutation on 2026-08-05 — it
+       stays as depth, because it becomes load-bearing again the moment
+       anyone relaxes the `a5 == 0` guard, and a fail-closed safety
+       property is the wrong place to spend a clause to save a branch.
+       Said out loud so the next reader does not mistake it for the
+       guard, which is the mistake this comment exists because of. */
     if (arm->target_a5 != a5) {
         return 0;
     }

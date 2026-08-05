@@ -44,7 +44,13 @@ int main(void)
 
     /* Naming NO target must name NOTHING. The obvious reading of a bare
        arm is "instrument everything", and that is the reading
-       docs/resident-components.md forbids. */
+       docs/resident-components.md forbids.
+
+       Watched under mutation 2026-08-05: this assertion survives removing
+       the `target_a5 == 0` clause, because the target-mismatch check
+       below it already enforces the property. It fails, correctly, when
+       that mismatch check is removed. The property is proven; the clause
+       that appears to protect it is not the one that does. */
     arm.target_a5 = 0;
     check(now_event_should_record(&arm, 4000, 0x1000) == 0,
           "a request naming no target instruments nothing");
