@@ -106,7 +106,8 @@ enum {
     kNowPeekTableCapAnchors = 1u << 0,  /* P1: per-process anchors */
     kNowPeekTableCapTree = 1u << 1,     /* P2: semantic-tree assist */
     kNowPeekTableCapAct = 1u << 2,      /* P4: the act plane (below) */
-    kNowPeekTableCapContent = 1u << 3   /* P3: the content plane */
+    kNowPeekTableCapContent = 1u << 3,  /* P3: the content plane */
+    kNowPeekTableCapEvents = 1u << 4    /* P5: the transition tail */
 };
 
 /* P3 asked for 1u << 2 and for its field at the head of the appended
@@ -802,6 +803,11 @@ typedef struct {
     /* U5 P4 V2 append. This is the continuation of `act`, not a second
        channel. Everything above retains its historic offset. */
     NowPeekActV2Cell act_v2;
+    /* U6 P5 append. One word, for the reason `content_block` is one: the
+       ring lives in the system heap so it is not a ring every reader of
+       every other plane carries past. 0 means the plane is absent, which
+       is what an older resident reports simply by being shorter. */
+    NowPeekU32 event_block;
 } NowPeekTable;
 
 /* The offsets ARE the contract; a drift here is a defect on the other
@@ -895,9 +901,11 @@ _Static_assert(offsetof(NowPeekTable, act_v2)
                "act v2 append offset");
 _Static_assert(sizeof(NowPeekActV2Cell) == 32 * 4,
                "act v2 cell size");
+/* The table ends where its last appended field ends. Every append edits
+   this line, and that is the point: it is the one assert that notices a
+   field added anywhere but the tail. */
 _Static_assert(sizeof(NowPeekTable)
-                   == offsetof(NowPeekTable, act_v2)
-                    + sizeof(NowPeekActV2Cell),
+                   == offsetof(NowPeekTable, event_block) + 4,
                "table size");
 _Static_assert(sizeof(NowPeekSemanticRecord) == 48,
                "semantic record size");
@@ -912,5 +920,10 @@ _Static_assert(offsetof(NowPeekSemanticCell, records) == 80,
 _Static_assert(sizeof(NowPeekSemanticCell)
                    == 80 + 48 * kNowPeekSemanticMaxRecords,
                "semantic cell size");
+
+_Static_assert(offsetof(NowPeekTable, event_block)
+                   == offsetof(NowPeekTable, act_v2)
+                       + sizeof(NowPeekActV2Cell),
+               "event block appends after act_v2 without moving it");
 
 #endif /* NOW_PEEK_TABLE_H */

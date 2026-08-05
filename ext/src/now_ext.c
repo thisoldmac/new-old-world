@@ -65,6 +65,15 @@ extern void now_ext_act_apply(NowPeekTable *table);
    and never to each other. */
 extern void now_content_boot(NowPeekTable *table);
 extern void now_content_gne(NowPeekTable *table);
+/* P5, the transition tail (now_event.c). Same two-entry shape, and the
+   pass takes the words this filter has ALREADY read: two reads of
+   LMGetWindowList in one pass could disagree, and a record that did not
+   describe the same instant as the anchor beside it would be worse than
+   no record. */
+extern void now_event_boot(NowPeekTable *table);
+extern void now_event_pass(NowPeekTable *table, NowPeekU32 ticks,
+                           NowPeekU32 a5, NowPeekU32 window_list,
+                           NowPeekU32 menu_list);
 extern void now_semantic_apply(NowPeekTable *table, NowPeekU32 ticks);
 
 /* Fast-path cache: consecutive GetNextEvent calls are usually the same
@@ -291,6 +300,11 @@ void now_ext_gne_apply(void)
        this is the call that lets it run. Disarmed it is a load, a null
        check and a return. */
     now_content_gne(table);
+    /* P5. Its own arm verdict, like P3's, because it also names an A5
+       world. Disarmed it is a load, a null check and a return. */
+    now_event_pass(table, ticks, (NowPeekU32)LMGetCurrentA5(),
+                   (NowPeekU32)LMGetWindowList(),
+                   (NowPeekU32)LMGetMenuList());
     if (request == 0 && now_ext_writer_lease_valid(table, ticks)
         && table->writer.resident_owner_epoch == 0) {
         table->writer.resident_owner_epoch = table->writer.owner_epoch;
@@ -360,6 +374,7 @@ void _start(void)
        exists and does not advertise is worse than one that is absent:
        absent is a state the product handles. */
     now_content_boot(table);
+    now_event_boot(table);
     /* P4's own format word, and the buffer size THIS binary allocated.
        Both are what an application gates on before it writes a request:
        an extension that predates the plane reports a shorter `length`,

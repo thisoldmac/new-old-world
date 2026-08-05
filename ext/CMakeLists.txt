@@ -50,6 +50,8 @@ add_executable(NowExt
     src/now_semantic_logic.c
     src/now_ext_gne.S
     src/now_content.c
+    src/now_event.c
+    src/now_event_logic.c
     src/now_content_logic.c
     # P4, the act plane: its own translation unit and its own six trap
     # trampolines. Separate files, no cross-plane calls - review enforces

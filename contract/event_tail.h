@@ -109,6 +109,12 @@ typedef struct {
     NowEventU32 arm_expiry; /* TickCount after which this lapses, so a
                                caller that dies leaves no hook armed   */
     NowEventU32 arm_commit; /* non-zero completes the request          */
+    /* Also application-written: how far the reader has consumed. The
+       resident reads it to decide whether a write costs the reader its
+       view, which is the only way `dropped` can mean anything - without
+       it the ring would either never report a loss or always report
+       one. */
+    NowEventU32 reader_cursor;
 
     /* The extension writes these. */
     NowEventU32 write_cursor; /* records written, ever; index is
@@ -129,8 +135,8 @@ typedef struct {
    fail to build when they drift; they fail to AGREE, and that is silent
    corruption (AGENTS.md). */
 _Static_assert(sizeof(NowEventRecord) == 24, "event record is 24 bytes");
-_Static_assert(offsetof(NowEventBlock, ring) == 40, "ring starts at 40");
-_Static_assert(sizeof(NowEventBlock) == 40 + 24 * kNowEventRingRecords,
+_Static_assert(offsetof(NowEventBlock, ring) == 44, "ring starts at 44");
+_Static_assert(sizeof(NowEventBlock) == 44 + 24 * kNowEventRingRecords,
                "event block is its header plus its ring");
 
 #endif /* NOW_EVENT_TAIL_H */
