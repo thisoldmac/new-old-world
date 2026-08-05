@@ -57,6 +57,40 @@ Three things worth keeping regardless of how that goes:
   Item and content families now hold separate stated byte shares of one
   ceiling. **Anything further added to this payload must take a share
   rather than assume room; there is none.**
+## FIRST LIVE ANSWERS from the 2026-08-05 drive: display carries, definition says `system`, desktopItems does not read
+
+Driven against a freshly cold-booted emulated Power Mac G4 with the
+resident active (`fc6e0946bde92715`, cap 31), with a real control panel
+opened so a FOREIGN window with undetermined controls was in view. Three
+queued questions, three answers.
+
+**`window.display` carries content — WATCHED.** Date & Time's window
+reports `displayTotal: 173`, NOW's own window `205`. The projection that
+landed the same day as TESTED is now watched answering off a live guest.
+
+**`definition` answers, and for this panel the answer is unanimous: all
+29 undetermined controls report `system`.** Every one is a standard
+Toolbox CDEF out of the System file rather than app-owned drawing. That
+is the first live data on slice 6's real question, and it points the same
+way the transport finding did: the information was recoverable all along.
+For this panel the genuinely-custom population is **zero**.
+
+Read it with three limits. It is ONE panel at ONE moment; the extension
+on that image PREDATES the batched-classification fix, so this is the
+one-cell transport's behaviour and not the fixed one; and 12 of the 41
+items were already `known` from the DITL type byte and never needed a
+CDEF at all. The corpus recapture is what turns this into a histogram.
+
+**`desktopItems` still does not read, and it is not the stale image.** It
+was nil for the whole 2026-08-05 morning drive, and it is nil here on a
+clean cold boot with the resident live and a foreign app frontmost. The
+matching symptom from the other side: the Finder's own **Desktop window
+is published with `itemTotal: 0`** while seventeen icons are on the
+screen. So the Finder-item read fails whole rather than partially, and
+slice 5c item 1's control-panel half is still unexercised because of it —
+the classifier's positive branch cannot fire against a roster that is
+never there.
+
 ## BROKEN: `transitions start` cannot arm, by any route (2026-08-05)
 
 **Found by driving, on the first live run of the verb.** P5's plane can
