@@ -354,13 +354,50 @@ records how a window came to look that way rather than only how it ended up,
 which is exactly the evidence a producer gap and a sampling gap are told apart
 by.
 
-### Slice 5c — the settlement defects a drive keeps finding · **NOT STARTED**
+### Slice 5c — the settlement defects a drive keeps finding · **1, 3 and 5 BUILT AND TESTED**
 
 Michelle's 2026-08-05 drive against the merged build, read from the journal
 and clocks rather than the screen. These are SETTLEMENT and LANE defects, not
 rendering ones, which is why they are their own slice rather than part of
 6: nothing here is about what the Mirror draws, and none of it waits on the
 corpus.
+
+**Status 2026-08-05 (second session).** Items 1, 3 and 5 are implemented,
+host-suite green, and every guard watched failing by mutation. Item 2 is
+untouched by design — fixing 1 removes most of its fuel, so the lane's own
+shape should be re-measured before it is redesigned. Item 4 is untouched.
+
+The three fixes share one idea, which is the reason they landed together:
+**do not spend the single mutation lane learning something this side
+already knows.** A control panel's owner is in the snapshot; an absent
+Finder item is in the roster; a Hide whose one `set` raised changed
+nothing. Each of those was previously discovered by waiting 15 s.
+
+Where each one is:
+
+- **1** — `MirrorActionExecutor.opensAsItsOwnApplication` classifies the
+  item out of the scene the act was drawn from, and only a POSITIVE signal
+  moves the prediction (the Finder's own `kind` of `application`, or a
+  file `type` of `APPL`/`appe`/`cdev`). Note the plan's own premise was
+  slightly wrong: `kind` is four words, not folder-or-file, and **none of
+  them names a control panel** — a `cdev` arrives as a plain `file`, so
+  `type` is what answers. Folders and disks keep the Finder-owned window;
+  aliases, documents and unread items keep the old prediction rather than
+  acquiring a new way to be wrong.
+- **5** — the re-read that already refuses a closed window now refuses an
+  item the container's published roster does not carry. `readIcons`
+  refuses a partial roster rather than returning part of one, so a
+  published roster is complete evidence; an unread container is nil and
+  claims nothing.
+- **3** — a refused Hide releases the lane instead of holding it for
+  evidence of an effect that never happened, and only Hide can prove that:
+  its script is one `set`, while Hide Others is a repeat loop that can
+  land partway and Show All's plural specifier has unmeasured atomicity.
+  The refusal now names the Finder route, keeps the osaErr, and names the
+  act-plane click as untried.
+
+**Not yet driven live in that session** — see the next heading for what
+the live run then showed.
 
 **1. A Finder-open predicts the wrong owner, so every control panel times
 out while succeeding.** `MirrorActionExecutor` builds

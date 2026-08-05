@@ -1838,10 +1838,10 @@ the host gate binds. Until it does, a red host gate with a NOW app
 running should be re-run with the app quit before it is believed —
 in either direction.
 
-**2026-08-05: the contention story is not the whole story.** The same
-red gate reproduced on this Mac with **no NOW app running at all** — no
-`New Old World` process, no agent socket in `$TMPDIR`, no concurrent
-build or test. Five cases fail (`AgentIntegrationQuitTests
+**2026-08-05: the contention story is not the whole story — but read
+the next paragraph before quoting this one.** The same red gate
+reproduced on this Mac with no `New Old World` process and no agent
+socket in `$TMPDIR`. Five cases fail (`AgentIntegrationQuitTests
 testReconnectInvalidatesPriorProcessReference`, `GuestIdentityTests
 testAddressingABackgroundMachineIsRefusedRatherThanRedirected`,
 `GuestListenerTests testAGuestThatNeverAnswersLeavesAgentAccessAbsent`,
@@ -1859,6 +1859,22 @@ can take. Anything landing while this is true carries an
 honestly-labelled red gate, and the two halves must be told apart by
 running the touched suites alone. This one is worth fixing before it
 teaches everybody to read a red host gate as noise.
+
+**And the check that was NOT made, recorded because it is the whole
+lesson of this entry.** "Nothing else was running" rested on
+`ps | grep` for `New Old World`, `swift build`, `swift test` and
+`xcodebuild` — none of which matches a bare `xctest`, which is what a
+SwiftPM suite actually runs as. Nobody looked at port 5250 itself. Half
+an hour later `lsof -nP -iTCP:5250` found exactly that: an `xctest` from
+another worktree's session holding the port, which also blocked
+`scripts/spin-up-ppc` with a much clearer message than any test failure
+gave. So the deterministic-subset finding above may still be
+in-suite interference, or may be a second session's suite — the
+evidence recorded cannot tell them apart, and it should have been
+`lsof` on the port from the start. **Check the PORT, not the process
+name**: `lsof -nP -iTCP:5250 -sTCP:LISTEN` before believing any host
+gate, red or green. That is the host-side twin of `MetalMachineGuard`
+this entry has been asking for, and it is one line.
 
 ## Photo sizes became long-edge stops; three metal defects fixed, none re-verified on metal (2026-08-02, latest)
 
