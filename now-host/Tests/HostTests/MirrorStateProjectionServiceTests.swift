@@ -351,6 +351,280 @@ final class MirrorStateProjectionServiceTests: XCTestCase {
                        "the front window is served first and is not starved")
     }
 
+    // MARK: - display: the drawing, for the face that draws nothing
+
+    /// A window whose content plane was traced, and one that was not.
+    private func drawnScene(ops: String,
+                            second: String = "") throws -> Scene {
+        let document = """
+        {
+          "version":2,"seq":5,"capturedAt":5,"source":"peek",
+          "screen":{"w":640,"h":480},
+          "apps":[{"psn":"0.9","name":"SimpleText","front":true,
+                   "incarnation":"process-st"}],
+          "processes":[{"psn":"0.9","name":"SimpleText","front":true,
+                        "signature":"ttxt","incarnation":"process-st"}],
+          "menubar":{"app":"SimpleText","menus":[]},
+          "windows":[{
+            "id":"0.9/Drawn#0","app":"SimpleText","psn":"0.9",
+            "title":"Drawn","kind":8,
+            "rect":{"l":40,"t":60,"r":440,"b":400},
+            "front":true,"z":0,"visible":true,"controls":[],
+            "ref":"win-drawn","incarnation":"process-st/window-drawn",
+            "display":[\(ops)]
+          },{
+            "id":"0.9/Untraced#0","app":"SimpleText","psn":"0.9",
+            "title":"Untraced","kind":8,
+            "rect":{"l":0,"t":0,"r":100,"b":100},
+            "front":false,"z":1,"visible":true,"controls":[],
+            "ref":"win-untraced",
+            "incarnation":"process-st/window-untraced"\(second)
+          }],
+          "meta":{"errors":[],"coverage":[]}
+        }
+        """
+        return try JSONDecoder().decode(Scene.self, from: Data(document.utf8))
+    }
+
+    private func projected(_ scene: Scene) async throws
+        -> AgentIntegrationMirrorSnapshot {
+        let registry = MirrorStateEngineRegistry()
+        _ = registry.engine(for: key).accept(scene)
+        let result = await service(registry).read(.init(intention: .snapshot))
+        return try XCTUnwrap(result.value?.snapshot)
+    }
+
+    func testTheDrawingIsCarriedVerbatimSoItCanBeReplayed() async throws {
+        /* Slice 6's rule is: to render a custom control, do not classify
+           it — replay its ops. That is only possible for a face that can
+           SEE the ops, and until now the Mirror window could and MCP
+           could not, so an agent could not do the render half at all. */
+        let snapshot = try await projected(try drawnScene(ops: """
+            {"op":"state","ticks":10,"kind":"origin","origin":[0,0]},
+            {"op":"rect","ticks":11,"verb":2,"rect":[0,0,400,340]},
+            {"op":"text","ticks":12,"text":"Save changes?","pen":[20,40],
+             "font":3,"size":9,"face":1},
+            {"op":"bits","ticks":13,"src":[0,0,32,32],"dst":[8,8,40,40]}
+            """))
+        let drawn = try XCTUnwrap(snapshot.surfaces.first {
+            $0.title == "Drawn"
+        })
+        let ops = try XCTUnwrap(drawn.display)
+
+        XCTAssertEqual(drawn.displayTotal, 4)
+        XCTAssertEqual(ops.count, 4)
+        /* Order is the contract: later ops paint over earlier, so a
+           replay that reorders them draws a different window. */
+        XCTAssertEqual(ops.map(\.op), ["state", "rect", "text", "bits"])
+
+        /* The op vocabulary reaches the caller untranslated. A projection
+           that reshaped these into named types would have to decide what
+           each coordinate array means, and every such decision is a place
+           for a replay to become a classification. */
+        let text = try XCTUnwrap(ops.first { $0.op == "text" })
+        XCTAssertEqual(text.text, "Save changes?")
+        XCTAssertEqual(text.pen, [20, 40])
+        XCTAssertEqual(text.font, 3)
+        XCTAssertEqual(text.face, 1)
+        let erase = try XCTUnwrap(ops.first { $0.op == "rect" })
+        XCTAssertEqual(erase.verb, 2)
+        XCTAssertEqual(erase.rect, [0, 0, 400, 340])
+        let blit = try XCTUnwrap(ops.first { $0.op == "bits" })
+        XCTAssertEqual(blit.src, [0, 0, 32, 32])
+        XCTAssertEqual(blit.dst, [8, 8, 40, 40])
+    }
+
+    func testAnUntracedWindowIsNotReportedAsOneThatDrewNothing()
+        async throws {
+        /* Today only the front window is traced at all, so collapsing
+           "not traced" into "traced and empty" would report every
+           background window as a window that draws nothing — a plausible
+           lie about the machine, and the exact distinction the IR keeps
+           by making `display` optional. */
+        let untraced = try await projected(try drawnScene(
+            ops: #"{"op":"line","ticks":1,"from":[0,0],"to":[9,9]}"#))
+        let quiet = try XCTUnwrap(untraced.surfaces.first {
+            $0.title == "Untraced"
+        })
+        XCTAssertNil(quiet.display)
+        XCTAssertNil(quiet.displayTotal)
+
+        let empty = try await projected(try drawnScene(
+            ops: #"{"op":"line","ticks":1,"from":[0,0],"to":[9,9]}"#,
+            second: #","display":[]"#))
+        let proven = try XCTUnwrap(empty.surfaces.first {
+            $0.title == "Untraced"
+        })
+        XCTAssertEqual(proven.display, [])
+        XCTAssertEqual(proven.displayTotal, 0)
+    }
+
+    func testALongDrawingIsBoundedAndSaysHowMuchItDropped() async throws {
+        /* The producer caps its own accumulator at 600 ops and a `text`
+           op carries an arbitrary DrawString, so the honest worst case is
+           600 long strings — which no per-op COUNT can bound inside a
+           64 KB message. */
+        let ops = (0..<600).map { index in
+            """
+            {"op":"text","ticks":\(index),
+             "text":"\(String(repeating: "M", count: 200)) \(index)",
+             "pen":[10,\(index)],"font":3,"size":9,"face":0}
+            """
+        }.joined(separator: ",")
+        let snapshot = try await projected(try drawnScene(ops: ops))
+        let drawn = try XCTUnwrap(snapshot.surfaces.first {
+            $0.title == "Drawn"
+        })
+        let carried = try XCTUnwrap(drawn.display)
+
+        /* Bounded, and the true count is stated beside it — a tail that
+           did not say so reads as the whole drawing, which is worse than
+           no drawing because it looks complete. */
+        XCTAssertEqual(drawn.displayTotal, 600)
+        XCTAssertLessThan(carried.count, 600)
+        XCTAssertGreaterThan(carried.count, 0)
+
+        /* The NEWEST ops survive, which is both the producer's own rule
+           when its accumulator overflows and the one that replays: later
+           ops paint over earlier, so a tail reaches the state the window
+           is in where a head stops partway through a redraw. */
+        XCTAssertEqual(carried.last?.ticks, 599)
+        XCTAssertEqual(carried.map(\.ticks), (600 - carried.count..<600).map { $0 })
+
+        let encoded = try JSONEncoder().encode(snapshot)
+        XCTAssertLessThan(encoded.count, 64 * 1024,
+                          "a traced window must fit one protocol message")
+    }
+
+    func testAWholeSceneOfItemsAndDrawOpsStillFitsOneMessage() async throws {
+        /* The two budgets are independent, so neither one alone proves
+           the ceiling holds. Adding Finder items to the snapshot is what
+           broke it last time: the writer throws past 64 KB and the
+           connection closes with NO reply, so `snapshot` stops answering
+           while `status` still does — which reads as a broken host rather
+           than an oversized payload (open-issues, 2026-08-05). */
+        var windows: [String] = []
+        for w in 0..<12 {
+            let controls = (0..<80).map { c in
+                """
+                {"ref":"r\(w)-\(c)","role":"control","title":"Item \(c)",
+                 "rect":{"l":1,"t":1,"r":2,"b":2},"enabled":true,
+                 "visible":true,
+                 "semantic":{"knowledge":"known","kind":"pushButton",
+                             "value":"a value long enough to matter"}}
+                """
+            }.joined(separator: ",")
+            let ops = (0..<600).map { index in
+                """
+                {"op":"text","ticks":\(index),
+                 "text":"\(String(repeating: "W", count: 200))",
+                 "pen":[1,\(index)],"font":3,"size":9,"face":0}
+                """
+            }.joined(separator: ",")
+            windows.append("""
+            {"id":"0.9/W\(w)#0","app":"Many","psn":"0.9","title":"W\(w)",
+             "rect":{"l":0,"t":0,"r":300,"b":200},"front":\(w == 0),
+             "z":\(w),"visible":true,"ref":"win\(w)",
+             "text":{"content":"\(String(repeating: "T", count: 9000))",
+                     "active":true},
+             "controls":[\(controls)],"display":[\(ops)],
+             "incarnation":"process-many/window-\(w)"}
+            """)
+        }
+        let document = """
+        {"version":2,"seq":9,"capturedAt":9,"source":"peek",
+         "screen":{"w":800,"h":600},
+         "apps":[{"psn":"0.9","name":"Many","front":true,
+                  "incarnation":"process-many"}],
+         "processes":[{"psn":"0.9","name":"Many","front":true,
+                       "signature":"many","incarnation":"process-many"}],
+         "menubar":{"app":"Many","menus":[]},
+         "windows":[\(windows.joined(separator: ","))],
+         "meta":{"errors":[],"coverage":[]}}
+        """
+        let snapshot = try await projected(
+            try JSONDecoder().decode(Scene.self, from: Data(document.utf8)))
+        let encoded = try JSONEncoder().encode(snapshot)
+        XCTAssertLessThan(encoded.count, 64 * 1024,
+                          "items and draw ops share one message ceiling")
+
+        /* Every window still reports its TRUE totals even when it got
+           nothing of that family, so a caller can see exactly what it did
+           not get and ask for that window alone. */
+        XCTAssertEqual(snapshot.surfaces.count, 12)
+        for surface in snapshot.surfaces {
+            XCTAssertEqual(surface.itemTotal, 80)
+            XCTAssertEqual(surface.displayTotal, 600)
+            XCTAssertEqual(surface.text?.contentTotal, 9000)
+            XCTAssertLessThanOrEqual(surface.text?.content.count ?? 0, 2048)
+        }
+        XCTAssertFalse(snapshot.surfaces[0].items.isEmpty,
+                       "the front window is served first and is not starved")
+        XCTAssertFalse(snapshot.surfaces[0].display?.isEmpty ?? true,
+                       "the front window's drawing is served first too")
+        XCTAssertTrue(snapshot.surfaces.contains { $0.items.isEmpty },
+                      "a window past the item budget returns no items")
+        XCTAssertTrue(snapshot.surfaces.contains {
+            $0.display?.isEmpty == true
+        }, "a window past the content budget returns no ops")
+
+        /* The two budgets are separate on purpose: a shared pool would let
+           whichever family is served first starve the rest, and the
+           measured item worst case (54.6 KB before any of this existed)
+           would have starved everything. */
+        XCTAssertFalse(snapshot.surfaces.allSatisfy {
+            $0.items.isEmpty || ($0.display?.isEmpty ?? true)
+        }, "one window must receive both families, not one at the other's cost")
+    }
+
+    // MARK: - the omission CLASS, not one more instance of it
+
+    func testEveryWindowFieldIsCarriedOrConsciouslyDeclined() async throws {
+        /* Three times in slice 2 the projection carried what a reader
+           REMEMBERED rather than what the model holds: `window.items` for
+           desktop icons, `window.items` again for Finder rows, and
+           `window.display`. Each shipped invisible for weeks. This walks
+           `Scene.Window`'s own stored properties and fails on any one the
+           roster below has not disposed of — so the NEXT field added to
+           the IR turns this red instead of shipping silently. */
+        let scene = try Self.rosterScene()
+        let window = try XCTUnwrap(scene.windows.first)
+        let declared = Set(IRSchema.declaredProperties(of: window)
+            .filter { $0.hasPrefix("Scene.Window.") }
+            .map { String($0.dropFirst("Scene.Window.".count)) })
+
+        XCTAssertFalse(declared.isEmpty,
+                       "reflection must see the window's own fields")
+        XCTAssertEqual(
+            declared.subtracting(Self.windowFieldRoster.keys).sorted(), [],
+            """
+            A field was added to Scene.Window and the MCP projection has \
+            not been told about it. Carry it in \
+            MirrorStateProjectionService.surfaces(_:), or add it to \
+            windowFieldRoster as .declined with the reason — but do not \
+            let it ship invisible, which is what happened three times.
+            """)
+        XCTAssertEqual(
+            Set(Self.windowFieldRoster.keys).subtracting(declared).sorted(),
+            [],
+            """
+            The roster names a field Scene.Window no longer has. Delete \
+            the row; a roster that outlives the model stops proving \
+            anything.
+            """)
+
+        /* The carried half is PROVEN against a real projection rather
+           than asserted, because a roster whose entries nothing checks is
+           the same kind of remembering it exists to replace. */
+        let snapshot = try await projected(scene)
+        for (field, disposition) in Self.windowFieldRoster {
+            guard case .carried(let reaches) = disposition else { continue }
+            XCTAssertTrue(reaches(snapshot),
+                          "Scene.Window.\(field) is rostered as carried "
+                            + "and did not reach the projection")
+        }
+    }
+
     // MARK: - the journal: which face drove it
 
     func testJournalTellsAnAgentDrivenActFromAHandDrivenOne() async throws {
@@ -484,5 +758,165 @@ final class MirrorStateProjectionServiceTests: XCTestCase {
         XCTAssertFalse(result.available)
         XCTAssertEqual(result.unavailable?.code,
                        "now-mirror-metrics-unavailable")
+    }
+}
+
+// MARK: - the roster the omission-class guard reads
+
+/// What the MCP surface projection does with one stored property of
+/// `Scene.Window`.
+private enum WindowFieldDisposition {
+    /// Reaches the projection, and the closure proves it against a real
+    /// snapshot rather than asserting it.
+    case carried((AgentIntegrationMirrorSnapshot) -> Bool)
+    /// Deliberately not carried. The reason is the whole point of the
+    /// case: "not carried" with no argument is the state all three
+    /// omissions were already in.
+    case declined(String)
+}
+
+extension MirrorStateProjectionServiceTests {
+    fileprivate static func full(_ snapshot: AgentIntegrationMirrorSnapshot)
+        -> AgentIntegrationMirrorSurface? {
+        snapshot.surfaces.first { $0.title == "Save changes?" }
+    }
+
+    fileprivate static func plain(_ snapshot: AgentIntegrationMirrorSnapshot)
+        -> AgentIntegrationMirrorSurface? {
+        snapshot.surfaces.first { $0.title == "Plain" }
+    }
+
+    /// Two windows: one populating every decodable field of
+    /// `Scene.Window`, and one with no `incarnation` — because `id` is
+    /// only observable as an entity key when the durable one is absent,
+    /// and a probe that cannot distinguish the two would let either
+    /// field's projection rot unnoticed.
+    fileprivate static func rosterScene() throws -> Scene {
+        let document = #"""
+        {
+          "version":2,"seq":6,"capturedAt":6,"source":"peek",
+          "screen":{"w":640,"h":480},
+          "apps":[{"psn":"0.9","name":"SimpleText","front":true,
+                   "incarnation":"process-st"}],
+          "processes":[{"psn":"0.9","name":"SimpleText","front":true,
+                        "signature":"ttxt","incarnation":"process-st"}],
+          "menubar":{"app":"SimpleText","menus":[]},
+          "windows":[{
+            "id":"0.9/Save changes?#0","app":"SimpleText","psn":"0.9",
+            "title":"Save changes?","kind":2,
+            "rect":{"l":40,"t":60,"r":440,"b":400},
+            "front":true,"z":0,"visible":true,
+            "ref":"win-save","addr":1234567,
+            "incarnation":"process-st/window-save",
+            "text":{"content":"Untitled","active":true},
+            "controls":[
+              {"ref":"ctl-save","role":"control","title":"Save",
+               "rect":{"l":10,"t":10,"r":60,"b":26},
+               "enabled":true,"visible":true,
+               "semantic":{"knowledge":"known","kind":"pushButton",
+                           "value":"Save"}}
+            ],
+            "dialogItems":[
+              {"number":3,"title":"Name",
+               "rect":{"l":10,"t":40,"r":200,"b":56},
+               "enabled":true,"visible":true,
+               "semantic":{"knowledge":"known","kind":"editText",
+                           "value":"Untitled"}}
+            ],
+            "display":[
+              {"op":"text","ticks":7,"text":"Save changes?","pen":[8,20],
+               "font":3,"size":9,"face":0}
+            ]
+          },{
+            "id":"0.9/Plain#0","app":"SimpleText","psn":"0.9",
+            "title":"Plain","kind":8,
+            "rect":{"l":0,"t":0,"r":120,"b":90},
+            "front":false,"z":1,"visible":true,"controls":[],
+            "items":[
+              {"name":"Read Me","kind":"file","type":"TEXT",
+               "creator":"ttxt","x":12,"y":20,"placed":true,
+               "alias":false,"invisible":false}
+            ]
+          }],
+          "meta":{"errors":[],"coverage":[]}
+        }
+        """#
+        return try JSONDecoder().decode(Scene.self, from: Data(document.utf8))
+    }
+
+    /// **Every stored property of `Scene.Window`, disposed of on purpose.**
+    ///
+    /// A field missing from here fails
+    /// `testEveryWindowFieldIsCarriedOrConsciouslyDeclined`, which is the
+    /// point: the three omissions this guard exists for were all silent,
+    /// and the cost of each was weeks of a face that could not see
+    /// something the model had been holding the whole time.
+    fileprivate static var windowFieldRoster:
+        [String: WindowFieldDisposition] {
+        [
+            "id": .carried { plain($0)?.entityID == "0.9/Plain#0" },
+            "app": .carried { snapshot in
+                snapshot.entities.contains {
+                    $0.kind == .window && $0.name == "SimpleText"
+                }
+            },
+            "psn": .declined("""
+                The guest's Process Serial Number is a transport identity \
+                that a relaunch reuses. Entities are addressed by durable \
+                incarnation — a window's owner arrives as \
+                `entities[].ownerID` — and publishing a psn beside it \
+                would offer a second, weaker key for the same join.
+                """),
+            "title": .carried { full($0)?.title == "Save changes?" },
+            "kind": .carried { full($0)?.kind == 2 },
+            "rect": .carried {
+                full($0)?.rect == .init(l: 40, t: 60, r: 440, b: 400)
+            },
+            "front": .carried { full($0)?.front == true },
+            "z": .carried { full($0)?.z == 0 },
+            "visible": .carried { full($0)?.visible == true },
+            "controls": .carried { snapshot in
+                full(snapshot)?.items.contains {
+                    $0.source == "control" && $0.title == "Save"
+                } == true
+            },
+            "dialogItems": .carried { snapshot in
+                full(snapshot)?.items.contains {
+                    $0.source == "dialogItem" && $0.number == 3
+                } == true
+            },
+            "ref": .carried { full($0)?.ref == "win-save" },
+            "addr": .declined("""
+                The window record's own guest address. The IR carries it \
+                so a HARNESS can say which window it is comparing against \
+                the machine; nothing renders from it, and MCP addresses \
+                windows by `entityID`, which stays valid across a scene \
+                the pointer does not. Publishing a raw guest pointer as \
+                an addressing option would invite a caller to key on it.
+                """),
+            "incarnation": .carried {
+                full($0)?.entityID
+                    == "window:process-st:process-st/window-save"
+            },
+            "text": .carried { full($0)?.text?.content == "Untitled" },
+            "items": .carried { snapshot in
+                plain(snapshot)?.items.contains {
+                    $0.source == "finderItem" && $0.title == "Read Me"
+                } == true
+            },
+            "display": .carried { snapshot in
+                full(snapshot)?.display?.contains {
+                    $0.op == "text" && $0.text == "Save changes?"
+                } == true
+            },
+            "island": .declined("""
+                Host-internal render state that happens to live on this \
+                struct. It has never been on the wire — `Serve.sceneMethod` \
+                nils every island before encoding, because island pixels \
+                ride their own pager — and it is a base64 RGBA blob that \
+                would exceed the protocol's whole one-message ceiling by \
+                itself.
+                """),
+        ]
     }
 }

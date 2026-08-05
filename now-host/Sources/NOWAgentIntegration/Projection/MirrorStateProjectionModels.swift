@@ -310,6 +310,24 @@ public struct AgentIntegrationMirrorDisplayOp:
     }
 }
 
+/// A dialog window's TextEdit body — what the field is actually holding,
+/// and whether it has the insertion point.
+public struct AgentIntegrationMirrorWindowText:
+    Codable, Equatable, Sendable {
+    /// Bounded, because a TE body has no size the producer promises.
+    public let content: String
+    public let active: Bool
+    /// The true character count. `content.count` short of this is a
+    /// prefix — the same rule `itemTotal` and `displayTotal` carry.
+    public let contentTotal: Int
+
+    public init(content: String, active: Bool, contentTotal: Int) {
+        self.content = content
+        self.active = active
+        self.contentTotal = contentTotal
+    }
+}
+
 /// A window's render-relevant detail, keyed to the entity of the same id.
 public struct AgentIntegrationMirrorSurface:
     Codable, Equatable, Sendable {
@@ -338,13 +356,30 @@ public struct AgentIntegrationMirrorSurface:
     /// drawing — the same rule `itemTotal` carries, for a list whose
     /// element size is unbounded.
     public let displayTotal: Int?
+    /// The Window Manager's `windowKind`, which is what decides how the
+    /// FRAME is drawn — a document window and a modal dialog are the same
+    /// rect and a different picture. Absent when the producer could not
+    /// say.
+    public let kind: Int?
+    /// The act-plane reference this window actuates through.
+    ///
+    /// Carried for the reason the control-level `ref` is: absent means the
+    /// window cannot be addressed by reference at all — NOW's own Carbon
+    /// window reports none rather than fabricating one — and a caller that
+    /// cannot see that difference reads an unaddressable window as an
+    /// ordinary one.
+    public let ref: String?
+    /// Dialog TextEdit content, for the windows that have it.
+    public let text: AgentIntegrationMirrorWindowText?
 
     public init(entityID: String, title: String,
                 rect: AgentIntegrationMirrorRect?, z: Int, front: Bool,
                 visible: Bool, items: [AgentIntegrationMirrorSurfaceItem],
                 itemTotal: Int,
                 display: [AgentIntegrationMirrorDisplayOp]? = nil,
-                displayTotal: Int? = nil) {
+                displayTotal: Int? = nil, kind: Int? = nil,
+                ref: String? = nil,
+                text: AgentIntegrationMirrorWindowText? = nil) {
         self.entityID = entityID
         self.title = title
         self.rect = rect
@@ -355,6 +390,9 @@ public struct AgentIntegrationMirrorSurface:
         self.itemTotal = itemTotal
         self.display = display
         self.displayTotal = displayTotal
+        self.kind = kind
+        self.ref = ref
+        self.text = text
     }
 }
 
