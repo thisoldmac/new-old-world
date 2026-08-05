@@ -194,7 +194,11 @@ tests pass; the full package is not green and must not be reported as such.
 
 Open before the state-engine campaign can close:
 
-- exact guest-minted Finder-item and application-visibility capabilities;
+- exact guest-minted Finder-item and application-visibility capabilities.
+  Application visibility is blocked rather than merely unbuilt: Mac OS 9.1's
+  Finder refuses to set `visible` at all, and cannot report its own process,
+  so no visibility postcondition can settle by the present route
+  (`mirror-visibility-census.md`);
 - typed producer coverage beyond census/windows/menubar, especially Finder
   enrichment, content epochs, and global layer order;
 - bounded tombstone retention tied to pending operations;
