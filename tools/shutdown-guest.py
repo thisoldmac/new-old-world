@@ -242,6 +242,20 @@ def main():
                   f"({int(time.time() - t0)}s)")
             return 0
         if not worker_answers(a.port):
+            # TWICE, and the second time is not caution for its own sake.
+            # One silent poll can be a refused connect, a busy moment or a
+            # timeout on a machine that is still perfectly alive — and the
+            # action this signal authorises is a QMP quit, which on a live
+            # machine IS the power cut rule 1 forbids. A transient must not
+            # be able to reach that. The first clean run of this path
+            # reported the worker silent on its very first poll (0 s after
+            # the applet launched), which is plausible — the applet is a
+            # 68K binary whose whole body is ShutDwnPower and the worker is
+            # one of the applications it quits — but "plausible" is not the
+            # standard for something that can corrupt a volume.
+            time.sleep(3)
+            if worker_answers(a.port):
+                continue
             elapsed = int(time.time() - t0)
             # Let the last writes drain before taking the process away.
             time.sleep(5)
