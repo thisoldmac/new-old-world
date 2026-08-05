@@ -4286,12 +4286,22 @@ components:
               planes:
                 type: array
                 description: >
-                  Exactly five rows in dependency order: structure,
-                  semantics, content, interaction, transitions. Unsupported
-                  rows remain present so unsupported and unasked cannot
-                  collapse — which is exactly how a resident predating a
-                  plane reports it: present, supported false.
-                minItems: 5
+                  The planes in dependency order: structure, semantics,
+                  content, interaction, transitions. Unsupported rows
+                  remain present so unsupported and unasked cannot
+                  collapse — which is how a resident predating a plane
+                  reports it: present, supported false.
+
+                  Four rows OR five, and the range is the compatibility
+                  rule rather than laxity. A guest built before P5 knows
+                  nothing of the transitions row and honestly sends four;
+                  a host that demanded five would refuse that guest's
+                  whole lifecycle report and show it as disconnected,
+                  which is the newer side reinterpreting an older peer's
+                  correct message as a fault. The reader fills a missing
+                  trailing row as unsupported. Rows are positional, so a
+                  new plane may only ever be APPENDED.
+                minItems: 4
                 maxItems: 5
                 items:
                   type: object

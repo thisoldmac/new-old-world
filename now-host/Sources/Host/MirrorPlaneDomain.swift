@@ -70,6 +70,25 @@ struct MirrorWirePlane: Codable, Equatable, Identifiable, Sendable {
     var reason: String?
 }
 
+/* In an extension so the memberwise initialiser survives. Declared
+   inside the struct it suppressed the memberwise one, and every call
+   site that builds a plane field by field stopped compiling. */
+extension MirrorWirePlane {
+    /// The row a guest that predates this plane could not have sent.
+    /// Reported as present-and-unsupported rather than absent, which is
+    /// the same distinction the wire keeps for every other plane: an
+    /// unsupported plane and an unasked one must not collapse.
+    init(unsupported plane: MirrorPlaneID) {
+        self.init(id: plane,
+                  purpose: "Not reported by this Mac's extension",
+                  capability: 0, supported: false, format: 0,
+                  requested: false, active: false,
+                  freshness: .unavailable, state: .unsupported,
+                  generation: 0,
+                  reason: "This Mac's NOW Extension predates the plane.")
+    }
+}
+
 struct MirrorWireFacts: Codable, Equatable, Sendable {
     var schema: Int
     var resident: MirrorWireExtension
@@ -95,12 +114,31 @@ struct MirrorWireFacts: Codable, Equatable, Sendable {
                 forKey: .resident, in: c,
                 debugDescription: "mirror facts did not describe NWex")
         }
-        planes = try c.decode([MirrorWirePlane].self, forKey: .planes)
-        guard planes.map(\.id) == MirrorPlaneID.allCases else {
+        let reported = try c.decode([MirrorWirePlane].self, forKey: .planes)
+        /* A guest built before a plane existed knows nothing of it and
+           honestly sends a shorter list. Refusing that is the NEWER side
+           reinterpreting an older peer's correct message as a fault —
+           the opposite of the rule this project holds, which is that an
+           older reader refuses a newer message rather than guessing at
+           it. So a PREFIX of the known planes is accepted and the
+           missing trailing rows are filled as unsupported.
+
+           Michelle saw the refusal this replaces on 2026-08-05: the
+           Mirror page read "The Mac's mirror facts do not match schema
+           1 … must carry every plane, in order" against a guest that was
+           reporting its four planes perfectly correctly. */
+        guard reported.map(\.id)
+                == Array(MirrorPlaneID.allCases.prefix(reported.count)),
+              !reported.isEmpty else {
             throw DecodingError.dataCorruptedError(
                 forKey: .planes, in: c,
-                debugDescription: "mirror facts must carry every plane, in order")
+                debugDescription:
+                    "mirror facts must carry the planes in order, "
+                    + "starting from structure")
         }
+        planes = reported + MirrorPlaneID.allCases
+            .dropFirst(reported.count)
+            .map { MirrorWirePlane(unsupported: $0) }
     }
 
     init(schema: Int, resident: MirrorWireExtension,

@@ -249,6 +249,41 @@ final class MirrorPlaneDomainTests: XCTestCase {
         XCTAssertTrue(model.requestedPlaneIDs(for: keyA).contains(.content))
     }
 
+    func testAGuestPredatingAPlaneIsNotRefusedItsWholeReport() throws {
+        /* Seen on 2026-08-05: the Mirror page read "The Mac's mirror
+           facts do not match schema 1 … must carry every plane, in
+           order" against a guest reporting its four planes perfectly
+           correctly. The newer host was reinterpreting an older peer's
+           right answer as a fault, which is the inverse of this
+           project's compatibility rule. */
+        let fourRows = #"{"schema":1,"extension":{"selector":"NWex","lifecycle":"active","expectedMajor":1,"residentMajor":1,"residentMinor":7,"tableLength":4096,"capabilities":15,"requested":15,"active":15,"heartbeat":99,"sourceManifest":"0000000100000002000000030000000400000005","buildFingerprint":"0000001000000011000000120000001300000014"},"planes":[{"id":"structure","purpose":"Window structure","capability":1,"supported":true,"format":3,"requested":true,"active":true,"freshness":"current","state":"active-current","generation":8},{"id":"semantics","purpose":"Meaning","capability":2,"supported":true,"format":2,"requested":true,"active":true,"freshness":"current","state":"active-current","generation":9},{"id":"content","purpose":"Content","capability":8,"supported":true,"format":2,"requested":true,"active":true,"freshness":"current","state":"active-current","generation":9},{"id":"interaction","purpose":"Input","capability":4,"supported":true,"format":2,"requested":true,"active":true,"freshness":"current","state":"active-current","generation":10}]}"#
+
+        let facts = try JSONDecoder().decode(
+            MirrorWireFacts.self, from: Data(fourRows.utf8))
+
+        XCTAssertEqual(facts.planes.map(\.id), MirrorPlaneID.allCases,
+                       "the roster is completed, not refused")
+        let filled = try XCTUnwrap(facts.planes.last)
+        XCTAssertEqual(filled.id, .transitions)
+        /* Present and unsupported, never absent: an unsupported plane and
+           an unasked one must not collapse into each other. */
+        XCTAssertFalse(filled.supported)
+        XCTAssertEqual(filled.state, .unsupported)
+        XCTAssertNotNil(filled.reason)
+        XCTAssertTrue(facts.planes[0].supported,
+                      "the rows the guest did send are untouched")
+    }
+
+    func testAScrambledPlaneOrderIsStillRefused() throws {
+        /* Accepting a prefix must not become accepting anything: the rows
+           are positional, and a reordering would silently relabel every
+           plane after the first difference. */
+        let scrambled = #"{"schema":1,"extension":{"selector":"NWex","lifecycle":"active","expectedMajor":1,"residentMajor":1,"residentMinor":7,"tableLength":4096,"capabilities":15,"requested":15,"active":15,"heartbeat":99,"sourceManifest":"0000000100000002000000030000000400000005","buildFingerprint":"0000001000000011000000120000001300000014"},"planes":[{"id":"semantics","purpose":"Meaning","capability":2,"supported":true,"format":2,"requested":true,"active":true,"freshness":"current","state":"active-current","generation":9},{"id":"structure","purpose":"Window structure","capability":1,"supported":true,"format":3,"requested":true,"active":true,"freshness":"current","state":"active-current","generation":8}]}"#
+
+        XCTAssertThrowsError(try JSONDecoder().decode(
+            MirrorWireFacts.self, from: Data(scrambled.utf8)))
+    }
+
     func testUnifiedWireFactsDecodeWithoutLegacyInventory() throws {
         let json = #"{"schema":1,"extension":{"selector":"NWex","lifecycle":"active","expectedMajor":1,"residentMajor":1,"residentMinor":7,"tableLength":4096,"capabilities":15,"requested":15,"active":15,"heartbeat":99,"sourceManifest":"0000000100000002000000030000000400000005","buildFingerprint":"0000001000000011000000120000001300000014"},"planes":[{"id":"structure","purpose":"Window structure","capability":1,"supported":true,"format":3,"requested":true,"active":true,"freshness":"current","state":"active-current","generation":8},{"id":"semantics","purpose":"Meaning","capability":2,"supported":false,"format":0,"requested":false,"active":false,"freshness":"unavailable","state":"unsupported","generation":0},{"id":"content","purpose":"Content","capability":8,"supported":true,"format":2,"requested":true,"active":true,"freshness":"current","state":"active-current","generation":9},{"id":"interaction","purpose":"Input","capability":4,"supported":true,"format":2,"requested":true,"active":true,"freshness":"current","state":"active-current","generation":10},{"id":"transitions","purpose":"Transitions a poll is too slow to see","capability":16,"supported":true,"format":1,"requested":true,"active":true,"freshness":"current","state":"active-current","generation":11}]}"#
         let facts = try JSONDecoder().decode(MirrorWireFacts.self,
