@@ -14,6 +14,61 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## UNVERIFIED: P4 publishes nothing, and the reason named for it was wrong (2026-08-05)
+
+**The symptom stands; the diagnosis attached to it does not.** A human drive on
+2026-08-04 (guest `a4a59d37d100`, resident `67d5ef43`) found
+`now_mirror_lifecycle` reporting **interaction generation 0** while structure sat
+at 613025 and content at 1522260, and not one act settling `confirmed` in eight
+minutes. That is real and still open.
+
+The reason recorded alongside it was that the host's requested plane mask "flaps
+between 7 and 15" with "the interaction bit (8) clear", pointing the repair at
+`MirrorControlModel.requestedPlaneIDs`, `MirrorPlanePolicyStore`, and the arming
+path. **That reading is wrong, and it points away from the defect.**
+`contract/peek_table.h` states the bits once:
+
+    kNowPeekTableCapAnchors = 1u << 0   P1
+    kNowPeekTableCapTree    = 1u << 1   P2
+    kNowPeekTableCapAct     = 1u << 2   P4   <- the act plane, BELOW P3
+    kNowPeekTableCapContent = 1u << 3   P3
+
+P4 sits below P3 because P3 asked for `1u << 2` while P4 already held it — the
+near-miss recorded under "Two planes asked for the same bit" (2026-07-31). So
+`cap=15 requested=7 active=7` says P4 **was requested and active**; the bit clear
+in 7 is P3, whose request is a bounded lease by design
+(`now_peek_claim_until`, from `qdtrace_cmd.c`), which is exactly what a mask
+expiring and being reclaimed looks like. Host plane policy is not implicated by
+that line. `now-guest-ppc/tests/peek_table_test.c` now pins each bit's value, so
+the same misreading fails a gate rather than an evening.
+
+**Where the defect actually has to be.** `mirror_probe.c :: plane_generation`
+returns, for P4, `table->act_v2.resident_generation`. That word is written in
+exactly one place — `now-guest-shared/src/now_act_guard.c`, where
+`v2_echo_request` bumps it twice and `now_act_v2_note` bumps it twice per stage —
+and both are reached only through `now_act_v2_begin`. Generation 0 therefore
+means **`now_act_v2_begin` returned early on every act of the drive**, and it has
+only three early exits:
+
+- `now_act_plane_state(table) != kNowActPlaneReady` (length, caps or act_format),
+- `cell->status != kNowPeekActStatusPending`,
+- `cell->target_a5 != current_a5` — by design, since only the target process's
+  own pump may proceed.
+
+Which one is unproven. Note that arming is *not* a candidate: the same log line
+that opened this arc shows the plane armed and active.
+
+**A rig warning that cost this session its measurement.**
+`/private/tmp/now-u7-extension-only/session.qcow2` carries the NOW Extension in
+its file system, but its internal snapshots predate it: resuming
+`--loadvm runner-ready` (a 2026-07-19 state) gives a guest reporting
+`lifecycle=absent`, `cap=-`, which reads exactly like a dead P4 on a machine that
+simply has no resident. Cold-boot it. Cold-booted here it still reported
+`absent` while `stat` showed `NOW Extension` present with type `INIT` and creator
+`NOWx` — the combination `scan_extensions_folder` is supposed to make impossible.
+That contradiction is unexplained and is the next thing to pull on; until it is,
+this template cannot demonstrate P4 either way.
+
 ## CYCLE 27 RETAINED-STATE CHECKPOINT; TWO ADVANCES, TWO BLOCKERS (2026-08-04)
 
 The exact `d0a3e1a` host was driven through native Mirror mouse input and
