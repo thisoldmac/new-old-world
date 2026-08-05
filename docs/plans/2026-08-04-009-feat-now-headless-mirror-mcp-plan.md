@@ -204,6 +204,57 @@ a control here and could not determine its kind" would make the coverage gap
 visible in the data instead of inferred from a bad-looking render. That is the
 cheapest move in this whole arc and it introduces no new mechanism.
 
+### Slice 5b — the event tail: what memory cannot hold
+
+**Memory answers "what is"; events answer "what happened",** and a class of
+thing has no answer to the first question at all:
+
+- **Immediate-mode drawing.** A window painted by QuickDraw calls and never
+  stored — the calls ARE the content. No memory walk however good recovers a
+  structure that was never written, which is most of the custom-draw class.
+- **On-demand construction.** A menu populated when it is pulled down; list
+  cells rendered by a custom `LDEF`. The structure is empty until the moment
+  it is not.
+- **Causality.** An Apple Event carries what an application was ASKED to do —
+  semantics that exist nowhere as state, only as a message in flight.
+
+Underneath all three sits a sampling problem worth naming on its own: **a
+~2.2 s poll cannot see anything shorter than 2.2 s.** An alert that appears
+and is dismissed, a progress state, a menu flash, a window opened and closed
+between walks — invisible, and invisible in a way better memory reading cannot
+fix. That is not a producer gap, it is a sampling gap, and it is the likely
+explanation for a recurring symptom: an act that worked while the Mirror never
+showed it.
+
+So the guest grows an **event tail**, and the QuickDraw stream ends up doing
+three jobs off one mechanism — invalidation (what changed, for cheap delta
+walking), content (what was drawn, the existing P3 plane), and transients and
+causality (this). One hook, three consumers, rather than three narrow hooks.
+
+Apple Events get their own line because they are the cheap win: a documented,
+first-party observation path that is **metal-safe with no emulator dependency
+at all**, which is rare in this project.
+
+Two constraints, both before anything is built:
+
+- **The cost is the risk, and it is worst on the machine that matters.** An
+  invalidation bitmask is O(1); an event LOG is unbounded. A tail recording
+  every drawing op is a firehose on a 1400c — CPU tax on every application
+  whether or not anyone is mirroring, and a memory problem besides. Ring
+  buffer, ARMED rather than always-on, and **overflow reported rather than
+  silently dropped**. A tail with a gap that does not say it has a gap is
+  worse than no tail, by the same rule that prints an absent settle as `-`
+  and never `0`.
+- **It lives in the resident**, by the family charter: trap patches and AE
+  handlers execute in a foreign context, so they are resident-only and
+  optional, and the product degrades honestly without them.
+
+This turns the corpus capture from a MOMENT into a TRANSACTION: arm the tail,
+perform the action, capture the moment, read the tail. Strictly better — it
+records how a window came to look that way rather than only how it ended up,
+which is exactly the evidence a producer gap and a sampling gap are told apart
+by.
+
 ### Slice 6 — close the gaps, metal-first
 
 Ordered by the ledger's own classes:
@@ -213,8 +264,12 @@ Ordered by the ledger's own classes:
   structure, fill a field the IR already has.
 - **Honesty for what cannot be read** — emit `unknown`/`truncated` rather than
   a plausible default, so the Mirror declines to draw what it does not know.
-- **Custom-drawn and composited art** — deferred, and stays deferred. Rung 5
-  holds QuickTime Player to the honesty bar for this exact reason.
+- **Custom-drawn and composited art** — deferred as PIXELS, and stays
+  deferred. But the event tail changes what "cannot be read" means for some
+  of it: a custom control that draws its own frame and label emits drawing
+  ops naming both, and text drawn with `DrawString` is content even when
+  nothing retained it. Rung 5 still holds QuickTime Player to the honesty
+  bar; the bar just moves once the tail exists.
 
 **Two oracles, two jobs, and the split is load-bearing.** QEMU memory reading
 DISCOVERS layout — one-off, when nobody yet knows what a structure looks like
