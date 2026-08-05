@@ -10,7 +10,10 @@
 #include "now_semantic_guard.h"
 #include "now_semantic_logic.h"
 
-enum { kSemanticWalkMax = 64 };
+/* The ceiling is the contract's, not this file's: the application pages
+   against the same number and the guard refuses a start ordinal beyond
+   it. See kNowPeekSemanticBatchWalkMax in peek_table.h. */
+enum { kSemanticWalkMax = kNowPeekSemanticBatchWalkMax };
 
 static int live_window(WindowRef want)
 {
@@ -23,21 +26,38 @@ static int live_window(WindowRef want)
     return 0;
 }
 
+/* The bounded breadth-first hierarchy walk, with its result KEPT.
+   It used to be spent proving one control's membership and then thrown
+   away, which is why classifying a window cost one walk per control. The
+   walk is the expensive half; the controls it enumerates are the answer
+   to the batched question. Returns how many it found, never more than
+   `cap`, and the root is deliberately included - a window's root control
+   is a control a person can see. */
+static short collect_below(ControlRef root, ControlRef *out, short cap)
+{
+    short head = 0, tail = 0;
+    if (cap <= 0) return 0;
+    out[tail++] = root;
+    while (head < tail) {
+        ControlRef node = out[head++];
+        UInt16 count = 0, i;
+        if (CountSubControls(node, &count) != noErr) continue;
+        for (i = 1; i <= count && tail < cap; ++i) {
+            ControlRef child = NULL;
+            if (GetIndexedSubControl(node, i, &child) == noErr
+                && child != NULL) out[tail++] = child;
+        }
+    }
+    return tail;
+}
+
 static int control_below(ControlRef root, ControlRef want)
 {
     ControlRef work[kSemanticWalkMax];
-    short head = 0, tail = 0;
-    work[tail++] = root;
-    while (head < tail) {
-        ControlRef node = work[head++];
-        UInt16 count = 0, i;
-        if (node == want) return 1;
-        if (CountSubControls(node, &count) != noErr) continue;
-        for (i = 1; i <= count && tail < kSemanticWalkMax; ++i) {
-            ControlRef child = NULL;
-            if (GetIndexedSubControl(node, i, &child) == noErr
-                && child != NULL) work[tail++] = child;
-        }
+    short found = collect_below(root, work, kSemanticWalkMax);
+    short i;
+    for (i = 0; i < found; ++i) {
+        if (work[i] == want) return 1;
     }
     return 0;
 }
@@ -164,18 +184,22 @@ static NowPeekU16 compact_kind(OSType kind)
     return kNowPeekSemanticControlOtherSystem;
 }
 
-static NowPeekU32 classify(void *ctx, NowPeekU32 window, NowPeekU32 control,
-                           NowPeekU16 *kind, unsigned char *text,
-                           NowPeekU16 cap, NowPeekU16 *true_length,
-                           NowPeekU32 *flags)
+/* Type a control whose membership is ALREADY PROVEN - either by the
+   caller's live_control, or by the batch walk that produced it. Nothing
+   here re-validates: doing so per control is precisely the cost that made
+   batching worth building. */
+static NowPeekU32 classify_member(void *ctx, NowPeekU32 window,
+                                  NowPeekU32 control, NowPeekU16 *kind,
+                                  unsigned char *text, NowPeekU16 cap,
+                                  NowPeekU16 *true_length, NowPeekU32 *flags)
 {
     ControlKind system_kind;
     Size actual = 0;
     OSErr err;
     (void)ctx;
+    (void)window;
     *true_length = 0;
     *flags = 0;
-    if (!live_control(window, control)) return kNowPeekSemanticStatusInvalid;
     err = GetControlData((ControlRef)control, kControlEntireControl,
                          kControlKindTag, sizeof(system_kind), &system_kind,
                          &actual);
@@ -209,6 +233,48 @@ static NowPeekU32 classify(void *ctx, NowPeekU32 window, NowPeekU32 control,
         return control_text((ControlRef)control, kControlStaticTextTextTag,
                             text, cap, true_length);
     return kNowPeekSemanticStatusOk;
+}
+
+static NowPeekU32 classify(void *ctx, NowPeekU32 window, NowPeekU32 control,
+                           NowPeekU16 *kind, unsigned char *text,
+                           NowPeekU16 cap, NowPeekU16 *true_length,
+                           NowPeekU32 *flags)
+{
+    *true_length = 0;
+    *flags = 0;
+    if (!live_control(window, control)) return kNowPeekSemanticStatusInvalid;
+    return classify_member(ctx, window, control, kind, text, cap,
+                           true_length, flags);
+}
+
+/* The batch's walk. It proves the window is live exactly once, then hands
+   back everything under its root - the membership proof and the answer
+   are the same traversal. */
+static NowPeekU16 collect_controls(void *ctx, NowPeekU32 window,
+                                   NowPeekU32 *out, NowPeekU16 cap)
+{
+    ControlRef work[kSemanticWalkMax];
+    ControlRef root = NULL;
+    short found, i, kept = 0;
+    (void)ctx;
+
+    if (!live_window((WindowRef)window)
+        || GetRootControl((WindowRef)window, &root) != noErr
+        || root == NULL) return 0;
+    found = collect_below(root, work,
+                          cap < kSemanticWalkMax ? (short)cap
+                                                 : kSemanticWalkMax);
+    for (i = 0; i < found; ++i) {
+        /* The same ownership check the single-control path makes, kept
+           per control rather than dropped because the walk was bounded:
+           a control reached through this root must still say it belongs
+           to this window. */
+        if (work[i] != NULL
+            && (*work[i])->contrlOwner == (WindowRef)window) {
+            out[kept++] = (NowPeekU32)work[i];
+        }
+    }
+    return (NowPeekU16)kept;
 }
 
 typedef struct {
@@ -340,4 +406,37 @@ void now_semantic_apply(NowPeekTable *table, NowPeekU32 ticks)
     else if (verdict == kNowSemanticBadRequest)
         now_semantic_refuse(&table->semantic, ticks, kNowPeekSemanticStatusInvalid);
     else now_semantic_resolve(&table->semantic, ticks, &source);
+}
+
+/* P2's second cell, served on the same pass and under the same rules.
+   It is a separate entry point because it is a separate lease: the two
+   cells no longer compete, which is the transport half of why 121
+   controls never carried a kind. */
+void now_semantic_batch_apply(NowPeekTable *table, NowPeekU32 ticks)
+{
+    NowSemanticBatchSource source;
+    NowSemanticRequestVerdict verdict;
+
+    if (!now_semantic_batch_ready(table)) return;
+    verdict = now_semantic_batch_verdict(
+        table, (NowPeekU32)LMGetCurrentA5(), ticks);
+    if (table->semantic_batch.response_request_generation
+            == table->semantic_batch.request_generation
+        && table->semantic_batch.response_writer_epoch
+            == table->semantic_batch.request_writer_epoch
+        && table->semantic_batch.response_generation != 0
+        && (table->semantic_batch.response_generation & 1U) == 0) return;
+    if (verdict == kNowSemanticWrongTarget || verdict == kNowSemanticNoPlane)
+        return;
+    source.ctx = NULL;
+    source.collect = collect_controls;
+    source.classify_member = classify_member;
+    if (verdict == kNowSemanticStale)
+        now_semantic_batch_refuse(&table->semantic_batch, ticks,
+                                  kNowPeekSemanticStatusStale);
+    else if (verdict == kNowSemanticBadRequest)
+        now_semantic_batch_refuse(&table->semantic_batch, ticks,
+                                  kNowPeekSemanticStatusInvalid);
+    else
+        now_semantic_batch_resolve(&table->semantic_batch, ticks, &source);
 }
