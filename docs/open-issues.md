@@ -57,6 +57,42 @@ Three things worth keeping regardless of how that goes:
   Item and content families now hold separate stated byte shares of one
   ceiling. **Anything further added to this payload must take a share
   rather than assume room; there is none.**
+## BROKEN: a blocked callee deafens NOW for 15 s per script (2026-08-05)
+
+**This is the mechanism behind the dropped connection**, and it is not
+about modals — a modal is only the commonest way to get a blocked callee.
+
+The guest is a serial Carbon application. `now_input_run_script` calls
+`OSADoScript`, and while that call is inside the OSA component **NOW
+pumps nothing**: not the wire, not its own event loop. The file says so
+in its own refusal text — *"this guest is serial and could not wait
+longer"*.
+
+There is a deadline, and it works: `OSASetActiveProc` installs a proc the
+component calls while the script runs, which returns `userCanceledErr`
+past the deadline. So a script cannot hang forever. But the deadline is
+`kNowScriptDefaultMs = 15000`, and **the host never sends `timeoutMs` at
+all** — zero occurrences in `NOWMirrorSource`. So every script to a
+blocked application makes the guest deaf for a full fifteen seconds.
+
+Stack a few and the arithmetic is the drive that died: acts queued 48–87
+seconds, the host's heartbeat unanswered through all of it, six
+operations settling `sessionChanged`, and the guest's socket left CLOSED
+while the host still believed it had a guest.
+
+**The Finder is the worst possible application for this**, because NOW
+reaches it for the icon roster, `finderOpen`, `finderSelect` and the
+visibility census — routine scene maintenance, not just user acts. So a
+blocked Finder does not degrade one feature; it deafens the whole guest
+on a timer.
+
+**The cheapest real fix is not a new mechanism.** Routine scene-
+maintenance reads (icons, census) should carry a SHORT `timeoutMs` — they
+are polls, and a poll that cannot answer in a second should give the wire
+back rather than hold it for fifteen. A user-initiated act can keep the
+long deadline, because a person is waiting for that one on purpose. The
+argument already exists on the verb; nobody passes it.
+
 ## The host's dispatch path has no test seam, and it cost three times today (2026-08-05)
 
 Not a defect in the product; a gap in how the product can be checked, and
