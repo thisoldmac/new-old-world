@@ -13,13 +13,17 @@ final class MirrorStateProjectionService {
     /// the live Mirror source and this service is a read-only adapter that
     /// must not become a second owner of anything.
     private let metrics: () -> AgentIntegrationMirrorMetrics?
+    private let lifecycle: () -> AgentIntegrationMirrorLifecycle?
 
     init(engines: MirrorStateEngineRegistry,
          currentGuest: @escaping () -> GuestKey?,
-         metrics: @escaping () -> AgentIntegrationMirrorMetrics? = { nil }) {
+         metrics: @escaping () -> AgentIntegrationMirrorMetrics? = { nil },
+         lifecycle: @escaping () -> AgentIntegrationMirrorLifecycle?
+            = { nil }) {
         self.engines = engines
         self.currentGuest = currentGuest
         self.metrics = metrics
+        self.lifecycle = lifecycle
     }
 
     func read(_ request: AgentIntegrationMirrorReadRequest) async
@@ -48,6 +52,25 @@ final class MirrorStateProjectionService {
                 metrics: metrics))
         }
 
+        /* Lifecycle answers before the snapshot guard for the same reason
+           metrics does, and a sharper one: the state it reports is exactly
+           what explains a Mirror with no snapshot. Refusing it until a
+           scene arrives would withhold the answer precisely when the
+           question is being asked. */
+        if request.intention == .lifecycle {
+            guard let facts = lifecycle() else {
+                return unavailable(
+                    "now-mirror-lifecycle-unavailable",
+                    "No Mac is connected, so no resident has answered")
+            }
+            return .init(value: .init(
+                intention: .lifecycle,
+                current: currentGuest()
+                    .flatMap { engines.existing(for: $0)?.snapshot }
+                    .map(metadata),
+                lifecycle: facts))
+        }
+
         guard let key = currentGuest(),
               let engine = engines.existing(for: key),
               let current = engine.snapshot else {
@@ -57,8 +80,12 @@ final class MirrorStateProjectionService {
         }
 
         switch request.intention {
-        case .metrics:
-            preconditionFailure("metrics is answered before this switch")
+        case .metrics, .lifecycle:
+            preconditionFailure("answered before this switch")
+        case .journal:
+            return .init(value: .init(
+                intention: .journal, current: metadata(current),
+                journal: engine.operations.records.map(Self.record)))
         case .status:
             return .init(value: .init(intention: .status,
                                       current: metadata(current)))
@@ -217,6 +244,22 @@ final class MirrorStateProjectionService {
                 front: window.front, visible: window.visible,
                 items: Array(all.prefix(perWindow)), itemTotal: all.count)
         }
+    }
+
+    /// The journal's own record, rendered. `target` and `postcondition`
+    /// are described rather than structured: they are for a person reading
+    /// what was asked, and a caller that needs to act uses the entity ids
+    /// the snapshot publishes.
+    private static func record(_ operation: MirrorOperation)
+        -> AgentIntegrationMirrorOperationRecord {
+        .init(id: operation.id,
+              source: operation.source.rawValue,
+              outcome: operation.outcome.rawValue,
+              reason: operation.reason,
+              target: String(describing: operation.target),
+              postcondition: String(describing: operation.postcondition),
+              displayedSnapshotID: operation.displayedSnapshotID,
+              settledSequence: operation.settledSequence)
     }
 
     private static func rect(_ rect: MirrorKit.Rect)

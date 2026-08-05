@@ -46,6 +46,10 @@ public enum HostProjectionCatalog {
            client that cannot see them has to guess at the difference
            between a slow machine and a queued act. */
         MirrorMetricsProjection.self,
+        /* Beside the metrics, because a measurement without its premise is
+           a confident, meaningless number: this row is the premise. */
+        MirrorLifecycleProjection.self,
+        MirrorJournalProjection.self,
         /* And the one mutation row that shares the window's executor. It
            sits with the reads rather than with the act lane's five because
            it is the same engine seen the other way round, and because a

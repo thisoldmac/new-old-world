@@ -1016,6 +1016,14 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// no action case can name a file. `finderSelect` and `finderOpen`
     /// are the whole argument for objects, and they are served here.
     func perform(_ interaction: Interaction) {
+        perform(interaction, source: .human)
+    }
+
+    /// The one dispatch path, with the face that asked for it. `MirrorKit`'s
+    /// `MirrorSceneSource` conformance above is the gesture door; this is the
+    /// same door with the caller named.
+    func perform(_ interaction: Interaction,
+                 source: MirrorOperationSource) {
         if let refusal = pinnedActionRefusal() {
             let label = InteractionBridge.label(for: interaction)
             ActLog.note(action: label,
@@ -1048,7 +1056,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             let label = InteractionBridge.label(for: interaction)
             if let engine = shadowEngine,
                let operation = MirrorActionExecutor.operation(
-                    for: interaction, plan: plan, engine: engine),
+                    for: interaction, plan: plan, engine: engine,
+                    source: source),
                let mutationBroker {
                 if pending {
                     mutationWaiting = true

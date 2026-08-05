@@ -236,6 +236,38 @@ final class MirrorStateProjectionServiceTests: XCTestCase {
         XCTAssertEqual(field.text, "/")
     }
 
+    // MARK: - the journal: which face drove it
+
+    func testJournalTellsAnAgentDrivenActFromAHandDrivenOne() async throws {
+        let registry = MirrorStateEngineRegistry()
+        let engine = registry.engine(for: key)
+        _ = engine.accept(try scene(seq: 1))
+        let process = MirrorProcessIdentity(
+            session: MirrorGuestSession(guest: "mirror-projection",
+                                        incarnation: "session"),
+            incarnation: "process-finder")
+
+        for (id, source) in [("by-hand", MirrorOperationSource.human),
+                             ("by-agent", .mcp)] {
+            engine.operations.append(.init(
+                id: id, source: source, displayedSnapshotID: 1,
+                displayedSequence: 1, target: .process(process),
+                postcondition: .processFront(process),
+                enqueuedAt: Date()))
+        }
+
+        let result = await service(registry).read(.init(intention: .journal))
+        let journal = try XCTUnwrap(result.value?.journal)
+
+        /* Hardcoded to `human` until 2026-08-05, so every agent-driven act
+           was recorded as a person's. The paired hand-versus-MCP check the
+           plan asks for is unreadable without this field. */
+        XCTAssertEqual(journal.first { $0.id == "by-hand" }?.source, "human")
+        XCTAssertEqual(journal.first { $0.id == "by-agent" }?.source, "mcp")
+        XCTAssertEqual(engine.store.entries.count, 1,
+                       "reading the journal publishes no snapshot")
+    }
+
     // MARK: - metrics: the Mirror page's numbers, headless
 
     func testMetricsCarryTheSameClocksTheMirrorPageShows() async {

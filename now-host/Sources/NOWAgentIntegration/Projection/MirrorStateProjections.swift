@@ -100,6 +100,66 @@ public enum MirrorMetricsProjection: HostProjection {
     }
 }
 
+/// **Which resident answered, and what the planes are doing.**
+///
+/// The lifecycle, the resident's build fingerprint, and the three plane
+/// bitmasks — capability, requested, active. The gap between the last two
+/// is the difference between "not armed" and "cannot arm", which reads
+/// identically in an act's refusal and calls for opposite repairs.
+public enum MirrorLifecycleProjection: HostProjection {
+    public static let capability = HostCapabilityID("now_mirror_lifecycle")
+    public static let requires: [String] = []
+    public static let exposes: [String] = []
+    public static let acceptedArguments: Set<String> = []
+    public static let faces = MirrorStateProjectionReach.faces
+    public static let availabilityNote = MirrorStateProjectionReach.availability
+    public static var mcpDescriptor: [String: Any] {
+        MirrorStateProjectionSchema.descriptor(
+            title: "New Old World Mirror Lifecycle",
+            description: "Returns the NOW Extension's lifecycle and build fingerprint, its capability/requested/active plane bits, and the host's plane policy — the provenance any Mirror measurement has to be read against.",
+            properties: [:])
+    }
+    public static func invoke(_ arguments: HostProjectionArguments,
+                              through client: AgentIntegrationClient) async
+        -> HostProjectionOutcome {
+        if let refusal = arguments.refusalIfAnyPresent(tool: capability) {
+            return .invalidArguments(refusal)
+        }
+        return .value(.init(await client.mirrorRead(.init(
+            intention: .lifecycle))))
+    }
+}
+
+/// **Every operation this session, and which face drove it.**
+///
+/// `now_mirror_metrics` says how long an act took; this says what was
+/// asked, of what, by whom, and how it ended. The `source` field is the
+/// one that makes a hand-driven act and an MCP-driven one distinguishable
+/// after the fact.
+public enum MirrorJournalProjection: HostProjection {
+    public static let capability = HostCapabilityID("now_mirror_journal")
+    public static let requires: [String] = []
+    public static let exposes: [String] = []
+    public static let acceptedArguments: Set<String> = []
+    public static let faces = MirrorStateProjectionReach.faces
+    public static let availabilityNote = MirrorStateProjectionReach.availability
+    public static var mcpDescriptor: [String: Any] {
+        MirrorStateProjectionSchema.descriptor(
+            title: "New Old World Mirror Journal",
+            description: "Returns the Mirror's bounded operation journal: every act this session with its source (human or mcp), target, postcondition, outcome and reason.",
+            properties: [:])
+    }
+    public static func invoke(_ arguments: HostProjectionArguments,
+                              through client: AgentIntegrationClient) async
+        -> HostProjectionOutcome {
+        if let refusal = arguments.refusalIfAnyPresent(tool: capability) {
+            return .invalidArguments(refusal)
+        }
+        return .value(.init(await client.mirrorRead(.init(
+            intention: .journal))))
+    }
+}
+
 /// **Driving the Mirror by the same path a hand takes.**
 ///
 /// The one mutation row that goes through `MirrorActionExecutor` and the

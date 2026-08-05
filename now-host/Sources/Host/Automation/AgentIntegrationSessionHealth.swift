@@ -90,11 +90,19 @@ final class AgentIntegrationHostAdapter {
         MirrorStateProjectionService(
             engines: engines,
             currentGuest: { [unowned self] in self.listener.activeKey },
-            metrics: { [unowned self] in self.mirrorMetrics?() ?? nil })
+            metrics: { [unowned self] in self.mirrorMetrics?() ?? nil },
+            lifecycle: { [unowned self] in self.mirrorLifecycle?() ?? nil })
     }
     /// Bound after construction because the Mirror source is made lazily and
     /// owns the timelines; this service only reads them.
     private var mirrorMetrics: (() -> AgentIntegrationMirrorMetrics?)?
+
+    private var mirrorLifecycle: (() -> AgentIntegrationMirrorLifecycle?)?
+
+    func bindMirrorLifecycle(
+        _ read: @escaping () -> AgentIntegrationMirrorLifecycle?) {
+        mirrorLifecycle = read
+    }
 
     func bindMirrorMetrics(
         _ read: @escaping () -> AgentIntegrationMirrorMetrics?) {

@@ -166,6 +166,67 @@ struct MirrorDriveService {
                 object: .desktop(nil),
                 gesture: .type(request.text ?? "")))
 
+        case .finderDeselect:
+            return .resolved(.init(
+                object: .desktop(nil),
+                gesture: .click(count: 1, mods: 0, at: .init(x: 0, y: 0))))
+
+        case .dialogItem:
+            guard let window = window(request.entityID, in: scene) else {
+                return .refused(missing("window", request.entityID))
+            }
+            let number = request.itemIndex ?? 0
+            guard let item = (window.dialogItems ?? []).first(where: {
+                $0.number == number
+            }) else {
+                return .refused(.init(
+                    code: "now-mirror-drive-no-such-dialog-item",
+                    message: "That window publishes no dialog item "
+                        + "\(number). Read now_mirror_snapshot: its "
+                        + "surfaces list every item this window carries."))
+            }
+            return .resolved(.init(
+                object: .dialogItem(.init(
+                    number: item.number, ref: item.ref, title: item.title,
+                    rect: item.rect, isEnabled: item.enabled,
+                    window: object(window, part: .content),
+                    semanticKind: item.semantic.kind,
+                    semanticAction: item.semantic.action,
+                    isSemanticallyActionable: item.enabled)),
+                gesture: .click(count: 1, mods: 0,
+                                at: .init(x: item.rect.l, y: item.rect.t))))
+
+        case .appleMenuItem:
+            /* An Apple Menu Items entry is not a separate object: it is a
+               row of the Apple menu, and the interaction policy is what
+               routes it to the guest Finder rather than to MenuSelect. So
+               resolve it out of the PUBLISHED menu instead of fabricating
+               one — a name that is not on the machine's Apple menu should
+               refuse here rather than reach the guest as a script naming
+               something that does not exist. */
+            guard let apple = scene.menubar?.menus.first(where: \.apple)
+            else {
+                return .refused(.init(
+                    code: "now-mirror-drive-no-apple-menu",
+                    message: "The published menu bar carries no Apple menu"))
+            }
+            guard let row = apple.items.first(where: {
+                $0.title == request.itemName
+            }) else {
+                return .refused(.init(
+                    code: "now-mirror-drive-no-such-apple-item",
+                    message: "The Apple menu has no row named "
+                        + "\(request.itemName ?? "(unnamed)")"))
+            }
+            return .resolved(.init(
+                object: .menuItem(.init(
+                    menu: .init(id: apple.id, title: apple.title,
+                                left: apple.left, isApple: true),
+                    index: row.index, title: row.title, cmd: row.cmd,
+                    isEnabled: row.enabled, isSeparator: row.separator)),
+                gesture: .click(count: 1, mods: 0,
+                                at: .init(x: apple.left, y: 0))))
+
         case .finderOpen, .finderSelect:
             let container = request.container.flatMap {
                 $0 == "desktop" ? nil : window($0, in: scene)

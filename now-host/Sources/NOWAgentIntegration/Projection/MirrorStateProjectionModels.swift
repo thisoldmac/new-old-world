@@ -14,6 +14,17 @@ public enum AgentIntegrationMirrorReadIntention: String, Codable, Sendable {
     /// a headless run, because an agent driving without it cannot tell a
     /// queued act from a slow machine.
     case metrics
+    /// Plane policy and the resident's own bits, plus its build. The Mirror
+    /// page shows all of it and a headless client could not see any of it —
+    /// and on 2026-08-04 a PowerBook answered from a stale `Now Extension`
+    /// beside the new `NowExt`, refusing every act as "the anchor plane is
+    /// absent or not armed", while the host knew the resident's build the
+    /// whole time and never said it.
+    case lifecycle
+    /// Every operation the Mirror has recorded this session, whichever face
+    /// drove it. The clocks in `metrics` say how long; this says what was
+    /// asked, of what, by whom, and how it ended.
+    case journal
 }
 
 public struct AgentIntegrationMirrorReadRequest:
@@ -42,7 +53,7 @@ public struct AgentIntegrationMirrorReadRequest:
         case .wait:
             return query == nil && (afterSnapshotID ?? 0) > 0
                 && (1...15_000).contains(timeoutMs ?? 5_000)
-        case .metrics:
+        case .metrics, .lifecycle, .journal:
             return query == nil && afterSnapshotID == nil && timeoutMs == nil
         }
     }
@@ -386,6 +397,91 @@ public struct AgentIntegrationMirrorMetrics:
     }
 }
 
+public struct AgentIntegrationMirrorPlane: Codable, Equatable, Sendable {
+    public let id: String
+    public let title: String
+    public let purpose: String
+    public let format: Int
+    public let generation: Int
+    /// Host policy: whether this face is asking for the plane at all.
+    public let requestedByHost: Bool
+
+    public init(id: String, title: String, purpose: String, format: Int,
+                generation: Int, requestedByHost: Bool) {
+        self.id = id
+        self.title = title
+        self.purpose = purpose
+        self.format = format
+        self.generation = generation
+        self.requestedByHost = requestedByHost
+    }
+}
+
+public struct AgentIntegrationMirrorLifecycle:
+    Codable, Equatable, Sendable {
+    public let lifecycle: String
+    public let residentBuild: String?
+    public let residentMajor: Int?
+    public let residentMinor: Int?
+    /// The three plane bitmasks the resident reports. `capabilities` is what
+    /// it CAN do, `requested` what the host asked for, `active` what it is
+    /// actually doing — and the gap between the last two is the difference
+    /// between "not armed" and "cannot arm", which reads identically in a
+    /// refusal and calls for opposite repairs.
+    public let capabilities: Int?
+    public let requested: Int?
+    public let active: Int?
+    public let reason: String?
+    public let planes: [AgentIntegrationMirrorPlane]
+
+    public init(lifecycle: String, residentBuild: String?,
+                residentMajor: Int?, residentMinor: Int?,
+                capabilities: Int?, requested: Int?, active: Int?,
+                reason: String?,
+                planes: [AgentIntegrationMirrorPlane]) {
+        self.lifecycle = lifecycle
+        self.residentBuild = residentBuild
+        self.residentMajor = residentMajor
+        self.residentMinor = residentMinor
+        self.capabilities = capabilities
+        self.requested = requested
+        self.active = active
+        self.reason = reason
+        self.planes = planes
+    }
+}
+
+/// One operation, as the journal holds it.
+///
+/// `source` is the face that drove it — `human` or `mcp`. It was hardcoded
+/// to `human` until 2026-08-05, so every agent-driven act was recorded as a
+/// person's; telling the two apart afterwards is most of what this row is
+/// for.
+public struct AgentIntegrationMirrorOperationRecord:
+    Codable, Equatable, Sendable {
+    public let id: String
+    public let source: String
+    public let outcome: String
+    public let reason: String?
+    public let target: String
+    public let postcondition: String
+    public let displayedSnapshotID: Int
+    public let settledSequence: Int?
+
+    public init(id: String, source: String, outcome: String,
+                reason: String?, target: String, postcondition: String,
+                displayedSnapshotID: Int, settledSequence: Int?) {
+        self.id = id
+        self.source = source
+        self.outcome = outcome
+        self.reason = reason
+        self.target = target
+        self.postcondition = postcondition
+        self.displayedSnapshotID = displayedSnapshotID
+        self.settledSequence = settledSequence
+    }
+}
+
 public struct AgentIntegrationMirrorReadValue:
     Codable, Equatable, Sendable {
     public let intention: AgentIntegrationMirrorReadIntention
@@ -393,6 +489,8 @@ public struct AgentIntegrationMirrorReadValue:
     public let snapshot: AgentIntegrationMirrorSnapshot?
     public let matches: [AgentIntegrationMirrorEntity]?
     public let metrics: AgentIntegrationMirrorMetrics?
+    public let lifecycle: AgentIntegrationMirrorLifecycle?
+    public let journal: [AgentIntegrationMirrorOperationRecord]?
     public let timedOut: Bool
 
     public init(intention: AgentIntegrationMirrorReadIntention,
@@ -400,12 +498,16 @@ public struct AgentIntegrationMirrorReadValue:
                 snapshot: AgentIntegrationMirrorSnapshot? = nil,
                 matches: [AgentIntegrationMirrorEntity]? = nil,
                 metrics: AgentIntegrationMirrorMetrics? = nil,
+                lifecycle: AgentIntegrationMirrorLifecycle? = nil,
+                journal: [AgentIntegrationMirrorOperationRecord]? = nil,
                 timedOut: Bool = false) {
         self.intention = intention
         self.current = current
         self.snapshot = snapshot
         self.matches = matches
         self.metrics = metrics
+        self.lifecycle = lifecycle
+        self.journal = journal
         self.timedOut = timedOut
     }
 }

@@ -39,6 +39,19 @@ public enum AgentIntegrationMirrorDriveGesture: String, Codable, Sendable {
     /// model exists for, because an icon has no control reference.
     case finderOpen
     case finderSelect
+    /// Clear the Finder's selection, which is what clicking empty desktop
+    /// does. Its own gesture rather than a `finderSelect` with no name,
+    /// because "select nothing" and "select the thing called nothing" must
+    /// not be the same request.
+    case finderDeselect
+    /// One live Dialog Manager item, by its 1-based DITL number, through
+    /// the addressed dialog's own event path. NOT a Control Manager part,
+    /// even when the item owns a `ControlHandle`.
+    case dialogItem
+    /// One system-owned Apple Menu Items entry, opened through the guest
+    /// Finder. CarbonLib does not expose `OpenDeskAcc` to the guest app,
+    /// so this is the public, metal-safe route rather than a shortcut.
+    case appleMenuItem
 }
 
 public struct AgentIntegrationMirrorDriveRequest:
@@ -91,6 +104,12 @@ public struct AgentIntegrationMirrorDriveRequest:
         case .type:
             return text?.isEmpty == false && (text!.count <= 256)
         case .finderOpen, .finderSelect:
+            return itemName?.isEmpty == false
+        case .finderDeselect:
+            return true
+        case .dialogItem:
+            return entityID?.isEmpty == false && (itemIndex ?? 0) > 0
+        case .appleMenuItem:
             return itemName?.isEmpty == false
         }
     }

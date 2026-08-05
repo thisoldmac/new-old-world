@@ -272,9 +272,30 @@ final class HostAppState: ObservableObject {
             let source = self.mirrorSource
             return MirrorDriveService(
                 scene: { source.scene },
-                perform: { source.perform($0) },
+                perform: { source.perform($0, source: .mcp) },
                 journal: { source.shadowEngine?.operations })
                 .drive(request)
+        }
+        integration.bindMirrorLifecycle { [weak self] in
+            guard let self, let facts = self.mirror.wireFacts else {
+                return nil
+            }
+            return .init(
+                lifecycle: facts.resident.lifecycle.rawValue,
+                residentBuild: facts.resident.buildFingerprint,
+                residentMajor: facts.resident.residentMajor,
+                residentMinor: facts.resident.residentMinor,
+                capabilities: facts.resident.capabilities,
+                requested: facts.resident.requested,
+                active: facts.resident.active,
+                reason: facts.resident.reason,
+                planes: facts.planes.map { plane in
+                    .init(id: plane.id.rawValue, title: plane.id.title,
+                          purpose: plane.purpose, format: plane.format,
+                          generation: plane.generation,
+                          requestedByHost:
+                            self.mirror.policyEnabled(plane.id))
+                })
         }
         integration.bindMirrorMetrics { [weak self] in
             guard let self, self.madeMirrorSource else { return nil }

@@ -30,9 +30,15 @@ enum MirrorActionExecutor {
     }
 
     @MainActor
+    /// `source` is WHICH FACE drove this, and it was hardcoded to `.human`
+    /// until 2026-08-05 — so every act an agent drove was recorded as a
+    /// person's. That reading is what the journal is for, and it is the
+    /// only thing that can tell a hand-driven act from an MCP-driven one
+    /// after the fact.
     static func operation(for interaction: Interaction,
                           plan: InteractionPlan,
                           engine: MirrorStateEngine,
+                          source: MirrorOperationSource = .human,
                           id: String = UUID().uuidString.lowercased(),
                           at date: Date = Date()) -> MirrorOperation? {
         guard let snapshot = engine.snapshot, let replica = engine.replica else {
@@ -51,7 +57,7 @@ enum MirrorActionExecutor {
         func make(target: MirrorEntityIdentity,
                   postcondition: MirrorOperationPostcondition)
             -> MirrorOperation {
-            .init(id: id, source: .human,
+            .init(id: id, source: source,
                   displayedSnapshotID: snapshot.id,
                   displayedSequence: snapshot.sequence,
                   target: target, postcondition: postcondition,
