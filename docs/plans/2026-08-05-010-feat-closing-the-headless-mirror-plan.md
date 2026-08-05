@@ -95,9 +95,40 @@ all until #3 lands, and slice 6 is the work that most needs an agent's
 patience. It is listed as slice-2 debt and it is really slice 6 rung zero.
 
 **Slice 6 opens with a measurement.** Splitting the 190 undetermined items
-decides how much of slice 6 exists. It needs no new mechanism, it is a
-lookup rather than an inference, and it may collapse most of the number. Do
-it before building anything, including before #3.
+decides how much of slice 6 exists. Do it before building anything.
+
+> **Ran 2026-08-05, and it reframed the slice rather than sizing it.** Two
+> corrections, both load-bearing.
+>
+> **The premise was wrong twice.** "A lookup rather than an inference" is
+> false: `contrlDefProc` is a `Handle` that `Controls.h` marks *not
+> supported in Carbon* with no accessor, and `GetControlKind` — the
+> Control Manager's own answer — **is not exported by CarbonLib 1.6**, a
+> bill this repo had already paid once (`scene_self.c`: "the link fails").
+>
+> **And the number was not measuring what it looked like.** The 190 is
+> **121 Control Manager controls + 69 dialog items** (the 69 all `resCtrl`,
+> the one DITL type whose row names no kind). Of 122 controls in the
+> corpus, **exactly one carries a determined kind** — and not because 121
+> classifications failed. A complete classifier already ships and is better
+> than the one this plan imagined: `now_semantic.c :: classify()` reads
+> `kControlKindTag` from inside the target process through the resident,
+> resolves fourteen families, and its `signature != kControlKindSignature`
+> branch IS the standard-versus-custom split, decided rather than inferred.
+> **121 controls were never asked.** `peek_table.h` carries a SINGLE
+> semantic cell, control classification is its lowest-priority claimant
+> (`offer(10…)` against 20 for list cells and 30 for menus), and only the
+> front process may spend it.
+>
+> **So slice 6's control half is a transport problem, not a drawing one.**
+> It shrinks and it MOVES: op replay is not what it needs, and neither is
+> classification work. Dispatched as its own task. What survives of the
+> original framing is the dialog-item half and the genuinely custom-drawn
+> remainder — which is what #3 is for, and #3 keeps its justification.
+>
+> The histogram this measurement was supposed to produce is **owed**: the
+> recorded corpus predates the field that would carry it, and the
+> resident's verdict exists for 1 of 122. It needs one live scene.
 
 ## Who is doing what (2026-08-05)
 
