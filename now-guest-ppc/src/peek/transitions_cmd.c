@@ -292,13 +292,30 @@ void now_transitions_commit_read(NowEventU32 next)
  * console_model.c and decides nothing of its own.
  */
 
+/* **A refusal must survive being parsed**, and this one did not. Measured
+   on a live guest 2026-08-05: `transitions start` with no target refuses
+   `no-process`, whose message reads `nothing by that name is running (see
+   "ps")` — and those quotes went onto the wire unescaped, so every client
+   got a JSON parse error at column 124 instead of the reason. The refusal
+   was correct and unreadable, which is the worse half of the two.
+
+   It is on an ERROR path, which is where a missing escape is least likely
+   to be exercised and most likely to matter: a caller meeting it is
+   already in trouble. `qdtrace_json.c` does this correctly and this file
+   simply did not copy it — the same escaper, three lines away in the
+   tree. Sibling verbs (`hide`, `quit`, `front`) carry the same
+   quote-bearing sentence and DO escape it, confirmed live on the same
+   machine. */
 static void error_json(long id, const char *code, const char *message,
                        char *out, long cap)
 {
+    char esc[192];
+
+    now_json_escape(message != NULL ? message : "", esc, (long)sizeof esc);
     snprintf(out, (size_t)cap,
              "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
              "\"error\":{\"code\":\"%s\",\"message\":\"%s\"}}",
-             id, code, message);
+             id, code != NULL ? code : "error", esc);
 }
 
 static void run_status(const char *json, long id, char *out, long cap)

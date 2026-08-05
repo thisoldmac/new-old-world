@@ -57,6 +57,61 @@ Three things worth keeping regardless of how that goes:
   Item and content families now hold separate stated byte shares of one
   ceiling. **Anything further added to this payload must take a share
   rather than assume room; there is none.**
+## BROKEN: `transitions start` cannot arm, by any route (2026-08-05)
+
+**Found by driving, on the first live run of the verb.** P5's plane can
+never publish, so slice 5b's delivery half is built and non-functional.
+
+`run_start` reads its target with `now_json_find_string(json, "name", ...)`
+where `json` is the WHOLE request — and every request envelope carries
+`"name"` already, as the verb's own name:
+
+```
+{"type":"command.request","id":101,"name":"transitions",
+ "args":{"op":"start","serialHi":0,"serialLo":34734082}}
+```
+
+First match wins, so the target is always the string `transitions`, which
+is never a running process. The by-name route is tried BEFORE the
+serial/front/a5 selector, so it short-circuits every other route too.
+Proven three ways on a live guest, all answering the same by-NAME refusal:
+
+- no target at all → `no-process` (should have fallen to the selector);
+- `serialHi`/`serialLo` naming a real running process → `no-process`;
+- `name: "New Old World"`, a real running process → `no-process`.
+
+**The contract already forbids this and the rule was not followed.**
+`hide` names its argument `target` and says why in the contract, verbatim:
+*"`target` and not `name` — see the arg-key rule in the preamble above."*
+`transitions` chose `name` and collided with the envelope.
+
+The fix is a contract change (the arg key) plus the guest's parse, not a
+logic repair — the resolution order in `now_transitions_start` is correct
+and reads correctly; it is being handed the wrong string.
+
+**Why no test caught it:** the native test exercises the logic below the
+parse, and the parse is only wrong in the presence of a real envelope. A
+fixture that wraps the args the way the wire does would have found it.
+
+## FIXED, watched: a `transitions` refusal was unparseable JSON (2026-08-05)
+
+Also found on that first live run, and fixed and re-driven the same
+session. `transitions start` refused `no-process`, whose message reads
+`nothing by that name is running (see "ps")` — and `error_json`
+interpolated it into `"message":"%s"` **unescaped**, so every client got a
+JSON parse error at column 124 instead of the reason. The refusal was
+correct and unreadable, which is the worse half of the two.
+
+It is on an ERROR path, which is where a missing escape is least likely to
+be exercised and most likely to matter — a caller meeting it is already in
+trouble. `qdtrace_json.c` does it correctly with `now_json_escape` and
+this file simply did not copy it. Swept the siblings: `hide`, `quit` and
+`front` carry the same quote-bearing sentence and DO escape it, confirmed
+on the same live machine, so this was one emitter and not a class.
+
+Verified by rebuilding, restaging onto the running guest and re-driving:
+the refusal now parses.
+
 ## BROKEN: the control classifier gets one shot per scene, and 121 controls never got one (2026-08-05)
 
 Slice 6's opening measurement was supposed to size how much of the 190
