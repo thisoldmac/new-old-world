@@ -271,6 +271,24 @@ final class NOWMirrorSourceTests: XCTestCase {
                        "all toggles coalesce into one follow-up scene")
     }
 
+    /// The status line is the only thing a person driving the Mirror
+    /// reads, so it says when a gesture is waiting on the lane rather than
+    /// on the Macintosh — and stays quiet when nothing is.
+    func testStatusNamesAWaitingLaneAndIsSilentWhenNothingWaits() {
+        let harness = CycleHarness(activeKey: .synthetic("status"))
+        let listener = testListener()
+        let source = NOWMirrorSource(
+            listener: listener, engineRegistry: MirrorStateEngineRegistry(),
+            act: testAct(listener), interval: 3_600, cycleIO: harness.io)
+
+        source.actTimeline.depth = 0
+        XCTAssertFalse(source.status.contains("waiting"))
+        source.actTimeline.depth = 1        // in flight, nothing behind it
+        XCTAssertFalse(source.status.contains("waiting"))
+        source.actTimeline.depth = 3
+        XCTAssertTrue(source.status.contains("2 waiting"), source.status)
+    }
+
     func testSceneFromStoppedLifetimeCannotSettleRestartedSameGuest() throws {
         let key = GuestKey.synthetic("same-guest-restart")
         let harness = CycleHarness(activeKey: key)

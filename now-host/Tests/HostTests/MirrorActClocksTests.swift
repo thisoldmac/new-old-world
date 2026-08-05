@@ -140,6 +140,30 @@ final class MirrorActClocksTests: XCTestCase {
         XCTAssertNotNil(recorded.last?.settledAt)
     }
 
+    func testDepthReadInsideTheRecordAlreadyExcludesTheActBeingReleased() async {
+        let process = MirrorProcessIdentity(session: session,
+                                            incarnation: "finder")
+        var depthsSeen: [Int] = []
+        var broker: MirrorMutationBroker?
+        broker = MirrorMutationBroker(timeout: 60,
+                                      clocks: { _ in
+            depthsSeen.append(broker?.depth ?? -1)
+        })
+        XCTAssertTrue(broker!.enqueue(
+            operation(id: "only", process: process, at: Date()),
+            label: "close",
+            execute: { .init(complaint: nil, effectMayHaveLanded: true) },
+            report: { _, _ in }))
+        await Task.yield()
+        broker!.observe([processEvidence(process, sequence: 2)])
+        await Task.yield()
+
+        /* The queue display reads depth from inside this notification. A
+           lane that has just emptied must not still read as busy. */
+        XCTAssertEqual(depthsSeen, [0])
+        XCTAssertEqual(broker!.depth, 0)
+    }
+
     func testSessionChangeStillRecordsTheTimeTheActCost() async {
         let process = MirrorProcessIdentity(session: session,
                                             incarnation: "finder")

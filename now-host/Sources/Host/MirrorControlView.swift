@@ -6,6 +6,7 @@ import SwiftUI
 struct MirrorControlView: View {
     @ObservedObject var model: MirrorControlModel
     @ObservedObject var mirrorWindow: NOWMirrorWindow
+    @ObservedObject var timeline: MirrorActTimeline
 
     var body: some View {
         VStack(spacing: 0) {
@@ -14,6 +15,7 @@ struct MirrorControlView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     productCard
+                    actsCard
                     lifecycleCard
                     planesCard
                 }
@@ -69,6 +71,63 @@ struct MirrorControlView: View {
                 .disabled(!mirrorWindow.isOpen && !model.connection.canCapture)
                 .keyboardShortcut(.defaultAction)
             }
+        }
+    }
+
+    /// **What the lane is doing, and where the last acts spent their time.**
+    ///
+    /// The 2026-08-04 PowerBook drive could not tell an act that was
+    /// working slowly from one queued behind an act that was going to
+    /// time out. Both look like a click that did nothing. The four clocks
+    /// answer it, so they belong on screen and not only in a log file
+    /// nobody opens mid-drive.
+    private var actsCard: some View {
+        card {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Acts").font(.headline)
+                Spacer()
+                Text(timeline.depth == 0
+                     ? "lane idle"
+                     : timeline.depth == 1
+                        ? "1 in flight"
+                        : "1 in flight, \(timeline.depth - 1) waiting")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(timeline.depth > 1 ? .primary : .secondary)
+            }
+            Text("One act reaches the Mac at a time, and it holds the lane "
+                 + "until the Mac confirms it or it times out. A gesture "
+                 + "that waited is not a slow Mac.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if timeline.records.isEmpty {
+                Text("No acts yet this session.")
+                    .font(.callout).foregroundStyle(.secondary)
+            } else {
+                ForEach(Array(timeline.records.reversed().prefix(8).enumerated()),
+                        id: \.offset) { _, clocks in
+                    Divider()
+                    actRow(clocks)
+                }
+            }
+        }
+    }
+
+    private func actRow(_ clocks: MirrorActClocks) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(clocks.label.isEmpty ? clocks.operationID : clocks.label)
+                    .font(.callout)
+                    .lineLimit(1)
+                Spacer()
+                Text(clocks.outcome.rawValue)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Text(clocks.narrative)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
         }
     }
 

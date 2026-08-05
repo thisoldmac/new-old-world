@@ -193,12 +193,17 @@ final class MirrorMutationBroker {
         timeoutTask?.cancel()
         timeoutTask = nil
         work.releasedAt = now()
+        /* The lane is free BEFORE the measurement is published, because
+           the queue display reads `depth` from inside that notification.
+           Leaving `active` set until afterwards made every record report
+           one more act in flight than there was, so a lane that had just
+           emptied still read as busy. */
+        active = nil
         record(work, kind: .released)
         work.report(work.operation, complaint)
         if work.operation.outcome == .timedOut {
             awaitingLateEvidence.append(work)
         }
-        active = nil
         drain()
     }
 

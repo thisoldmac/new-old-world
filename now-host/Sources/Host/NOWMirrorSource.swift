@@ -140,7 +140,20 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
     /// What the window shows: the act while it is still worth reading,
     /// then the ambient line again.
-    var status: String { lastAct.isEmpty ? ambient : lastAct }
+    /// The one line under the Mirror, with the lane's depth on it.
+    ///
+    /// A person driving cannot tell a gesture that is being served slowly
+    /// from one that has not left yet, and on 2026-08-04 that ambiguity
+    /// is most of what made a metal drive unreadable. The FIFO knows, and
+    /// it costs one clause to say so. Only when something is actually
+    /// waiting: a permanent "0 queued" would be noise on the surface a
+    /// person is trying to read the Macintosh through.
+    var status: String {
+        let base = lastAct.isEmpty ? ambient : lastAct
+        guard actTimeline.depth > 1 else { return base }
+        let waiting = actTimeline.depth - 1
+        return base + "   ·   \(waiting) waiting"
+    }
 
     /// NOW addresses elements by reference and has no positional click
     /// verb — `contract/asyncapi.yaml` states that omission deliberately.
