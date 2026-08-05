@@ -926,6 +926,87 @@ static void test_unproven_controls_are_unknown_and_unactionable(void)
     check_absent(out, "\"action\":\"scroll\"");
 }
 
+/* `definition` says WHERE a control's definition function came from, and
+ * the rule it has to keep is that it never grows into a kind.
+ *
+ * Three things are pinned. It appears where the kind is unknown, which is
+ * the only place it adds anything. It is ABSENT where a role exists,
+ * because a known kind is a strictly better answer and a second weaker
+ * provenance beside it invites a reader to average the two. And it never
+ * turns `knowledge` into "known" or produces an `action` - a control
+ * whose definition the Toolbox supplies is still a control nobody has
+ * identified, and clicking it would be the 2026-08-03 defect with a
+ * politer input. */
+static void test_definition_is_not_a_kind(void)
+{
+    NowScene s;
+    char out[8192];
+    int p;
+
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    p = now_scene_add_process(&s, 0, 9, "Date & Time", 0x64617474UL, 1,
+                              kNowSceneAnchorOk, 0);
+    (void)now_scene_add_window(&s, p, "Date & Time", 30, 40, 200, 400, 1);
+
+    /* 0 system-defined, 1 application-defined, 2 unreadable, 3 nothing to
+       say, 4 system-defined AND already identified by the resident. */
+    (void)now_scene_add_control(&s, 0, "On", 85, 70, 101, 152, 1, 1, 0, 0, 1);
+    (void)now_scene_add_control(&s, 0, "Clock", 105, 70, 121, 152,
+                                1, 1, 0, 0, 1);
+    (void)now_scene_add_control(&s, 0, "Odd", 125, 70, 141, 152,
+                                1, 1, 0, 0, 1);
+    (void)now_scene_add_control(&s, 0, "Bare", 145, 70, 161, 152,
+                                1, 1, 0, 0, 1);
+    (void)now_scene_add_control(&s, 0, "Named", 165, 70, 181, 152,
+                                1, 1, 0, 0, 1);
+    now_scene_set_control_definition(&s, 0, 0, 1);   /* System */
+    now_scene_set_control_definition(&s, 0, 1, 2);   /* Application */
+    now_scene_set_control_definition(&s, 0, 2, 3);   /* Indeterminate */
+    now_scene_set_control_definition(&s, 0, 3, 0);   /* Absent */
+    now_scene_set_control_definition(&s, 0, 4, 1);   /* System, but... */
+    now_scene_set_control_role(&s, 0, 4, "button");  /* ...already known */
+
+    check(now_scene_encode(&s, out, sizeof out, NULL) == kNowSceneEncodeOk,
+          "the panel encodes");
+
+    check_present(out, "\"knowledge\":\"unknown\",\"definition\":\"system\"");
+    check_present(out,
+                  "\"knowledge\":\"unknown\",\"definition\":\"application\"");
+    check_present(out,
+                  "\"knowledge\":\"unknown\",\"definition\":\"indeterminate\"");
+
+    /* Absent emits no key at all, per the absent-key rule, and neither
+       does the control that already has a kind. Counting is the check
+       that catches BOTH omissions at once: five controls, exactly three
+       of which may say anything. An occurrence test would pass while a
+       fourth key quietly appeared. */
+    {
+        const char *scan = out;
+        int seen = 0;
+
+        while ((scan = strstr(scan, "\"definition\":")) != NULL) {
+            ++seen;
+            scan += 13;
+        }
+        check(seen == 3,
+              "exactly three of five controls emit a definition key");
+    }
+
+    /* The identified one carries its kind and NOT a second opinion. */
+    check(strstr(out, "\"knowledge\":\"known\",\"kind\":\"pushButton\"")
+          != NULL,
+          "a control the resident named keeps its kind");
+    check(strstr(out, "\"kind\":\"pushButton\",\"definition\"") == NULL
+          && strstr(out, "\"definition\":\"system\",\"kind\"") == NULL,
+          "and carries no definition beside it");
+
+    /* The line that matters: an origin never becomes authority. */
+    check_absent(out, "\"knowledge\":\"known\",\"definition\"");
+    check(strstr(out, "\"title\":\"On\"") != NULL
+          && strstr(out, "{\"role\":\"unknown\",\"title\":\"On\"") != NULL,
+          "a system-defined control is still role unknown");
+}
+
 static void test_dialog_items_carry_v2_semantics(void)
 {
     NowScene s;
@@ -1036,6 +1117,7 @@ int main(void)
     test_coverage_and_incarnation_reach_the_wire();
     test_proven_control_roles_keep_their_semantics();
     test_unproven_controls_are_unknown_and_unactionable();
+    test_definition_is_not_a_kind();
     test_dialog_items_carry_v2_semantics();
     test_a_control_without_a_reference_still_carries_the_key();
     test_produced_fields();
