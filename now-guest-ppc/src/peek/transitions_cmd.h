@@ -19,21 +19,10 @@
 
 #include "transitions_logic.h"
 
-/* How a caller names the ONE process to instrument. Presence is separate
-   from value throughout, so a half serial is malformed rather than a
-   different process. */
-typedef struct {
-    int has_a5;
-    NowEventU32 a5;
-    int has_serial_hi;
-    int has_serial_lo;
-    NowEventU32 serial_hi;
-    NowEventU32 serial_lo;
-    int has_front;
-    int front_true;
-    const char *name;    /* the console's route; NULL or "" is absent */
-    long ttl_ticks;      /* 0 means the default                       */
-} NowTransitionsStartReq;
+/* NowTransitionsStartReq moved to transitions_logic.h, because what fills
+   it is now Toolbox-free and testable there while what CONSUMES it is
+   not. The boundary is the request/reply one: the parse produces the Req
+   with no Toolbox, the resolve turns it into the Arm below with plenty. */
 
 typedef struct {
     NowEventU32 a5;

@@ -824,7 +824,11 @@ static void console_model_dispatch(const char *input)
 
             memset(&req, 0, sizeof req);
             if (rest[0] != '\0') {
-                req.name = rest;
+                /* The console's route is a NAME and always was: this face
+                   builds the Req directly and never met the wire's arg
+                   key, which is why the collision that broke the wire
+                   left the console line working. */
+                req.target = rest;
             } else {
                 /* No name is the front process, which typed HERE is NOW
                    itself. The reply names what it armed rather than

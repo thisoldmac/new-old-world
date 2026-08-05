@@ -31,6 +31,27 @@ enum {
     kNowTransitionsTtlDefault = 3600
 };
 
+/* How a caller names the ONE process to instrument. Presence is separate
+   from value throughout, so a half serial is malformed rather than a
+   different process.
+ *
+ * Here rather than beside now_transitions_start because what FILLS this
+ * needs no Toolbox and what consumes it needs a great deal of one, and
+ * the filling is where the plane's worst defect lived unseen. */
+typedef struct {
+    int has_a5;
+    NowEventU32 a5;
+    int has_serial_hi;
+    int has_serial_lo;
+    NowEventU32 serial_hi;
+    NowEventU32 serial_lo;
+    int has_front;
+    int front_true;
+    const char *target;  /* by name; NULL or "" is absent. NOT `name` -
+                            see now_transitions_start_args below.       */
+    long ttl_ticks;      /* 0 means the default                        */
+} NowTransitionsStartReq;
+
 /* Everything either face needs to render a `status`, and nothing about
    how either renders it. One producer, two renderers - the rule in
    docs/command-parity.md, and the reason the Console and the wire cannot
@@ -114,5 +135,51 @@ const char *now_transitions_kind_name(NowEventU32 kind);
  * in them. */
 const char *now_transitions_parse_line(const char *args,
                                        char *op, long op_cap);
+
+/* Why the wire's grammar is here too, and not left inline in the command
+ * file the way it was until 2026-08-05.
+ *
+ * The console line had a parser in this file, reachable by the native
+ * test. The WIRE's arg extraction did not: it sat inside a static
+ * function in transitions_cmd.c, above `#include <Carbon.h>`, where no
+ * host compiler could reach it. So `transitions start` shipped with a
+ * parse that could not arm ANY process by ANY route, past a green suite,
+ * because every test entered the plane BELOW this line with a Req a test
+ * had filled by hand.
+ *
+ * The defect was one key. `target` was declared `name`, and the guest
+ * scans a request FLAT - so it matched the envelope's own
+ * `"name":"transitions"` first and armed the literal string
+ * `transitions`, which is never a process. Being the first route tried,
+ * it short-circuited serial, front and a5 as well.
+ *
+ * TAKE THE WHOLE FRAME, NOT THE ARGS OBJECT. `request_json` is the
+ * request exactly as the wire delivered it, envelope and all, because
+ * that is what the caller has and what the flat scan actually sees. A
+ * test that hands this only the inner `args` object proves nothing about
+ * the bug this function exists to have caught: the collision is only
+ * observable in the presence of the envelope. */
+typedef enum {
+    kNowTransitionsArgsOK = 0,
+    kNowTransitionsArgsBadA5,
+    kNowTransitionsArgsBadSerial,
+    kNowTransitionsArgsBadFront,
+    /* No request at all. Unreachable from either face; it carries
+       now_transitions_start's own word for the same condition rather
+       than borrowing a code that would name a field nobody sent. */
+    kNowTransitionsArgsUnreadable
+} NowTransitionsArgsResult;
+
+/* Fills `req` from a whole request frame. `target_buf` backs `req->target`
+   and must outlive it. Returns kNowTransitionsArgsOK, or a refusal whose
+   wire code and message are below - the caller renders them, this decides
+   them, so both faces refuse a malformed request identically. */
+NowTransitionsArgsResult now_transitions_start_args(const char *request_json,
+                                                    NowTransitionsStartReq *req,
+                                                    char *target_buf,
+                                                    long target_cap);
+
+const char *now_transitions_args_code(NowTransitionsArgsResult r);
+const char *now_transitions_args_message(NowTransitionsArgsResult r);
 
 #endif /* NOW_TRANSITIONS_LOGIC_H */

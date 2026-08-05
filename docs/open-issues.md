@@ -91,12 +91,12 @@ slice 5c item 1's control-panel half is still unexercised because of it —
 the classifier's positive branch cannot fire against a roster that is
 never there.
 
-## BROKEN: `transitions start` cannot arm, by any route (2026-08-05)
+## FIXED, watched on an emulator (not metal): `transitions start` could not arm, by any route (2026-08-05)
 
-**Found by driving, on the first live run of the verb.** P5's plane can
-never publish, so slice 5b's delivery half is built and non-functional.
+**Found by driving, on the first live run of the verb, and fixed and
+re-driven the same day.** While it stood, P5's plane could never publish.
 
-`run_start` reads its target with `now_json_find_string(json, "name", ...)`
+`run_start` read its target with `now_json_find_string(json, "name", ...)`
 where `json` is the WHOLE request — and every request envelope carries
 `"name"` already, as the verb's own name:
 
@@ -105,27 +105,127 @@ where `json` is the WHOLE request — and every request envelope carries
  "args":{"op":"start","serialHi":0,"serialLo":34734082}}
 ```
 
-First match wins, so the target is always the string `transitions`, which
+First match wins, so the target was always the string `transitions`, which
 is never a running process. The by-name route is tried BEFORE the
-serial/front/a5 selector, so it short-circuits every other route too.
+serial/front/a5 selector, so it short-circuited every other route too.
 Proven three ways on a live guest, all answering the same by-NAME refusal:
 
 - no target at all → `no-process` (should have fallen to the selector);
 - `serialHi`/`serialLo` naming a real running process → `no-process`;
 - `name: "New Old World"`, a real running process → `no-process`.
 
-**The contract already forbids this and the rule was not followed.**
+**The contract already forbade this and the rule was not followed.**
 `hide` names its argument `target` and says why in the contract, verbatim:
 *"`target` and not `name` — see the arg-key rule in the preamble above."*
 `transitions` chose `name` and collided with the envelope.
 
-The fix is a contract change (the arg key) plus the guest's parse, not a
-logic repair — the resolution order in `now_transitions_start` is correct
-and reads correctly; it is being handed the wrong string.
+**The fix.** The arg is `target` (contract first, then both faces). The
+parse moved out of `transitions_cmd.c` — where it sat in a static
+function above `#include <Carbon.h>`, unreachable to any host compiler —
+into `transitions_logic.c`, beside the console line's grammar that was
+already there for exactly this reason. The console face never went
+through JSON at all, which is why `transitions start Finder` typed at the
+machine kept working throughout.
 
-**Why no test caught it:** the native test exercises the logic below the
-parse, and the parse is only wrong in the presence of a real envelope. A
-fixture that wraps the args the way the wire does would have found it.
+**Swept the class.** All 41 verbs' declared args checked against the
+envelope keys (`type`, `id`, `name`, `args`, `line`): `transitions` was
+the only collision. `resolvedVia: name` deliberately keeps its word — it
+names the resolution MECHANISM, and only a request is scanned flat.
+
+**Why no test caught it, and what now does.** The native test exercised
+the logic BELOW the parse, with a `NowTransitionsStartReq` a test had
+filled by hand, so the suite was green while the verb could not arm.
+`transitions_args_test.c` feeds the parse whole request frames — envelope
+and all, because with the args object alone the collision is invisible,
+which is precisely how it shipped. `contract_arg_key_source_test.py`
+holds all 41 verbs to the rule from the contract itself; two verbs have
+now broken it (`launch` on metal, `transitions` on an emulator), so it is
+executable rather than prose a third time.
+
+**Re-driven on the live emulated Power Mac G4** (build `c39f3e093af3`,
+verified in the guest's own hello before believing anything it said):
+
+```
+-> {"type":"command.request","id":103,"name":"transitions",
+    "args":{"op":"start","target":"New Old World"}}
+<- {"cmd":"start","a5":"0x1f21cb60","resolvedVia":"name",
+    "process":"New Old World","expiry":116845,"now":113245,
+    "requested":true,"armed":false}
+```
+
+Then `activity.passes` moved — 1071, then 5572, then 9005 — which is the
+resident's own word that it ran INSIDE the armed process and agreed.
+**The ring's reader and writer have now met on a machine.**
+
+## FIXED, watched on an emulator (not metal): a `transitions drain` reply lost its own records (2026-08-05)
+
+**Found on this plane's first ever drain**, immediately after the fix
+above made a drain possible at all. The reply carried the records AND
+threw them away:
+
+```
+{"cmd":"drain","records":[ …22 real records, 2853 bytes… ],
+ "cursor":0,"nextCursor":22,"records":22,"lost":0,…}
+```
+
+`records` twice in one object — the array, then the count in the tail. A
+duplicate key is **legal JSON and silently lossy**: every conforming
+parser keeps one and drops the other, with no error anywhere. Python kept
+the integer. So `transitions drain` looked like it returned a count and
+no data, while the records were on the wire the whole time.
+
+It is the arg-key rule in the REPLY direction — a key stated twice is a
+key lost. `qdtrace` names its array `ops` and its count `records` and
+never met this; this verb named both the same word.
+
+**The fix** renames the tail count to `count`, declared in the contract
+beside the array. `transitions_reply_source_test.py` reads every reply in
+`transitions_cmd.c` and fails on any key stated twice in one object —
+source text because `run_drain` assembles one object across two
+`snprintf`s above `<Carbon.h>`, the same reason
+`GuestWireConformanceTests` asks for a fixture there.
+
+Re-driven after restaging; a standard parser now reads both:
+
+```
+{"cmd":"drain","records":[{"ticks":113305,"seq":1,"kind":4,
+ "kindName":"heartbeat","a5":"0x1f21cb60","value":"0x1ecfd8d0",
+ "previous":"0x1ecfd8d0"}, …],"cursor":0,"nextCursor":4,"count":4,
+ "lost":0,"dropped":0,"pending":74,"writeCursor":74,"more":true}
+```
+
+## UNVERIFIED: no non-heartbeat transition has ever been recorded (2026-08-05)
+
+The plane is proven to produce, but everything it has produced is `kind 4
+heartbeat` — the resident's one-a-second pulse on a quiet machine. **No
+`windowList`, `frontProcess` or `menuList` record has been observed on
+any machine**, so the three kinds that are the point of the plane are
+still unexercised end to end.
+
+One attempt, recorded because the failure is informative rather than a
+defect. With NOW armed, the front process was switched to the Finder and
+back over the wire. The drain shows heartbeats either side and **a gap
+where the switch was** — seq 125 at tick 141725, seq 126 at tick 141915,
+190 ticks (~3 s) apart against a 60-tick cadence. NOW was backgrounded
+and got no time, so from the armed process's own event passes the front
+process never appeared to change. That is exactly the sampler limitation
+`contract/event_tail.h` states — "something raised and dismissed between
+two event passes is STILL missed" — observed for the first time.
+
+**What would test it properly:** arm a process that keeps pumping while
+another comes and goes — the Finder is the obvious one. That attempt
+refused `anchor-plane-absent`: the anchor plane captures an anchor only
+when the target pumps while the plane is claimed, and the sequence for
+getting a FOREIGN process anchored before arming it is not established
+here. Arming NOW itself works because it is the process doing the
+arming.
+
+**A rig note worth keeping.** Driving stopped when the human's own host
+app took port 5271 (`lsof -nP -iTCP:5271` showed `New Old World` PID
+29286 holding the listener with the guest connected to it). Everything
+above was measured before that, and every reply quoted carried build
+`c39f3e093af3`. This is the collision AGENTS.md warns about, met in
+practice.
 
 ## FIXED, watched: a `transitions` refusal was unparseable JSON (2026-08-05)
 
