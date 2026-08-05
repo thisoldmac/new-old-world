@@ -32,20 +32,28 @@ static int live_window(WindowRef want)
    walk is the expensive half; the controls it enumerates are the answer
    to the batched question. Returns how many it found, never more than
    `cap`, and the root is deliberately included - a window's root control
-   is a control a person can see. */
-static short collect_below(ControlRef root, ControlRef *out, short cap)
+   is a control a person can see.
+
+   The queue is the CALLER'S buffer and holds control words rather than
+   ControlRefs, so the batch path does not carry a second 64-entry frame
+   on top of the one it already fills. This code runs from a system-wide
+   event filter, on whatever stack the interrupted application had; 256
+   bytes is a bound worth keeping rather than doubling for tidiness. The
+   casts are scalar, per element - the array is never aliased as two
+   pointer types. */
+static short collect_below(ControlRef root, NowPeekU32 *out, short cap)
 {
     short head = 0, tail = 0;
     if (cap <= 0) return 0;
-    out[tail++] = root;
+    out[tail++] = (NowPeekU32)root;
     while (head < tail) {
-        ControlRef node = out[head++];
+        ControlRef node = (ControlRef)out[head++];
         UInt16 count = 0, i;
         if (CountSubControls(node, &count) != noErr) continue;
         for (i = 1; i <= count && tail < cap; ++i) {
             ControlRef child = NULL;
             if (GetIndexedSubControl(node, i, &child) == noErr
-                && child != NULL) out[tail++] = child;
+                && child != NULL) out[tail++] = (NowPeekU32)child;
         }
     }
     return tail;
@@ -53,11 +61,11 @@ static short collect_below(ControlRef root, ControlRef *out, short cap)
 
 static int control_below(ControlRef root, ControlRef want)
 {
-    ControlRef work[kSemanticWalkMax];
+    NowPeekU32 work[kSemanticWalkMax];
     short found = collect_below(root, work, kSemanticWalkMax);
     short i;
     for (i = 0; i < found; ++i) {
-        if (work[i] == want) return 1;
+        if (work[i] == (NowPeekU32)want) return 1;
     }
     return 0;
 }
@@ -253,7 +261,6 @@ static NowPeekU32 classify(void *ctx, NowPeekU32 window, NowPeekU32 control,
 static NowPeekU16 collect_controls(void *ctx, NowPeekU32 window,
                                    NowPeekU32 *out, NowPeekU16 cap)
 {
-    ControlRef work[kSemanticWalkMax];
     ControlRef root = NULL;
     short found, i, kept = 0;
     (void)ctx;
@@ -261,17 +268,22 @@ static NowPeekU16 collect_controls(void *ctx, NowPeekU32 window,
     if (!live_window((WindowRef)window)
         || GetRootControl((WindowRef)window, &root) != noErr
         || root == NULL) return 0;
-    found = collect_below(root, work,
+    /* Straight into the caller's buffer - see collect_below on why there
+       is no second frame here. */
+    found = collect_below(root, out,
                           cap < kSemanticWalkMax ? (short)cap
                                                  : kSemanticWalkMax);
     for (i = 0; i < found; ++i) {
+        ControlRef control = (ControlRef)out[i];
+
         /* The same ownership check the single-control path makes, kept
            per control rather than dropped because the walk was bounded:
            a control reached through this root must still say it belongs
-           to this window. */
-        if (work[i] != NULL
-            && (*work[i])->contrlOwner == (WindowRef)window) {
-            out[kept++] = (NowPeekU32)work[i];
+           to this window. Filtering in place is safe - kept never runs
+           ahead of i. */
+        if (control != NULL
+            && (*control)->contrlOwner == (WindowRef)window) {
+            out[kept++] = (NowPeekU32)control;
         }
     }
     return (NowPeekU16)kept;
