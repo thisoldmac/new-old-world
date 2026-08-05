@@ -57,6 +57,61 @@ Three things worth keeping regardless of how that goes:
   Item and content families now hold separate stated byte shares of one
   ceiling. **Anything further added to this payload must take a share
   rather than assume room; there is none.**
+## BROKEN: one modal wedges the whole Mirror, and the lane turns it into 90 seconds (2026-08-05, from Michelle's drive)
+
+**The most complete failure this arc has recorded, and every link is
+evidenced.** It is not one defect; it is three, and the one that matters
+most is not the one that started it.
+
+**The chain.** Opening `harness.log` — a document whose creator
+application is not on the machine — makes the FINDER raise its "could not
+find the application program that created the document" modal. A Finder
+inside `ModalDialog` does not service Apple Events, and NOW reaches the
+Finder for *everything*: the icon roster, `finderOpen`, `finderSelect`,
+the visibility census. So one ordinary Macintosh event stops the Mirror's
+entire Finder surface, and nothing on either face can dismiss it.
+
+**The amplifier, measured.** From `acts.log`, queue waits behind the
+stuck lane: **48 737, 53 146, 53 821, 63 246, 65 653, 70 923 and 87 508
+ms.** One act waited **87.5 seconds**. That is WORSE than the 51.8 s that
+made the lane a plan item in the first place, and it happened after the
+fix that was supposed to remove most of its fuel.
+
+**Then the session died.** Six operations settled `sessionChanged`, four
+more logged `disconnected:` with 48–66 s waits already on them, and the
+guest's socket was left `CLOSED` on the host's listening port while the
+host still believed it had a guest. The Mirror had to be relaunched, then
+believed itself connected and dispatched nothing.
+
+**What this falsifies.** The plan deprioritised the lane amplifier (5c
+item 2) on the reasoning that fixing the owner prediction "removes most of
+its fuel". That reasoning is wrong, and this is the counter-example: ANY
+Finder-blocking event refills the lane instantly, and a modal is a normal
+thing for a Macintosh to do. The amplifier is not downstream of item 1 —
+it is the thing that converts any single stuck act into a dead session.
+
+**Three defects, in the order they should be fixed.**
+
+1. **The lane must be bounded and cancellable.** A single FIFO whose only
+   escape is a 15 s timeout cannot survive one act that blocks. Nothing
+   can be cancelled: a person watching a 70 s wait has no way to abandon
+   it. This is now the highest-value item in the arc.
+2. **A modal must reach the operator.** Rung 4, unchanged since it was
+   written, and now with a second door into it. Worth noting from the
+   same session: a Dialog Manager button IS clickable through the posted
+   click the anchor worker sends — the modal was dismissed that way —
+   even though a MENU is not. So the act is reachable; the plumbing is
+   not.
+3. **A document open needs an honest postcondition.** `harness.log` fell
+   into the documented gap: unknown kind, so the prediction falls back to
+   a Finder window, which never appears. That did not cause the modal, but
+   it is why the act sat in the lane for 70 s instead of failing fast.
+
+**And one thing that worked.** The Finder roster read correctly
+throughout this session — desktop icons rendered fine, per the operator.
+So the intermittency recorded above is real and this session is a case
+where it worked.
+
 ## BROKEN: the host face can HIDE and cannot SHOW (2026-08-05)
 
 Found on the breadth-first drive, minutes after Hide started working from
