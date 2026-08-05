@@ -354,13 +354,98 @@ records how a window came to look that way rather than only how it ended up,
 which is exactly the evidence a producer gap and a sampling gap are told apart
 by.
 
-### Slice 5c — the settlement defects a drive keeps finding · **NOT STARTED**
+### Slice 5c — the settlement defects a drive keeps finding · **1, 3 and 5 BUILT AND TESTED**
 
 Michelle's 2026-08-05 drive against the merged build, read from the journal
 and clocks rather than the screen. These are SETTLEMENT and LANE defects, not
 rendering ones, which is why they are their own slice rather than part of
 6: nothing here is about what the Mirror draws, and none of it waits on the
 corpus.
+
+**Status 2026-08-05 (second session).** Items 1, 3 and 5 are implemented,
+host-suite green, and every guard watched failing by mutation. Item 2 is
+untouched by design — fixing 1 removes most of its fuel, so the lane's own
+shape should be re-measured before it is redesigned. Item 4 is untouched.
+
+The three fixes share one idea, which is the reason they landed together:
+**do not spend the single mutation lane learning something this side
+already knows.** A control panel's owner is in the snapshot; an absent
+Finder item is in the roster; a Hide whose one `set` raised changed
+nothing. Each of those was previously discovered by waiting 15 s.
+
+Where each one is:
+
+- **1** — `MirrorActionExecutor.opensAsItsOwnApplication` classifies the
+  item out of the scene the act was drawn from, and only a POSITIVE signal
+  moves the prediction (the Finder's own `kind` of `application`, or a
+  file `type` of `APPL`/`appe`/`cdev`). Note the plan's own premise was
+  slightly wrong: `kind` is four words, not folder-or-file, and **none of
+  them names a control panel** — a `cdev` arrives as a plain `file`, so
+  `type` is what answers. Folders and disks keep the Finder-owned window;
+  aliases, documents and unread items keep the old prediction rather than
+  acquiring a new way to be wrong.
+- **5** — the re-read that already refuses a closed window now refuses an
+  item the container's published roster does not carry. `readIcons`
+  refuses a partial roster rather than returning part of one, so a
+  published roster is complete evidence; an unread container is nil and
+  claims nothing.
+- **3** — a refused Hide releases the lane instead of holding it for
+  evidence of an effect that never happened, and only Hide can prove that:
+  its script is one `set`, while Hide Others is a repeat loop that can
+  land partway and Show All's plural specifier has unmeasured atomicity.
+  The refusal now names the Finder route, keeps the osaErr, and names the
+  act-plane click as untried.
+
+### What driving it live then showed (2026-08-05, second session)
+
+A guest was stood up from scratch — `scripts/build-guests`,
+`scripts/spin-up-ppc`, a cold boot, resident `fc6e0946bde9271…` at
+`cap 31`, `lifecycle: active`, all four planes requested and active — and
+driven headless through `tools/now-agent`. It cost more than the fixes
+did, and it earned more:
+
+**Proven live.** A `finderOpen` of a disk settled **`confirmed`** on
+`windowNamedPresent(owner: Finder, title: "Macintosh HD")`, from
+observation, at `settledSequence 27`. That is the half of item 1 the old
+prediction was right about, still right.
+
+**Found live, fixed, and re-driven.** `now_mirror_drive` answered
+`{"outcome": "dispatched"}` for an act the host had explicitly declined —
+`acts.log` carried `NOT DISPATCHED: Interaction policy is off` for the
+same call. `perform` reported its decline only to the Mirror's status
+line, which a headless caller cannot read, and the drive service inferred
+the outcome from the ABSENCE of a broker record, a signal that "refused
+before dispatch" and "took the direct path" both produce. Fixed; the same
+call now answers `refused` with the reason, verified against the live
+host. `MirrorDriveService` had no tests at all, which is the finding
+under the finding.
+
+**Found live, half-fixed, NOT proven.** The journal recorded that
+confirmed act as `source: human` — and it was driven entirely over the
+agent socket. An act arriving while an observation is in flight is
+deferred and re-enters through the one-argument `perform`, whose `source`
+defaults to `.human`, so the 2026-08-05 attribution fix is undone by a
+path older than it. The argument is now passed through. **The test for it
+is owed**: a harnessed `NOWMirrorSource` never reached the broker at all
+in the shape the case needs, which may be the same reason the live drive
+answered `id: "direct"` — `shadowEngine` nil on the MCP path — and that
+is a second question this session could not close. Both are in the
+ledger.
+
+**What blocked the rest, and it is not the change.** Item 1's control-panel
+half was never exercised: `desktopItems` stayed nil for the whole run, so
+the classifier's positive branch never fired. Chasing it further was not
+possible with confidence, because another session was driving its own
+guest on this Mac at the same time and `acts.log` is shared across host
+instances with no instance marker — lines cannot be attributed by
+timestamp. `mirror_read --intention journal` is per-instance and is the
+reliable read; prefer it.
+
+Three rig facts, all costly to rediscover, now in
+[open-issues](../open-issues.md): a worktree path is too long for a QMP
+socket; `spin-up-ppc` cannot complete its clean shutdown because the
+canonical anchor worker has no `script` verb; and mac99 rejects `abs`
+input events entirely, so QMP mouse injection there is relative-only.
 
 **1. A Finder-open predicts the wrong owner, so every control panel times
 out while succeeding.** `MirrorActionExecutor` builds

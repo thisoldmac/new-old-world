@@ -1043,28 +1043,42 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// no action case can name a file. `finderSelect` and `finderOpen`
     /// are the whole argument for objects, and they are served here.
     func perform(_ interaction: Interaction) {
-        perform(interaction, source: .human)
+        _ = perform(interaction, source: .human)
     }
 
     /// The one dispatch path, with the face that asked for it. `MirrorKit`'s
     /// `MirrorSceneSource` conformance above is the gesture door; this is the
     /// same door with the caller named.
+    ///
+    /// **Returns the sentence when the act never left**, because the two
+    /// faces do not hear a refusal the same way. A person reads `report`
+    /// on the Mirror's status line; a headless caller gets only the
+    /// return value, and until 2026-08-05 that was nothing — so
+    /// `MirrorDriveService` inferred "dispatched" from the absence of a
+    /// broker record and could not tell a direct-path act from one this
+    /// side had explicitly declined. Measured live the same day: driving
+    /// `finderOpen` at a guest whose interaction plane was never armed
+    /// logged `NOT DISPATCHED: Interaction policy is off` and answered
+    /// MCP `outcome: dispatched`. The host had the reason in its hand and
+    /// told the agent the opposite of it.
+    @discardableResult
     func perform(_ interaction: Interaction,
-                 source: MirrorOperationSource) {
+                 source: MirrorOperationSource) -> String? {
         if let refusal = pinnedActionRefusal() {
             let label = InteractionBridge.label(for: interaction)
             ActLog.note(action: label,
                         outcome: "NOT DISPATCHED: \(refusal)", ms: 0)
             report(refusal)
-            return
+            return refusal
         }
         guard currentPlanePolicy.contains(.interaction) else {
             let label = InteractionBridge.label(for: interaction)
+            let why = "Interaction is off; the Mirror is read-only."
             ActLog.note(action: label,
                         outcome: "NOT DISPATCHED: Interaction policy is off",
                         ms: 0)
-            report("\(label): Interaction is off; the Mirror is read-only.")
-            return
+            report("\(label): \(why)")
+            return why
         }
         let plan = InteractionPolicy.plan(for: interaction, planes: planes)
         switch plan {
@@ -1075,10 +1089,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             ActLog.note(action: InteractionBridge.label(for: interaction),
                         outcome: "NOT DISPATCHED (nothing): \(why)", ms: 0)
             report(why)
+            return why
         case .unsupported(let why):
             ActLog.note(action: InteractionBridge.label(for: interaction),
                         outcome: "NOT DISPATCHED (unsupported): \(why)", ms: 0)
             report("\(InteractionBridge.label(for: interaction)): \(why)")
+            return why
         default:
             let label = InteractionBridge.label(for: interaction)
             if let engine = shadowEngine,
@@ -1095,9 +1111,23 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                             try? await Task.sleep(nanoseconds: 25_000_000)
                         }
                         self.mutationWaiting = false
-                        self.perform(interaction)
+                        /* **Carry the face through the wait.** This called
+                           the one-argument overload, which defaults to
+                           `.human` — so an MCP act that happened to arrive
+                           while an observation was in flight was journalled
+                           as a person's, undoing the 2026-08-05 fix by a
+                           path older than it. Caught live the same day: an
+                           `finderOpen` driven entirely over the agent
+                           socket settled `confirmed` and recorded
+                           `source: human`. The journal is what tells a
+                           hand-driven act from an agent-driven one after
+                           the fact, and this was the only act in it. */
+                        _ = self.perform(interaction, source: source)
                     }
-                    return
+                    /* Held, not refused — it re-enters this door when the
+                       observation clears, and the caller has an operation
+                       coming. */
+                    return nil
                 }
                 report(label + " — queued")
                 let accepted = mutationBroker.enqueue(operation,
@@ -1141,9 +1171,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 })
                 actTimeline.depth = mutationBroker.depth
                 if !accepted {
-                    report(label + " — not dispatched: operation journal full")
+                    let full = "not dispatched: operation journal full"
+                    report(label + " — " + full)
+                    return full
                 }
-                return
+                return nil
             }
             if shadowEngine != nil,
                MirrorActionExecutor.requiresTypedSettlement(
@@ -1153,7 +1185,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 ActLog.note(action: "unresolved \(label)  plan=\(plan)",
                             outcome: "NOT DISPATCHED: \(reason)", ms: 0)
                 report(label + " — " + reason)
-                return
+                return reason
             }
             /* The same re-read the brokered path makes, for the acts that
                never queue. Their staleness is only the poll's own lag
@@ -1163,7 +1195,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 ActLog.note(action: "\(label)  plan=\(plan)",
                             outcome: "NOT DISPATCHED: \(stale)", ms: 0)
                 report("\(label) — \(stale)")
-                return
+                return stale
             }
             report(label + "…")
             Task { @MainActor [weak self] in
@@ -1203,6 +1235,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 }
                 self.poll()                  // show the effect now
             }
+            /* The direct path's own answer arrives asynchronously and is
+               NOT a refusal to dispatch — the act left. A complaint from
+               the guest is settlement news, and this return says only
+               whether the act got out of the door. */
+            return nil
         }
     }
 
@@ -1626,16 +1663,77 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             let read = await readingOutput(
                 "script", ["source": .text(source)],
                 osaFailureIsAnError: true)
-            if let error = read.error { return error }
+            if let error = read.error {
+                /* **Hide's script is ONE `set`, so a raise proves nothing
+                   was hidden** — and a refusal that cannot say that holds
+                   the single mutation lane for the full 15 s waiting for
+                   evidence of an effect that never happened. Michelle's
+                   2026-08-05 drive paid that twice over: the Finder
+                   refuses `set visible` (`-10000`, `-10006`, and here
+                   `osaErr -1753`), and commanding menu -16489 instead
+                   dispatches without changing the machine, which is why
+                   `InteractionPlan` keeps visibility typed.
+
+                   Hide Others is deliberately NOT given the same
+                   treatment: its script is a REPEAT LOOP over every
+                   background process, so it can hide two applications and
+                   raise on the third, and `notSent` would then report a
+                   partial change as nothing at all. Unknown is the true
+                   answer there until the script can say how far it got. */
+                planRefusalReach = Self.visibilityRefusalReach(for: action)
+                return Self.visibilityRefusal(error)
+            }
             return Self.visibilityDispatchOutcome(read.value)
 
         case .showAll:
             let read = await readingOutput(
                 "script", ["source": .text(Self.showAllApplicationsScript)],
                 osaFailureIsAnError: true)
-            if let error = read.error { return error }
+            if let error = read.error {
+                planRefusalReach = Self.visibilityRefusalReach(for: action)
+                return Self.visibilityRefusal(error)
+            }
             return Self.visibilityDispatchOutcome(read.value)
         }
+    }
+
+    /// **Whether a raised visibility script PROVES nothing changed**, which
+    /// is the only thing that lets the mutation lane stop waiting for
+    /// evidence instead of holding it for the full 15 s.
+    ///
+    /// It is per-action because the three scripts differ in exactly the
+    /// way that matters:
+    ///
+    /// - **Hide is one `set`.** If it raised, the front application was
+    ///   not hidden. Provably unsent — and this is the case Michelle's
+    ///   2026-08-05 drive measured burning the lane.
+    /// - **Hide Others is a repeat LOOP** over every background process,
+    ///   so it can hide two applications and raise on the third. Reporting
+    ///   that as unsent would call a partial change nothing at all.
+    /// - **Show All is one statement with a PLURAL specifier**, resolved
+    ///   inside the Finder. Whether it shows some before raising has never
+    ///   been measured, and an unmeasured atomicity claim is not proof.
+    ///
+    /// Only the first is a proof; the other two are honestly unknown.
+    static func visibilityRefusalReach(
+        for action: InteractionPlan.ApplicationVisibility)
+        -> AgentIntegrationProjectionFailure.Reach {
+        if case .hide = action { return .notSent }
+        return .unknown
+    }
+
+    /// **What a person needs to hear when visibility is refused**, which
+    /// is not the raw osaErr. Hiding an application plainly works on a
+    /// Macintosh — a person does it from the Application menu — so a bare
+    /// error code reads as a broken mirror rather than as the one thing
+    /// NOW has not built. Says which route failed, keeps the code for
+    /// whoever is diagnosing, and names the route still untried so this
+    /// sentence dates itself the moment somebody makes it work.
+    static func visibilityRefusal(_ error: String) -> String {
+        "the Finder will not set an application's visibility (\(error)); "
+            + "NOW has no other route yet — a real click on the "
+            + "Application menu through the act plane is untried — so "
+            + "nothing was hidden or shown."
     }
 
     static func visibilityDispatchOutcome(_ raw: String?) -> String? {

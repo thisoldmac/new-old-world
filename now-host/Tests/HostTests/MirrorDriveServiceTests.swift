@@ -1,0 +1,104 @@
+import XCTest
+import MirrorKit
+import NOWAgentIntegration
+@testable import Host
+
+/// **The reply an agent gets when it drives the Mirror.**
+///
+/// This surface had no tests at all, which is how it came to tell a
+/// caller `dispatched` for an act the host had explicitly declined. The
+/// defect was invisible from inside: `perform` reported the reason to the
+/// Mirror's status line — which a person reads and a headless caller
+/// cannot — and the service inferred an outcome from the ABSENCE of a
+/// broker record, a signal that "refused before dispatch" and "took the
+/// direct path" both produce.
+@MainActor
+final class MirrorDriveServiceTests: XCTestCase {
+
+    /// Measured live 2026-08-05 against a guest whose interaction plane
+    /// had never armed: `acts.log` carried `NOT DISPATCHED: Interaction
+    /// policy is off` and the same act answered MCP `outcome: dispatched`.
+    func testARefusedActIsNotReportedAsDispatched() throws {
+        var asked: [Interaction] = []
+        let service = MirrorDriveService(
+            scene: { try? self.makeScene() },
+            perform: { interaction in
+                asked.append(interaction)
+                return "Interaction is off; the Mirror is read-only."
+            },
+            journal: { nil })
+
+        let reply = service.drive(.init(gesture: .finderOpen,
+                                        itemName: "Macintosh HD",
+                                        container: "desktop"))
+        let operation = try XCTUnwrap(reply.operation)
+
+        XCTAssertEqual(operation.outcome, "refused")
+        XCTAssertEqual(operation.reason,
+                       "Interaction is off; the Mirror is read-only.")
+        XCTAssertTrue(operation.settled,
+                      "nothing is coming; a caller must not poll for it")
+        XCTAssertFalse(operation.awaitsObservation)
+        XCTAssertEqual(asked.count, 1,
+                       "the refusal must come from the real dispatch door, "
+                           + "not from a second opinion about it")
+    }
+
+    /// The other half, and the reason the absence of a record cannot carry
+    /// this meaning alone: an act that DID leave by the direct path has no
+    /// typed postcondition and no journal record either, and it is not a
+    /// refusal.
+    func testAnActThatLeftByTheDirectPathStillReadsAsDispatched() throws {
+        let service = MirrorDriveService(
+            scene: { try? self.makeScene() },
+            perform: { _ in nil },
+            journal: { nil })
+
+        let reply = service.drive(.init(gesture: .finderSelect,
+                                        itemName: "Macintosh HD",
+                                        container: "desktop"))
+        let operation = try XCTUnwrap(reply.operation)
+
+        XCTAssertEqual(operation.outcome, "dispatched")
+        XCTAssertEqual(operation.id, "direct")
+        XCTAssertNil(operation.reason)
+        XCTAssertFalse(operation.awaitsObservation,
+                       "the direct path can never be confirmed by observation")
+    }
+
+    /// A refusal that happens BEFORE the dispatch door — an unresolvable
+    /// name — still answers the older shape, and must not be turned into
+    /// an operation record by the change above.
+    func testAnUnresolvableTargetIsStillAnUnavailableRatherThanAnOperation() {
+        var performed = false
+        let service = MirrorDriveService(
+            scene: { try? self.makeScene() },
+            perform: { _ in performed = true; return nil },
+            journal: { nil })
+
+        let reply = service.drive(.init(gesture: .select,
+                                        entityID: "window:not-on-this-mac"))
+
+        XCTAssertNil(reply.operation)
+        XCTAssertFalse(reply.available)
+        XCTAssertFalse(performed,
+                       "a name the snapshot does not carry never reaches "
+                           + "the dispatch door")
+    }
+
+    private func makeScene() throws -> MirrorKit.Scene {
+        do {
+            let data = Data(#"""
+            {"version":2,"seq":1,"capturedAt":1,"source":"peek",
+             "screen":{"w":640,"h":480},
+             "apps":[{"psn":"0.3","name":"Finder","front":true}],
+             "desktopItems":[
+              {"name":"Macintosh HD","kind":"disk","x":500,"y":40,
+               "placed":true,"alias":false,"invisible":false}],
+             "windows":[],
+             "meta":{"errors":[]}}
+            """#.utf8)
+            return try JSONDecoder().decode(MirrorKit.Scene.self, from: data)
+        }
+    }
+}

@@ -68,7 +68,23 @@ BASE="${NOW_SPIN_BASE:-$HOME/Lab/Assets/os91-qemu/os91-runner.qcow2}"
 # The directory and not just the socket, because the lab's launcher
 # derives qmp-ui.sock from qmp.sock's DIRNAME with a fixed name, and the
 # lab is an instrument this repo does not get to edit.
+#
+# THE DEFAULT DOES NOT FIT FROM A WORKTREE, which is where agents work.
+# A UNIX socket path is capped at 104 bytes, and
+# now/.claude/worktrees/<branch>/run/<pid>/qmp-ui.sock spends 108 of them
+# before the sock file is named. QEMU refuses to start and says so in
+# run/<pid>/qemu.log — but the script's own output ends after "boot a
+# fresh, session-private clone" with no error, so it reads as a boot that
+# hung rather than one that never began. Checked here instead, with the
+# cure in the message.
 RUN="${NOW_SPIN_RUN:-$NOW/run/$$}"
+if [ "${#RUN}" -gt 80 ]; then
+    echo "run directory is too deep for a UNIX socket: $RUN" >&2
+    echo "  (${#RUN} bytes; qmp-ui.sock needs the whole path under 104)" >&2
+    echo "  set NOW_SPIN_RUN to something short, e.g." >&2
+    echo "  NOW_SPIN_RUN=/private/tmp/nowvm-\$\$ $0" >&2
+    exit 78
+fi
 DISK="$RUN/session.qcow2"
 QMP="$RUN/qmp.sock"
 
