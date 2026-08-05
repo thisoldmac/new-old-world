@@ -54,6 +54,17 @@ NOT settle, and what to watch for on the PowerBook:
   is the fifth time that remap has been written and the ordering trap —
   remap Connection first — has been the bug at least once.
 
+**A control created at an empty rectangle may never render (2026-08-05).**
+Worth knowing beyond this file. The rail's bar is created once and
+Show/Hidden, and the layout reports an EMPTY nav_scroll while everything
+fits — an honest description of "no bar", and a fine creation rect for
+`scrollBarProc`, which drew correctly after a later `SizeControl`.
+`kControlScrollBarLiveProc` does not: born 0x0, it stayed invisible no
+matter how it was resized. The tell was that the bar appeared when the
+app opened INTO a small window and not when the same window was dragged
+down to the same size — two paths to identical geometry, one working.
+Create controls at a real rectangle and let Show/Hide carry visibility.
+
 Two things are known limitations rather than suspicions:
 
 - **The drag does not scroll the list under itself.** Rearranging a row
