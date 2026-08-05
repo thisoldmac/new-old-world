@@ -296,7 +296,7 @@ and the census probes, per guest, with served and PROVEN kept as
 separate columns. **A change to what a guest serves updates it in the
 same commit**, the way a behaviour change updates the contract first.
 
-Two rules it has already had to learn the hard way, both worth keeping
+Three rules it has already had to learn the hard way, all worth keeping
 in mind when you edit it:
 
 - **Derive it, do not remember it.** The file carries the `grep`
@@ -307,6 +307,41 @@ in mind when you edit it:
   first version of that file counted rows, showed two ticks, and so said
   nothing about the fact that NOW-68K cannot report its own CPU or RAM.
   Any row that is a subsystem gets expanded.
+- **Re-derive at the MERGE, not only at the edit.** A derived number is
+  true at the moment it is derived and can rot without anyone touching
+  it — because a *sibling branch* changed the thing it was derived from.
+  Two workstreams on 2026-08-05 each added a verb and each honestly
+  re-derived this file; one wrote 40 declared / 37 PPC, the other 38 / 35,
+  and both were correct when written and wrong on arrival. **Neither
+  author did anything careless and the merge still produced a lie.**
+  So: derive again after any merge that touched what the file derives
+  from, and treat a clean textual merge of a derived table as no evidence
+  at all.
+
+### Enumerated lists rot at merges, and only a gate catches it
+
+The rule above generalises past this one file, and 2026-08-05 paid for it
+three times in one day: `contract-coverage.md`'s counts, an
+`open-issues.md` heading orphaned from the body that had been retitled
+elsewhere, and `mcp-coverage.md` ending with **two** "unnoticed rows,
+named together" lists — one naming `mirror`, the other `hide`, neither
+naming both.
+
+All three were caught by a gate rather than by a reader, and the sharpest
+one says why in its own failure text: *"Closing one is a two-place edit
+and this is the second place; a stale list here overstates how much of
+the surface nobody has decided about."*
+
+Two things follow, and the second is the one that costs something:
+
+- **A hand-maintained enumeration wants a test that reads it**, checking
+  it against whatever it enumerates. `MCPCoverageTests` and
+  `CommandParityTests` are the pattern; both exist because the same class
+  of drift shipped once already.
+- **Prose that restates a table is a second place to be wrong.** Where a
+  list appears twice — once as a table and once in a sentence — either
+  gate the pair or delete one. A sentence naming seven of eight rows is
+  not a smaller error than a wrong number; it is a more convincing one.
 
 Durable technical claims that outlive this repository go to the parent's
 corpus as findings (`data/findings/`), validated with `tools/data check`.
