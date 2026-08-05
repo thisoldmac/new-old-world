@@ -625,6 +625,28 @@ final class MirrorStateProjectionServiceTests: XCTestCase {
         }
     }
 
+    func testTheRosterReadsContentRatherThanMerePresence() async throws {
+        /* **The guard needs its own guard.** A roster check that only asks
+           whether a key is there passes for a field that arrives empty,
+           and then the roster reports coverage it does not have — the same
+           shape as a test that passed for months by winning a race while
+           asserting the opposite of what was happening.
+
+           So: run every `.carried` check against a window whose fields are
+           all PRESENT and all EMPTY. Every one must fail. A check that
+           still passes here is a presence check wearing a value check's
+           clothes, and this names it. */
+        let snapshot = try await projected(try Self.emptiedRosterScene())
+        for (field, disposition) in Self.windowFieldRoster {
+            guard case .carried(let reaches) = disposition else { continue }
+            XCTAssertFalse(reaches(snapshot),
+                           "Scene.Window.\(field)'s roster check passes "
+                             + "against a window that carries nothing, so "
+                             + "it proves the key exists rather than that "
+                             + "the Mac's state arrived")
+        }
+    }
+
     // MARK: - the journal: which face drove it
 
     func testJournalTellsAnAgentDrivenActFromAHandDrivenOne() async throws {
@@ -776,14 +798,56 @@ private enum WindowFieldDisposition {
 }
 
 extension MirrorStateProjectionServiceTests {
+    /* Located by POSITION, not by title. `title` is itself a rostered
+       field, so a locator that matched on it could not be run against the
+       emptied probe — and the emptied probe is what proves these checks
+       read content rather than mere presence. */
     fileprivate static func full(_ snapshot: AgentIntegrationMirrorSnapshot)
         -> AgentIntegrationMirrorSurface? {
-        snapshot.surfaces.first { $0.title == "Save changes?" }
+        snapshot.surfaces.first
     }
 
     fileprivate static func plain(_ snapshot: AgentIntegrationMirrorSnapshot)
         -> AgentIntegrationMirrorSurface? {
-        snapshot.surfaces.first { $0.title == "Plain" }
+        snapshot.surfaces.dropFirst().first
+    }
+
+    /// The same two windows with every field PRESENT and EMPTY — `[]`
+    /// lists, `""` strings, zeroed numbers, `false` flags.
+    ///
+    /// Nothing here is absent, so a roster check that passes against it is
+    /// asserting that a key exists rather than that the machine's state
+    /// arrived. That is the failure mode that keeps a suite green for the
+    /// wrong reason, and it is invisible from the positive case alone.
+    fileprivate static func emptiedRosterScene() throws -> Scene {
+        let document = #"""
+        {
+          "version":2,"seq":7,"capturedAt":7,"source":"peek",
+          "screen":{"w":640,"h":480},
+          "apps":[{"psn":"0.0","name":"","front":false,
+                   "incarnation":"process-empty"}],
+          "processes":[{"psn":"0.0","name":"","front":false,
+                        "signature":"????","incarnation":"process-empty"}],
+          "menubar":{"app":"","menus":[]},
+          "windows":[{
+            "id":"","app":"","psn":"0.0","title":"","kind":0,
+            "rect":{"l":0,"t":0,"r":0,"b":0},
+            "front":false,"z":9,"visible":false,
+            "ref":"","addr":0,
+            "text":{"content":"","active":false},
+            "controls":[],"dialogItems":[],"display":[],"items":[]
+          },{
+            "id":"","app":"","psn":"0.0","title":"","kind":0,
+            "rect":{"l":0,"t":0,"r":0,"b":0},
+            "front":false,"z":8,"visible":false,
+            "ref":"","addr":0,
+            "text":{"content":"","active":false},
+            "controls":[],"dialogItems":[],"display":[],"items":[]
+          }],
+          "meta":{"errors":[],"coverage":[]}
+        }
+        """#
+        return try JSONDecoder().decode(Scene.self, from: Data(document.utf8))
     }
 
     /// Two windows: one populating every decodable field of
