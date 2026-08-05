@@ -43,8 +43,8 @@ is. Slices 0–5 are done. What is NOT:
 
 | # | owed | from | state |
 |---|---|---|---|
-| 1 | the paired hand-versus-MCP comparison | 009 § Verification | never run — **the only test in this arc that cannot be automated away** |
-| 2 | slice 1's page-versus-reply check | slice 1 | compared against a log sharing the same source; testing one half twice |
+| 1 | a field-by-field DIFF of the operation record between faces | 009 § Verification, narrowed 2026-08-05 | the ceremony is done — both faces have been driven live many times and both settle. The **diff** has never been run, and it is where the two defects found on 2026-08-05 actually lived |
+| 2 | slice 1's page-versus-reply check | slice 1 | compared against a log sharing the same source; testing one half twice. **This is the part that needs the screen** |
 | 3 | `window.display` — per-window QuickDraw ops in the snapshot | slice 2 | **not projected.** The content plane is live (generation 384 on the 2026-08-05 guest), so the drawing IS captured and MCP simply cannot see it |
 | 4 | does the MCP drive path hold an engine? | 2026-08-05 | **suspected broken.** If `shadowEngine` is nil there, every MCP act takes the direct path and can never settle — which would contradict slice 3's central claim |
 | 5 | source attribution through a held act | 2026-08-05 | fixed, **test owed**; a harnessed source never reached the broker, which may be #4 |
@@ -284,12 +284,31 @@ dropped**, and it lives in the resident.
 
 Small, and none of it is optional:
 
-- **The paired check** (#1): the same mutation driven once by hand through
-  the Mirror and once through MCP, producing the same operation record and
-  the same settlement. This is the proof the two faces are one
-  implementation, and A is the reason to doubt it.
-- **Slice 1's page-versus-reply check** (#2): needs the screen. Comparing
-  against `acts.log` is comparing against the same records.
+- **The record diff** (#1), and 009 asked for the wrong shape of it.
+  "Drive the same mutation both ways and see that both settle" is a
+  ceremony, and it has effectively been performed many times: slice 4
+  logged an MCP `activate` settling `source=mcp outcome=confirmed`, and
+  Michelle's hand drives settle confirmed routinely. Both faces work. That
+  is not in doubt and re-performing it proves nothing new.
+
+  **What has never been done is comparing the two records field by field**,
+  and that is precisely where both 2026-08-05 defects lived: an MCP-driven
+  act recorded `source: human`, and MCP received `outcome: dispatched` for
+  an act whose refusal the human face was shown on its status line. Neither
+  is visible from driving each face and checking it works; both are visible
+  in one diff.
+
+  So 009's claim that this "cannot be automated away" is **wrong**, and the
+  correction matters because it is what turns a ritual into a gate: drive
+  the same interaction through `perform(.human)` and `perform(.mcp)`
+  against one engine and assert the records match on every field except
+  `source` and `id`. That is a host test. It fails today on the second
+  defect and would have failed yesterday on the first.
+
+  The residue that genuinely needs a person is #2 alone.
+- **Slice 1's page-versus-reply check** (#2): needs the screen, and is the
+  only item here that does. Comparing against `acts.log` is comparing
+  against the same records.
 - **`finderDeselect`, and a `dialogItem` that does something** (#6).
 - **Item 1's control-panel half, live** (#7): the classifier's positive
   branch has never fired against a real machine, because `desktopItems`
