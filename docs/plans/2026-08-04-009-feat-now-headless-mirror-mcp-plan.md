@@ -142,6 +142,95 @@ Resident identity is worth its own line: on 2026-08-04 a PowerBook with an old
 refused as *the anchor plane is absent or not armed*, and the host knew the
 resident's build the whole time without saying it.
 
+### Slice 5 — the control-panel corpus, and the gap ledger
+
+**Parity is a floor, not a ceiling, and this is the slice that says so.** The
+renderer and MCP read the same IR; if the producer never captured a list's
+cells, both faces are equally blind and perfect parity hides it. The walls this
+project keeps hitting — lists, custom draws, whole classes of element — live
+one layer BELOW both faces, and no amount of slice 1–4 work reaches them.
+
+Open roughly ten control panels and capture each one three ways, at the same
+moment:
+
+- the **guest framebuffer** (QMP screendump) — what the machine is showing;
+- the **MCP snapshot** — what the IR carries;
+- the **oracle memory read** — what is actually in the heap.
+
+Two diffs fall out, and they answer different questions. Screendump against
+snapshot says *what we fail to show*, which is the UX gap the drive loop has
+been scoring by eye. Snapshot against memory says *which layer lost it* — the
+structure existed and the producer dropped it, or it was never there. Without
+the second diff an enumeration is a list of complaints; with it every row
+arrives already assigned to producer work, honesty work, or deferred-forever.
+
+Control panels are the sample for the reason rung 3 gives: they are identical
+on every OS 9 machine, so a captured scene is a permanent regression fixture in
+a way "whatever was open that day" never is. Capture them **garbage and all** —
+Mirror's corpus rule is explicit that a corpus of only healthy scenes tests
+nothing.
+
+Pick for **variety of control class**, not for ten panels: Extensions Manager
+(the best real list on the machine), Monitors and Sound (lists and sliders),
+Appearance (tabs, colour swatches), TCP/IP (multi-character tab-linked fields),
+Date & Time (radios, steppers, and rows already scored red), File Sharing
+(fields, a list, live state), Keyboard (popups), Memory (radios, sliders),
+Internet (many fields, tabs).
+
+Three rules the capture tool must enforce rather than ask anyone to remember:
+
+- **One moment.** The machine moves between reads, and a diff across two states
+  is noise wearing the costume of a finding. Same discipline as the paired
+  screendump rule.
+- **Target frontmost.** Occlusion is a skip and never a pass; the structure read
+  does not care, the pixel comparison does.
+- **Provenance on every capture** — guest build, resident build and plane bits,
+  snapshot id and generations. Slice 4's read rows exist to supply exactly this,
+  which is why they come first.
+
+The output is a ledger with a fixed vocabulary per gap, or it will not survive
+being read a week later: **which layer** (producer / IR / client), **which
+class** (readable structure, custom-drawn, composited art), and **the honest
+interim behaviour**. That last column is what makes the follow-up metal-friendly
+work rather than a wish list: a gap with no reading path still has a correct
+answer, which is to say so in the data rather than draw something plausible.
+
+One finding is already in hand and shapes the ledger's first rows.
+`Scene.Semantics` carries `listCells` and `listTotalCount` today — the IR has
+had a place for list rows all along, so for lists the producer is the whole
+problem and layer 2 is fine. And `knowledge` (`known`/`unknown`/`truncated`/
+`stale`) plus `completeness` already exist, so a producer that admitted "I saw
+a control here and could not determine its kind" would make the coverage gap
+visible in the data instead of inferred from a bad-looking render. That is the
+cheapest move in this whole arc and it introduces no new mechanism.
+
+### Slice 6 — close the gaps, metal-first
+
+Ordered by the ledger's own classes:
+
+- **Readable structures the producer does not walk** — `ListRec` cells,
+  `TERec` bodies, popup menu contents. Ordinary work: read a documented
+  structure, fill a field the IR already has.
+- **Honesty for what cannot be read** — emit `unknown`/`truncated` rather than
+  a plausible default, so the Mirror declines to draw what it does not know.
+- **Custom-drawn and composited art** — deferred, and stays deferred. Rung 5
+  holds QuickTime Player to the honesty bar for this exact reason.
+
+**Two oracles, two jobs, and the split is load-bearing.** QEMU memory reading
+DISCOVERS layout — one-off, when nobody yet knows what a structure looks like
+on this OS version, or whether one exists at all. That "does a structure exist
+here" question is what decides between a walk and an honest refusal, and it is
+the highest-value thing the emulator can answer. A guest-side probe SURVEYS
+coverage — what the resident found, interpreted, and could not read — over the
+wire, on metal, with no emulator involved. Surveying must not depend on QEMU or
+the coverage question becomes unanswerable on the PowerBook, which is the one
+machine where it matters.
+
+And the oracle is an instrument, so it is the first suspect: a two-byte width
+error in a probe's own filter once produced two opposite wrong conclusions from
+one bug in this project's history. Cross-check anything it reads against the
+guest's own view of the same window before an offset reaches a walk.
+
 ## Ordering, and why it is not the obvious one
 
 Metrics first because they are the point of a headless round and cost least.
@@ -149,6 +238,13 @@ The snapshot before the executor because it is what makes MCP a *mirror* rather
 than a summary, and because it surfaces the ref gap the executor needs closed.
 The rows last because every one of them is a day's work on the current split
 surface and an hour once the executor is shared.
+
+Slices 5 and 6 come after all of that and are a different KIND of work: 1–4
+make the two faces one product, and 5–6 widen what either face can see at all.
+They are appended rather than woven in because they depend on the whole of
+1–4 — the corpus's provenance comes from slice 4's read rows, its structure
+comes from slice 2's surfaces, and opening ten panels to capture them is
+slice 3's drive path doing the opening.
 
 ## What would make this arc wrong
 
