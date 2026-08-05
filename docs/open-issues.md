@@ -112,7 +112,49 @@ on the same live machine, so this was one emitter and not a class.
 Verified by rebuilding, restaging onto the running guest and re-driving:
 the refusal now parses.
 
-## BROKEN: the control classifier gets one shot per scene, and 121 controls never got one (2026-08-05)
+## UNVERIFIED: the classifier's transport was rebuilt; nothing has watched it classify a real panel (2026-08-05)
+
+**The three transport defects below are fixed in code and none of the fix
+has run on a Macintosh.** P2 gained a second cell for batched control
+classification: one request now types a whole window instead of one
+control per scene, each record naming the exact `ControlRef` it
+describes. The priorities were inverted — a class fact is the
+prerequisite for a list request and now outranks it — and the front-only
+gate became a front-first priority, so background panels can be filled in
+at all. `contract/peek_table.h`, `ext/src/now_semantic{,_logic}.c`,
+`now-guest-shared/src/now_semantic_guard.c`,
+`now-guest-ppc/src/peek/semantic_{client,policy}.c`.
+
+What is proven: 111 native tests pass, the PPC guest cross-builds, and
+four properties were watched fail under mutation — the resolver's
+one-walk-per-reply cost argument, the guard's refusal of a reply naming
+one control twice, the policy's join-by-named-control, and the priority
+ordering. That last one caught a real error: the first draft had the
+ordering inverted and the source guard passed, because the assertion
+encoded the same mistake as the constants.
+
+What is not proven, and is the whole point of the change:
+
+- **The 68K extension has never been built.** No m68k toolchain is
+  installed on this machine, so `scripts/build-guests` skips `ext`. The
+  resident half is `-fsyntax-only` clean under the classic PPC compiler
+  with Universal Interfaces and introduces no new Toolbox symbol, so the
+  flat-INIT link surface is unchanged — but that is an argument, not a
+  link.
+- **No panel has been classified.** The measurement that motivated this
+  (1 of 122 controls determined) has not been retaken. Until the corpus
+  is recaptured against a rebuilt extension, the claim that this fixes
+  the starvation is a design argument.
+- How much of the corpus is *genuinely* custom-drawn remains unknown,
+  still bounded by the `UnsupportedCustom` branch — which had been
+  exercised 1/122 times precisely because nothing else got a turn.
+
+The next step is a cold-load sweep on a machine with an m68k toolchain:
+rebuild the extension, recapture the ten panels, and count determined
+kinds. The original measurement below is kept as the baseline that
+number will be compared against.
+
+## (fixed, pending verification) BROKEN: the control classifier gets one shot per scene, and 121 controls never got one (2026-08-05)
 
 Slice 6's opening measurement was supposed to size how much of the 190
 undetermined corpus items are genuinely custom-drawn. It found something

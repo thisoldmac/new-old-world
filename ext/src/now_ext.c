@@ -75,6 +75,7 @@ extern void now_event_pass(NowPeekTable *table, NowPeekU32 ticks,
                            NowPeekU32 a5, NowPeekU32 window_list,
                            NowPeekU32 menu_list);
 extern void now_semantic_apply(NowPeekTable *table, NowPeekU32 ticks);
+extern void now_semantic_batch_apply(NowPeekTable *table, NowPeekU32 ticks);
 
 /* Fast-path cache: consecutive GetNextEvent calls are usually the same
    front app, so an A5 match skips the slot scan. Lives in the resident
@@ -273,6 +274,12 @@ void now_ext_gne_apply(void)
     if (request & kNowPeekTableCapTree) {
         table->arm_active |= kNowPeekTableCapTree;
         now_semantic_apply(table, ticks);
+        /* P2's second cell, on the same armed pass. Two cells means two
+           bounded resolvers per pass rather than one - and the batch
+           REPLACES up to 32 single-control requests that would each have
+           paid their own hierarchy walk, so the pass gets cheaper per
+           fact, not dearer. */
+        now_semantic_batch_apply(table, ticks);
     } else if (table->arm_active & kNowPeekTableCapTree) {
         table->arm_active &= ~(NowPeekU32)kNowPeekTableCapTree;
     }
@@ -398,6 +405,12 @@ void _start(void)
     table->writer_length = (NowPeekU16)sizeof table->writer;
     table->semantic_format = kNowPeekSemanticFormatV2;
     table->semantic_length = (NowPeekU16)sizeof table->semantic;
+    /* P2's second cell advertises itself the same accretive way: this
+       binary's `length` reaches it and this pair claims it. An older
+       extension is simply shorter, and the application falls back to the
+       single-control op without being told to. */
+    table->semantic_batch_format = kNowPeekSemanticBatchFormatV1;
+    table->semantic_batch_length = (NowPeekU16)sizeof table->semantic_batch;
     /* Magic last: a reader that somehow sees the address early finds it
        only once the table is fully formed. */
     table->magic = (NowPeekU32)kNowPeekTableMagic;
