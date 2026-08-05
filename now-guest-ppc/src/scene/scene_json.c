@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "axwalk.h"    /* NowAxDefProcOrigin: scene.h stores one as a short */
 #include "json.h"
 
 /* The IR v2 encoder.
@@ -335,6 +336,23 @@ static void put_ref(Sink *k, const char *ref)
  * `now_scene_set_control_role` carries the exact procID-derived role; the
  * encoder must preserve that distinction rather than flattening every known
  * role back into a push button. */
+/* WHOSE definition function draws this control - a strictly weaker claim
+   than `kind`, and the only one a foreign ControlRecord read can support
+   on its own. It is emitted BESIDE knowledge rather than folded into it:
+   "the Toolbox supplies this control's definition" does not say which
+   control it is, so it can never authorise an action, and a reader that
+   treats it as a kind is reading a key that does not say that.
+   `Absent` omits the key, per the absent-key rule. */
+static const char *control_definition(short origin)
+{
+    switch (origin) {
+    case kNowAxDefProcSystem: return "system";
+    case kNowAxDefProcApplication: return "application";
+    case kNowAxDefProcIndeterminate: return "indeterminate";
+    default: return NULL;
+    }
+}
+
 static const char *control_kind(const char *role)
 {
     if (strcmp(role, "button") == 0) return "pushButton";
@@ -451,7 +469,16 @@ static void put_controls(Sink *k, const NowScene *s, const NowSceneWindow *w)
         put_ref_required(k, c->ref);
         put(k, ",\"semantic\":{\"knowledge\":");
         if (c->role[0] == '\0') {
+            const char *definition = control_definition(c->definition);
+
             put_str(k, "unknown");
+            /* Only where the kind is unknown. Where a role exists the
+               answer is already better, and a second, weaker provenance
+               beside it invites a reader to average the two. */
+            if (definition != NULL) {
+                put(k, ",\"definition\":");
+                put_str(k, definition);
+            }
         } else {
             const char *action = control_action(c->role);
             char value[16];

@@ -243,6 +243,14 @@ typedef struct {
        from checkbox; an application asking the Control Manager about its
        OWN control can, and does. */
     char role[16];
+    /* WHERE the control's definition came from, when the role is still
+       empty. A `NowAxDefProcOrigin`, and deliberately NOT a kind: it
+       separates a definition the Toolbox supplied from one the
+       application supplied, which is the split that decides whether a
+       documented answer exists to go looking for. Zero (Absent) is the
+       nothing-to-say value, and self-observed controls leave it there -
+       they already have a procID-derived role, which is strictly more. */
+    short definition;
     int semantic_value_known;
     char semantic_value[kNowSceneTextMax];
     int list_cells_present;
@@ -541,6 +549,9 @@ int now_scene_last_control(const NowScene *s, int window);
 
 void now_scene_set_control_role(NowScene *s, int window, int index,
                                 const char *role);
+/* `origin` is a NowAxDefProcOrigin. Setting it never implies a kind. */
+void now_scene_set_control_definition(NowScene *s, int window, int index,
+                                      short origin);
 void now_scene_set_control_semantic_value(NowScene *s, int window, int index,
                                           const char *value);
 /* Attaches a bounded guest-provided list payload to one control. `complete`

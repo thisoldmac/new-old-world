@@ -140,6 +140,12 @@ static void walk_controls(NowScene *s, int window, const NowAxMemory *memory,
            complete. */
         name_control(s, window, hops, refs, win->address, handle);
         now_scene_set_control_handle(s, window, hops, handle);
+        /* Free with the read - contrlDefProc is inside the 296 bytes the
+           control walk already validated. It answers a strictly weaker
+           question than the semantic plane below and is set first, so a
+           resident that does answer overwrites nothing. */
+        now_scene_set_control_definition(s, window, hops,
+                                         control.def_proc_origin);
         /* P2 is a target-context description of every live control, not a
            Date & Time resource-control special case. This is what lets the
            same extension inventory Sherlock's ordinary window controls. */

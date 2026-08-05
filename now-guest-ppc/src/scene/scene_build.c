@@ -399,6 +399,20 @@ void now_scene_set_control_role(NowScene *s, int window, int index,
     }
 }
 
+void now_scene_set_control_definition(NowScene *s, int window, int index,
+                                      short origin)
+{
+    NowSceneWindow *w = window_at(s, window);
+
+    if (w == NULL || !w->controls_present) {
+        return;
+    }
+    if (index < 0 || index >= (int)w->control_count) {
+        return;
+    }
+    s->controls[w->first_control + index].definition = origin;
+}
+
 void now_scene_set_control_semantic_value(NowScene *s, int window, int index,
                                           const char *value)
 {

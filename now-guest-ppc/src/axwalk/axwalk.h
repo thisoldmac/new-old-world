@@ -90,6 +90,52 @@ typedef struct {
     char          title[kNowAxTitleMax + 1];
 } NowAxWindow;
 
+/* WHERE a control's definition function lives, which is not the same
+   question as WHAT the control is.
+ *
+ * `contrlDefProc` (Controls.h: `Handle contrlDefProc;` at offset 24, the
+ * field Carbon marks "not supported in Carbon" - there is no accessor,
+ * which is why it is read as bytes) holds a Handle to the loaded CDEF.
+ * The resource ID would name the family - Multiverse.h:18029 gives
+ * `pushButProc = 0`, `checkBoxProc = 1`, `radioButProc = 2`,
+ * `scrollBarProc = 16`, and a procID is `16 * CDEF_id + variant`, so
+ * CDEF 0 is the button family and CDEF 1 the scroll bar. But a Handle is
+ * not an ID, and the Resource Manager can only name a handle that is in
+ * the CALLER's resource chain.
+ *
+ * What a foreign read CAN answer is which heap the handle came from,
+ * because the walk is already told both bounds. The System file's CDEFs
+ * carry the `sysheap` resource attribute, so they load once into the
+ * system heap and every process's controls share them; a CDEF in an
+ * application's own resource fork loads into that application's
+ * partition. So the zone the handle sits in separates a system-supplied
+ * definition from an application-supplied one WITHOUT naming either.
+ *
+ * That is deliberately less than a kind. A system definition says "the
+ * Toolbox drew this, so a documented answer exists"; it does not say
+ * button rather than scroll bar, and this enum must never be flattened
+ * into one. Guessing a widget from where its code lives is the same
+ * class of error as guessing one from a value range, which drew Mail's
+ * alert buttons as three scroll bars on 2026-08-03.
+ *
+ * `Indeterminate` is a real answer and is expected to be non-empty: it
+ * covers an unreadable handle, and it covers the possibility that this
+ * field carries something besides a bare address. The classic Control
+ * Manager is documented to keep a control's variation code, and
+ * `GetControlVariant` (CarbonLib exports it) retrieves one from a
+ * control we may not touch; if the variant rides in this field's high
+ * byte, the raw longword lands in neither zone and lands HERE rather
+ * than in a wrong bucket. A first live histogram with a large
+ * Indeterminate column is therefore evidence about the field's layout,
+ * not a failed read - and no masking is applied on a guess, because a
+ * 24-bit mask on a 32-bit-clean machine is its own defect. */
+typedef enum {
+    kNowAxDefProcAbsent = 0,        /* the field is zero */
+    kNowAxDefProcSystem = 1,        /* handle sits in the system heap */
+    kNowAxDefProcApplication = 2,   /* handle sits in the target partition */
+    kNowAxDefProcIndeterminate = 3  /* neither zone claims it */
+} NowAxDefProcOrigin;
+
 /* One classic ControlRecord. Bounds are already translated to global by
    the window's origin, so a consumer never has to know the local frame. */
 typedef struct {
@@ -107,6 +153,8 @@ typedef struct {
     short         value;          /* contrlValue @18: checkbox, scroll pos */
     short         min;            /* contrlMin   @20 */
     short         max;            /* contrlMax   @22 */
+    unsigned long def_proc;       /* contrlDefProc @24, raw and unmasked */
+    short         def_proc_origin;/* a NowAxDefProcOrigin */
 } NowAxControl;
 
 enum {
