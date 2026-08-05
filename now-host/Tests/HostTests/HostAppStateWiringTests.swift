@@ -11,11 +11,19 @@ final class HostAppStateWiringTests: XCTestCase {
         let suite = "HostAppStateWiring.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
-        // A specific, unlikely-taken port; listen at launch.
-        defaults.set(52981, forKey: "listenPort")
+        /* The one place that still listens AT LAUNCH, which is why it is the
+           one place that has to name a port: settings read 0 as unset. The
+           number comes from `testListenPort`, not from a constant — 52981
+           was "a specific, unlikely-taken port" and sat inside the ephemeral
+           range this process hands to its own port-0 listeners, so it took
+           the port from itself (docs/open-issues.md, 2026-08-05). */
+        defaults.set(Int(testListenPort()), forKey: "listenPort")
         defaults.set(true, forKey: "listenAtLaunch")
 
         let state = HostAppState(registry: .standard, defaults: defaults)
+        /* Not just at the end: a failure below must not leave the port held
+           for whatever runs next. */
+        defer { state.stopListening() }
 
         let deadline = Date().addingTimeInterval(8)
         func wait(_ cond: @escaping () -> Bool) async throws {
@@ -31,16 +39,12 @@ final class HostAppStateWiringTests: XCTestCase {
             return XCTFail("listener never became ready: \(state.listener.state)")
         }
 
-        let guest = NWConnection(host: .ipv4(.loopback),
-                                 port: NWEndpoint.Port(rawValue: 52981)!,
-                                 using: .tcp)
-        defer { guest.cancel() }
-        guest.start(queue: .main)
-        let hello = try ControlMessageCodec.encode(.hello(
+        let guest = FakeGuest(port: try XCTUnwrap(state.listener.boundPort))
+        defer { guest.connection.cancel() }
+        guest.start()
+        try guest.send(.hello(
             Hello(contract: Contract.revision, side: "guest", version: "0.1.0",
                   name: "PowerBook 1400", os: "9.1", chunk: 8192)))
-        let frame = try FrameCodec.encode(channel: .control, payload: hello)
-        guest.send(content: frame, completion: .idempotent)
 
         try await wait {
             if case .connected = state.listener.state { return true }
@@ -60,7 +64,5 @@ final class HostAppStateWiringTests: XCTestCase {
                                   key: try XCTUnwrap(
                                     state.listener.activeKey)),
                        "Screenshots badge must mirror the connection")
-
-        state.stopListening()
     }
 }

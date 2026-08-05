@@ -3,9 +3,11 @@ import XCTest
 
 @MainActor
 final class HostAppStateTests: XCTestCase {
+    /// `offTheWire()` on every suite here: none of these tests is about the
+    /// wire, and without it each one binds 5250 for the rest of the run.
     func testInvalidPersistedSelectionFallsBackToFirstModule() {
         let suite = "HostAppStateTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
+        let defaults = UserDefaults(suiteName: suite)!.offTheWire()
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set("removed-module", forKey: "selectedModuleID")
 
@@ -18,7 +20,7 @@ final class HostAppStateTests: XCTestCase {
     /// a relaunch has to restore it like any other module.
     func testPersistedFooterSelectionSurvivesRelaunch() {
         let suite = "HostAppStateTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
+        let defaults = UserDefaults(suiteName: suite)!.offTheWire()
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set("settings", forKey: "selectedModuleID")
 
@@ -38,7 +40,7 @@ final class HostAppStateTests: XCTestCase {
     /// — which reads as the app forgetting them rather than as a rename.
     func testAPersistedSelectionSurvivesTheModuleBeingRenamed() {
         let suite = "HostAppStateTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
+        let defaults = UserDefaults(suiteName: suite)!.offTheWire()
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set("agent", forKey: "selectedModuleID")
 
@@ -49,7 +51,7 @@ final class HostAppStateTests: XCTestCase {
 
     func testSelectionPersists() {
         let suite = "HostAppStateTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
+        let defaults = UserDefaults(suiteName: suite)!.offTheWire()
         defer { defaults.removePersistentDomain(forName: suite) }
         let registry = ModuleRegistry(modules: [
             ModuleDescriptor(id: "screenshots", title: "Screenshots",

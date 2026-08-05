@@ -168,7 +168,7 @@ final class GuestStatusTests: XCTestCase {
     // MARK: - Menu header
 
     func testHeaderShowsTheConnectionWhenNothingIsBlocking() {
-        let delegate = AppDelegate()
+        let delegate = quietAppDelegate()
         let line = delegate.statusHeaderLine(
             status: .connected(name: "PowerBook 1400", quietFor: 1),
             readiness: .init(isEnabled: true, reason: nil))
@@ -178,7 +178,7 @@ final class GuestStatusTests: XCTestCase {
     /// A connected-but-greyed-out command is the confusing case: the header
     /// has to say which lane occupant is responsible.
     func testHeaderExplainsAGreyOutThatTheConnectionDoesNotExplain() {
-        let delegate = AppDelegate()
+        let delegate = quietAppDelegate()
         let line = delegate.statusHeaderLine(
             status: .connected(name: "PowerBook 1400", quietFor: 1),
             readiness: .init(isEnabled: false,
@@ -190,7 +190,7 @@ final class GuestStatusTests: XCTestCase {
     /// When there is no guest the connection line already says everything;
     /// appending "no Mac is connected" to it would just stutter.
     func testHeaderDoesNotRestateAMissingGuest() {
-        let delegate = AppDelegate()
+        let delegate = quietAppDelegate()
         let line = delegate.statusHeaderLine(
             status: .waiting(port: 5252),
             readiness: .init(isEnabled: false, reason: "No Mac is connected"))
@@ -203,12 +203,18 @@ final class GuestStatusTests: XCTestCase {
     /// promises, proven together rather than each in isolation.
     func testARealGuestFlipsBothTheStatusAndTheCommand() async throws {
         let suite = "GuestStatusE2E.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
+        /* This test is about the menu bar, not about listening at launch, so
+           it starts the listener itself on port 0 rather than naming a port
+           through settings. 52983 was "unlikely to be taken" and sat inside
+           the ephemeral range every other listener and dial in this process
+           is allocated from, so this process took it from itself and the
+           bind failed (docs/open-issues.md, 2026-08-05). */
+        let defaults = UserDefaults(suiteName: suite)!.offTheWire()
         defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.set(52983, forKey: "listenPort")
-        defaults.set(true, forKey: "listenAtLaunch")
 
         let state = HostAppState(registry: .standard, defaults: defaults)
+        defer { state.stopListening() }
+        state.listener.start(port: 0)
         let deadline = Date().addingTimeInterval(8)
         func wait(_ cond: @escaping () -> Bool) async throws {
             while !cond(), Date() < deadline {
@@ -222,23 +228,21 @@ final class GuestStatusTests: XCTestCase {
         guard case .waiting(let port) = state.guestStatus.status else {
             return XCTFail("never listened: \(state.guestStatus.status)")
         }
-        XCTAssertEqual(port, 52983)
+        /* The menu bar must show the port it is ACTUALLY listening on, which
+           is the claim a fixed number could never separate from a constant
+           the status line happened to repeat. */
+        XCTAssertEqual(port, state.listener.boundPort)
         XCTAssertFalse(state.quickCapture.readiness.isEnabled,
                        "no guest — the command must be greyed out")
         XCTAssertEqual(state.quickCapture.readiness.reason,
                        "No Mac is connected")
 
-        let guest = NWConnection(host: .ipv4(.loopback),
-                                 port: NWEndpoint.Port(rawValue: 52983)!,
-                                 using: .tcp)
-        defer { guest.cancel() }
-        guest.start(queue: .main)
-        let hello = try ControlMessageCodec.encode(.hello(
+        let guest = FakeGuest(port: try XCTUnwrap(state.listener.boundPort))
+        defer { guest.connection.cancel() }
+        guest.start()
+        try guest.send(.hello(
             Hello(contract: Contract.revision, side: "guest", version: "0.1.0",
                   name: "PowerBook 1400", os: "9.1", chunk: 8192)))
-        guest.send(content: try FrameCodec.encode(channel: .control,
-                                                  payload: hello),
-                   completion: .idempotent)
 
         try await wait { state.guestStatus.status.isConnected }
         XCTAssertEqual(state.guestStatus.status.menuLine,
@@ -255,7 +259,7 @@ final class GuestStatusTests: XCTestCase {
     }
 
     func testStatusLineIsTheFirstMenuItemAndIsNotClickable() throws {
-        let delegate = AppDelegate()
+        let delegate = quietAppDelegate()
         let menu = delegate.makeStatusMenu()
         let header = try XCTUnwrap(menu.item(withTag: AppDelegate.statusLineTag))
         XCTAssertEqual(menu.items.first, header, "status reads first")
