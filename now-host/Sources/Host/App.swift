@@ -14,7 +14,24 @@ extension String {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                          NSMenuDelegate {
     private let registry = ModuleRegistry.standard
-    private lazy var state = HostAppState(registry: registry)
+    /// Where this delegate's settings live. The product's own domain by
+    /// default, which is the shipping behaviour and unchanged.
+    ///
+    /// Injectable because a bare `AppDelegate()` was reaching the REAL
+    /// preference domain from eight places in the test suite — and
+    /// `listenAtLaunch` is true when unset, so touching `state` bound the
+    /// product's port 5250 with a person's own settings behind it. Found
+    /// on 2026-08-05 by running two suites at once: one run's port guard
+    /// named the other's `xctest` holding 5250 (docs/open-issues.md).
+    private let defaults: UserDefaults
+    private lazy var state = HostAppState(registry: registry,
+                                          defaults: defaults)
+
+    init(defaults: UserDefaults = UserDefaults(
+        suiteName: ProductIdentity.preferencesSuite) ?? .standard) {
+        self.defaults = defaults
+        super.init()
+    }
     private var statusItem: NSStatusItem?
     private var window: NSWindow?
     private var flash: StatusItemFlash?

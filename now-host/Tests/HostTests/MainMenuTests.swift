@@ -17,7 +17,7 @@ import XCTest
 final class MainMenuTests: XCTestCase {
 
     private func menu() -> NSMenu {
-        AppDelegate().makeMainMenu()
+        quietAppDelegate().makeMainMenu()
     }
 
     private func submenu(_ title: String, in menu: NSMenu) throws -> NSMenu {
@@ -50,7 +50,7 @@ final class MainMenuTests: XCTestCase {
     /// otherwise a menu item that greys out or does nothing at runtime, which
     /// is exactly how a menu bar rots.
     func testEveryTargetedItemReachesItsAction() throws {
-        let delegate = AppDelegate()
+        let delegate = quietAppDelegate()
         let menu = delegate.makeMainMenu()
         // Submenu holders are excluded: AppKit gives them submenuAction:
         // and owns it.
@@ -188,7 +188,7 @@ final class MainMenuTests: XCTestCase {
     /// carries the fewest verbs that make sense with nothing on screen. If it
     /// grows to mirror the main menu there are two surfaces to keep honest.
     func testTheStatusItemStaysTheSmallSurface() {
-        let delegate = AppDelegate()
+        let delegate = quietAppDelegate()
         let status = delegate.makeStatusMenu()
         let titles = status.items.filter { !$0.isSeparatorItem }.map(\.title)
         // One status line plus three verbs: open, shoot, quit.

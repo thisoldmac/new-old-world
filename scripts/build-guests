@@ -30,6 +30,23 @@ if [ -f "$repo_root/.env.lab" ]; then
     set -a
     . "$repo_root/.env.lab"
     set +a
+else
+    # A WORKTREE does not inherit it, and that is the common case here
+    # rather than a contributor without Retro68: `.env.lab` is gitignored
+    # by design (it describes one desk), so every new worktree starts
+    # without one and this gate silently stops running in it. Said out
+    # loud, with the fix, because "SKIPPED (no toolchain)" sent someone
+    # looking for a Retro68 install that was on the machine all along
+    # (2026-08-05).
+    echo "== no .env.lab in $repo_root"
+    sibling=$(ls -1 "$repo_root"/../*/.env.lab \
+                    "$repo_root"/../../.env.lab 2>/dev/null | head -1)
+    if [ -n "$sibling" ]; then
+        echo "   a sibling checkout has one: $sibling"
+        echo "   cp \"$sibling\" \"$repo_root/.env.lab\""
+    else
+        echo "   cp .env.lab.example .env.lab   # see docs/lab-setup.md"
+    fi
 fi
 
 # Keyed to THIS checkout. Build products stay outside the repository
