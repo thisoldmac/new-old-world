@@ -44,6 +44,34 @@ structure) · **art** (composited pixels).
 | 5 | **Sound: 0 of 64 items addressable**, the worst window in the corpus, and 75 items truncated to 64. | producer | readable | `sound/ir.json` | refuses by name |
 | 6 | **The harness reads window titles as binary garbage** — every window in every `guest.json` (`'\x192?\x1f!?…'`), where the IR has correct titles. The independent oracle is wrong here, not the thing it is checking. | client (oracle) | readable | corpus-wide | none — the oracle silently reports garbage |
 
+## One panel, both sides, 2026-08-05
+
+The aggregate above is easy to nod at. This is the same finding on a single
+window, captured in one moment, and it is the shape every row here takes.
+
+**What the machine drew** (guest framebuffer): `8/ 5/2026`, `4:22:39 AM`,
+"The time zone has not been specified.", "Time server: Apple Americas/…",
+"Clock has not been synchronized.", an On/Off radio pair, two checkboxes,
+five push buttons, engraved group boxes. A completely ordinary control panel.
+
+**What the IR carried for that window**: 41 items, and
+
+- **every single one has `text: null`.** Not one field value crossed. The
+  date and the time — the entire point of the panel — are absent.
+- **27 of the 29 inspected have no determined kind.** The On/Off radios are
+  `UNKNOWN`, so nothing tells a renderer to draw a radio.
+- several titles are garbage bytes (`\x17p`, `\uf8ffC`, `\x13Ï`).
+
+Labels and button titles DO cross. So the Mirror has enough to draw a
+plausible-looking panel and nothing to draw a correct one, which is exactly
+the failure mode "the controls rendered" was coined for.
+
+A note on method, because it is easy to get wrong: comparing the guest
+framebuffer against itself proves nothing — of course the Mac looks right,
+it is the Mac. The only useful comparison is the framebuffer against what
+the IR carries, because the IR is what the Mirror draws from. That is what
+the three-way capture exists for.
+
 ## Two claims of mine the corpus falsified
 
 Recorded because being wrong in a stated direction is the useful half.
