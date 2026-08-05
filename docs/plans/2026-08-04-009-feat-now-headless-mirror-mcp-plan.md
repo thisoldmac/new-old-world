@@ -52,6 +52,12 @@ date: 2026-08-04
   no determined kind, a known `listBox` carries no cells, and dialog items are
   addressable 75/186 against controls at 96/122.
 
+  Slices 0–5 are done. **Slice 5c is new**, from Michelle's drive against
+  the merged build: settlement and lane defects, chief among them a
+  Finder-open that predicts the Finder as the window's owner when a control
+  panel opens as its own application — so every panel open times out for
+  15 s having worked, and those timeouts stacked into a 51.8 s wait.
+
   **Still owed:** the paired hand-versus-MCP comparison (§ Verification);
   slice 1's page-versus-reply check, which was compared against a log sharing
   the same source; slice 2's `window.display` debt; and slices 5b and 6. Not
@@ -323,6 +329,61 @@ perform the action, capture the moment, read the tail. Strictly better — it
 records how a window came to look that way rather than only how it ended up,
 which is exactly the evidence a producer gap and a sampling gap are told apart
 by.
+
+### Slice 5c — the settlement defects a drive keeps finding · **NOT STARTED**
+
+Michelle's 2026-08-05 drive against the merged build, read from the journal
+and clocks rather than the screen. These are SETTLEMENT and LANE defects, not
+rendering ones, which is why they are their own slice rather than part of
+6: nothing here is about what the Mirror draws, and none of it waits on the
+corpus.
+
+**1. A Finder-open predicts the wrong owner, so every control panel times
+out while succeeding.** `MirrorActionExecutor` builds
+`windowNamedPresent(owner: Finder, title: item)` for a Finder-open, but a
+control panel opens AS ITS OWN APPLICATION — a live snapshot shows the Date
+& Time window owned by a process named `Date & Time`, not by the Finder.
+The postcondition can never match, so the act burns its whole 15 s timeout
+having worked. It only holds for FOLDERS, whose windows the Finder does own.
+The item's kind is already in the snapshot (`finderItem` carries
+folder/file), so a principled fix can predict a window for a folder and a
+PROCESS for an application rather than guessing one shape for both.
+Measured cost: four `open "AppleTalk"` attempts, 15 s each.
+
+**2. The 15 s timeout is an amplifier, and the queue is where it is felt.**
+From the same drive, waits behind the lane: 15 611 ms, 22 207 ms, 22 106 ms,
+37 391 ms, 51 786 ms, 49 281 ms. One click waited **51.8 seconds**. Taussig's
+fix ended the lane hold for refusals that never reached the machine; a
+TIMEOUT still holds it for the full period, and defect 1 manufactures
+timeouts. Fixing 1 removes most of the fuel, but the amplifier is its own
+problem — a settled-by-eviction act blocks work that has nothing to do with
+it. Worth asking whether the FIFO must be one lane, or one lane PER TARGET.
+
+**3. An act that cannot possibly settle should refuse, not wait.** Hide,
+Hide Others and Show All are now KNOWN impossible by this route — Mac OS
+9.1's Finder has `visible` read-only (see the open-issues entry from the
+census arc). They still time out for 15 s each. Something the product knows
+cannot work should say so immediately and by name; burning the lane to
+re-discover it every time is the opposite of the honesty rule. The drive
+also shows the script now raising `osaErr -1753`, a different error from the
+`-10000`/`-10006` the census arc recorded, so the refusal text is
+out of date as well.
+
+**4. A modal alert still refuses interaction.** Opening Mail raises its
+"is this computer set up for Internet access" alert; the Mirror could not
+answer it and it had to be dismissed on the machine. This is rung 4 of the
+drive loop, unchanged, and it BLOCKS the application while it is up — so it
+is also a queue problem.
+
+**5. An act that legitimately did nothing still costs 15 s.** Driving
+`finderOpen "Date & Time"` against the DESKTOP container (where it does not
+live) correctly opened nothing — and still burned the full timeout rather
+than the Finder answering "no such item". A null result that costs the same
+as a hung one teaches a caller nothing.
+
+Explicitly NOT in this slice: window contents. Michelle's drive confirms
+they are unchanged, which is expected — that is slices 5/6's territory and
+no MCP work was ever going to move it.
 
 ### Slice 6 — close the gaps, metal-first · **NOT STARTED**
 
