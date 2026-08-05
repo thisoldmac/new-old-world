@@ -58,10 +58,10 @@ is. Slices 0–5 are done. What is NOT:
 | 6 | `finderDeselect`; a `dialogItem` that does something | slice 4 | never driven live (the one exercised was a separator) |
 | 7 | item 1's control-panel half | 5c | fixed and unit-tested; **never exercised live** — `desktopItems` was nil for the whole 2026-08-05 drive |
 | 8 | the lane amplifier | 5c item 2 | untouched |
-| 9 | **Hide does not work at all** | 5c item 3 | half done: it no longer blocks the lane. It still does nothing |
+| 9 | **Hide does not work at all** | 5c item 3 | **WATCHED WORKING 2026-08-05**, on an emulated Power Mac G4, via weak-linked `ShowHideProcess`. Three independent witnesses: the mutation reply, an `IsProcessVisible` read-back, and a framebuffer screendump with the Finder's desktop icons gone. Both directions. **Still owed:** the host switch off AppleScript (deferred to avoid colliding with A and D), and metal |
 | 10 | modal alerts refuse interaction | 5c item 4 | untouched |
-| 11 | the event tail's delivery half | 5b | **guest half DONE 2026-08-05** (`claude/p5-transitions-delivery`): contract verb, both faces, native test, cross-build green. Host consumer deliberately deferred to a later slice. **Nothing observed live** — no record from this ring has crossed the wire on any machine, and no guest has been stood up since the verb landed |
-| 12 | all of slice 6 | 6 | not started |
+| 11 | the event tail's delivery half | 5b | guest half built and gate-green — and **`start` cannot arm by any route**, proven live: it reads its target with `now_json_find_string(json, "name")` over the whole request, and every envelope already carries `"name"` as the verb's own name. So the plane can never publish. `status` and `drain` answer correctly; one refusal was unparseable JSON and is fixed and re-driven. Arg-key fix handed off |
+| 12 | all of slice 6 | 6 | **rung zero ran and reframed it** — the 121 is a transport number, not a count of custom-drawn controls. The one-cell starvation is fixed in code (batched class resolution, 32 walks per window down to 1) and **nothing has watched it classify a real panel**. Slice 6's actual question — how much is genuinely custom — is still open, asked of one control |
 
 Two rig facts bound everything below: `scripts/spin-up-ppc` cannot complete
 its cold boot unattended (dispatched as its own task), and the interaction
