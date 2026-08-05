@@ -619,9 +619,9 @@ to exist:
 
 ### The unnoticed rows, named together
 
-**`axsnap`, `handle`, `actselftest`, `aesend`, `net`, `script` and
-`mirror`** — all served by the PowerPC guest, none decided either way.
-Their rows above say what a decision would have to settle.
+**`axsnap`, `handle`, `actselftest`, `aesend`, `hide`, `net`, `script`
+and `mirror`** — all served by the PowerPC guest, none decided either
+way. Their rows above say what a decision would have to settle.
 
 `mirror` joined on 2026-08-02, the day its verb landed, and it is the only
 one here whose undecidedness is about WHOSE MACHINE rather than about risk
@@ -630,9 +630,6 @@ same Macintosh, so the question a row must answer first is whether NOW
 should describe a neighbour to a caller at all. Its pane face is owed the
 same decision and has not had it either — the host's Mirror page still
 reads a folder listing — so this is currently a verb both faces ignore.
-**`axsnap`, `handle`, `actselftest`, `aesend`, `hide`, `net` and `script`**
-— all served by the PowerPC guest, none decided either way. Their rows above
-say what a decision would have to settle.
 
 `hide` joined on 2026-08-05, the day the verb landed, and it is the one here
 whose undecidedness is partly about the MACHINE rather than about the
