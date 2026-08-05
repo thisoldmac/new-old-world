@@ -1,4 +1,5 @@
 import Foundation
+import NOWAgentIntegration
 
 /// The clocks of one scene cycle — the other half of "it felt slow".
 ///
@@ -74,6 +75,20 @@ struct MirrorCycleClocks: Equatable {
     private static func ms(_ interval: TimeInterval?) -> String {
         guard let interval else { return "-" }
         return String(Int((interval * 1000).rounded()))
+    }
+
+    private static func msValue(_ interval: TimeInterval?) -> Int? {
+        interval.map { Int(($0 * 1000).rounded()) }
+    }
+
+    /// One conversion for both faces — see `MirrorActClocks.projected`.
+    var projected: AgentIntegrationMirrorCycleMetric {
+        .init(walk: walk, outcome: outcome,
+              idleMs: Self.msValue(idleBefore),
+              requestMs: Self.msValue(request),
+              decodeMs: Self.msValue(decode),
+              totalMs: Self.msValue(total) ?? 0,
+              windows: windows, elements: elements)
     }
 }
 

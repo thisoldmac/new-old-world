@@ -89,7 +89,16 @@ final class AgentIntegrationHostAdapter {
     private lazy var mirrorState = mirrorEngines.map { engines in
         MirrorStateProjectionService(
             engines: engines,
-            currentGuest: { [unowned self] in self.listener.activeKey })
+            currentGuest: { [unowned self] in self.listener.activeKey },
+            metrics: { [unowned self] in self.mirrorMetrics?() ?? nil })
+    }
+    /// Bound after construction because the Mirror source is made lazily and
+    /// owns the timelines; this service only reads them.
+    private var mirrorMetrics: (() -> AgentIntegrationMirrorMetrics?)?
+
+    func bindMirrorMetrics(
+        _ read: @escaping () -> AgentIntegrationMirrorMetrics?) {
+        mirrorMetrics = read
     }
     private var sessionID: UUID?
     private var sessionConnectedAt: Date?

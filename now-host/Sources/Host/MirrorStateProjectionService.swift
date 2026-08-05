@@ -9,11 +9,17 @@ import NOWAgentIntegration
 final class MirrorStateProjectionService {
     private let engines: MirrorStateEngineRegistry
     private let currentGuest: () -> GuestKey?
+    /// Read as a closure rather than held, because the timelines belong to
+    /// the live Mirror source and this service is a read-only adapter that
+    /// must not become a second owner of anything.
+    private let metrics: () -> AgentIntegrationMirrorMetrics?
 
     init(engines: MirrorStateEngineRegistry,
-         currentGuest: @escaping () -> GuestKey?) {
+         currentGuest: @escaping () -> GuestKey?,
+         metrics: @escaping () -> AgentIntegrationMirrorMetrics? = { nil }) {
         self.engines = engines
         self.currentGuest = currentGuest
+        self.metrics = metrics
     }
 
     func read(_ request: AgentIntegrationMirrorReadRequest) async
@@ -22,6 +28,26 @@ final class MirrorStateProjectionService {
             return unavailable("now-mirror-read-invalid",
                                "The Mirror read request is not well formed")
         }
+        /* Metrics are answered before the snapshot guard on purpose. A run
+           whose scene never arrived is exactly when an agent most needs to
+           see the cycle clocks — a walk that is failing or timing out is
+           itself the measurement, and refusing it for want of a snapshot
+           would hide the slowest cases behind the same silence a person
+           gets from a blank Mirror. */
+        if request.intention == .metrics {
+            guard let metrics = metrics() else {
+                return unavailable(
+                    "now-mirror-metrics-unavailable",
+                    "The Mirror is not running, so it has measured nothing")
+            }
+            return .init(value: .init(
+                intention: .metrics,
+                current: currentGuest()
+                    .flatMap { engines.existing(for: $0)?.snapshot }
+                    .map(metadata),
+                metrics: metrics))
+        }
+
         guard let key = currentGuest(),
               let engine = engines.existing(for: key),
               let current = engine.snapshot else {
@@ -31,6 +57,8 @@ final class MirrorStateProjectionService {
         }
 
         switch request.intention {
+        case .metrics:
+            preconditionFailure("metrics is answered before this switch")
         case .status:
             return .init(value: .init(intention: .status,
                                       current: metadata(current)))

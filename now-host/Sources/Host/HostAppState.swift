@@ -93,7 +93,14 @@ final class HostAppState: ObservableObject {
     /// The native data-driven Mirror source. It reads the same policy model
     /// the page renders, so the visible toggles are the claims this source
     /// actually makes.
+    /// Whether `mirrorSource` has actually been made. The MCP metrics read
+    /// must not be the thing that constructs the Mirror: an agent asking
+    /// what has been measured would otherwise create the measurer and get
+    /// an empty answer that reads like a quiet machine.
+    private var madeMirrorSource = false
+
     private(set) lazy var mirrorSource: NOWMirrorSource = {
+        madeMirrorSource = true
         let source = NOWMirrorSource(
             listener: listener,
             engineRegistry: mirrorEngines,
@@ -240,6 +247,17 @@ final class HostAppState: ObservableObject {
                 }
             }
             self.knownGuests = now
+        }
+        /* Bound at the end of init, once every stored property exists: the
+           closure captures self, and the Mirror source it reads is made
+           lazily. A metrics read must never be the thing that constructs
+           the Mirror — an agent asking what has been measured would then
+           create the measurer and get an empty answer that reads exactly
+           like a quiet machine. */
+        integration.bindMirrorMetrics { [weak self] in
+            guard let self, self.madeMirrorSource else { return nil }
+            return self.mirrorSource.actTimeline.projected(
+                cycles: self.mirrorSource.cycleTimeline)
         }
         if settings.listenAtLaunch {
             startListening()

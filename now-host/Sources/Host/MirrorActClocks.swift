@@ -1,5 +1,6 @@
 import Foundation
 import MirrorKit
+import NOWAgentIntegration
 
 /// The clocks of one Mirror act, kept apart on purpose.
 ///
@@ -126,5 +127,22 @@ struct MirrorActClocks: Equatable {
     private static func ms(_ interval: TimeInterval?) -> String {
         guard let interval else { return "-" }
         return String(Int((interval * 1000).rounded()))
+    }
+
+    private static func msValue(_ interval: TimeInterval?) -> Int? {
+        interval.map { Int(($0 * 1000).rounded()) }
+    }
+
+    /// The same measurement an agent reads over MCP. One conversion, here,
+    /// so the headless client and the Mirror page cannot come to disagree
+    /// about what a clock means.
+    var projected: AgentIntegrationMirrorActMetric {
+        .init(kind: kind.rawValue, operationID: operationID, label: label,
+              outcome: outcome.rawValue,
+              queueDepthAtEntry: queueDepthAtEntry,
+              waitedMs: Self.msValue(waited),
+              dispatchMs: Self.msValue(dispatch),
+              settleMs: Self.msValue(settle),
+              totalMs: Self.msValue(total) ?? 0)
     }
 }

@@ -1,5 +1,6 @@
 import Foundation
 import MirrorKit
+import NOWAgentIntegration
 
 /// Where an act's clocks go: the log, and the Mirror's own queue display.
 ///
@@ -41,6 +42,15 @@ final class MirrorActTimeline: ObservableObject {
     /// The most recent measurement for one act, whatever kind it was.
     func latest(operationID: String) -> MirrorActClocks? {
         records.last { $0.operationID == operationID }
+    }
+
+    /// Everything the Mirror page shows, for the headless client. Newest
+    /// last, matching the page's own order.
+    func projected(cycles: MirrorCycleTimeline)
+        -> AgentIntegrationMirrorMetrics {
+        .init(laneDepth: depth,
+              acts: records.map(\.projected),
+              cycles: cycles.records.map(\.projected))
     }
 
     /// Both lines, together: the narrative for a person scrolling the log

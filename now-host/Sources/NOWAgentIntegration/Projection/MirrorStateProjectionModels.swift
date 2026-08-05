@@ -5,6 +5,15 @@ public enum AgentIntegrationMirrorReadIntention: String, Codable, Sendable {
     case snapshot
     case find
     case wait
+    /// The act and scene-cycle clocks the Mirror page shows.
+    ///
+    /// Not a diagnostic extra. The Mirror window and MCP are two clients
+    /// of one state engine, differing only in pixels and input method —
+    /// so a measurement a person can read off the Mirror page and an
+    /// agent cannot is drift, and it is the drift that matters most for
+    /// a headless run, because an agent driving without it cannot tell a
+    /// queued act from a slow machine.
+    case metrics
 }
 
 public struct AgentIntegrationMirrorReadRequest:
@@ -33,6 +42,8 @@ public struct AgentIntegrationMirrorReadRequest:
         case .wait:
             return query == nil && (afterSnapshotID ?? 0) > 0
                 && (1...15_000).contains(timeoutMs ?? 5_000)
+        case .metrics:
+            return query == nil && afterSnapshotID == nil && timeoutMs == nil
         }
     }
 }
@@ -165,23 +176,105 @@ public struct AgentIntegrationMirrorSnapshot:
     }
 }
 
+/// One act's four clocks, as the Mirror page shows them.
+///
+/// `-1` is never used for "did not happen": an absent settle and a settle
+/// of zero are opposite results, so the field is simply absent. The same
+/// rule the `NOWBASE` line follows with `-`.
+public struct AgentIntegrationMirrorActMetric:
+    Codable, Equatable, Sendable {
+    public let kind: String
+    public let operationID: String
+    public let label: String
+    public let outcome: String
+    public let queueDepthAtEntry: Int
+    public let waitedMs: Int?
+    public let dispatchMs: Int?
+    public let settleMs: Int?
+    public let totalMs: Int
+
+    public init(kind: String, operationID: String, label: String,
+                outcome: String, queueDepthAtEntry: Int,
+                waitedMs: Int?, dispatchMs: Int?, settleMs: Int?,
+                totalMs: Int) {
+        self.kind = kind
+        self.operationID = operationID
+        self.label = label
+        self.outcome = outcome
+        self.queueDepthAtEntry = queueDepthAtEntry
+        self.waitedMs = waitedMs
+        self.dispatchMs = dispatchMs
+        self.settleMs = settleMs
+        self.totalMs = totalMs
+    }
+}
+
+/// One scene cycle. `walk` names which planes were asked for, because a
+/// structure-only poll and a full walk are different amounts of work on
+/// the classic Mac and must not be averaged together.
+public struct AgentIntegrationMirrorCycleMetric:
+    Codable, Equatable, Sendable {
+    public let walk: String
+    public let outcome: String
+    public let idleMs: Int?
+    public let requestMs: Int?
+    public let decodeMs: Int?
+    public let totalMs: Int
+    public let windows: Int?
+    public let elements: Int?
+
+    public init(walk: String, outcome: String, idleMs: Int?,
+                requestMs: Int?, decodeMs: Int?, totalMs: Int,
+                windows: Int?, elements: Int?) {
+        self.walk = walk
+        self.outcome = outcome
+        self.idleMs = idleMs
+        self.requestMs = requestMs
+        self.decodeMs = decodeMs
+        self.totalMs = totalMs
+        self.windows = windows
+        self.elements = elements
+    }
+}
+
+public struct AgentIntegrationMirrorMetrics:
+    Codable, Equatable, Sendable {
+    /// Acts queued or in flight right now. `0` means the next act reaches
+    /// the Mac immediately; above zero, a slow gesture is waiting on the
+    /// lane rather than on the machine.
+    public let laneDepth: Int
+    public let acts: [AgentIntegrationMirrorActMetric]
+    public let cycles: [AgentIntegrationMirrorCycleMetric]
+
+    public init(laneDepth: Int,
+                acts: [AgentIntegrationMirrorActMetric],
+                cycles: [AgentIntegrationMirrorCycleMetric]) {
+        self.laneDepth = laneDepth
+        self.acts = acts
+        self.cycles = cycles
+    }
+}
+
 public struct AgentIntegrationMirrorReadValue:
     Codable, Equatable, Sendable {
     public let intention: AgentIntegrationMirrorReadIntention
     public let current: AgentIntegrationMirrorSnapshotMetadata?
     public let snapshot: AgentIntegrationMirrorSnapshot?
     public let matches: [AgentIntegrationMirrorEntity]?
+    public let metrics: AgentIntegrationMirrorMetrics?
     public let timedOut: Bool
 
     public init(intention: AgentIntegrationMirrorReadIntention,
                 current: AgentIntegrationMirrorSnapshotMetadata?,
                 snapshot: AgentIntegrationMirrorSnapshot? = nil,
                 matches: [AgentIntegrationMirrorEntity]? = nil,
+                metrics: AgentIntegrationMirrorMetrics? = nil,
                 timedOut: Bool = false) {
         self.intention = intention
         self.current = current
         self.snapshot = snapshot
         self.matches = matches
+        self.metrics = metrics
         self.timedOut = timedOut
     }
 }

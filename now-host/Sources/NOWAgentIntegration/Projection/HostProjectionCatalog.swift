@@ -42,6 +42,10 @@ public enum HostProjectionCatalog {
         MirrorSnapshotProjection.self,
         MirrorFindProjection.self,
         MirrorWaitProjection.self,
+        /* And metrics, because the Mirror page shows them and a headless
+           client that cannot see them has to guess at the difference
+           between a slow machine and a queued act. */
+        MirrorMetricsProjection.self,
         /* With the observations rather than beside the Files family: it
            reads what the guest wrote about itself, changes nothing, and
            names no file — the nearest neighbour of a process listing, not

@@ -150,4 +150,83 @@ final class MirrorStateProjectionServiceTests: XCTestCase {
         XCTAssertEqual(timedOut.value?.current?.snapshotID, currentID)
         XCTAssertEqual(engine.store.entries.count, 1)
     }
+
+    // MARK: - metrics: the Mirror page's numbers, headless
+
+    func testMetricsCarryTheSameClocksTheMirrorPageShows() async {
+        let acts = MirrorActTimeline(log: { _ in })
+        let cycles = MirrorCycleTimeline(log: { _ in })
+        acts.depth = 3
+        acts.record(.init(
+            kind: .released, operationID: "op", label: "close Finder",
+            outcome: .timedOut, queueDepthAtEntry: 2,
+            enqueuedAt: Date(timeIntervalSince1970: 0),
+            dispatchStartedAt: Date(timeIntervalSince1970: 4),
+            dispatchReturnedAt: Date(timeIntervalSince1970: 6),
+            settledAt: nil,
+            releasedAt: Date(timeIntervalSince1970: 21)))
+        cycles.record(.init(
+            requestedAt: Date(timeIntervalSince1970: 0),
+            deliveredAt: Date(timeIntervalSince1970: 1),
+            publishedAt: Date(timeIntervalSince1970: 1.25),
+            idleBefore: 0.8, semantics: true, interaction: true,
+            outcome: "ok", windows: 1, elements: 54))
+
+        let service = MirrorStateProjectionService(
+            engines: MirrorStateEngineRegistry(),
+            currentGuest: { nil },
+            metrics: { acts.projected(cycles: cycles) })
+        let result = await service.read(.init(intention: .metrics))
+
+        XCTAssertTrue(result.available)
+        XCTAssertEqual(result.value?.metrics?.laneDepth, 3)
+        let act = result.value?.metrics?.acts.first
+        XCTAssertEqual(act?.queueDepthAtEntry, 2)
+        XCTAssertEqual(act?.waitedMs, 4000)
+        XCTAssertEqual(act?.dispatchMs, 2000)
+        /* The reading the whole instrument exists for: never settled is
+           absent, not zero, so a headless caller cannot average a timeout
+           into a healthy act. */
+        XCTAssertNil(act?.settleMs)
+        XCTAssertEqual(act?.totalMs, 21000)
+        XCTAssertEqual(result.value?.metrics?.cycles.first?.walk, "full")
+        XCTAssertEqual(result.value?.metrics?.cycles.first?.requestMs, 1000)
+    }
+
+    func testMetricsAnswerEvenWhenNoSceneHasEverArrived() async {
+        let acts = MirrorActTimeline(log: { _ in })
+        let cycles = MirrorCycleTimeline(log: { _ in })
+        cycles.record(.init(
+            requestedAt: Date(timeIntervalSince1970: 0), deliveredAt: nil,
+            publishedAt: Date(timeIntervalSince1970: 30), idleBefore: nil,
+            semantics: true, interaction: true, outcome: "declined",
+            windows: nil, elements: nil))
+        let service = MirrorStateProjectionService(
+            engines: MirrorStateEngineRegistry(),
+            currentGuest: { nil },
+            metrics: { acts.projected(cycles: cycles) })
+
+        /* A walk that never answered is exactly when the numbers matter
+           most; refusing for want of a snapshot would hide the slowest
+           cases behind the same silence a blank Mirror already gives. */
+        let result = await service.read(.init(intention: .metrics))
+        XCTAssertTrue(result.available)
+        XCTAssertNil(result.value?.current)
+        XCTAssertEqual(result.value?.metrics?.cycles.first?.outcome,
+                       "declined")
+        XCTAssertNil(result.value?.metrics?.cycles.first?.requestMs)
+    }
+
+    func testMetricsAreUnavailableRatherThanEmptyWhenNothingMeasures() async {
+        let service = MirrorStateProjectionService(
+            engines: MirrorStateEngineRegistry(),
+            currentGuest: { nil })
+        let result = await service.read(.init(intention: .metrics))
+
+        /* An empty measurement set and an absent measurer read identically
+           to a caller, and they call for opposite next steps. */
+        XCTAssertFalse(result.available)
+        XCTAssertEqual(result.unavailable?.code,
+                       "now-mirror-metrics-unavailable")
+    }
 }

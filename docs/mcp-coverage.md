@@ -107,6 +107,7 @@ The test compares both against the code literally.
 | `now_mirror_snapshot` | — | — | none; reads the native Mirror state engine without another guest request |
 | `now_mirror_find` | — | — | none; queries the native Mirror state engine without another guest request |
 | `now_mirror_wait` | — | — | none; waits for the native Mirror state engine without another guest request |
+| `now_mirror_metrics` | — | — | none; reads the host's own act and scene-cycle clocks, and asks the Mac nothing |
 | `now_guest_log_tail` | `tail` | `tail` | command |
 | `now_capture_screen` | `capture.request` | `capture.request` | message family |
 | `now_stream_screen` | `stream.start`, `stream.stop`, `stream.refresh` | `stream.start`, `stream.stop`, `stream.refresh` | message family |

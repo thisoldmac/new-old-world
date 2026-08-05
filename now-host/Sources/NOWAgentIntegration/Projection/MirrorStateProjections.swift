@@ -64,6 +64,39 @@ public enum MirrorStatusProjection: HostProjection {
     }
 }
 
+/// **The Mirror page's own measurements, for the client with no page.**
+///
+/// The Mirror window and MCP are two clients of one state engine; the only
+/// differences are meant to be pixels and input method. A number a person
+/// can read off the Acts card and an agent cannot is therefore drift, and
+/// it is the drift that bites hardest headless: without the queue depth
+/// and the four clocks, an agent cannot tell an act that is being served
+/// slowly from one queued behind an act that will time out — which is the
+/// exact ambiguity that made the 2026-08-04 PowerBook drive unreadable.
+public enum MirrorMetricsProjection: HostProjection {
+    public static let capability = HostCapabilityID("now_mirror_metrics")
+    public static let requires: [String] = []
+    public static let exposes: [String] = []
+    public static let acceptedArguments: Set<String> = []
+    public static let faces = MirrorStateProjectionReach.faces
+    public static let availabilityNote = MirrorStateProjectionReach.availability
+    public static var mcpDescriptor: [String: Any] {
+        MirrorStateProjectionSchema.descriptor(
+            title: "New Old World Mirror Metrics",
+            description: "Returns the Mirror's act clocks (queue wait, dispatch, settle, total, and the lane depth each act entered behind) and its scene cycle clocks (idle, request, decode, per walk kind), without polling the guest.",
+            properties: [:])
+    }
+    public static func invoke(_ arguments: HostProjectionArguments,
+                              through client: AgentIntegrationClient) async
+        -> HostProjectionOutcome {
+        if let refusal = arguments.refusalIfAnyPresent(tool: capability) {
+            return .invalidArguments(refusal)
+        }
+        return .value(.init(await client.mirrorRead(.init(
+            intention: .metrics))))
+    }
+}
+
 public enum MirrorSnapshotProjection: HostProjection {
     public static let capability = HostCapabilityID("now_mirror_snapshot")
     public static let requires: [String] = []
