@@ -105,7 +105,8 @@ final class AgentIntegrationActControl {
                 "now-window-act-invalid",
                 "A window act names one now-window-… reference from a "
                     + "current observation, one action, and exactly the "
-                    + "geometry that action takes"))
+                    + "geometry that action takes",
+                reach: .notSent))
         }
         /* Numbers as NUMBERS. `String(left)` sent `"left": "40"`, and the
            classic guest's strtol stops at the quote - so every window act
@@ -145,7 +146,8 @@ final class AgentIntegrationActControl {
                 "now-control-act-invalid",
                 "A control act names one now-element-… reference from a "
                     + "current observation and one Control Manager part "
-                    + "code"))
+                    + "code",
+                reach: .notSent))
         }
         return await dispatch(
             verb: "ctlact",
@@ -176,7 +178,8 @@ final class AgentIntegrationActControl {
             return .refused(Self.failure(
                 "now-menu-act-invalid",
                 "A menu act names a menu id, a 1-based item and the "
-                    + "titleLeft that is its identity check"))
+                    + "titleLeft that is its identity check",
+                reach: .notSent))
         }
         var args: [String: CommandArg] = [
             "menu": .number(request.menu),
@@ -233,7 +236,8 @@ final class AgentIntegrationActControl {
             return .refused(Self.failure(
                 "now-key-invalid",
                 "A key act names a key by `name`, by `code`, by `char`, or "
-                    + "any combination — but at least one of the three"))
+                    + "any combination — but at least one of the three",
+                reach: .notSent))
         }
         guard let sessionID = currentSessionID() else {
             return .unavailable(.guest)
@@ -310,7 +314,8 @@ final class AgentIntegrationActControl {
             return .refused(Self.failure(
                 "now-text-get-invalid",
                 "A text read names one now-element-… reference from a "
-                    + "current observation"))
+                    + "current observation",
+                reach: .notSent))
         }
         guard let sessionID = currentSessionID() else {
             return .unavailable(.guest)
@@ -367,7 +372,8 @@ final class AgentIntegrationActControl {
             return .refused(Self.failure(
                 "now-text-set-invalid",
                 "A text write names one now-element-… reference from a "
-                    + "current observation"))
+                    + "current observation",
+                reach: .notSent))
         }
         guard AgentIntegrationActPolicy.isBoundedText(text) else {
             /* Named rather than truncated. A silent half-write is the one
@@ -377,7 +383,8 @@ final class AgentIntegrationActControl {
                 "This host sends at most "
                     + "\(AgentIntegrationActPolicy.maximumTextScalars) "
                     + "scalars of replacement text, and refuses a longer "
-                    + "one rather than writing a truncated half"))
+                    + "one rather than writing a truncated half",
+                reach: .notSent))
         }
         let requested = text.unicodeScalars.count
         return await dispatch(
@@ -465,7 +472,8 @@ final class AgentIntegrationActControl {
                 Self.bounded(result.error?.message
                     ?? "The paired guest refused the act"),
                 correlation: result.error?.correlation,
-                settlement: result.error?.settlement))
+                settlement: result.error?.settlement,
+                reach: Self.reach(ofGuestRefusal: result.error)))
         case .result(let result):
             let rows = Self.rows(from: result, verb: verb)
             let correlation = rows["Correlation"]
@@ -538,12 +546,38 @@ final class AgentIntegrationActControl {
         return out
     }
 
-    private static func failure(_ code: String, _ message: String,
-                                correlation: String? = nil,
-                                settlement: String? = nil)
+    private static func failure(
+        _ code: String, _ message: String,
+        correlation: String? = nil,
+        settlement: String? = nil,
+        reach: AgentIntegrationProjectionFailure.Reach = .unknown)
         -> AgentIntegrationProjectionFailure {
         .init(code: code, message: bounded(message),
-              correlation: correlation, settlement: settlement)
+              correlation: correlation, settlement: settlement,
+              reach: reach)
+    }
+
+    /// **Whether a guest refusal reached the act plane, read off the
+    /// guest's own reply rather than out of its prose.**
+    ///
+    /// The guest draws this line structurally and says so where it draws
+    /// it (`now-guest-ppc/src/act/act_cmds.c`): `reply_error` answers a
+    /// malformed request or a reference that would not resolve, and
+    /// carries no correlation because no act was ever registered —
+    /// "validation and resolve errors … can never inherit a previous
+    /// action". `reply_registered_error` answers everything after
+    /// `now_act_submit`, and carries the correlation that submit
+    /// registered. So the absence of a correlation on a refusal is the
+    /// machine saying nothing was armed, dispatched or attempted.
+    ///
+    /// It is deliberately not a list of codes. `element-not-found`,
+    /// `element-stale`, `bad-request` and the act-plane status codes all
+    /// arrive by the correlation-free path today, and a code added to the
+    /// guest tomorrow lands on the right side of this test without anyone
+    /// remembering to add it here.
+    static func reach(ofGuestRefusal error: CommandResult.CommandError?)
+        -> AgentIntegrationProjectionFailure.Reach {
+        error?.correlation == nil ? .notSent : .unknown
     }
 
     private static func bounded(_ value: String) -> String {

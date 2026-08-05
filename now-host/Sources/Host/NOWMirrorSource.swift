@@ -203,6 +203,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private var settlementTracker = MirrorSettlementTracker()
     private var planCorrelation: String?
     private var planSettlement = "unknown"
+    /// Whether the last served plan's refusal is known never to have
+    /// reached the machine. It decides whether the broker keeps the lane
+    /// open waiting for evidence, so it is read from the act lane's typed
+    /// answer rather than from the refusal's wording.
+    private var planRefusalReach = AgentIntegrationProjectionFailure
+        .Reach.unknown
     private var mutationBroker: MirrorMutationBroker?
     /// Survives a guest change on purpose: the interesting comparison is
     /// often the acts either side of a reconnection.
@@ -1086,6 +1092,22 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                         return .init(complaint: "the Mirror closed",
                                      effectMayHaveLanded: false)
                     }
+                    /* **The picture was old, and by now the host knows
+                       it.** A person clicks a scene up to a poll old, and
+                       an act that queued behind others dispatches seconds
+                       later — by which time newer scenes have arrived. If
+                       the target is not in the newest one, sending it
+                       would spend a round trip to be told what this side
+                       can already see, and the guest's refusal would then
+                       be one more thing to attribute. Refuse here
+                       instead, and say which half moved. */
+                    if let stale = self.staleTargetComplaint(for: plan) {
+                        ActLog.note(action: "attempt \(label)  plan=\(plan)",
+                                    outcome: "NOT DISPATCHED: \(stale)",
+                                    ms: 0)
+                        return .init(complaint: stale,
+                                     effectMayHaveLanded: false)
+                    }
                     let started = Date()
                     let complaint = await self.serve(plan)
                     ActLog.note(action: "attempt \(label)  plan=\(plan)",
@@ -1094,8 +1116,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                                     * 1000))
                     return .init(
                         complaint: complaint,
-                        effectMayHaveLanded: complaint?.contains(
-                            "was not sent") != true)
+                        effectMayHaveLanded: complaint != nil
+                            && self.planRefusalReach != .notSent)
                 }, report: { [weak self] operation, complaint in
                     self?.reportOperation(operation, label: label,
                                           complaint: complaint)
@@ -1114,6 +1136,16 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 ActLog.note(action: "unresolved \(label)  plan=\(plan)",
                             outcome: "NOT DISPATCHED: \(reason)", ms: 0)
                 report(label + " — " + reason)
+                return
+            }
+            /* The same re-read the brokered path makes, for the acts that
+               never queue. Their staleness is only the poll's own lag
+               rather than a lane wait, but a click on a window that has
+               closed is the same click and deserves the same sentence. */
+            if let stale = staleTargetComplaint(for: plan) {
+                ActLog.note(action: "\(label)  plan=\(plan)",
+                            outcome: "NOT DISPATCHED: \(stale)", ms: 0)
+                report("\(label) — \(stale)")
                 return
             }
             report(label + "…")
@@ -1243,11 +1275,67 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
     // MARK: - Serving a plan
 
+    /// The newest scene this side has, checked against the plan's target
+    /// at the moment the plan is about to be sent.
+    private func staleTargetComplaint(for plan: InteractionPlan) -> String? {
+        Self.staleTargetComplaint(for: plan, in: scene)
+    }
+
+    /// **What a person clicked, re-read against what the machine last
+    /// said.**
+    ///
+    /// The Mirror draws a scene that is already a poll old, so a click can
+    /// name a window that has since closed — and an act that waits its turn
+    /// in the FIFO is dispatched seconds later still, against a scene the
+    /// host has by then replaced. This is the re-read, and it is
+    /// deliberately narrow:
+    ///
+    /// - **Only windows, and only by the reference the guest minted.**
+    ///   Window references are interned on the guest, so an unchanged
+    ///   window keeps its token across republishes
+    ///   (`now_obs_intern`/`identity_same`); a reference the newest scene
+    ///   no longer carries therefore means the window is gone, not that
+    ///   its name changed. Element references are not checked here — a
+    ///   control lives inside a window the structural walk may have
+    ///   published without its controls, and "absent" would then be a
+    ///   statement about the walk rather than the machine.
+    /// - **Only when there is a scene to check against.** No scene is not
+    ///   evidence of absence.
+    ///
+    /// It never claims an effect and never re-aims: a stale target is
+    /// refused with the reason, exactly as `MirrorDriveService` refuses a
+    /// name the published snapshot does not carry.
+    static func staleTargetComplaint(for plan: InteractionPlan,
+                                     in scene: MirrorKit.Scene?) -> String? {
+        guard let scene, let ref = windowReference(in: plan) else {
+            return nil
+        }
+        guard !scene.windows.contains(where: { $0.ref == ref }) else {
+            return nil
+        }
+        return "the scene moved on — that window is no longer on the "
+            + "machine, so the act was not sent. Read it again."
+    }
+
+    /// The window reference a plan acts on, or nil for a plan that does
+    /// not name one.
+    static func windowReference(in plan: InteractionPlan) -> String? {
+        switch plan {
+        case .windowAct(let ref, _):
+            return ref
+        case .activateWindow(_, let ref):
+            return ref
+        default:
+            return nil
+        }
+    }
+
     /// Returns nil when it went, or a sentence for a person when it did
     /// not. Every branch answers one or the other; none stays quiet.
     private func serve(_ plan: InteractionPlan) async -> String? {
         planCorrelation = nil
         planSettlement = "unknown"
+        planRefusalReach = .unknown
         switch plan {
         case .controlPart(let ref, let part, _):
             return readingResident(await act.controlAct(.init(element: ref,
@@ -1265,6 +1353,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
         case .menuCommand(let menuID, let index, let left):
             guard let process = Self.frontProcess(in: scene) else {
+                planRefusalReach = .notSent
                 return "the current scene has no unique front process; "
                     + "the menu act was not sent"
             }
@@ -1682,8 +1771,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         case .completed:
             return nil
         case .refused(let failure):
+            planRefusalReach = failure.reach
             return "\(failure.code): \(failure.message)"
         case .unavailable(let why):
+            /* Nobody to ask is not the same as nothing was sent: the
+               guest may have gone away between the request and the
+               answer. Leave it unknown. */
             return "\(why)"
         }
     }
@@ -1699,6 +1792,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         case .refused(let failure):
             planCorrelation = failure.correlation
             planSettlement = failure.settlement ?? "unknown"
+            planRefusalReach = failure.reach
             return "\(failure.code): \(failure.message)"
         case .unavailable(let unavailable):
             return unavailable.message

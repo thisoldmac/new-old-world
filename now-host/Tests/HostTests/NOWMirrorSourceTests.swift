@@ -595,6 +595,75 @@ final class NOWMirrorSourceTests: XCTestCase {
                       + "window, so this asserted nothing - recapture with "
                       + "scripts/probes/capture-scene-fixture.py")
     }
+
+    // MARK: - The picture is older than the act
+
+    private func fixtureScene() throws -> MirrorKit.Scene {
+        let url = try XCTUnwrap(
+            Bundle.module.url(forResource: "now-scene-ir-v1",
+                              withExtension: "json",
+                              subdirectory: "Fixtures"))
+        return try JSONDecoder().decode(MirrorKit.Scene.self,
+                                        from: Data(contentsOf: url))
+    }
+
+    /// **A click on a window the newest scene no longer carries is refused
+    /// here, not on the machine.**
+    ///
+    /// The Mirror draws a scene a poll old and an act can wait seconds in
+    /// the FIFO behind others, so by dispatch time the host often already
+    /// knows the target is gone. On 2026-08-05 it sent anyway: three
+    /// closes of one window, two of them answered "nothing in this process
+    /// answers to that name any more" — a round trip each, and a lane slot
+    /// each, to be told what the host could see.
+    func testAWindowTheNewestSceneHasLostIsNotSent() throws {
+        let scene = try fixtureScene()
+        let live = try XCTUnwrap(scene.windows.first?.ref,
+                                 "the fixture must carry a window reference")
+
+        XCTAssertNil(
+            NOWMirrorSource.staleTargetComplaint(
+                for: .windowAct(ref: live, act: .close), in: scene),
+            "a window the scene still carries is the caller's to act on")
+
+        let gone = NOWMirrorSource.staleTargetComplaint(
+            for: .windowAct(ref: "now-window-00000000-0000-4000-8000-"
+                                 + "000000000000", act: .close),
+            in: scene)
+        XCTAssertNotNil(gone)
+        XCTAssertTrue(gone?.contains("was not sent") == true,
+                      "a person needs to know their click did nothing, not "
+                          + "just that something was wrong")
+    }
+
+    /// Two boundaries on the re-read, both deliberate. No scene is not
+    /// evidence of absence, and a plan that names no window has nothing
+    /// here to check — an element reference is not looked up, because a
+    /// structural walk may publish a window without its controls and
+    /// "absent" would then describe the walk rather than the machine.
+    func testTheRereadRefusesOnlyWhatItCanActuallySee() throws {
+        XCTAssertNil(NOWMirrorSource.staleTargetComplaint(
+            for: .windowAct(ref: "now-window-1", act: .close), in: nil))
+
+        let scene = try fixtureScene()
+        XCTAssertNil(NOWMirrorSource.staleTargetComplaint(
+            for: .controlPart(ref: "now-element-1", part: 10, mods: 0),
+            in: scene))
+        XCTAssertNil(NOWMirrorSource.staleTargetComplaint(
+            for: .keystroke(code: 36, char: 13, mods: 0), in: scene))
+    }
+
+    /// Activation names a window too, and it is the same question.
+    func testActivationIsRereadLikeAnyOtherWindowAct() throws {
+        let scene = try fixtureScene()
+        XCTAssertEqual(
+            NOWMirrorSource.windowReference(
+                in: .activateWindow(psn: "0.1", ref: "now-window-9")),
+            "now-window-9")
+        XCTAssertNotNil(NOWMirrorSource.staleTargetComplaint(
+            for: .activateWindow(psn: "0.1", ref: "now-window-9"),
+            in: scene))
+    }
 }
 
 /// The icon reader, pinned against what the machine actually returned.
