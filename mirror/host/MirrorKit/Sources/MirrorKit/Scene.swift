@@ -144,6 +144,7 @@ public struct Scene: Codable, Equatable, Sendable {
         public var completeness: Completeness?
 
         public init(knowledge: Knowledge, kind: String? = nil,
+                    definition: String? = nil,
                     action: String? = nil, state: String? = nil,
                     value: String? = nil,
                     listCells: [ListCell]? = nil,
@@ -154,6 +155,7 @@ public struct Scene: Codable, Equatable, Sendable {
                     completeness: Completeness? = nil) {
             self.knowledge = knowledge
             self.kind = kind
+            self.definition = definition
             self.action = action
             self.state = state
             self.value = value

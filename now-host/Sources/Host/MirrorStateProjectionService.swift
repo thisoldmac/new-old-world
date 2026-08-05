@@ -223,6 +223,7 @@ final class MirrorStateProjectionService {
                     state: control.semantic?.state,
                     text: control.semantic?.value,
                     knowledge: control.semantic?.knowledge.rawValue,
+                    definition: control.semantic?.definition,
                     number: nil)
             }
             let dialogItems = (window.dialogItems ?? []).map { item in
@@ -235,6 +236,7 @@ final class MirrorStateProjectionService {
                     kind: item.semantic.kind, state: item.semantic.state,
                     text: item.semantic.value,
                     knowledge: item.semantic.knowledge.rawValue,
+                    definition: item.semantic.definition,
                     number: item.number)
             }
             /* **The Finder's own items, and the omission that hid them.**
