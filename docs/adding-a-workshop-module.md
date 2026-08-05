@@ -55,25 +55,52 @@ appear or does not switch.
 
 1. **`workshop_module.h`** — add the ID to `WorkshopModuleID` and bump
    `kWorkshopModuleCount`. The enum order **is** the View menu order and
-   the sidebar order; the menu item number is the module ID.
+   the sidebar's DEFAULT order; the menu item number is the module ID.
+
+   The nav ids must stay the contiguous prefix `1..kWorkshopNavRows`,
+   with the pinned group after them — `kWorkshopIsNavModule` and the
+   saved sidebar order both depend on it, and a static assert fails the
+   build if a page lands between `Chat` and `Preferences`. So a nav page
+   goes in **before** `Preferences`, and a pinned one **after**
+   `Connection`.
 2. **`workshop_layout.h` / `.c`** — `nav_rows[]` is sized for the
-   non-pinned modules (10 today: Screenshots, Files, Console, Processes,
-   Hardware, Software, MCP, Diagnostics, Networking, iCloud — the enum
-   in `workshop_module.h` is the truth when this list rots, as it has
-   before) via `kWorkshopNavRows`. Grow that constant; the loop in
-   `workshop_layout_compute` is already generic. `Connection` and `Logs`
-   are special: both are pinned below the divider (`conn_row`, `logs_row`)
-   and are not in `nav_rows`. A module placed above `Connection` renumbers
-   it, which bumps the prefs format — Logs took it to 12, its Invert switch
-   to 13; see `now_prefs_load`. To pin a new page in the footer instead of
-   the scrolling list, add its own row rect the way `logs_row` does and map
+   non-pinned modules via `kWorkshopNavRows` (11 today — the enum in
+   `workshop_module.h` is the truth when this list rots, as it has
+   before). Grow that constant; the loop in `workshop_layout_compute` is
+   already generic. `Preferences`, `Logs` and `Connection` are special:
+   all three are pinned below the divider (`prefs_row`, `logs_row`,
+   `conn_row`) and are not in `nav_rows`. A module placed above
+   `Connection` renumbers it, which bumps the prefs format — Logs took it
+   to 12, its Invert switch to 13, the Preferences page to 19; see
+   `now_prefs_load`. To pin a new page in the footer instead of the
+   scrolling list, add its own row rect the way `logs_row` does and map
    it in `row_rect()`.
+
+   **`nav_rows[i]` is the i-th visible SLOT, not the i-th module.** It
+   was indexed by module ID until the rail learned to scroll and to be
+   rearranged; both make "row 3" and "module 3" different things. The
+   rail maps a slot to a module through the person's saved order plus
+   the scroll offset, and `row_rect()` returns **NULL** for a nav row
+   that is currently off screen — every caller has to handle that, and
+   it is an ordinary state rather than an error. Slots past
+   `nav_visible` are zeroed, so walking the whole array draws nothing
+   for them instead of painting a stale row over a live one.
 3. **`workshop_sidebar.c`** — add a `k_rows` entry (title, subtitle,
-   icon ID) and, if it is not pinned, make sure `row_rect()` maps it.
+   icon ID) and, if it IS pinned, map it in `row_rect()` and add it to
+   the pinned lists in `workshop_sidebar_draw`, `workshop_sidebar_click`
+   and `module_at_visual`. A nav page needs none of that: it arrives
+   through the order table automatically, including at the foot of an
+   arrangement someone already saved.
+
+   The subtitle is what the **compact** density drops, so it must be
+   genuinely secondary — a row whose title alone does not say what the
+   page is will be unreadable for anyone running compact.
 4. **`workshop_window.c`** — add a `k_module_info` entry (title, blurb,
    and the placeholder line shown until the module registers) and
    register the ops in `workshop_open()`.
-5. **`main.c`** — add the View menu item with its Cmd-key.
+5. **`main.c`** — add the View menu item with its Cmd-key. The item
+   number must BE the module ID: Networking once landed without an item
+   and every entry below it selected its neighbour.
 6. **`now-guest-ppc/CMakeLists.txt`** — add the source file(s).
 
 Plus a 16×16 `ics#` in `now-guest-ppc/resources/app.r` for the sidebar icon.

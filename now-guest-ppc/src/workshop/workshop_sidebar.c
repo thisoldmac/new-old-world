@@ -1021,6 +1021,17 @@ void workshop_sidebar_activate(Boolean active)
         return;
     }
     g_active = active;
+    /* The bar is a real control and must go grey with the window like
+       any other; the hand-drawn rows follow g_active in selection_color.
+       Guarded on a CHANGE by the early return above, because both calls
+       redraw whatever they are passed. */
+    if (g_scroll != NULL) {
+        if (active) {
+            ActivateControl(g_scroll);
+        } else {
+            DeactivateControl(g_scroll);
+        }
+    }
     InvalWindowRect(g_owner, &g_lay.rail_list);
 }
 

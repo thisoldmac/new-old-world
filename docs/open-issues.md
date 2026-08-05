@@ -14,6 +14,51 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## The rearrangeable sidebar is entirely unverified (2026-08-04)
+
+The rail gained four things in one arc — a scroll bar that appears only
+on overflow, Option-drag reordering, a compact density, and a
+Preferences page — and **not one of them has been on a machine**. The
+gate that ran is `scripts/build-guests` (it compiles) plus the layout
+unit test here, whose new guards were watched to fail under four
+mutations. That is *builds* and *tested*; nobody has watched any of it
+work. What to look at first, in the order it is most likely to be
+wrong:
+
+- **The Option-drag itself.** A nested `StillDown`/`GetMouse` tracking
+  loop that pumps the wire and draws its insertion line in `patXor`.
+  XOR feedback has to erase exactly, so the thing to watch for is a
+  line left behind after the drop, or a smear when the mouse moves
+  fast. It has never tracked a real mouse.
+- **The scroll bar's first appearance.** It is created hidden and shown
+  only when the rows overflow, which at rich density happens at the
+  430-high minimum window and nowhere else. Growing the window past
+  the threshold and back is the case that exercises Show/Hide plus the
+  clamp; a bar that draws but does not hit-test is the classic symptom
+  of a control created at the wrong moment.
+- **Compact drawing.** 18-pixel rows with a hard-coded baseline of 13
+  and the icon still at its native 16. The baseline is arithmetic, not
+  a metrics query, so a system font that measures differently would
+  show as text riding high or clipped.
+- **The prefs v19 migration.** An old file must reopen on the page the
+  person actually had: Connection remaps 13 -> 14 and Logs 12 -> 13.
+  This is the fifth time that remap has been written and the ordering
+  trap (remap Connection first) has been the bug at least once.
+
+Two things are known limitations rather than suspicions:
+
+- **The drag does not scroll the list under itself.** Rearranging a row
+  past the visible edge of a scrolled rail means dropping, scrolling,
+  and dragging again. It only bites at rich density in a minimum-size
+  window, which is also the only configuration that scrolls at all.
+- **The Edit menu holds Preferences and nothing else.** Cut/Copy/Paste
+  are absent rather than greyed, because this window has no keyboard
+  focus machinery and the TextEdit fields on Chat and Console each own
+  their own `TEHandle` — there is no "the focused field" for an Edit
+  command to act on. Wiring them needs a new module op handing the
+  Workshop the page's current `TEHandle`. That is the same missing seam
+  as the dead `GetKeyboardFocus` gates noted below.
+
 ## The chat.* family: metal-proven end to end; edges still open (2026-08-02)
 
 Four rounds on the real desk moved most of the 2026-08-02 unknowns to
