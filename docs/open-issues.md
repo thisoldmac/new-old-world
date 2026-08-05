@@ -1838,6 +1838,28 @@ the host gate binds. Until it does, a red host gate with a NOW app
 running should be re-run with the app quit before it is believed —
 in either direction.
 
+**2026-08-05: the contention story is not the whole story.** The same
+red gate reproduced on this Mac with **no NOW app running at all** — no
+`New Old World` process, no agent socket in `$TMPDIR`, no concurrent
+build or test. Five cases fail (`AgentIntegrationQuitTests
+testReconnectInvalidatesPriorProcessReference`, `GuestIdentityTests
+testAddressingABackgroundMachineIsRefusedRatherThanRedirected`,
+`GuestListenerTests testAGuestThatNeverAnswersLeavesAgentAccessAbsent`,
+`MultiGuestFocusTests testEveryGuestScopedModelFollowsTheActiveMac`,
+`MultiGuestListenerTests
+testABackgroundGuestLeavingDoesNotDisturbTheConsole`), each on a 5 s or
+10 s timeout, and each **passes in 0.1 s when run alone**.
+
+What is different from 2026-08-02, and what it costs: the subset is now
+the SAME on every run rather than varying, which is the signature of
+in-suite interference rather than of another program on the machine. So
+the advice above — quit the app and re-run — no longer clears the gate,
+and `scripts/test-all` cannot go green here by any action a contributor
+can take. Anything landing while this is true carries an
+honestly-labelled red gate, and the two halves must be told apart by
+running the touched suites alone. This one is worth fixing before it
+teaches everybody to read a red host gate as noise.
+
 ## Photo sizes became long-edge stops; three metal defects fixed, none re-verified on metal (2026-08-02, latest)
 
 **Unverified, deliberately labelled.** Metal feedback named three

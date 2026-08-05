@@ -1626,16 +1626,77 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             let read = await readingOutput(
                 "script", ["source": .text(source)],
                 osaFailureIsAnError: true)
-            if let error = read.error { return error }
+            if let error = read.error {
+                /* **Hide's script is ONE `set`, so a raise proves nothing
+                   was hidden** — and a refusal that cannot say that holds
+                   the single mutation lane for the full 15 s waiting for
+                   evidence of an effect that never happened. Michelle's
+                   2026-08-05 drive paid that twice over: the Finder
+                   refuses `set visible` (`-10000`, `-10006`, and here
+                   `osaErr -1753`), and commanding menu -16489 instead
+                   dispatches without changing the machine, which is why
+                   `InteractionPlan` keeps visibility typed.
+
+                   Hide Others is deliberately NOT given the same
+                   treatment: its script is a REPEAT LOOP over every
+                   background process, so it can hide two applications and
+                   raise on the third, and `notSent` would then report a
+                   partial change as nothing at all. Unknown is the true
+                   answer there until the script can say how far it got. */
+                planRefusalReach = Self.visibilityRefusalReach(for: action)
+                return Self.visibilityRefusal(error)
+            }
             return Self.visibilityDispatchOutcome(read.value)
 
         case .showAll:
             let read = await readingOutput(
                 "script", ["source": .text(Self.showAllApplicationsScript)],
                 osaFailureIsAnError: true)
-            if let error = read.error { return error }
+            if let error = read.error {
+                planRefusalReach = Self.visibilityRefusalReach(for: action)
+                return Self.visibilityRefusal(error)
+            }
             return Self.visibilityDispatchOutcome(read.value)
         }
+    }
+
+    /// **Whether a raised visibility script PROVES nothing changed**, which
+    /// is the only thing that lets the mutation lane stop waiting for
+    /// evidence instead of holding it for the full 15 s.
+    ///
+    /// It is per-action because the three scripts differ in exactly the
+    /// way that matters:
+    ///
+    /// - **Hide is one `set`.** If it raised, the front application was
+    ///   not hidden. Provably unsent — and this is the case Michelle's
+    ///   2026-08-05 drive measured burning the lane.
+    /// - **Hide Others is a repeat LOOP** over every background process,
+    ///   so it can hide two applications and raise on the third. Reporting
+    ///   that as unsent would call a partial change nothing at all.
+    /// - **Show All is one statement with a PLURAL specifier**, resolved
+    ///   inside the Finder. Whether it shows some before raising has never
+    ///   been measured, and an unmeasured atomicity claim is not proof.
+    ///
+    /// Only the first is a proof; the other two are honestly unknown.
+    static func visibilityRefusalReach(
+        for action: InteractionPlan.ApplicationVisibility)
+        -> AgentIntegrationProjectionFailure.Reach {
+        if case .hide = action { return .notSent }
+        return .unknown
+    }
+
+    /// **What a person needs to hear when visibility is refused**, which
+    /// is not the raw osaErr. Hiding an application plainly works on a
+    /// Macintosh — a person does it from the Application menu — so a bare
+    /// error code reads as a broken mirror rather than as the one thing
+    /// NOW has not built. Says which route failed, keeps the code for
+    /// whoever is diagnosing, and names the route still untried so this
+    /// sentence dates itself the moment somebody makes it work.
+    static func visibilityRefusal(_ error: String) -> String {
+        "the Finder will not set an application's visibility (\(error)); "
+            + "NOW has no other route yet — a real click on the "
+            + "Application menu through the act plane is untried — so "
+            + "nothing was hidden or shown."
     }
 
     static func visibilityDispatchOutcome(_ raw: String?) -> String? {

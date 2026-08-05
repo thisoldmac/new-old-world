@@ -490,6 +490,68 @@ final class NOWMirrorSourceTests: XCTestCase {
                        "visibility dispatch outcome unavailable")
     }
 
+    /// **A refused Hide must not hold the lane for 15 s**, and only Hide
+    /// has the proof that lets it let go. Michelle's 2026-08-05 drive
+    /// measured the cost: the Finder refuses `set visible` (`-10000`,
+    /// `-10006`, and here `osaErr -1753`), and the refusal then waited out
+    /// the whole timeout for evidence of an effect that never happened,
+    /// while everything queued behind it waited too.
+    func testOnlyHideCanProveARaisedVisibilityScriptChangedNothing() {
+        let app = InteractionPlan.ApplicationVisibility.hide(
+            psn: "0.4", incarnation: "now", name: "New Old World",
+            menuID: -16_489, itemIndex: 1, titleLeft: 600)
+        let others = InteractionPlan.ApplicationVisibility.hideOthers(
+            exceptPSN: "0.4", incarnation: "now", name: "New Old World",
+            menuID: -16_489, itemIndex: 2, titleLeft: 600)
+
+        XCTAssertEqual(NOWMirrorSource.visibilityRefusalReach(for: app),
+                       .notSent, "one `set` that raised set nothing")
+        XCTAssertEqual(NOWMirrorSource.visibilityRefusalReach(for: others),
+                       .unknown, "a loop can hide two and raise on the third")
+        XCTAssertEqual(NOWMirrorSource.visibilityRefusalReach(for: .showAll),
+                       .unknown, "a plural specifier's atomicity is unmeasured")
+
+        /* The consequence the reach exists for, spelled out: only the
+           provable one releases the lane. */
+        let refusal = NOWMirrorSource.visibilityRefusal(
+            "the guest's AppleScript raised osaErr -1753")
+        XCTAssertFalse(NOWMirrorSource.effectMayHaveLanded(
+            complaint: refusal, reach: .notSent))
+        XCTAssertTrue(NOWMirrorSource.effectMayHaveLanded(
+            complaint: refusal, reach: .unknown))
+    }
+
+    /// **The premise the reach above rests on**, asserted against the
+    /// scripts themselves so it cannot rot silently. Hide's proof is that
+    /// its script mutates exactly once; rewrite it as a loop and the proof
+    /// is gone while every test about the reach still passes.
+    func testHidesProofIsThatItsScriptMutatesExactlyOnce() {
+        let hide = NOWMirrorSource.hideFrontApplicationScript
+        XCTAssertEqual(
+            hide.components(separatedBy: "set visible").count - 1, 1,
+            "Hide claims `notSent` on the strength of a single mutation")
+        XCTAssertFalse(hide.contains("repeat"),
+                       "a loop can land partway and could not claim it")
+        XCTAssertTrue(NOWMirrorSource.hideOtherApplicationsScript
+            .contains("repeat"),
+            "Hide Others is the loop this rule keeps `unknown`")
+    }
+
+    /// A bare osaErr reads as a broken mirror. Hiding plainly works on a
+    /// Macintosh, so the sentence has to say it is NOW that has not built
+    /// it, keep the code for whoever is diagnosing, and name the route
+    /// still untried — which is what dates the sentence when someone makes
+    /// that route work.
+    func testAVisibilityRefusalNamesTheRouteAndTheOneStillUntried() {
+        let refusal = NOWMirrorSource.visibilityRefusal(
+            "the guest's AppleScript raised osaErr -1753")
+
+        XCTAssertTrue(refusal.contains("osaErr -1753"), refusal)
+        XCTAssertTrue(refusal.contains("Finder will not set"), refusal)
+        XCTAssertTrue(refusal.contains("untried"), refusal)
+        XCTAssertTrue(refusal.contains("nothing was hidden or shown"), refusal)
+    }
+
     func testKeyCapsIsOpenedFromTheGuestsAppleMenuItemsFolder() {
         let script = NOWMirrorSource.appleMenuItemScript("Key Caps")
         XCTAssertTrue(script.contains("tell application \"Finder\""))
