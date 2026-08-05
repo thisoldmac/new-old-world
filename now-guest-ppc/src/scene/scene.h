@@ -301,6 +301,11 @@ enum {
 typedef struct {
     short number;
     short kind;
+    /* As on a control, and it reaches a dialog item by the same join. A
+       `resCtrl` DITL row is the one item type whose kind the item list
+       cannot name - it says only that a ControlRecord exists - so this is
+       precisely where the weaker answer has something to add. */
+    short definition;
     char title[kNowSceneDialogTitleMax];
     NowSceneRect rect;
     int enabled;

@@ -123,6 +123,15 @@ public struct Scene: Codable, Equatable, Sendable {
     public struct Semantics: Codable, Equatable, Sendable {
         public var knowledge: Knowledge
         public var kind: String?
+        /// WHERE the control's definition function came from, when `kind`
+        /// could not be determined: `system`, `application` or
+        /// `indeterminate`. It is a strictly weaker claim than `kind` and
+        /// must never be promoted into one — `system` says a documented
+        /// answer exists somewhere, not that this is a push button. It
+        /// exists to size the undetermined population: a system-defined
+        /// control is a producer gap worth closing, an application-defined
+        /// one is a control whose only evidence will ever be its drawing.
+        public var definition: String?
         public var action: String?
         public var state: String?
         public var value: String?

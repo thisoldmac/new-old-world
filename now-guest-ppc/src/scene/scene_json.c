@@ -610,6 +610,17 @@ static void put_dialog_items(Sink *k, const NowScene *s,
         put(k, ",\"semantic\":{\"knowledge\":");
         put_str(k, item->kind == kNowSceneSemanticUnknown
                    ? "unknown" : "known");
+        if (item->kind == kNowSceneSemanticUnknown) {
+            const char *definition = control_definition(item->definition);
+
+            /* The `resCtrl` case, and the only dialog item type whose kind
+               the DITL cannot supply. Same rule as a control's: emitted
+               only where the kind is missing. */
+            if (definition != NULL) {
+                put(k, ",\"definition\":");
+                put_str(k, definition);
+            }
+        }
         if (item->kind != kNowSceneSemanticUnknown) {
             put(k, ",\"kind\":");
             put_str(k, dialog_kind(item->kind));

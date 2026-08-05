@@ -228,6 +228,7 @@ static void walk_dialog_items(NowScene *s, int window,
                disables two checkboxes at runtime while their DITL rows stay
                enabled. */
             item->enabled = control->enabled;
+            item->definition = control->definition;
             if (control->ref[0] != '\0') {
                 strcpy(item->ref, control->ref);
             }
