@@ -65,6 +65,18 @@ int main(void)
               && (kNowPeekTableCapTree & kNowPeekTableCapContent) == 0
               && (kNowPeekTableCapAct & kNowPeekTableCapContent) == 0,
           "all four capability bits are distinct");
+    /* Distinct is not enough: WHICH bit each plane holds is what a
+       person reads a live `cap=15 requested=7` line with, and the
+       plane numbers do not run in bit order. P3 asked for 1u << 2
+       while P4 already held it (the 2026-07-31 near-miss), so P4 sits
+       BELOW P3. On 2026-08-05 that cost an investigation: a drive log
+       reading requested=7 was reported as "the interaction bit clear"
+       and the arc opened against the host's plane policy, when 7 is
+       Anchors|Tree|Act and the plane actually unrequested was P3. */
+    check(kNowPeekTableCapAnchors == 1u, "P1 anchors is bit 0 (1)");
+    check(kNowPeekTableCapTree == 2u, "P2 semantic tree is bit 1 (2)");
+    check(kNowPeekTableCapAct == 4u, "P4 act is bit 2 (4), BELOW P3");
+    check(kNowPeekTableCapContent == 8u, "P3 content is bit 3 (8)");
 
     memset(&t, 0, sizeof t);
     t.magic = (NowPeekU32)kNowPeekTableMagic;
