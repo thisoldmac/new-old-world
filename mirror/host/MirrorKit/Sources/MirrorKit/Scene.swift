@@ -11,9 +11,10 @@ import Foundation
 /// fields are additive within v1 (record them in `IRSchema.v1Additions`);
 /// removing or renaming one moves `IR.version`. See `IRVersion.swift`.
 ///
-/// Two properties are deliberately **outside** the frozen IR and are excluded
-/// from `Codable` — `Window.island` and `Window.items`. Reasons at their
-/// declarations.
+/// One property is deliberately **outside** the frozen IR and is excluded
+/// from `Codable` — `Window.island`. Reason at its declaration.
+/// (`Window.items` was excluded with it and re-entered as an additive v1
+/// field on 2026-07-31; it encodes. This sentence used to name both.)
 public struct Scene: Codable, Equatable, Sendable {
     /// IR version stamp — the body's self-stamp, the same number the service
     /// puts in `result["irVersion"]`. Always `IR.version`; the fixture corpus
@@ -433,7 +434,16 @@ public struct Scene: Codable, Equatable, Sendable {
     /// renderer draws a generic glyph by kind/alias.
     public struct DesktopItem: Codable, Equatable, Sendable {
         public var name: String
-        /// "folder" | "file".
+        /// `folder` | `disk` | `application` | `file`, reduced from the
+        /// Finder's own kind string by whichever producer read it.
+        ///
+        /// **It is four words, and it does not name a control panel** — a
+        /// `cdev` arrives here as a plain `file`, so anything that needs to
+        /// tell one from a document reads `type` rather than this. Said
+        /// out loud because this comment used to claim two of the four,
+        /// and a reader who believed it would predict a Finder window for
+        /// every control panel — which is exactly the settlement defect of
+        /// 2026-08-05.
         public var kind: String
         public var type: String?
         public var creator: String?

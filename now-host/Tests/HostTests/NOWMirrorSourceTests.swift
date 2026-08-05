@@ -636,6 +636,82 @@ final class NOWMirrorSourceTests: XCTestCase {
                           + "just that something was wrong")
     }
 
+    /// **A null result must not cost what a hung one does.** Driving
+    /// `finderOpen "Date & Time"` against the desktop, where it does not
+    /// live, correctly opened nothing on 2026-08-05 — and still burned the
+    /// full 15 s timeout holding the single mutation lane, teaching the
+    /// caller nothing it could tell from a wedge. The roster the scene
+    /// already publishes answers it here, for free.
+    func testAFinderItemTheRosterDoesNotCarryIsNotSent() throws {
+        let scene = try finderScene()
+
+        XCTAssertNil(NOWMirrorSource.staleTargetComplaint(
+            for: .finderOpen(item: "Macintosh HD", container: .desktop),
+            in: scene), "an item the desktop roster carries is the caller's")
+
+        let absent = NOWMirrorSource.staleTargetComplaint(
+            for: .finderOpen(item: "Date & Time", container: .desktop),
+            in: scene)
+        XCTAssertEqual(absent, "the Finder shows no item named Date & Time "
+                           + "on the desktop, so the act was not sent. "
+                           + "Read it again.")
+
+        /* Selecting names an item exactly as opening does, and pays the
+           same round trip to be told it is not there. */
+        let inWindow = NOWMirrorSource.staleTargetComplaint(
+            for: .finderSelect(item: "Date & Time",
+                               container: .window(title: "Extensions")),
+            in: scene)
+        XCTAssertEqual(inWindow, "the Finder shows no item named Date & Time "
+                           + "in Extensions, so the act was not sent. "
+                           + "Read it again.")
+    }
+
+    /// **An unread container claims nothing**, which is the same rule as
+    /// "no scene is not evidence of absence" one level down. `readIcons`
+    /// refuses a partial or changing roster rather than returning part of
+    /// one, so a published roster IS complete — but a container it never
+    /// reached is nil, and nil must not read as empty or every act into an
+    /// unwalked window would be refused on the strength of a read that
+    /// never happened.
+    func testAnUnreadFinderContainerRefusesNothing() throws {
+        let scene = try finderScene()
+
+        XCTAssertNil(NOWMirrorSource.staleTargetComplaint(
+            for: .finderOpen(item: "anything at all",
+                             container: .window(title: "Control Panels")),
+            in: scene), "that window published no items shelf")
+        XCTAssertNil(NOWMirrorSource.staleTargetComplaint(
+            for: .finderOpen(item: "anything at all",
+                             container: .window(title: "No Such Window")),
+            in: scene), "a window this scene does not carry cannot say")
+    }
+
+    private func finderScene() throws -> MirrorKit.Scene {
+        let data = Data(#"""
+        {"version":2,"seq":1,"capturedAt":1,"source":"peek",
+         "screen":{"w":640,"h":480},
+         "apps":[{"psn":"0.3","name":"Finder","front":true}],
+         "desktopItems":[
+          {"name":"Macintosh HD","kind":"disk","x":500,"y":40,
+           "placed":true,"alias":false,"invisible":false}],
+         "windows":[
+          {"id":"0.3/Extensions#0","app":"Finder","psn":"0.3",
+           "title":"Extensions","rect":{"l":0,"t":0,"r":300,"b":200},
+           "front":true,"z":0,"visible":true,"controls":[],
+           "ref":"ext-ref","items":[
+            {"name":"AppleShare","kind":"file","type":"INIT",
+             "creator":"schr","x":10,"y":10,"placed":true,"alias":false,
+             "invisible":false}]},
+          {"id":"0.3/Control Panels#0","app":"Finder","psn":"0.3",
+           "title":"Control Panels","rect":{"l":0,"t":0,"r":300,"b":200},
+           "front":false,"z":1,"visible":true,"controls":[],
+           "ref":"panels-ref"}],
+         "meta":{"errors":[]}}
+        """#.utf8)
+        return try JSONDecoder().decode(MirrorKit.Scene.self, from: data)
+    }
+
     /// Two boundaries on the re-read, both deliberate. No scene is not
     /// evidence of absence, and a plan that names no window has nothing
     /// here to check — an element reference is not looked up, because a

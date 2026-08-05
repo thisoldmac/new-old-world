@@ -1338,20 +1338,56 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     ///   statement about the walk rather than the machine.
     /// - **Only when there is a scene to check against.** No scene is not
     ///   evidence of absence.
+    /// - **Finder items, only against a roster the scene actually holds.**
+    ///   A Finder act names its item by name rather than by a minted
+    ///   reference, and the container's roster is all-or-nothing
+    ///   (`readIcons` refuses a partial or changing read rather than
+    ///   returning some of it), so a published roster missing the name is
+    ///   real absence. An unread container is nil and claims nothing. This
+    ///   arm exists because the alternative was measured: driving
+    ///   `finderOpen "Date & Time"` against the desktop, where it does not
+    ///   live, correctly opened nothing and still burned the full 15 s
+    ///   timeout holding the one mutation lane. A null result that costs
+    ///   the same as a hung one teaches a caller nothing.
     ///
     /// It never claims an effect and never re-aims: a stale target is
     /// refused with the reason, exactly as `MirrorDriveService` refuses a
     /// name the published snapshot does not carry.
     static func staleTargetComplaint(for plan: InteractionPlan,
                                      in scene: MirrorKit.Scene?) -> String? {
-        guard let scene, let ref = windowReference(in: plan) else {
+        guard let scene else { return nil }
+        if let ref = windowReference(in: plan) {
+            guard !scene.windows.contains(where: { $0.ref == ref }) else {
+                return nil
+            }
+            return "the scene moved on — that window is no longer on the "
+                + "machine, so the act was not sent. Read it again."
+        }
+        if let (item, container) = finderItemReference(in: plan),
+           let published = MirrorActionExecutor.publishedItems(of: container,
+                                                               in: scene),
+           !published.contains(where: { $0.name == item }) {
+            let place: String
+            switch container {
+            case .desktop: place = "on the desktop"
+            case .window(let title): place = "in \(title)"
+            }
+            return "the Finder shows no item named \(item) \(place), so "
+                + "the act was not sent. Read it again."
+        }
+        return nil
+    }
+
+    /// The Finder item a plan acts on, or nil for a plan that names none.
+    static func finderItemReference(in plan: InteractionPlan)
+        -> (String, InteractionPlan.FinderContainer)? {
+        switch plan {
+        case .finderOpen(let item, let container),
+             .finderSelect(let item, let container):
+            return (item, container)
+        default:
             return nil
         }
-        guard !scene.windows.contains(where: { $0.ref == ref }) else {
-            return nil
-        }
-        return "the scene moved on — that window is no longer on the "
-            + "machine, so the act was not sent. Read it again."
     }
 
     /// The window reference a plan acts on, or nil for a plan that does

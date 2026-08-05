@@ -29,6 +29,61 @@ enum MirrorActionExecutor {
         }
     }
 
+    /// The items a scene publishes for a Finder container, or **nil when
+    /// it has not read them**. The difference is the whole reason for the
+    /// optional: an unread container cannot say an item is absent, and a
+    /// caller that flattened nil to `[]` would refuse acts on the strength
+    /// of a read that never happened.
+    static func publishedItems(of container: InteractionPlan.FinderContainer,
+                               in scene: MirrorKit.Scene)
+        -> [MirrorKit.Scene.DesktopItem]? {
+        switch container {
+        case .desktop:
+            return scene.desktopItems
+        case .window(let title):
+            return scene.windows.first { $0.title == title }?.items
+        }
+    }
+
+    /// Whether opening this item raises its OWN application rather than a
+    /// Finder window — and **nil when the scene cannot say**, which is the
+    /// answer far more often than it looks.
+    ///
+    /// Only a positive signal moves the prediction, because the cost of
+    /// being wrong is symmetric (a 15 s timeout either way) and the cost
+    /// of being wrong about something that used to work is not:
+    ///
+    /// - The Finder's own `kind` reaches us reduced to four words
+    ///   (`NOWMirrorSource.parseIcons`), and **a control panel is none of
+    ///   them** — it arrives as a plain `file`. So kind alone cannot
+    ///   answer the case this exists for.
+    /// - `type` can: `APPL` and `appe` are the Finder's file types for an
+    ///   application and a background-only one, and `cdev` is a control
+    ///   panel. Those three, and the Finder calling something an
+    ///   application in its own words, are the whole positive set.
+    /// - **An alias reports its own kind and never its target's**, so an
+    ///   alias to a folder and an alias to a control panel are
+    ///   indistinguishable here. Unknown, deliberately.
+    /// - Everything else — documents, the Trash, an item this scene never
+    ///   read — stays unknown and keeps the Finder-window prediction it
+    ///   has always had. For a document that prediction is still wrong;
+    ///   it is not wrong in a NEW way, and nothing measured says what the
+    ///   right one is.
+    static func opensAsItsOwnApplication(
+        _ item: String,
+        in container: InteractionPlan.FinderContainer,
+        scene: MirrorKit.Scene) -> Bool? {
+        guard let entry = publishedItems(of: container, in: scene)?
+            .first(where: { $0.name == item }), !entry.alias else {
+            return nil
+        }
+        if entry.kind == "application" { return true }
+        switch entry.type {
+        case "APPL", "appe", "cdev": return true
+        default: return nil
+        }
+    }
+
     @MainActor
     /// `source` is WHICH FACE drove this, and it was hardcoded to `.human`
     /// until 2026-08-05 — so every act an agent drove was recorded as a
@@ -129,8 +184,27 @@ enum MirrorActionExecutor {
             }
             return make(target: .window(identity),
                         postcondition: .windowAbsent(identity))
-        case .finderOpen(let item, _):
+        case .finderOpen(let item, let container):
+            /* **A Finder-open does not always make a Finder window.** This
+               predicted one for everything, and a control panel opens as
+               its OWN application — a snapshot taken while Date & Time was
+               up shows that window owned by a process named `Date & Time`,
+               not by the Finder. The postcondition could never match, so
+               every panel open burned its whole 15 s timeout HAVING
+               WORKED, and because the mutation FIFO is one lane those
+               timeouts stacked into waits of up to 51.8 s behind it
+               (Michelle's 2026-08-05 drive).
+
+               The shape for that is not new: `openAppleMenuItem` already
+               predicts `processNamedPresent`, and opening Date & Time from
+               the Apple menu's Control Panels is the same event as opening
+               it from a Finder window. This case was the outlier. */
             guard let finder = namedProcess("Finder") else { return nil }
+            if opensAsItsOwnApplication(item, in: container,
+                                        scene: snapshot.scene) == true {
+                return make(target: .process(finder),
+                            postcondition: .processNamedPresent(item))
+            }
             return presentOrCreated(owner: finder, title: item)
         case .menuCommand:
             guard case .menuItem(let item) = interaction.object,

@@ -140,6 +140,103 @@ final class MirrorActionExecutorTests: XCTestCase {
                        .processNamedPresent("Key Caps"))
     }
 
+    /// **The defect that made every control panel time out having
+    /// worked.** A Finder-open predicted a Finder-owned window for
+    /// everything; a control panel opens as its OWN application, so the
+    /// postcondition could never match and the act burned its full 15 s
+    /// holding the one mutation lane. `openAppleMenuItem` has always
+    /// predicted `processNamedPresent` for the same event reached from the
+    /// Apple menu — this case was the outlier, not the new shape.
+    func testOpeningAControlPanelPredictsItsOwnProcessNotAFinderWindow() throws {
+        let engine = try makeEngine()
+        let finder = MirrorProcessIdentity(session: engine.session,
+                                           incarnation: "finder")
+
+        for panel in ["Date & Time", "AppleTalk"] {
+            let operation = try XCTUnwrap(MirrorActionExecutor.operation(
+                for: open(panel, in: "Control Panels"),
+                plan: .finderOpen(item: panel,
+                                  container: .window(title: "Control Panels")),
+                engine: engine, id: "open-\(panel)"))
+            XCTAssertEqual(operation.postcondition,
+                           .processNamedPresent(panel),
+                           "a cdev opens as an application named for itself")
+            XCTAssertEqual(operation.target, .process(finder),
+                           "the Finder is still who was asked to open it")
+        }
+
+        let app = try XCTUnwrap(MirrorActionExecutor.operation(
+            for: open("SimpleText", in: "Control Panels"),
+            plan: .finderOpen(item: "SimpleText",
+                              container: .window(title: "Control Panels")),
+            engine: engine, id: "open-app"))
+        XCTAssertEqual(app.postcondition, .processNamedPresent("SimpleText"))
+    }
+
+    /// The half the old prediction was right about, and it must stay right:
+    /// the Finder does own a folder's window, and a disk's.
+    func testOpeningAFolderStillPredictsAFinderOwnedWindow() throws {
+        let engine = try makeEngine()
+        let finder = MirrorProcessIdentity(session: engine.session,
+                                           incarnation: "finder")
+
+        let folder = try XCTUnwrap(MirrorActionExecutor.operation(
+            for: open("Fonts", in: "Control Panels"),
+            plan: .finderOpen(item: "Fonts",
+                              container: .window(title: "Control Panels")),
+            engine: engine, id: "open-folder"))
+        XCTAssertEqual(folder.postcondition,
+                       .windowNamedPresent(owner: finder, title: "Fonts"))
+
+        let disk = try XCTUnwrap(MirrorActionExecutor.operation(
+            for: open("Macintosh HD", in: nil),
+            plan: .finderOpen(item: "Macintosh HD", container: .desktop),
+            engine: engine, id: "open-disk"))
+        XCTAssertEqual(disk.postcondition,
+                       .windowNamedPresent(owner: finder,
+                                           title: "Macintosh HD"))
+    }
+
+    /// **Only a positive signal moves the prediction.** An alias reports
+    /// its own kind and never its target's, a document's type says nothing
+    /// about which application will claim it, and an item this scene never
+    /// read cannot be classified at all. All three keep the prediction they
+    /// have always had rather than acquiring a new way to be wrong.
+    func testAnUnclassifiableItemKeepsTheOldPrediction() throws {
+        let engine = try makeEngine()
+        let finder = MirrorProcessIdentity(session: engine.session,
+                                           incarnation: "finder")
+
+        for (item, container) in [
+            ("Panel Alias", InteractionPlan.FinderContainer
+                .window(title: "Control Panels")),
+            ("Read Me", .desktop),
+            ("Never Read", .window(title: "System Folder")),
+        ] {
+            let operation = try XCTUnwrap(MirrorActionExecutor.operation(
+                for: open(item, in: nil),
+                plan: .finderOpen(item: item, container: container),
+                engine: engine, id: "open-\(item)"))
+            XCTAssertEqual(operation.postcondition,
+                           .windowNamedPresent(owner: finder, title: item),
+                           "\(item) is not classifiable from this scene")
+        }
+    }
+
+    private func open(_ name: String, in container: String?) -> Interaction {
+        let window = container.map {
+            MirrorObject.Window(
+                id: "0.3/\($0)#0", ref: "panels-ref", psn: "0.3", title: $0,
+                rect: .init(l: 0, t: 0, r: 300, b: 200), kind: 0,
+                isFront: true, part: .content)
+        }
+        return .init(object: .finderItem(.init(name: name,
+                                               container: window,
+                                               point: .init(x: 10, y: 20))),
+                     gesture: .click(count: 2, mods: 0,
+                                     at: .init(x: 10, y: 20)))
+    }
+
     private func makeEngine() throws -> MirrorStateEngine {
         let engine = MirrorStateEngine(guestKey: .synthetic("maxbook"))
         let data = Data(#"""
@@ -155,11 +252,34 @@ final class MirrorActionExecutorTests: XCTestCase {
            "signature":"MACS","incarnation":"finder"},
           {"psn":"0.4","name":"New Old World","front":true,
            "signature":"NOWo","incarnation":"now"}],
+         "desktopItems":[
+          {"name":"Macintosh HD","kind":"disk","x":500,"y":40,
+           "placed":true,"alias":false,"invisible":false},
+          {"name":"Read Me","kind":"file","type":"TEXT","creator":"ttxt",
+           "x":500,"y":120,"placed":true,"alias":false,"invisible":false}],
          "windows":[
           {"id":"0.3/System Folder#0","app":"Finder","psn":"0.3",
            "title":"System Folder","rect":{"l":1,"t":2,"r":200,"b":180},
            "front":false,"z":1,"visible":true,"controls":[],
-           "ref":"system-ref","incarnation":"system-window"}],
+           "ref":"system-ref","incarnation":"system-window"},
+          {"id":"0.3/Control Panels#0","app":"Finder","psn":"0.3",
+           "title":"Control Panels","rect":{"l":10,"t":40,"r":310,"b":240},
+           "front":true,"z":0,"visible":true,"controls":[],
+           "ref":"panels-ref","incarnation":"panels-window",
+           "items":[
+            {"name":"Date & Time","kind":"file","type":"cdev",
+             "creator":"date","x":10,"y":10,"placed":true,"alias":false,
+             "invisible":false},
+            {"name":"AppleTalk","kind":"file","type":"cdev",
+             "creator":"atlk","x":80,"y":10,"placed":true,"alias":false,
+             "invisible":false},
+            {"name":"SimpleText","kind":"application","type":"APPL",
+             "creator":"ttxt","x":150,"y":10,"placed":true,"alias":false,
+             "invisible":false},
+            {"name":"Fonts","kind":"folder","x":10,"y":80,
+             "placed":true,"alias":false,"invisible":false},
+            {"name":"Panel Alias","kind":"file","x":80,"y":80,
+             "placed":true,"alias":true,"invisible":false}]}],
          "meta":{"errors":[],"coverage":[
           {"scope":"processes","status":"complete"},
           {"scope":"windows","owner":"finder","status":"complete"},
