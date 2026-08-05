@@ -25,10 +25,10 @@ import NOWAgentIntegration
 /// (2026-08-05) — nothing about the code under test, and nothing a
 /// contributor could quit to clear. Retrying cannot fix it, because the
 /// kernel's answer is a function of the destination and does not change.
-/// Choosing the source port here does: `sourcePorts` never repeats a number
-/// in the life of the process, so no 4-tuple can repeat either, and the
-/// range sits below the ephemeral floor so the kernel's own picks for
-/// everything else in this process can never land on one of ours.
+/// Choosing the source port here does: `SourcePorts` hands out each number
+/// once, so within a run no 4-tuple can repeat, and its lane sits below the
+/// ephemeral floor so the kernel's own picks for everything else in this
+/// process can never land on one of ours.
 @MainActor
 final class FakeGuest {
     /// Source ports for the fake guests, handed out once each.
