@@ -92,6 +92,20 @@ struct NOWMirrorCycleIO {
     }
 }
 
+/// **The one door a guest command leaves through.**
+///
+/// Production binds it to `GuestListener.runCommand`; a test holds it to
+/// read the exact verb and args a plan became, and answers when it
+/// chooses — which is also the only honest way to have an act HOLD the
+/// mutation lane on purpose. It exists because `serve` had no seam at
+/// all: every fix to it was verified one level below where it lives, and
+/// a mutation reinstating the Finder-activate defect left nine tests
+/// green (2026-08-05).
+typealias GuestCommandSend = @MainActor (
+    _ verb: String,
+    _ args: [String: CommandArg]?,
+    _ completion: @escaping (CommandResult) -> Void) -> Void
+
 /// **Mirror's live view, driven by NOW's own wire.**
 ///
 /// The one object that makes `LiveMirrorView` — Mirror's gesture routing,
@@ -207,6 +221,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private let engineRegistry: MirrorStateEngineRegistry?
     private let act: AgentIntegrationActControl
     private let cycleIO: NOWMirrorCycleIO
+    private let sendCommand: GuestCommandSend
     private let interval: TimeInterval
     private let planePolicy: @MainActor (GuestKey) -> Set<MirrorPlaneID>
     private let finderRefreshOverride: (@MainActor (
@@ -279,12 +294,16 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
              MirrorKit.Scene, Int, @escaping () -> Void
          ) -> Void)? = nil,
          cycleIO: NOWMirrorCycleIO? = nil,
+         sendCommand: GuestCommandSend? = nil,
          lifecycleDidChange: @escaping @MainActor () -> Void = {}) {
         self.listener = listener
         self.engineRegistry = engineRegistry
         self.act = act
         let content = NOWMirrorContentPlane(listener: listener)
         self.cycleIO = cycleIO ?? .live(listener: listener, content: content)
+        self.sendCommand = sendCommand ?? { verb, args, completion in
+            listener.runCommand(verb, typed: args, completion: completion)
+        }
         self.interval = interval
         self.planePolicy = planePolicy
         self.finderRefreshOverride = finderRefreshOverride
@@ -1838,7 +1857,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                                osaFailureIsAnError: Bool = false)
         async -> (value: String?, error: String?, truncated: Bool) {
         await withCheckedContinuation { continuation in
-            listener.runCommand(verb, typed: args) { result in
+            sendCommand(verb, args) { result in
                 guard result.ok else {
                     let e = result.error
                     return continuation.resume(returning: (
@@ -1888,7 +1907,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                      _ args: [String: CommandArg], act isAct: Bool = false)
         async -> String? {
         await withCheckedContinuation { continuation in
-            listener.runCommand(verb, typed: args) { result in
+            sendCommand(verb, args) { result in
                 if result.ok {
                     if isAct {
                         let rows = AgentIntegrationActControl.rows(

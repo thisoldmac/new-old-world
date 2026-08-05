@@ -76,18 +76,26 @@ final class AgentIntegrationActControl {
     private let commandTimeout: TimeInterval
     private let clock: @MainActor () -> Date
     private let audit: (HostLog.LogLevel, String) -> Void
+    /// Same seam as `NOWMirrorSource`'s, for the five act verbs this
+    /// class carries: a test reads the composed command and answers when
+    /// it chooses, instead of verifying the wiring one level below it.
+    private let sendCommand: GuestCommandSend
 
     init(listener: GuestListener,
          currentSessionID: @escaping @MainActor () -> UUID?,
          commandTimeout: TimeInterval = AgentIntegrationActControl
              .commandTimeout,
          clock: @escaping @MainActor () -> Date = { Date() },
-         audit: ((HostLog.LogLevel, String) -> Void)? = nil) {
+         audit: ((HostLog.LogLevel, String) -> Void)? = nil,
+         sendCommand: GuestCommandSend? = nil) {
         self.listener = listener
         self.currentSessionID = currentSessionID
         self.commandTimeout = commandTimeout
         self.clock = clock
         self.audit = audit ?? { HostLog.shared.write($0, "act", $1) }
+        self.sendCommand = sendCommand ?? { verb, args, completion in
+            listener.runCommand(verb, typed: args, completion: completion)
+        }
     }
 
     // MARK: - winact
@@ -509,7 +517,7 @@ final class AgentIntegrationActControl {
         await withCheckedContinuation { continuation in
             var settled = false
             var timeoutTask: Task<Void, Never>?
-            listener.runCommand(verb, typed: args) {
+            sendCommand(verb, args) {
                 guard !settled else { return }
                 settled = true
                 timeoutTask?.cancel()
