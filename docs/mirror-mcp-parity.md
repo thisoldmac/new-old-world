@@ -86,11 +86,17 @@ found while taking this inventory rather than added for MCP's sake:
   control can be addressed by reference by either face. The Mirror hides
   this behind positional resolution; an agent cannot. **Measured
   2026-08-05** over the headless surface, against the guest's own
-  Workshop window: **6 of 54 items carry an addressable ref**. The other
-  48 — 30 static texts, 13 icons, the placards, the panel, the
-  separator, the selection band — are drawn and unnameable. Slice 3 of
-  [the plan](plans/2026-08-04-009-feat-now-headless-mirror-mcp-plan.md)
-  cannot be complete until the producer mints them.
+  Workshop window: **6 of 54 items carry an addressable ref**.
+
+  **CORRECTED the same day, by the ten-panel corpus.** That number was
+  taken against NOW observing ITSELF and written as though it were
+  general. It is not: foreign panels do far better — Date & Time 41/41,
+  VGA Display 33/33, Keyboard 36/37. Across the corpus the split is
+  96/122 for Control Manager controls and **75/186 for dialog items**,
+  with Sound at 0/64. So there are two gaps wearing one number: NOW's
+  self-observation, and dialog items generally. See
+  [mirror-element-coverage.md](mirror-element-coverage.md), which is
+  derived from captures rather than from one window.
 - The act clocks and the operation journal are visible in NOW's Mirror
   page but nowhere else, so an agent cannot tell a queued act from a slow
   one — the exact ambiguity the clocks were built to remove.
