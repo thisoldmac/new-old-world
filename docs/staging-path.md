@@ -27,17 +27,31 @@ wrong trap ABI does not crash, it lies*, could not be run at all.
 | Piece | What it does |
 | --- | --- |
 | `tools/stage-ext.py` | Pushes `NowExt.bin` into `System Folder:Extensions` and the app beside it, through the lab's baked anchor worker. Verifies **by fork size and Finder type**, read back off the guest. |
-| `scripts/spin-up-ppc` | Fresh session-private clone → stage → flush wait → **hard QMP `quit` and relaunch** → re-verify → launch NOW → interrogate. |
+| `scripts/spin-up-ppc` | Fresh session-private clone → stage → **guest-clean shutdown and relaunch** → re-verify → launch NOW → interrogate. |
+| `tools/guest-shutdown` | A 68K applet whose whole body is `ShutDwnPower()`. Staged like the extension; it is how the Macintosh is asked to shut ITSELF down. |
+| `tools/shutdown-guest.py` | Quits the front application, launches that applet through the worker, waits for QEMU to exit. Never `quit`. |
 | `tools/askguest.py` | Listens as a NOW host, takes the dialling guest, asks verbs, prints answers verbatim. `fakeguest.py`'s mirror image. |
 
 Ported from `mirror/tools/` (upstream `5c822b0`, `f42cb09`, `a82cc8f`),
 keeping every rule that hardening encodes: an INIT loads at boot **only**
-and OS 9 ignores a soft power-down, so the reboot is a hard quit; wait for
-the volume flush and let the post-reboot `stat` be the guardrail; verify by
+and OS 9 ignores a soft power-down, so the machine has to be reboot**ed**
+rather than resumed; let the post-reboot `stat` be the guardrail; verify by
 fork size, never by exit code; tolerate exactly `catalog dates err -43` (a
 measured anchor quirk) and still require the verify to pass; walk `mkdir`'s
 chain because it is `FSpDirCreate`; probe ports free rather than assume
 them; clone the base image, never boot it.
+
+**One rule was later found to be wrong, and it was this one.** The ported
+reboot was a QMP `quit`, which is a power cut: it sets the volume's
+unclean bit, so every cycle began with a Disk First Aid pass on the disk
+it was about to measure. Asking the guest instead needs a route into a
+machine whose human interface nothing outside can reach — no QMP key
+event arrives, there is no absolute pointer, a posted click cannot select
+from a menu, and the canonical anchor worker has no `script` verb. So NOW
+stages an applet that calls the Shutdown Manager. Measured 2026-08-05:
+launch to QEMU exit, 6 s; the next boot reached the anchor in 42 s with no
+Disk First Aid, against 161 s for a boot after a power cut.
+[open-issues.md](open-issues.md) carries what else that ruled out.
 
 **One thing could not be ported.** NOW's wire runs *guest → host*: the guest
 dials, defaulting to `10.0.2.2:5250` (`prefs.c` `set_defaults`,

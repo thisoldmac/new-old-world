@@ -4,8 +4,9 @@ booted emulator guest, through the lab's baked anchor worker.
 
     NOW_ANCHOR_PORT=1702 tools/stage-ext.py
 
-    NowExt.bin  -> Macintosh HD:System Folder:Extensions:NOW Extension
-    the app     -> Macintosh HD:TimBotTu:now-dev:New Old World
+    NowExt.bin       -> Macintosh HD:System Folder:Extensions:NOW Extension
+    the app          -> Macintosh HD:TimBotTu:now-dev:New Old World
+    NowShutDown.bin  -> Macintosh HD:TimBotTu:now-dev:NOW Shut Down
 
 THE GAP THIS CLOSES. `scripts/build-guests` builds `ext/` and, until this
 file, nothing in the repository deployed it. Three of NOW's four planes
@@ -25,11 +26,11 @@ file is not a path to doing so.
 THE FIVE THINGS THAT GO WRONG, each measured in this repository:
 
   * AN INIT LOADS AT BOOT ONLY, and OS 9 ignores a soft power-down. This
-    script stages; it does NOT reboot. `scripts/spin-up-ppc` attempts the
-    repository's guest-shutdown route, fails closed if the scoped Worker
-    cannot serve it, then relaunches and re-verifies. A stage without a
-    qualified cold reboot leaves the OLD extension resident and every
-    result attributed to the new one.
+    script stages; it does NOT reboot. `scripts/spin-up-ppc` asks the
+    guest to shut itself down (tools/shutdown-guest.py, driving the
+    applet staged below), fails closed if it will not go, then relaunches
+    and re-verifies. A stage without a qualified cold reboot leaves the
+    OLD extension resident and every result attributed to the new one.
 
   * BELIEVING A PUSH. Verification is by FORK SIZE and Finder type, read
     back off the guest — never the exit code of the push. An INIT's code
@@ -84,10 +85,12 @@ EXTENSIONS = "Macintosh HD:System Folder:Extensions"
 DEV = os.environ.get("NOW_GUEST_DIR", "Macintosh HD:TimBotTu:now-dev")
 EXT_NAME = os.environ.get("NOW_EXT_NAME", "NOW Extension")
 APP_NAME = os.environ.get("NOW_APP_NAME", "New Old World")
+SHUTDOWN_NAME = os.environ.get("NOW_SHUTDOWN_NAME", "NOW Shut Down")
 
 ANCHOR_PORT = int(os.environ.get("NOW_ANCHOR_PORT", "1700"))
 EXT_BIN = os.environ.get("NOW_EXT_BIN")          # required
 APP_BIN = os.environ.get("NOW_APP_BIN")          # optional
+SHUTDOWN_BIN = os.environ.get("NOW_SHUTDOWN_BIN")  # optional (rig instrument)
 
 if not EXT_BIN or not os.path.isfile(EXT_BIN):
     raise SystemExit(
@@ -172,6 +175,21 @@ if APP_BIN:
     ensure_dir(DEV)
     push_verified(f"{DEV}:{APP_NAME}", open(APP_BIN, "rb").read(),
                   want_type="APPL", min_data=1024)
+
+# 2a. The rig's shutdown applet, if one was given. It is not part of the
+#     product and it is nobody's feature: it is how the machine is asked
+#     to shut ITSELF down before the cold reboot an INIT requires, because
+#     the anchor worker has no `script` verb to ask the Finder with and
+#     QMP input never reaches this guest (tools/shutdown-guest.py).
+#     It goes in the same dev folder as the app so one delete clears the
+#     whole staging area.
+if SHUTDOWN_BIN:
+    if not os.path.isfile(SHUTDOWN_BIN):
+        raise SystemExit(f"NOW_SHUTDOWN_BIN does not exist: {SHUTDOWN_BIN}")
+    print(f"== stage {SHUTDOWN_NAME} ==")
+    ensure_dir(DEV)
+    push_verified(f"{DEV}:{SHUTDOWN_NAME}", open(SHUTDOWN_BIN, "rb").read(),
+                  want_type="APPL", min_rsrc=1024)
 
 # 2b. The guest's dialling book, when the caller runs its OWN listener.
 #

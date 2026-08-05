@@ -316,7 +316,9 @@ agent now gets for a held act (`id: "held"`, `outcome: queued`,
 ## Three rig facts that each read as something else (2026-08-05)
 
 None of these is a defect in NOW; all three cost time because they
-present as a hang or as a broken change.
+present as a hang or as a broken change. The second is now fixed and the
+third turned out to have a different cause than the one first written
+down here.
 
 - **A worktree is too deep to host a VM.** A UNIX socket path is capped
   at 104 bytes and `now/.claude/worktrees/<branch>/run/<pid>/qmp-ui.sock`
@@ -326,24 +328,135 @@ present as a hang or as a broken change.
   hung. This is the DEFAULT path for every agent, because agents work in
   worktrees. `scripts/spin-up-ppc` now checks and names the cure
   (`NOW_SPIN_RUN=/private/tmp/nowvm-$$`).
-- **`spin-up-ppc` cannot finish its clean shutdown.** Rule 1 requires the
-  guest to shut itself down through the Finder, via the anchor worker's
-  `script` verb — and the canonical worker build does not have one
-  (`tools:` lists put/get/list/launch/observe/click/key/type and no
-  `script`). It stops with "the agent refused the script verb" and leaves
-  the VM running, so **the INIT never loads** and every plane reports
-  `unsupported/gen0`. Worked around by hand: quit the guest app with
-  Cmd-Q through the worker's `key`, drive Special > Shut Down, then
-  relaunch QEMU on the same disk. The middle step is the hard one —
-- **mac99 rejects `abs` input events.** QMP `input-send-event` answers
-  "Input handler not found for event type abs": the machine is started
-  with `-device usb-kbd` and no pointing device, so the mouse is the
-  ADB one and only `rel` is handled. Relative moves carry OS 9's pointer
-  acceleration, so counted steps do not land where they are aimed — a
-  menu drag needs the closed-loop `mouseloc` convergence, which is not
-  wired here. The worker's own `click` verb closes a menu without
-  selecting from it (cooperative tracking-loop starvation). Net: an agent
-  currently has no reliable route to a menu selection on this rig.
+- **`spin-up-ppc` could not finish its clean shutdown. FIXED, and the
+  route is the Shutdown Manager rather than the Finder.** Rule 1 needs
+  the guest to shut ITSELF down before the cold boot an INIT requires,
+  and the lab's `tools/shutdown-guest` asks the Finder through an agent's
+  `script` verb — which the canonical baked worker does not have. Its
+  `hello` lists 24 tools (`put`…`click`, `key`, `type`) and `script` is
+  not among them, so the run stopped with "the agent refused the script
+  verb" and left the VM up with the extension staged and never loaded:
+  every plane then reported `unsupported/gen0` and `needs-restart`, which
+  reads as a broken build rather than a boot that never happened.
+
+  NOW now stages its own applet, `tools/guest-shutdown`, whose entire
+  body is `ShutDwnPower()` — the Shutdown Manager call the Finder itself
+  ends up making, which runs the registered shutdown procedures, flushes
+  and unmounts the volumes and asks the power manager to cut power.
+  `tools/shutdown-guest.py` quits the front application first (Cmd-Q
+  through the worker's `key` verb, the one posted-event route measured
+  working) and then launches it through the worker's `launch` verb. It is
+  68K because the Shutdown Manager is `CALL_NOT_IN_CARBON` and the
+  application's own toolchain cannot compile the call at all.
+
+  Measured: launch to QEMU exit, 6 s. Booting the same qcow2 straight
+  afterwards reached the anchor in 42 s with no Disk First Aid modal —
+  which is the assertion that matters, because the whole reason not to
+  use QMP `quit` is the unclean-volume bit.
+
+  What it does NOT do, by construction, is send quit AppleEvents to
+  running applications; the Finder does that before it calls the Shutdown
+  Manager and this skips it. That is why the front application is quit
+  first, and why this is a rig instrument and not a way to stop a machine
+  somebody is using.
+
+  **One failure, and it did not reproduce.** Four shutdowns went in 6 s
+  each; a fifth did not go at all, and the worker then timed out on
+  `observe`, so the machine was wedged rather than slow. That one had
+  been driven through roughly fifteen `actselftest` calls first — each
+  claiming and withdrawing the act plane, which is the path the entry
+  below says is broken — and the run directory was deleted before a
+  screendump could be taken, so there is no evidence and no cause. The
+  same tool then shut down a comparable machine (extension resident, NOW
+  launched and quit) in 6 s. Recorded because a rig that hangs one time
+  in five is worth knowing about even when nothing was learned; if it
+  recurs, screendump BEFORE cleaning up.
+- **Nothing outside this machine can reach its human interface, and the
+  reason is not ADB.** The earlier entry blamed an ADB mouse; `info
+  qtree` says `has-adb = false` on both `macio-newworld` and `via-pmu`,
+  so mac99,via=pmu here has no ADB keyboard, no ADB mouse and no ADB
+  power key at all. Every input device is USB: the machine's own
+  `usb-kbd` and `usb-mouse` (enumerated, addresses 0.23 and 0.24) plus a
+  second `usb-kbd` that `-device usb-kbd` puts behind a hub, which OS 9
+  never enumerates — both it and its hub still sit at address 0.0.
+
+  Three separate measurements, none of them a route in:
+
+  * **QMP keyboard input never arrives.** Not "lands in the wrong place"
+    — arrives nowhere. With Key Caps open and frontmost, neither
+    `send-key` (plain, held, and with modifiers) nor `input-send-event`
+    key-down/key-up pairs light a single key or put a character in its
+    field. Cmd-N in the Finder makes no folder; Cmd-Shift-3 makes no
+    Picture 1.
+  * **`abs` pointer events are refused**, and now for a stated reason:
+    "Input handler not found for event type abs" is what QEMU says when
+    no absolute pointing device exists, and none does. `rel` motion is
+    accepted and carries OS 9's pointer acceleration, so counted steps do
+    not land where they are aimed (measured earlier the same day: aimed
+    at (270,119), ended near (10,63)).
+  * **The worker's `click` verb closes a menu without selecting from
+    it** — a posted event pair is already up by the time `MenuSelect`'s
+    tracking loop reads the real button state.
+
+  So an agent still has **no route to a menu selection on this rig**, and
+  that is now a UI-driving limitation rather than a blocker: nothing in
+  `spin-up-ppc` needs a menu any more.
+
+  Two things this did NOT establish. Why the key events vanish is a
+  hypothesis, not a measurement — the un-enumerated second keyboard is
+  suspicious, but nothing here proved QEMU routes to it. And whether
+  dropping `-device usb-kbd` from the lab's `tbt_qemu_boot` would restore
+  QMP keyboard input was not tried; it is the cheapest next experiment,
+  and it would unblock keyboard driving generally. Even if it worked it
+  would not give a shutdown: a USB keyboard has no power key here either,
+  and Shut Down has no Command-key equivalent in the Finder.
+
+## BROKEN: the anchor plane is active and binds nothing (2026-08-05)
+
+**Found by the first cold boot that ever got this far.** Until the guest
+could be made to shut itself down, `scripts/spin-up-ppc` stopped before
+the reboot, so nothing had ever interrogated a machine with the unified
+NOW Extension resident from a clean start. It does now, and the resident
+is plainly alive:
+
+    mirror -> lifecycle "active", capabilities 31, all five planes
+              supported, resident fc6e0946bde9271, table 4256 bytes
+    qdtrace op=status -> plane {format 2, length 65728, ringCap 65536}
+
+And nothing can be addressed inside it:
+
+    actselftest -> no-such-process        (every attempt, over minutes)
+    axsnap      -> front "New Old World", bind "no-plane",
+                   hasWindows false, hasMenus false
+
+**The two halves disagree about the same planes.** `actselftest` calls
+`now_act_ready`, which claims anchors + act; asked immediately afterwards
+in the same connection, `mirror` reports `requested: 5, active: 5` — so
+the claim reaches the table and the resident is serving both. Yet
+`now_ax_bind_process` still answers `kNowPeekReadNoPlane`, which
+`qdtrace_cmd.c` words as "the window-anchor plane is not armed". The
+client's plane gate and the resident's own report of the same word do not
+agree.
+
+Also note `bind: "no-plane"` and not `not-pumped`: this is not the
+settle window [staging-path.md](staging-path.md) records, where a
+just-launched application is briefly invisible because it has not pumped.
+That one cleared in seconds; this does not clear at all, and it is NOW's
+OWN application — the case every earlier entry here treats as the easy
+one.
+
+**Not measured, and worth doing first:** whether this predates the
+unified extension (2026-08-03) or arrived with it. `staging-path.md`
+records `actselftest` answering `abi-agreed` on 2026-08-01, on the plane
+model that work replaced, so a bisect has somewhere to start. Read
+`now_ax_bind_process` in `now-guest-ppc/src/axwalk/axprocess.c` against
+whatever `mirror` reads for `active`, because those are the two words
+that disagree.
+
+`spin-up-ppc` runs `actselftest` and prints its answer, but does not gate
+on it — a gate permanently red for a defect the rig neither causes nor
+can fix is a gate nobody reads. It moves back into the gate when this is
+closed.
 
 ## BROKEN: a Finder-open predicts the wrong owner, so panels time out having worked (2026-08-05)
 
