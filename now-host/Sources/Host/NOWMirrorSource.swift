@@ -63,6 +63,10 @@ enum NOWMirrorSceneContinuity {
 @MainActor
 struct NOWMirrorCycleIO {
     var activeKey: () -> GuestKey?
+    /// Whether the named session still holds a live connection. The lane
+    /// reads it when a cycle fails, so a guest that died is noticed by
+    /// the next poll rather than learned from a queue that never drains.
+    var isGuestConnected: (GuestKey) -> Bool
     var isScenePending: () -> Bool
     var requestScene: (
         GuestKey, Bool, Bool,
@@ -80,6 +84,7 @@ struct NOWMirrorCycleIO {
                      content: NOWMirrorContentPlane) -> Self {
         .init(
             activeKey: { listener.activeKey },
+            isGuestConnected: { listener.isConnected($0) },
             isScenePending: { listener.isScenePending },
             requestScene: { key, semantics, interaction, completion in
                 listener.requestScene(
@@ -474,6 +479,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                     : failure.message
                 self.cycleOutcome = failure.refusedByGuest
                     ? "declined" : "failed"
+                self.noticeDeadGuest()
             }
             self.finishCycle(generation)
         }
@@ -568,6 +574,31 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 + "v\(delivery.irVersion): \(error)"
         }
         finishCycle(generation)
+    }
+
+    /// **The lane must survive its guest.** Measured 2026-08-05: the
+    /// session ended with a socket left CLOSED while the host still
+    /// believed it had a guest, and six operations settled
+    /// `sessionChanged` at once only when the session was finally torn
+    /// down by hand — the queue had been the only thing that knew. The
+    /// wire already notices a death (socket close, the 75 s idle clock);
+    /// this is the missing hop: when a cycle fails and the pinned
+    /// session no longer holds a connection, the lane ends its acts NOW,
+    /// once, each typed `sessionChanged` — rather than each waiting out
+    /// its own timeout against a machine that is gone.
+    private func noticeDeadGuest() {
+        guard let pinned = pinnedGuestKey,
+              !cycleIO.isGuestConnected(pinned),
+              let mutationBroker, mutationBroker.depth > 0 else { return }
+        let ended = mutationBroker.depth
+        mutationBroker.sessionChanged()
+        actTimeline.depth = mutationBroker.depth
+        ActLog.note(action: "(guest lost)",
+                    outcome: "ended \(ended) act"
+                        + (ended == 1 ? "" : "s")
+                        + ": the pinned Mac is no longer connected", ms: 0)
+        report("the Mac disconnected — \(ended) act"
+               + (ended == 1 ? " was" : "s were") + " ended")
     }
 
     private func isCurrentCycle(_ generation: Int) -> Bool {

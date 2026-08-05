@@ -60,7 +60,8 @@ final class MirrorServeSeamTests: XCTestCase {
     /// the seam, with one identified scene already displayed.
     private func sourceWithSeam(
         _ sent: SentCommands
-    ) async throws -> (NOWMirrorSource, GuestListener, FakeGuest) {
+    ) async throws -> (NOWMirrorSource, MirrorCycleHarness,
+                       GuestListener, FakeGuest) {
         let (listener, guest) = try await connectedListener()
         try await waitUntil("the guest is the active Mac") {
             listener.activeKey != nil
@@ -82,7 +83,7 @@ final class MirrorServeSeamTests: XCTestCase {
         harness.completeScene(0, with: .success(sceneDelivery(
             try documentWithDesktopItems(seq: 1), seq: 1, for: key)))
         harness.completeJoin(0)
-        return (source, listener, guest)
+        return (source, harness, listener, guest)
     }
 
     private func doubleClick(_ item: String) -> Interaction {
@@ -99,7 +100,7 @@ final class MirrorServeSeamTests: XCTestCase {
     /// Reinstating `activate: true` at the call site must fail HERE.
     func testOpeningAControlPanelLeavesTheFinderBehindIt() async throws {
         let sent = SentCommands()
-        let (source, listener, guest) = try await sourceWithSeam(sent)
+        let (source, _, listener, guest) = try await sourceWithSeam(sent)
         defer { guest.connection.cancel(); listener.stop() }
 
         XCTAssertEqual(source.scene?.desktopItems?.count, 2,
@@ -125,7 +126,7 @@ final class MirrorServeSeamTests: XCTestCase {
     /// Finder must come forward for it.
     func testOpeningAFolderBringsTheFinderForward() async throws {
         let sent = SentCommands()
-        let (source, listener, guest) = try await sourceWithSeam(sent)
+        let (source, _, listener, guest) = try await sourceWithSeam(sent)
         defer { guest.connection.cancel(); listener.stop() }
 
         source.perform(doubleClick("Projects"))
@@ -137,6 +138,46 @@ final class MirrorServeSeamTests: XCTestCase {
         XCTAssertTrue(script.contains(
             "open item \"Projects\" of desktop"), script)
         XCTAssertTrue(script.hasSuffix("activate\nend tell"), script)
+    }
+
+    /// **A dead guest ends the lane on the next cycle, not by timeout.**
+    /// Measured 2026-08-05: the session ended with a socket left CLOSED
+    /// while the host still believed it had a guest, and the acts in the
+    /// lane learned it only by each spending its own deadline. The wire
+    /// notices a death; this asserts the missing hop — the failed cycle
+    /// consults connectivity and ends the lane once, typed
+    /// `sessionChanged`.
+    func testADeadGuestEndsTheLaneOnTheNextCycleNotByTimeout() async throws {
+        let sent = SentCommands()
+        let (source, harness, listener, guest) = try await sourceWithSeam(sent)
+        defer { guest.connection.cancel(); listener.stop() }
+
+        // An act the guest will never answer — it is about to die.
+        source.perform(doubleClick("Projects"))
+        try await waitUntil("the act reaches the seam") {
+            sent.all.count == 1
+        }
+        XCTAssertEqual(source.waitingActs, 1)
+
+        harness.guestConnected = false
+        source.planePolicyDidChange()          // the test's way to ask for one
+        try await waitUntil("the follow-up cycle is requested") {
+            harness.sceneCompletions.count == 2
+        }
+        harness.completeScene(1, with: .failure(
+            .init(message: "No Mac is connected")))
+
+        XCTAssertEqual(source.waitingActs, 0,
+                       "the lane must not wait out a timeout against a "
+                           + "machine that is gone")
+        let record = try XCTUnwrap(
+            source.shadowEngine?.operations.records.last)
+        XCTAssertEqual(record.outcome, .sessionChanged)
+
+        // Answer the held command so the abandoned serve can return.
+        sent.all[0].completion(.init(
+            id: 1, ok: false, output: nil,
+            error: .init(code: "disconnected", message: "gone")))
     }
 
     /// The act-control half of the seam: the composed act command is

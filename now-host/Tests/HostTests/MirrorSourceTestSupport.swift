@@ -17,6 +17,9 @@ import MirrorKit
 @MainActor
 final class MirrorCycleHarness {
     var activeKey: GuestKey?
+    /// Whether the pinned session still holds a connection, as the lane's
+    /// dead-guest check sees it. Tests flip it to kill the guest.
+    var guestConnected = true
     var globalScenePending = false
     var sceneRequests: [(GuestKey, Bool, Bool)] = []
     var sceneCompletions: [
@@ -31,6 +34,7 @@ final class MirrorCycleHarness {
     var io: NOWMirrorCycleIO {
         .init(
             activeKey: { self.activeKey },
+            isGuestConnected: { _ in self.guestConnected },
             isScenePending: { self.globalScenePending },
             requestScene: { key, semantics, interaction, completion in
                 self.globalScenePending = true

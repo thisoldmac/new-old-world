@@ -248,6 +248,12 @@ final class GuestListener: ObservableObject {
     /// Every guest currently past the hello gate, by SESSION identity —
     /// one entry per connection, never per name.
     private var sessions: [GuestKey: Session] = [:]
+
+    /// Whether this exact session still holds a live connection. A guest
+    /// key names one dial-in, so a machine that dropped and redialled
+    /// answers false here for its old key — which is the question the
+    /// Mirror's lane needs answered, not "is some Mac connected".
+    func isConnected(_ key: GuestKey) -> Bool { sessions[key] != nil }
     /// Which machine each live session is a session WITH. The registry is
     /// the book; this is the page open at each socket.
     private var machineBySession: [GuestKey: GuestRegistry.Record] = [:]
