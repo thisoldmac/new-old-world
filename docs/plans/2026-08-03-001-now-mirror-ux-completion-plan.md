@@ -16,6 +16,38 @@ Complete the recovered NOW Mirror as a faithful and operable classic Mac surface
 
 The work starts from recovered commit `2047b6b`. Its committed Cycle 18 ledger is the characterization baseline: 10 of 40 rows pass, 16 fail, 2 are blocked, 2 are not applicable, and 10 remain unscored. Execution is blocked until [the unified NOW Extension prerequisite](2026-08-03-002-feat-unified-now-extension-plan.md) has delivered and proven P1-P4, retired MirrorApp/port 1420/TB* runtime dependencies, and promoted the clean extension-only development image. This plan then consumes those artifacts and completes the broader broker, renderer, UX, and MCP campaign; bounded pixel exceptions remain a later roadmap unit.
 
+## Status, 2026-08-05
+
+**The prerequisite block is lifted and this plan is the live destination
+again.** Execution was blocked until the unified NOW Extension had
+"delivered and proven P1-P4". The resident now reports `cap 31` with all
+five planes supported, and the interaction plane published its first
+generation on 2026-08-05 — so U2 onward can proceed.
+
+**One slice goes first:**
+[011, A Mirror that survives being driven](2026-08-05-011-feat-a-mirror-that-survives-being-driven-plan.md).
+A hand drive on 2026-08-05 ended with the guest deaf, acts queued 87
+seconds deep, and the session dead after one ordinary Macintosh event.
+Cycle 18 is a SCORING exercise, and a machine that wedges cannot be
+scored — so survivability precedes fidelity, and 011 is deliberately
+narrow so it does not become this plan.
+
+**The Problem Frame below has aged well, which is the useful part.** Its
+three named symptoms were re-observed by a person on 2026-08-05, two days
+after they were written: Date & Time's controls, a popup that invokes the
+wrong Toolbox part, and the Mail alert's wrong buttons. They are U6 rows,
+not new defects, and they should not be re-investigated from scratch —
+what they need is the authoritative semantics of U2 and the renderer of
+U6, in that order.
+
+What HAS changed under it: the guest now serves far more meaning than it
+did (control classification through `kControlKindTag`, `window.display`
+projected, the semantic transport rebuilt to type a whole window per
+request rather than one control per scene), and the reason those gains
+are not yet visible in the ledger is that nothing has re-scored Cycle 18
+against them. **That re-score is the first thing U6 should do**, not the
+last — the baseline it inherits is from a build that predates all of it.
+
 ## Problem Frame
 
 The recovered branch has the NOW-owned Mirror window, guest scene production, object-first interactions, and a disciplined UX loop. It is not yet a polished emulator surface.

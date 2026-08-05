@@ -49,6 +49,56 @@ And one premise that is no longer true and must stop being repeated: **the
 interaction plane has published.** `interaction=active-current/gen14`,
 beside those very acts. The planes were never the reason.
 
+## Where this sits, and what it is NOT
+
+**This plan is one slice, and a narrow one on purpose.** The arc it serves
+was written on 2026-08-03 and still owns the destination:
+[001, NOW Mirror UX Completion](2026-08-03-001-now-mirror-ux-completion-plan.md)
+— *"complete the recovered NOW Mirror as a faithful and operable classic
+Mac surface"*, against the Cycle 18 ledger where **10 of 40 rows pass**.
+Read that for where this is going. Read this only for what is in the way.
+
+Two things about 001 are worth stating plainly, because both were true
+today and neither was noticed:
+
+- **Its blocking prerequisite has been delivered.** 001 says execution is
+  blocked until the unified NOW Extension has "delivered and proven
+  P1-P4". The resident is live at `cap 31` with all five planes
+  supported, and the interaction plane published its first generation on
+  2026-08-05. That block is lifted.
+- **The defects being rediscovered by hand are already ITS rows.** 001's
+  Problem Frame, written 2026-08-03, names them: *"Date & Time fields
+  render as scroll bars. A popup renders as a button and invokes the
+  wrong Toolbox part. The Mail alert shows the wrong default button."*
+  The wrong-controls report of 2026-08-05 is that third sentence,
+  observed again by a person two days later. It is not a new defect and
+  should not get a new investigation — it should get 001's U6.
+
+**So the shape of the remaining work is three phases, not one:**
+
+1. **Survivability — this plan.** A machine that wedges cannot be scored,
+   so nothing downstream is measurable until it stops. Narrow by design
+   and it should stay narrow: resist growing it into the rendering work.
+2. **Meaning and fidelity — 001's U2, U5, U6.** Authoritative semantics
+   for foreign controls and dialog items, then a renderer that draws what
+   they mean rather than what it guesses. This is where the Cycle 18 reds
+   go green, where the QuickDraw content plane earns its keep, and where
+   slice 6's classify-versus-replay split is finally actionable. It is
+   the largest phase and the one this plan keeps deferring.
+3. **Native polish — 001's U7 and beyond.** The ladder from "correct" to
+   "feels like a Macintosh": Platinum fidelity, the bounded pixel
+   exceptions 001 defers to a later roadmap unit, and the judgement a
+   human has to make because no test can. Explicitly last, because
+   polishing a surface whose controls are wrong would be polishing a lie.
+
+**The failure mode this section exists to prevent** is the one that
+produced it: drilling into the defect in front of you until the arc goes
+out of focus. Every plan in this family has been written after a drive
+found something, and each has been narrower than the last. That is
+correct for a slice and wrong for a destination — so the destination
+lives in 001, this file is explicitly subordinate to it, and finishing
+this plan means returning to U6 rather than writing 012.
+
 ## Goal Capsule
 
 - **Objective:** make the Mirror survivable under a real person driving
