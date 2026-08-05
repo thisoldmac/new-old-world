@@ -235,17 +235,36 @@ Macintosh**, so a `status` on any machine today answers
 `content-plane-absent`, correctly, and that is the whole of what it has
 been seen to do.
 
-`transitions` (2026-08-05) is in exactly that position and should be
-read the same way. Its plane IS live — the resident writer is installed
-and the fifth plane was confirmed reporting format 1 on a running guest
-that day — but at **generation 0**, because until this verb existed
-nothing armed it. Served and PROVEN are separate columns here, and this
-row has only the first: **no record from this ring has ever been
-observed crossing the wire**, on any machine, and the guest that would
-produce one has not been stood up since the verb landed. A `status`
-answers, a `start` writes a request; whether the resident then agrees
-inside the target is what `activity.passes` exists to say, and nobody
-has read it yet.
+`transitions` (2026-08-05) began in exactly that position and **no
+longer is**, which is worth stating precisely because the distinction
+this section draws is the one that moved. Served and PROVEN are separate
+columns here, and this row now has both — but only for one of the four
+record kinds.
+
+The row read "no record from this ring has ever been observed crossing
+the wire" until later the same day. Two defects stood between the verb
+and its ring, both found by driving and neither by any suite: `start`
+could not arm by any route (an arg key shadowing the envelope), and once
+it could, `drain` stated `records` twice in one object so every
+conforming parser dropped the array. With both fixed, on the live
+emulated Power Mac G4:
+
+- `start` resolved a real target — `resolvedVia: "name"`, `a5
+  0x1f21cb60`, `process "New Old World"`;
+- `activity.passes` moved (1071, 5572, 9005), which is the resident's
+  own word that it ran INSIDE the armed process and agreed;
+- `drain` returned **22 real records**, `seq` 1..22, `lost: 0`,
+  `dropped: 0`, ticks exactly 60 apart.
+
+**The ring's reader and writer have met on a machine.** What is still
+unproven is the part that matters most: every record ever observed is
+`kind 4 heartbeat`, the resident's one-a-second pulse. **No
+`windowList`, `frontProcess` or `menuList` record has been seen on any
+machine.** One attempt to force a `frontProcess` transition instead
+produced the first live sighting of the sampler's own stated limit — a
+190-tick gap where the switch was, because the armed process was
+backgrounded and its event passes never saw the change. See
+[open-issues.md](open-issues.md).
 
 **PPC serves 38 of 41.** `put` is console-only there and `cancel` is
 not a verb at all, both deliberately: the host reaches those
@@ -602,7 +621,28 @@ catch, is [source-text-gates.md](source-text-gates.md). It is the reason
 this file's own future gate should be planned as a bounded check with its
 blind spots written down rather than as a guarantee.
 
-Last re-derived: **2026-08-05**, on `claude/hide-showhideprocess`, by
+Last re-derived: **2026-08-05**, on `claude/transitions-arg-key`, by
+running all three commands at the foot while fixing two `transitions`
+defects. **The counts were correct: 41 / 38 / 13**, and nothing on
+either side had drifted — the first derivation in four not to find an
+error, which is worth recording as plainly as the failures.
+
+What changed was a verb's DECLARATION without changing what any guest
+serves: `transitions`'s target arg is now `target` (it was `name`, which
+shadowed the envelope), and its drain reply gained `count` (its record
+count was `records`, which shadowed its own array). Neither moves a
+row. What did move is the `transitions` row's PROVEN status, above —
+records from that ring have now been observed crossing the wire, and the
+paragraph saying they never had is corrected rather than deleted.
+
+A note for the next derivation, since this file is now three-for-four on
+finding its own errors: the check that keeps working is counting the
+table against the registry rather than the registry against itself, and
+the check that has never yet been run is whether a row's PROVEN column
+still matches what anyone has actually watched. This one was stale by a
+day.
+
+The derivation before that: **2026-08-05**, on `claude/hide-showhideprocess`, by
 running the commands above while adding `hide`. The verb registry was
 **35 in this file and 38 in the contract** — `key` and `net` had each
 landed without a row, and neither the counts nor the roster paragraphs
