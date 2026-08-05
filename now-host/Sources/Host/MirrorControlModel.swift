@@ -72,7 +72,8 @@ final class MirrorControlModel: ObservableObject, GuestScopedModel {
             residentBuild: facts.resident.buildFingerprint,
             capabilities: facts.resident.capabilities,
             requested: facts.resident.requested,
-            active: facts.resident.active)
+            active: facts.resident.active,
+            planes: facts.planes)
         ActLog.note(action: "identity\n    " + line,
                     outcome: facts.resident.lifecycle.rawValue, ms: 0)
     }

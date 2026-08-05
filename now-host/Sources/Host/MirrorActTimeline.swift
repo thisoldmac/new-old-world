@@ -77,11 +77,23 @@ final class MirrorActTimeline: ObservableObject {
     /// not armed", which reads as a missing capability rather than as the
     /// wrong component replying, and cost a boot cycle to work out. The
     /// host knew the resident's build the whole time and never said it.
+    ///
+    /// The per-plane column earns its place the same way. `cap`, `requested`
+    /// and `active` are bitmasks, and reading which plane a bit belongs to
+    /// is exactly what went wrong on 2026-08-05: `requested=7` was reported
+    /// as the interaction plane being unrequested when P4 is bit 2 and the
+    /// plane actually missing was P3. Worse, the number a P4 investigation
+    /// actually needs — whether the plane has ever PUBLISHED — appeared in
+    /// no log at all, so "interaction generation 0" could only be obtained
+    /// by a live agent call against a host holding the one per-user socket.
+    /// Each plane now says its own name, state and generation beside the
+    /// masks they have to be read with.
     static func identityLine(guestName: String, guestBuild: String?,
                              address: String?, lifecycle: String,
                              residentBuild: String?, capabilities: Int?,
-                             requested: Int?, active: Int?) -> String {
-        BaselineLine.line("actmeta", [
+                             requested: Int?, active: Int?,
+                             planes: [MirrorWirePlane] = []) -> String {
+        var fields: [(String, String)] = [
             ("guest", guestName),
             ("guest_build", guestBuild ?? "-"),
             ("address", address ?? "-"),
@@ -90,6 +102,11 @@ final class MirrorActTimeline: ObservableObject {
             ("cap", capabilities.map(String.init) ?? "-"),
             ("requested", requested.map(String.init) ?? "-"),
             ("active", active.map(String.init) ?? "-"),
-        ])
+        ]
+        for plane in planes {
+            fields.append((plane.id.rawValue,
+                           "\(plane.state.rawValue)/gen\(plane.generation)"))
+        }
+        return BaselineLine.line("actmeta", fields)
     }
 }

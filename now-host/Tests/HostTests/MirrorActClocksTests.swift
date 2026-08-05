@@ -233,6 +233,56 @@ final class MirrorActClocksTests: XCTestCase {
         XCTAssertTrue(line.contains("active=0"), line)
     }
 
+    /// Measured on an emulated Power Mac G4, 2026-08-05: with all four
+    /// planes armed and active, the act plane sat at generation 0 until an
+    /// act was actually submitted, then went to 6 (an echo plus two stage
+    /// notes, two bumps each). Generation 0 is therefore a truthful "no act
+    /// has reached the resident", NOT a dead plane — and the drive that
+    /// reported it could not say which, because no log carried the number.
+    func testIdentityLineCarriesEachPlanesOwnStateAndGeneration() {
+        let line = MirrorActTimeline.identityLine(
+            guestName: "Power Mac G4", guestBuild: "16d99316ff6b",
+            address: "127.0.0.1", lifecycle: "active",
+            residentBuild: "67d5ef434db7", capabilities: 15,
+            requested: 15, active: 15,
+            planes: [plane(.structure, generation: 41908),
+                     plane(.semantics, generation: 2),
+                     plane(.content, generation: 2196),
+                     plane(.interaction, generation: 0)])
+
+        XCTAssertTrue(line.contains("structure=active-current/gen41908"), line)
+        XCTAssertTrue(line.contains("interaction=active-current/gen0"), line)
+        /* The masks stay, because the per-plane column is what they MEAN
+           and a reader who has only one of the two has been misled before:
+           requested=7 was read as the interaction plane being off when P4
+           is bit 2 and the plane missing was P3. */
+        XCTAssertTrue(line.contains("requested=15 active=15"), line)
+    }
+
+    func testIdentityLineWithoutPlanesIsUnchanged() {
+        /* A guest whose facts never decoded has no planes to report, and
+           the line must still be the one every earlier baseline was read
+           as — an instrument that changes shape when it has less to say
+           makes two runs incomparable. */
+        let line = MirrorActTimeline.identityLine(
+            guestName: "guest-2", guestBuild: nil, address: nil,
+            lifecycle: "absent", residentBuild: nil, capabilities: nil,
+            requested: nil, active: nil)
+
+        XCTAssertEqual(line,
+                       "NOWBASE actmeta guest=guest-2 guest_build=- "
+                       + "address=- lifecycle=absent resident_build=- "
+                       + "cap=- requested=- active=-")
+    }
+
+    private func plane(_ id: MirrorPlaneID,
+                       generation: Int) -> MirrorWirePlane {
+        MirrorWirePlane(id: id, purpose: "", capability: 0, supported: true,
+                        format: 1, requested: true, active: true,
+                        freshness: .current, state: .activeCurrent,
+                        generation: generation, reason: nil)
+    }
+
     private func operation(id: String, process: MirrorProcessIdentity,
                            at date: Date) -> MirrorOperation {
         .init(id: id, source: .human, displayedSnapshotID: 1,
