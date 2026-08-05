@@ -406,6 +406,45 @@ on the same live machine, so this was one emitter and not a class.
 Verified by rebuilding, restaging onto the running guest and re-driving:
 the refusal now parses.
 
+## MEASURED: the batched classifier is cold-loaded and the numbers have not moved (2026-08-05)
+
+The entry above says the transport rebuild is "fixed in code and none of
+the fix has run on a Macintosh", and that **nothing has been cold-loaded
+and no panel reclassified**. Half of that is now closed and the other
+half is the finding.
+
+**Cold-loaded: yes.** `scripts/spin-up-ppc` staged `NowExt` at 69 716
+bytes (against 67 741 for the previous build) and cold-booted; the
+resident came up `lifecycle: active`, `cap 31`, build fingerprint
+`f172318dda79798d9025a2e37e310cabd75c10d9`.
+
+**Reclassified: no. Date & Time reads exactly as it did before.**
+
+| window | items | `knowledge: known` | kinds determined | `definition` |
+|---|---|---|---|---|
+| Date & Time (foreign) | 41 | **12** | 12 | `system` × 29 |
+| NOW's own Workshop | 53 | **53** | 53 | — |
+
+Identical to the pre-batching reading of the same panel: 29 unknown, 12
+known, and all 29 undetermined ones reporting `system`. So the batched
+transport is resident and the classification count is unchanged.
+
+**Two things that disagree, informatively.** `definition` says those 29
+are standard CDEFs loaded from the System file. `kind` says it cannot
+determine what they are. If they really are stock Toolbox controls then
+`kControlKindTag` should name them — so either the host never asks for
+the batch, or it asks and the resident does not answer. That is the next
+question, and it is a narrow one.
+
+**And the inverse pair is worth putting beside it**, because together
+they say the two mechanisms fail on opposite populations:
+
+- **kinds**: NOW observing itself 53/53; a foreign panel 12/41.
+- **refs**: NOW observing itself 0/53; a foreign panel 41/41.
+
+Whatever is wrong is about the boundary between NOW and a process it does
+not own, in both directions at once.
+
 ## UNVERIFIED: the classifier's transport was rebuilt; nothing has watched it classify a real panel (2026-08-05)
 
 **The three transport defects below are fixed in code and none of the fix
