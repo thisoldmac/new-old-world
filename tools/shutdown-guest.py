@@ -111,6 +111,51 @@ def qmp_alive(sock_path):
         s.close()
 
 
+def worker_answers(port):
+    """Is anything on the guest still serving? The shutdown procedures quit
+    every application, the baked worker included, so this going quiet is
+    the machine reporting its own death.
+
+    A fresh Harness per call for the same reason qmp_alive opens a fresh
+    socket: a held connection reports the machine that WAS there."""
+    try:
+        Harness(host="127.0.0.1", port=port,
+                expect_backing={"worker"}).request("hello", {})
+        return True
+    except Exception:
+        return False
+
+
+def quit_a_shut_down_machine(sock_path):
+    """QMP `quit` on a guest that has ALREADY unmounted its volume.
+
+    This is not the power cut rule 1 forbids, and the difference is the
+    whole point. That rule is about quitting a RUNNING machine, which sets
+    the unclean-volume bit and puts Disk First Aid in the next boot. Here
+    the Shutdown Manager has already run its procedures, quit every
+    application and unmounted the disk; QEMU is merely still resident
+    because mac99's emulated power-off does not terminate the process.
+    Measured 2026-08-05: quitting at exactly this point and cold-booting
+    gave a clean boot in 156 s with no repair modal."""
+    if not os.path.exists(sock_path):
+        return
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(10)
+    try:
+        s.connect(sock_path)
+        f = s.makefile("rwb")
+        f.readline()
+        f.write(b'{"execute":"qmp_capabilities"}\n')
+        f.flush()
+        f.readline()
+        f.write(b'{"execute":"quit"}\n')
+        f.flush()
+    except OSError:
+        pass
+    finally:
+        s.close()
+
+
 def front_process(h):
     for p in h.request("observe", {}).get("processes", []):
         if p.get("front"):
@@ -180,15 +225,39 @@ def main():
         print(f"the worker would not launch the applet: {exc}", file=sys.stderr)
         return 1
 
+    # WAIT FOR THE MACHINE, NOT FOR QEMU. This polled qmp_alive alone and
+    # therefore always timed out: mac99's emulated power-off does not
+    # terminate the process, so the guest shuts down perfectly and QEMU
+    # sits there with a frozen last frame. Watched 2026-08-05 - the Finder
+    # and the baked worker both gone, every application quit, and the
+    # script still waiting for an exit that cannot come.
+    #
+    # The worker going quiet is the honest signal: it is an application,
+    # the shutdown procedures quit it, and it was answering moments ago
+    # (this function has already made two successful requests through it).
     t0 = time.time()
     while time.time() - t0 < a.timeout:
         if not qmp_alive(a.sock):
-            print(f"guest shut itself down ({int(time.time() - t0)}s)")
+            print(f"guest shut itself down and QEMU exited "
+                  f"({int(time.time() - t0)}s)")
+            return 0
+        if not worker_answers(a.port):
+            elapsed = int(time.time() - t0)
+            # Let the last writes drain before taking the process away.
+            time.sleep(5)
+            print(f"guest shut itself down ({elapsed}s); QEMU is still "
+                  f"resident because mac99 does not power off, so quitting "
+                  f"the already-unmounted machine")
+            quit_a_shut_down_machine(a.sock)
+            deadline = time.time() + 30
+            while time.time() < deadline and qmp_alive(a.sock):
+                time.sleep(1)
             return 0
         time.sleep(2)
 
-    print(f"guest still running {a.timeout}s after the applet was launched. "
-          f"Left alone deliberately - look at a screendump before deciding "
+    print(f"guest still running {a.timeout}s after the applet was launched, "
+          f"and its worker is still answering - so it did not shut down. "
+          f"Left alone deliberately: look at a screendump before deciding "
           f"to quit it.", file=sys.stderr)
     return 1
 
