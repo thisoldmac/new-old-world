@@ -14,6 +14,50 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## UNVERIFIED: MCP can see the drawing now, but nobody has read one live (2026-08-05)
+
+`now_mirror_snapshot` claims to carry the renderer's whole input and three
+times it has not: `window.items` for desktop icons, `window.items` again
+for Finder rows, and `window.display` — the per-window QuickDraw ops. The
+third is now projected, along with `kind`, `ref` and `text`, which turned
+out to be missing for exactly the same reason. Slice 6's render rule (to
+render a custom control, replay its ops rather than classify it) is
+reachable from MCP for the first time.
+
+**Status is TESTED, not verified.** 1416 host tests pass and six new ones
+cover it, but no snapshot has been read off a real guest with ops in it —
+the VM stand-up could not complete a cold boot unattended that day. The
+shape is proven; the content is not. What would settle it is one headless
+`now_mirror_snapshot` against a guest whose front window is being drawn,
+checking that `displayTotal` is non-zero and the ops describe what the
+Mirror window is showing.
+
+Three things worth keeping regardless of how that goes:
+
+- **The omission CLASS has a guard now**, not just this instance. A test
+  walks `Scene.Window`'s stored properties with
+  `IRSchema.declaredProperties` and fails on any the projection has not
+  disposed of — carried (proven against a real projection) or declined
+  with a reason. Adding a field to the IR and forgetting the projection is
+  no longer silent. Watched failing by adding a probe field to
+  `Scene.Window`: it named `probeField`.
+- **The guard has its own guard.** A roster check that asks whether a key
+  exists passes for a field that arrives empty, which is coverage the
+  roster does not have — the same shape as a test that stays green for the
+  wrong reason. So every carried check also runs against a window whose
+  fields are all present and all empty and must fail there. Watched
+  failing by weakening one check to `!= nil`.
+- **The 64 KB ceiling has no headroom left, and this is the number to
+  know.** The item projection ALONE encoded **54.6 KB of 64 KB** in its
+  worst case, measured rather than estimated. Any independently-bounded
+  addition therefore overflowed the message, and overflow is not a
+  truncated reply — it is the writer throwing and the connection closing
+  with no reply, so `snapshot` stops answering while `status` still does
+  (the same failure this file already records from adding Finder items).
+  Item and content families now hold separate stated byte shares of one
+  ceiling. **Anything further added to this payload must take a share
+  rather than assume room; there is none.**
+
 ## THE STALE-REF REFUSAL NO LONGER HOLDS THE LANE (2026-08-05)
 
 **Fixed, tested, and watched on an emulated guest.** During the first human
