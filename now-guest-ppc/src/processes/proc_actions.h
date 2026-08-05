@@ -16,6 +16,30 @@ OSErr now_proc_bring_to_front(const ProcessSerialNumber *psn);
    application has gone. */
 OSErr now_proc_ask_quit(const ProcessSerialNumber *psn);
 
+/* --- one process by name, for a caller that will not act on it ----------
+
+   `transitions start Finder` needs a PSN and nothing else: it hands the
+   resolved A5 to a resident and never sends the process an event. That
+   is a smaller question than quit's or front's, and it gets its own
+   entry point rather than a second walk — the walk is the part that must
+   not drift (see gather_targets), and a console that invented its own
+   matcher is precisely what docs/command-parity.md forbids.
+
+   Ambiguity is REFUSED rather than resolved to the first match. Arming a
+   resident inside whichever SimpleText the Process Manager happened to
+   list first is a wrong answer that looks like a right one. */
+typedef enum {
+    kProcFindOne = 0,         /* exactly one live process, `psn` written */
+    kProcFindNotRunning,      /* nothing by that name is running         */
+    kProcFindAmbiguous,       /* several matches; this Mac will not guess */
+    kProcFindNoName           /* an empty argument names nothing         */
+} NowProcFindOutcome;
+
+/* Writes `psn` only on kProcFindOne. NOW itself is a fair target here —
+   reading a process is not quitting it. */
+NowProcFindOutcome now_proc_find_by_name(const char *want,
+                                         ProcessSerialNumber *psn);
+
 /* --- quit by name: the composition ---------------------------------------
 
    process.quit takes a PSN, and a PSN is only meaningful while the

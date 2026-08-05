@@ -19,10 +19,9 @@
 
 #include <Carbon.h>
 
-#include "axprocess.h"
+#include "arm_target.h"
 #include "json.h"
 #include "peek.h"
-#include "peek_oracle.h"
 #include "qdtrace_target.h"
 
 #include <stdio.h>
@@ -76,146 +75,48 @@ NowContentBlock *now_qdtrace_block(void)
 
 /* ---- argument parsing ------------------------------------------------
  *
- * A5 worlds and ring cursors are both 32-bit quantities that routinely
- * have the top bit set, and `long` is 32 bits on the machine this runs
- * on. So neither may ride a signed JSON integer: an A5 of 0x80000000
- * arrives as a negative long, and a write_cursor does exceed 2^31 after
- * two gigabytes of records. Both are accepted as strings, decimal or
- * 0x-prefixed, with the signed integer form kept only as a fallback for
- * the small values a human types by hand.
+ * The wide-form parsers moved to json.c on 2026-08-05, when P5's
+ * `transitions` needed the same three-way answer for the same reason
+ * (json.h states it). These two are the local narrowing to a
+ * NowContentU32, and nothing else.
  */
 static int parse_u32(const char *json, const char *key,
                      NowContentU32 *out, int *present)
 {
-    char buf[24];
-    const char *p;
     unsigned long v = 0;
-    int digits = 0;
-    int base = 10;
 
-    *present = 0;
-    if (now_json_find_string(json, key, buf, (long)sizeof buf)) {
-        p = buf;
-        while (*p == ' ') {
-            p++;
-        }
-        if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) {
-            base = 16;
-            p += 2;
-        }
-        for (; *p != '\0'; ++p) {
-            int d;
-
-            if (*p >= '0' && *p <= '9') {
-                d = *p - '0';
-            } else if (base == 16 && *p >= 'a' && *p <= 'f') {
-                d = *p - 'a' + 10;
-            } else if (base == 16 && *p >= 'A' && *p <= 'F') {
-                d = *p - 'A' + 10;
-            } else {
-                return 0;   /* a malformed number is refused, not floored */
-            }
-            v = v * (unsigned long)base + (unsigned long)d;
-            digits++;
-            if (digits > 10) {
-                return 0;
-            }
-        }
-        if (digits == 0) {
-            return 0;
-        }
+    if (!now_json_find_wide_u32(json, key, &v, present)) {
+        return 0;
+    }
+    if (*present) {
         *out = (NowContentU32)v;
-        *present = 1;
-        return 1;
-    }
-    if (now_json_value(json, key) != NULL) {
-        long n = now_json_find_int(json, key, 0);
-
-        if (n < 0) {
-            return 0;
-        }
-        *out = (NowContentU32)n;
-        *present = 1;
-        return 1;
-    }
-    return 1;   /* absent is not malformed */
-}
-
-/* Command arguments may arrive as typed JSON booleans or through the
-   host's older string form. Both shapes mean the same thing; any other
-   present value is malformed rather than silently false. */
-static int parse_bool(const char *json, const char *key, int *out,
-                      int *present)
-{
-    char buf[8];
-
-    *present = 0;
-    if (now_json_find_string(json, key, buf, (long)sizeof buf)) {
-        if (strcmp(buf, "true") == 0) {
-            *out = 1;
-        } else if (strcmp(buf, "false") == 0) {
-            *out = 0;
-        } else {
-            return 0;
-        }
-        *present = 1;
-        return 1;
-    }
-    if (now_json_value(json, key) != NULL) {
-        *out = now_json_find_bool(json, key, 0);
-        *present = 1;
     }
     return 1;
 }
 
+static int parse_bool(const char *json, const char *key, int *out,
+                      int *present)
+{
+    return now_json_find_wide_bool(json, key, out, present);
+}
+
 /* Resolve the selected live process exactly as observation does: bind its
    anchor, then apply the stricter trust gate required for arming. A stale
-   anchor may still be useful to look at and is not safe to instrument. */
+   anchor may still be useful to look at and is not safe to instrument.
+ *
+ * The rule itself moved to src/peek/arm_target.c on 2026-08-05, when P5's
+ * `transitions start` needed the same answer. Two copies of a safety rule
+ * do not fail to build when they drift - they fail to agree. */
 static int resolve_start_target(const ProcessSerialNumber *psn,
                                 NowContentU32 *a5, const char **code,
                                 const char **message)
 {
-    NowAxContext ctx;
-    NowPeekReadStatus status = now_ax_bind_process(psn, &ctx);
+    unsigned long resolved = 0;
 
-    switch (status) {
-    case kNowPeekReadOk:
-        break;
-    case kNowPeekReadNoPlane:
-        *code = "anchor-plane-absent";
-        *message = "the NOW Extension's window-anchor plane is not armed, "
-                   "so no process can be resolved to an A5 from here";
-        return 0;
-    case kNowPeekReadNoAnchor:
-        *code = "not-pumped";
-        *message = "this process has not pumped its event loop since "
-                   "anchors were armed; bring it forward and ask again";
-        return 0;
-    case kNowPeekReadAmbiguous:
-        *code = "ambiguous";
-        *message = "two or more anchor slots claim this process; this Mac "
-                   "will not guess which one is current";
-        return 0;
-    case kNowPeekReadMismatch:
-        *code = "mismatch";
-        *message = "the matching anchor disagrees with this process's "
-                   "partition and cannot be used";
-        return 0;
-    case kNowPeekReadNoWindows:
-    case kNowPeekReadStub:
-    case kNowPeekReadUnreadable:
-    default:
-        *code = "unreadable";
-        *message = "this process's anchor cannot be validated safely";
+    if (!now_peek_arm_target_a5(psn, &resolved, code, message)) {
         return 0;
     }
-    if (!now_peek_anchor_a5_arm_trusted(ctx.verdict)) {
-        *code = "a5-stale";
-        *message = "this process's anchor is safe to observe but too stale "
-                   "to arm; bring it forward so it pumps, then retry";
-        return 0;
-    }
-    *a5 = (NowContentU32)ctx.a5;
+    *a5 = (NowContentU32)resolved;
     return 1;
 }
 

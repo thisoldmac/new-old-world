@@ -6,6 +6,7 @@
 #include "nowlog.h"
 #include "observe.h"
 #include "qdtrace.h"
+#include "transitions_cmd.h"
 
 #include <Carbon.h>
 
@@ -1497,6 +1498,16 @@ void now_command_run(const char *name, const char *request_json, long id,
        control answer and not a transfer. */
     if (strcmp(name, "qdtrace") == 0) {
         now_qdtrace_run(request_json, id, out, cap);
+        return;
+    }
+    /* The transition plane's reader (P5). The same four subcommands
+       behind one `op`, and the same shape of thing — a ring an optional
+       resident fills inside an armed process. It is a SAMPLER: it catches
+       what a 2.2 s poll misses because the guest's event loop is ~60 Hz,
+       and something raised and dismissed between two passes is still
+       missed. See contract/event_tail.h. */
+    if (strcmp(name, "transitions") == 0) {
+        now_transitions_run(request_json, id, out, cap);
         return;
     }
     /* The reference layer. Each of these writes its whole command.result
