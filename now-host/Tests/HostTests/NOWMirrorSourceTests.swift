@@ -430,25 +430,6 @@ final class NOWMirrorSourceTests: XCTestCase {
         XCTAssertTrue(source.contains("tell application \"Finder\""))
     }
 
-    func testApplicationVisibilityUsesTypedTargetAndFinderShowAll() {
-        let hide = NOWMirrorSource.hideFrontApplicationScript
-        XCTAssertTrue(hide.contains(
-            "first application process whose frontmost is true"))
-        XCTAssertFalse(hide.contains("keystroke"))
-        let others = NOWMirrorSource.hideOtherApplicationsScript
-        XCTAssertTrue(others.contains("if not (frontmost of candidate)"))
-        XCTAssertTrue(others.contains("set visible of candidate to false"))
-        let show = NOWMirrorSource.showAllApplicationsScript
-        XCTAssertTrue(show.contains("set visible of every application "
-                                    + "process to true"))
-        XCTAssertNil(NOWMirrorSource.visibilityDispatchOutcome(
-            "\"dispatched\""))
-        XCTAssertEqual(NOWMirrorSource.visibilityDispatchOutcome(
-            "\"dispatched-but-unconfirmed\""),
-            "dispatched-but-unconfirmed")
-        XCTAssertEqual(NOWMirrorSource.visibilityDispatchOutcome(nil),
-                       "visibility dispatch outcome unavailable")
-    }
 
     /// **A refused Hide must not hold the lane for 15 s**, and only Hide
     /// has the proof that lets it let go. Michelle's 2026-08-05 drive
@@ -456,60 +437,40 @@ final class NOWMirrorSourceTests: XCTestCase {
     /// `-10006`, and here `osaErr -1753`), and the refusal then waited out
     /// the whole timeout for evidence of an effect that never happened,
     /// while everything queued behind it waited too.
-    func testOnlyHideCanProveARaisedVisibilityScriptChangedNothing() {
-        let app = InteractionPlan.ApplicationVisibility.hide(
-            psn: "0.4", incarnation: "now", name: "New Old World",
-            menuID: -16_489, itemIndex: 1, titleLeft: 600)
-        let others = InteractionPlan.ApplicationVisibility.hideOthers(
-            exceptPSN: "0.4", incarnation: "now", name: "New Old World",
-            menuID: -16_489, itemIndex: 2, titleLeft: 600)
-
-        XCTAssertEqual(NOWMirrorSource.visibilityRefusalReach(for: app),
-                       .notSent, "one `set` that raised set nothing")
-        XCTAssertEqual(NOWMirrorSource.visibilityRefusalReach(for: others),
-                       .unknown, "a loop can hide two and raise on the third")
-        XCTAssertEqual(NOWMirrorSource.visibilityRefusalReach(for: .showAll),
-                       .unknown, "a plural specifier's atomicity is unmeasured")
-
-        /* The consequence the reach exists for, spelled out: only the
-           provable one releases the lane. */
-        let refusal = NOWMirrorSource.visibilityRefusal(
-            "the guest's AppleScript raised osaErr -1753")
-        XCTAssertFalse(NOWMirrorSource.effectMayHaveLanded(
-            complaint: refusal, reach: .notSent))
-        XCTAssertTrue(NOWMirrorSource.effectMayHaveLanded(
-            complaint: refusal, reach: .unknown))
-    }
 
     /// **The premise the reach above rests on**, asserted against the
     /// scripts themselves so it cannot rot silently. Hide's proof is that
     /// its script mutates exactly once; rewrite it as a loop and the proof
     /// is gone while every test about the reach still passes.
-    func testHidesProofIsThatItsScriptMutatesExactlyOnce() {
-        let hide = NOWMirrorSource.hideFrontApplicationScript
-        XCTAssertEqual(
-            hide.components(separatedBy: "set visible").count - 1, 1,
-            "Hide claims `notSent` on the strength of a single mutation")
-        XCTAssertFalse(hide.contains("repeat"),
-                       "a loop can land partway and could not claim it")
-        XCTAssertTrue(NOWMirrorSource.hideOtherApplicationsScript
-            .contains("repeat"),
-            "Hide Others is the loop this rule keeps `unknown`")
-    }
 
     /// A bare osaErr reads as a broken mirror. Hiding plainly works on a
     /// Macintosh, so the sentence has to say it is NOW that has not built
     /// it, keep the code for whoever is diagnosing, and name the route
     /// still untried — which is what dates the sentence when someone makes
     /// that route work.
-    func testAVisibilityRefusalNamesTheRouteAndTheOneStillUntried() {
-        let refusal = NOWMirrorSource.visibilityRefusal(
-            "the guest's AppleScript raised osaErr -1753")
 
-        XCTAssertTrue(refusal.contains("osaErr -1753"), refusal)
-        XCTAssertTrue(refusal.contains("Finder will not set"), refusal)
-        XCTAssertTrue(refusal.contains("untried"), refusal)
-        XCTAssertTrue(refusal.contains("nothing was hidden or shown"), refusal)
+    /// **The outcome word is an OBSERVATION, and only one of them is a
+    /// success.** The guest calls `ShowHideProcess` and then reads the flag
+    /// back with `IsProcessVisible` before answering, so `hidden` means the
+    /// machine was seen hidden rather than asked to hide. Watched working
+    /// on an emulated Power Mac G4 2026-08-05.
+    func testOnlyAReadBackHiddenCountsAsAHide() {
+        XCTAssertNil(NOWMirrorSource.hideDispatchOutcome("\"hidden\""))
+
+        /* `unconfirmed` is the exact shape of the old AppleScript lie —
+           the call was accepted and the flag did not move — and it must
+           never read as success again. */
+        let unconfirmed = NOWMirrorSource.hideDispatchOutcome("\"unconfirmed\"")
+        XCTAssertNotNil(unconfirmed)
+        XCTAssertTrue(unconfirmed?.contains("still visible") == true,
+                      unconfirmed ?? "nil")
+
+        let old = NOWMirrorSource.hideDispatchOutcome("\"unavailable\"")
+        XCTAssertTrue(old?.contains("CarbonLib 1.5") == true, old ?? "nil")
+        XCTAssertNotNil(NOWMirrorSource.hideDispatchOutcome("\"not-running\""))
+        XCTAssertNotNil(NOWMirrorSource.hideDispatchOutcome(nil))
+        XCTAssertNotNil(NOWMirrorSource.hideDispatchOutcome("\"\""),
+                        "an empty outcome is not a quiet success")
     }
 
     func testKeyCapsIsOpenedFromTheGuestsAppleMenuItemsFolder() {

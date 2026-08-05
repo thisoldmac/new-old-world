@@ -1668,13 +1668,6 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// execution time; the scene identity guard below binds that transient
     /// role to the exact process the person clicked. A race stays pending
     /// because the later retained census settles by PSN incarnation.
-    static let hideFrontApplicationScript = """
-            tell application "Finder"
-            set visible of first application process whose frontmost is true \
-            to false
-            end tell
-            return "dispatched"
-            """
 
     static func appleMenuItemScript(_ name: String) -> String {
         let escaped = name.replacingOccurrences(of: "\"", with: "\\\"")
@@ -1686,113 +1679,99 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         """
     }
 
-    static let hideOtherApplicationsScript = """
-            tell application "Finder"
-            repeat with candidate in every application process
-            if not (frontmost of candidate) then \
-            set visible of candidate to false
-            end repeat
-            end tell
-            return "dispatched"
-            """
 
-    static let showAllApplicationsScript = """
-            tell application "Finder"
-            set visible of every application process to true
-            end tell
-            return "dispatched"
-            """
 
     private func applicationVisibility(
         _ action: InteractionPlan.ApplicationVisibility) async -> String? {
         switch action {
-        case .hide(let psn, let incarnation, _, _, _, _),
-             .hideOthers(let psn, let incarnation, _, _, _, _):
+        case .hide(let psn, let incarnation, let name, _, _, _):
+            /* **The route that actually works, as of 2026-08-05.** Hiding
+               went through the Finder's AppleScript object model, which is
+               READ-ONLY for `visible` and refuses (`-10000`, `-10006`,
+               `osaErr -1753`) — so Hide has never once worked from this
+               face. The guest now serves it directly through the Process
+               Manager's own `ShowHideProcess`, weak-linked, and answers
+               with an `IsProcessVisible` read-back rather than a claim.
+               Watched working on an emulated Power Mac G4 that day, both
+               directions, with the Finder's desktop icons disappearing
+               from the framebuffer as the third witness.
+
+               The guest verb takes a NAME because that is what a person
+               has; the psn/incarnation check above it is still what makes
+               this act about the exact application the scene displayed. */
             guard let app = scene?.apps.first(where: { $0.psn == psn }),
                   app.front, app.incarnation == incarnation else {
                 return "the Application-menu target changed before dispatch"
             }
-            let source: String
-            if case .hide = action {
-                source = Self.hideFrontApplicationScript
-            } else {
-                source = Self.hideOtherApplicationsScript
-            }
-            let read = await readingOutput(
-                "script", ["source": .text(source)],
-                osaFailureIsAnError: true)
+            let read = await readingOutput("hide",
+                                           ["target": .text(name)],
+                                           row: "Outcome")
             if let error = read.error {
-                /* **Hide's script is ONE `set`, so a raise proves nothing
-                   was hidden** — and a refusal that cannot say that holds
-                   the single mutation lane for the full 15 s waiting for
-                   evidence of an effect that never happened. Michelle's
-                   2026-08-05 drive paid that twice over: the Finder
-                   refuses `set visible` (`-10000`, `-10006`, and here
-                   `osaErr -1753`), and commanding menu -16489 instead
-                   dispatches without changing the machine, which is why
-                   `InteractionPlan` keeps visibility typed.
-
-                   Hide Others is deliberately NOT given the same
-                   treatment: its script is a REPEAT LOOP over every
-                   background process, so it can hide two applications and
-                   raise on the third, and `notSent` would then report a
-                   partial change as nothing at all. Unknown is the true
-                   answer there until the script can say how far it got. */
-                planRefusalReach = Self.visibilityRefusalReach(for: action)
-                return Self.visibilityRefusal(error)
+                /* The guest's own outcome vocabulary is typed, so a
+                   refusal here says which half moved without guessing. */
+                planRefusalReach = .notSent
+                return "hide: \(error)"
             }
-            return Self.visibilityDispatchOutcome(read.value)
+            return Self.hideDispatchOutcome(read.value)
 
-        case .showAll:
-            let read = await readingOutput(
-                "script", ["source": .text(Self.showAllApplicationsScript)],
-                osaFailureIsAnError: true)
-            if let error = read.error {
-                planRefusalReach = Self.visibilityRefusalReach(for: action)
-                return Self.visibilityRefusal(error)
-            }
-            return Self.visibilityDispatchOutcome(read.value)
+        case .hideOthers, .showAll:
+            /* **No route exists for these two, and pretending costs a
+               round trip to be told what this side already knows.** The
+               Finder's object model refuses `set visible` for all three
+               commands alike — that is one measurement, not three — and
+               the guest's `hide` verb hides ONE NAMED process, which is
+               what a `ShowHideProcess` call is. Hide Others and Show All
+               are therefore not "broken": they are unbuilt, and what would
+               build them is a guest-side iteration over the process list
+               calling the same verified call per process, which is its own
+               small piece of work rather than a fallback to try here.
+
+               Refusing by name and immediately is the same rule that
+               stopped Hide holding the lane for 15 s: never spend the one
+               mutation lane rediscovering a route already measured dead. */
+            planRefusalReach = .notSent
+            return "the Finder will not set an application's visibility, "
+                + "and this Mac's own route hides ONE named process — so "
+                + "Hide Others and Show All are unbuilt rather than "
+                + "broken. Hiding a single application does work."
+
         }
     }
 
-    /// **Whether a raised visibility script PROVES nothing changed**, which
-    /// is the only thing that lets the mutation lane stop waiting for
-    /// evidence instead of holding it for the full 15 s.
+    /// **The guest's own word for what happened to the flag**, mapped to
+    /// this side's complaint-or-nil.
     ///
-    /// It is per-action because the three scripts differ in exactly the
-    /// way that matters:
+    /// Only `hidden` is a success here, and it is a stronger one than this
+    /// surface usually gets: the guest called `ShowHideProcess` and then
+    /// read the state back with `IsProcessVisible` before answering, so
+    /// the word is an observation rather than a dispatch. The typed
+    /// postcondition still settles from a later scene — that rule is older
+    /// than this route and survives it — but a caller is no longer waiting
+    /// on the ONLY evidence.
     ///
-    /// - **Hide is one `set`.** If it raised, the front application was
-    ///   not hidden. Provably unsent — and this is the case Michelle's
-    ///   2026-08-05 drive measured burning the lane.
-    /// - **Hide Others is a repeat LOOP** over every background process,
-    ///   so it can hide two applications and raise on the third. Reporting
-    ///   that as unsent would call a partial change nothing at all.
-    /// - **Show All is one statement with a PLURAL specifier**, resolved
-    ///   inside the Finder. Whether it shows some before raising has never
-    ///   been measured, and an unmeasured atomicity claim is not proof.
-    ///
-    /// Only the first is a proof; the other two are honestly unknown.
-    static func visibilityRefusalReach(
-        for action: InteractionPlan.ApplicationVisibility)
-        -> AgentIntegrationProjectionFailure.Reach {
-        if case .hide = action { return .notSent }
-        return .unknown
+    /// `unconfirmed` is deliberately a complaint. It means the call was
+    /// accepted and the flag did NOT move, which is the exact shape of the
+    /// old AppleScript lie and must never read as success again.
+    static func hideDispatchOutcome(_ raw: String?) -> String? {
+        guard let raw else { return "the guest reported no hide outcome" }
+        let outcome = unquote(raw).trimmingCharacters(in: .whitespaces)
+        switch outcome {
+        case "hidden":
+            return nil
+        case "unconfirmed":
+            return "hide: the call was accepted and the application is "
+                + "still visible"
+        case "unavailable":
+            return "hide: this Mac's CarbonLib does not export "
+                + "ShowHideProcess (it needs CarbonLib 1.5 or later)"
+        case "":
+            return "the guest reported no hide outcome"
+        default:
+            return "hide: \(outcome)"
+        }
     }
 
-    /// **What a person needs to hear when visibility is refused**, which
-    /// is not the raw osaErr. Hiding an application plainly works on a
-    /// Macintosh — a person does it from the Application menu — so a bare
-    /// error code reads as a broken mirror rather than as the one thing
-    /// NOW has not built. Says which route failed, keeps the code for
-    /// whoever is diagnosing, and names the route still untried so this
-    /// sentence dates itself the moment somebody makes it work.
-    static func visibilityRefusal(_ error: String) -> String {
-        "the Finder will not set an application's visibility (\(error)); "
-            + "NOW has no other route yet — a real click on the "
-            + "Application menu through the act plane is untried — so "
-            + "nothing was hidden or shown."
-    }
+
 
     static func visibilityDispatchOutcome(_ raw: String?) -> String? {
         guard let raw else { return "visibility dispatch outcome unavailable" }
