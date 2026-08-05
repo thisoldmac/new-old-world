@@ -30,9 +30,16 @@ left.** Where they disagree about status, this one is newer and
   on 2026-08-05: **stop if a fix cannot be driven live** — three fixes
   landed that day and only one was proven, and the unproven ones are now
   debt in this document; and **stop if a route is being built on an
-  unchecked API floor.** `ShowHideProcess` looked like the obvious answer to
-  Hide and is absent from both toolchains; an hour of building on it would
-  have been spent before anything linked.
+  unchecked API floor.**
+
+  That second one was written citing `ShowHideProcess` as absent from the
+  toolchain, which is **wrong** — see § C. The sweep that "checked" it read
+  one of two CarbonLib archives. The rule survives its own example, and is
+  sharper for it: an API floor is not checked by one grep that agrees with
+  your expectation. It is checked by enumerating what could answer the
+  question and looking at all of it, and the header search agreeing is not
+  independent evidence when the headers ship in the same version pair as
+  the archive.
 - **Tail ownership:** with MCP present or absent the Mirror window behaves
   identically. Nothing here gives MCP its own route to the guest.
 
