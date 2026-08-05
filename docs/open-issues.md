@@ -57,6 +57,42 @@ Three things worth keeping regardless of how that goes:
   Item and content families now hold separate stated byte shares of one
   ceiling. **Anything further added to this payload must take a share
   rather than assume room; there is none.**
+## BROKEN: the host face can HIDE and cannot SHOW (2026-08-05)
+
+Found on the breadth-first drive, minutes after Hide started working from
+that face. Driving `hide` with no target hides the FRONT application —
+and when the front application is NOW itself, its window vanishes and
+**nothing on the host face can bring it back**. `showAll` has no route
+(the Finder refuses `set visible`), and the `.hide` plan only ever hides.
+
+Recovering it needed the guest's own verb over the wire
+(`hide --show "New Old World"`), which means stopping the host to free
+the port — a person driving the Mirror cannot do that from the Mirror.
+Relaunching the application does NOT unhide it; the launch succeeds and
+`visible` stays false.
+
+Measured on the machine: `New Old World front=true visible=false`, with
+the desktop icons still on screen because the Finder was untouched.
+
+The asymmetry is the defect, not the hiding. What closes it is a `show`
+direction on the same verb the host already calls — `hide --show NAME`
+exists and works on the guest today — rather than anything new.
+
+## The Finder roster is INTERMITTENT, not absent (2026-08-05)
+
+Sharpening the `desktopItems` entry above, which reads as though the
+Finder-item read never works. On one drive it clearly did: the absent-item
+refusal fired — *"the Finder shows no item named No Such Item At All on
+the desktop"* — and that guard only speaks when the roster is PUBLISHED,
+since an unread container claims nothing. Reads minutes later on the same
+guest returned nil again.
+
+So it is not a read that never happens; it is a read that sometimes
+happens. That is a different investigation from the one the earlier entry
+implies, and a more tractable one: something is racing or expiring rather
+than missing. The Finder's own Desktop window publishing `itemTotal: 0`
+while icons are on screen is the same symptom from the other side.
+
 ## FIRST LIVE ANSWERS from the 2026-08-05 drive: display carries, definition says `system`, desktopItems does not read
 
 Driven against a freshly cold-booted emulated Power Mac G4 with the
