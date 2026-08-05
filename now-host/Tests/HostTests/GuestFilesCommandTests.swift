@@ -504,7 +504,12 @@ final class GuestFilesCommandTests: XCTestCase {
     func testHostCommandRegistrationDoesNotAddUIOrStartTheListener()
         throws {
         let suite = "GuestFilesHostState.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        /* `offTheWire()` is what makes the listener assertion below mean
+           anything. Without it `listenAtLaunch` is absent and therefore
+           true, so the listener IS starting and `.idle` only reads back
+           because the bind has not finished — an assertion that passed by
+           winning a race, on a listener left holding 5250 for the run. */
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite)).offTheWire()
         defer { defaults.removePersistentDomain(forName: suite) }
         let modules = ModuleRegistry.standard.modules
 

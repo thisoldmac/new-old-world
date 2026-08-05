@@ -429,8 +429,12 @@ final class ConnectionsModelTests: XCTestCase {
                 return GuestKey.parse(selector) == nil
                     ? .notConnected(selector) : .sessionEnded(selector)
             })
-        let port: UInt16 = 52987
-        listener.start(port: port)
+        /* Port 0, not 52987. A fixed number here sat inside the ephemeral
+           range this process draws every other listener and dial from, so
+           the bind was intermittently refused with EADDRINUSE by this very
+           process (docs/open-issues.md, 2026-08-05). */
+        listener.start(port: 0)
+        defer { listener.stop() }
 
         let deadline = Date().addingTimeInterval(8)
         func wait(_ cond: @escaping () -> Bool) async throws {
@@ -443,17 +447,12 @@ final class ConnectionsModelTests: XCTestCase {
             return false
         }
 
-        let guest = NWConnection(host: .ipv4(.loopback),
-                                 port: NWEndpoint.Port(rawValue: port)!,
-                                 using: .tcp)
-        guest.start(queue: .main)
-        let hello = try ControlMessageCodec.encode(.hello(
+        let guest = FakeGuest(port: try XCTUnwrap(listener.boundPort))
+        guest.start()
+        try guest.send(.hello(
             Hello(contract: Contract.revision, side: "guest",
                   version: "0.1.0", name: "PowerBook 180c", os: "7.1",
                   chunk: 8192)))
-        guest.send(content: try FrameCodec.encode(channel: .control,
-                                                  payload: hello),
-                   completion: .idempotent)
 
         /* Waited for on the MODEL, not on the listener: the page has to
            learn about the roster by subscribing to it. A test that called
@@ -464,7 +463,7 @@ final class ConnectionsModelTests: XCTestCase {
         let session = try XCTUnwrap(live.liveSessionID)
         XCTAssertEqual(live.name, "PowerBook 180c")
 
-        guest.cancel()
+        guest.connection.cancel()
         try await wait { model.snapshot.isIdle }
 
         XCTAssertTrue(model.snapshot.isIdle,
