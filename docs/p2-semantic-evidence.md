@@ -80,14 +80,21 @@ A window with more controls than one reply carries is drained by
 successive requests from `request_start`; `response_total_count` reports
 how many the walk found in all.
 
-Status: native-tested (the resolver, the guard, and the application-side
-policy), PPC cross-build green, and the resolver's one-walk property and
-the guard's duplicate refusal were both watched fail under mutation. **The
-68K extension half has not been built** — no m68k toolchain is installed
-on the machine this was written on, so `scripts/build-guests` skips `ext`
-entirely. It adds no new Toolbox symbol, so the flat-INIT link surface is
-unchanged, but that is an argument and not a build. Nothing here is
-metal-verified.
+Status: `scripts/test-all` green — native tests (the resolver, the guard
+and the application-side policy), all three cross-builds including the
+**68K flat INIT**, and the host gate. The batch entry points link into
+`NowExt.map`, and a deliberate error appended to `ext/src/now_semantic.c`
+was watched fail the ext build, so that gate covers the resident code
+rather than merely running beside it. Five properties were watched fail
+under mutation, including the resolver's one-walk cost argument and the
+guard's refusal of a duplicate control.
+
+**Nothing here is metal-verified, and nothing has been cold-loaded.** The
+v2 checkpoint above is the cautionary precedent: it passed every gate,
+then produced no live list cells on the first cold-load sweep because the
+single request kept naming a background Finder control. A built INIT is
+not a serving INIT, and the count of determined kinds is the only
+measurement that will settle this.
 
 ## Frozen envelope
 

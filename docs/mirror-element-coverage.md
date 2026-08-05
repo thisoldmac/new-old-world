@@ -203,9 +203,9 @@ being classified at all. The design, the bounds argument and what it
 costs are in
 [the P2 evidence gate](p2-semantic-evidence.md#the-envelope-changed-a-second-cell-for-batched-classification-2026-08-05).
 
-**This table is not superseded — it is the before.** Nothing has
-reclassified a panel: the 68K extension has not been built (no m68k
-toolchain here) and the corpus has not been recaptured. When it is, the
+**This table is not superseded — it is the before.** Everything compiles,
+including the 68K extension, but nothing has reclassified a panel: no
+cold load, no recapture. When there is one, the
 comparison to make is the `undetermined` column of row 2 against the 121
 above, and the number that finally answers slice 6's actual question is
 how many of the newly-determined controls come back
