@@ -1887,13 +1887,16 @@ the guest's own `process.list` (it is the name Mirror's source and
 releases the agent's single client slot as cleanly as the code assumes.
 ## The host suite was fighting itself over ports (2026-08-02, settled 2026-08-05)
 
-**It was never contention with the app. The suite was its own second
-program.** For three days a red `scripts/test-all` here was read as
-"something else is running on this Mac"; the truth is that the tests
-were binding the product's own port, hard-coding ports out of the range
-the kernel hands out, and abandoning several hundred sockets a run.
-Three separate defects, all in the test target, all now fixed —
-`swift test` is 1402 tests, 0 failures, and 51 s rather than 86.
+**It WAS contention — and the suite was manufacturing it.** For three
+days a red `scripts/test-all` here was read as "something else is
+running on this Mac", which was true and stopped the enquiry one step
+too early: the something else was another session's copy of this same
+suite, holding the product's own port because five of these tests take
+it by accident and none gives it back. Alongside that, the tests were
+hard-coding ports out of the range the kernel hands out, and abandoning
+several hundred sockets a run. Three separate defects, all in the test
+target, all now fixed — `swift test` is 1408 tests, 0 failures, and
+51 s rather than 86.
 
 **What was actually wrong.**
 
@@ -1950,18 +1953,45 @@ but the agent socket was never implicated — `AgentIntegrationSocketTests`
 already builds its endpoint under a unique temporary directory — and no
 global or leaked task was involved.
 
+**Found from the other end at the same time, and the two halves fit.**
+A parallel session went looking for what was holding the machine rather
+than for what the suite was doing, and found it: **check the PORT, not
+the process name.**
+
+```
+lsof -nP -iTCP:5250 -sTCP:LISTEN
+```
+
+`ps | grep` for `New Old World`, `swift build`, `swift test` and
+`xcodebuild` matches none of them, because a SwiftPM suite runs as a
+bare `xctest` — so "nothing else is running" was never checked. `lsof`
+found an `xctest` from ANOTHER WORKTREE's session holding 5250, and it
+surfaced through `scripts/spin-up-ppc`, which now carries that check
+and says so in one line. That is the host-side twin of
+`MetalMachineGuard` this entry had been asking for.
+
+**But that foreign `xctest` was holding 5250 BECAUSE of defect 1.** No
+test asks for that port; five of them take it by accident, and none
+gives it back. So "another session was running" and "the suite binds
+the product's port" are one fact from two directions, and the reading
+that the 2026-08-02 diagnosis therefore stands unchanged is too
+generous to it: the contention was manufactured here. A second
+`xctest` also explains the collisions in defect 3 far better than
+anything inside one process does — two suites drawing from one
+ephemeral range, each leaving ~150 sockets open.
+
 **What is NOT proven, and it matters.** The five timeouts stopped
 reproducing on this Mac partway through the investigation, with the
 ORIGINAL code: two concurrent full runs of the unfixed tests are now
-green. The correlate is visible in the logs — the failing runs carry
-36–69 `Failed to create NSXPCConnection` lines from AddressBook's XPC
-store retrying, and take 77–137 s; the green ones carry 23 and take
-51 s. So this is a LOAD-SHAPED defect, and the before/after A/B that
-would settle it cannot be run any more. Defect 1 is verified by
-observation (the `lsof` above). Defect 2 is verified by the failures in
-the trace logs (`listener -> failed(...48...)` on 52981 and 52983).
-Defect 3 rests on the captured port pairs plus the fact that the fix
-removes the mechanism by construction, NOT on a watched before/after.
+green, as is a single one. The most likely reason is simply that the
+other session's `xctest` finished. So the before/after A/B that would
+settle it cannot be run any more. Defect 1 is verified by observation
+(the `lsof` above, watched by mutation: `xctest ... TCP *:5250
+(LISTEN)` with the old code, nothing with the new). Defect 2 is
+verified by the failures in the trace logs (`listener -> failed(...48...)`
+on 52981 and 52983). Defect 3 rests on the captured port pairs plus a
+fix that removes the mechanism by construction, NOT on a watched
+before/after.
 
 A reproduction was attempted and deleted rather than kept: building the
 collision by hand — dial a listener, abandon the socket, put a new
@@ -1972,62 +2002,16 @@ test, so there is no guard here. If the five ever come back, the way in
 is `FakeGuest`'s state handler: log `state`, `currentPath?.localEndpoint`
 and `remoteEndpoint`, and look for `.waiting(EADDRINUSE)`.
 
-**The rule that is still missing.** The metal side has
-`MetalMachineGuard` — "a gate must check the MACHINE is free"
-(docs/68k-metal-runbook.md). The host gate still has no twin: nothing
-checks for a live `New Old World`, or for another session's `swift
-test`, before it binds. With the three defects above gone the suite no
-longer collides with itself, but it can still collide with the app, and
-it would say so with the same unhelpful timeout.
-
-**2026-08-05: RESOLVED, and it was contention after all — the check was
-wrong, not the diagnosis.** Skip to the resolution three paragraphs down
-before acting on anything here. The gate went red on this Mac with no
-`New Old World` process and no agent socket in `$TMPDIR`. Five cases
-failed (`AgentIntegrationQuitTests
-testReconnectInvalidatesPriorProcessReference`, `GuestIdentityTests
-testAddressingABackgroundMachineIsRefusedRatherThanRedirected`,
-`GuestListenerTests testAGuestThatNeverAnswersLeavesAgentAccessAbsent`,
-`MultiGuestFocusTests testEveryGuestScopedModelFollowsTheActiveMac`,
-`MultiGuestListenerTests
-testABackgroundGuestLeavingDoesNotDisturbTheConsole`), each on a 5 s or
-10 s timeout, and each **passes in 0.1 s when run alone**.
-
-What is different from 2026-08-02, and what it costs: the subset is now
-the SAME on every run rather than varying, which is the signature of
-in-suite interference rather than of another program on the machine. So
-the advice above — quit the app and re-run — no longer clears the gate,
-and `scripts/test-all` cannot go green here by any action a contributor
-can take. Anything landing while this is true carries an
-honestly-labelled red gate, and the two halves must be told apart by
-running the touched suites alone.
-
-**The check that was not made, and the resolution it produced.**
-"Nothing else was running" rested on `ps | grep` for `New Old World`,
-`swift build`, `swift test` and `xcodebuild` — none of which matches a
-bare `xctest`, which is what a SwiftPM suite actually runs as. Nobody
-looked at port 5250 itself. Half an hour later `lsof -nP -iTCP:5250`
-found precisely that: an `xctest` from ANOTHER WORKTREE's session
-holding the port. It surfaced not through any test failure but through
-`scripts/spin-up-ppc`, which checks the port and says so in one line.
-
-**With 5250 verified free, the same suite ran 1408 tests with 0
-failures.** So the 2026-08-02 diagnosis stands unchanged and the
-"deterministic subset with an idle machine" reading was an artefact of
-looking for the wrong thing: the machine was never idle. The refinement
-that survives is only that a *fixed* failing subset does not rule
-contention out, so subset stability is not the signal to reason from.
-
-**Check the PORT, not the process name**:
-
-```
-lsof -nP -iTCP:5250 -sTCP:LISTEN
-```
-
-before believing any host gate, red or green. That is the host-side
-twin of `MetalMachineGuard` this entry has been asking for, it is one
-line, and it is the only check here that has ever given a straight
-answer.
+**What is still missing.** `scripts/spin-up-ppc` checks 5250 now, but
+the host gate itself does not: nothing in `scripts/test-host` looks at
+the port, or for another session's `xctest`, before it binds. With the
+three defects above gone the suite no longer manufactures the
+contention, but a person's own running app still can, and it would say
+so with the same unhelpful timeout. Two things this entry has taught
+twice, worth keeping whichever way you come at it next time: a FIXED
+failing subset does not rule contention out, so subset stability is not
+a signal to reason from; and the only check that has ever given a
+straight answer is `lsof` on the port.
 
 ## Photo sizes became long-edge stops; three metal defects fixed, none re-verified on metal (2026-08-02, latest)
 
