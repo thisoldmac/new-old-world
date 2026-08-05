@@ -477,6 +477,52 @@ final class AgentIntegrationActLaneTests: XCTestCase {
             .unknown)
     }
 
+    /// **"Nobody to ask" is two different facts, and only one of them
+    /// leaves a caller waiting.**
+    ///
+    /// No guest at all means the act never left this host. A guest that
+    /// went away DURING the act means it did leave and this side can no
+    /// longer see what became of it. Both arrive as `unavailable`, and
+    /// before they carried a reach the second one's honesty made the first
+    /// one hold the Mirror's lane for a machine that was never asked.
+    func testNoGuestAtAllAndAGuestThatLeftMidActAreDifferentReaches()
+        async throws {
+        let (listener, guest) = try await connectedListener()
+        defer { guest.connection.cancel(); listener.stop() }
+
+        let never = AgentIntegrationActControl(
+            listener: listener, currentSessionID: { nil })
+        guard case .unavailable(let nobody) = await never.windowAct(
+            .init(window: Self.window, action: .close)) else {
+            return XCTFail("no session is unavailable, not a refusal")
+        }
+        XCTAssertEqual(nobody.reach, .notSent)
+
+        /* The session changes between the request and the reply, which is
+           what a guest disconnecting mid-act looks like from here. */
+        installResponder(on: guest, verb: "winact") { id in
+            .init(id: id, ok: true,
+                  output: ["winact": [["Dispatch", "dispatched"]]],
+                  error: nil)
+        }
+        var reads = 0
+        let changing = AgentIntegrationActControl(
+            listener: listener,
+            currentSessionID: {
+                reads += 1
+                return UUID(uuidString: reads == 1
+                    ? Self.session
+                    : "5b6d9a44-0000-4000-8000-000000000002")
+            })
+        guard case .unavailable(let vanished) = await changing.windowAct(
+            .init(window: Self.window, action: .close)) else {
+            return XCTFail("a guest that changed mid-act is unavailable")
+        }
+        XCTAssertEqual(vanished.reach, .unknown,
+                       "this act reached a Macintosh; writing it off as "
+                           + "never-sent would lose a real effect")
+    }
+
     /// An act this side refused for its shape never reached a socket, so
     /// the caller may stop waiting immediately.
     func testAnActRefusedForItsShapeWasNotSent() async throws {

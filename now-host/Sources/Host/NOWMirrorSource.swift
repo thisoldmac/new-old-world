@@ -1795,9 +1795,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             planRefusalReach = failure.reach
             return "\(failure.code): \(failure.message)"
         case .unavailable(let why):
-            /* Nobody to ask is not the same as nothing was sent: the
-               guest may have gone away between the request and the
-               answer. Leave it unknown. */
+            /* Nobody to ask usually means nothing was sent — but not
+               always: a guest that went away DURING an act says so with
+               its own reach, and that act may be running on a Macintosh
+               this side can no longer see. */
+            planRefusalReach = why.reach
             return "\(why)"
         }
     }
@@ -1816,6 +1818,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             planRefusalReach = failure.reach
             return "\(failure.code): \(failure.message)"
         case .unavailable(let unavailable):
+            planRefusalReach = unavailable.reach
             return unavailable.message
         }
     }

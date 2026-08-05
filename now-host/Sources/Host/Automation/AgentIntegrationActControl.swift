@@ -610,6 +610,11 @@ private extension AgentIntegrationProjectionFailure {
     /// act lane needs both spellings of one sentence when the machine
     /// changed mid-act.
     var asUnavailable: AgentIntegrationUnavailable {
-        AgentIntegrationUnavailable(code: code, message: message)
+        /* The reach travels with it. Every OTHER unavailable means nobody
+           was asked, but this one is built after a guest went away mid-act
+           — the request did leave, and saying otherwise would let a caller
+           write off an act that may be running on a Macintosh. */
+        AgentIntegrationUnavailable(code: code, message: message,
+                                    reach: reach)
     }
 }

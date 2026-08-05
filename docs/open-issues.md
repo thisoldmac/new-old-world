@@ -94,17 +94,28 @@ the desk with another session's verification host, which owned 5250):
   it. **A supported override belongs in the product**, and the two sides
   should agree on how the path is computed.
 
+**A second false green, found by the test that closed the first.**
+Writing the brokered-path test surfaced the same defect entering by
+another door: `AgentIntegrationUnavailable` — "there was nobody to ask" —
+said nothing about reach, so an act refused because NO GUEST WAS
+CONNECTED was held open and then confirmed by a later scene. Nothing had
+been sent. That type now carries a reach too, defaulting to `notSent`,
+because every one of its statics means the request never left this host;
+the single exception is a guest that vanished mid-act, which is built
+from a failure and inherits its `unknown`. Both directions are tested,
+and the passthrough was watched to fail.
+
 Still open from this:
 
-- **The brokered call site has no automated test**, only the drive above
-  — which did exercise it, since a close is the act that needs a typed
-  settlement. Both decisions are functions watched to fail by mutation,
-  and the DIRECT path's call site is covered by a test. The brokered
-  one is not: the scene fixture carries no incarnations, so no window in
-  it has the stable identity a brokered operation needs, and the test
-  that would cover it has to hold one act in the lane while a second
-  scene arrives. Until that exists, this line is what stands between the
-  fix and a silent regression.
+- **A refusal AFTER the act plane armed nothing still holds the lane
+  15 s.** `the target served the request and did not arm` carries a
+  correlation, so this side calls it `unknown` — and in the 03:09 drive
+  that was right: the act settled `confirmedAfterTimeout` at 16 503 ms,
+  it HAD landed. But the guest can sometimes tell the two apart
+  (`kNowActNotArmed` means no patch was installed, so no click can be
+  delivered), and it says so only in prose. If that distinction is worth
+  the 15 s, it belongs in the contract as a field, not in host
+  guesswork over the guest's sentences.
 - **A guest mis-attribution, noted not fixed.** `now_act_submit` returns
   `kNowActNoExtension` before it registers a correlation, and
   `act_cmds.c:546` answers that with `reply_registered_status`, which
