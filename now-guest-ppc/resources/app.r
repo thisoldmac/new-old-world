@@ -56,7 +56,8 @@ resource 'vers' (1) {
    132 globe (Connection), 133 row list (Processes), 134 chip (Hardware),
    135 lined page (Logs), 136 boxed app tiles (Software), 137 key (MCP),
    138 gauge (Diagnostics), 139 linked nodes (Networking),
-   140 cloud (iCloud). */
+   140 cloud (iCloud), 141 speech bubble (Chat),
+   142 sliders (Preferences). */
 resource 'ics#' (129) {
     {
         $"0000 0000 0780 7FFE 4002 43C2 4422 4812"
@@ -187,6 +188,20 @@ resource 'ics#' (141) {
         $"0FF8 00E0 00C0 0080 0000 0000 0000 0000",
         $"0000 0000 0FF8 1FFC 3FFE 3FFE 3FFE 1FFC"
         $"0FF8 00E0 00C0 0080 0000 0000 0000 0000"
+    }
+};
+
+/* 142 sliders (Preferences). Three tracks with their knobs at different
+   settings - the era's own icon for "settings", and legible at 16 in one
+   bit, which a gear is not. Mask equals the art here rather than filling
+   a silhouette: this is line art with deliberate gaps, and a solid mask
+   would punch a white block out of the selection band. */
+resource 'ics#' (142) {
+    {
+        $"0000 0000 0E00 3FFC 0E00 0000 0070 3FFC"
+        $"0070 0000 0700 3FFC 0700 0000 0000 0000",
+        $"0000 0000 0E00 3FFC 0E00 0000 0070 3FFC"
+        $"0070 0000 0700 3FFC 0700 0000 0000 0000"
     }
 };
 

@@ -3,6 +3,11 @@
 
 #include <Carbon.h>
 
+/* On-disk room for the sidebar's module order. Fixed forever at a size
+   with headroom, because the record is accretive: growing it later would
+   move every field after it. Eleven nav rows use it today. */
+enum { kNowSidebarOrderMax = 24 };
+
 typedef struct {
     char host[64];            /* dotted quad, C string */
     unsigned short port;
@@ -77,6 +82,22 @@ typedef struct {
        has no opinion and keeps the default (full), because that is what
        every deployed machine already does. */
     short agent_access;
+
+    /* Sidebar appearance and arrangement, owned by the Preferences page.
+
+       sidebar_order holds NAV module ids in the person's order, padded
+       with zeros. It is stored raw and sanitised by workshop_sidebar.c,
+       the way agent_access is stored raw and judged by agent_access.c -
+       prefs is below the seam that owns the id list. Sanitising means an
+       unknown id is dropped and a missing one appended, so a module added
+       later simply arrives at the foot of a saved order instead of
+       invalidating it.
+
+       Nav ids are safe to persist because a new page is APPENDED to the
+       nav range; only the pinned ids at the foot have ever been
+       renumbered, and those are not in here. */
+    short sidebar_order[kNowSidebarOrderMax];
+    Boolean sidebar_compact;  /* one line per row instead of icon + two */
 } NowPrefs;
 
 /* Loads saved settings, or the defaults (10.0.2.2:5250 — the QEMU host
@@ -85,8 +106,10 @@ typedef struct {
    twice-renumbered for Processes and Hardware), v12 (adds log_to_disk
    and renumbers Connection again for the Logs page), v13/v14, v15
    (adds agent_access and renumbers for the MCP and Diagnostics pages),
-   and v16/v17 (no new fields; Networking then iCloud renumber the
-   pinned pair). */
+   v16/v17 (no new fields; Networking then iCloud renumber the pinned
+   pair), v18 (Chat, likewise), and v19 (adds the sidebar order and
+   density, and renumbers the pinned group again for the Preferences
+   page). */
 void now_prefs_load(NowPrefs *prefs);
 OSErr now_prefs_save(const NowPrefs *prefs);
 

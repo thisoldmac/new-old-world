@@ -35,6 +35,7 @@ add_application(now-guest-ppc
     src/logs/logs_module.c
     src/mcp/mcp_layout.c
     src/mcp/mcp_module.c
+    src/preferences/preferences_module.c
     src/diagnostics/diag_layout.c
     src/diagnostics/diagnostics_module.c
     src/network/net_facts.c

@@ -21,15 +21,30 @@ typedef enum {
     kWorkshopDiagnostics,
     kWorkshopNetworking,
     kWorkshopCloud,
-    kWorkshopChat,           /* the last nav row, above the pinned pair */
+    kWorkshopChat,           /* the last nav row, above the pinned group */
+
+    /* The pinned group, in the order it sits at the foot of the rail.
+       These three are NOT in the person's rearrangeable order: the rail
+       is theirs to arrange above the divider, and the utilities below it
+       stay where they are put. */
+    kWorkshopPreferences,
     kWorkshopLogs,
     kWorkshopConnection      /* pinned; every nav insertion pushes this
                                 and Logs down — iCloud moved the prefs
-                                format to 17, Chat to 18; see
+                                format to 17, Chat to 18, and the
+                                Preferences page to 19; see
                                 now_prefs_load */
 } WorkshopModuleID;
 
-enum { kWorkshopModuleCount = 13 };
+enum { kWorkshopModuleCount = 14 };
+
+/* The nav range is a CONTIGUOUS prefix, 1..kWorkshopNavRows, and the
+   pinned group is everything after it. The sidebar's saved order stores
+   ids from this range, so the range must stay a prefix: a new page goes
+   in before Preferences (extending the nav range) or after Connection,
+   never in between. */
+#define kWorkshopIsNavModule(m) \
+    ((int)(m) >= 1 && (int)(m) < (int)kWorkshopPreferences)
 
 typedef struct WorkshopModuleOps {
     OSErr (*create)(WindowRef owner, const Rect *body);

@@ -13,6 +13,7 @@
 #include "files_module.h"
 #include "logs_module.h"
 #include "mcp_module.h"
+#include "preferences_module.h"
 #include "processes_module.h"
 #include "screenshots_module.h"
 #include "software_module.h"
@@ -78,6 +79,10 @@ static const struct {
       "A model on the other Mac's harness, talking about THIS Mac. It "
       "can look at what runs here, with the access MCP grants.",
       "Chat has not moved in yet." },
+    { "Preferences",
+      "How this window behaves. Rearrange the rail by Option-dragging a "
+      "row; everything here is remembered between launches.",
+      "Preferences has not moved in yet." },
     { "Logs",
       "This launch's event log. Toggle whether it also reaches the disk.",
       "Logs has not moved in yet." },
@@ -104,9 +109,14 @@ static void invalidate_pane(void)
 static void compute_layout(void)
 {
     Rect content;
+    WorkshopRailSpec spec;
 
     GetWindowPortBounds(g_window, &content);
-    workshop_layout_compute(&content, &g_lay);
+    /* The rail's density and scroll position are the sidebar's state, so
+       the geometry is asked for rather than assumed - a grow, a density
+       change and a scroll all land here and must agree. */
+    workshop_sidebar_rail_spec(&spec);
+    workshop_layout_compute(&content, &spec, &g_lay);
 }
 
 /* Standard bounds: the spec's content size, centered, clamped to the
@@ -197,9 +207,15 @@ Boolean workshop_open(void)
     g_ops[kWorkshopNetworking] = network_module_ops();
     g_ops[kWorkshopCloud] = cloud_module_ops();
     g_ops[kWorkshopChat] = chat_module_ops();
+    g_ops[kWorkshopPreferences] = preferences_module_ops();
     g_ops[kWorkshopLogs] = logs_module_ops();
     g_ops[kWorkshopConnection] = connection_module_ops();
     now_prefs_load(&prefs);
+    /* Before the first compute_layout, never after: the rail's density
+       decides its row height, and therefore every rectangle in the
+       window that the rail's width does not already fix. */
+    workshop_sidebar_load_prefs();
+    workshop_sidebar_set_relayout_fn(workshop_resized);
     if (restorable_bounds(&prefs.workshop_rect)) {
         bounds = prefs.workshop_rect;
     } else {

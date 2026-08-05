@@ -65,10 +65,20 @@ static void check_common(const Rect *content, const WorkshopLayout *lay,
     CHECK(contains(content, &lay->status), "status inside content");
     CHECK(contains(&lay->sidebar, &lay->rail_list),
           "panel inside sidebar");
-    for (i = 0; i < kWorkshopNavRows; ++i) {
+    CHECK(lay->nav_visible >= 1 && lay->nav_visible <= kWorkshopNavRows,
+          "visible slot count is sane");
+    for (i = 0; i < lay->nav_visible; ++i) {
         CHECK(contains(&lay->rail_list, &lay->nav_rows[i]),
               "module row inside panel");
     }
+    /* Slots past the visible count are empty, so a caller that walks the
+       whole array cannot paint a stale row over a live one. */
+    for (i = lay->nav_visible; i < kWorkshopNavRows; ++i) {
+        CHECK(width(&lay->nav_rows[i]) == 0 && height(&lay->nav_rows[i]) == 0,
+              "unused slot is empty");
+    }
+    CHECK(contains(&lay->rail_list, &lay->prefs_row),
+          "preferences row inside panel");
     CHECK(contains(&lay->rail_list, &lay->conn_row),
           "connection row inside panel");
     CHECK(contains(&lay->rail_list, &lay->logs_row),
@@ -83,24 +93,60 @@ static void check_common(const Rect *content, const WorkshopLayout *lay,
     CHECK(disjoint(&lay->sidebar, &lay->status), "rail vs status");
     CHECK(disjoint(&lay->header, &lay->body), "header vs body");
     CHECK(disjoint(&lay->body, &lay->status), "body vs status");
-    for (i = 0; i < kWorkshopNavRows - 1; ++i) {
+    for (i = 0; i < lay->nav_visible - 1; ++i) {
         CHECK(disjoint(&lay->nav_rows[i], &lay->nav_rows[i + 1]),
               "module rows do not overlap");
     }
-    CHECK(disjoint(&lay->nav_rows[kWorkshopNavRows - 1],
+    CHECK(disjoint(&lay->nav_rows[lay->nav_visible - 1],
                    &lay->conn_divider),
           "last module row vs divider");
-    CHECK(disjoint(&lay->conn_divider, &lay->logs_row),
-          "divider vs logs row");
+    CHECK(disjoint(&lay->conn_divider, &lay->prefs_row),
+          "divider vs preferences row");
+    CHECK(disjoint(&lay->prefs_row, &lay->logs_row),
+          "preferences row vs logs row");
     CHECK(disjoint(&lay->logs_row, &lay->conn_row),
           "logs row vs connection row");
+    /* The bug this whole file exists for: the nav list running past the
+       divider and drawing on top of the pinned group. */
     CHECK(lay->conn_divider.top
-              > lay->nav_rows[kWorkshopNavRows - 1].bottom,
+              > lay->nav_rows[lay->nav_visible - 1].bottom,
           "divider below the module rows");
-    CHECK(lay->conn_divider.bottom <= lay->logs_row.top,
-          "divider above the pinned pair");
+    CHECK(lay->conn_divider.bottom <= lay->prefs_row.top,
+          "divider above the pinned group");
+    CHECK(lay->prefs_row.bottom <= lay->logs_row.top,
+          "preferences pinned directly above logs");
     CHECK(lay->logs_row.bottom <= lay->conn_row.top,
           "logs pinned directly above connection");
+
+    /* The scroll bar exists exactly when the list overflows, takes its
+       width from the rows rather than from the panel, and spans only the
+       nav list - never the pinned group. */
+    if (lay->rail_scrolls) {
+        CHECK(contains(&lay->rail_list, &lay->nav_scroll),
+              "scroll bar inside panel");
+        CHECK(width(&lay->nav_scroll) == kWorkshopRailScrollWidth,
+              "scroll bar is 16 wide");
+        CHECK(lay->nav_scroll.left == lay->nav_rows[0].right,
+              "scroll bar takes its width from the rows");
+        CHECK(lay->nav_scroll.top == lay->nav_rows[0].top
+                  && lay->nav_scroll.bottom
+                         == lay->nav_rows[lay->nav_visible - 1].bottom,
+              "scroll bar spans exactly the visible slots");
+        CHECK(disjoint(&lay->nav_scroll, &lay->conn_divider),
+              "scroll bar clear of the divider");
+        CHECK(disjoint(&lay->nav_scroll, &lay->conn_row),
+              "scroll bar clear of the pinned group");
+    } else {
+        CHECK(lay->nav_visible == kWorkshopNavRows,
+              "no scroll bar means every row fits");
+        CHECK(width(&lay->nav_scroll) == 0 && height(&lay->nav_scroll) == 0,
+              "no scroll bar rect when nothing overflows");
+        CHECK(lay->nav_rows[0].right == lay->rail_list.right - 1,
+              "rows keep the full width when there is no bar");
+    }
+    CHECK(lay->nav_scroll_top >= 0
+              && lay->nav_scroll_top <= kWorkshopNavRows - lay->nav_visible,
+          "scroll position clamped to what can be shown");
 
     /* The fixed chrome heights the spec names. */
     CHECK(height(&lay->header) == kWorkshopHeaderHeight, "header is 38");
@@ -109,15 +155,21 @@ static void check_common(const Rect *content, const WorkshopLayout *lay,
     CHECK(lay->status.bottom == content->bottom, "status at the bottom");
     CHECK(lay->header.right == content->right, "header reaches the edge");
 
-    /* Row geometry: two-line rows, connection pinned at the bottom. */
-    for (i = 0; i < kWorkshopNavRows; ++i) {
-        CHECK(height(&lay->nav_rows[i]) == kWorkshopSidebarRowHeight,
+    /* Row geometry: every row is the density in effect, and the pinned
+       group follows the nav rows rather than keeping its own height. */
+    CHECK(lay->row_height == kWorkshopSidebarRowHeight
+              || lay->row_height == kWorkshopSidebarCompactRowHeight,
+          "row height is one of the two densities");
+    for (i = 0; i < lay->nav_visible; ++i) {
+        CHECK(height(&lay->nav_rows[i]) == lay->row_height,
               "module row height");
     }
-    CHECK(height(&lay->conn_row) == kWorkshopSidebarRowHeight,
+    CHECK(height(&lay->conn_row) == lay->row_height,
           "connection row height");
-    CHECK(height(&lay->logs_row) == kWorkshopSidebarRowHeight,
+    CHECK(height(&lay->logs_row) == lay->row_height,
           "logs row height");
+    CHECK(height(&lay->prefs_row) == lay->row_height,
+          "preferences row height");
     CHECK(lay->conn_row.bottom >= lay->rail_list.bottom - 2,
           "connection pinned at the panel bottom");
 
@@ -137,28 +189,97 @@ static void check_common(const Rect *content, const WorkshopLayout *lay,
 #undef CHECK
 }
 
+static void set_content(Rect *r, short w, short h)
+{
+    r->left = 0;
+    r->top = 0;
+    r->right = w;
+    r->bottom = h;
+}
+
 int main(void)
 {
     Rect content;
     WorkshopLayout lay;
+    WorkshopRailSpec rail;
 
-    /* Standard content at 800x600. */
-    content.left = 0;
-    content.top = 0;
-    content.right = kWorkshopStdContentW;
-    content.bottom = kWorkshopStdContentH;
-    workshop_layout_compute(&content, &lay);
+    /* Standard content at the spec size, rich and unscrolled - the shape
+       the window had before either was a choice. NULL must mean exactly
+       that, so the old callers' geometry is unchanged. */
+    set_content(&content, kWorkshopStdContentW, kWorkshopStdContentH);
+    workshop_layout_compute(&content, NULL, &lay);
     check_common(&content, &lay, "standard");
     check(width(&lay.sidebar) == kWorkshopRailWide,
           "standard: rail at full width");
+    check(lay.row_height == kWorkshopSidebarRowHeight,
+          "standard: NULL spec means the rich density");
+    {
+        WorkshopLayout explicit_rich;
+
+        rail.compact = 0;
+        rail.scroll_top = 0;
+        workshop_layout_compute(&content, &rail, &explicit_rich);
+        check(explicit_rich.nav_rows[0].bottom == lay.nav_rows[0].bottom
+                  && explicit_rich.conn_row.top == lay.conn_row.top
+                  && explicit_rich.nav_visible == lay.nav_visible,
+              "standard: NULL spec matches an explicit rich one");
+    }
 
     /* Minimum content. */
-    content.right = kWorkshopMinContentW;
-    content.bottom = kWorkshopMinContentH;
-    workshop_layout_compute(&content, &lay);
+    set_content(&content, kWorkshopMinContentW, kWorkshopMinContentH);
+    workshop_layout_compute(&content, NULL, &lay);
     check_common(&content, &lay, "minimum");
     check(width(&lay.sidebar) == kWorkshopRailNarrow,
           "minimum: rail compacts");
+
+    /* Compact density: shorter rows, and enough of them that the list
+       that overflowed at this size no longer does. */
+    rail.compact = 1;
+    rail.scroll_top = 0;
+    workshop_layout_compute(&content, &rail, &lay);
+    check_common(&content, &lay, "minimum compact");
+    check(lay.row_height == kWorkshopSidebarCompactRowHeight,
+          "compact: rows take the compact height");
+    check(!lay.rail_scrolls,
+          "compact: every row fits at the minimum window size");
+
+    /* Scrolling: a spec that asks for an offset gets one, the slots move
+       by exactly one row height per step, and an offset past the end is
+       clamped rather than emptying the list. */
+    {
+        WorkshopLayout unscrolled;
+        WorkshopLayout scrolled;
+        WorkshopLayout overscrolled;
+
+        set_content(&content, kWorkshopMinContentW, kWorkshopMinContentH);
+        rail.compact = 0;
+        rail.scroll_top = 0;
+        workshop_layout_compute(&content, &rail, &unscrolled);
+        check(unscrolled.rail_scrolls,
+              "rich at the minimum size: the list overflows");
+        check_common(&content, &unscrolled, "rich scrolling");
+
+        rail.scroll_top = 1;
+        workshop_layout_compute(&content, &rail, &scrolled);
+        check(scrolled.nav_scroll_top == 1, "scrolled: offset honoured");
+        check(scrolled.nav_rows[0].top == unscrolled.nav_rows[0].top,
+              "scrolled: the first slot stays put - the CONTENT moves");
+        check(scrolled.nav_visible == unscrolled.nav_visible,
+              "scrolled: the same number of slots");
+
+        rail.scroll_top = 99;
+        workshop_layout_compute(&content, &rail, &overscrolled);
+        check(overscrolled.nav_scroll_top
+                  == kWorkshopNavRows - overscrolled.nav_visible,
+              "overscrolled: clamped to the last full page");
+        check_common(&content, &overscrolled, "overscrolled");
+
+        rail.scroll_top = -5;
+        workshop_layout_compute(&content, &rail, &overscrolled);
+        check(overscrolled.nav_scroll_top == 0,
+              "negative scroll clamps to the top");
+    }
+    set_content(&content, kWorkshopMinContentW, kWorkshopMinContentH);
 
     /* An offset origin must shift every rectangle rigidly. */
     {
@@ -177,8 +298,8 @@ int main(void)
         moved.top = (short)(zero.top + dy);
         moved.right = (short)(zero.right + dx);
         moved.bottom = (short)(zero.bottom + dy);
-        workshop_layout_compute(&zero, &at_zero);
-        workshop_layout_compute(&moved, &shifted);
+        workshop_layout_compute(&zero, NULL, &at_zero);
+        workshop_layout_compute(&moved, NULL, &shifted);
         check(shifted.body.left == at_zero.body.left + dx
                   && shifted.body.top == at_zero.body.top + dy
                   && shifted.status.bottom == at_zero.status.bottom + dy

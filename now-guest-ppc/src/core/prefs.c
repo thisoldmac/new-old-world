@@ -92,6 +92,16 @@ typedef struct {
     short agent_access;
 } PrefsRecordV15;
 
+/* Format 19: the Preferences page joins the pinned group, renumbering
+   Logs and Connection once more, and brings the first new fields since
+   15 - the sidebar's module order and its density. The order is a fixed
+   24 shorts so this layout never has to grow again for it. */
+typedef struct {
+    PrefsRecordV15 v15;               /* format = 19 */
+    short sidebar_compact;
+    short sidebar_order[kNowSidebarOrderMax];
+} PrefsRecordV19;
+
 /* Format 16 reuses the V15 layout, bumping only the number to mark that
    Networking joined as nav id 9 (Logs and Connection shifted down
    again). It adds no persisted field, like formats 10, 11 and 14 before
@@ -177,6 +187,11 @@ static void set_defaults(NowPrefs *prefs)
     prefs->agent_access = 2;
     prefs->workshop_module = 1;       /* Screenshots */
     SetRect(&prefs->workshop_rect, 0, 0, 0, 0);
+    /* An all-zero order means "no opinion": the sidebar fills it from the
+       enum, which is the arrangement every existing machine already has.
+       Rich is likewise what is already on screen, so a file that predates
+       the field changes nothing about how the rail looks. */
+    prefs->sidebar_compact = false;
 }
 
 static Boolean valid_depth(short depth)
@@ -189,7 +204,8 @@ void now_prefs_load(NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV15);
+    long count = sizeof(PrefsRecordV19);
+    PrefsRecordV19 v19;
     PrefsRecordV15 v15;
     PrefsRecordV13 v13;
     PrefsRecordV12 v12;
@@ -205,9 +221,10 @@ void now_prefs_load(NowPrefs *prefs)
     if (FSpOpenDF(&spec, fsRdPerm, &ref) != noErr) {
         return;
     }
-    memset(&v15, 0, sizeof v15);
-    err = FSRead(ref, &count, &v15);
+    memset(&v19, 0, sizeof v19);
+    err = FSRead(ref, &count, &v19);
     FSClose(ref);
+    v15 = v19.v15;
     v13 = v15.v13;
     v12 = v13.v12;
     v9 = v12.v9;
@@ -331,12 +348,23 @@ void now_prefs_load(NowPrefs *prefs)
                 module = 12;          /* Logs */
             }
         }
-        /* 13 rather than kWorkshopModuleCount: prefs is core and the
+        if (record.format <= 18) {
+            /* Preferences went in as the FIRST of the pinned group
+               (format 19), so both the pages below it move: Logs 12 -> 13
+               and Connection 13 -> 14. Connection first, as ever, or
+               12 -> 13 runs straight on into 14. */
+            if (module == 13) {
+                module = 14;          /* Connection */
+            } else if (module == 12) {
+                module = 13;          /* Logs */
+            }
+        }
+        /* 14 rather than kWorkshopModuleCount: prefs is core and the
            module id list is UI, so this file does not include the
            Workshop's header. The number is a literal here for the same
            reason it always was, and the remaps above are what keep it
            meaningful. */
-        if (module >= 1 && module <= 13) {
+        if (module >= 1 && module <= 14) {
             prefs->workshop_module = module;
         }
         prefs->workshop_rect = v9.workshop_rect;
@@ -352,6 +380,14 @@ void now_prefs_load(NowPrefs *prefs)
                means. A pre-15 file keeps the default. */
             prefs->agent_access = v15.agent_access;
         }
+        if (record.format >= 19 && count >= (long)sizeof(PrefsRecordV19)) {
+            /* Stored raw, sanitised by the sidebar: this file does not
+               know which ids are nav rows, and a half-validated order
+               would be a second opinion about the same list. */
+            prefs->sidebar_compact = v19.sidebar_compact != 0;
+            memcpy(prefs->sidebar_order, v19.sidebar_order,
+                   sizeof prefs->sidebar_order);
+        }
     } else if (record.console_open != 0) {
         /* Seed from the old window session: someone who kept the
            Console window open wants the Console page, not Screenshots.
@@ -364,7 +400,8 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV15);
+    long count = sizeof(PrefsRecordV19);
+    PrefsRecordV19 v19;
     PrefsRecordV15 v15;
     PrefsRecordV13 v13;
     PrefsRecordV12 v12;
@@ -374,9 +411,10 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 
     memset(&record, 0, sizeof record);
     record.magic = kPrefsMagic;
-    record.format = 18;               /* Chat inserted as nav id 11,
-                                         shifting Logs and Connection down
-                                         again; layout unchanged since 15 */
+    record.format = 19;               /* Preferences pinned above Logs,
+                                         shifting Logs and Connection down;
+                                         and the first new fields since 15,
+                                         the sidebar's order and density */
     record.port = prefs->port;
     strncpy(record.host, prefs->host, sizeof record.host - 1);
     record.shot_depth = prefs->shot_depth;
@@ -424,7 +462,12 @@ OSErr now_prefs_save(const NowPrefs *prefs)
     memset(&v15, 0, sizeof v15);
     v15.v13 = v13;
     v15.agent_access = prefs->agent_access;
-    err = FSWrite(ref, &count, &v15);
+    memset(&v19, 0, sizeof v19);
+    v19.v15 = v15;
+    v19.sidebar_compact = prefs->sidebar_compact ? 1 : 0;
+    memcpy(v19.sidebar_order, prefs->sidebar_order,
+           sizeof v19.sidebar_order);
+    err = FSWrite(ref, &count, &v19);
     if (err == noErr) {
         SetEOF(ref, count);           /* what we wrote, not an older record */
     }
