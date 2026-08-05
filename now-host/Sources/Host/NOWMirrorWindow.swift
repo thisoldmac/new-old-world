@@ -33,6 +33,18 @@ final class NOWMirrorWindow: NSObject, ObservableObject, NSWindowDelegate {
         self.source = source
         self.screen = screen
         requestedScale = launchOptions.scale
+        openAtLaunch = launchOptions.openAtLaunch
+    }
+
+    private let openAtLaunch: Bool
+
+    /// Opens the Mirror once a Mac is connected, when the launch asked for
+    /// it. Called on every connection state change and guarded by `isOpen`,
+    /// because a guest that dials in, drops and redials must not stack
+    /// windows — and because the request arrives before any guest does.
+    func openIfLaunchAsked(title: String) {
+        guard openAtLaunch, !isOpen else { return }
+        show(title: title)
     }
 
     func show(title: String) {

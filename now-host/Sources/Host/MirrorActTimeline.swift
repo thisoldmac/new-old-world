@@ -46,9 +46,9 @@ final class MirrorActTimeline: ObservableObject {
 
     /// Everything the Mirror page shows, for the headless client. Newest
     /// last, matching the page's own order.
-    func projected(cycles: MirrorCycleTimeline)
+    func projected(cycles: MirrorCycleTimeline, running: Bool)
         -> AgentIntegrationMirrorMetrics {
-        .init(laneDepth: depth,
+        .init(running: running, laneDepth: depth,
               acts: records.map(\.projected),
               cycles: cycles.records.map(\.projected))
     }

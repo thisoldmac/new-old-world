@@ -239,6 +239,16 @@ public struct AgentIntegrationMirrorCycleMetric:
 
 public struct AgentIntegrationMirrorMetrics:
     Codable, Equatable, Sendable {
+    /// Whether the Mirror is running — polling the Mac and publishing
+    /// scenes.
+    ///
+    /// Found by calling this row for the first time against a live host on
+    /// 2026-08-05: it answered `laneDepth 0` with two empty lists, which is
+    /// honest and unreadable. "The Mirror is open and the machine has been
+    /// quiet" and "the Mirror was never opened, so nothing could have been
+    /// measured" are the same reply without this field, and they call for
+    /// opposite next steps — wait, versus open the Mirror.
+    public let running: Bool
     /// Acts queued or in flight right now. `0` means the next act reaches
     /// the Mac immediately; above zero, a slow gesture is waiting on the
     /// lane rather than on the machine.
@@ -246,9 +256,10 @@ public struct AgentIntegrationMirrorMetrics:
     public let acts: [AgentIntegrationMirrorActMetric]
     public let cycles: [AgentIntegrationMirrorCycleMetric]
 
-    public init(laneDepth: Int,
+    public init(running: Bool, laneDepth: Int,
                 acts: [AgentIntegrationMirrorActMetric],
                 cycles: [AgentIntegrationMirrorCycleMetric]) {
+        self.running = running
         self.laneDepth = laneDepth
         self.acts = acts
         self.cycles = cycles

@@ -175,7 +175,7 @@ final class MirrorStateProjectionServiceTests: XCTestCase {
         let service = MirrorStateProjectionService(
             engines: MirrorStateEngineRegistry(),
             currentGuest: { nil },
-            metrics: { acts.projected(cycles: cycles) })
+            metrics: { acts.projected(cycles: cycles, running: true) })
         let result = await service.read(.init(intention: .metrics))
 
         XCTAssertTrue(result.available)
@@ -204,7 +204,7 @@ final class MirrorStateProjectionServiceTests: XCTestCase {
         let service = MirrorStateProjectionService(
             engines: MirrorStateEngineRegistry(),
             currentGuest: { nil },
-            metrics: { acts.projected(cycles: cycles) })
+            metrics: { acts.projected(cycles: cycles, running: true) })
 
         /* A walk that never answered is exactly when the numbers matter
            most; refusing for want of a snapshot would hide the slowest
@@ -215,6 +215,30 @@ final class MirrorStateProjectionServiceTests: XCTestCase {
         XCTAssertEqual(result.value?.metrics?.cycles.first?.outcome,
                        "declined")
         XCTAssertNil(result.value?.metrics?.cycles.first?.requestMs)
+    }
+
+    func testAQuietMirrorIsToldApartFromOneThatNeverRan() async {
+        let acts = MirrorActTimeline(log: { _ in })
+        let cycles = MirrorCycleTimeline(log: { _ in })
+
+        /* Both replies are empty. Without `running` they are the same
+           reply, and they call for opposite next steps — wait, versus open
+           the Mirror. Found by calling this row against a live host on
+           2026-08-05, which answered empty for the second reason and read
+           exactly like the first. */
+        let quiet = await MirrorStateProjectionService(
+            engines: MirrorStateEngineRegistry(), currentGuest: { nil },
+            metrics: { acts.projected(cycles: cycles, running: true) })
+            .read(.init(intention: .metrics))
+        let neverRan = await MirrorStateProjectionService(
+            engines: MirrorStateEngineRegistry(), currentGuest: { nil },
+            metrics: { acts.projected(cycles: cycles, running: false) })
+            .read(.init(intention: .metrics))
+
+        XCTAssertEqual(quiet.value?.metrics?.acts.count, 0)
+        XCTAssertEqual(neverRan.value?.metrics?.acts.count, 0)
+        XCTAssertEqual(quiet.value?.metrics?.running, true)
+        XCTAssertEqual(neverRan.value?.metrics?.running, false)
     }
 
     func testMetricsAreUnavailableRatherThanEmptyWhenNothingMeasures() async {

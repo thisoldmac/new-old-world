@@ -175,7 +175,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         MirrorKit.Scene, Int, @escaping () -> Void
     ) -> Void)?
     private let lifecycleDidChange: @MainActor () -> Void
-    private var running = false
+    private(set) var running = false
     private var runGeneration = 0
     private var cycleGeneration: Int?
     private var pollRequestedAfterCycle = false

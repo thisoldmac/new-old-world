@@ -1,0 +1,201 @@
+#!/usr/bin/env python3
+"""now-agent - one call to a running NOW host's agent socket, from a shell.
+
+WHY THIS EXISTS, and why it is a tool rather than a test helper.
+
+The headless-Mirror arc (docs/plans/2026-08-04-009) rests on one claim: the
+Mirror window and the NOW MCP are two clients of one state engine, differing
+only in pixels and input method. Every slice of it is owed the same proof --
+that the row ANSWERS, from a live host, with the same values the Mirror page
+is showing at that moment. Host tests cannot make that claim: they exercise
+the service and the registry, and a green suite in front of a surface nobody
+called is precisely the shape of gate AGENTS.md warns about ("a broken app
+build passed 459 green tests for a day").
+
+Nothing here is a second way into the Mac. It speaks the SAME private,
+same-user socket an MCP client speaks, sends one request, and prints the
+reply. If a call works here it works for an agent, and if it does not, the
+refusal is the finding.
+
+    tools/now-agent session_health
+    tools/now-agent mirror_read --intention metrics
+    tools/now-agent mirror_read --intention snapshot
+    tools/now-agent mirror_read --intention wait --after 41 --timeout-ms 8000
+    tools/now-agent mirror_read --intention find --query "Macintosh HD"
+
+`--json` prints the reply verbatim; the default prints a short human summary
+for the intentions that have one, because a wall of JSON scrolling past
+during a drive is how a refusal goes unread.
+"""
+import argparse
+import json
+import os
+import socket
+import sys
+import uuid
+
+PROTOCOL_VERSION = 10
+MAX_MESSAGE_BYTES = 64 * 1024
+
+
+def socket_path() -> str:
+    """The endpoint `AgentIntegrationEndpoint.currentUser` computes.
+
+    Derived, never guessed: a hard-coded /tmp path would silently talk to a
+    different host than the one under test on any Mac whose TMPDIR is the
+    usual per-user one.
+    """
+    tmp = os.environ.get("TMPDIR", "/tmp")
+    return os.path.join(tmp, f"dev.newoldworld.now-agent-{os.geteuid()}",
+                        "host.sock")
+
+
+def call(request: dict, timeout: float) -> dict:
+    path = socket_path()
+    if not os.path.exists(path):
+        raise SystemExit(
+            f"no NOW host is listening at {path}\n"
+            "Start the host app; the socket appears with it.")
+    payload = json.dumps(request).encode() + b"\n"
+    if len(payload) > MAX_MESSAGE_BYTES:
+        raise SystemExit("request exceeds the protocol's message ceiling")
+    conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    conn.settimeout(timeout)
+    try:
+        conn.connect(path)
+    except (FileNotFoundError, ConnectionRefusedError) as error:
+        raise SystemExit(f"the host socket refused the connection: {error}")
+    try:
+        conn.sendall(payload)
+        # One request per connection; the reply does not start until the
+        # write side is closed, exactly as the Swift client does it.
+        conn.shutdown(socket.SHUT_WR)
+        chunks = []
+        while True:
+            chunk = conn.recv(4096)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            if b"\n" in chunk:
+                break
+    finally:
+        conn.close()
+    raw = b"".join(chunks).split(b"\n", 1)[0]
+    if not raw:
+        raise SystemExit("the host closed the connection without replying")
+    return json.loads(raw)
+
+
+def summarise(operation: str, reply: dict) -> str:
+    """A few lines a person can read mid-drive. Never a substitute for the
+    reply: `--json` is always available and the summary says when it has
+    nothing to add."""
+    result = reply.get("mirrorReadResult") or {}
+    if operation != "mirror_read" or not result:
+        return json.dumps(reply, indent=2, sort_keys=True)
+    if not result.get("available", False):
+        bad = result.get("unavailable") or {}
+        return (f"unavailable: {bad.get('code', '?')}\n"
+                f"  {bad.get('message', '')}")
+    value = result.get("value") or {}
+    lines = [f"intention: {value.get('intention')}"]
+    current = value.get("current")
+    if current:
+        lines.append(
+            f"snapshot {current.get('snapshotID')} seq "
+            f"{current.get('sequence')} guest {current.get('guest')}"
+            f" scene-gen {current.get('sceneGeneration')}"
+            f" content-gen {current.get('contentGeneration')}")
+    metrics = value.get("metrics")
+    if metrics is not None:
+        lines.append(f"lane depth: {metrics.get('laneDepth')}")
+        for cycle in metrics.get("cycles", [])[-6:]:
+            lines.append(
+                "  cycle {walk:<22} {outcome:<9} idle {idle:>6} "
+                "request {req:>6} decode {dec:>5} total {tot:>6} "
+                "win {win} el {el}".format(
+                    walk=cycle.get("walk", "?"),
+                    outcome=cycle.get("outcome", "?"),
+                    idle=dash(cycle.get("idleMs")),
+                    req=dash(cycle.get("requestMs")),
+                    dec=dash(cycle.get("decodeMs")),
+                    tot=dash(cycle.get("totalMs")),
+                    win=dash(cycle.get("windows")),
+                    el=dash(cycle.get("elements"))))
+        for act in metrics.get("acts", [])[-8:]:
+            lines.append(
+                "  act   {label:<28} {outcome:<12} behind {depth} "
+                "waited {waited:>6} dispatch {disp:>6} settle {set:>6} "
+                "total {tot:>6}".format(
+                    label=(act.get("label") or act.get("operationID"))[:28],
+                    outcome=act.get("outcome", "?"),
+                    depth=act.get("queueDepthAtEntry"),
+                    waited=dash(act.get("waitedMs")),
+                    disp=dash(act.get("dispatchMs")),
+                    set=dash(act.get("settleMs")),
+                    tot=dash(act.get("totalMs"))))
+        if not metrics.get("acts") and not metrics.get("cycles"):
+            lines.append("  (nothing measured yet)")
+    snapshot = value.get("snapshot")
+    if snapshot:
+        lines.append(f"entities: {len(snapshot.get('entities', []))}"
+                     f"  menus: {len(snapshot.get('menus', []))}")
+    matches = value.get("matches")
+    if matches is not None:
+        for entity in matches[:12]:
+            lines.append(f"  {entity.get('kind')} {entity.get('id')} "
+                         f"{entity.get('title') or entity.get('name')}")
+    if value.get("timedOut"):
+        lines.append("timed out waiting for a newer snapshot")
+    return "\n".join(lines)
+
+
+def dash(value) -> str:
+    """`-` for absent, never `0`. A settle that never happened and one that
+    took no time are opposite results (docs/mirror-measurement-method.md)."""
+    return "-" if value is None else str(value)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Call a running NOW host's agent socket once.")
+    parser.add_argument("operation",
+                        help="e.g. session_health, mirror_read")
+    parser.add_argument("--intention",
+                        help="mirror_read: status|snapshot|find|wait|metrics")
+    parser.add_argument("--query", help="mirror_read find: the needle")
+    parser.add_argument("--after", type=int,
+                        help="mirror_read wait: afterSnapshotID")
+    parser.add_argument("--timeout-ms", type=int,
+                        help="mirror_read wait: timeoutMs")
+    parser.add_argument("--json", action="store_true",
+                        help="print the reply verbatim")
+    parser.add_argument("--timeout", type=float, default=30.0,
+                        help="socket timeout in seconds")
+    args = parser.parse_args()
+
+    request = {
+        "version": PROTOCOL_VERSION,
+        "requestID": str(uuid.uuid4()).upper(),
+        "operation": args.operation,
+    }
+    if args.intention:
+        mirror = {"intention": args.intention}
+        if args.query is not None:
+            mirror["query"] = args.query
+        if args.after is not None:
+            mirror["afterSnapshotID"] = args.after
+        if args.timeout_ms is not None:
+            mirror["timeoutMs"] = args.timeout_ms
+        request["mirrorReadRequest"] = mirror
+
+    reply = call(request, timeout=args.timeout)
+    if args.json:
+        print(json.dumps(reply, indent=2, sort_keys=True))
+    else:
+        print(summarise(args.operation, reply))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

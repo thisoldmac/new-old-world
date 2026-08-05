@@ -233,6 +233,10 @@ final class HostAppState: ObservableObject {
                 self.console.forgetGuest()
             }
             self.captureSmokeIfRequested(state)
+            if case .connected = state {
+                self.mirrorWindow.openIfLaunchAsked(
+                    title: "Mirror — \(self.connectedMachineName)")
+            }
         }
         /* A guest leaving the roster is a different event to the active one
            changing, and only the models whose cache dies with the
@@ -257,7 +261,8 @@ final class HostAppState: ObservableObject {
         integration.bindMirrorMetrics { [weak self] in
             guard let self, self.madeMirrorSource else { return nil }
             return self.mirrorSource.actTimeline.projected(
-                cycles: self.mirrorSource.cycleTimeline)
+                cycles: self.mirrorSource.cycleTimeline,
+                running: self.mirrorSource.running)
         }
         if settings.listenAtLaunch {
             startListening()
