@@ -14,6 +14,42 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## The folding sidebar, both halves (2026-08-05)
+
+The rail folds to icons on the guest and the sidebar does the same on the
+host, both with tooltips on the folded icons, and the host gained the
+guest's other two choices (density, rearrange).
+
+**Guest: emulator-verified.** Folds and unfolds, the icons and the
+Connection lamp draw, the hand-drawn help tag appears over a Data
+Browser and the Browser repaints clean when it goes. A true fresh
+install - prefs file deleted - starts expanded with rich rows, which is
+the default that matters.
+
+**Host: confirmed working by the human at the desk**, not by me: screen
+access was declined, so I have never seen it. `swift test` and the Xcode
+target in both configurations are all I can speak to directly.
+
+Open, and worth knowing:
+
+- **A first launch showed the rail COLLAPSED on a disk whose prefs file
+  predated the run**, and I did not trace who wrote that file. Deleting
+  it gave the correct expanded default, so this is not a bad default -
+  but "a saved preference from somewhere I did not identify" is the
+  honest description, and if a fresh machine ever opens folded, start
+  here rather than at the defaults.
+- **Carbon help tags do not display under Mac OS 9.** This toolchain's
+  MacHelp.h carries only the help-tag API (`HMSetControlHelpContent`,
+  `HMDisplayTag`) - classic `HMShowBalloon` is not in these headers at
+  all - and help tags are a Mac OS X facility. The guest's tooltip is
+  therefore drawn by hand. Anyone reaching for the Help Manager on this
+  target should expect a feature that compiles, links, and shows nothing.
+- **The guest's tag is armed from idle**, which runs unslept during a
+  transfer. It is one `GetMouse` and two comparisons per pass and draws
+  only on a change, but it has not been watched during a large transfer,
+  which is the condition that has caught every other idle-path mistake
+  in this window.
+
 ## The rearrangeable sidebar: emulator-verified, never on metal (2026-08-04)
 
 The rail gained four things in one arc — a scroll bar that appears only
