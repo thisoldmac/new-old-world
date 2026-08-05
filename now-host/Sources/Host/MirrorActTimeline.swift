@@ -52,4 +52,34 @@ final class MirrorActTimeline: ObservableObject {
                     outcome: clocks.narrative,
                     ms: Int((clocks.total * 1000).rounded()))
     }
+
+    /// **Who answered, before any number is worth reading.**
+    ///
+    /// A rate measured without its premise recorded is a confident,
+    /// meaningless number — the lesson `docs/mirror-measurement-method.md`
+    /// carries as rule 1, and the reason the metal transfer ladder emits a
+    /// `meta` line before its rungs.
+    ///
+    /// This one earns its place twice over. On 2026-08-04 a PowerBook
+    /// 1400c had two residents in one System Folder — an old
+    /// `Now Extension` beside the new `NowExt` — and the stale one
+    /// answered. Every act refused with "the anchor plane is absent or
+    /// not armed", which reads as a missing capability rather than as the
+    /// wrong component replying, and cost a boot cycle to work out. The
+    /// host knew the resident's build the whole time and never said it.
+    static func identityLine(guestName: String, guestBuild: String?,
+                             address: String?, lifecycle: String,
+                             residentBuild: String?, capabilities: Int?,
+                             requested: Int?, active: Int?) -> String {
+        BaselineLine.line("actmeta", [
+            ("guest", guestName),
+            ("guest_build", guestBuild ?? "-"),
+            ("address", address ?? "-"),
+            ("lifecycle", lifecycle),
+            ("resident_build", residentBuild ?? "-"),
+            ("cap", capabilities.map(String.init) ?? "-"),
+            ("requested", requested.map(String.init) ?? "-"),
+            ("active", active.map(String.init) ?? "-"),
+        ])
+    }
 }

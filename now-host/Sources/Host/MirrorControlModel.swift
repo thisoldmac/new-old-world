@@ -52,10 +52,29 @@ final class MirrorControlModel: ObservableObject, GuestScopedModel {
                     self.factsByGuest[requestedGuest.key] = facts
                 }
                 self.updatePendingDeadlines(for: facts, now: Date())
+                self.logIdentity(facts, guest: requestedGuest)
             case .failure(let failure):
                 self.lifecycleError = failure.reason
             }
         }
+    }
+
+    /// Writes which machine and which resident answered, beside the act
+    /// measurements they will be read with. See
+    /// `MirrorActTimeline.identityLine` for why this is not decoration.
+    private func logIdentity(_ facts: MirrorWireFacts,
+                             guest: ConnectedGuest?) {
+        let line = MirrorActTimeline.identityLine(
+            guestName: guest?.name ?? "unknown",
+            guestBuild: guest?.build,
+            address: guest.map { "\($0.address)" },
+            lifecycle: facts.resident.lifecycle.rawValue,
+            residentBuild: facts.resident.buildFingerprint,
+            capabilities: facts.resident.capabilities,
+            requested: facts.resident.requested,
+            active: facts.resident.active)
+        ActLog.note(action: "identity\n    " + line,
+                    outcome: facts.resident.lifecycle.rawValue, ms: 0)
     }
 
     var planeFacts: [MirrorWirePlane] { wireFacts?.planes ?? [] }

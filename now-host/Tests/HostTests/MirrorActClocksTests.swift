@@ -203,6 +203,36 @@ final class MirrorActClocksTests: XCTestCase {
         XCTAssertNotNil(timeline.latest(operationID: "op36"))
     }
 
+    // MARK: - the premise the numbers are read against
+
+    func testIdentityLineNamesTheResidentThatActuallyAnswered() {
+        let line = MirrorActTimeline.identityLine(
+            guestName: "Powerbook 1400c", guestBuild: "16d99316ff6b",
+            address: "10.91.5.47", lifecycle: "active",
+            residentBuild: "67d5ef434db7", capabilities: 15,
+            requested: 15, active: 15)
+
+        XCTAssertEqual(line,
+                       "NOWBASE actmeta guest=Powerbook_1400c "
+                       + "guest_build=16d99316ff6b address=10.91.5.47 "
+                       + "lifecycle=active resident_build=67d5ef434db7 "
+                       + "cap=15 requested=15 active=15")
+    }
+
+    func testIdentityLineDistinguishesAnUnreportedFieldFromZero() {
+        let line = MirrorActTimeline.identityLine(
+            guestName: "guest-2", guestBuild: nil, address: nil,
+            lifecycle: "absent", residentBuild: nil, capabilities: nil,
+            requested: nil, active: 0)
+
+        /* `-` and `0` are different answers: "the resident did not say"
+           and "the resident says no planes are active" call for opposite
+           next steps. */
+        XCTAssertTrue(line.contains("resident_build=-"), line)
+        XCTAssertTrue(line.contains("cap=-"), line)
+        XCTAssertTrue(line.contains("active=0"), line)
+    }
+
     private func operation(id: String, process: MirrorProcessIdentity,
                            at date: Date) -> MirrorOperation {
         .init(id: id, source: .human, displayedSnapshotID: 1,
