@@ -34,8 +34,22 @@ date: 2026-08-04
   Finder came front with its Macintosh HD window. It appears in
   `now_mirror_metrics` as `click Finder`, the same label and the same clocks
   the Mirror page's Acts card shows, which is the invariant this arc exists
-  to establish. Still owed: the paired hand-versus-MCP comparison (§
-  Verification), and slice 4.
+  to establish.
+
+  Slice 4 followed on 2026-08-05 and closed the mutate vocabulary and the
+  remaining reads. `now_mirror_lifecycle` answered live with resident build
+  `67d5ef434db7…`, `cap 15 requested 15 active 15`, and all four planes with
+  their generations — the provenance that was invisible on the PowerBook. An
+  MCP-driven activate then recorded `source=mcp outcome=confirmed` in
+  `now_mirror_journal`, which is what makes the paired check readable at all:
+  the executor had hardcoded `source: .human`, so every agent-driven act was
+  recorded as a person's. Refusals were exercised too — an Apple menu row that
+  is not on the machine, a dialog item that does not exist, and an unpublished
+  window each refuse by name and say where to look.
+
+  **Still owed:** the paired hand-versus-MCP comparison (§ Verification), and
+  slices 5, 5b and 6. Not yet driven live: `finderDeselect`, and `dialogItem`
+  against an item that does something (the one exercised was a separator).
 
 ---
 
