@@ -122,46 +122,84 @@ Still open from this:
   attaches the PREVIOUS command's correlation. It is conservative for the
   host rule above — a stale correlation reads as "may have landed", which
   only costs a wait — but it is wrong.
-## BROKEN: an agent-driven act is journalled as a person's when it waits (2026-08-05)
+## FIXED, TESTED: an agent-driven act was journalled as a person's when it waited (2026-08-05, test landed 2026-08-05)
 
 An act that arrives while an observation is in flight is deferred and
-re-enters `NOWMirrorSource.perform` when the cycle clears — through the
-**one-argument overload**, whose `source` defaults to `.human`. So an MCP
-act unlucky enough to land mid-cycle is recorded as a hand-driven one.
-This undoes the 2026-08-05 attribution fix by a path older than it, and
-the journal is the only thing that can tell the two faces apart after the
-fact.
+re-enters `NOWMirrorSource.perform` when the cycle clears — and it used
+to do that through the **one-argument overload**, whose `source` defaults
+to `.human`. So an MCP act unlucky enough to land mid-cycle was recorded
+as a hand-driven one, undoing the earlier attribution fix by a path older
+than it. The journal is the only thing that can tell the two faces apart
+after the fact.
 
 Measured: a `finderOpen` driven entirely over the agent socket settled
 `confirmed` and recorded `source: human`. It was the only record in that
 host's journal, so there was nothing to confuse it with.
 
-The argument is now passed through. **The regression test is owed and is
-not written** — a harnessed `NOWMirrorSource` never reached the broker in
-the shape the case needs, which is its own open question below. Until
-that test exists this fix is code review, not verification.
+The argument is passed through, and **the owed regression test is now
+here**: `MirrorFaceParityTests.testAnMCPActHeldMidObservationIsStill
+RecordedAsMCPs`, with a human twin beside it so it cannot pass by making
+every act one face. Watched failing by reverting the argument, and again
+by reverting the older executor fix — both name the field.
 
-## BROKEN (suspected): the MCP drive path may hold no engine (2026-08-05)
+The earlier attempt could not get a harnessed `NOWMirrorSource` to the
+broker at all. What it needed was to leave the content join OPEN: that
+is the deferred case, and until the join is released the act is held and
+has no record. The cycle harness that does it is shared test support
+(`MirrorSourceTestSupport.swift`) rather than private to one file.
 
-Two observations that fit one cause and are not yet proven to share it.
-Live, `now_mirror_drive` answered `id: "direct"` for a `finderOpen` while
-the Mirror page was cycling normally against the same guest — the direct
-path is taken when `shadowEngine` is nil. In a unit harness, a
-`NOWMirrorSource` built with an engine registry never produced a broker
-record for the same gesture.
+## RESOLVED — NOT the cause: the MCP drive path holds an engine (2026-08-05)
 
-If `HostAppState.mirrorSource` hands the drive service a source whose
-`shadowEngine` is nil, then **every MCP act takes the direct path and can
-never settle**, which contradicts slice 3's central claim that both faces
-run through one executor. That claim WAS demonstrated on 2026-08-05
-(an MCP `activate` settled `confirmed`), so this is not simply broken —
-it is conditional on something not yet identified, most likely whether a
-guest key has been bound at drive time.
+The suspicion was that `HostAppState.mirrorSource` hands the drive
+service a source whose `shadowEngine` is nil, so every MCP act takes the
+direct path and can never settle. **It does not, and it cannot.** Two
+independent arguments, both cheap to re-check:
 
-Worth settling before any further headless measurement is believed: a
-measurement taken through the direct path describes a different product
-from the one a person drives, which is the exact defect this whole arc
-exists to remove.
+- `shadowEngine` and `pinnedGuestKey` are written together in `start()`
+  and cleared together in both of `stop()`'s branches — nowhere else. So
+  a nil engine implies a nil pin, and `pinnedActionRefusal()` refuses by
+  name whenever the pin is nil, **before** the engine is consulted. On
+  the MCP path a nil engine produces a refusal with a sentence, never
+  `id: "direct"`. (Before the source has ever started there is no
+  published scene either, and the drive is refused
+  `now-mirror-snapshot-unavailable` without reaching `perform`.)
+- The live evidence refutes it directly, and it was already in this
+  file. The act that answered `id: "direct"` settled `confirmed` on a
+  typed `windowNamedPresent` postcondition — which a nil engine cannot
+  mint — and recorded `source: human`, which only the deferred branch
+  produces. One act, both facts, and each says the engine was bound.
+
+**The real cause is the deferred branch**, and it is the third instance
+of one defect rather than a new one. A held act returns without
+enqueuing, so no broker record exists yet, and `MirrorDriveService`
+inferred "no new record" == "took the direct path" — answering
+`awaitsObservation: false`, which tells the only face that cannot see the
+screen to stop waiting, about an act that was on its way to settling.
+All three of the arc's drive-service defects are that same
+reconstruction: a refusal read as a dispatch, a held act read as a
+direct one, and a record found by resemblance rather than by id.
+
+Fixed by not reconstructing it. `perform` answers
+`MirrorPerformDisposition` — `refused` / `brokered(id)` / `held` /
+`direct` — and the service reports what it is told. Guarded by
+`MirrorDriveServiceTests.testAHeldActIsNotReportedAsTheDirectPath` and,
+through a real `NOWMirrorSource` mid-observation,
+`MirrorFaceParityTests.testAnActHeldMidObservationIsNotReportedToMCPAs
+TheDirectPath`. Both watched failing against the pre-fix reading.
+
+**What this means for the measurements already recorded: nothing needs
+re-reading.** The worry was that the headless numbers behind slices 3
+and 4 described the direct path rather than the shared one. They did
+not — the engine was bound throughout. What was wrong was the REPLY to
+the caller, not the path the act took: an act reported `id: "direct"`
+still went through `MirrorActionExecutor`, the broker and the typed
+postcondition. Slice 3's central claim stands, and it now has a gate
+(`MirrorFaceParityTests`) instead of a ceremony.
+
+**Still unverified: none of this has been driven live.** No VM was stood
+up for the fix — the cold boot cannot run unattended today. The reply an
+agent now gets for a held act (`id: "held"`, `outcome: queued`,
+`awaitsObservation: true`) has never been seen by a real MCP client.
 
 ## Three rig facts that each read as something else (2026-08-05)
 

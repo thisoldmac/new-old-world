@@ -126,6 +126,21 @@ public struct AgentIntegrationMirrorDriveRequest:
 /// the Mac; only an outcome carrying `confirmed` says a later observation
 /// saw the postcondition hold. That rule is older than this surface and
 /// survives it — poll with `now_mirror_act` again, or watch the snapshot.
+///
+/// `id` is the journal's id for anything the broker took. Three values are
+/// not ids, and each says which of the host's endings the act reached:
+///
+/// - `not-dispatched` — refused here; `reason` says why, `settled` is true
+///   and nothing is coming.
+/// - `direct` — dispatched with no typed postcondition. Seven of the
+///   fourteen plans are like this by construction; `awaitsObservation` is
+///   false and no settlement can ever arrive.
+/// - `held` — it arrived while an observation was in flight, so it is
+///   waiting for the cycle to clear and has no record YET. One is coming:
+///   `awaitsObservation` is true, and the record appears in the journal
+///   under a real id once it enters the lane. Before 2026-08-05 this case
+///   was reported as `direct`, which told the caller to stop waiting for a
+///   settlement that was on its way.
 public struct AgentIntegrationMirrorDriveOperation:
     Codable, Equatable, Sendable {
     public let id: String
