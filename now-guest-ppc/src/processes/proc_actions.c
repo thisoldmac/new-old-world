@@ -4,9 +4,39 @@
 #include <string.h>
 
 #include <Carbon.h>
+#include <CodeFragments.h>
 
+#include "proc_hide_args.h"
 #include "proc_quit_args.h"
 #include "wire.h"
+
+/* --- the Process Manager's visibility calls ------------------------------
+
+   Declared here because the Universal Interfaces on this toolchain's
+   include path are 3.4, and these two arrived in 3.4.1. The text is that
+   header's, copied rather than paraphrased so the selector travels with the
+   prototype:
+
+     Universal Interfaces 3.4.1, Processes.h ll. 542-545
+       ShowHideProcess()   Availability: CarbonLib 1.5 and later,
+                           Non-Carbon CFM: not available
+       IsProcessVisible()  selector 0x005F, same availability
+
+   THREEWORDINLINE macros away on this target (PowerPC, CFM) — it is here to
+   record the selector, which is otherwise the one fact about this route
+   that lives nowhere in the tree. The import itself is resolved through
+   CarbonLib's import library; see now-guest-ppc/CMakeLists.txt for why that
+   needs a line of its own, and why NOW_HAVE_SHOWHIDEPROCESS can be 0. */
+#if NOW_HAVE_SHOWHIDEPROCESS
+EXTERN_API( OSErr )
+ShowHideProcess(
+  const ProcessSerialNumber *  PSN,
+  Boolean                      visible)     THREEWORDINLINE(0x3F3C, 0x0060, 0xA88F);
+
+EXTERN_API( Boolean )
+IsProcessVisible(const ProcessSerialNumber * PSN)
+                                            THREEWORDINLINE(0x3F3C, 0x005F, 0xA88F);
+#endif
 
 OSErr now_proc_bring_to_front(const ProcessSerialNumber *psn)
 {
@@ -419,4 +449,161 @@ NowProcFrontOutcome now_proc_front_by_name(const char *arg, char *msg,
              "front: asked for \"%.24s\"; it is NOT frontmost after %d s",
              shown, kProcFrontWaitSecs);
     return kProcFrontUnconfirmed;
+}
+
+/* --- hide / show by name -------------------------------------------------- */
+
+Boolean now_proc_hide_available(const char **which)
+{
+#if NOW_HAVE_SHOWHIDEPROCESS
+    /* A function designator is never null in standard C, so GCC folds
+       `ShowHideProcess == 0` to false and optimises the whole guard away -
+       verified by reading the generated PowerPC at -O1 and -O2, where the
+       comparison simply is not there. Laundering the address through a
+       volatile local defeats that: the compiler must load the pointer from
+       the TOC word CFM actually filled in, and an unresolved weak import
+       is kUnresolvedCFragSymbolAddress (zero) in exactly that word.
+
+       Both symbols or neither - see proc_actions.h. */
+    void *const volatile show_hide = (void *)ShowHideProcess;
+    void *const volatile is_visible = (void *)IsProcessVisible;
+
+    if (show_hide == (void *)kUnresolvedCFragSymbolAddress) {
+        if (which != NULL) {
+            *which = "ShowHideProcess";
+        }
+        return false;
+    }
+    if (is_visible == (void *)kUnresolvedCFragSymbolAddress) {
+        if (which != NULL) {
+            *which = "IsProcessVisible";
+        }
+        return false;
+    }
+    return true;
+#else
+    /* Built against an import library that does not carry the symbols at
+       all, so there is nothing to be weak about. Same refusal, one layer
+       earlier, and it names the same thing a person would look for. */
+    if (which != NULL) {
+        *which = "ShowHideProcess";
+    }
+    return false;
+#endif
+}
+
+NowProcHideOutcome now_proc_hide_by_name(const char *arg, char *msg, long cap)
+{
+    ProcHideArgs args;
+    QuitTarget targets[kMaxTargets];
+    char shown[kProcQuitNameMax];
+    Boolean skipped_self = false;
+    const char *missing = "ShowHideProcess";
+    int found;
+
+    if (!now_proc_hide_parse(arg, &args, msg, cap)) {
+        return kProcHideBadArgs;
+    }
+    if (!now_proc_hide_available(&missing)) {
+        /* By name, and with the reason, because "hide did nothing" is the
+           report this verb exists to stop anyone filing again. */
+        snprintf(msg, (size_t)cap,
+                 "hide: this Mac's CarbonLib does not export %.24s - it "
+                 "needs CarbonLib 1.5 or later", missing);
+        return kProcHideUnavailable;
+    }
+
+    /* skip_self false: NOW is a fair target here, as it is for `front`.
+       See proc_actions.h. */
+    found = gather_targets(args.name, targets, &skipped_self, false);
+    if (found < 0) {
+        snprintf(msg, (size_t)cap,
+                 "hide: more than %d processes are named \"%.31s\"",
+                 kMaxTargets, args.name);
+        return kProcHideAmbiguous;
+    }
+    if (found == 0) {
+        /* NOT ok, and not `quit`'s reading of the same sentence: hiding
+           something that is not running is not a state that can hold. */
+        snprintf(msg, (size_t)cap,
+                 "hide: nothing named \"%.31s\" is running (see \"ps\")",
+                 args.name);
+        return kProcHideNotRunning;
+    }
+    if (found > 1) {
+        /* No --all. Hiding an arbitrary one of several is worse than doing
+           nothing, and the same refusal `front` makes. */
+        snprintf(msg, (size_t)cap,
+                 "hide: %d processes are named \"%.24s\" - narrow it down",
+                 found, args.name);
+        return kProcHideAmbiguous;
+    }
+
+    pascal_to_c(targets[0].name, shown, sizeof shown);
+
+    /* The race the contract warns about: the walk above is already in the
+       past, and a PSN can be reused. */
+    if (!target_is_live(&targets[0])) {
+        snprintf(msg, (size_t)cap,
+                 "hide: \"%.31s\" went away before it could be reached",
+                 shown);
+        return kProcHideNotRunning;
+    }
+
+#if NOW_HAVE_SHOWHIDEPROCESS
+    if (args.action == kProcHideActionStatus) {
+        Boolean visible = IsProcessVisible(&targets[0].psn);
+
+        snprintf(msg, (size_t)cap, "hide: \"%.31s\" is %s", shown,
+                 visible ? "visible" : "hidden");
+        return visible ? kProcHideReadVisible : kProcHideReadHidden;
+    }
+
+    {
+        Boolean want = (Boolean)(args.action == kProcHideActionShow);
+        UInt32 deadline = TickCount() + (UInt32)kProcHideWaitSecs * 60;
+        OSErr err = ShowHideProcess(&targets[0].psn, want);
+
+        if (err != noErr) {
+            /* Report the code. It is documented to refuse for some
+               processes and nobody here knows which, so swallowing it
+               would throw away the only evidence of why. */
+            snprintf(msg, (size_t)cap,
+                     "hide: the Mac would not %s \"%.24s\" (error %d)",
+                     want ? "show" : "hide", shown, (int)err);
+            return kProcHideRefused;
+        }
+        for (;;) {
+            /* Normalised on both sides: a classic Toolbox Boolean is
+               "nonzero is true", not "1 is true", and comparing the two
+               bytes directly would read a true of 0xFF as disagreement. */
+            Boolean now_visible =
+                (Boolean)(IsProcessVisible(&targets[0].psn) != 0);
+
+            if (now_visible == want) {
+                snprintf(msg, (size_t)cap, "hide: \"%.31s\" is now %s", shown,
+                         want ? "visible" : "hidden");
+                return want ? kProcHideShown : kProcHideHidden;
+            }
+            if (TickCount() >= deadline) {
+                break;
+            }
+            yield_ticks(2);
+        }
+        /* Accepted and nothing moved. Never reported as done: the whole
+           point of reading the flag back is that a dispatch may not claim
+           an effect. */
+        snprintf(msg, (size_t)cap,
+                 "hide: asked to %s \"%.20s\"; it is still %s after %d s",
+                 want ? "show" : "hide", shown, want ? "hidden" : "visible",
+                 kProcHideWaitSecs);
+        return kProcHideUnconfirmed;
+    }
+#else
+    /* Unreachable: now_proc_hide_available() returned false above. Here so
+       the file compiles the same shape either way. */
+    snprintf(msg, (size_t)cap,
+             "hide: this build has no ShowHideProcess import");
+    return kProcHideUnavailable;
+#endif
 }

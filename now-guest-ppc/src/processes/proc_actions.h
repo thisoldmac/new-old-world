@@ -3,6 +3,9 @@
 
 #include <Processes.h>
 
+#include "proc_hide_args.h"        /* NowProcHideOutcome, and the vocabulary
+                                      both faces render it through */
+
 /* The two process actions that are honest on this platform, factored out
    so the Processes page (acting on its selection) and the host-driven
    wire verbs (acting on a PSN off the wire) share ONE implementation
@@ -115,5 +118,59 @@ typedef enum {
    that line and nothing else. */
 NowProcFrontOutcome now_proc_front_by_name(const char *arg, char *msg,
                                            long cap);
+
+/* --- hide / show by name: the same composition, over a weak import -------
+
+   Hiding an application is ordinary on a Macintosh — a person does it from
+   the Application menu — and until this landed NOW had no route that
+   reproduced it. Two are measured dead and written up in
+   docs/open-issues.md: AppleScript's `set visible` is refused by the
+   Finder's object model, and commanding menu -16489 dispatches without
+   effect because the Application menu is SYSTEM-owned (MenuSelect calls
+   SystemMenu, so a patch on the front application's MenuSelect never sees
+   the choice). This is the Process Manager's own call, which is what the
+   Application menu itself ends up in.
+
+   THE CALL IS WEAK-IMPORTED AND MUST BE CHECKED BEFORE IT IS USED.
+   ShowHideProcess and IsProcessVisible arrived in CarbonLib 1.5; our floor
+   is 1.6, so they exist across the whole target range — but a weak import
+   that a running CarbonLib cannot resolve is address zero, and calling it
+   is a jump to zero. `now_proc_hide_available()` is that check, and the
+   verb refuses BY NAME rather than crashing when it says no. They are one
+   capability, not two: a mutation whose effect cannot be observed cannot
+   settle, so if either symbol is missing the whole verb is unavailable.
+
+   IsProcessVisible is not decoration. ProcessInfoRec has no visibility
+   field at all, so nothing else on this machine can answer "is it hidden?"
+   — and the flag it reads is the same one Mac OS 8's own
+   AdjustApplicationMenu tests when it decides whether Hide is enabled. One
+   flag, both readers.
+
+   The bridge from a NAME is `quit`'s and `front`'s, unchanged: list,
+   match, re-validate, act, read back. Refusing several matches is the same
+   refusal for the same reason. NOW itself is a fair target, as it is for
+   `front` and unlike `quit`: hiding this process severs nothing — a hidden
+   application still gets scheduled, so the wire keeps being served — where
+   quitting it would cut the reply mid-send. */
+
+/* Whether this CarbonLib resolved BOTH symbols. When it returns false,
+   `which` (if not NULL) is filled with the name of the first one that did
+   not, so the refusal can say it. */
+Boolean now_proc_hide_available(const char **which);
+
+/* Runs the composition for `arg` — the whole rest of the line, whose
+   grammar is proc_hide_args.h's. Writes one line of plain language into
+   `msg` for EVERY outcome, good ones included, because the console renders
+   that line and nothing else. */
+NowProcHideOutcome now_proc_hide_by_name(const char *arg, char *msg,
+                                         long cap);
+
+/* The seconds the read-back is given before an accepted call is reported
+   kProcHideUnconfirmed. Shorter than `front`'s: ShowHideProcess sets the
+   layer's visible flag, and IsProcessVisible reads that flag rather than
+   the screen, so the two should already agree on return. The wait is for
+   the case where they do not — cheap when it is not needed, and the
+   difference between "we asked" and "we watched it happen" when it is. */
+#define kProcHideWaitSecs 1
 
 #endif /* NOW_PROC_ACTIONS_H */

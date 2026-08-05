@@ -474,6 +474,22 @@ static void console_model_dispatch(const char *input)
         console_model_append(line);
         return;
     }
+    if (strcmp(name, "hide") == 0) {
+        char msg[240];
+
+        /* Whole rest of the line after any leading flags, like quit and
+           for the same reason: process names have spaces. The grammar and
+           the outcome vocabulary both live once, in proc_hide_args.c, so
+           this face and the wire's cannot come to disagree about what
+           "hide --show Finder" means or about what happened. */
+        while (*raw_args == ' ') {
+            ++raw_args;
+        }
+        (void)now_proc_hide_by_name(raw_args, msg, sizeof msg);
+        snprintf(line, sizeof line, "%.120s", msg);
+        console_model_append(line);
+        return;
+    }
     if (strcmp(name, "key") == 0) {
         char msg[240];
 
