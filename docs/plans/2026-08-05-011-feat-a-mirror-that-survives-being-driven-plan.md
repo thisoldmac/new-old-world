@@ -99,6 +99,80 @@ correct for a slice and wrong for a destination — so the destination
 lives in 001, this file is explicitly subordinate to it, and finishing
 this plan means returning to U6 rather than writing 012.
 
+## Picking this up cold
+
+**Start at § A, the lane.** It is the amplifier, and until an act cannot
+block its successors every measurement taken after a bad act is a
+measurement of the lane rather than of the thing you were testing.
+
+**Branch:** `claude/mirror-5c-settlement`, 330 commits ahead of main.
+`scripts/test-all` is green — 116 native, both guest cross-builds, host
+gate. Nothing is uncommitted and every agent branch from 2026-08-05 is
+merged into it.
+
+**Nothing is running.** The host app is stopped and the guest was shut
+down cleanly through the applet. **The staged image survives** at
+`/private/tmp/nowvm-clean-80254/session.qcow2` (613 MB) — extension and
+app current, INIT already cold-loaded once, volume clean. Relaunching
+that disk is faster than re-staging; a fresh `scripts/spin-up-ppc` also
+works end to end now and takes about six minutes. `/private/tmp` does not
+survive a host reboot.
+
+Two flags the emulator needs and the defaults get wrong:
+`NOW_SPIN_RUN=/private/tmp/nowvm-$$` (a worktree path exceeds the 104-byte
+UNIX socket cap and QEMU fails with no message the script surfaces), and
+`NOW_SPIN_DISPLAY=1` if a person is going to watch — without it there is
+no window, and a wedged guest cannot be told from a dead one.
+
+### Facts that stop you re-deriving them
+
+Every one of these was measured on 2026-08-05 and several contradict what
+older documents still say:
+
+- **The interaction plane HAS published** — `interaction=active-current/gen14`.
+  "The plane was dark" is no longer an available explanation for a failed
+  act, and the plan docs that still imply it are stale.
+- **`ShowHideProcess` exists** in `toolchain/multiversal/libppc/libCarbonLib.a`
+  as a weak import, and NOT in the `universal` archive the linker's
+  symlink resolves to. There are two CarbonLib archives of different
+  vintages; checking one and concluding absence is how this route was
+  wrongly closed once already.
+- **A weak-import guard must launder the address through a `volatile`**,
+  or GCC folds it away at `-O1`. Swept: exactly one such guard exists and
+  it is correct.
+- **`contract-coverage.md` is 41 declared / 38 PPC / 13 68K**, re-derived
+  at the merge. Re-derive it again after any merge that touches what it
+  derives from.
+- **The 190 undetermined items are 121 controls + 69 dialog items**, and
+  the control half is a TRANSPORT question, not a drawing one.
+- **A Dialog Manager button IS clickable** through the anchor worker's
+  posted click; a MENU is not. That asymmetry is real and useful.
+- **mac99 has no absolute pointer and no ADB keyboard** — QMP `abs` events
+  are refused and key events never arrive. The guest can only be shut down
+  by asking it from inside (`tools/guest-shutdown`).
+
+### Traps this session fell into, so you do not
+
+- **A worktree's HEAD is not the branch you are continuing.** All five
+  agents were handed worktrees up to 292 commits behind. Name the fork
+  point in any brief.
+- **A green helper suite does not verify the wiring.** `serve` has no test
+  seam; a mutation reinstating the Finder-activate defect left nine tests
+  green. Say so in the commit when the wiring is untested — § F closes it.
+- **Check port 5250 before believing any host gate**, red or green.
+- **Commit before mutating.** A `git checkout` during a mutation pass took
+  an uncommitted fix with it.
+
+### What is owed and unproven
+
+Hide works from the guest and from the host route, watched on an emulator
+— never on metal. The `transitions` ring records and drains, and every
+record ever seen is a heartbeat; no `windowList`, `frontProcess` or
+`menuList` record has been observed anywhere. `desktopItems` is
+intermittent rather than absent. And the batched classifier is
+cold-loaded with the classification count unchanged, which is § E's first
+question.
+
 ## Goal Capsule
 
 - **Objective:** make the Mirror survivable under a real person driving
