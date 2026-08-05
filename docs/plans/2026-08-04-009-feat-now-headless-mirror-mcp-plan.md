@@ -300,6 +300,49 @@ error in a probe's own filter once produced two opposite wrong conclusions from
 one bug in this project's history. Cross-check anything it reads against the
 guest's own view of the same window before an offset reaches a walk.
 
+## What the first human drive taught (2026-08-05)
+
+Michelle drove the Mirror by hand for eight minutes against the slice-4 build,
+and the instruments were read afterwards instead of the screen being watched.
+Findings, and where each one went:
+
+- **`actmeta` earned its keep on its first outing, against me.** I called the
+  "anchor plane is absent or not armed" refusals false negatives, from a
+  lifecycle read taken AFTER the drive (`requested 15 active 15`). The
+  `actmeta` lines beside the acts said `requested 7 active 7` — the
+  interaction bit really was clear while she drove. A measurement without its
+  premise recorded is a confident, meaningless number, and the premise line
+  is what caught the error. Corollary: some of the 2026-08-04 PowerBook
+  diagnosis likely needs re-reading against its own premise lines, which that
+  log does not have.
+- **The interaction plane has never published** — generation 0 against
+  structure at 613 025 and content at 1 522 260, while every host toggle
+  reads on. Every `settlement=unknown` in the drive is downstream of it.
+  Dispatched as its own task; guest/resident-side, too large to fold in.
+- **The visibility census lands on 0 of 8 applications**, so
+  `processVisibility` postconditions are STRUCTURALLY unable to settle —
+  the Workshop hid on the machine and the Mirror put it back. Hypothesis:
+  the `sequence == replica.lastSequence` guard loses a race against the
+  ~2.2 s cycle. Dispatched as its own task.
+- **Retries stack behind corpses, measured from real hands**: three attempts
+  at one close box — `timedOut` holding the lane 15 s, the second click
+  waiting 8 615 ms behind it, the third confirming from evidence 19 s later.
+  The clocks made the friction attributable; nothing to fix in this arc
+  beyond what the queue display already shows.
+- **The instrument had the producer's blind spot.** All 60 cycles measured
+  `elements 0` against a desktop showing seventeen icons: the snapshot
+  projection and the cycle counter both skipped `window.items`. Fixed in the
+  arc (`c596261`), with the general lesson: a meter built from the same
+  model it measures cannot see what the model omits — which is the argument
+  for slice 5's three-way pairing being independent captures.
+- **Decoding nothing costs ~315 ms** (median across 60 zero-element cycles;
+  request median 92 ms, idle 783 ms). A fixed host-side term, separable from
+  the Mac entirely, and the first concrete optimisation target the cycle
+  clocks have produced. Belongs to the performance thread, not this arc.
+- **Selection timing is wrong at the input layer**: a real Mac selects on
+  mouse DOWN; the Mirror acts on mouse up. Mildly wrong today, load-bearing
+  for click-and-drag. Dispatched as its own task.
+
 ## Ordering, and why it is not the obvious one
 
 Metrics first because they are the point of a headless round and cost least.
