@@ -1812,53 +1812,100 @@ running; whether `mirror-agent` is the name the agent's process wears in
 the guest's own `process.list` (it is the name Mirror's source and
 `spin-up.sh` use, read rather than observed); and whether SIGTERM
 releases the agent's single client slot as cleanly as the code assumes.
-## The host suite fails when a NOW app is already running (2026-08-02)
+## The host suite was fighting itself over ports (2026-08-02, settled 2026-08-05)
 
-**Environmental, not a defect in the code under test — but it reads
-exactly like one.** `scripts/test-all` went red on the loopback
-suites (`GuestListenerTests`, `GuestIdentityTests`,
-`ConnectionsModelTests`, `MultiGuestListenerTests`,
-`AgentIntegration*`) while two `New Old World.app` instances were
-running on this Mac, one of them holding port 5250. Evidence that it
-is contention and not the change under test:
+**It was never contention with the app. The suite was its own second
+program.** For three days a red `scripts/test-all` here was read as
+"something else is running on this Mac"; the truth is that the tests
+were binding the product's own port, hard-coding ports out of the range
+the kernel hands out, and abandoning several hundred sockets a run.
+Three separate defects, all in the test target, all now fixed —
+`swift test` is 1402 tests, 0 failures, and 51 s rather than 86.
 
-- the same failures reproduce on the parent commit, with the change
-  absent;
-- a different subset fails on each run;
-- `GuestListenerTests` passes 23/23 twice when run ALONE, and fails
-  only inside the full run;
-- every cloud suite (50 tests) passes in both.
+**What was actually wrong.**
 
-The suites bind port 0, so this is not a simple port collision —
-it is load and listener contention on a machine that is also running
-the product. The metal rule (`MetalMachineGuard`: "a gate must check
-the MACHINE is free", docs/68k-metal-runbook.md) has a host-side twin
-that does not exist: nothing checks for a live `New Old World` before
-the host gate binds. Until it does, a red host gate with a NOW app
-running should be re-run with the app quit before it is believed —
-in either direction.
+1. **Five tests were binding 5250 — the shipping port — and never
+   letting go.** `SettingsModel` reads an ABSENT `listenAtLaunch` as
+   true and an absent (or zero) `listenPort` as `defaultPort`, so a
+   `HostAppState` built on a fresh `UserDefaults` suite starts
+   listening during `init`. Four cases in `HostAppStateTests` and one
+   in `GuestFilesCommandTests` only wanted the module list and got a
+   live listener on the port a person's own NOW app holds. Watched
+   directly: `lsof -nP -iTCP:5250 -sTCP:LISTEN` during those tests
+   shows `xctest ... TCP *:5250 (LISTEN)` before the fix and nothing
+   after. `UserDefaults.offTheWire()` states it once. It also makes
+   `testHostCommandRegistrationDoesNotAddUIOrStartTheListener` mean
+   something: it was asserting `.idle` on a listener that WAS starting
+   and had not finished binding — an assertion that passed by winning a
+   race.
+2. **Four fixed ports sat inside the ephemeral range.** 52981, 52983
+   and 52987 were each chosen as "a specific, unlikely-taken port", and
+   all three are inside 49152–65535 — which is exactly where this same
+   process is handed every port-0 listener and every dial. So the suite
+   took those ports from itself, and `HostAppStateWiringTests`,
+   `GuestStatusTests` and `ConnectionsModelTests` intermittently failed
+   to bind with EADDRINUSE. They use port 0 and read the bound port
+   back now. `HostAppStateWiringTests` is the one test that must name a
+   port before it binds — it is the only one still proving
+   listen-at-launch — and it uses a pid-keyed port outside the range.
+3. **The fake guest let the kernel choose its source port.** macOS picks
+   one by hashing the DESTINATION (RFC 6056), so one listener port is
+   always offered one source port. A full run makes ~400 loopback dials
+   and leaves ~150 of the sockets open — a test that stops its listener
+   and drops its guest leaves one in CLOSE_WAIT for the life of the
+   process — so when a later port-0 listener is handed a port that has
+   been used before, the kernel proposes the source port that went with
+   it, the 4-tuple already exists, and `connect` is refused.
+   Network.framework does not FAIL such a connection: it parks it in
+   `.waiting` and keeps it there, which at the test reads as a guest
+   that never arrived. Measured with the state handler logging its
+   endpoints: twelve dials in a row refused, every one from
+   `127.0.0.1:55961` to `127.0.0.1:55963`. `FakeGuest` names its own
+   source port now, from a per-process lane above 1024 and below the
+   ephemeral floor, never repeating a number in a run — so no 4-tuple
+   can repeat.
 
-**2026-08-05: the contention story is not the whole story.** The same
-red gate reproduced on this Mac with **no NOW app running at all** — no
-`New Old World` process, no agent socket in `$TMPDIR`, no concurrent
-build or test. Five cases fail (`AgentIntegrationQuitTests
-testReconnectInvalidatesPriorProcessReference`, `GuestIdentityTests
-testAddressingABackgroundMachineIsRefusedRatherThanRedirected`,
-`GuestListenerTests testAGuestThatNeverAnswersLeavesAgentAccessAbsent`,
-`MultiGuestFocusTests testEveryGuestScopedModelFollowsTheActiveMac`,
-`MultiGuestListenerTests
-testABackgroundGuestLeavingDoesNotDisturbTheConsole`), each on a 5 s or
-10 s timeout, and each **passes in 0.1 s when run alone**.
+**What was wrong in the old entry, and is deleted.** "The suites bind
+port 0, so this is not a simple port collision" — port 0 is what made
+it one, because the ephemeral range is shared with every client socket
+in the process. "A different subset fails on each run" (2026-08-02) and
+"the SAME subset every run" (2026-08-05) were the same defect at two
+machine loads, not two different signatures. The 2026-08-05 addendum
+also guessed at "a shared listener, a per-user socket path, a
+global/static, or a leaked task": there was a shared listener (5250),
+but the agent socket was never implicated — `AgentIntegrationSocketTests`
+already builds its endpoint under a unique temporary directory — and no
+global or leaked task was involved.
 
-What is different from 2026-08-02, and what it costs: the subset is now
-the SAME on every run rather than varying, which is the signature of
-in-suite interference rather than of another program on the machine. So
-the advice above — quit the app and re-run — no longer clears the gate,
-and `scripts/test-all` cannot go green here by any action a contributor
-can take. Anything landing while this is true carries an
-honestly-labelled red gate, and the two halves must be told apart by
-running the touched suites alone. This one is worth fixing before it
-teaches everybody to read a red host gate as noise.
+**What is NOT proven, and it matters.** The five timeouts stopped
+reproducing on this Mac partway through the investigation, with the
+ORIGINAL code: two concurrent full runs of the unfixed tests are now
+green. The correlate is visible in the logs — the failing runs carry
+36–69 `Failed to create NSXPCConnection` lines from AddressBook's XPC
+store retrying, and take 77–137 s; the green ones carry 23 and take
+51 s. So this is a LOAD-SHAPED defect, and the before/after A/B that
+would settle it cannot be run any more. Defect 1 is verified by
+observation (the `lsof` above). Defect 2 is verified by the failures in
+the trace logs (`listener -> failed(...48...)` on 52981 and 52983).
+Defect 3 rests on the captured port pairs plus the fact that the fix
+removes the mechanism by construction, NOT on a watched before/after.
+
+A reproduction was attempted and deleted rather than kept: building the
+collision by hand — dial a listener, abandon the socket, put a new
+listener back on that port — does not reproduce it, because the
+kernel's source-port choice advances on every successful bind
+elsewhere. A test that passes with and without the fix is worse than no
+test, so there is no guard here. If the five ever come back, the way in
+is `FakeGuest`'s state handler: log `state`, `currentPath?.localEndpoint`
+and `remoteEndpoint`, and look for `.waiting(EADDRINUSE)`.
+
+**The rule that is still missing.** The metal side has
+`MetalMachineGuard` — "a gate must check the MACHINE is free"
+(docs/68k-metal-runbook.md). The host gate still has no twin: nothing
+checks for a live `New Old World`, or for another session's `swift
+test`, before it binds. With the three defects above gone the suite no
+longer collides with itself, but it can still collide with the app, and
+it would say so with the same unhelpful timeout.
 
 ## Photo sizes became long-edge stops; three metal defects fixed, none re-verified on metal (2026-08-02, latest)
 
