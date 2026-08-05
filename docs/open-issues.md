@@ -289,11 +289,42 @@ block behind one appended table word, the resident writer (`ext/src/now_event.c`
 the guest's ring reader, and a fifth `transitions` plane reported end to end.
 109 native tests, three cross-builds, full host gate.
 
-**What does not exist, and the honest status is BLOCKED-BY-UNBUILT rather
-than broken:** nothing arms the plane, no contract message carries records
-to the host, and the host consumes none. The ring will stay empty on any
-drive until that lands. So a cold boot proves the INIT loads, allocates,
-publishes `cap` bit 4 and boots clean — and proves nothing about the tail.
+**UPDATE 2026-08-05, `claude/p5-transitions-delivery`: the guest half of
+that gap is closed and the machine half is not.** The contract declares a
+`transitions` verb — `status` (the default, which moves nothing), `start`,
+`stop`, `drain` — modelled on `qdtrace` and simpler than it in three
+stated ways; the PowerPC guest answers it on BOTH faces off one
+implementation; and a native test covers the command layer's own
+decisions. So something arms the plane now, and a message carries records.
+
+**What is still not proven is everything that matters.** No guest has
+been stood up since the verb landed — the VM cold boot could not run
+unattended — so **no record from this ring has ever been observed
+crossing the wire, on any machine**. `status` has never answered from a
+real block, `start` has never had a resident agree with it, and `drain`
+has never returned a record. The reader and the writer have still never
+met: the ring's two halves are tested separately, against fixtures, by
+the host compiler. Treat every claim below the contract as BUILDS, not
+tested and not metal-verified.
+
+Two things a first live run should look at, because they are where the
+guest half is most likely to be wrong: `activity.passes` staying at zero
+while a request reads live (that is an arm that named the wrong world,
+and it is the one diagnostic this design leans on), and whether
+`reader_cursor` moving forward on drain actually makes `dropped` behave —
+the forward-only rule is native-tested against a fixture and has never
+been read by the resident it exists for.
+
+**The host consumes none, and that is deliberate rather than pending:**
+the host consumer is a later slice, declared in `docs/mcp-coverage.md`'s
+gap table with its reason. Until it lands the plane is reachable only by
+a person typing at the guest or by a direct `command.request`.
+
+Before that update, the status was: nothing arms the plane, no contract
+message carries records to the host, and the host consumes none. So a
+cold boot proved the INIT loads, allocates, publishes `cap` bit 4 and
+boots clean — and proved nothing about the tail. That last sentence is
+still true.
 
 Two things found while building it, both mine:
 
