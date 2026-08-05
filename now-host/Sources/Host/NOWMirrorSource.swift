@@ -1588,8 +1588,19 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             return await finder(
                 "select \(reference(item, in: container))")
         case .finderOpen(let item, let container):
+            /* Leave the Finder where it is when the thing being opened
+               comes up as its own application — otherwise the `activate`
+               below the phrase covers it the instant it appears. No scene
+               means no classification, and the old behaviour is the
+               honest default: a folder open is the case the Finder must
+               be in front for. */
+            let ownApp = scene.map {
+                MirrorActionExecutor.opensAsItsOwnApplication(
+                    item, in: container, scene: $0) == true
+            } ?? false
             return await finder(
-                "open \(reference(item, in: container))")
+                "open \(reference(item, in: container))",
+                activate: !ownApp)
         case .finderDeselect:
             return await finder("select {}")
 
@@ -1624,17 +1635,32 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         }
     }
 
-    static func finderScript(_ phrase: String) -> String {
+    /// **`activate` is right for a selection and wrong for an open**, and
+    /// the difference is what a person sees afterwards.
+    ///
+    /// Selecting an icon while another application is frontmost changes
+    /// nothing anybody can see, so the Finder comes forward — that is why
+    /// this was always here. But `activate` runs AFTER the phrase, so an
+    /// open that raises a NEW application's window is covered by the
+    /// Finder the instant it appears. Measured 2026-08-05: control panels
+    /// "open quickly, but still immediately push them behind Finder".
+    ///
+    /// The rule separating the two is the one the owner prediction
+    /// already uses. A thing that opens a FINDER window wants the Finder
+    /// in front; a thing that opens as its OWN application wants to be
+    /// left in front itself.
+    static func finderScript(_ phrase: String,
+                             activate: Bool = true) -> String {
         """
         tell application "Finder"
-        \(phrase)
-        activate
+        \(phrase)\(activate ? "\nactivate" : "")
         end tell
         """
     }
 
-    private func finder(_ phrase: String) async -> String? {
-        let source = Self.finderScript(phrase)
+    private func finder(_ phrase: String,
+                        activate: Bool = true) async -> String? {
+        let source = Self.finderScript(phrase, activate: activate)
         let complaint = await run("script", ["source": .text(source)])
         if let settlement = Self.dispatchOnlySettlement(
             ifSuccessful: complaint) {

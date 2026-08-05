@@ -422,12 +422,28 @@ final class NOWMirrorSourceTests: XCTestCase {
 
     // MARK: - System Application-menu visibility
 
-    func testFinderItemCommandsAlsoActivateFinder() {
-        let source = NOWMirrorSource.finderScript(
-            "open item \"Macintosh HD\" of desktop")
-        XCTAssertTrue(source.contains("open item \"Macintosh HD\" of desktop"))
-        XCTAssertTrue(source.contains("activate"))
-        XCTAssertTrue(source.contains("tell application \"Finder\""))
+    /// **A selection wants the Finder in front; an open does not always.**
+    /// `activate` runs after the phrase, so an open that raises a NEW
+    /// application's window is covered by the Finder the instant it
+    /// appears — measured on a live machine 2026-08-05: control panels
+    /// "open quickly, but still immediately push them behind Finder".
+    func testTheFinderComesForwardForASelectionAndNotOverANewApplication() {
+        let select = NOWMirrorSource.finderScript(
+            "select item \"Macintosh HD\" of desktop")
+        XCTAssertTrue(select.contains("select item \"Macintosh HD\""))
+        XCTAssertTrue(select.contains("tell application \"Finder\""))
+        XCTAssertTrue(select.hasSuffix("activate\nend tell"),
+                      "a selection nobody can see is not a selection — and "
+                          + "the line must be `activate` exactly, on its own")
+
+        let ownApp = NOWMirrorSource.finderScript(
+            "open item \"Date & Time\" of folder \"Control Panels\"",
+            activate: false)
+        XCTAssertFalse(ownApp.contains("activate"),
+                       "the panel that just opened must stay in front")
+        XCTAssertTrue(ownApp.contains("open item \"Date & Time\""))
+        XCTAssertTrue(ownApp.hasSuffix("end tell"),
+                      "dropping activate must not leave a dangling line")
     }
 
 
