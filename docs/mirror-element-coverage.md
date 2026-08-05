@@ -176,7 +176,24 @@ cold boot cannot complete unattended today). Until then the honest
 statement is: **the 190 splits 121/69 by source, and how it splits by
 definition origin is unknown.**
 
-## One panel, both sides, 2026-08-05
+### The starvation is fixed in code; this table is the baseline (2026-08-05)
+
+The 121 is a transport number, not a knowledge number. P2 now carries a
+second cell that types a **whole window per request** instead of one
+control per scene, control classification outranks the list-cell request
+that used to preempt it, and background panels are no longer barred from
+being classified at all. The design, the bounds argument and what it
+costs are in
+[the P2 evidence gate](p2-semantic-evidence.md#the-envelope-changed-a-second-cell-for-batched-classification-2026-08-05).
+
+**This table is not superseded — it is the before.** Nothing has
+reclassified a panel: the 68K extension has not been built (no m68k
+toolchain here) and the corpus has not been recaptured. When it is, the
+comparison to make is the `undetermined` column of row 2 against the 121
+above, and the number that finally answers slice 6's actual question is
+how many of the newly-determined controls come back
+`UnsupportedCustom` — that is the genuinely-app-owned population, and it
+has still only ever been asked 122 times about one control.
 
 The aggregate above is easy to nod at. This is the same finding on a single
 window, captured in one moment, and it is the shape every row here takes.

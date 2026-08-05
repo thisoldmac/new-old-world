@@ -22,7 +22,77 @@ adding evidence.
 | Non-dialog TextEdit roots — **rejected/deferred** | A plain `WindowRecord` has no public TE root. Guessing an offset beyond it can interpret adjacent memory as a handle. Dialog text is already proven by the normal reader. No documented standard root or explicit registration exists in the current evidence. | None justified. | No P2 v1 operation or record. | None. | None. | Structurally unknown. A future explicit registration contract requires a new evidence review and an accretive operation. |
 | System-owned menu rows (Apple/system menus) | P1 exposes the process `MenuList`, and the normal reader can parse application-owned menu bytes. System-populated Apple rows can instead be owned/resolved by Menu/Resource Manager state and may not be represented by the same application heap bytes. Geometry/title inference is not evidence. The existing Finder fixture has 16 Apple rows below its separator, so a 12-row envelope is known insufficient before the ABI is written. | Menu Manager in the target context; exact `MenuHandle` and menu ID already observed structurally. | At most 32 records with 32 text bytes each: 1536 response bytes. True item count returned separately. | At most 32 exact menu-item reads and 1024 copied bytes. No menu tracking, insertion, command dispatch, or other resolver. | Writer epoch, target A5, menu handle, menu ID, and structural scene generation are echoed. Reply commits last. | `truncated`, `unsupported`, `invalid`, `wrong-target`, or `stale`. A handle/ID mismatch is `wrong-target`, never a lookup by ID alone. |
 
+## The envelope changed: a second cell for batched classification (2026-08-05)
+
+The row above bounds control classification at "one exact-control
+validation and one resource/definition classification. **No control-list
+walk and no nested resolver.**" That bound was written to keep a
+system-wide event filter cheap, and it did — but it was priced against
+the wrong thing, and a measurement showed it.
+
+Of 122 Control Manager controls in the ten-panel corpus, **exactly one
+carried a determined kind**. The classifier was never the problem. The
+transport was: one cell answers one question per scene, control
+classification was its lowest-priority claimant, and only the front
+process could spend it. A class fact lives ~128 scenes; a list fact
+expires every ~4. So the cheap, long-lived, *prerequisite* fact lost the
+cell permanently to the expensive, short-lived one that depends on it —
+a list request cannot even be formed until its control is known to be a
+list box.
+
+**Why a batch is not a bounds increase.** Serving one class request
+already walks up to 64 controls (`control_below`) to prove the requested
+control is live and in the window, then discards the walk and classifies
+one. The batch keeps that single walk and classifies up to 32 of the
+controls it already enumerated. Per window the cost goes from 32 walks
+plus 32 classifications to **one** walk plus 32 classifications. The
+resolver's own bound — at most 32 classifications, at most 32 copied text
+bytes each — is the bound already granted to the list-cell and menu-row
+resolvers. Per fact, the cost falls.
+
+What genuinely grows: the filter may now examine **two** pending requests
+per armed pass rather than one, because the batch is a second cell with
+its own lease. That is the deliberate cost, and it is what removes the
+competition that starved the plane — the two cells no longer bid for one
+lease. Worst-case resolver work per pass is two bounded resolvers, each
+already envelope-approved.
+
+**Why a second cell rather than a wider one.** `semantic` is not at the
+table's tail; `act_v2` and `event_block` follow it and a static assert
+pins `act_v2` to `semantic`'s end. Widening the record or cell would move
+both and break an older reader silently — the same reason `act_v2` was
+itself appended rather than grown. The batch cell is therefore accretive,
+at the tail, gated by length plus its own format word. A resident that
+predates it is shorter, and the application falls back to the
+single-control op with no loss of correctness.
+
+**Identity is echoed, never inferred.** Each 48-byte record carries the
+exact `ControlRef` it describes. A walk ordinal would have required both
+sides to derive the same traversal order, and would have attached a role
+to the wrong control — silently — the day they diverged. The guard
+refuses a reply that names one control twice, because the join is by
+control word alone.
+
+Bounds unchanged: at most 32 records per reply, at most 32 text bytes per
+record, requests expire after 120 ticks, and the same publish-last
+generation discipline and echoed-identity recheck apply to both cells.
+A window with more controls than one reply carries is drained by
+successive requests from `request_start`; `response_total_count` reports
+how many the walk found in all.
+
+Status: native-tested (the resolver, the guard, and the application-side
+policy), PPC cross-build green, and the resolver's one-walk property and
+the guard's duplicate refusal were both watched fail under mutation. **The
+68K extension half has not been built** — no m68k toolchain is installed
+on the machine this was written on, so `scripts/build-guests` skips `ext`
+entirely. It adds no new Toolbox symbol, so the flat-INIT link surface is
+unchanged, but that is an argument and not a build. Nothing here is
+metal-verified.
+
 ## Frozen envelope
+
+The paragraph below describes v1/v2's single cell and remains true of it;
+the section above states what the second cell adds and what it costs.
 
 P2 is one single-consumer cell. Format v2 keeps the v1 fixed layout while
 giving a control-class record a typed Control Manager kind and an optional
