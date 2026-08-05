@@ -2035,20 +2035,24 @@ or run from two worktrees. Both of these are unfixed and neither is
 about ports:
 
 - **`HostLog.shared` is one file per LAUNCH SECOND, not per process.**
+  Two runs starting in the same second share
+  `now-logs/<yyyy-MM-dd HHmmss>.log` and read each other's lines:
   `HostProjectionAuditTests testTheEventReachesTheHostLogInTheSpecFormat`
-  failed reading `a line worth keeping` — a string belonging to
-  `HostLogTests` in the OTHER process. Two runs starting in the same
-  second share `now-logs/<yyyy-MM-dd HHmmss>.log` and read each other's
-  lines. Two NOW apps launched together would do the same, so this is
-  arguably a product defect and not only a test one; the fix (a pid in
-  the name) is product-visible, which is why it is recorded here rather
-  than taken.
-- **`HostServingTests testGuestCanSendAFileAndItLandsInTheShare` fails
-  under concurrency**, in both runs, on its own temporary share
-  directory: `".now-<uuid>.convert" couldn't be moved ... an item with
-  the same name already exists`, and in the other run the arrival is
-  never announced. Not yet diagnosed — it may be cross-process or it
-  may be a race inside one run that only load exposes.
+  failed reading `a line worth keeping`, a string belonging to
+  `HostLogTests` in the OTHER process, and `LoggingSpecTests
+  testALineMatchesTheFormatTheSpecDefines` failed the same way. Two NOW
+  apps launched together would do this too, so it is arguably a product
+  defect and not only a test one; the fix (a pid in the name) is
+  product-visible, which is why it is recorded rather than taken.
+- **`CloudModuleModelTests testTheToggleRemembersAndRestoresTheShare`**
+  fails across processes on a share path. Undiagnosed.
+
+Both were measured with the fixes above already in: one of the two
+concurrent runs was 1410 tests and fully green, the other carried these
+three. An earlier reading of the same experiment also blamed
+`HostServingTests testGuestCanSendAFileAndItLandsInTheShare`; that one
+stopped recurring once `AppDelegate` stopped binding 5250, so it was a
+knock-on and not its own defect.
 
 ## Photo sizes became long-edge stops; three metal defects fixed, none re-verified on metal (2026-08-02, latest)
 
