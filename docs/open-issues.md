@@ -57,6 +57,39 @@ Three things worth keeping regardless of how that goes:
   Item and content families now hold separate stated byte shares of one
   ceiling. **Anything further added to this payload must take a share
   rather than assume room; there is none.**
+## The host's dispatch path has no test seam, and it cost three times today (2026-08-05)
+
+Not a defect in the product; a gap in how the product can be checked, and
+it has now been paid for often enough to name.
+
+`NOWMirrorSource.serve` turns a plan into a guest command and sends it
+through the listener. Nothing can intercept that command in a test, so
+every fix to it is verified one level BELOW where it lives — the helper
+that builds a string is tested, and the line that decides which string to
+build is not. Three fixes on 2026-08-05 landed with exactly that shape:
+
+- the **Hide host switch**: `hideDispatchOutcome` is tested; that
+  `.hide` calls the guest verb at all is not;
+- the **`transitions` arg key**: the parse is tested against a real
+  envelope, and the agent had to DRIVE A MACHINE to prove the wiring;
+- the **Finder `activate` rule**: `finderScript` is tested in both
+  shapes, and mutating the call site to pass `activate: true`
+  unconditionally left **nine tests green**.
+
+That last one is the clean demonstration, because the mutation reinstates
+precisely the defect the change exists to fix and nothing notices.
+
+It also explains a pattern in today's live drives: the defects the
+machine found — a refusal that was unparseable, a reply that lost its own
+records, a verb that could not arm — were all in this same band, between
+a tested helper and a tested projection.
+
+**What would close it** is a seam of the kind `NOWMirrorCycleIO` already
+gives the scene cycle: one injectable "send this command" function, so a
+test can assert WHICH command a plan produces. That is a small refactor
+with a large blast radius on confidence, and it is the highest-value
+testing work in this arc.
+
 ## BROKEN: one modal wedges the whole Mirror, and the lane turns it into 90 seconds (2026-08-05, from Michelle's drive)
 
 **The most complete failure this arc has recorded, and every link is
