@@ -10,18 +10,32 @@
    way the Files page browses it (files_browser_view.c) — this view
    calls the same now_wire_list_host and reclaims conn_set_listing the
    moment it asks ("a second request replaces the first" is already
-   the wire's rule for the answer). All g_drive_* state that used to
-   live in cloud_module.c lives here now; the shell only knows this
-   view is active (the ops it gets back from cloud_drive_view_ops) and
-   that the Data Browser it still owns needs row text and two
-   notifications this file cannot reach through CloudViewOps. */
+   the wire's rule for the answer).
+
+   This view owns its OWN Data Browser, with the Files page's exact
+   column recipe (Name with the row's native icon, Kind, Size,
+   Modified) — not the shell's shared two-column control. One control
+   cannot safely wear both column sets: the only way off a column is
+   RemoveDataBrowserTableViewColumn, which is NOT among the 22 symbols
+   spikes/databrowser proved CarbonLib 1.6.0 exports on the PB1400c,
+   and declared-but-unproven is exactly the gap that keeps Drive a
+   flat list (docs/guest-ui-start-here.md). So the drive browser is a
+   second, mostly-hidden control built from proven calls only, and the
+   shell shows whichever control the mode owns.
+
+   The shell still owns the live search and mutates whichever browser
+   is active (cloud_drive_view_browser() hands this one over), still
+   routes clicks/keys by rectangle and focus, and still runs the
+   status placard. Selection, double-click and row text moved in here
+   with the control: the affordance line goes out through
+   CloudDriveHost.set_status, exactly as before. */
 
 const CloudViewOps *cloud_drive_view_ops(void);
 
 /* The shell operations this view needs and cannot do itself, because
-   each one touches state (g_selected, g_status, g_loading, the detail
-   pane's invalidation) that stays shell-owned — shared across whatever
-   view is active, not drive-specific. */
+   each one touches state (the search filter's g_in_view diff, g_status,
+   g_loading) that stays shell-owned — shared across whatever view is
+   active, not drive-specific. */
 typedef struct CloudDriveHost {
     void (*clear_list)(void);
     void (*invalidate_detail)(void);
@@ -30,24 +44,24 @@ typedef struct CloudDriveHost {
 
     /* [first_index, first_index + count) just landed in this view's own
        row storage (g_drive_rows) — the shell decides which of them the
-       live search currently admits and adds only those to the Data
-       Browser it owns, exactly as it does for its own rows in
-       note_listing. Without this hook a page arriving while a search
-       is typed would show rows the field says it is hiding. */
+       live search currently admits and adds only those to whichever
+       Data Browser is active (this view's, in drive mode), exactly as
+       it does for its own rows in note_listing. Without this hook a
+       page arriving while a search is typed would show rows the field
+       says it is hiding. */
     void (*add_rows)(int first_index, int count);
 } CloudDriveHost;
 
-/* One-time wiring, called from cloud_create() right after the shell's
-   shared Data Browser exists (or failed to — pass NULL either way;
-   every entry point below already guards it, same as the old inline
-   code did). `host`'s callbacks must outlive the page (they are the
-   shell's own static functions, so they do). */
-void cloud_drive_view_bind(ControlRef browser, const CloudDriveHost *host);
+/* One-time wiring, called from cloud_create() (this view's create op
+   builds its own browser first). `host`'s callbacks must outlive the
+   page (they are the shell's own static functions, so they do). */
+void cloud_drive_view_bind(const CloudDriveHost *host);
 
 /* Window close / quit, called from cloud_dispose() before the shell
-   nulls its own g_owner: stops a listing reply that arrives after
-   disposal from touching a control the Window Manager already took
-   (files_browser_view.c's dispose guards the same way). */
+   nulls its own g_owner: disposes this view's browser BEFORE its UPPs
+   (files_browser_view.c's dispose order and the finding
+   carbon-upp-is-not-a-cast-on-cfm carry the reason), and releases the
+   icon cache. */
 void cloud_drive_view_dispose(void);
 
 /* choose_service tells this view whether it is the one currently
@@ -70,22 +84,18 @@ Boolean cloud_drive_view_at_root(void);
    the shared store's. */
 int cloud_drive_view_row_count(void);
 
-/* Row text for the shell's shared Data Browser while this view is
-   active. `item` is 1-based, matching AddDataBrowserItems' IDs.
-   Returns false (property unsupported) exactly where the old inline
-   switch in cloud_module.c's item_data did. */
-Boolean cloud_drive_view_row_text(DataBrowserItemID item,
-                                  DataBrowserPropertyID property,
-                                  char *out, long cap);
+/* This view's own Data Browser (NULL when creation failed): the
+   control the shell shows, sizes, focuses and filter-mutates while
+   drive mode is on. */
+ControlRef cloud_drive_view_browser(void);
 
-/* Double-click on a row: open the folder, or fetch the file. Selection
-   and deselection stay in the shell's item_notify — they only ever
-   toggled g_selected and an invalidate, no drive-specific state. */
-void cloud_drive_view_row_opened(int index);
-
-/* Selection changed (-1 = deselected). The placard carries the card
-   pane's old affordance line — there is no card in drive mode. */
-void cloud_drive_view_row_selected(int index);
+/* The toolbar history pair. can_* feed the buttons' dimming (the
+   shell's idle caches the answer and calls HiliteControl only on a
+   change); go_* retrace. All four are safe with no history. */
+Boolean cloud_drive_view_can_back(void);
+Boolean cloud_drive_view_can_forward(void);
+void cloud_drive_view_go_back(void);
+void cloud_drive_view_go_forward(void);
 
 /* The wire's listing answer (conn_set_listing), reclaimed inside this
    file's own request function the instant it asks, exactly as

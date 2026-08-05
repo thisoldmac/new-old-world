@@ -1195,15 +1195,51 @@ final class FileConverterTests: XCTestCase {
             from: Date(timeIntervalSince1970: 9_000_000_000)))
     }
 
-    func testGuestWireDatesRefuseValuesItsSignedParserCannotRepresent() {
-        let modern = Date(timeIntervalSince1970: 1_784_000_000)
-        XCTAssertNotNil(ClassicDate.macSeconds(from: modern))
-        XCTAssertNil(ClassicDate.guestWireSeconds(from: modern))
+    /// The guest now parses "modified" unsigned (now_json_find_u32), so
+    /// the wire's only real ceiling is what an unsigned 32-bit classic
+    /// second count can hold — early 2040, not January 1972. This used
+    /// to assert the OPPOSITE at the 1972/2026 points: that a modern
+    /// date came back nil because the guest's parser was signed. That
+    /// was the regression that shipped — the field was omitted, and
+    /// every 2026 photo drew "--" for Modified.
+    func testGuestWireDatesCarryTheFullUnsignedRange() throws {
+        // 1904: just after the classic epoch itself.
+        let nearEpoch = try XCTUnwrap(ClassicDate.date(from: 100))
+        XCTAssertEqual(ClassicDate.guestWireSeconds(from: nearEpoch), 100)
 
-        let representable = Date(timeIntervalSince1970: 1_000_000)
+        // 1972: just past the OLD (signed, Int32.max) ceiling. This is
+        // the exact regression point — the guest's strtol parser
+        // saturates here, which is why the host used to stop sending
+        // past it.
+        let pastOldCeiling = try XCTUnwrap(
+            ClassicDate.date(from: Int(Int32.max) + 100_000))
+        XCTAssertNotNil(ClassicDate.macSeconds(from: pastOldCeiling))
         XCTAssertEqual(
-            ClassicDate.guestWireSeconds(from: representable),
-            ClassicDate.macSeconds(from: representable))
+            ClassicDate.guestWireSeconds(from: pastOldCeiling),
+            ClassicDate.macSeconds(from: pastOldCeiling))
+
+        // 2026: today. This is the value that shipped as "--" in the
+        // Modified column for every 2026 photo, cloud listing and
+        // drive/files browser row.
+        let modern = Date(timeIntervalSince1970: 1_784_000_000)
+        XCTAssertEqual(
+            ClassicDate.guestWireSeconds(from: modern),
+            ClassicDate.macSeconds(from: modern))
+
+        // 2040: just inside the unsigned 32-bit ceiling — the real one.
+        let nearUnsignedCeiling = try XCTUnwrap(
+            ClassicDate.date(from: 4_294_967_294))
+        XCTAssertEqual(
+            ClassicDate.guestWireSeconds(from: nearUnsignedCeiling),
+            4_294_967_294)
+
+        // Past 2040: genuinely unrepresentable in an unsigned 32-bit
+        // classic second count. Omitting the field here is correct,
+        // not a bug — there is no honest value to send.
+        let pastUnsignedCeiling = Date(
+            timeIntervalSince1970: 9_000_000_000)
+        XCTAssertNil(ClassicDate.macSeconds(from: pastUnsignedCeiling))
+        XCTAssertNil(ClassicDate.guestWireSeconds(from: pastUnsignedCeiling))
     }
 
     func testClassicEpochConverts() throws {

@@ -317,17 +317,43 @@ resource 'MENU' (135) {
     }
 };
 
-/* The Chat page's model pop-up: a placeholder the catalog rewrites. */
+/* The Photos view's download-size pop-up. Item order is load-bearing:
+   cloud_model.c's cloud_size_token maps items 1-4 to the contract's
+   four size tokens (original / long1600 / long1024 / long640), largest
+   first, and cloud_photos_view.c's k_size_stops maps the same items to
+   the longest edge each one asks for.
+   There is NO "host default" item any more: an item that cannot say on
+   screen what it will deliver is not an answer to "at what size?", so
+   the host's own setting arrives as data (cloud.report defaultSize)
+   and is preselected instead.
+   Each longN stop names the LONGEST edge, which is why the wording
+   below says "long side" rather than a box: a 640x480 BOX gave a
+   portrait photo the short edge's number. The text is the FALLBACK
+   wording only — rebuild_size_menu rewrites every item via
+   SetMenuItemText to the selected photo's exact result ("480 x 640")
+   whenever the entry states its width/height, and restores this
+   literal wording on no selection or when it does not. */
 resource 'MENU' (136) {
-    136, textMenuProc, allEnabled, enabled, "Models",
+    136, textMenuProc, allEnabled, enabled, "Size",
+    {
+        "Original", noIcon, noKey, noMark, plain;
+        "Long side 1600", noIcon, noKey, noMark, plain;
+        "Long side 1024", noIcon, noKey, noMark, plain;
+        "Long side 640", noIcon, noKey, noMark, plain
+    }
+};
+
+/* The Chat page's model pop-up: a placeholder the catalog rewrites. */
+resource 'MENU' (137) {
+    137, textMenuProc, allEnabled, enabled, "Models",
     {
         "(ask the other Mac)", noIcon, noKey, noMark, plain
     }
 };
 
 /* The Chat page's provider pop-up, rewritten the same way. */
-resource 'MENU' (137) {
-    137, textMenuProc, allEnabled, enabled, "Providers",
+resource 'MENU' (138) {
+    138, textMenuProc, allEnabled, enabled, "Providers",
     {
         "(none)", noIcon, noKey, noMark, plain
     }

@@ -313,7 +313,12 @@ int n68_putrx_parse_offer(const char *json, long len, N68PutOffer *out)
                                   (long)sizeof out->file_type);
     (void)now68k_json_find_string(json, (size_t)len, "creator",
                                   out->creator, (long)sizeof out->creator);
-    (void)now68k_json_find_int(json, (size_t)len, "modified",
+    /* Unsigned: a classic file date is unsigned seconds since 1904 and
+       the host may send up to 2^32-1. now68k_json_find_int cannot
+       carry that - it is a signed 32-bit long - and would saturate at
+       2^31-1 (January 1972) the same way the PowerPC guest's
+       now_json_find_int did before this field moved off it. */
+    (void)now68k_json_find_u32(json, (size_t)len, "modified",
                                &out->modified);
 
     /* Booleans: json_scan.h has no bool reader, and the two callers here

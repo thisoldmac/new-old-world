@@ -290,11 +290,37 @@ run_c now-guest-ppc cloud_layout_test.c     ""  src/cloud/cloud_layout.c
 # (CloudRow's title+subtitle, Drive's FileEntry name) every view's
 # row_matches wraps around it.
 run_c now-guest-ppc cloud_filter_test.c     ""  src/cloud/cloud_filter.c
+# The drive browser's Back/Forward history: browser semantics (visit
+# pushes, Back/Forward retrace, a new navigation forfeits Forward) and
+# the 16-deep bound that drops the OLDEST step, proven by walking the
+# landing places, never by reading the stacks.
+run_c now-guest-ppc cloud_nav_test.c        ""  src/cloud/cloud_nav.c
+# The photo preview's decidable half: preview.begin validation (a
+# malformed begin must read as refusable, never as an allocation), the
+# screen-depth -> ask-depth mapping, and the pane-fit arithmetic the
+# CopyBits destination reads.
+run_c now-guest-ppc cloud_preview_test.c    "" \
+      src/cloud/cloud_preview.c src/core/json.c
+# The Size popup's longest-edge arithmetic: what a longN token will
+# actually deliver for a GIVEN photo, computed from the entry's own
+# width/height (docs/icloud.md) rather than sent over the wire. The
+# PORTRAIT case is the one to watch fail under mutation - it is the
+# whole reason these stops stopped being fit boxes, since a 640x480 box
+# gave a portrait photo the short edge's number. "Never upscale" is the
+# second rule pinned here.
+run_c now-guest-ppc cloud_photo_size_test.c "" \
+      src/cloud/cloud_photo_size.c
 # The Contacts card's grouping/date-parsing decisions -- kept out of
 # cloud_contacts_view.c so they run here, off a fixture, rather than
 # only ever being exercised by eye on the PowerBook.
 run_c now-guest-ppc cloud_contacts_card_test.c "" \
       src/cloud/cloud_contacts_card.c
+# The Contacts card cache's pure half: insert/lookup/evict/bounds, the
+# decidable core behind "a selection with a cached card draws instantly
+# and asks nothing" (docs/icloud.md). No wire, no prefetch scheduling --
+# those stay in cloud_module.c, unreachable from a host cc.
+run_c now-guest-ppc cloud_card_cache_test.c "" \
+      src/cloud/cloud_card_cache.c
 # The path row's label: the share named by the listing's own root, with
 # "Shared folder" only left for hosts predating the field, and one colon
 # at the root/path join whichever spelling of root arrived.

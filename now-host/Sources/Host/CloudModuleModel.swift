@@ -50,6 +50,34 @@ final class CloudModuleModel: ObservableObject {
         refresh()
     }
 
+    // MARK: - Downloads
+
+    /* The per-service Downloads setting: what a cloud.get delivers.
+       Photos-only today — the one service whose originals routinely
+       dwarf the machine they are bound for. Read and written through
+       the same defaults the provider observes, the enabledKeys shape. */
+
+    func hasDownloadSize(_ service: String) -> Bool {
+        service == "photos"
+    }
+
+    func downloadSize(_ service: String)
+        -> PhotosCloudProvider.DownloadSize {
+        guard hasDownloadSize(service) else { return .long640 }
+        return defaults.string(
+            forKey: PhotosCloudProvider.downloadSizeKey)
+            .flatMap(PhotosCloudProvider.DownloadSize.init(rawValue:))
+            ?? .long640
+    }
+
+    func setDownloadSize(_ service: String,
+                         _ size: PhotosCloudProvider.DownloadSize) {
+        guard hasDownloadSize(service) else { return }
+        defaults.set(size.rawValue,
+                     forKey: PhotosCloudProvider.downloadSizeKey)
+        refresh()
+    }
+
     // MARK: - Grants
 
     /// Whether the row should offer a grant button: on, but macOS has

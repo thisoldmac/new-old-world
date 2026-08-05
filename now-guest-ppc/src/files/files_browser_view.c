@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "db_hilite.h"
 #include "files_path_label.h"
 #include "wire.h"
 
@@ -116,6 +117,11 @@ static void open_row(int index)
            the transfer when the module paints the Stop button into this
            same click. */
         now_pull_asked(&g_pull, g_rows[index].name);
+        /* The get-note hook follows the asker, the listing hook's own
+           rule (request(), above): the iCloud page's drive browser can
+           steal it for its own pull, so every ask from here claims it
+           back. */
+        conn_set_get_note(files_browser_note);
         if (now_wire_get_host(full, g_rows[index].name, err,
                               sizeof err) < 0) {
             now_pull_reset(&g_pull);
@@ -305,6 +311,7 @@ Boolean files_browser_create(WindowRef owner, const Rect *area)
     SetDataBrowserListViewHeaderBtnHeight(g_browser, 16);
     SetDataBrowserHasScrollBars(g_browser, false, true);
     SetDataBrowserSortProperty(g_browser, kColName);
+    now_browser_fill_hilite(g_browser);
     HideControl(g_browser);
     g_path[0] = '\0';
     g_row_count = 0;

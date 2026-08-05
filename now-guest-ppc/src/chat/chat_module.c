@@ -37,9 +37,13 @@
    tracks selection, TEIdle blinks, TEActivate follows the window - the
    same text engine every classic dialog field is made of. */
 
+/* 136 belongs to the Photos size pop-up, which landed on main first;
+   these two moved up rather than silently sharing its ID. A duplicate
+   'MENU' number is a resource-fork collision Rez does not have to
+   report and the loser of which simply never appears. */
 enum {
-    kChatModelsMenuID = 136,
-    kChatProvidersMenuID = 137
+    kChatModelsMenuID = 137,
+    kChatProvidersMenuID = 138
 };
 
 static WindowRef g_owner;
@@ -261,7 +265,7 @@ static void rebuild_provider_popup(void)
     int i;
 
     if (menu == NULL) {
-        strcpy(g_status, "A popup menu resource is missing (137)");
+        strcpy(g_status, "A popup menu resource is missing (138)");
         return;
     }
     if (g_provider_sel >= g_provider_count) {
@@ -301,7 +305,7 @@ static void rebuild_model_popup(void)
     int i;
 
     if (menu == NULL) {
-        strcpy(g_status, "A popup menu resource is missing (136)");
+        strcpy(g_status, "A popup menu resource is missing (137)");
         return;
     }
     if (g_model_sel >= g_model_count) {

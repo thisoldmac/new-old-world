@@ -166,6 +166,17 @@ void conn_set_get_note(ConnGetNote fn);
 int now_wire_get_host(const char *path, const char *name,
                       char *err, long cap);
 
+/* Where a PULL (file.get, the entry point above) actually lands.
+   use=false (the default) means the downloads folder — byte-identical
+   to every pull before this existed; use=true redirects it to the
+   folder named by vref/dir, consumed at get_begin when the answer's
+   file.begin arrives. Guest-side only; no contract change, the same
+   reasoning now_wire_cloud_get_destination below already carries: this
+   is a delivery the guest itself asked for, and the receiver is
+   sovereign over where its own disk keeps it. */
+void now_wire_get_destination(Boolean use, short vref, long dir);
+Boolean now_wire_get_destination_get(short *vref, long *dir);
+
 /* Which half of a pull is in flight. Asked and receiving-nothing-yet are
    different facts about the same machine, and one boolean could not tell
    them apart: a sender that has neither given a size nor delivered a
@@ -231,8 +242,79 @@ int now_wire_cloud_list(const char *service, long cursor,
                         char *err, long cap);
 int now_wire_cloud_detail(const char *service, const char *item,
                           char *err, long cap);
+
+/* True while a cloud.services/cloud.list/cloud.detail ask is awaiting
+   its answer — the single slot the three share (a second ask replaces
+   the first, above). The Contacts card prefetch (cloud_module.c)
+   reads this before ever asking a cloud.detail of its own: prefetch
+   traffic must be the only thing waiting on an idle wire, never
+   layered under a page still loading or a person's own selection
+   already in flight, and this is the one place that answer lives. */
+Boolean now_wire_cloud_pending(void);
+
+/* `size` is the contract's per-ask delivery size ("original",
+   "fit1024", "fit640"), or NULL/"" to omit the field and take the
+   host's configured default — the ask every guest before the field
+   sent, byte for byte. */
 int now_wire_cloud_get(const char *service, const char *item,
-                       char *err, long cap);
+                       const char *size, char *err, long cap);
+
+/* Where a cloud.get's answering offer lands. use=false (the default)
+   means the share root — byte-identical to the pre-existing behavior;
+   use=true redirects THAT offer's landing to the folder named by
+   vref/dir through the pull path's entry point. Guest-side only, no
+   contract change: the share bound governs what the sender may reach
+   unbidden, and this delivery is one the guest asked for — the
+   receiver is sovereign over its own disk. */
+void now_wire_cloud_get_destination(Boolean use, short vref, long dir);
+Boolean now_wire_cloud_get_destination_get(short *vref, long *dir);
+
+/* The inbound receive (the file.offer lane a cloud.get's answer
+   rides), read-only, now_wire_get_active's shape: false when nothing
+   is landing; otherwise fills what has arrived, what is expected, and
+   whether the receive answers our own cloud.get. Every out-parameter
+   is optional. */
+Boolean now_wire_receive_active(long *received, long *expected,
+                                Boolean *cloud_get,
+                                char *name, long name_cap);
+
+/* The last inbound receive's one-line outcome ("Received IMG_1234.jpg"
+   or why not) and its sequence number, which changes exactly when a
+   receive ends — poll the number, read the line when it moved. This is
+   the seam that lets a page replace "Receiving..." with how it went. */
+long now_wire_receive_outcome(char *out, long cap);
+
+/* --- one item as pixels (cloud.preview) ---------------------------------
+   The photo preview: the host decodes, resizes and dithers; this side
+   receives raw indexed rows over the bulk lane (preview.begin / bulk /
+   preview.end, contract) and hands them to ONE hook as ONE settled
+   answer — the batching rule: a preview lands as one delivery and one
+   invalidation, never per bulk frame. On success `pixels` is filled
+   and `fail_reason` NULL; on any failure (refusal, timeout, malformed
+   begin, short transfer, lost link) `pixels` is NULL and the reason is
+   plain MacRoman. The pixel buffer is WIRE-OWNED and valid only for
+   the call: CopyBits it into your own GWorld before returning. */
+typedef struct {
+    long width;
+    long height;
+    long depth;                       /* 1 or 8, contract's enum */
+    long row_bytes;
+    long bytes;
+    const unsigned char *pixels;      /* rows top-to-bottom */
+} NowCloudPreviewPixels;
+typedef void (*ConnCloudPreviewNote)(const NowCloudPreviewPixels *pixels,
+                                     const char *fail_reason);
+void conn_set_cloud_preview_note(ConnCloudPreviewNote fn);
+
+/* Asks for one item as pixels fitting max_w x max_h at depth (1 or 8,
+   cloud_preview_ask_depth's answer). One preview question at a time —
+   unlike the ask kinds above this one cannot replace itself, because
+   the answer is a bulk transfer already in flight; while one is
+   pending or arriving this returns -1 and the view re-asks when the
+   hook settles. */
+int now_wire_cloud_preview(const char *service, const char *item,
+                           long max_w, long max_h, long depth,
+                           char *err, long cap);
 
 /* --- talking to the other machine's model -------------------------------
    The chat.* family: the modern machine's model harness, asked one turn

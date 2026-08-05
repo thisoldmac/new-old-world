@@ -76,6 +76,7 @@ enum ControlMessage: Equatable, Sendable {
     case cloudDetail(CloudDetail)
     case cloudCard(CloudCard)
     case cloudGet(CloudGet)
+    case cloudPreview(CloudPreview)
     case cloudRefuse(CloudRefuse)
     case chatModels(ChatModels)
     case chatCatalog(ChatCatalog)
@@ -85,6 +86,8 @@ enum ControlMessage: Equatable, Sendable {
     case chatResult(ChatResult)
     case chatCancel(ChatCancel)
     case chatReset(ChatReset)
+    case previewBegin(PreviewBegin)
+    case previewEnd(PreviewEnd)
 }
 
 // MARK: - The cloud family
@@ -107,6 +110,11 @@ struct CloudServiceEntry: Codable, Equatable, Sendable, Identifiable {
     /// serving, so the guest's dropdown can say WHY a thing is missing.
     var state: String
     var detail: String?
+    /// For a service that sizes its deliveries: this host's own
+    /// configured CloudGet.size token, so a guest that offers the
+    /// choice preselects the setting instead of carrying a "host
+    /// default" item it cannot name on screen. nil everywhere else.
+    var defaultSize: String?
 
     var id: String { service }
 }
@@ -133,6 +141,14 @@ struct CloudEntry: Codable, Equatable, Sendable, Identifiable {
     var bytes: Int?
     /// Classic Mac epoch: seconds since 1904-01-01.
     var modified: Int?
+    /// Pixel width/height of the entry's ORIGINAL, when the service
+    /// knows one (photos fills both; a service whose rows are not
+    /// images omits both — omission is not zero). Paired so a guest
+    /// can compute the exact post-fit resolution a CloudGet.size box
+    /// will produce from numbers it already has, without a wire round
+    /// trip: the fit arithmetic is the asker's, not the host's to send.
+    var width: Int?
+    var height: Int?
 
     var id: String { item }
 }
@@ -165,6 +181,21 @@ struct CloudGet: Codable, Equatable, Sendable {
     var id: Int
     var service: String
     var item: String
+    /// The per-ask delivery size (original / long640 / long1024 /
+    /// long1600), each naming the LONGEST edge the host scales the
+    /// original's longer dimension onto, aspect preserved, never up.
+    /// Absent means the host's configured Downloads default — which a
+    /// guest with a size picker no longer uses, since cloud.report's
+    /// defaultSize tells it what that setting is. The retired fitN
+    /// boxes are refused by name, never aliased (contract).
+    var size: String?
+
+    init(id: Int, service: String, item: String, size: String? = nil) {
+        self.id = id
+        self.service = service
+        self.item = item
+        self.size = size
+    }
 }
 
 struct CloudRefuse: Codable, Equatable, Sendable {
@@ -262,6 +293,45 @@ struct ChatCancel: Codable, Equatable, Sendable {
 
 struct ChatReset: Codable, Equatable, Sendable {
     var id: Int
+}
+
+/// One item as pixels, rendered entirely by the host: decode (HEIC
+/// included), resize to fit the asked box, dither to the asked depth.
+/// Success is a preview.begin / bulk / preview.end transfer; failure —
+/// a busy lane included — is cloud.refuse on this id.
+struct CloudPreview: Codable, Equatable, Sendable {
+    var id: Int
+    var service: String
+    var item: String
+    /// The asker's pane. The host scales to FIT, aspect preserved; the
+    /// begin's width/height say what actually fit.
+    var maxWidth: Int
+    var maxHeight: Int
+    /// 1 or 8 — the two depths a dither can honestly target. 8 is
+    /// indices into the classic system 256-colour table, 1 is packed
+    /// black-and-white. No palette travels; the system tables are the
+    /// shared truth.
+    var depth: Int
+}
+
+/// The bracket around a preview's bulk bytes, the capture/scene shape:
+/// begin says what the rows are, end closes the transfer.
+struct PreviewBegin: Codable, Equatable, Sendable {
+    var id: Int
+    var transfer: Int
+    var width: Int
+    var height: Int
+    var depth: Int
+    /// Stated rather than derived (width at 8, ceil(width/8) at 1), so
+    /// the two sides never have to agree about rounding.
+    var rowBytes: Int
+    var bytes: Int
+}
+
+struct PreviewEnd: Codable, Equatable, Sendable {
+    var id: Int
+    var transfer: Int
+    var ok: Bool
 }
 
 struct Hello: Codable, Equatable, Sendable {
@@ -1149,6 +1219,9 @@ enum ControlMessageCodec {
             return .cloudCard(try decoder.decode(CloudCard.self, from: data))
         case "cloud.get":
             return .cloudGet(try decoder.decode(CloudGet.self, from: data))
+        case "cloud.preview":
+            return .cloudPreview(
+                try decoder.decode(CloudPreview.self, from: data))
         case "cloud.refuse":
             return .cloudRefuse(
                 try decoder.decode(CloudRefuse.self, from: data))
@@ -1173,6 +1246,12 @@ enum ControlMessageCodec {
                 try decoder.decode(ChatCancel.self, from: data))
         case "chat.reset":
             return .chatReset(try decoder.decode(ChatReset.self, from: data))
+        case "preview.begin":
+            return .previewBegin(
+                try decoder.decode(PreviewBegin.self, from: data))
+        case "preview.end":
+            return .previewEnd(
+                try decoder.decode(PreviewEnd.self, from: data))
         case "stream.request":
             return .streamRequest(
                 try decoder.decode(StreamRequest.self, from: data))
@@ -1300,6 +1379,7 @@ enum ControlMessageCodec {
         case .cloudDetail(let m): return try tagged("cloud.detail", m)
         case .cloudCard(let m): return try tagged("cloud.card", m)
         case .cloudGet(let m): return try tagged("cloud.get", m)
+        case .cloudPreview(let m): return try tagged("cloud.preview", m)
         case .cloudRefuse(let m): return try tagged("cloud.refuse", m)
         case .chatModels(let m): return try tagged("chat.models", m)
         case .chatCatalog(let m): return try tagged("chat.catalog", m)
@@ -1309,6 +1389,8 @@ enum ControlMessageCodec {
         case .chatResult(let m): return try tagged("chat.result", m)
         case .chatCancel(let m): return try tagged("chat.cancel", m)
         case .chatReset(let m): return try tagged("chat.reset", m)
+        case .previewBegin(let m): return try tagged("preview.begin", m)
+        case .previewEnd(let m): return try tagged("preview.end", m)
         case .streamRequest(let m): return try tagged("stream.request", m)
         case .streamStart(let m): return try tagged("stream.start", m)
         case .streamStop(let m): return try tagged("stream.stop", m)

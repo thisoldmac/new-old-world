@@ -16,7 +16,15 @@ typedef unsigned char Boolean;
 enum {
     kCloudMaxServices = 8,
     kCloudMaxRows = 128,              /* the Files browser's bound */
-    kCloudMaxCardRows = 16
+    kCloudMaxCardRows = 16,
+
+    /* The download-size popup, stated ONCE here because MENU 136's
+       resource, the view's stop table and the token map all have to
+       agree: four items, largest first (Original, 1600, 1024, 640),
+       and item 2 is the largest BOUNDED stop — where the popup opens
+       when the host named no size this guest knows. */
+    kCloudSizeItemCount = 4,
+    kCloudSizeLargestStopItem = 2
 };
 
 typedef struct {
@@ -24,6 +32,17 @@ typedef struct {
     char label[32];                   /* MacRoman, drawn in the popup */
     char state[16];                   /* serving | off | no-access | ... */
     char detail[96];                  /* MacRoman, drawn under the list */
+    char default_size[16];            /* the host's own CloudGet.size
+                                          setting, for a service that
+                                          sizes its deliveries; empty
+                                          when the host stated none.
+                                          Protocol token, not display
+                                          text: the popup PRESELECTS
+                                          the item it names rather than
+                                          carrying a "host default"
+                                          item that could not say what
+                                          it meant (cloud_size_
+                                          default_item, below). */
 } CloudService;
 
 typedef struct {
@@ -32,6 +51,17 @@ typedef struct {
     char subtitle[48];                /* MacRoman */
     long bytes;                       /* 0 = unstated */
     unsigned long modified;           /* classic seconds; 0 = unstated */
+    long width;                       /* the ORIGINAL's pixel size; 0 =
+                                          unstated (a non-image service,
+                                          or one that cannot learn it).
+                                          Paired with height so the
+                                          Photos view can compute a
+                                          fitN token's exact post-fit
+                                          resolution itself (the wire
+                                          token stays coarse by
+                                          contract) — see docs/icloud.md
+                                          and cloud_photo_size.h. */
+    long height;                      /* see width */
 } CloudRow;
 
 typedef struct {
@@ -68,6 +98,16 @@ int cloud_parse_report(const char *reply, CloudStore *store);
 int cloud_parse_listing(const char *reply, CloudStore *store);
 int cloud_parse_card(const char *reply, CloudStore *store);
 
+/* cloud_parse_card's own core, taking caller-supplied buffers instead
+   of a whole CloudStore: the card cache (cloud_card_cache.h) fills one
+   entry from a cloud.card reply that may answer a PREFETCH rather than
+   the row currently on screen, and a second kCloudMaxRows-sized
+   CloudStore just to reach its card[]/card_item fields would cost
+   ~25KB of scratch for a ~2.5KB card. cloud_parse_card is this
+   function pointed at one store's own fields. */
+int cloud_parse_card_rows(const char *reply, char *item_out, long item_cap,
+                          CloudCardRow *rows_out, int rows_cap);
+
 /* The first service whose state is "serving" and that has rows to ask
    for (not drive, whose browsing lives in Files); -1 when none. The
    dropdown's initial selection. */
@@ -85,5 +125,55 @@ Boolean cloud_service_listable(const char *service);
    host-cc testable (cloud_model_test.c) — the wording is a decision,
    not a drawing detail. */
 void cloud_listing_status(const CloudStore *store, char *out, long cap);
+
+/* The last colon-separated segment of a classic path ("Macintosh
+   HD:Photos:Trips" -> "Trips"; "Macintosh HD:" -> "Macintosh HD"),
+   which is what the photos summary line shows. The FULL path belongs
+   in the disclosed row where there is room; the always-visible line
+   gets the one word that answers "where", so both facts still fit a
+   200pt pane. An empty path writes an empty string - the caller has a
+   share-root name to fall back on and this file does not know it. */
+void cloud_dest_leaf(const char *path, char *out, long cap);
+
+/* --- the download-size popup and the download's own read-out --------
+   Pure decisions the photos view draws from, host-cc tested in
+   cloud_model_test.c: the popup-item-to-wire mapping and the two
+   change-gate values (bar position, byte-count line) whose "did the
+   shown value change" comparisons are the whole idle discipline. */
+
+/* Menu item (1-based, the MENU 136 order: Original / 1600 / 1024 /
+   640) to the contract's size token. Every item names a REAL size:
+   there is no "host default" item any more, because an item that
+   cannot say on screen what it will deliver is not an answer to
+   "at what size?" — the host's setting arrives as data instead
+   (CloudService.default_size) and is preselected. NULL only for an
+   item the popup cannot produce; a caller that gets NULL has no size
+   to send, not a size to guess. */
+const char *cloud_size_token(int menu_item);
+
+/* The reverse map: the popup item that means this token, 0 for NULL,
+   empty, or a token this guest does not offer (a newer host's, or one
+   of the RETIRED fitN boxes). */
+int cloud_size_item(const char *token);
+
+/* The item to OPEN the popup on, given the host's reported
+   defaultSize. An unknown or absent token falls back to the largest
+   BOUNDED stop rather than to Original: Original is the absence of a
+   size, and a 48-megapixel original landing unasked on a 6MB partition
+   is exactly the mistake a fallback must not make. Never 0 — this
+   answer is always an item a person can see selected. */
+int cloud_size_default_item(const char *token);
+
+/* The bar's control value, 0..1000 (the share panel's scale), clamped;
+   -1 when expected is unknown or nothing is moving — the value at
+   which a bar should not be shown at all rather than sit at zero. */
+int cloud_dl_bar_value(long received, long expected);
+
+/* One line of byte progress ("312K of 3,204K" without the comma:
+   "312K of 3204K"), or the received count alone when the total is
+   unstated. Change-gated by the caller via strcmp: the string IS the
+   gate, so it must be a pure function of its inputs. */
+void cloud_dl_bytes_line(long received, long expected,
+                         char *out, long cap);
 
 #endif /* NOW_CLOUD_MODEL_H */

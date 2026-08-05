@@ -80,10 +80,20 @@ static const CloudViewOps k_ops = {
     NULL,                              /* key: generic HandleControlKey */
     NULL,                              /* idle: nothing to watch */
     NULL,                              /* reset_for_service: ask_rows(1) */
-    view_row_matches
+    view_row_matches,
+    NULL,                              /* select: the card is the state */
+    NULL,                              /* control_click: no own controls */
+    NULL                               /* save_size: host default */
 };
 
 const CloudViewOps *cloud_list_view_ops(void)
 {
     return &k_ops;
+}
+
+void cloud_list_view_draw_card(const CloudLayout *r,
+                               const CloudStore *store,
+                               const CloudService *service, int selected)
+{
+    view_draw(r, store, service, selected);
 }

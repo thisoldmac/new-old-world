@@ -10,7 +10,7 @@ Workshop window it was originally written for now exists; to add a page
 to it, read [adding-a-workshop-module.md](adding-a-workshop-module.md)
 after this.
 
-## Six rules that have each already broken something
+## Eight rules that have each already broken something
 
 **A UPP is not a cast.** This build is `TARGET_RT_MAC_CFM`, where
 `MixedMode.h` makes a UPP a `UniversalProcPtr` — a routine descriptor.
@@ -64,6 +64,22 @@ draws its own insertion, `TEClick` places the caret, `TEIdle` blinks,
 The same fact means any `GetKeyboardFocus` gate in this window is dead
 code — three Data Browser pages carry one and their arrow keys have
 never fired.
+**A manager-owned control amplifies your damage — mutate it once per
+settled answer, never once per wire page.** Your own invalidations can
+be perfectly bounded and the page still flashes whole: a Data Browser
+repaints ITSELF on every `AddDataBrowserItems`, and a listing that
+arrives as eight 16-row control frames fed straight into eight add
+calls is eight full-control repaints in under a second (watched on the
+PowerBook, 2026-08-02, on all three iCloud views at once — the exact
+repaint scope is the CDEF's business, but the storm is yours).
+Accumulate wire pages in your own store and touch the control once
+when the listing settles; keystroke-time changes go through a per-row
+DIFF against what the control already shows, never remove-all/add-all.
+This is the recurring redraw bug's third costume — the first was
+whole-pane invalidation from idle, the second unconditional
+`HiliteControl` — and what the three share is one rule: the pixels a
+person sees may change only when the FACTS they show changed, whether
+the repaint is yours or a control's.
 
 ## Two traps that are not about drawing
 

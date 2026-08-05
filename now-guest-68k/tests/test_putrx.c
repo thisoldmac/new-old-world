@@ -1325,6 +1325,49 @@ static void test_parsing_a_file_offer(void)
     check("absent overwrite defaults to false", o.overwrite == 0);
     check("absent container is data", o.macbinary == 0);
 
+    /* The regression this file exists to pin: a classic file date past
+     * 2^31-1 classic seconds (January 1972) used to saturate through
+     * now68k_json_find_int's signed strtol and land on the wire as
+     * that same wrong value instead of the real, modern one - the
+     * PowerPC guest had exactly this bug in serve_file_offer before
+     * the field moved to now68k_json_find_u32 / now_json_find_u32.
+     * 3866844800 is a 2026 date in classic seconds. */
+    {
+        static const char modern[] =
+            "{\"id\":3,\"name\":\"Photo.jpg\",\"bytes\":1,"
+            "\"modified\":3866844800}";
+
+        check("a 2026 offer parses",
+              n68_putrx_parse_offer(modern, (long)strlen(modern), &o) == 1);
+        check("its modified date survives past the old signed ceiling",
+              o.modified == 3866844800UL);
+        /* Pins the mutation: reverting to now68k_json_find_int would
+         * make this line true instead - the saturated 2^31-1. This is
+         * observable only on a build where `long` is actually 32 bits,
+         * which this native test host's own `long` may not be - see
+         * the overflow check below for a host-width-independent pin. */
+        check("...and is not the saturated signed value",
+              o.modified != 2147483647UL);
+    }
+
+    /* Host-width-independent pin: now68k_json_find_u32 masks to 32
+     * bits by hand; now68k_json_find_int's raw value would not be
+     * masked on any host, 32-bit long or 64. A value past 2^32 never
+     * legitimately arrives here (the host's ClassicDate stops below
+     * it), but it is what makes a reversion at this call site fail
+     * regardless of the test host's own `long` width. */
+    {
+        static const char overflow[] =
+            "{\"id\":4,\"name\":\"Overflow.jpg\",\"bytes\":1,"
+            "\"modified\":4294967397}";
+
+        check("an overflowing offer still parses",
+              n68_putrx_parse_offer(overflow, (long)strlen(overflow),
+                                    &o) == 1);
+        check("its modified date is masked to 32 bits",
+              o.modified == 101UL);
+    }
+
     {
         static const char mb[] =
             "{\"id\":2,\"name\":\"App\",\"bytes\":10,"

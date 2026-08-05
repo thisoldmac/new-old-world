@@ -43,6 +43,389 @@ Still open:
   purpose): the three Data Browser pages gate arrows on
   `GetKeyboardFocus` and so have never taken a key. Spun off as its own
   task; docs/guest-ui-start-here.md carries the rule.
+## The host suite fails when a NOW app is already running (2026-08-02)
+
+**Environmental, not a defect in the code under test — but it reads
+exactly like one.** `scripts/test-all` went red on the loopback
+suites (`GuestListenerTests`, `GuestIdentityTests`,
+`ConnectionsModelTests`, `MultiGuestListenerTests`,
+`AgentIntegration*`) while two `New Old World.app` instances were
+running on this Mac, one of them holding port 5250. Evidence that it
+is contention and not the change under test:
+
+- the same failures reproduce on the parent commit, with the change
+  absent;
+- a different subset fails on each run;
+- `GuestListenerTests` passes 23/23 twice when run ALONE, and fails
+  only inside the full run;
+- every cloud suite (50 tests) passes in both.
+
+The suites bind port 0, so this is not a simple port collision —
+it is load and listener contention on a machine that is also running
+the product. The metal rule (`MetalMachineGuard`: "a gate must check
+the MACHINE is free", docs/68k-metal-runbook.md) has a host-side twin
+that does not exist: nothing checks for a live `New Old World` before
+the host gate binds. Until it does, a red host gate with a NOW app
+running should be re-run with the app quit before it is believed —
+in either direction.
+
+## Photo sizes became long-edge stops; three metal defects fixed, none re-verified on metal (2026-08-02, latest)
+
+**Unverified, deliberately labelled.** Metal feedback named three
+things about the Photos save controls, and all three are fixed and
+TESTED — nothing here has been looked at on the PowerBook since.
+
+- **The Size caption overprinted the popup.** `view_draw` drew "Size"
+  into `size_popup`'s own rect — a popup paints its value across the
+  whole control, so the caption landed on top of it and read as
+  garbage. The caption now has `CloudLayout.size_label` of its own, on
+  the same row at the group box's left inset, the shape `dest_row` +
+  `dest_btn` already used one line below. `cloud_layout_test.c`
+  asserts `size_label.right <= size_popup.left` relationally, watched
+  failing under a mutation that puts the caption back on the popup.
+- **"Host default" is gone.** Every popup item now names a real size,
+  and the host's configured setting arrives as data instead
+  (`CloudReport.defaultSize`, additive) and is PRESELECTED. `cloud.get`
+  from this guest always carries an explicit token.
+- **The stops changed meaning.** `original` / `long640` / `long1024` /
+  `long1600`, each naming the LONGEST edge (aspect preserved, never
+  upscaling). The `fitN` fit boxes are **retired, not aliased** — see
+  the contract's own `CloudGet.size` prose for why the graceful
+  refusal is what let a deliberate semantic break skip a revision bump.
+
+What only metal can settle:
+
+- **The caption and popup side by side at 640x480.** The layout test
+  proves they do not overlap in arithmetic; whether "Size" is legible
+  beside a popup wearing "3024 x 4032" on a real 640-wide screen is a
+  looking question, and the pane's inset clamp has never been seen.
+- **A portrait photo actually arriving at 480x640.** The scale is
+  proven twice off-machine (`PhotosProcessingTests` through the real
+  CoreGraphics pipeline, `cloud_photo_size_test.c` for the guest's
+  label arithmetic, both mutation-watched) but never against a real
+  PHAsset with real EXIF orientation, which is the one input a
+  fixture cannot fake honestly.
+- **The preselect on a real report.** `defaultSize` riding the wire
+  and moving the popup has run in no loopback test of the GUEST half
+  — the guest's parser is unit-tested, the control mutation is not
+  reachable from a host cc.
+- **Whether anything still sends a retired token.** Nothing in this
+  tree does; a stale build on the PowerBook would, and would get the
+  named refusal rather than a wrong picture. Nobody has watched that
+  refusal land in the guest's status line.
+
+## RESOLVED: every modern classic-date field was silently dropped (2026-08-02)
+
+### Fixed, tested — not yet re-verified on metal
+
+Watched on metal 2026-08-02: the iCloud Photos list showed "--" in
+Modified for every 2026 photo. Traced to `ClassicDate.guestWireSeconds`
+(`now-host/Sources/Host/FileConverter.swift`), which stopped at
+`Int32.max` — January 1972 in classic (1904-epoch) seconds — because
+the deployed guest read the field with `strtol` into a signed 32-bit
+`long`. Every date after that came back `nil` from the host function,
+`modified` was omitted from the wire entirely, and the guest drew the
+"unstated" dash instead. Not Photos-specific: `CloudServices.swift`,
+`HostShare.swift` and `FilesModel.swift` all route through the same
+function, so cloud listings and the drive/files browser carried the
+same silent gap — every date after early 1972, on every listing
+either guest reads.
+
+A classic file date is actually **unsigned** seconds since 1904, good
+to early 2040; the host's ceiling was simply wrong, not conservative.
+Fix: the host stops clamping early (`guestWireSeconds` now just
+forwards `macSeconds`'s own, correct, unsigned ceiling), and the guest
+gained an unsigned reader to match — `now_json_find_u32`
+(`now-guest-ppc/src/core/json.c`) and `now68k_json_find_u32`
+(already existed on the 68K side for CRC32, just needed pointing at
+this field) — used at every classic-seconds field either guest parses
+off the wire: the PPC guest's cloud listing rows, browse/pull replies
+(drive/files browser, `file.pull`), and both guests' `file.offer`
+push.
+
+A second, independent site carried the identical bug and is not
+reached by `ClassicDate` at all: `GuestFileUploadCommands.begin`'s
+own inline `modified <= Int32.max` clamp on the MCP agent-upload
+path (a raw already-classic-seconds `Int`, not a `Date`). Found by
+grepping `now-host/Sources` for `Int32.max` once the first site was
+fixed. Two PRE-EXISTING host tests turned out to encode the bug as
+correct behavior (asserting `.modified == nil` for a modern date) and
+needed correcting alongside the fix — caught by running the full
+host suite, not by writing new tests.
+
+**Tested, nothing more; full account in
+[icloud.md](icloud.md#every-modern-modified-date-silently-dropped-fixed-2026-08-02).**
+Host XCTest and guest `json_native_test`/`cloud_model_test`/`test_putrx`
+all pass, mutation-watched by hand. Nothing has run on the emulator or
+the PowerBook since the fix — confirming a 2026 photo's Modified column
+now draws a real date, rather than merely that the wire carries one, is
+the next metal session's job.
+
+## Drive's split-view pane has never run anywhere (2026-08-02, later still still)
+
+**Unverified.** Drive stopped being the full-width flat list the
+2026-08-01 entry below documents and went back to a list/detail split
+— the SAME split every other iCloud view uses, not a second one
+(`cloud_layout.c` computes one list/detail geometry and reuses it for
+drive mode too, differing only in `list_top`, pushed down by the
+breadcrumb row above it, and in the pane's own furniture below). The
+destination row and Choose... moved off the old toolbar strip and
+into the pane; the pull's moving bar and byte line moved there too,
+reusing Photos' own `cloud_dl_bar_value`/`cloud_dl_bytes_line` idle
+discipline against a different wire entry point
+(`now_wire_get_active`, since Drive pulls through `now_wire_get_host`
+rather than `cloud.get`); and the selected item's own name/kind/
+size/date plus the double-click affordance line — which the
+2026-08-01 review below moved onto the placard — moved back into the
+pane, so the placard no longer changes on selection or on a pull's
+byte count, only on durable folder/error/outcome news. No image
+preview for drive files: a drive row carries no cloud item id, so a
+later arc that wants one needs a real fetch-and-decode path, not this
+pane's text — the seam is named in `cloud_drive_view.c`'s
+`draw_item_card`.
+
+`scripts/test-all` is green with each exit code read directly (79
+native tests including `cloud_layout_test.c`'s rewritten, relational
+drive-mode assertions — the old ones asserted full width and had to
+change outright — both guest cross-builds, `swift test` at 1355
+tests with 0 failures, `xcodebuild` Debug and Release), the new
+layout assertions were watched failing via a deliberate mutation
+before being trusted, and `audit_source.py` over both touched files
+raised only already-reviewed lexical categories (the new
+`SetControlValue` on the download bar is change-guarded, read back to
+confirm). **None of this has run on the emulator or the PowerBook.**
+The 2026-08-01 metal pass for Drive (below) predates every layout
+Drive has worn since, including this one — what it proves is the
+browsing logic (list, descend, Up, double-click fetch), not any pane
+pixels. Before this can move past "tested": watch the split render at
+640x480 and at a roomier size, select a folder and a file and confirm
+the pane's text matches what the columns already say, start a pull
+and watch the bar/byte line move in the pane while the placard stays
+on the folder's own listing, and confirm Choose... still redirects a
+pull's landing folder from its new position.
+
+## The polish2 integration merged three UI arcs; the seam between them has never run (2026-08-02, later still)
+
+**Unverified, and the specific claim is narrower than "the union is
+untested."** `claude/polish2-drive-dest`, `claude/polish2-photos-cols`
+and `claude/polish2-contacts` — each individually tested against the
+shell as it existed on `claude/polish2-foundations` — merged onto
+`claude/polish2-integration` with real conflicts in `cloud_module.c`
+and `cloud_photos_view.c`, not just adjacent additions:
+
+- **`cloud_module.c`**: `view_own_browser()`/`active_browser()`/
+  `show_own_browser()` had to generalize from two view-owned browsers
+  (Drive, Photos, from the drive-dest+photos-cols merge) to three
+  (adding Contacts) rather than picking either side's flag check
+  wholesale — a real design decision made at merge time, not a
+  mechanical union.
+- **`cloud_photos_view.c`**: photos-cols' own Data Browser (Name/Size/
+  Modified columns, the Size popup's exact-resolution labels) had to be
+  kept while adopting polish2-contacts' extraction of the preview
+  GWorld/fetch state out of this file into the new shared
+  `cloud_preview_well.c` — meaning Photos' preview path now goes
+  through the well's rebind-on-select `note` callback for the first
+  time. Photos' OWN branch never tested against that extraction
+  (contacts' branch predates photos-cols' columns); contacts' OWN
+  branch never tested against Photos having a Data Browser of its own.
+  Neither branch's tests can have exercised this interaction, only the
+  merged tree's tests can, and `scripts/test-all` at the pure-logic
+  level cannot see a Toolbox-level selection/rebind race.
+
+`scripts/test-all` is green on the merged tree (79 native tests
+including all seven `cloud_*` ones, both guest cross-builds, the host
+suites and the Xcode app target) and `audit_source.py` over every
+touched `now-guest-ppc/src/cloud/*.c` file raised nothing new past
+already-reviewed, already-guarded lexical patterns. **None of this ran
+on the emulator or the PowerBook.** What only metal can prove, most
+load-bearing first:
+
+- **The preview well correctly rebinds across a Photos-to-Contacts
+  switch on a REAL machine.** Select a photo, let its preview arrive
+  on the new Data Browser, switch to Contacts mid-flight or right
+  after, pick a card, and confirm the well's eviction/rebind hands the
+  right pane its pixels — not a stale Photos preview drawn into the
+  Contacts well, not a Contacts ask silently landing in the Photos
+  pane.
+- **Four browsers (shell, Drive, Photos, Contacts) sharing one window's
+  activate/show lifecycle** — `cloud_activate`'s `lists[4]` and
+  `show_own_browser`'s four-way dispatch are new arithmetic this merge
+  wrote, unexercised past compiling and the pure geometry tests.
+- Every per-branch metal gap already ledgered below (Contacts guest UI,
+  Photos download UX, Photos preview) still applies undiminished — this
+  entry is additionally about the THREE arcs running together, not a
+  replacement for any of them.
+
+## polish2-foundations: contract + host only, tested with fakes; the two real-data paths and the whole guest half are unbuilt (2026-08-02, later still)
+
+**Unverified, deliberately labelled — and narrower than the other
+2026-08-02 entries: no guest UI exists for any of this yet.** The
+foundations arc (contract: `CloudGet.size` grows fit1440/fit2048,
+`CloudListing` entries grow optional width/height, x-cloud contacts
+gains `cloud.preview`; host: `PhotosCloudProvider.DownloadSize` grows
+the same two boxes, `.list` fills width/height from
+`PHAsset.pixelWidth`/`pixelHeight`, `ContactsCloudProvider.preview`
+reuses the photos decode/fit/dither pipeline against
+`CNContactThumbnailImageDataKey`) is TESTED — loopback-proven with
+FAKE providers (`CloudServingTests`, `CloudModuleModelTests`) — and
+none of it has touched a real PHAsset or CNContact. What only a
+granted library/address book (this Mac's existing TCC grants) and
+metal can prove, additional to the items already ledgered below for
+`PhotosCloudProvider`:
+
+- **`PHAsset.pixelWidth`/`pixelHeight` actually land in a real
+  listing.** The fill is one line reading documented public
+  properties, but "documented and public" is a code-reading claim
+  until a real library's rows carry real numbers a person can compare
+  against Photos.app.
+- **`ContactsCloudProvider.preview` has never run granted.** The
+  `CNContactThumbnailImageDataKey` fetch, a REAL contact that has a
+  thumbnail, a real one that does not (proving the not-found "no
+  photo" path fires from the actual store rather than only from a
+  fake's scripted fault), and the reused pipeline against a real
+  Contacts-app thumbnail's actual bytes (not the flat synthetic JPEG
+  the loopback test generates) are all unexercised.
+- **fit1440/fit2048 against a real multi-thousand-photo library.**
+  `processedJPEG`'s box arithmetic is shared code already proven for
+  the other three tokens (`PhotosProcessingTests`), so this is lower
+  risk than a new pipeline — but "lower risk" is still a claim, not a
+  measurement, until someone asks a real original at 2048x1536 and
+  looks at the JPEG that comes back.
+  *(2026-08-02, later: moot as written — all five `fitN` boxes were
+  retired the same day for the four `longN` long-edge stops, and the
+  unmeasured claim now belongs to those. See the long-edge entry at
+  the top.)*
+- **The guest half is entirely unbuilt.** Nothing here has a
+  `now-guest-ppc` counterpart: no Size popup entries for the two new
+  boxes, no exact-resolution-from-dimensions arithmetic on the guest
+  side, no contacts card wired to ask `cloud.preview` or draw the "no
+  photo" placeholder. This arc is contract + host seams for those
+  pages to consume, not the pages themselves.
+
+  **No longer true for the contacts half (2026-08-02, later still):**
+  the contacts card now asks `cloud.preview` on selection and draws
+  the "no photo" placeholder — see the Contacts guest UI entry below.
+  The Size-popup entries and exact-resolution arithmetic remain
+  unbuilt; those are Photos-only and this arc did not touch them.
+
+## Contacts guest UI shipped tested; nothing has run past cross-compilation (2026-08-02, later still)
+
+**Unverified, deliberately labelled — narrower than "tested" usually
+reads here.** Built atop polish2-foundations: Contacts gets its own
+Data Browser (Name/Company columns, `cloud_contacts_view.c`, the drive
+browser's view-owned recipe), a real address-book card (photo well,
+name, grouped rows — `cloud_contacts_card_layout` in
+`cloud_contacts_card.c`), and a photo well shared with Photos
+(`cloud_preview_well.c`, extracted from `cloud_photos_view.c`). What is
+actually verified: the pure card layout is host-cc tested and
+mutation-watched (`cloud_contacts_card_test.c`), and the PPC guest
+cross-compiles clean with zero warnings. That is ALL — nothing here has
+run against a live host wire, on the emulator, or on the PowerBook:
+
+- **The Data Browser itself is unwatched.** Two real columns, its own
+  UPPs, the fill-hilite call — all follow the drive browser's proven
+  recipe, but "follows a proven recipe" is not the same claim as
+  "watched drawing rows on the PB1400c."
+- **The photo well's CopyBits landing is unwatched.** Reused verbatim
+  from Photos' own preview (metal status there is itself only
+  loopback-proven, see the entries below), but landing into a SMALLER
+  well (48x48) rather than the photos pane is new geometry nobody has
+  seen render.
+- **The hand-drawn silhouette placeholder has never been seen.** A
+  gray head-and-shoulders in two `PaintOval` calls, clipped to the
+  well — geometry read by eye in the source, not by eye on a screen.
+- **The preview-well extraction is a real behavior change for Photos,
+  not just a file move.** `cloud_preview_well.c`'s `_select` rebinds
+  the settle callback on every call, which changes exactly which
+  view's pane gets invalidated when a late preview answer lands after
+  the selection has moved on. Photos' preview path carried a metal
+  pass before this refactor (2026-08-01); that pass does not cover the
+  code as it exists now.
+- **A contact WITH a real thumbnail has never been asked for.** The
+  wire path is loopback-proven (polish2-foundations, above) with a
+  synthetic JPEG; nothing here has asked a real granted `CNContactStore`
+  for a real photo and watched it dither and land in the well.
+- **The card became titled GROUP BOXES (2026-08-02, later still) and
+  no box has ever been drawn.** The judged design replaced the flat
+  label/value column with one `kControlGroupBoxTextTitleProc` control
+  per section (Phone, Email, Address, Other), held as a fixed pool of
+  four that a selection only retitles, moves and shows or hides. The
+  pure half is host-cc tested and mutation-watched, and the guest
+  cross-compiles — but the constructor is proven in this codebase only
+  by `software_module.c`'s ONE static box, never by four that move and
+  retitle under a live selection. Three specific things nobody has
+  watched: whether `SetControlTitle` + `MoveControl` on a visible
+  group box repaints cleanly on CarbonLib 1.6 rather than leaving
+  frame debris; whether the hand-drawn rows survive the box's own
+  redraw ordering inside an update event (the pane is invalidated once
+  per settled sync, which SHOULD make that moot, and "should" is the
+  word doing the work); and whether the `truncEnd` values read as
+  intended in the 70-point column at the smallest pane.
+
+## Photos download UX shipped tested; every visible behavior awaits metal (2026-08-02, later)
+
+**Unverified, deliberately labelled.** The four-item download arc
+(the pane's "Loading preview..." state; the download bar + byte count
+off the new read-only `now_wire_receive_active`; the per-ask `size`
+on `cloud.get` — contract-additive, host loopback-proven with watched
+mutations, guest Size popup MENU 136; the guest-side destination
+chooser redirecting a cloud-born offer through
+`now_files_receive_begin_at`; and the receive-outcome seam replacing
+the stuck "Receiving..." status) is TESTED at its decidable seams and
+cross-compiles, and none of it has been watched on a machine. The
+specific things only metal can prove:
+
+- **The furniture rows draw where the geometry says** (size popup row,
+  destination row, bar, byte line stacked over Save at 640x480), and
+  the card/preview genuinely never draws under a live control.
+- **The bar moves and the byte line ticks without flicker** during a
+  real multi-hundred-KB receive — the change-gates are unit-tested,
+  the pixels are not.
+- **A redirected offer lands whole in the chosen folder** with type/
+  creator/date stamped, and choosing the share root really is
+  byte-identical (it never sets the override; only a code-reading
+  claim so far).
+- **The outcome line replaces the status at completion** on a real
+  wire, including the refusal endings (exists / too-big / busy).
+- **The popup CDEF under CarbonLib 1.6** accepts the fixed MENU 136
+  the way the services popup accepts its rebuilt one — same recipe,
+  never this menu.
+
+## Photos preview + processing shipped tested; a granted library and metal own the rest (2026-08-02)
+
+**Unverified, deliberately labelled.** The list+preview arc
+(`cloud.preview` / `preview.begin` / `preview.end`, contract-additive;
+`ClassicDither`; `cloud_photos_view.c`; the Downloads picker feeding
+`cloud.photos.downloadSize` into the get pipeline) is TESTED — pure
+ditherers with watched mutations, loopback serving with bytes-intact
+and lane-exclusivity proofs, in-test JPEG/HEIC fixtures for the
+resize pipeline, host-cc guest units — and none of it has met a
+machine. What only a granted library and metal can prove:
+
+- **The palette is the real one only by construction.** ClassicDither
+  generates the standard 'clut' 8 layout (cube minus black slot, four
+  ramps, black at 255) and dithers against it; the guest's GWorld
+  wears whatever a NULL colour table gives an 8-bit depth. That the
+  two tables are THE SAME TABLE on a real CarbonLib screen — the
+  whole reason no palette travels — is a code-reading claim until a
+  preview is looked at on the PowerBook. If colours arrive scrambled,
+  suspect this first.
+- **PhotosCloudProvider.preview has never run granted**: the
+  local-bytes-only fetch, the busy bargain for an un-materialized
+  original, and a real HEIC through decode->fit->dither all need this
+  Mac's TCC grant.
+- **The pane under a held lane** ("Preview after the download", the
+  re-ask when selection moves mid-transfer) is guest logic past the
+  pure units: builds only, exercised on no machine, and 1-bit asks
+  (screens under 8-bit) have no fixture anywhere.
+- **Downsized downloads against a real library**: processedJPEG is
+  fixture-tested; a 48 MP original through `long640` (was `fit640`
+  until the long-edge arc, same day) on the wire to a real guest is
+  not.
+- **Preview pacing on real hardware**: a 300x200 8-bit preview is
+  ~60 KB, ~0.2 s at the measured 300 KiB/s — arithmetic, not a
+  measurement; nobody has felt the selection-to-pixels latency at
+  the PowerBook.
 
 ## The cloud.* family: real providers are untested, and the guest half does not exist (2026-08-01)
 

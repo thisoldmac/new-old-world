@@ -130,10 +130,20 @@ final class GuestFileUploadCommands {
                 container: request.container,
                 fileType: request.fileType,
                 creator: request.creator,
-                // The deployed guest parser is signed 32-bit. Omission is
-                // the canonical safe behavior for an unrepresentable date.
+                // A classic file date is unsigned seconds since 1904
+                // (good to ~2040); the guest now parses it unsigned
+                // (now_json_find_u32, now-guest-ppc/src/core/json.c).
+                // This used to clamp at Int32.max instead (~Jan 1972,
+                // the deployed guest's OLD signed strtol ceiling) and
+                // silently dropped every modern date - the same
+                // regression ClassicDate.guestWireSeconds carried and
+                // is fixed there; this is an independent duplicate of
+                // that clamp for the agent-upload path, not something
+                // ClassicDate's fix reaches on its own. Omission stays
+                // the canonical safe behavior for a genuinely
+                // unrepresentable (pre-1904 or post-2040) date.
                 modified: request.modified.flatMap {
-                    $0 >= 0 && $0 <= Int(Int32.max) ? $0 : nil
+                    $0 >= 0 && $0 <= Int(UInt32.max) ? $0 : nil
                 },
                 sha256: request.sha256)
             authorities[status.uploadID] = authority

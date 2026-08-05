@@ -231,6 +231,7 @@ channels:
       cloudDetail: { $ref: "#/components/messages/cloudDetail" }
       cloudCard: { $ref: "#/components/messages/cloudCard" }
       cloudGet: { $ref: "#/components/messages/cloudGet" }
+      cloudPreview: { $ref: "#/components/messages/cloudPreview" }
       cloudRefuse: { $ref: "#/components/messages/cloudRefuse" }
       chatModels: { $ref: "#/components/messages/chatModels" }
       chatCatalog: { $ref: "#/components/messages/chatCatalog" }
@@ -240,16 +241,22 @@ channels:
       chatResult: { $ref: "#/components/messages/chatResult" }
       chatCancel: { $ref: "#/components/messages/chatCancel" }
       chatReset: { $ref: "#/components/messages/chatReset" }
+      previewBegin: { $ref: "#/components/messages/previewBegin" }
+      previewEnd: { $ref: "#/components/messages/previewEnd" }
   bulk:
     address: "1"
     description: >
       Raw payload bytes on channel 1, correlated by the frame header's
-      transfer id. Three payload kinds ride it: capture pixel data (rows
+      transfer id. Four payload kinds ride it: capture pixel data (rows
       top-to-bottom, rowBytes apart; depth 8 uses the guest's palette;
       16 is RGB555 big-endian; 32 is xRGB8888 big-endian), file content
-      (file.begin describes the container), and a scene document
-      (scene.begin: UTF-8 JSON, the Mirror IR whose major is irVersion).
-      The control message that began the transfer says which.
+      (file.begin describes the container), a scene document
+      (scene.begin: UTF-8 JSON, the Mirror IR whose major is irVersion),
+      and a cloud preview (preview.begin: raw indexed rows, top-to-bottom,
+      rowBytes apart, already dithered by the HOST to the depth the guest
+      asked — no palette block, because the target is the classic system
+      table for that depth, which both sides already own). The control
+      message that began the transfer says which.
 
 operations:
   hostExecutesLine:
@@ -650,6 +657,7 @@ operations:
       - $ref: "#/channels/control/messages/cloudList"
       - $ref: "#/channels/control/messages/cloudDetail"
       - $ref: "#/channels/control/messages/cloudGet"
+      - $ref: "#/channels/control/messages/cloudPreview"
     description: >
       The guest asks the HOST about its cloud. One direction by
       DEFINITION rather than by precedent: the family's subject is the
@@ -676,6 +684,18 @@ operations:
       cloud.refuse answers only what fails BEFORE an offer exists; once
       the offer is on the wire, the file family owns the outcome,
       including the one-transfer-wide lane.
+
+      cloud.preview asks for one item AS PIXELS: a small transfer
+      (preview.begin, bulk frames, preview.end) of raw indexed rows the
+      host has already resized to fit the asked box and dithered to the
+      asked depth. The HOST does all rendering — the same division as
+      text conversion, applied to pixels: the modern machine is the only
+      side that can decode a HEIC, and the classic machine should only
+      ever CopyBits what arrives. It rides the one-transfer-wide lane
+      like everything else on the bulk channel, so while a download (or
+      anything else) holds the lane the ask is refused busy via
+      cloud.refuse — a bounded prefix of the same bargain cloud.get
+      strikes, never a queue.
   hostServesCloud:
     action: receive
     channel: { $ref: "#/channels/control" }
@@ -684,6 +704,8 @@ operations:
       - $ref: "#/channels/control/messages/cloudListing"
       - $ref: "#/channels/control/messages/cloudCard"
       - $ref: "#/channels/control/messages/cloudRefuse"
+      - $ref: "#/channels/control/messages/previewBegin"
+      - $ref: "#/channels/control/messages/previewEnd"
     description: >
       The host's answers. Every human-readable string in them — labels,
       titles, subtitles, card rows — is converted BEFORE sending:
@@ -772,6 +794,13 @@ operations:
       of the two flowing while a turn is open — a guest is entitled to
       declare a turn dead after 60 seconds of total silence and cancel
       it.
+
+      preview.begin and preview.end bracket a cloud.preview's answer,
+      the way capture and scene bracket theirs: begin says what the bulk
+      bytes are (dimensions, depth, rowBytes, total), end closes the
+      transfer. A service that cannot render one refuses not-listable —
+      the same well-formed refusal an older host's silence approximates,
+      which is what keeps the ask additive.
 
 components:
   messages:
@@ -961,6 +990,9 @@ components:
     cloudGet:
       name: cloud.get
       payload: { $ref: "#/components/schemas/CloudGet" }
+    cloudPreview:
+      name: cloud.preview
+      payload: { $ref: "#/components/schemas/CloudPreview" }
     cloudRefuse:
       name: cloud.refuse
       payload: { $ref: "#/components/schemas/CloudRefuse" }
@@ -988,6 +1020,12 @@ components:
     chatReset:
       name: chat.reset
       payload: { $ref: "#/components/schemas/ChatReset" }
+    previewBegin:
+      name: preview.begin
+      payload: { $ref: "#/components/schemas/PreviewBegin" }
+    previewEnd:
+      name: preview.end
+      payload: { $ref: "#/components/schemas/PreviewEnd" }
 
   schemas:
     Hello:
@@ -1160,6 +1198,21 @@ components:
                   One converted sentence of state ("Sharing iCloud
                   Drive", "342 photos", "Open Privacy & Security on the
                   host"). Display only.
+              defaultSize:
+                type: string
+                description: >
+                  For a service that sizes its deliveries (photos
+                  today): the host's OWN configured CloudGet.size
+                  token. It exists so a guest that offers the choice
+                  can PRESELECT the host's setting instead of carrying
+                  a "host default" item whose meaning it cannot name
+                  on screen — the setting arrives as data and the
+                  guest's ask is always an explicit token.
+                  Additive and optional: a host that omits it, or that
+                  names a token this guest has never heard of, leaves
+                  the guest to open on a size of its own choosing.
+                  Data, not a command — the guest may still send any
+                  token the CloudGet.size enum allows.
     CloudList:
       type: object
       required: [type, id, service]
@@ -1217,6 +1270,23 @@ components:
               modified:
                 type: integer
                 description: Classic Mac seconds since 1904.
+              width:
+                type: integer
+                description: >
+                  Pixel width of the entry's ORIGINAL, when the
+                  service knows one (photos fills this; a service
+                  whose rows are not images, or that cannot learn
+                  their pixel size, omits both width and height —
+                  omission is not zero). Paired with height so the
+                  guest can compute the exact resolution a given
+                  CloudGet.size box will actually produce (fit-box
+                  arithmetic on the asker's own numbers, never sent
+                  over the wire) without a role reversal: this is
+                  still the host stating a fact about its own data,
+                  not rendering on the guest's behalf.
+              height:
+                type: integer
+                description: Pixel height of the entry's ORIGINAL; see width.
         more: { type: boolean }
         cursor: { type: integer }
     CloudDetail:
@@ -1267,6 +1337,131 @@ components:
             the host invents (sanitized the way every host-sent name
             is); this id correlates only the refusal path. Once the
             offer exists, the file family owns the outcome.
+        size:
+          enum: [original, long640, long1024, long1600]
+          description: >
+            The delivery size for THIS ask, for services that size
+            their deliveries (photos today: the same renders the
+            host's own Downloads picker offers). Each longN token
+            names the LONGEST EDGE in pixels: the host scales the
+            original so that its longer dimension is exactly N,
+            preserving aspect and never enlarging, whichever way up
+            the photo is. A portrait 3024x4032 asked at long640
+            arrives 480x640; the same photo landscape (4032x3024)
+            arrives 640x480. original delivers every pixel, resized
+            not at all (still transcoded to JPEG when the container is
+            modern).
+            The long edge, rather than a box, IS the fix: a 640x480
+            fit box gave a portrait photo the SHORT edge's number and
+            delivered 360x480, a size nobody asked for and no picker
+            could name.
+            RETIRED, NOT ALIASED: fit640, fit1024, fit1440 and fit2048
+            named fit boxes and are gone. This is a deliberate
+            semantic break on a field days old, and it deliberately
+            does NOT bump x-contract-revision, because the break is
+            graceful by construction — a peer still sending a retired
+            token meets the same unknown-token check that has always
+            guarded this field and gets a refusal NAMING the valid
+            set. A named refusal is a worse outcome than success and a
+            far better one than an alias: fit640 quietly answering as
+            long640 would hand a portrait guest a render it never
+            asked for and could not have described.
+            The tokens stay coarse on purpose: the host does not
+            compute or send an exact post-scale resolution for a
+            delivered file. A guest that wants to SHOW the exact
+            resolution a photo will render at computes it itself from
+            the entry's own width/height (CloudListing) and the chosen
+            long edge — the asker already has both numbers, and a
+            fifth wire round trip to learn their ratio would be the
+            wire doing the asker's arithmetic for it.
+            The field stays optional. Absent means the host's
+            configured default, which is what a guest with no size UI
+            of its own sends. A guest that OFFERS the choice does not
+            use absence for it: it learns the host's configured token
+            from cloud.report's defaultSize, preselects that, and
+            always sends an explicit token — so what a person sees
+            selected and what actually arrives cannot disagree. A
+            token outside the enum is refused with a reason, never
+            guessed at; a service that does not size its deliveries
+            ignores the field.
+    CloudPreview:
+      type: object
+      required: [type, id, service, item, maxWidth, maxHeight, depth]
+      additionalProperties: false
+      description: >
+        One item as pixels, rendered ENTIRELY by the host: decode (HEIC
+        included), resize to fit the asked box, dither to the asked
+        depth. Success is a preview.begin / bulk / preview.end transfer
+        correlated by this id; failure — including a busy lane — is
+        cloud.refuse. The payload stays dumb on purpose: width, height,
+        rowBytes, depth, pixels and nothing else, so the classic side's
+        whole job is one CopyBits.
+      properties:
+        type: { const: cloud.preview }
+        id: { type: integer }
+        service: { type: string }
+        item: { type: string, maxLength: 64 }
+        maxWidth:
+          type: integer
+          minimum: 16
+          description: >
+            The box the pixels must fit — the asker's pane, in pixels.
+            The host scales to fit inside maxWidth x maxHeight
+            preserving aspect; the answer's width and height say what
+            actually fit.
+        maxHeight: { type: integer, minimum: 16 }
+        depth:
+          enum: [1, 8]
+          description: >
+            The depth the pixels should arrive at — the asker's screen,
+            reduced to the two depths a dither can honestly target: 8 is
+            indices into the classic system 256-colour table, 1 is
+            black-and-white (0 white, 1 black). A guest at 2 or 4 bits
+            asks for 1: a preview it can draw beats one it must map. No
+            palette travels; the system tables are the shared truth —
+            unlike a capture, whose screen may wear any CLUT and
+            therefore sends its own.
+    PreviewBegin:
+      type: object
+      required: [type, id, transfer, width, height, depth, rowBytes,
+                 bytes]
+      additionalProperties: false
+      properties:
+        type: { const: preview.begin }
+        id:
+          type: integer
+          description: The cloud.preview id this answers.
+        transfer: { type: integer, minimum: 1, maximum: 65535 }
+        width:
+          type: integer
+          minimum: 1
+          description: >
+            What actually fit the asked box, aspect preserved — never
+            larger than the ask's maxWidth.
+        height: { type: integer, minimum: 1 }
+        depth:
+          enum: [1, 8]
+          description: Echoes the ask; the rows are indices at this depth.
+        rowBytes:
+          type: integer
+          minimum: 1
+          description: >
+            Bytes per row in the bulk stream. width at depth 8,
+            ceil(width / 8) at depth 1 — stated rather than derived, so
+            the two sides never have to agree about rounding.
+        bytes:
+          type: integer
+          minimum: 1
+          description: Total bulk bytes to expect (rowBytes * height).
+    PreviewEnd:
+      type: object
+      required: [type, id, transfer, ok]
+      additionalProperties: false
+      properties:
+        type: { const: preview.end }
+        id: { type: integer }
+        transfer: { type: integer }
+        ok: { type: boolean }
     CloudRefuse:
       type: object
       required: [type, id, code]
@@ -4377,19 +4572,49 @@ components:
           The photo library, newest first. title is the photo's name or
           its date when cameras named it IMG_4021; subtitle is the
           taken date, LongDateString-renderable; bytes is what the
-          original would cost to fetch. cloud.detail answers a card of
-          what the library knows (taken, camera, dimensions, place when
-          there is one). cloud.get delivers ONE photo as an ordinary
-          file.offer — JPEG, converted by the host from whatever
-          modern container the library holds, typed JPEG/ogle so it
-          opens by double-click on arrival.
+          original would cost to fetch; width/height are the original's
+          pixel dimensions, always filled — the one service whose rows
+          the host can always size before an offer exists. cloud.detail
+          answers a card of what the library knows (taken, camera,
+          dimensions, place when there is one). cloud.get delivers ONE
+          photo as an ordinary file.offer — JPEG, converted by the host
+          from whatever modern container the library holds (HEIC
+          included), typed JPEG/ogle so it opens by double-click on
+          arrival, and downsized per the ask's own size field when it
+          carries one (original / long640 / long1024 / long1600, each
+          naming the LONGEST edge — see CloudGet.size, including why
+          the retired fitN boxes are refused rather than aliased),
+          else per the host's own Downloads setting — the asker's
+          choice outranks the configured default, and absence means
+          the default. The report's defaultSize carries that
+          configured token, so a guest can preselect it instead of
+          offering a "host default" it cannot name. cloud.preview
+          answers with the selected
+          photo as raw indexed pixels, host-dithered to the asked depth
+          and sized to the asked pane — the guest's list-and-preview
+          render, one photo in memory at a time.
       contacts:
         description: >
           The address book, alphabetical. title is the full name;
-          subtitle the organization when there is one. cloud.detail is
-          the card — phones, emails, addresses as [label, value] rows
-          in the person's own labels ("home", "work"), converted.
-          cloud.get is refused not-listable for now: a contact AS A
-          FILE would be a vCard the classic side cannot open natively,
-          and a card on screen is the honest deliverable until
-          something over there can read one.
+          subtitle the organization when there is one; width/height are
+          always absent — a contact row is not sized in pixels.
+          cloud.detail is the card — phones, emails, addresses as
+          [label, value] rows in the person's own labels ("home",
+          "work"), converted. cloud.get is refused not-listable for
+          now: a contact AS A FILE would be a vCard the classic side
+          cannot open natively, and a card on screen is the honest
+          deliverable until something over there can read one.
+          cloud.preview IS served, unlike cloud.get: the contact's own
+          thumbnail image, host-dithered to the asked depth and sized
+          to the asked pane, the exact photos pipeline reused rather
+          than a second one built for one field. A contact with no
+          thumbnail refuses cloud.refuse not-found, reason "no photo" —
+          a well-formed, expected outcome (most contacts have none),
+          not an error; the guest's card pane renders its own
+          placeholder for it rather than treating the refusal as
+          failure. The distinction from cloud.get's blanket
+          not-listable is deliberate: a thumbnail is pixels the host
+          already renders for photos, where a vCard is a document
+          format the classic side cannot open at all — the same
+          not-built-yet-vs-not-buildable line the rest of this family
+          draws elsewhere.
