@@ -33,16 +33,21 @@ import NOWAgentIntegration
 final class FakeGuest {
     /// Source ports for the fake guests, handed out once each.
     ///
-    /// Above 1024 and below the ephemeral floor of 49152. Keyed to the
-    /// process, because two `swift test` runs in two worktrees at once is
-    /// ordinary on this desk and a fixed start would have them fighting.
+    /// Above 1024 and below the ephemeral floor of 49152, so the kernel's
+    /// own choices for everything else in this process can never land on
+    /// one of ours. One LANE per process, 1024 wide — more than twice the
+    /// ~400 dials a full run makes — because two `swift test` runs in two
+    /// worktrees at once is ordinary on this desk, and two runs marching up
+    /// the same numbers would be a new way to collide rather than a fix for
+    /// the old one.
     private enum SourcePorts {
-        private static var next = 20_000 + (Int(getpid()) % 18_000)
+        private static let lane = 20_000 + (Int(getpid()) % 28) * 1_024
+        private static var next = lane
 
         static func take() -> UInt16 {
             let port = next
             next += 1
-            if next >= 49_000 { next = 20_000 }
+            if next >= lane + 1_024 { next = lane }
             return UInt16(port)
         }
     }
