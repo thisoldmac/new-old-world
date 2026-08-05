@@ -177,6 +177,96 @@ until something has watched it go false.
 operation end to end. The host app could not be run beside the one already
 holding the per-user agent endpoint, so the script was proven against the
 guest directly and the join proven by unit test, not the two together.
+## P4's plane is intact; the reason named for its silence was wrong (2026-08-05)
+
+**The symptom stands; the diagnosis attached to it does not.** A human drive on
+2026-08-04 (guest `a4a59d37d100`, resident `67d5ef43`) found
+`now_mirror_lifecycle` reporting **interaction generation 0** while structure sat
+at 613025 and content at 1522260, and not one act settling `confirmed` in eight
+minutes. That is real and still open.
+
+The reason recorded alongside it was that the host's requested plane mask "flaps
+between 7 and 15" with "the interaction bit (8) clear", pointing the repair at
+`MirrorControlModel.requestedPlaneIDs`, `MirrorPlanePolicyStore`, and the arming
+path. **That reading is wrong, and it points away from the defect.**
+`contract/peek_table.h` states the bits once:
+
+    kNowPeekTableCapAnchors = 1u << 0   P1
+    kNowPeekTableCapTree    = 1u << 1   P2
+    kNowPeekTableCapAct     = 1u << 2   P4   <- the act plane, BELOW P3
+    kNowPeekTableCapContent = 1u << 3   P3
+
+P4 sits below P3 because P3 asked for `1u << 2` while P4 already held it — the
+near-miss recorded under "Two planes asked for the same bit" (2026-07-31). So
+`cap=15 requested=7 active=7` says P4 **was requested and active**; the bit clear
+in 7 is P3, whose request is a bounded lease by design
+(`now_peek_claim_until`, from `qdtrace_cmd.c`), which is exactly what a mask
+expiring and being reclaimed looks like. Host plane policy is not implicated by
+that line. `now-guest-ppc/tests/peek_table_test.c` now pins each bit's value, so
+the same misreading fails a gate rather than an evening.
+
+**Where the defect actually has to be.** `mirror_probe.c :: plane_generation`
+returns, for P4, `table->act_v2.resident_generation`. That word is written in
+exactly one place — `now-guest-shared/src/now_act_guard.c`, where
+`v2_echo_request` bumps it twice and `now_act_v2_note` bumps it twice per stage —
+and both are reached only through `now_act_v2_begin`. Generation 0 therefore
+means **`now_act_v2_begin` returned early on every act of the drive**, and it has
+only three early exits:
+
+- `now_act_plane_state(table) != kNowActPlaneReady` (length, caps or act_format),
+- `cell->status != kNowPeekActStatusPending`,
+- `cell->target_a5 != current_a5` — by design, since only the target process's
+  own pump may proceed.
+
+Arming is *not* a candidate: the same log line that opened this arc shows the
+plane armed and active. Measurement below settles which of the three it is —
+the second, `cell->status` never pending, because no act ever arrived.
+
+**RESOLVED the same day: generation 0 means idle, not dead.** Reproduced on an
+emulated Power Mac G4 (guest `16d99316ff6b`, resident `67d5ef43` — the same
+resident as the drive), with all four planes reading
+`requested=15 active=15` and every plane `active-current`:
+
+    interaction=active-current/gen0     <- before any act
+    interaction=active-current/gen6     <- after ONE console `actselftest`
+
+Six is exactly one echo plus two stage notes at two bumps each, and the act
+itself failed. So `resident_generation` advances as soon as an act reaches
+`now_act_v2_begin`, and **generation 0 is a truthful "no act has ever reached
+the resident" — not a broken plane.** P4's publish path is intact.
+
+That moves the open question upstream, off the resident entirely: in the
+2026-08-04 drive, acts were attempted and settled `unknown` /
+`dispatched-but-unconfirmed` while the resident's counter never moved, so
+those acts never got as far as a pending cell the resident could see. The
+next investigation belongs in the host's act dispatch and the guest's
+`now_act_submit`, not in arming, plane policy, or `ext/`.
+
+**Two rig traps found on the way, both of which mimic a dead plane.**
+
+1. `/private/tmp/now-u7-extension-only/session.qcow2` carries the NOW
+   Extension in its file system, but its internal snapshots predate it.
+   Resuming `--loadvm runner-ready` (a 2026-07-19 state) gives a guest
+   reporting `lifecycle=absent`, `cap=-`. Cold-boot it and the resident is
+   active. (An earlier draft of this entry claimed a cold boot still
+   reported `absent`; that was wrong — it was reading stale lines from an
+   append-only log that BOTH sessions' hosts write to. Mark the log length
+   before an experiment and read only past the mark. `NOWBASE actmeta`
+   lines carry `guest_build=`, which is the only way to tell whose guest
+   a line describes.)
+2. **A guest binary not named `New Old World` cannot arm any plane at
+   all.** `peek.c :: current_app_identity` requires creator `NOWo` *and*
+   the exact process name, and `maintain_writer` returns 0 without it —
+   "dev-named app: read-only NWex" — so `publish_claims` never writes
+   `arm_request`. Same build, same resident, same host: renamed from
+   `now-guest-ppc` to `New Old World`, `requested` went **0 → 15**. The
+   app looks entirely healthy meanwhile, and the host still reports
+   `lifecycle=active cap=15`, so the Mirror simply shows nothing and every
+   act refuses. AGENTS.md records this name as a *preferences* rule; its
+   sharper consequence is that a dev-named build has no Mirror at all.
+
+The instrument that settled all of this is now permanent: the `actmeta`
+line carries each plane's own state and generation beside the masks.
 
 ## CYCLE 27 RETAINED-STATE CHECKPOINT; TWO ADVANCES, TWO BLOCKERS (2026-08-04)
 

@@ -166,6 +166,35 @@ Identity decisions, fixed now so nothing squats them: Gestalt selector
 Extension"**, file type `'INIT'`, creator `'NOWx'`. Not `'TBax'` /
 `'TBqd'` — those are tbt's.
 
+### A fifth state the table has and this list did not: no writer
+
+The four states above describe whether the RESIDENT is there. They say
+nothing about whether this application is allowed to *drive* it, and that
+is a separate gate with its own failure mode.
+
+Only one process may write `arm_request`, and it must prove itself:
+`peek.c :: current_app_identity` requires process creator `'NOWo'` **and**
+the exact process name **"New Old World"**. Fail either and
+`maintain_writer` returns 0 — "dev-named app: read-only NWex" — so
+`publish_claims` never writes the word, no plane is ever armed, and every
+act refuses.
+
+This is deliberate: a stray build must not seize six trap patches in
+another process. But it degrades **silently, and not honestly**, which is
+what the rest of this page forbids. The resident is genuinely active, so
+discovery reports `active` with full `cap`; the application shows a healthy
+extension and an empty Mirror, and nothing anywhere says the word "writer".
+Measured 2026-08-05: one build, one resident, one host — renamed
+`now-guest-ppc` → `New Old World` — took `requested` from **0 to 15**.
+
+Two consequences worth stating plainly. A **side build cannot be
+plane-tested under its own name**, which collides with the deploy rule that
+an experiment goes up as its own name; plane work is the exception, and the
+canonical name is part of the test rig. And the honest-degradation
+requirement is currently **unmet here** — a page that renders the four
+states above still cannot tell a person why a live resident is doing
+nothing for them.
+
 ## Target contract and verification
 
 Floor and ceiling: **Mac OS 8.6–9.2.2, PowerPC** (the application's

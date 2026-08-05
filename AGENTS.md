@@ -189,6 +189,18 @@ quietly went to whatever machine a stale default named.
   (The canonical name lives once, in `prefs.c :: prefs_spec`; the base
   prefs file is `New Old World Prefs`, so the existing saved host carries
   over from the old `now-guest` canonical.)
+- **The name gates the MIRROR too, and that half is silent.** Preferences
+  are the mild consequence. `peek.c :: current_app_identity` also requires
+  the exact name (plus creator `NOWo`) before the app may write
+  `arm_request`, so a differently-named build arms **no plane at all** and
+  every act refuses — while the resident reports `active` with full
+  capabilities and nothing names the cause. Renaming one build
+  `now-guest-ppc` → `New Old World` took `requested` from 0 to 15 with
+  nothing else changed (2026-08-05). So a side experiment can carry its own
+  name right up until you need a plane, and plane work is the one case
+  where the canonical name is part of the test rig, not the product name.
+  See [docs/resident-components.md](docs/resident-components.md) >
+  "no writer".
 - **Check the build stamp before believing a test result.** It can read
   a few minutes early, because CMake touches `build_stamp.c` at the end
   of a build; `touch now-guest-ppc/src/core/build_stamp.c` first to force it current.
