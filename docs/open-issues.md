@@ -122,6 +122,47 @@ Still open from this:
   attaches the PREVIOUS command's correlation. It is conservative for the
   host rule above — a stale correlation reads as "may have landed", which
   only costs a wait — but it is wrong.
+## P5, THE TRANSITION TAIL: RESIDENT WRITES, NOTHING DELIVERS YET (2026-08-05)
+
+**Built and gated; never executed on a machine.** A ~2.2 s scene cycle
+cannot see anything shorter than 2.2 s — measured across 60 cycles: 783 ms
+idle, 92 ms request, 315 ms decode. An alert raised and dismissed between
+walks leaves the machine as it found it and the Mirror never knew. P5 is a
+transition SAMPLER at the guest's own event-loop rate, riding the jGNE pass
+that already reads the window list, menu list and current A5 for the anchor
+plane.
+
+What exists: the contract (`contract/event_tail.h`), a ring in a system-heap
+block behind one appended table word, the resident writer (`ext/src/now_event.c`),
+the guest's ring reader, and a fifth `transitions` plane reported end to end.
+109 native tests, three cross-builds, full host gate.
+
+**What does not exist, and the honest status is BLOCKED-BY-UNBUILT rather
+than broken:** nothing arms the plane, no contract message carries records
+to the host, and the host consumes none. The ring will stay empty on any
+drive until that lands. So a cold boot proves the INIT loads, allocates,
+publishes `cap` bit 4 and boots clean — and proves nothing about the tail.
+
+Two things found while building it, both mine:
+
+- **The plane roster was made breaking in the wrong direction.** Moving the
+  contract from exactly-four plane rows to exactly-five meant a newer host
+  refused an older guest's honest four-row report — "The Mac's mirror facts
+  do not match schema 1". This project's rule is that an older reader
+  refuses a NEWER message, never the reverse. The contract now says four
+  rows or five and the reader completes a missing trailing row as
+  present-and-unsupported.
+- **The snapshot outgrew one protocol message.** Adding Finder items pushed
+  a scene of several panels plus a desktop past the 64 KB ceiling, past
+  which the writer throws and the connection closes with NO reply — so
+  `now_mirror_snapshot` stopped answering while `status` and `lifecycle`
+  still did, which reads as a broken host rather than an oversized payload.
+  Bounded per window AND per snapshot now, both stated in `itemTotal`.
+
+Also unverified: `finderDeselect` and `dialogItem` against an item that
+does something have never been driven; the INIT resource is 67 KB against
+a conventional 32 KB budget (pre-existing, and this image boots it).
+
 ## BROKEN: the Finder cannot set `visible`, so no Hide act can ever land (2026-08-05)
 
 Measured directly against Mac OS 9.1 (mac99, guest build `a4a59d37d100`) by
