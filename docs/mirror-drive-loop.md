@@ -128,6 +128,37 @@ functional, accurate mirror of the guest** — one a person can operate.
    verify that state in both the Mirror and guest capture. Then use the guest's
    Special > Shut Down path and wait for the VM to exit. A disconnected host,
    black capture, or QMP `quit` is not proof of a clean filesystem shutdown.
+2l. **The guest binary must be named `New Old World`, or NOTHING arms.**
+   `peek.c :: current_app_identity` requires creator `NOWo` *and* that exact
+   process name; without both, `maintain_writer` returns 0 — "dev-named app:
+   read-only NWex" — and `arm_request` is never written. Every plane then
+   stays inert and every act refuses, while the app looks entirely healthy
+   and the host still reports `lifecycle=active cap=15`. Measured
+   2026-08-05: same build, same resident, same host, renamed
+   `now-guest-ppc` → `New Old World`, and `requested` went **0 → 15**.
+   AGENTS.md records this name as a preferences rule; this is the sharper
+   half. A side build cannot be plane-tested under its own name. To get a
+   mountable image with the right name, re-run the build's Rez step with
+   `--cc "New Old World.dsk"` rather than renaming the CMake target.
+2m. **Mark the log before the experiment, and check who answered.**
+   `~/Library/Logs/NewOldWorld/acts.log` is append-only and EVERY host on
+   the Mac writes to it, so grepping the whole file returns another
+   session's guest — or your own stale boot — and it reads exactly like a
+   live result. On 2026-08-05 that produced a confident, wrong conclusion
+   about a cold boot. Record `wc -l` first, read only past the mark, and
+   attribute every line by its `guest_build=` field, which is the only
+   thing that says whose guest it describes. The `cycle` lines carry no
+   guest identity at all and cannot be attributed.
+2n. **`tools/now-agent` reaches ONE host per user.** Its endpoint is a
+   fixed path (`$TMPDIR/dev.newoldworld.now-agent-<uid>/host.sock`), not
+   per bundle, so whichever host started first owns it and a second
+   session's calls go silently to *their* host. Renaming the bundle per 2h
+   does not isolate this. `lsof` the socket and confirm the owning pid is
+   yours before believing any answer; if it is not, read the guest's own
+   numbers instead and do not kill the other host. A whole second host is
+   isolated with `NOW_PREFS_SUFFIX=<slug>`, which moves settings *and* the
+   guest registry — note that the listen port then lives in
+   `dev.newoldworld.now.settings.<slug>`, not in the bundle id's domain.
 3. **If the mirror cannot do it, that IS the finding.** Record it. Do
    not reach past it to keep the run going.
 4. **Record, don't fix, during a sweep.** No edits, no builds, no
