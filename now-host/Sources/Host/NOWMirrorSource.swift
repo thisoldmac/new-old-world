@@ -818,6 +818,16 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
     nonisolated private static let visibilityPageSize = 8
 
+    /// `visible` must be bound to a variable before it is concatenated. Read
+    /// inline, the Finder hands back an object specifier rather than the
+    /// boolean, and `&` refuses it — measured on Mac OS 9.1 (mac99,
+    /// 2026-08-05): `-1700 Can't make visible of «class prcs» "tbt-worker"
+    /// of application "Finder" into a string`. The error aborts the whole
+    /// script, so the census returned NO rows at all and every process read
+    /// `visible: null` while the coverage claim said only that the census
+    /// "did not uniquely cover every application" — a total failure wearing
+    /// the same words as a partial one. `set vis to ...` forces the
+    /// specifier to resolve; the same read then coerces.
     static func visibilityScript(offset: Int,
                                  limit: Int = visibilityPageSize) -> String {
         """
@@ -831,8 +841,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         if firstIndex <= lastIndex then
         repeat with i from firstIndex to lastIndex
         set candidate to item i of ps
-        set out to out & "V" & tab & (name of candidate) & tab & \
-        (visible of candidate) & return
+        set nm to name of candidate
+        set vis to visible of candidate
+        set out to out & "V" & tab & nm & tab & (vis as string) & return
         end repeat
         end if
         end tell
