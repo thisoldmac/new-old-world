@@ -80,6 +80,31 @@ Recorded from the drive whose notes are in `docs/local/`, with QMP
 screendumps of the alert and of the machine unchanged after the posted
 click.
 
+**2026-08-05, later: this has a slice, and reading the code sharpened it
+twice.**
+[012, Liveness below the application](plans/2026-08-05-012-feat-liveness-below-the-application-plan.md).
+Two corrections to the entry above, both from the source rather than from
+reasoning:
+
+- **The keepalive already exists**, and it is guest-driven — the contract
+  has the guest send `ping` after 30 s of silence. So nothing needs a new
+  liveness message; the starvation stops the application sending the one
+  that is already there.
+- **The resident cannot currently help.** `ext/src/now_ext.c` installs
+  its vehicle at `LMSetGNEFilter`, and the act plane's patches fire on
+  trap calls, so **every execution context the extension has is
+  application-driven**. During this exact starvation the resident does not
+  run either. Liveness therefore needs the extension's first
+  interrupt-time context, which is what makes 012 a slice rather than a
+  patch.
+
+One thing in this entry is over-stated and is corrected there: the
+deafness was **>90 s with recovery**, not indefinite. "A modal waits for a
+person, so it is unbounded" was an inference, and `ModalDialog` does call
+`GetNextEvent` — so a modal merely sitting may starve nothing. The
+suspect is the app-enumeration scan behind that particular alert, and it
+is a suspicion, not a finding.
+
 ## UNVERIFIED: MCP can see the drawing now, but nobody has read one live (2026-08-05)
 
 `now_mirror_snapshot` claims to carry the renderer's whole input and three

@@ -325,7 +325,13 @@ Two consequences for how C gets specified:
   at interrupt time, or re-pinning across a redial so a lost wire costs a
   reconnect rather than a session — are laid out in
   [open-issues.md](../open-issues.md)'s top entry. **This is now the
-  binding survivability question, ahead of the rest of C.**
+  binding survivability question, ahead of the rest of C**, and it has
+  its own slice:
+  [012, Liveness below the application](2026-08-05-012-feat-liveness-below-the-application-plan.md).
+  Reading the code for that plan found the fact that sets its size: every
+  execution context the extension has today — the `jGNE` filter, the act
+  plane's trap patches — is **application-driven**, so during this
+  starvation the resident does not run either.
 
 ### D — capture the alert three ways before fixing what it renders
 
