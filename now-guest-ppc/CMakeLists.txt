@@ -79,6 +79,7 @@ add_application(now-guest-ppc
     src/peek/peek_lease.c
     src/peek/peek_validate.c
     src/peek/peek_oracle.c
+    src/peek/event_read.c
     src/peek/peek_read.c
     src/peek/semantic_client.c
     src/peek/semantic_policy.c

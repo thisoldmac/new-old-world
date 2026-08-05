@@ -4286,11 +4286,13 @@ components:
               planes:
                 type: array
                 description: >
-                  Exactly four rows in dependency order: structure,
-                  semantics, content, interaction. Unsupported rows remain
-                  present so unsupported and unasked cannot collapse.
-                minItems: 4
-                maxItems: 4
+                  Exactly five rows in dependency order: structure,
+                  semantics, content, interaction, transitions. Unsupported
+                  rows remain present so unsupported and unasked cannot
+                  collapse — which is exactly how a resident predating a
+                  plane reports it: present, supported false.
+                minItems: 5
+                maxItems: 5
                 items:
                   type: object
                   required:
@@ -4299,7 +4301,9 @@ components:
                   properties:
                     id:
                       type: string
-                      enum: [structure, semantics, content, interaction]
+                      enum:
+                        [structure, semantics, content, interaction,
+                         transitions]
                     purpose: { type: string }
                     capability: { type: integer }
                     supported: { type: boolean }

@@ -10,7 +10,7 @@
 
 enum {
     kMirrorFactsSchema = 1,
-    kMirrorPlaneCount = 4,
+    kMirrorPlaneCount = 5,
     kMirrorIdentityWords = 5,
     kMirrorReasonMax = 128
 };
@@ -27,7 +27,11 @@ typedef enum {
     kMirrorPlaneStructure = 0,
     kMirrorPlaneSemantics,
     kMirrorPlaneContent,
-    kMirrorPlaneInteraction
+    kMirrorPlaneInteraction,
+    /* P5. Appended last, so every existing row keeps its index: the host
+       reads these positionally and a reordering would silently relabel
+       four planes. */
+    kMirrorPlaneTransitions
 } MirrorPlane;
 
 typedef enum {

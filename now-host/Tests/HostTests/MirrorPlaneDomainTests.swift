@@ -250,7 +250,7 @@ final class MirrorPlaneDomainTests: XCTestCase {
     }
 
     func testUnifiedWireFactsDecodeWithoutLegacyInventory() throws {
-        let json = #"{"schema":1,"extension":{"selector":"NWex","lifecycle":"active","expectedMajor":1,"residentMajor":1,"residentMinor":7,"tableLength":4096,"capabilities":15,"requested":15,"active":15,"heartbeat":99,"sourceManifest":"0000000100000002000000030000000400000005","buildFingerprint":"0000001000000011000000120000001300000014"},"planes":[{"id":"structure","purpose":"Window structure","capability":1,"supported":true,"format":3,"requested":true,"active":true,"freshness":"current","state":"active-current","generation":8},{"id":"semantics","purpose":"Meaning","capability":2,"supported":false,"format":0,"requested":false,"active":false,"freshness":"unavailable","state":"unsupported","generation":0},{"id":"content","purpose":"Content","capability":8,"supported":true,"format":2,"requested":true,"active":true,"freshness":"current","state":"active-current","generation":9},{"id":"interaction","purpose":"Input","capability":4,"supported":true,"format":2,"requested":true,"active":true,"freshness":"current","state":"active-current","generation":10}]}"#
+        let json = #"{"schema":1,"extension":{"selector":"NWex","lifecycle":"active","expectedMajor":1,"residentMajor":1,"residentMinor":7,"tableLength":4096,"capabilities":15,"requested":15,"active":15,"heartbeat":99,"sourceManifest":"0000000100000002000000030000000400000005","buildFingerprint":"0000001000000011000000120000001300000014"},"planes":[{"id":"structure","purpose":"Window structure","capability":1,"supported":true,"format":3,"requested":true,"active":true,"freshness":"current","state":"active-current","generation":8},{"id":"semantics","purpose":"Meaning","capability":2,"supported":false,"format":0,"requested":false,"active":false,"freshness":"unavailable","state":"unsupported","generation":0},{"id":"content","purpose":"Content","capability":8,"supported":true,"format":2,"requested":true,"active":true,"freshness":"current","state":"active-current","generation":9},{"id":"interaction","purpose":"Input","capability":4,"supported":true,"format":2,"requested":true,"active":true,"freshness":"current","state":"active-current","generation":10},{"id":"transitions","purpose":"Transitions a poll is too slow to see","capability":16,"supported":true,"format":1,"requested":true,"active":true,"freshness":"current","state":"active-current","generation":11}]}"#
         let facts = try JSONDecoder().decode(MirrorWireFacts.self,
                                               from: Data(json.utf8))
         XCTAssertEqual(facts.schema, 1)
@@ -258,7 +258,8 @@ final class MirrorPlaneDomainTests: XCTestCase {
         XCTAssertEqual(facts.resident.buildFingerprint,
                        "0000001000000011000000120000001300000014")
         XCTAssertEqual(facts.planes.map(\.id),
-                       [.structure, .semantics, .content, .interaction])
+                       [.structure, .semantics, .content, .interaction,
+                        .transitions])
         XCTAssertFalse(facts.planes[1].supported)
     }
 
@@ -325,7 +326,8 @@ final class MirrorPlaneDomainTests: XCTestCase {
         model.refreshLifecycle()
         XCTAssertEqual(model.wireFacts?.resident.lifecycle, .active)
         model.connection = .disconnected
-        XCTAssertEqual(model.wireFacts?.planes.count, 4,
+        XCTAssertEqual(model.wireFacts?.planes.count,
+                       MirrorPlaneID.allCases.count,
                        "disconnect pins the last facts instead of blanking")
         XCTAssertEqual(model.presentation(for: try XCTUnwrap(model.planeFacts.first)),
                        .disconnected)

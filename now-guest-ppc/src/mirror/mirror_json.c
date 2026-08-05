@@ -21,7 +21,8 @@ static const char *lifecycle_word(MirrorLifecycle value)
 static const char *plane_id(MirrorPlane plane)
 {
     static const char *ids[kMirrorPlaneCount] = {
-        "structure", "semantics", "content", "interaction"
+        "structure", "semantics", "content", "interaction",
+        "transitions"
     };
     return ids[(int)plane];
 }
@@ -32,7 +33,8 @@ static const char *plane_purpose(MirrorPlane plane)
         "Window and menu structure",
         "Native control and list meaning",
         "Data-driven window content",
-        "Keyboard and mouse mutation"
+        "Keyboard and mouse mutation",
+        "Transitions a poll is too slow to see"
     };
     return purposes[(int)plane];
 }

@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "content_table.h"
+#include "event_tail.h"
 #include "peek.h"
 #include "peek_validate.h"
 
@@ -52,6 +53,31 @@ static const NowContentBlock *content_block(const NowPeekTable *table)
     return (const NowContentBlock *)address;
 }
 
+/* P5's block, reached the way the content block is: through the table's
+   own length, then a system-range check on the address. An extension
+   older than this plane reports a shorter length and never gets here,
+   which is how the row comes back supported=false rather than absent. */
+static const NowEventBlock *event_block(const NowPeekTable *table)
+{
+    unsigned long field_end = (unsigned long)offsetof(NowPeekTable,
+                                                       event_block)
+        + sizeof table->event_block;
+    unsigned long address;
+
+    if (table->length < field_end || table->event_block == 0) {
+        return NULL;
+    }
+    address = table->event_block;
+    if (!system_range_contains(address, sizeof(NowEventBlock))) {
+        return NULL;
+    }
+    if (((const NowEventBlock *)address)->magic
+            != (NowEventU32)kNowEventBlockMagic) {
+        return NULL;
+    }
+    return (const NowEventBlock *)address;
+}
+
 static int plane_format_compatible(const NowPeekTable *table,
                                    MirrorPlane plane,
                                    unsigned long format)
@@ -70,6 +96,8 @@ static int plane_format_compatible(const NowPeekTable *table,
         need = (unsigned long)offsetof(NowPeekTable, act_v2)
             + sizeof table->act_v2;
         return format == kNowPeekActFormatV2 && table->length >= need;
+    case kMirrorPlaneTransitions:
+        return format == kNowEventFormatV1;
     }
     return 0;
 }
@@ -78,7 +106,8 @@ static unsigned long plane_capability(MirrorPlane plane)
 {
     static const unsigned long values[kMirrorPlaneCount] = {
         kNowPeekTableCapAnchors, kNowPeekTableCapTree,
-        kNowPeekTableCapContent, kNowPeekTableCapAct
+        kNowPeekTableCapContent, kNowPeekTableCapAct,
+        kNowPeekTableCapEvents
     };
     return values[(int)plane];
 }
@@ -112,6 +141,11 @@ static unsigned long plane_format(const NowPeekTable *table,
         need = (unsigned long)offsetof(NowPeekTable, act)
             + sizeof table->act;
         return table->length >= need ? table->act_format : 0;
+    case kMirrorPlaneTransitions:
+    {
+        const NowEventBlock *block = event_block(table);
+        return block != NULL ? block->format : 0;
+    }
     }
     return 0;
 }
@@ -148,6 +182,14 @@ static unsigned long plane_generation(const NowPeekTable *table,
         }
         need = (unsigned long)offsetof(NowPeekTable, act) + sizeof table->act;
         return table->length >= need ? table->act.seq : 0;
+    case kMirrorPlaneTransitions:
+    {
+        const NowEventBlock *block = event_block(table);
+        /* The write cursor IS the generation: it counts records ever
+           written, so a reader watching it move knows the plane is
+           producing without reading a single record. */
+        return block != NULL ? block->write_cursor : 0;
+    }
     }
     return 0;
 }

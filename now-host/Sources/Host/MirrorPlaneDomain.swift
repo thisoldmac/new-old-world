@@ -5,6 +5,10 @@ enum MirrorPlaneID: String, Codable, CaseIterable, Identifiable, Sendable {
     case semantics
     case content
     case interaction
+    /// P5. Appended last, matching the guest's own ordering, because both
+    /// sides read these rows positionally and a reordering would silently
+    /// relabel four planes.
+    case transitions
 
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
@@ -95,7 +99,7 @@ struct MirrorWireFacts: Codable, Equatable, Sendable {
         guard planes.map(\.id) == MirrorPlaneID.allCases else {
             throw DecodingError.dataCorruptedError(
                 forKey: .planes, in: c,
-                debugDescription: "mirror facts must carry P1-P4 in order")
+                debugDescription: "mirror facts must carry every plane, in order")
         }
     }
 
