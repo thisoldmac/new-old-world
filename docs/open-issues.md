@@ -16,7 +16,7 @@ shape of the mistake than for the fix.
 
 ## THE STALE-REF REFUSAL NO LONGER HOLDS THE LANE (2026-08-05)
 
-**Fixed, tested, not yet watched on a live guest.** During the first human
+**Fixed, tested, and watched on an emulated guest.** During the first human
 drive, `winact` refusals against windows the Mirror was still displaying
 held the mutation FIFO for its whole 15 s timeout. Measured in
 `~/Library/Logs/NewOldWorld/acts.log`: a close refused at 02:03:47.753
@@ -42,23 +42,69 @@ references do not churn on republish.** The guest interns them
 token in the same log confirmed an act fifteen seconds and a dozen scene
 generations after it was minted.
 
+### The drive that proved it, and how to run one beside somebody else
+
+Driven headlessly on an emulated Power Mac G4 at 03:09 on 2026-08-05 —
+three `close`s at one Finder window, 300 ms apart, which is the incident's
+own shape. The third one:
+
+    NOT DISPATCHED: the scene moved on — that window is no longer on the
+    machine, so the act was not sent. Read it again.
+    NOWBASE act ... outcome=refused depth=2 waited_ms=8596
+                    dispatch_ms=12 settle_ms=- total_ms=8608
+
+Twelve milliseconds and no guest round trip, against ~89 ms and a 15 s
+lane hold before. And `refused`, terminal: the 02:04 equivalent of this
+act was recorded `confirmedAfterRefusal` by a scene that another close
+had produced.
+
+**The conservative branch earned its keep in the same run.** The FIRST
+close was refused `the target served the request and did not arm` — a
+refusal the guest raises after `now_act_submit` registered a correlation,
+so this side calls it `unknown` and keeps waiting. It held the lane the
+full 15 s… and then settled `confirmedAfterTimeout` at 16 503 ms. The
+close had landed. Had the rule been "any refusal is terminal", that act
+would have been written off as failed while the window was closing.
+
+**Two hosts on one Mac, without touching each other** (this run shared
+the desk with another session's verification host, which owned 5250):
+
+- `NOW_PREFS_SUFFIX=<slug>` gives the second host its own settings and
+  guest registry — it already existed for exactly this, see
+  `ProductIdentity`. Put the port in that domain:
+  `defaults write dev.newoldworld.now.settings.<slug> listenPort -int 5262`.
+- The guest dials `10.0.2.2:5250` from saved preferences with
+  `auto_connect` on, and QEMU refuses a `guestfwd` on `10.0.2.2` because
+  it is the gateway. Move the gateway instead, and the address is free to
+  forward:
+
+      TBT_EXTRA_HOSTFWD="net=10.0.2.0/24,host=10.0.2.5,dns=10.0.2.6,\
+      guestfwd=tcp:10.0.2.2:5250-tcp:127.0.0.1:5262" tools/launch --instance 91
+
+  The guest's own preferences never change, and its dial cannot reach the
+  other host. `guestfwd` connects eagerly at launch, so start the host
+  first.
+- **The agent socket is the one thing that cannot be shared.** It is
+  `<darwin-user-temp>/dev.newoldworld.now-agent-<uid>/host.sock`, one per
+  user, and `FileManager.temporaryDirectory` ignores `TMPDIR` on macOS
+  even though `tools/now-agent` derives its path from `TMPDIR` and says
+  so in a docstring. The second host logs `local agent integration
+  unavailable` and runs on without an MCP surface. This drive used a
+  build-only patch (an env override, reverted before committing) to move
+  it. **A supported override belongs in the product**, and the two sides
+  should agree on how the path is computed.
+
 Still open from this:
 
-- **Not driven live.** The verification was to be headless
-  (`tools/now-agent mirror_drive`) against a VM. It could not run:
-  another session's NOW host owned TCP 5250 and the local agent endpoint
-  (`/tmp/dev.newoldworld.now-agent-<uid>/host.sock`), the guest dials
-  10.0.2.2:5250 with `auto_connect` on, and launching a guest would have
-  connected it into that other session's host. The VM was stopped rather
-  than pointed at a stranger. What a live drive must show: the refusal
-  class settles in milliseconds, and two quick closes do not stack ~8 s
-  of queue wait.
-- **One call site is unwatched.** Both decisions are functions, each
-  watched to fail by mutation, and the direct path's call site is
-  covered. The BROKERED path's call site is not: the scene fixture
-  carries no incarnations, so no window in it has the stable identity a
-  brokered operation needs, and the test that would cover it has to hold
-  one act in the lane while a second scene arrives.
+- **The brokered call site has no automated test**, only the drive above
+  — which did exercise it, since a close is the act that needs a typed
+  settlement. Both decisions are functions watched to fail by mutation,
+  and the DIRECT path's call site is covered by a test. The brokered
+  one is not: the scene fixture carries no incarnations, so no window in
+  it has the stable identity a brokered operation needs, and the test
+  that would cover it has to hold one act in the lane while a second
+  scene arrives. Until that exists, this line is what stands between the
+  fix and a silent regression.
 - **A guest mis-attribution, noted not fixed.** `now_act_submit` returns
   `kNowActNoExtension` before it registers a correlation, and
   `act_cmds.c:546` answers that with `reply_registered_status`, which
