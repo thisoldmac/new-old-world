@@ -6,6 +6,14 @@ date: 2026-08-04
 
 # The headless Mirror — NOW MCP as the Mirror's second client - Plan
 
+> **This plan owns slices 0–5 and the reasoning behind them. The remaining
+> scope moved to
+> [2026-08-05-010, Closing the headless Mirror](2026-08-05-010-feat-closing-the-headless-mirror-plan.md)
+> on 2026-08-05** — the debt slices 1–3 left, the rest of 5c, 5b's delivery
+> half, and all of slice 6, with an honest inventory of what is owed and an
+> ordering argument for why the obvious order is wrong. Read this one for
+> why the arc exists and what it decided; read that one for what is left.
+
 ## Goal Capsule
 
 - **Objective:** Make the NOW MCP a complete headless client of the Mirror's

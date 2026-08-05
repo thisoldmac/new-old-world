@@ -237,11 +237,42 @@ Application menu. Neither route NOW has reproduces it.
   commanding menu -16489, the route that reported success without changing
   the machine".
 
-**Untried:** delivering a real CLICK to that menu through the act plane
-rather than a `MenuSelect` command — the one thing a person does that
-neither route reproduces. Until something is watched working, Hide is
-UNBUILT rather than broken, and a route already known to fail should refuse
-by name instead of holding the shared lane for 15 s.
+**Why the act plane cannot reach it, understood 2026-08-05.** `menuact`
+works by arming a trap patch so the target application's own `MenuSelect`
+returns the chosen row — which is why it drives the Finder 8/8. The
+Application menu is **system-owned**: the Process Manager performs the
+hide, and the front application's `MenuSelect` never sees it. So this is
+not a flaky route, it is the wrong mechanism for this menu.
+
+**A real positional click is not possible today either**: the guest has no
+positional click verb. `mouseloc` is a READ (`input/input_cmds.c`), and the
+act plane delivers menu choices by arming a patch rather than by moving a
+pointer.
+
+**The Process Manager's own visibility call is absent from the toolchain,
+under any spelling** (checked 2026-08-05). `libCarbonLib.a` exports
+`SetFrontProcess` and not `ShowHideProcess`. Sweeping both Retro68
+toolchains for every identifier containing `Hide` or `Visib` finds only
+window-, control-, dialog- and cursor-level calls; the near miss `ShowHide`
+is the **Window Manager's** (`_ShowHide`, `$A908`, takes a `WindowPtr`) and
+is NOT a substitute — hiding an app's windows without setting the process
+flag leaves the Application menu's checkmark wrong and the process still
+visible to `GetProcessInformation`, which is a mirror reporting a state the
+machine is not in. The complete declared Process Manager set is
+`GetCurrentProcess`, `GetNextProcess`, `GetProcessInformation`,
+`SameProcess`, the two port-name calls, `AEProcessAppleEvent`,
+`SetFrontProcess` and `WakeUpProcess` — all reads but the last two.
+
+**What remains untried:** the 68K resident reaching an undeclared Process
+Manager selector through `_OSDispatch` (`$A88F`), which IS declared. The
+mechanism exists; only the selector number is missing, and it must come
+from a document rather than a guess. Plan:
+[2026-08-05-010 § C](plans/2026-08-05-010-feat-closing-the-headless-mirror-plan.md).
+
+Until something is watched working, Hide is UNBUILT rather than broken. Its
+other half — that it should not hold the shared lane for 15 s rediscovering
+a route already known to fail — was fixed on 2026-08-05; that changed the
+cost of failing and nothing about whether Hide works.
 
 ## P5, THE TRANSITION TAIL: RESIDENT WRITES, NOTHING DELIVERS YET (2026-08-05)
 
