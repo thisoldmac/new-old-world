@@ -27,26 +27,31 @@ at all. `contract/peek_table.h`, `ext/src/now_semantic{,_logic}.c`,
 `now-guest-shared/src/now_semantic_guard.c`,
 `now-guest-ppc/src/peek/semantic_{client,policy}.c`.
 
-What is proven: 111 native tests pass, the PPC guest cross-builds, and
-four properties were watched fail under mutation — the resolver's
+What is proven: `scripts/test-all` is green — 111 native tests, all three
+cross-builds (PPC guest, 68K guest, **and the 68K flat INIT**), and the
+host gate. The extension links the batch resolver: `now_semantic_batch_
+apply/resolve/ready/verdict` all appear in `NowExt.map`, and appending a
+deliberate error to `ext/src/now_semantic.c` was watched fail the build,
+so that gate genuinely covers the resident code.
+
+Five properties were watched fail under mutation — the resolver's
 one-walk-per-reply cost argument, the guard's refusal of a reply naming
-one control twice, the policy's join-by-named-control, and the priority
-ordering. That last one caught a real error: the first draft had the
-ordering inverted and the source guard passed, because the assertion
-encoded the same mistake as the constants.
+one control twice, the policy's join-by-named-control, the drained-window
+suppression, and the priority ordering. That last one caught a real
+error: the first draft had the ordering inverted and the source guard
+passed, because the assertion encoded the same mistake as the constants.
 
 What is not proven, and is the whole point of the change:
 
-- **The 68K extension has never been built.** No m68k toolchain is
-  installed on this machine, so `scripts/build-guests` skips `ext`. The
-  resident half is `-fsyntax-only` clean under the classic PPC compiler
-  with Universal Interfaces and introduces no new Toolbox symbol, so the
-  flat-INIT link surface is unchanged — but that is an argument, not a
-  link.
 - **No panel has been classified.** The measurement that motivated this
   (1 of 122 controls determined) has not been retaken. Until the corpus
-  is recaptured against a rebuilt extension, the claim that this fixes
-  the starvation is a design argument.
+  is recaptured against a rebuilt extension that has been cold-loaded,
+  the claim that this fixes the starvation is a design argument that
+  compiles.
+- **Nothing has been cold-loaded or run.** A built INIT is not a serving
+  INIT; `docs/p2-semantic-evidence.md` records that the previous P2
+  checkpoint passed every gate and then produced no live list cells at
+  all on the first cold-load sweep.
 - How much of the corpus is *genuinely* custom-drawn remains unknown,
   still bounded by the `UnsupportedCustom` branch — which had been
   exercised 1/122 times precisely because nothing else got a turn.
