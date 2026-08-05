@@ -273,16 +273,8 @@ final class MirrorStateProjectionService {
                the first time. Third instance of the same omission shape;
                `testEveryWindowFieldIsCarriedOrConsciouslyDeclined` is the
                guard that is meant to end it. */
-            let display = window.display.map { ops -> [AgentIntegrationMirrorDisplayOp] in
-                /* **Newest last, oldest dropped first.** That is the
-                   producer's own rule when its 600-op accumulator
-                   overflows, and it is the one that survives a replay:
-                   later ops paint over earlier, so a tail still reaches
-                   the state the window is in, where a head stops partway
-                   through a redraw that has since been painted over. */
-                let newestFirst = ops.reversed().map(Self.displayOp)
-                let fits = Self.affording(newestFirst, within: &contentBytes)
-                return Array(newestFirst.prefix(fits).reversed())
+            let display = window.display.map {
+                Self.replayable($0, within: &contentBytes)
             }
             let all = controls + dialogItems + finderItems
             let room = max(0, min(perWindow, budget - spent))
@@ -339,6 +331,22 @@ final class MirrorStateProjectionService {
        snapshot's metadata, entities and menus. */
     private static let itemBudgetBytes = 40 * 1024
     private static let contentBudgetBytes = 12 * 1024
+
+    /// The window's drawing, bounded — **newest last, oldest dropped
+    /// first.**
+    ///
+    /// That is the producer's own rule when its 600-op accumulator
+    /// overflows, and it is the one that survives a replay: later ops
+    /// paint over earlier, so a tail still reaches the state the window is
+    /// in, where a head stops partway through a redraw that has since been
+    /// painted over.
+    private static func replayable(_ ops: [MirrorKit.DisplayOp],
+                                   within budget: inout Int)
+        -> [AgentIntegrationMirrorDisplayOp] {
+        let newestFirst = ops.reversed().map(displayOp)
+        let fits = affording(newestFirst, within: &budget)
+        return Array(newestFirst.prefix(fits).reversed())
+    }
 
     /// How many of `values`, in the order given, the remaining budget can
     /// afford — measured by encoding them, because the failure this

@@ -489,7 +489,8 @@ final class MirrorStateProjectionServiceTests: XCTestCase {
            ops paint over earlier, so a tail reaches the state the window
            is in where a head stops partway through a redraw. */
         XCTAssertEqual(carried.last?.ticks, 599)
-        XCTAssertEqual(carried.map(\.ticks), (600 - carried.count..<600).map { $0 })
+        XCTAssertEqual(carried.map(\.ticks),
+                       Array((600 - carried.count)..<600))
 
         let encoded = try JSONEncoder().encode(snapshot)
         XCTAssertLessThan(encoded.count, 64 * 1024,
