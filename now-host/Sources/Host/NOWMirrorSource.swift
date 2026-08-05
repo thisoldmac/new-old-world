@@ -1116,8 +1116,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                                     * 1000))
                     return .init(
                         complaint: complaint,
-                        effectMayHaveLanded: complaint != nil
-                            && self.planRefusalReach != .notSent)
+                        effectMayHaveLanded: Self.effectMayHaveLanded(
+                            complaint: complaint,
+                            reach: self.planRefusalReach))
                 }, report: { [weak self] operation, complaint in
                     self?.reportOperation(operation, label: label,
                                           complaint: complaint)
@@ -1274,6 +1275,26 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     }
 
     // MARK: - Serving a plan
+
+    /// **Whether the mutation lane must keep waiting after an attempt.**
+    ///
+    /// The one line that decides how long a refusal holds the FIFO, so it
+    /// is a function with a name rather than an expression inside a
+    /// closure — it was an expression, and it was `complaint?.contains(
+    /// "was not sent") != true`, which is how a refusal the machine
+    /// raised before it armed anything came to hold the lane for fifteen
+    /// seconds and then be confirmed by another act's effect.
+    ///
+    /// An attempt that did not complain went to the machine and settles
+    /// from observation. A refusal settles now only when this side can
+    /// prove nothing was sent; every other refusal keeps waiting, because
+    /// an act that may have landed must not be written off.
+    static func effectMayHaveLanded(
+        complaint: String?,
+        reach: AgentIntegrationProjectionFailure.Reach) -> Bool {
+        guard complaint != nil else { return true }
+        return reach != .notSent
+    }
 
     /// The newest scene this side has, checked against the plan's target
     /// at the moment the plan is about to be sent.

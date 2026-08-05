@@ -653,6 +653,23 @@ final class NOWMirrorSourceTests: XCTestCase {
             for: .keystroke(code: 36, char: 13, mods: 0), in: scene))
     }
 
+    /// The line that holds the lane. A dispatched attempt waits for
+    /// observation; a refusal waits only when this side cannot say the act
+    /// never left.
+    func testOnlyAProvablyUnsentRefusalStopsTheLaneWaiting() {
+        XCTAssertTrue(NOWMirrorSource.effectMayHaveLanded(
+            complaint: nil, reach: .notSent),
+            "a successful dispatch settles from a later scene, whatever a "
+                + "stale reach field says")
+        XCTAssertTrue(NOWMirrorSource.effectMayHaveLanded(
+            complaint: "act-timeout: armed, and nothing called it",
+            reach: .unknown))
+        XCTAssertFalse(NOWMirrorSource.effectMayHaveLanded(
+            complaint: "element-not-found: nothing in this process answers "
+                + "to that name any more",
+            reach: .notSent))
+    }
+
     /// Activation names a window too, and it is the same question.
     func testActivationIsRereadLikeAnyOtherWindowAct() throws {
         let scene = try fixtureScene()
