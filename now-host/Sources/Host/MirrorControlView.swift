@@ -7,6 +7,7 @@ struct MirrorControlView: View {
     @ObservedObject var model: MirrorControlModel
     @ObservedObject var mirrorWindow: NOWMirrorWindow
     @ObservedObject var timeline: MirrorActTimeline
+    @ObservedObject var cycles: MirrorCycleTimeline
 
     var body: some View {
         VStack(spacing: 0) {
@@ -16,6 +17,7 @@ struct MirrorControlView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     productCard
                     actsCard
+                    cyclesCard
                     lifecycleCard
                     planesCard
                 }
@@ -128,6 +130,46 @@ struct MirrorControlView: View {
             Text(clocks.narrative)
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    /// **What one look at the Mac costs.** Kept apart from acts because
+    /// an act confirms from a later scene: this period is charged to
+    /// every gesture on the machine, and shortening it is a different
+    /// repair from anything in the act path.
+    private var cyclesCard: some View {
+        card {
+            Text("Scene cycles").font(.headline)
+            Text("Structure alone and a full walk are different amounts of "
+                 + "work on the Mac. They are listed separately because an "
+                 + "average of the two describes no machine.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            let walks = ["structure", "structure+semantics",
+                         "structure+interaction", "full"]
+            let latest = walks.compactMap { cycles.latest(walk: $0) }
+            if latest.isEmpty {
+                Text("No scene has arrived yet.")
+                    .font(.callout).foregroundStyle(.secondary)
+            } else {
+                ForEach(Array(latest.enumerated()), id: \.offset) { _, cycle in
+                    Divider()
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(cycle.walk).font(.callout)
+                            Spacer()
+                            Text(cycle.outcome).font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Text(cycle.baselineLine)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
         }
     }
 

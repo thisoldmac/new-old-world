@@ -207,6 +207,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// Survives a guest change on purpose: the interesting comparison is
     /// often the acts either side of a reconnection.
     let actTimeline = MirrorActTimeline()
+    let cycleTimeline = MirrorCycleTimeline()
+    private var cycleAsked: (at: Date, semantics: Bool, interaction: Bool)?
+    private var cycleDelivered: Date?
+    private var cycleOutcome = "no-reply"
+    private var lastCyclePublishedAt: Date?
     private var mutationWaiting = false
     private var sceneGuestKey: GuestKey?
     private(set) var pinnedGuestKey: GuestKey?
@@ -343,18 +348,26 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         let generation = runGeneration
         cycleGeneration = generation
         let planes = planePolicy(pinnedGuestKey)
+        cycleAsked = (at: Date(),
+                      semantics: planes.contains(.semantics),
+                      interaction: planes.contains(.interaction))
+        cycleDelivered = nil
+        cycleOutcome = "no-reply"
         cycleIO.requestScene(
             pinnedGuestKey, planes.contains(.semantics),
             planes.contains(.interaction)) { [weak self] result in
             guard let self else { return }
+            self.cycleDelivered = Date()
             guard self.isCurrentCycle(generation) else { return }
             switch result {
             case .success(let delivery):
                 guard delivery.guestKey == self.pinnedGuestKey else {
                     self.ambient = "ignored a scene from a different Mac"
+                    self.cycleOutcome = "wrong-mac"
                     self.finishCycle(generation)
                     return
                 }
+                self.cycleOutcome = "ok"
                 /* Content is a bounded command answer issued only after the
                    scene transfer settles. Rearming the structural poll here
                    would create a second cadence and race the one command
@@ -370,6 +383,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 self.ambient = failure.refusedByGuest
                     ? "the Mac declined: \(failure.message)"
                     : failure.message
+                self.cycleOutcome = failure.refusedByGuest
+                    ? "declined" : "failed"
             }
             self.finishCycle(generation)
         }
@@ -476,6 +491,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// interval owns every other continuation.
     private func finishCycle(_ generation: Int) {
         guard isCurrentCycle(generation) else { return }
+        recordCycleClocks()
         cycleGeneration = nil
         if pollRequestedAfterCycle {
             pollRequestedAfterCycle = false
@@ -483,6 +499,34 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         } else {
             rearm()
         }
+    }
+
+    /// One measurement per cycle, whatever it produced. A cycle that
+    /// declined or never answered still spent the guest's time, and a
+    /// baseline made only of successful walks describes a machine that
+    /// is never busy.
+    private func recordCycleClocks() {
+        guard let asked = cycleAsked else { return }
+        let published = Date()
+        cycleTimeline.record(.init(
+            requestedAt: asked.at,
+            deliveredAt: cycleDelivered,
+            publishedAt: published,
+            idleBefore: lastCyclePublishedAt.map {
+                asked.at.timeIntervalSince($0)
+            },
+            semantics: asked.semantics,
+            interaction: asked.interaction,
+            outcome: cycleOutcome,
+            windows: scene?.windows.count,
+            /* Controls plus reported dialog items: the two together are
+               what a walk actually had to enumerate, and a rewalk's cost
+               tracks this far better than the window count does. */
+            elements: scene?.windows.reduce(0) {
+                $0 + $1.controls.count + ($1.dialogItems?.count ?? 0)
+            }))
+        lastCyclePublishedAt = published
+        cycleAsked = nil
     }
 
     private func rearm() {
