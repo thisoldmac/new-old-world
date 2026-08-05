@@ -179,54 +179,78 @@ that reproduces it. Every route tried, with what is actually known:
 | AppleScript `set visible` through the Finder's object model | **dead** | refused `-10000`, `-10006`, `osaErr -1753`. Read-only there |
 | `menuact` on menu `-16489` | **dead** | dispatches, changes nothing. The Application menu is SYSTEM-owned, not served by the front application's own `MenuSelect` — which is why the act plane's trap patch, that drives the Finder 8/8, cannot reach it |
 | a real positional click | **not possible today** | the guest has no positional click verb. `mouseloc` is a READ (`input_cmds.c`), and the act plane delivers menu choices by arming a patch, not by moving a pointer |
-| **the Process Manager's own visibility call** | **checked, and closed for the app** | see below |
+| **`ShowHideProcess`** — the Process Manager's own call | **OPEN, and it is the answer** | present in CarbonLib as a weak import; see below |
 
-That last row is new and it changes the shape of the problem.
+**I got this wrong first, and the way I got it wrong is the lesson.** I
+swept for the symbol, found it absent, and wrote "closed for the app" into
+this plan and the ledger. The sweep checked
+`toolchain/universal/libppc/libCarbonLib.a` and two `CarbonFrameworkLib`
+archives — and never `toolchain/multiversal/libppc/libCarbonLib.a`, which
+has it. **There are two CarbonLib archives of different vintages in this
+toolchain and I checked one of them.** Verified since:
 
-**The API floor, checked rather than assumed** — prompted by the
-observation that show/hide predates Carbon and might not be a Carbon call.
-It is not, and it is worse than that:
+| archive | `ShowHideProcess` |
+|---|---|
+| `Retro68/ImportLibraries/libCarbonLib.a` | **present** (3 syms, with `IsProcessVisible`) |
+| `Retro68-build/toolchain/multiversal/libppc/libCarbonLib.a` | **present** |
+| `Retro68-build/toolchain/universal/libppc/libCarbonLib.a` | absent |
+| `powerpc-apple-macos/lib/libCarbonLib.a` | → symlink to the `universal` one |
 
-- `libCarbonLib.a` exports `SetFrontProcess` and **not**
-  `ShowHideProcess`. The Carbon application cannot call it.
-- **Under any spelling.** Sweeping both toolchains for every identifier
-  containing `Hide` or `Visib` turns up only window-, control-, dialog- and
-  cursor-level calls. The one near miss, `ShowHide`, is the **Window
-  Manager's** (`_ShowHide`, trap `$A908`, takes a `WindowPtr`).
-- The complete set of Process Manager functions Retro68 declares is
-  `GetCurrentProcess`, `GetNextProcess`, `GetProcessInformation`,
-  `SameProcess`, `GetPortNameFromProcessSerialNumber`,
-  `GetProcessSerialNumberFromPortName`, `AEProcessAppleEvent`,
-  `SetFrontProcess`, `WakeUpProcess`. Every one is a read except the last
-  two. **There is no visibility call in the toolchain at all.**
+The cause is a version split: the headers on the include path are
+Universal Interfaces **3.4**, and `ShowHideProcess` did not exist until
+**3.4.1** (checked against 3.2, 3.3.2, 3.4 — zero occurrences in each).
+The richer archives are 3.4.1-derived. **The linker currently resolves the
+symlink to the 3.4 archive, so the search path has to change.**
 
-**`ShowHide` is not a substitute, and reaching for it is the trap here.**
-Hiding an application's windows without setting the process's visible flag
-would leave the Application menu's checkmark wrong and the process still
-visible to `GetProcessInformation` — a mirror that reports a state the
-machine is not in, which is the plausible-lie shape the honesty bar
-forbids. It is also a foreign-context WRITE, which the charter permits only
-in a resident.
+**The declaration, cited from two independent Apple distributions**
+(UI 3.4.1 `Processes.h` ll. 542–545; QuickTime 7.3 SDK `CIncludes`,
+byte-identical selector; and Apple's *Process Manager Reference*
+2007-12-04 p.19, whose revision history dates the entry to 2003-04-01):
 
-So the remaining candidate is the **resident**, and it fits the family
-charter exactly: foreign-context execution lives only in resident
-components, and a resident component is always optional. The 68K extension
-already runs in the system context and already patches traps, and
-`_OSDispatch` (trap `$A88F`) — the dispatcher the Process Manager rides on
-— **is** declared in the toolchain. So the mechanism to reach an undeclared
-selector exists; only the selector is missing.
+```c
+pascal OSErr ShowHideProcess(const ProcessSerialNumber *psn, Boolean visible)
+                                    THREEWORDINLINE(0x3F3C, 0x0060, 0xA88F);
+```
 
-**Before anything is built, two things must be checked, in this order:**
+Availability, verbatim: `Non-Carbon CFM: not available` /
+**`CarbonLib: in CarbonLib 1.5 and later`** / `Mac OS X: in 10.1 and
+later`. Our floor is CarbonLib 1.6, so on the whole target range the call
+exists. It is in `CarbonLib__weak.o` — a **weak** import, which is exactly
+right for a 1.5+ symbol: the app loads under an older CarbonLib and tests
+the address before calling.
 
-1. **The selector number, from a document.** A phantom constant here is
-   precisely what the provenance rule forbids — cite Inside Macintosh:
-   Processes or a Universal Interfaces header, or mark it a guess awaiting
-   evidence and do not ship it. This is the one number the whole route
-   rests on and the toolchain does not supply it.
-2. **That the call works at all on this OS version**, from the resident's
-   context, on one process, watched. It is documented to fail for some
-   processes, and its behaviour with a background-only application is its
-   own question.
+Its companion read is **`IsProcessVisible`** (selector `0x005F`), and it
+settles a worry this plan previously recorded. `ProcessInfoRec` has **no
+visibility field at all**, so `GetProcessInformation` cannot disagree with
+the menu — the underlying state is the LAYER's `visible` flag, and Mac OS
+8's own `AdjustApplicationMenu` decides the Hide/Hide Others/Show All
+enablement by testing exactly that flag. One flag drives both the menu and
+the read; the divergence I feared would require them to be separate, and
+they are not.
+
+**And it explains the dead end properly.** For a system-owned menu,
+`MenuSelect` calls `SystemMenu` (trap `$A9B5`) and returns **0** in the
+high word to the application. The Process Manager's patch on `_SystemMenu`
+is what performs the hide. So arming a trap patch on the front
+application's `MenuSelect` skips the only code that acts on the choice.
+Not a flaky route — **the wrong trap.**
+
+**Ordering, and the one route not to take.** Route 1 is the weak-linked
+Carbon call, and it removes the need for a resident entirely. Route 2, if
+that fails, is `SystemMenu` from the 68K resident (public, in
+`libInterfaceLib`, declared in the 68K toolchain already; hides the FRONT
+application, which is what a person's click does). Route 3 — reaching
+selector `0x0060` by raw `_OSDispatch` — is **last and is dangerous**:
+Apple's own dispatcher does no bounds check on the selector, so an
+unimplemented one does not return an error, it reads past the table and
+`rts`es into whatever that longword happens to be. In a resident, in every
+application's context, that is an unrecoverable crash rather than a
+`paramErr`, and there is no way to probe for it first.
+
+**Still unproven, and it is the thing to measure:** whether the classic
+68K Process Manager in 8.6–9.x implements 0x0060 itself, or whether
+CarbonLib 1.5 implements it above the trap. Route 1 does not care; routes
+2 and 3 do.
 
 Only then: a contract verb, the host projection, and the typed postcondition
 (`processVisibility` already exists and already cannot settle — see the

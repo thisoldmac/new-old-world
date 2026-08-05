@@ -249,24 +249,50 @@ positional click verb. `mouseloc` is a READ (`input/input_cmds.c`), and the
 act plane delivers menu choices by arming a patch rather than by moving a
 pointer.
 
-**The Process Manager's own visibility call is absent from the toolchain,
-under any spelling** (checked 2026-08-05). `libCarbonLib.a` exports
-`SetFrontProcess` and not `ShowHideProcess`. Sweeping both Retro68
-toolchains for every identifier containing `Hide` or `Visib` finds only
-window-, control-, dialog- and cursor-level calls; the near miss `ShowHide`
-is the **Window Manager's** (`_ShowHide`, `$A908`, takes a `WindowPtr`) and
-is NOT a substitute — hiding an app's windows without setting the process
-flag leaves the Application menu's checkmark wrong and the process still
-visible to `GetProcessInformation`, which is a mirror reporting a state the
-machine is not in. The complete declared Process Manager set is
-`GetCurrentProcess`, `GetNextProcess`, `GetProcessInformation`,
-`SameProcess`, the two port-name calls, `AEProcessAppleEvent`,
-`SetFrontProcess` and `WakeUpProcess` — all reads but the last two.
+**THE ROUTE THAT EXISTS: `ShowHideProcess`, weak-linked from the Carbon
+app.** An earlier version of this entry said the Process Manager's
+visibility call was absent from the toolchain under any spelling. **That
+was wrong, and the error is worth keeping**: the sweep checked
+`toolchain/universal/libppc/libCarbonLib.a` and two `CarbonFrameworkLib`
+archives, and never `toolchain/multiversal/libppc/libCarbonLib.a`. There
+are TWO CarbonLib archives of different vintages here and only one was
+looked at. Verified 2026-08-05:
 
-**What remains untried:** the 68K resident reaching an undeclared Process
-Manager selector through `_OSDispatch` (`$A88F`), which IS declared. The
-mechanism exists; only the selector number is missing, and it must come
-from a document rather than a guess. Plan:
+- present in `Retro68/ImportLibraries/libCarbonLib.a` and
+  `toolchain/multiversal/libppc/libCarbonLib.a`, together with
+  `IsProcessVisible`;
+- absent from `toolchain/universal/libppc/libCarbonLib.a` — and
+  `powerpc-apple-macos/lib/libCarbonLib.a` is a SYMLINK to that one, so
+  **the linker currently resolves to the archive without the symbol**;
+- the split is Universal Interfaces 3.4 (headers, on the include path)
+  versus 3.4.1 (the richer archives). `ShowHideProcess` did not exist
+  until 3.4.1 — zero occurrences in 3.2, 3.3.2 and 3.4.
+
+`pascal OSErr ShowHideProcess(const ProcessSerialNumber *psn, Boolean
+visible)`, `THREEWORDINLINE(0x3F3C, 0x0060, 0xA88F)`, cited from UI 3.4.1
+`Processes.h` ll. 542–545 and Apple's *Process Manager Reference*
+(2007-12-04, p.19). Availability: **CarbonLib 1.5 and later** — our floor
+is 1.6. It is a WEAK import, so the address is tested before it is called.
+
+**And this entry's other worry is settled.** `ProcessInfoRec` carries no
+visibility field at all, so `GetProcessInformation` cannot disagree with
+the Application menu; the state is the LAYER's `visible` flag, which is
+also what Mac OS 8's own `AdjustApplicationMenu` tests when it decides
+whether Hide is enabled. One flag, both readers. `IsProcessVisible`
+(selector `0x005F`) is the read-back.
+
+**Why `menuact` could never have worked, precisely.** For a system-owned
+menu, `MenuSelect` calls `SystemMenu` (trap `$A9B5`) and returns 0 in the
+high word to the application; the Process Manager's patch on `_SystemMenu`
+performs the hide. Arming a patch on the front application's `MenuSelect`
+therefore skips the only code that acts. The wrong trap, not a flaky one.
+
+**Do not reach selector `0x0060` by raw `_OSDispatch`.** Apple's
+dispatcher does no bounds check: an unimplemented selector does not return
+an error, it reads past the table and `rts`es into whatever that longword
+holds — in a resident, in every application's context, an unrecoverable
+crash rather than a `paramErr`, with no way to probe first. That route is
+last. Plan:
 [2026-08-05-010 § C](plans/2026-08-05-010-feat-closing-the-headless-mirror-plan.md).
 
 Until something is watched working, Hide is UNBUILT rather than broken. Its
