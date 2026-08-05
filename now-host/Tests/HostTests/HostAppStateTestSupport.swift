@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+@testable import Host
 
 /// Two rules about ports that every `HostAppState` test needs, stated here
 /// once because they were being got wrong in five files independently.
@@ -21,6 +22,20 @@ extension UserDefaults {
         set(false, forKey: "listenAtLaunch")
         return self
     }
+}
+
+/// An `AppDelegate` that cannot reach the real settings or the real port.
+///
+/// A bare `AppDelegate()` builds its `HostAppState` on the product's own
+/// preference domain, so touching `state` reads a person's saved settings
+/// and — `listenAtLaunch` being true when unset — binds 5250. Eight tests
+/// were doing that. None of them is about the wire; they are about menus
+/// and the status item.
+@MainActor
+func quietAppDelegate(_ label: String = "AppDelegate") -> AppDelegate {
+    let suite = "\(label).\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!.offTheWire()
+    return AppDelegate(defaults: defaults)
 }
 
 /// A listen port for the one test that must name one before it binds.

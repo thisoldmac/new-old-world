@@ -136,7 +136,7 @@ final class QuickCaptureTests: XCTestCase {
     // MARK: - The menu item itself
 
     func testStatusMenuCarriesTheCommandGreyedOutWithNoGuest() throws {
-        let delegate = AppDelegate()
+        let delegate = quietAppDelegate()
         let menu = delegate.makeStatusMenu()
         let shoot = try XCTUnwrap(menu.items.first {
             $0.title == "Screenshot Guest"

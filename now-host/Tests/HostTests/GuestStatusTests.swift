@@ -168,7 +168,7 @@ final class GuestStatusTests: XCTestCase {
     // MARK: - Menu header
 
     func testHeaderShowsTheConnectionWhenNothingIsBlocking() {
-        let delegate = AppDelegate()
+        let delegate = quietAppDelegate()
         let line = delegate.statusHeaderLine(
             status: .connected(name: "PowerBook 1400", quietFor: 1),
             readiness: .init(isEnabled: true, reason: nil))
@@ -178,7 +178,7 @@ final class GuestStatusTests: XCTestCase {
     /// A connected-but-greyed-out command is the confusing case: the header
     /// has to say which lane occupant is responsible.
     func testHeaderExplainsAGreyOutThatTheConnectionDoesNotExplain() {
-        let delegate = AppDelegate()
+        let delegate = quietAppDelegate()
         let line = delegate.statusHeaderLine(
             status: .connected(name: "PowerBook 1400", quietFor: 1),
             readiness: .init(isEnabled: false,
@@ -190,7 +190,7 @@ final class GuestStatusTests: XCTestCase {
     /// When there is no guest the connection line already says everything;
     /// appending "no Mac is connected" to it would just stutter.
     func testHeaderDoesNotRestateAMissingGuest() {
-        let delegate = AppDelegate()
+        let delegate = quietAppDelegate()
         let line = delegate.statusHeaderLine(
             status: .waiting(port: 5252),
             readiness: .init(isEnabled: false, reason: "No Mac is connected"))
@@ -259,7 +259,7 @@ final class GuestStatusTests: XCTestCase {
     }
 
     func testStatusLineIsTheFirstMenuItemAndIsNotClickable() throws {
-        let delegate = AppDelegate()
+        let delegate = quietAppDelegate()
         let menu = delegate.makeStatusMenu()
         let header = try XCTUnwrap(menu.item(withTag: AppDelegate.statusLineTag))
         XCTAssertEqual(menu.items.first, header, "status reads first")
