@@ -363,9 +363,19 @@ static void plot_small_icon(short id, const Rect *dst_rect)
     HUnlock(h);
 }
 
+static void draw_nav_rows(void);
+
 /* Scrolling moves which module each slot shows; the slots themselves do
    not move, so nothing is relaid out - the nav area is simply repainted
-   with a different stretch of the list in it. */
+   with a different stretch of the list in it.
+
+   It repaints DIRECTLY rather than invalidating, because the live scroll
+   bar calls this from inside TrackControl: an invalidation would not be
+   serviced until the tracking loop returned, so the rail would sit frozen
+   under a moving thumb and jump at the drop. Immediate feedback during
+   tracking is the documented exception to update-event ownership, and
+   the drawing is the same function the update path calls, so the next
+   ordinary update reproduces it from the same state. */
 static void scroll_to(short top)
 {
     short before = g_scroll_top;
@@ -378,7 +388,10 @@ static void scroll_to(short top)
     if (g_scroll != NULL) {
         SetControlValue(g_scroll, g_scroll_top);
     }
-    inval_nav_area();
+    if (g_owner != NULL) {
+        SetPortWindowPort(g_owner);
+        draw_nav_rows();
+    }
 }
 
 static pascal void scroll_action(ControlRef control, ControlPartCode part)
@@ -386,7 +399,6 @@ static pascal void scroll_action(ControlRef control, ControlPartCode part)
     short page = (short)(visible_slots() - 1);
     short delta = 0;
 
-    (void)control;
     if (page < 1) {
         page = 1;
     }
@@ -403,6 +415,13 @@ static pascal void scroll_action(ControlRef control, ControlPartCode part)
     case kControlPageDownPart:
         delta = page;
         break;
+    case kControlIndicatorPart:
+        /* The live variant calls the action proc for the thumb too, which
+           the plain scrollBarProc never did - that is what makes the list
+           follow the thumb instead of jumping at the drop. */
+        scroll_to(GetControlValue(control));
+        now_wire_pump();
+        return;
     default:
         return;
     }
@@ -424,6 +443,28 @@ static void reveal_pos(short pos)
     }
 }
 
+/* Where the bar lives, INCLUDING when the layout says there is none.
+
+   The layout reports an empty nav_scroll while everything fits, which is
+   the honest description of "no bar" - but a control must never be
+   CREATED at an empty rectangle. The live CDEF will not render a bar
+   that was born 0x0 and resized later: it appeared on a relaunch into a
+   small window and stayed invisible when the same window was dragged
+   down to the same size, which is the difference between the two paths.
+   (The plain scrollBarProc tolerated it, which is why this only showed
+   up when the CDEF changed.) So creation uses a real strip and
+   visibility is Show/Hide's business, where it belongs. */
+static void scroll_bar_rect(Rect *out)
+{
+    if (g_lay.rail_scrolls) {
+        *out = g_lay.nav_scroll;
+        return;
+    }
+    *out = g_lay.nav_rows[0];
+    out->left = (short)(out->right - kWorkshopRailScrollWidth);
+    out->bottom = g_lay.nav_rows[visible_slots() - 1].bottom;
+}
+
 /* The bar mirrors the list: one unit per row, a page of what fits, and
    disabled-and-hidden the moment everything does. Called after any
    change to the layout, the scroll position or the row count. */
@@ -437,12 +478,26 @@ static void sync_scrollbar(void)
     clamp_scroll();
     wanted = g_lay.rail_scrolls;
     if (wanted) {
-        MoveControl(g_scroll, g_lay.nav_scroll.left, g_lay.nav_scroll.top);
-        SizeControl(g_scroll,
-                    (short)(g_lay.nav_scroll.right - g_lay.nav_scroll.left),
-                    (short)(g_lay.nav_scroll.bottom - g_lay.nav_scroll.top));
+        Rect bar;
+
+        scroll_bar_rect(&bar);
+        MoveControl(g_scroll, bar.left, bar.top);
+        SizeControl(g_scroll, (short)(bar.right - bar.left),
+                    (short)(bar.bottom - bar.top));
         SetControlMaximum(g_scroll, max_scroll());
         SetControlValue(g_scroll, g_scroll_top);
+        /* The thumb's SIZE, in the same units as the value: how many rows
+           the bar can see out of the whole list. The Appearance scroll
+           bar draws the indicator proportionally from this - a rail one
+           row short of fitting gets a nearly full-length thumb, which is
+           the honest picture of how little there is to scroll.
+
+           Whether it is DRAWN proportionally is the system's call, not
+           ours: Smart Scrolling is a control-panel setting, and with it
+           off the thumb is a fixed block. Setting the view size is
+           correct either way, and deliberately does not second-guess the
+           person's setting. */
+        SetControlViewSize(g_scroll, visible_slots());
     }
     /* IsControlVisible before Show/Hide: both draw whatever they are
        passed, so calling them unconditionally is the flicker loop the
@@ -486,6 +541,7 @@ Boolean workshop_sidebar_create(WindowRef owner, const WorkshopLayout *lay,
                                 WorkshopSidebarSelectFn on_select)
 {
     Str255 empty;
+    Rect bar;
 
     g_owner = owner;
     g_lay = *lay;
@@ -506,8 +562,15 @@ Boolean workshop_sidebar_create(WindowRef owner, const WorkshopLayout *lay,
         return false;
     }
     empty[0] = 0;
-    g_scroll = NewControl(owner, &g_lay.nav_scroll, empty, false, 0, 0, 0,
-                          scrollBarProc, 0);
+    /* The LIVE variant, not scrollBarProc: it is the one that takes a
+       view size for a proportional thumb, and the one that calls the
+       action proc while the thumb moves. Already proven to compile and
+       run here by network_module.c, whose bar is the same CDEF.
+       SetControlViewSize is CarbonLib 1.0 and later, well under this
+       app's 1.6 floor. */
+    scroll_bar_rect(&bar);
+    g_scroll = NewControl(owner, &bar, empty, false, 0, 0, 0,
+                          kControlScrollBarLiveProc, 0);
     if (g_scroll == NULL) {
         DisposeControlActionUPP(g_scroll_action_upp);
         g_scroll_action_upp = NULL;
@@ -698,12 +761,41 @@ static void draw_row(WorkshopModuleID module)
     }
 }
 
+/* Every visible slot, white ground and all. The ONE place the nav list
+   is painted: the update path calls it, and so does scroll_to during
+   live tracking, so a scrolled rail and a redrawn one cannot disagree.
+   Which module a slot holds is the person's order and the scroll
+   position, never the enum. */
+static void draw_nav_rows(void)
+{
+    RGBColor white = { 0xFFFF, 0xFFFF, 0xFFFF };
+    RGBColor saved_back;
+    Rect area;
+    short i;
+
+    /* The rows do not tile their own background - a shorter list after a
+       scroll to the end would leave the last row's pixels behind. */
+    area = g_lay.nav_rows[0];
+    area.bottom = g_lay.nav_rows[visible_slots() - 1].bottom;
+    GetBackColor(&saved_back);
+    RGBBackColor(&white);
+    EraseRect(&area);
+    RGBBackColor(&saved_back);
+
+    for (i = 0; i < visible_slots(); ++i) {
+        WorkshopModuleID module = module_at_slot(i);
+
+        if (module != (WorkshopModuleID)0) {
+            draw_row_in(module, &g_lay.nav_rows[i]);
+        }
+    }
+}
+
 void workshop_sidebar_draw(void)
 {
     RGBColor white = { 0xFFFF, 0xFFFF, 0xFFFF };
     RGBColor saved_back;
     Pattern gray;
-    int i;
 
     if (g_owner == NULL) {
         return;
@@ -740,15 +832,7 @@ void workshop_sidebar_draw(void)
     RGBBackColor(&saved_back);
     FrameRect(&g_lay.rail_list);
 
-    /* Nav rows by SLOT: which module a slot holds is the person's order
-       and the scroll position, not the enum. */
-    for (i = 0; i < visible_slots(); ++i) {
-        WorkshopModuleID module = module_at_slot((short)i);
-
-        if (module != (WorkshopModuleID)0) {
-            draw_row_in(module, &g_lay.nav_rows[i]);
-        }
-    }
+    draw_nav_rows();
     draw_row(kWorkshopPreferences);
     draw_row(kWorkshopLogs);
     draw_row(kWorkshopConnection);
@@ -785,6 +869,38 @@ static short drop_pos(Point where)
         slot = visible_slots();
     }
     return (short)(g_scroll_top + slot);
+}
+
+/* The row being dragged, as a gray outline that follows the pointer -
+   the same feedback Mac OS gives for a dragged window, and the reason
+   DragGrayRgn exists. Gray pattern in XOR so the frame is the classic
+   dotted one and a second draw in the same place erases it exactly,
+   whatever it was drawn over.
+
+   Clamped to the nav list: an outline free to wander would XOR over the
+   pinned group and the window frame, and a person dragging a row is
+   never trying to drop it on Connection. */
+static void toggle_drag_outline(short top)
+{
+    Rect frame;
+    Pattern gray;
+    short row_h = g_lay.row_height;
+    short lo = g_lay.nav_rows[0].top;
+    short hi = (short)(g_lay.nav_rows[visible_slots() - 1].bottom - row_h);
+
+    if (top < lo) {
+        top = lo;
+    }
+    if (top > hi) {
+        top = hi;
+    }
+    SetRect(&frame, g_lay.nav_rows[0].left, top, g_lay.nav_rows[0].right,
+            (short)(top + row_h));
+    GetQDGlobalsGray(&gray);
+    PenPat(&gray);
+    PenMode(patXor);
+    FrameRect(&frame);
+    PenNormal();
 }
 
 /* The insertion line, drawn in XOR so drawing it a second time in the
@@ -830,12 +946,16 @@ static void toggle_drop_line(short pos)
    it is in docs/open-issues.md rather than hidden here. */
 static void drag_row(short from_pos, Point start)
 {
-    Point last = start;
-    short shown = -1;
+    short slot = (short)(from_pos - g_scroll_top);
+    short grab = (short)(start.v - g_lay.nav_rows[slot].top);
+    short shown_pos = -1;             /* insertion line, -1 = none drawn */
+    short shown_top = 0;              /* outline, valid while shown_pos >= 0 */
     Boolean armed = false;
 
     while (StillDown()) {
         Point now_pt;
+        short want_pos;
+        short want_top;
 
         now_wire_pump();              /* the rule: every nested loop pumps */
         GetMouse(&now_pt);
@@ -854,29 +974,31 @@ static void drag_row(short from_pos, Point start)
             }
             armed = true;
         }
-        if (now_pt.v == last.v && shown >= 0) {
-            continue;
+        want_pos = drop_pos(now_pt);
+        want_top = (short)(now_pt.v - grab);
+        if (shown_pos >= 0 && want_pos == shown_pos && want_top == shown_top) {
+            continue;                 /* nothing moved; do not redraw */
         }
-        last = now_pt;
-        {
-            short want = drop_pos(now_pt);
-
-            if (want != shown) {
-                if (shown >= 0) {
-                    toggle_drop_line(shown);
-                }
-                toggle_drop_line(want);
-                shown = want;
-            }
+        /* Erase both, then draw both. Erasing first matters: the outline
+           and the line can overlap, and XOR feedback only cancels when it
+           is undone in the state it was drawn in. */
+        if (shown_pos >= 0) {
+            toggle_drop_line(shown_pos);
+            toggle_drag_outline(shown_top);
         }
+        toggle_drag_outline(want_top);
+        toggle_drop_line(want_pos);
+        shown_pos = want_pos;
+        shown_top = want_top;
     }
-    if (shown >= 0) {
-        toggle_drop_line(shown);      /* erase before anything repaints */
+    if (shown_pos >= 0) {
+        toggle_drop_line(shown_pos);  /* erase before anything repaints */
+        toggle_drag_outline(shown_top);
     }
-    if (!armed || shown < 0) {
+    if (!armed || shown_pos < 0) {
         return;                       /* an Option-click that never moved */
     }
-    order_move(from_pos, shown);
+    order_move(from_pos, shown_pos);
     order_persist();
     inval_nav_area();
 }
@@ -893,20 +1015,21 @@ Boolean workshop_sidebar_click(const EventRecord *event, Point local)
     if (g_scroll != NULL && g_lay.rail_scrolls
         && PtInRect(local, &g_lay.nav_scroll)) {
         ControlRef hit = NULL;
-        ControlPartCode part = FindControl(local, g_owner, &hit);
 
+        /* The part is not needed any more - one TrackControl serves every
+           part of a live bar - but FindControl still has to run to learn
+           WHICH control was hit. */
+        (void)FindControl(local, g_owner, &hit);
         if (hit == g_scroll) {
-            if (part == kControlIndicatorPart) {
-                /* The thumb tracks as an outline and reports at release;
-                   the Control Manager calls no action proc for it, which
-                   is why this one is NULL rather than unpumped by
-                   oversight. */
-                if (TrackControl(g_scroll, local, NULL) != 0) {
-                    scroll_to(GetControlValue(g_scroll));
-                }
-            } else {
-                TrackControl(g_scroll, local, g_scroll_action_upp);
-            }
+            /* One call for every part, thumb included. With the plain
+               scrollBarProc the indicator had to be tracked with a NULL
+               action and read at release, because the Control Manager
+               called no action proc for it; the LIVE variant does, so the
+               same proc drives arrows, pages and thumb - and the wire is
+               pumped for all three instead of stopping for the one a
+               finger rests on longest. */
+            TrackControl(g_scroll, local, g_scroll_action_upp);
+            scroll_to(GetControlValue(g_scroll));  /* settle on release */
             return true;
         }
     }
