@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+"""Ask an emulator guest to shut ITSELF down, and wait for it to go.
+
+    tools/shutdown-guest.py <qmp.sock> --port <anchor> [--timeout 120]
+
+WHY THIS IS NOT `tools/qmp <sock> quit`. QMP `quit` is a power cut. It
+sets the volume's unclean bit, so the next boot is "Your computer did not
+shut down properly" and a Disk First Aid pass - and `scripts/spin-up-ppc`
+COLD-BOOTS for a living, because an INIT loads at boot and at no other
+time. A rig that manufactures a dirty volume on every cycle spends its
+time repairing the disk it is about to measure.
+
+WHY IT IS NOT THE LAB'S `tools/shutdown-guest` EITHER. That one asks the
+Finder through a guest agent's `script` verb. The lab's canonical anchor
+worker - the one baked into the runner image every session clones - does
+not have that verb, so it stops with "the agent refused the script verb"
+and leaves the machine up. Measured 2026-08-05; its `hello` lists 24
+tools and `script` is not among them.
+
+HOW THIS ONE ASKS. A classic Mac shuts down from inside, so NOW stages a
+small application that does nothing but call the Shutdown Manager
+(tools/guest-shutdown, staged by tools/stage-ext.py) and this launches it
+through the worker's `launch` verb. Every route that goes through the
+human interface was tried first and is dead on this rig:
+
+  * QMP keyboard events never arrive. mac99,via=pmu reports
+    `has-adb=false`, so there is no ADB keyboard and no power key; neither
+    `send-key` nor `input-send-event` moves a key in Key Caps.
+  * QMP `abs` pointer events are refused outright - there is no absolute
+    pointing device - and the `rel` ones that are accepted carry OS 9's
+    pointer acceleration, so counted steps do not land where they aim.
+  * The worker's own `click` verb closes a menu without selecting from it.
+
+WHAT IT COSTS. The applet calls ShutDwnPower, which is what the Finder
+itself ends up calling: shutdown procedures run, volumes are flushed and
+unmounted, the power manager cuts power. It does NOT send quit
+AppleEvents first - that part is the Finder's, and this skips it. So an
+application holding unsaved work loses it. This politely quits the front
+application first when it is not the Finder, which covers the ordinary
+case, and it is still not a substitute for a person shutting a machine
+down that somebody is using.
+
+Exit 0 means QEMU exited, which only happens because the guest asked for
+power off. Exit 1 means it did not, and the VM is left running and
+untouched: deciding to kill an emulator that would not shut down is the
+caller's business, not this file's.
+"""
+import argparse
+import json
+import os
+import socket
+import sys
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+NOW = os.path.abspath(os.path.join(HERE, ".."))
+
+# The lab checkout owns the emulator and the anchor client; NOW owns the
+# artifacts. Normally NOW's parent - but not from a git worktree, which
+# sits several levels deeper and whose parent has no mcp-classic in it.
+LAB = os.environ.get("NOW_LAB_ROOT")
+if not LAB:
+    LAB = NOW
+    while LAB != "/" and not os.path.isdir(os.path.join(LAB, "mcp-classic")):
+        LAB = os.path.dirname(LAB)
+sys.path.insert(0, os.path.join(LAB, "mcp-classic"))
+from timbottu_mcp_classic.harness import Harness, HarnessError  # noqa: E402
+
+DEV = os.environ.get("NOW_GUEST_DIR", "Macintosh HD:TimBotTu:now-dev")
+APPLET = os.environ.get("NOW_SHUTDOWN_NAME", "NOW Shut Down")
+
+# Cmd-Q as the front application sees it: virtual key 12 is 'q', and 256
+# is cmdKey in the event record's modifiers. Measured working through the
+# worker's `key` verb on 2026-08-05 - it is a posted event, which is why
+# it reaches an application's menu handling while a posted CLICK cannot
+# reach a menu's tracking loop.
+CMD_Q = {"code": 12, "char": ord("q"), "mods": 256}
+
+
+def qmp_alive(sock_path):
+    """Is QEMU still answering? A dead socket IS the success signal.
+
+    One connection per call and no reuse: the socket file is unlinked when
+    QEMU exits, so a stale connection would keep reporting a machine that
+    is gone."""
+    if not os.path.exists(sock_path):
+        return False
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(10)
+    try:
+        s.connect(sock_path)
+        f = s.makefile("rwb")
+        f.readline()                                   # the greeting
+        f.write(b'{"execute":"qmp_capabilities"}\n')
+        f.flush()
+        f.readline()
+        f.write(b'{"execute":"query-status"}\n')
+        f.flush()
+        while True:
+            line = f.readline()
+            if not line:
+                return False
+            reply = json.loads(line)
+            if "return" in reply:
+                return True
+            if "error" in reply:
+                return False
+    except (OSError, ValueError):
+        return False
+    finally:
+        s.close()
+
+
+def front_process(h):
+    for p in h.request("observe", {}).get("processes", []):
+        if p.get("front"):
+            return p
+    return None
+
+
+def quit_front_application(h):
+    """Give whatever is in front a chance to save itself before the applet
+    takes the machine down without asking. The Finder has no Quit, so it
+    is left alone; anything else gets Cmd-Q and up to ten seconds."""
+    front = front_process(h)
+    if front is None or front.get("signature") == "MACS":
+        return
+    name = front.get("name")
+    print(f"  quitting the front application ({name}) first")
+    try:
+        h.request("key", CMD_Q)
+    except HarnessError as exc:
+        print(f"  [warn] could not post Cmd-Q: {exc}")
+        return
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        time.sleep(1)
+        now_front = front_process(h)
+        if now_front is None or now_front.get("signature") == "MACS":
+            print("  the Finder is front again")
+            return
+    print(f"  [warn] {name} is still front; shutting down over it")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("sock", help="the VM's qmp.sock")
+    ap.add_argument("--port", type=int, required=True,
+                    help="host port forwarded to the guest's anchor worker")
+    ap.add_argument("--timeout", type=int, default=120,
+                    help="seconds to wait for QEMU to exit (default 120)")
+    ap.add_argument("--applet", default=f"{DEV}:{APPLET}",
+                    help="HFS path of the staged shutdown applet")
+    a = ap.parse_args()
+
+    if not qmp_alive(a.sock):
+        print(f"nothing answering QMP at {a.sock}; no machine to shut down",
+              file=sys.stderr)
+        return 1
+
+    h = Harness(host="127.0.0.1", port=a.port, expect_backing={"worker"})
+
+    # Fail on a MISSING applet rather than on a launch that quietly did
+    # nothing: "the file is not staged" and "the guest ignored us" are
+    # different problems with different cures, and only one of them is
+    # about this rig at all.
+    st = h.request("stat", {"path": a.applet})
+    if not st.get("exists"):
+        print(f"no shutdown applet at {a.applet} - stage it first "
+              f"(NOW_SHUTDOWN_BIN=... tools/stage-ext.py, built by "
+              f"scripts/build-guests 68k)", file=sys.stderr)
+        return 1
+
+    quit_front_application(h)
+
+    print(f"  launching {a.applet}")
+    try:
+        h.request("launch", {"path": a.applet})
+    except HarnessError as exc:
+        print(f"the worker would not launch the applet: {exc}", file=sys.stderr)
+        return 1
+
+    t0 = time.time()
+    while time.time() - t0 < a.timeout:
+        if not qmp_alive(a.sock):
+            print(f"guest shut itself down ({int(time.time() - t0)}s)")
+            return 0
+        time.sleep(2)
+
+    print(f"guest still running {a.timeout}s after the applet was launched. "
+          f"Left alone deliberately - look at a screendump before deciding "
+          f"to quit it.", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

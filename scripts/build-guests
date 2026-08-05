@@ -91,4 +91,15 @@ if [ "$which" = both ] || [ "$which" = 68k ]; then
         "${NOW68K_TOOLCHAIN:-}" ext
 fi
 
+# The rig's shutdown applet. Not a guest and not part of the product - it
+# is the emulator instrument scripts/spin-up-ppc launches to make the
+# machine shut ITSELF down before the cold reboot an INIT requires. It
+# builds here because this script is the only thing in the tree that
+# drives a cross-compiler, and it is 68K because the Shutdown Manager is
+# CALL_NOT_IN_CARBON: the toolchain the application uses cannot see it.
+if [ "$which" = both ] || [ "$which" = 68k ]; then
+    build_guest "guest-shutdown (NOW Shut Down, rig instrument)" \
+        tools/guest-shutdown "${NOW68K_TOOLCHAIN:-}" shutdown
+fi
+
 exit $rc
