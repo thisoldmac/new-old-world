@@ -359,15 +359,19 @@ timeouts. Fixing 1 removes most of the fuel, but the amplifier is its own
 problem — a settled-by-eviction act blocks work that has nothing to do with
 it. Worth asking whether the FIFO must be one lane, or one lane PER TARGET.
 
-**3. An act that cannot possibly settle should refuse, not wait.** Hide,
-Hide Others and Show All are now KNOWN impossible by this route — Mac OS
-9.1's Finder has `visible` read-only (see the open-issues entry from the
-census arc). They still time out for 15 s each. Something the product knows
-cannot work should say so immediately and by name; burning the lane to
-re-discover it every time is the opposite of the honesty rule. The drive
-also shows the script now raising `osaErr -1753`, a different error from the
-`-10000`/`-10006` the census arc recorded, so the refusal text is
-out of date as well.
+**3. Hide times out on a route that is refused, and the route it should
+use is untried.** Hiding an application plainly WORKS on a Macintosh — a
+person does it from the Application menu. What the census arc measured is
+narrower: setting `visible` through the Finder's AppleScript object model
+is refused (`-10000`, `-10006`), and this drive shows a third error,
+`osaErr -1753`, so even the refusal text is stale. That is one mechanism
+failing, not a capability the machine lacks, and calling it "impossible"
+was an overstatement of somebody else's measurement.
+
+Two things follow. The act plane driving the Application menu is the
+candidate route and has never been tried — that is the experiment, and it
+is cheap. And while a route is known-refused, it should refuse by NAME
+immediately rather than burn 15 s of the shared lane rediscovering it.
 
 **4. A modal alert still refuses interaction.** Opening Mail raises its
 "is this computer set up for Internet access" alert; the Mirror could not
