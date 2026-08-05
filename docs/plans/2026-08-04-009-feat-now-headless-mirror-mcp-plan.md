@@ -253,7 +253,7 @@ a control here and could not determine its kind" would make the coverage gap
 visible in the data instead of inferred from a bad-looking render. That is the
 cheapest move in this whole arc and it introduces no new mechanism.
 
-### Slice 5b — the event tail: what memory cannot hold · **NOT STARTED**
+### Slice 5b — the event tail: what memory cannot hold · **HALF BUILT**
 
 **Memory answers "what is"; events answer "what happened",** and a class of
 thing has no answer to the first question at all:
@@ -274,6 +274,20 @@ between walks — invisible, and invisible in a way better memory reading cannot
 fix. That is not a producer gap, it is a sampling gap, and it is the likely
 explanation for a recurring symptom: an act that worked while the Mirror never
 showed it.
+
+**Status 2026-08-05.** The mechanism is built and gated: contract
+(`contract/event_tail.h`), the ring in a system-heap block behind one
+appended table word, the resident writer, the guest's reader, and a fifth
+`transitions` plane reported end to end. **The delivery half is not:**
+nothing arms the plane, no contract message carries records, the host
+consumes none. So the ring stays empty on any drive, and a cold boot
+proves the INIT loads and publishes — not that the tail works.
+
+A caution recorded because it nearly shipped as "done": the guest reader
+was written, native-tested and cross-build-green while being **absent from
+the guest's CMakeLists**. Nothing compiled it into a guest binary. A
+cross-build is green about the files it builds, and adding a file to a
+directory does not add it to a build.
 
 **Narrowed 2026-08-05:** the tail is NOT the answer to unclassified controls —
 qdtrace already captures the drawing and the content plane is live. Its
