@@ -14,6 +14,62 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## BROKEN: the Finder cannot set `visible`, so no Hide act can ever land (2026-08-05)
+
+Measured directly against Mac OS 9.1 (mac99, guest build `a4a59d37d100`) by
+impersonating a host with `tools/askguest.py` and running the production
+scripts verbatim. **All three visibility mutations are refused by the
+Finder's object model**, so `Hide`, `Hide Others` and `Show All` have never
+been able to work by this route:
+
+- `hideFrontApplicationScript` → `-10000 Finder got an error: Can't
+  continue .`
+- `showAllApplicationsScript` → `-10006 Can't set visible of every
+  application process to true.`
+- `hideOtherApplicationsScript` → `-10006 Can't set visible of item 1 of
+  every application process to false.`
+
+`visible` is readable and read-only there: `set v to visible of process
+"tbt-worker"` answers `false`, and every attempt to assign it fails. The
+census confirmed the machine was unchanged after each attempt. This is the
+real blocker behind C27's "Hide Finder timed out"; the settlement rule was
+never the problem, and the dispatch it was waiting on could not have
+happened. A working Hide needs a different mechanism — the act plane
+driving the Application menu is the candidate, and it is what a person
+uses — not a repair to this script.
+
+**Fixed the same day, and separately: the census asked a question the
+Finder cannot answer inline.** `visible of candidate` read straight into a
+`&` chain is an object specifier, not a boolean, and the concatenation
+raised `-1700 Can't make visible of «class prcs» "tbt-worker" of
+application "Finder" into a string`. AppleScript fails a script WHOLE, so
+the census returned no rows at all — which is why `now_mirror_snapshot`
+showed `visible: null` for every process and a coverage claim that blamed
+name ambiguity. Binding the property first fixes it; the corrected script
+was run against the same machine and returned all 7 rows the Finder can
+see. `MirrorStateEngine.enrichVisibility`'s sequence guard, which the
+investigation began by suspecting, was never implicated: the coverage row
+that appeared in the snapshot could only have been written by a census that
+already passed it.
+
+**Still open, and the reason a complete census is not enough.** The Finder
+is absent from its own process list — `count of (every process whose name
+is "Finder")` is 0, and `name of process "Finder"` errors — while the
+replica always carries the Finder as an application. So
+`matched == Set(replica.applications.keys)` cannot hold, coverage stays
+`partial`, and a visibility postcondition still cannot settle even with the
+script repaired. `visible of application "Finder"` does answer a real
+boolean (`true`), but it addresses the Finder application rather than a
+process row, nothing has yet watched it change, and a value that never
+changes would settle mutations falsely — the failure
+`docs/mirror-drive-loop.md` §2j exists to prevent. It is not to be adopted
+until something has watched it go false.
+
+**Unverified here:** the repaired census has not been watched settling an
+operation end to end. The host app could not be run beside the one already
+holding the per-user agent endpoint, so the script was proven against the
+guest directly and the join proven by unit test, not the two together.
+
 ## CYCLE 27 RETAINED-STATE CHECKPOINT; TWO ADVANCES, TWO BLOCKERS (2026-08-04)
 
 The exact `d0a3e1a` host was driven through native Mirror mouse input and
