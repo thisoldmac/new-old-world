@@ -124,6 +124,17 @@ mid-word — so the render workflow in consequence (1) is impossible today.
 Projected from the same engine snapshot the renderer composes from, so the two
 cannot disagree.
 
+**Outstanding slice-2 debt, found twice after it was called done.** The claim
+is "the renderer's whole input", and twice it has not been: `window.items`
+(desktop icons and Finder rows, fixed `c596261`) and **`window.display` — the
+per-window QuickDraw ops — which is still not projected.** The content plane
+is live and busy (generation 1.6 M and climbing on the 2026-08-05 guest), so
+the drawing IS captured; MCP simply cannot see it. Until it can, an agent
+cannot answer "what did this custom control actually draw", which is the only
+evidence that exists for the class slice 6 cares most about. Same omission
+shape three times: the projection carries what a reader remembered rather than
+what the model holds.
+
 **This slice will expose, not cause, a Mirror-side defect:** `Scene.Control.ref`
 is empty from NOW's producer. The window hides it behind positional resolution;
 an agent will be able to see a control it cannot name. Record it, do not paper
@@ -240,6 +251,12 @@ fix. That is not a producer gap, it is a sampling gap, and it is the likely
 explanation for a recurring symptom: an act that worked while the Mirror never
 showed it.
 
+**Narrowed 2026-08-05:** the tail is NOT the answer to unclassified controls —
+qdtrace already captures the drawing and the content plane is live. Its
+argument is the sampling one above, which stands on its own: no amount of
+draw-op capture fixes a poll that cannot see a dialog raised and dismissed
+between walks.
+
 So the guest grows an **event tail**, and the QuickDraw stream ends up doing
 three jobs off one mechanism — invalidation (what changed, for cheap delta
 walking), content (what was drawn, the existing P3 plane), and transients and
@@ -271,13 +288,52 @@ by.
 
 ### Slice 6 — close the gaps, metal-first
 
-Ordered by the ledger's own classes:
+**Re-ordered 2026-08-05 by what the corpus actually said.** The honesty bullet
+this slice used to open with is void: the producer ALREADY emits
+`knowledge: unknown` and `role: unknown` for all 190 undetermined items. The
+honesty is there and the coverage is not, so there is no cheap first move of
+that kind.
 
-- **Readable structures the producer does not walk** — `ListRec` cells,
-  `TERec` bodies, popup menu contents. Ordinary work: read a documented
-  structure, fill a field the IR already has.
-- **Honesty for what cannot be read** — emit `unknown`/`truncated` rather than
-  a plausible default, so the Mirror declines to draw what it does not know.
+**Step one is a measurement, not a build: split the 190.** An undetermined
+kind means the walk could not resolve the control's defProc, and that is two
+populations wearing one number:
+
+- a **standard Toolbox CDEF** — button family, scrollbar, popup — whose
+  resource ID sits in the control record and is documented. A known ID means
+  we already had the answer and dropped it: a producer bug fixed by reading a
+  field, with no drawing involved.
+- a **genuinely app-owned CDEF**, where nothing static says anything and the
+  drawing is the only evidence there will ever be.
+
+Reading those IDs is a lookup rather than an inference, it is small, and it
+probably collapses a large fraction of the 190 — which decides how much of
+everything below is even needed. Do it before building anything.
+
+**Then split the remainder by GOAL, because mixing the two is where this turns
+dishonest:**
+
+- **To RENDER a custom control, do not classify it — replay its ops.** That is
+  what P3 is for, and a faithful replay cannot be wrong about what the thing
+  looks like, where a classification can.
+- **To DRIVE one, classification is unavoidable** — this is a checkbox, its hit
+  region is here, its part code is that — and it is heuristic pattern-matching
+  over draw ops. A widget guessed from a `FrameRect` and a `DrawString` is
+  exactly the plausible lie rung 5's honesty bar forbids. Drawing a control
+  correctly and declining to click it is a coherent product state; drawing a
+  guess is not.
+
+So classification is owed only where drivability is owed, which is a far
+smaller set than 190.
+
+Remaining work, by the ledger's classes:
+
+- **Readable structures the producer does not walk** — `ListRec` cells (the
+  Monitors resolution list is a known `listBox` with no cells and the text
+  "Selected value unavailable"), `TERec` bodies, popup menu contents.
+  Ordinary work: read a documented structure, fill a field the IR already
+  has.
+- **Unclassifiable by any static read** — refuse to drive, by name, and render
+  from the replayed ops.
 - **Custom-drawn and composited art** — deferred as PIXELS, and stays
   deferred. But the event tail changes what "cannot be read" means for some
   of it: a custom control that draws its own frame and label emits drawing
