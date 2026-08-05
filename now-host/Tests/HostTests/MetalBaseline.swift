@@ -1,4 +1,5 @@
 import Foundation
+@testable import Host
 
 /// One line per measurement, in a shape a person can grep and a script
 /// can read, so that the first metal run on the PowerBook 180c produces
@@ -35,29 +36,22 @@ import Foundation
 /// about to fail.
 ///
 /// docs/68k-metal-baseline.md says what to record and how to read it.
+///
+/// The grammar itself moved to `BaselineLine` in the application when the
+/// Mirror act instrument began emitting the same kind of line from inside
+/// the running app. Two copies of it would not fail to build when they
+/// drifted — they would fail to agree, and the marker is what every
+/// recorded baseline's provenance rests on.
 enum MetalBaseline {
 
-    /// The prefix a run is grepped for. Changing it invalidates every
-    /// recorded baseline's provenance, so it lives here once.
-    static let marker = "NOWBASE"
+    static var marker: String { BaselineLine.marker }
 
-    /// A value with a space in it would split into two fields and quietly
-    /// corrupt the record, so spaces become underscores and the rest is
-    /// passed through. Not general escaping — the values here are
-    /// versions, verdicts, integrity strings and numbers, and pretending
-    /// otherwise would invite somebody to put a message in one.
     static func sanitise(_ value: String) -> String {
-        let cleaned = value.map { $0 == " " || $0 == "\n" ? "_" : $0 }
-        return cleaned.isEmpty ? "-" : String(cleaned)
+        BaselineLine.sanitise(value)
     }
 
-    /// `NOWBASE <kind> k=v k=v`. Order is the caller's, because a record
-    /// read by a human wants its identifying fields first.
     static func line(_ kind: String, _ fields: [(String, String)]) -> String {
-        let body = fields
-            .map { "\($0.0)=\(sanitise($0.1))" }
-            .joined(separator: " ")
-        return body.isEmpty ? "\(marker) \(kind)" : "\(marker) \(kind) \(body)"
+        BaselineLine.line(kind, fields)
     }
 
     /// Prints it. A separate call so a test can build a line and assert

@@ -191,6 +191,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private var planCorrelation: String?
     private var planSettlement = "unknown"
     private var mutationBroker: MirrorMutationBroker?
+    /// Survives a guest change on purpose: the interesting comparison is
+    /// often the acts either side of a reconnection.
+    let actTimeline = MirrorActTimeline()
     private var mutationWaiting = false
     private var sceneGuestKey: GuestKey?
     private(set) var pinnedGuestKey: GuestKey?
@@ -242,9 +245,14 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         shadowEngine = engineRegistry?.engine(for: key)
         _ = shadowEngine?.setEnabledPlanes(planePolicy(key))
         scene = shadowEngine?.snapshot?.scene ?? scene
-        mutationBroker = shadowEngine.map {
-            MirrorMutationBroker(journal: $0.operations)
+        mutationBroker = shadowEngine.map { engine in
+            MirrorMutationBroker(journal: engine.operations,
+                                 clocks: { [weak self] in
+                self?.actTimeline.record($0)
+                self?.actTimeline.depth = self?.mutationBroker?.depth ?? 0
+            })
         }
+        actTimeline.depth = 0
         running = true
         cycleGeneration = nil
         pollRequestedAfterCycle = false
@@ -999,7 +1007,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                     return
                 }
                 report(label + " — queued")
-                let accepted = mutationBroker.enqueue(operation, execute: {
+                let accepted = mutationBroker.enqueue(operation,
+                                                      label: label,
+                                                      execute: {
                     [weak self] in
                     guard let self else {
                         return .init(complaint: "the Mirror closed",
@@ -1019,6 +1029,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                     self?.reportOperation(operation, label: label,
                                           complaint: complaint)
                 })
+                actTimeline.depth = mutationBroker.depth
                 if !accepted {
                     report(label + " — not dispatched: operation journal full")
                 }
