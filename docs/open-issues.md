@@ -14,7 +14,7 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
-## UNVERIFIED: P4 publishes nothing, and the reason named for it was wrong (2026-08-05)
+## P4's plane is intact; the reason named for its silence was wrong (2026-08-05)
 
 **The symptom stands; the diagnosis attached to it does not.** A human drive on
 2026-08-04 (guest `a4a59d37d100`, resident `67d5ef43`) found
@@ -55,19 +55,55 @@ only three early exits:
 - `cell->target_a5 != current_a5` — by design, since only the target process's
   own pump may proceed.
 
-Which one is unproven. Note that arming is *not* a candidate: the same log line
-that opened this arc shows the plane armed and active.
+Arming is *not* a candidate: the same log line that opened this arc shows the
+plane armed and active. Measurement below settles which of the three it is —
+the second, `cell->status` never pending, because no act ever arrived.
 
-**A rig warning that cost this session its measurement.**
-`/private/tmp/now-u7-extension-only/session.qcow2` carries the NOW Extension in
-its file system, but its internal snapshots predate it: resuming
-`--loadvm runner-ready` (a 2026-07-19 state) gives a guest reporting
-`lifecycle=absent`, `cap=-`, which reads exactly like a dead P4 on a machine that
-simply has no resident. Cold-boot it. Cold-booted here it still reported
-`absent` while `stat` showed `NOW Extension` present with type `INIT` and creator
-`NOWx` — the combination `scan_extensions_folder` is supposed to make impossible.
-That contradiction is unexplained and is the next thing to pull on; until it is,
-this template cannot demonstrate P4 either way.
+**RESOLVED the same day: generation 0 means idle, not dead.** Reproduced on an
+emulated Power Mac G4 (guest `16d99316ff6b`, resident `67d5ef43` — the same
+resident as the drive), with all four planes reading
+`requested=15 active=15` and every plane `active-current`:
+
+    interaction=active-current/gen0     <- before any act
+    interaction=active-current/gen6     <- after ONE console `actselftest`
+
+Six is exactly one echo plus two stage notes at two bumps each, and the act
+itself failed. So `resident_generation` advances as soon as an act reaches
+`now_act_v2_begin`, and **generation 0 is a truthful "no act has ever reached
+the resident" — not a broken plane.** P4's publish path is intact.
+
+That moves the open question upstream, off the resident entirely: in the
+2026-08-04 drive, acts were attempted and settled `unknown` /
+`dispatched-but-unconfirmed` while the resident's counter never moved, so
+those acts never got as far as a pending cell the resident could see. The
+next investigation belongs in the host's act dispatch and the guest's
+`now_act_submit`, not in arming, plane policy, or `ext/`.
+
+**Two rig traps found on the way, both of which mimic a dead plane.**
+
+1. `/private/tmp/now-u7-extension-only/session.qcow2` carries the NOW
+   Extension in its file system, but its internal snapshots predate it.
+   Resuming `--loadvm runner-ready` (a 2026-07-19 state) gives a guest
+   reporting `lifecycle=absent`, `cap=-`. Cold-boot it and the resident is
+   active. (An earlier draft of this entry claimed a cold boot still
+   reported `absent`; that was wrong — it was reading stale lines from an
+   append-only log that BOTH sessions' hosts write to. Mark the log length
+   before an experiment and read only past the mark. `NOWBASE actmeta`
+   lines carry `guest_build=`, which is the only way to tell whose guest
+   a line describes.)
+2. **A guest binary not named `New Old World` cannot arm any plane at
+   all.** `peek.c :: current_app_identity` requires creator `NOWo` *and*
+   the exact process name, and `maintain_writer` returns 0 without it —
+   "dev-named app: read-only NWex" — so `publish_claims` never writes
+   `arm_request`. Same build, same resident, same host: renamed from
+   `now-guest-ppc` to `New Old World`, `requested` went **0 → 15**. The
+   app looks entirely healthy meanwhile, and the host still reports
+   `lifecycle=active cap=15`, so the Mirror simply shows nothing and every
+   act refuses. AGENTS.md records this name as a *preferences* rule; its
+   sharper consequence is that a dev-named build has no Mirror at all.
+
+The instrument that settled all of this is now permanent: the `actmeta`
+line carries each plane's own state and generation beside the masks.
 
 ## CYCLE 27 RETAINED-STATE CHECKPOINT; TWO ADVANCES, TWO BLOCKERS (2026-08-04)
 
