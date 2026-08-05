@@ -27,6 +27,9 @@ struct MirrorDriveService {
     /// The journal the broker writes into, so the reply can carry the same
     /// record the Mirror page shows rather than a second account of it.
     let journal: () -> MirrorOperationJournal?
+    /// Abandon the lane, answering how many acts it ended. The same call
+    /// the Mirror window's cancel button makes.
+    let cancel: () -> Int
 
     func drive(_ request: AgentIntegrationMirrorDriveRequest)
         -> AgentIntegrationMirrorDriveResult {
@@ -34,6 +37,21 @@ struct MirrorDriveService {
             return .init(unavailable: .init(
                 code: "now-mirror-drive-invalid",
                 message: "The Mirror drive request is not well formed"))
+        }
+        /* BEFORE the scene guard, deliberately: a cancel acts on the
+           host's own lane, and the wedged guest it exists for is exactly
+           the one publishing no scene. Gating it on a snapshot would make
+           the escape hatch unreachable from the situation it escapes. */
+        if request.gesture == .cancel {
+            let ended = cancel()
+            return .init(operation: .init(
+                id: "cancel", outcome: "cancelled",
+                reason: ended == 0
+                    ? "nothing was waiting"
+                    : "cancelled \(ended) act" + (ended == 1 ? "" : "s")
+                        + "; each journal record says whether anything "
+                        + "was sent",
+                settled: true, awaitsObservation: false))
         }
         guard let scene = scene() else {
             return .init(unavailable: .init(
@@ -286,6 +304,16 @@ struct MirrorDriveService {
                     point: .init(x: 0, y: 0))),
                 gesture: .click(count: count, mods: 0,
                                 at: .init(x: 0, y: 0))))
+
+        case .cancel:
+            /* Served before resolution ever runs — `drive` short-circuits
+               it ahead of the scene guard. Stated rather than defaulted so
+               a reordering that made a cancel reach here is a named
+               refusal, not a positional guess. */
+            return .refused(.init(
+                code: "now-mirror-drive-cancel-misrouted",
+                message: "A cancel acts on the host's lane and is served "
+                    + "before resolution; it cannot name an entity"))
         }
     }
 

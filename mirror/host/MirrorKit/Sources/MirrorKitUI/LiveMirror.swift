@@ -40,6 +40,16 @@ public protocol MirrorSceneSource: ObservableObject {
     /// and a Control Manager part on another - see `ActionPlanes`.
     var planes: ActionPlanes { get }
 
+    /// Acts a mutation lane is still serving — the one in flight plus the
+    /// ones queued behind it. Zero for a driver with no lane, which is
+    /// also the default.
+    var waitingActs: Int { get }
+    /// Abandon the in-flight act and everything queued behind it,
+    /// answering how many acts were ended. The default does nothing, for
+    /// a driver with no lane to free.
+    @discardableResult
+    func cancelPendingActs() -> Int
+
     /// **The object-first entry point, and the one the view uses.**
     ///
     /// A person acted on a THING; what to send is the driver's business.
@@ -53,6 +63,10 @@ public protocol MirrorSceneSource: ObservableObject {
 public extension MirrorSceneSource {
     /// Positioned device input, which every conformer used until 2026-08-02.
     var planes: ActionPlanes { .deviceDriven }
+
+    var waitingActs: Int { 0 }
+    @discardableResult
+    func cancelPendingActs() -> Int { 0 }
 
     func perform(_ interaction: Interaction) {
         switch InteractionPolicy.plan(for: interaction, planes: planes) {
@@ -178,14 +192,27 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                 /* The hover names what a click WOULD do; the status says
                    what one DID. The second is the answer to a question a
                    person just asked, so it leads. */
-                Text(controller.status.isEmpty ? hovered
-                     : hovered.isEmpty ? controller.status
-                     : "\(controller.status)   ·   over \(hovered)")
-                    .font(.system(size: 11, design: .monospaced))
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(.thinMaterial)
+                HStack(spacing: 8) {
+                    Text(controller.status.isEmpty ? hovered
+                         : hovered.isEmpty ? controller.status
+                         : "\(controller.status)   ·   over \(hovered)")
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    /* The way out of a wait. A stuck act used to be
+                       unabandonnable — the 87-second queue of 2026-08-05
+                       had a person watching with nothing to do — so
+                       whenever the lane holds anything, the line that
+                       reports the wait also offers to end it. */
+                    if controller.waitingActs > 0 {
+                        Button("cancel") { controller.cancelPendingActs() }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.secondary)
+                            .underline()
+                    }
+                }
+                .font(.system(size: 11, design: .monospaced))
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(.thinMaterial)
             }
         }
     }

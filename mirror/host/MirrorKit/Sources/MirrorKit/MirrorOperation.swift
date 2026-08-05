@@ -28,11 +28,16 @@ public enum MirrorOperationOutcome: String, Codable, Equatable, Sendable {
     case confirmedAfterTimeout
     case confirmedAfterRefusal
     case sessionChanged
+    /// A person or an agent abandoned the wait. Terminal, and never
+    /// rewritten into a refusal: for an act that had already dispatched,
+    /// the reason says plainly that the effect may still land — cancelling
+    /// is a statement about the WAIT, not about the machine.
+    case cancelled
 
     public var isTerminal: Bool {
         switch self {
         case .refused, .confirmed, .confirmedAfterTimeout,
-             .confirmedAfterRefusal, .sessionChanged:
+             .confirmedAfterRefusal, .sessionChanged, .cancelled:
             return true
         case .queued, .dispatched, .awaitingEvidenceAfterRefusal, .timedOut:
             return false
@@ -124,4 +129,6 @@ public enum MirrorOperationEvent: Equatable, Sendable {
     case timedOut(at: Date)
     case observation(MirrorSettlementEvidence)
     case sessionChanged(at: Date)
+    /// A person or an agent asked the lane to stop waiting for this act.
+    case cancelled(at: Date)
 }

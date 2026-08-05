@@ -26,7 +26,7 @@ final class MirrorDriveServiceTests: XCTestCase {
                 asked.append(interaction)
                 return .refused("Interaction is off; the Mirror is read-only.")
             },
-            journal: { nil })
+            journal: { nil }, cancel: { 0 })
 
         let reply = service.drive(.init(gesture: .finderOpen,
                                         itemName: "Macintosh HD",
@@ -52,7 +52,7 @@ final class MirrorDriveServiceTests: XCTestCase {
         let service = MirrorDriveService(
             scene: { try? self.makeScene() },
             perform: { _ in .direct },
-            journal: { nil })
+            journal: { nil }, cancel: { 0 })
 
         let reply = service.drive(.init(gesture: .finderSelect,
                                         itemName: "Macintosh HD",
@@ -77,7 +77,8 @@ final class MirrorDriveServiceTests: XCTestCase {
         let service = MirrorDriveService(
             scene: { try? self.makeScene() },
             perform: { _ in .held },
-            journal: { MirrorOperationJournal() })   // empty, as it is then
+            journal: { MirrorOperationJournal() },   // empty, as it is then
+            cancel: { 0 })
 
         let reply = service.drive(.init(gesture: .finderOpen,
                                         itemName: "Macintosh HD",
@@ -107,7 +108,7 @@ final class MirrorDriveServiceTests: XCTestCase {
         let service = MirrorDriveService(
             scene: { try? self.makeScene() },
             perform: { _ in .brokered("wanted") },
-            journal: { journal })
+            journal: { journal }, cancel: { 0 })
 
         let reply = service.drive(.init(gesture: .finderOpen,
                                         itemName: "Macintosh HD",
@@ -124,7 +125,7 @@ final class MirrorDriveServiceTests: XCTestCase {
         let service = MirrorDriveService(
             scene: { try? self.makeScene() },
             perform: { _ in performed = true; return .direct },
-            journal: { nil })
+            journal: { nil }, cancel: { 0 })
 
         let reply = service.drive(.init(gesture: .select,
                                         entityID: "window:not-on-this-mac"))
@@ -134,6 +135,47 @@ final class MirrorDriveServiceTests: XCTestCase {
         XCTAssertFalse(performed,
                        "a name the snapshot does not carry never reaches "
                            + "the dispatch door")
+    }
+
+    /// **A cancel must be reachable from the exact situation it exists
+    /// for: a wedged guest publishing nothing.** Gating it on the scene
+    /// guard would make the escape hatch unreachable when the machine is
+    /// deaf — so it is served first, touches no entity, and never reaches
+    /// the dispatch door.
+    func testACancelEndsTheLaneWithoutASceneAndWithoutDispatching() throws {
+        var performed = false
+        var cancelled = false
+        let service = MirrorDriveService(
+            scene: { nil },                    // the wedged case: no scene
+            perform: { _ in performed = true; return .direct },
+            journal: { nil },
+            cancel: { cancelled = true; return 3 })
+
+        let reply = service.drive(.init(gesture: .cancel))
+        let operation = try XCTUnwrap(reply.operation)
+
+        XCTAssertTrue(cancelled)
+        XCTAssertFalse(performed,
+                       "a cancel acts on the host's lane, never the guest")
+        XCTAssertEqual(operation.outcome, "cancelled")
+        XCTAssertTrue(operation.settled)
+        XCTAssertFalse(operation.awaitsObservation)
+        XCTAssertTrue(operation.reason?.contains("3 acts") == true,
+                      operation.reason ?? "(no reason)")
+    }
+
+    func testACancelWithNothingWaitingSaysSo() throws {
+        let service = MirrorDriveService(
+            scene: { nil },
+            perform: { _ in .direct },
+            journal: { nil },
+            cancel: { 0 })
+
+        let reply = service.drive(.init(gesture: .cancel))
+        let operation = try XCTUnwrap(reply.operation)
+
+        XCTAssertEqual(operation.reason, "nothing was waiting")
+        XCTAssertTrue(operation.settled)
     }
 
     private func makeOperation(id: String) throws -> MirrorOperation {

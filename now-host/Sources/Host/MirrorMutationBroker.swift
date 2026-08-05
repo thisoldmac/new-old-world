@@ -109,6 +109,52 @@ final class MirrorMutationBroker {
         awaitingLateEvidence = remaining
     }
 
+    /// **Ends the in-flight act and everything queued behind it, on
+    /// request.** This is the difference between a bad act and a lost
+    /// session: before it existed, a person watching a 70-second wait had
+    /// no way to abandon it, and neither did an agent — seven stacked
+    /// timeouts were measured at 87.5 s on 2026-08-05, with nothing to do
+    /// but watch.
+    ///
+    /// A cancel is a statement about the WAIT, not about the machine. The
+    /// active act may already be running on the guest, so its record says
+    /// the effect may still land rather than pretending it was refused;
+    /// acts still queued were provably never sent and say that instead.
+    /// Late evidence for previously timed-out acts keeps accruing — those
+    /// already gave the lane up, and their history is not this cancel's
+    /// to rewrite.
+    @discardableResult
+    func cancelAll(at date: Date = Date()) -> Int {
+        var ended = 0
+        timeoutTask?.cancel()
+        timeoutTask = nil
+        if var work = active {
+            work.operation = MirrorOperationReducer.reduce(
+                work.operation, event: .cancelled(at: date))
+            work.releasedAt = date
+            /* The lane frees BEFORE the reports go out, for the same
+               reason `finish` does: the queue display reads `depth` from
+               inside the notification. */
+            active = nil
+            journal.replace(work.operation)
+            record(work, kind: .released)
+            work.report(work.operation, nil)
+            ended += 1
+        }
+        let waiting = queue
+        queue.removeAll()
+        for var work in waiting {
+            work.operation = MirrorOperationReducer.reduce(
+                work.operation, event: .cancelled(at: date))
+            work.releasedAt = date
+            journal.replace(work.operation)
+            record(work, kind: .released)
+            work.report(work.operation, nil)
+            ended += 1
+        }
+        return ended
+    }
+
     func sessionChanged(at date: Date = Date()) {
         timeoutTask?.cancel()
         /* A session change ends these acts without settling them, and

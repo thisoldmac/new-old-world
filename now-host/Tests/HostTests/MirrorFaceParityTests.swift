@@ -138,7 +138,8 @@ final class MirrorFaceParityTests: XCTestCase {
         let service = MirrorDriveService(
             scene: { rig.source.scene },
             perform: { rig.source.perform($0, source: .mcp) },
-            journal: { rig.source.shadowEngine?.operations })
+            journal: { rig.source.shadowEngine?.operations },
+            cancel: { rig.source.cancelPendingActs() })
 
         let reply = service.drive(.init(gesture: .finderOpen,
                                         itemName: "Macintosh HD",
@@ -166,7 +167,8 @@ final class MirrorFaceParityTests: XCTestCase {
         let service = MirrorDriveService(
             scene: { rig.source.scene },
             perform: { rig.source.perform($0, source: .mcp) },
-            journal: { rig.source.shadowEngine?.operations })
+            journal: { rig.source.shadowEngine?.operations },
+            cancel: { rig.source.cancelPendingActs() })
 
         let reply = service.drive(.init(gesture: .finderSelect,
                                         itemName: "Macintosh HD",

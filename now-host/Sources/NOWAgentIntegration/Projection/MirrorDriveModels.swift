@@ -52,6 +52,10 @@ public enum AgentIntegrationMirrorDriveGesture: String, Codable, Sendable {
     /// Finder. CarbonLib does not expose `OpenDeskAcc` to the guest app,
     /// so this is the public, metal-safe route rather than a shortcut.
     case appleMenuItem
+    /// Abandon the in-flight act and everything queued behind it. It acts
+    /// on the HOST's lane, not the machine, so it needs no entity and no
+    /// published scene — the wedged guest it exists for publishes nothing.
+    case cancel
 }
 
 public struct AgentIntegrationMirrorDriveRequest:
@@ -111,6 +115,8 @@ public struct AgentIntegrationMirrorDriveRequest:
             return entityID?.isEmpty == false && (itemIndex ?? 0) > 0
         case .appleMenuItem:
             return itemName?.isEmpty == false
+        case .cancel:
+            return true
         }
     }
 }
@@ -120,7 +126,8 @@ public struct AgentIntegrationMirrorDriveRequest:
 /// Same fields the Mirror window's own journal carries, because it IS that
 /// record. `outcome` is the broker's, not a paraphrase: `queued`,
 /// `dispatched`, `refused`, `timedOut`, `confirmed`,
-/// `confirmedAfterTimeout`, `confirmedAfterRefusal`, `sessionChanged`.
+/// `confirmedAfterTimeout`, `confirmedAfterRefusal`, `sessionChanged`,
+/// `cancelled`.
 ///
 /// **A dispatch is not an effect.** `dispatched` means the request reached
 /// the Mac; only an outcome carrying `confirmed` says a later observation

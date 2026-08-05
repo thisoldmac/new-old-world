@@ -273,7 +273,8 @@ final class HostAppState: ObservableObject {
             return MirrorDriveService(
                 scene: { source.scene },
                 perform: { source.perform($0, source: .mcp) },
-                journal: { source.shadowEngine?.operations })
+                journal: { source.shadowEngine?.operations },
+                cancel: { source.cancelPendingActs() })
                 .drive(request)
         }
         integration.bindMirrorLifecycle { [weak self] in

@@ -28,6 +28,17 @@ public enum MirrorOperationReducer {
             operation.outcome = .sessionChanged
             operation.reason = "guest session changed"
             operation.settledAt = at
+        case .cancelled(let at):
+            /* The reason distinguishes the two histories a cancel can end,
+               because they claim different things about the machine: an act
+               still queued was provably never sent, while a dispatched one
+               reached a guest whose answer nobody stayed to hear. */
+            operation.reason = operation.outcome == .queued
+                ? "cancelled before dispatch; nothing was sent"
+                : "cancelled while awaiting the guest; the effect may "
+                    + "still land"
+            operation.outcome = .cancelled
+            operation.settledAt = at
         case .observation(let evidence):
             guard operation.outcome == .dispatched
                     || operation.outcome == .timedOut

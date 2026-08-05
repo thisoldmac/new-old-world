@@ -210,6 +210,29 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         return base + "   ·   \(waiting) waiting"
     }
 
+    /// Acts in the mutation lane right now — the one holding it plus the
+    /// ones waiting. What the cancel affordance shows against.
+    var waitingActs: Int { mutationBroker?.depth ?? 0 }
+
+    /// A person or an agent abandoning the wait. Ends the in-flight act
+    /// and everything queued behind it; the journal records each with a
+    /// typed `cancelled` outcome whose reason says whether anything was
+    /// sent. The lane is immediately free for the next act.
+    @discardableResult
+    func cancelPendingActs() -> Int {
+        guard let mutationBroker, mutationBroker.depth > 0 else {
+            report("nothing is waiting to cancel")
+            return 0
+        }
+        let ended = mutationBroker.cancelAll()
+        actTimeline.depth = mutationBroker.depth
+        ActLog.note(action: "(cancel)",
+                    outcome: "cancelled \(ended) act"
+                        + (ended == 1 ? "" : "s"), ms: 0)
+        report("cancelled \(ended) act" + (ended == 1 ? "" : "s"))
+        return ended
+    }
+
     /// NOW addresses elements by reference and has no positional click
     /// verb — `contract/asyncapi.yaml` states that omission deliberately.
     /// Both halves matter: the first is what makes this mirror drivable on
@@ -1344,6 +1367,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 + (operation.reason ?? "refused")
         case .sessionChanged:
             outcome = "cancelled because the guest session changed"
+        case .cancelled:
+            outcome = operation.reason ?? "cancelled"
         }
         ActLog.note(action: "operation \(operation.id) \(label)",
                     outcome: operation.outcome.rawValue, ms: 0)

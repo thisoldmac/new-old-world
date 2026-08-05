@@ -170,6 +170,91 @@ final class MirrorMutationBrokerTests: XCTestCase {
                        .refused)
     }
 
+    /// **A cancel ends the wait, and the record tells the two histories
+    /// apart.** The in-flight act reached a guest whose answer nobody
+    /// stayed for, so its reason says the effect may still land; the act
+    /// still queued was provably never sent, and says that instead. This
+    /// is the difference between a bad act and a lost session: the
+    /// 2026-08-05 drive stacked seven timeouts to 87.5 s with no way to
+    /// abandon any of them.
+    func testCancelAllFreesTheLaneAndRecordsBothHistories() async {
+        let process = MirrorProcessIdentity(session: session,
+                                            incarnation: "finder")
+        let broker = MirrorMutationBroker(timeout: 30)
+        var queuedActDispatched = false
+
+        XCTAssertTrue(broker.enqueue(operation(id: "held", process: process),
+          execute: { .init(complaint: nil, effectMayHaveLanded: true) },
+          report: { _, _ in }))
+        XCTAssertTrue(broker.enqueue(operation(id: "behind", process: process),
+          execute: {
+            queuedActDispatched = true
+            return .init(complaint: nil, effectMayHaveLanded: true)
+          }, report: { _, _ in }))
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        XCTAssertEqual(broker.depth, 2)
+
+        XCTAssertEqual(broker.cancelAll(), 2)
+
+        XCTAssertEqual(broker.depth, 0, "the lane is free at once")
+        XCTAssertFalse(queuedActDispatched,
+                       "a cancelled queued act must never reach the guest")
+        let held = broker.journal.operation(id: "held")
+        XCTAssertEqual(held?.outcome, .cancelled)
+        XCTAssertTrue(held?.reason?.contains("may still land") == true,
+                      held?.reason ?? "(no reason)")
+        let behind = broker.journal.operation(id: "behind")
+        XCTAssertEqual(behind?.outcome, .cancelled)
+        XCTAssertTrue(behind?.reason?.contains("nothing was sent") == true,
+                      behind?.reason ?? "(no reason)")
+    }
+
+    /// A cancel is terminal: a later scene that happens to satisfy the
+    /// abandoned postcondition — because some other act produced it —
+    /// must not turn the cancelled act green, exactly as a provably
+    /// unsent refusal cannot be confirmed.
+    func testACancelledActIsNeverRewrittenByLaterEvidence() async {
+        let process = MirrorProcessIdentity(session: session,
+                                            incarnation: "finder")
+        let broker = MirrorMutationBroker(timeout: 30)
+        XCTAssertTrue(broker.enqueue(operation(id: "gone", process: process),
+          execute: { .init(complaint: nil, effectMayHaveLanded: true) },
+          report: { _, _ in }))
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        broker.cancelAll()
+
+        broker.observe([processEvidence(process, sequence: 2)])
+
+        XCTAssertEqual(broker.journal.operation(id: "gone")?.outcome,
+                       .cancelled)
+    }
+
+    /// The point of cancelling: the next act dispatches immediately and
+    /// settles normally, instead of waiting out its predecessor.
+    func testTheLaneServesTheNextActImmediatelyAfterACancel() async {
+        let process = MirrorProcessIdentity(session: session,
+                                            incarnation: "finder")
+        let broker = MirrorMutationBroker(timeout: 30)
+        XCTAssertTrue(broker.enqueue(operation(id: "stuck", process: process),
+          execute: { .init(complaint: nil, effectMayHaveLanded: true) },
+          report: { _, _ in }))
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        broker.cancelAll()
+
+        var dispatched = false
+        XCTAssertTrue(broker.enqueue(operation(id: "fresh", process: process),
+          execute: {
+            dispatched = true
+            return .init(complaint: nil, effectMayHaveLanded: true)
+          }, report: { _, _ in }))
+        try? await Task.sleep(nanoseconds: 20_000_000)
+
+        XCTAssertTrue(dispatched, "nothing holds the lane after a cancel")
+        broker.observe([processEvidence(process, sequence: 2)])
+        XCTAssertEqual(broker.journal.operation(id: "fresh")?.outcome,
+                       .confirmed)
+    }
+
     private func operation(id: String, process: MirrorProcessIdentity)
         -> MirrorOperation {
         .init(id: id, source: .human, displayedSnapshotID: 1,
