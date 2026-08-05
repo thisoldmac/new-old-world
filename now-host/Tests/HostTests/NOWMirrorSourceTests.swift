@@ -1038,6 +1038,68 @@ final class NOWMirrorIconParsingTests: XCTestCase {
         XCTAssertTrue(parsed.unique)
     }
 
+    /// The same "AppleScript fails a script WHOLE" family as the Finder art
+    /// pass below, in the one place whose failure was silent. Reading
+    /// `visible of candidate` straight into a `&` chain does not yield the
+    /// boolean: the Finder returns an object specifier and the concatenation
+    /// raises `-1700 Can't make visible of «class prcs» "tbt-worker" of
+    /// application "Finder" into a string` — measured on Mac OS 9.1 (mac99,
+    /// 2026-08-05), where it aborted the script before its first row. The
+    /// census then delivered NOTHING, so `enrichVisibility` matched no name,
+    /// every process read `visible: null`, and the coverage claim blamed
+    /// name ambiguity. Bind the property first; a bound value coerces.
+    func testVisibilityCensusBindsTheBooleanBeforeConcatenatingIt() {
+        let script = NOWMirrorSource.visibilityScript(offset: 0)
+
+        XCTAssertTrue(script.contains("set vis to visible of candidate"),
+                      "the property must resolve into a variable first")
+        XCTAssertTrue(script.contains("(vis as string)"),
+                      "the bound boolean is what gets coerced")
+        XCTAssertFalse(script.contains("(visible of candidate)"),
+                       "an inline read is the specifier that raises -1700 "
+                       + "and takes the whole census down with it")
+    }
+
+    /// The bytes Mac OS 9.1 actually returned for the corrected script
+    /// (mac99, 2026-08-05), verbatim including the `\r` row endings and the
+    /// SOURCE-form quotes. A census this side cannot parse is a census that
+    /// settles nothing, and the fixture is the machine's own answer rather
+    /// than one this test invented.
+    func testVisibilityCensusParsesWhatMacOS9Answered() {
+        let measured = "\"N\t7\r"
+            + "V\tControl Strip Extension\tfalse\r"
+            + "V\tDVD AutoLauncher\tfalse\r"
+            + "V\tFBC Indexing Scheduler\tfalse\r"
+            + "V\tFolder Actions\tfalse\r"
+            + "V\ttbt-appe\tfalse\r"
+            + "V\ttbt-worker\tfalse\r"
+            + "V\tNew Old World\ttrue\r\""
+        let parsed = NOWMirrorSource.parseVisibility(measured)
+
+        XCTAssertEqual(parsed.total, 7)
+        XCTAssertEqual(parsed.rowCount, 7)
+        XCTAssertTrue(parsed.unique)
+        XCTAssertEqual(parsed.byName["New Old World"], true)
+        XCTAssertEqual(parsed.byName["tbt-worker"], false)
+        XCTAssertNil(parsed.byName["Finder"],
+                     "the Finder is absent from its own process list - "
+                     + "measured `count of (every process whose name is "
+                     + "\"Finder\")` = 0 on the same machine")
+    }
+
+    /// A guest that raises answers `ok: true` with an empty output row, so
+    /// only `osaErr` distinguishes a refusal from an empty answer. An older
+    /// guest omits the row entirely, and that silence must not be promoted
+    /// into a failure it never reported.
+    func testOnlyAReportedNonZeroOSACodeCountsAsAFailure() {
+        XCTAssertTrue(NOWMirrorSource.isOSAFailure("-1753"))
+        XCTAssertTrue(NOWMirrorSource.isOSAFailure(" -1700 "))
+        XCTAssertFalse(NOWMirrorSource.isOSAFailure("0"))
+        XCTAssertFalse(NOWMirrorSource.isOSAFailure(""),
+                       "a guest that reports no code reported no failure")
+        XCTAssertFalse(NOWMirrorSource.isOSAFailure("nonsense"))
+    }
+
     /// The two passes are two scripts now, and their results are joined.
     /// Each arrives in SOURCE form carrying its OWN quotes, so joining
     /// them raw would leave a `""` inside a line and eat the rows on
