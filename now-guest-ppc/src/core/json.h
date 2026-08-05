@@ -48,9 +48,39 @@ long now_json_find_int(const char *json, const char *key, long fallback);
 unsigned long now_json_find_u32(const char *json, const char *key,
                                 unsigned long fallback);
 
+/* The WIDE forms: a 32-bit value that may arrive as a JSON string, and
+   the three-way answer a caller that must refuse malformed input needs.
+ *
+ * An A5 world and a ring cursor are both 32-bit quantities that routinely
+ * have their top bit set, and `long` is 32 bits on the machine this runs
+ * on - so neither may ride a signed JSON integer: an A5 of 0x80000000
+ * arrives as a negative long. Both are therefore accepted as STRINGS,
+ * decimal or 0x-prefixed, with the signed integer form kept as a fallback
+ * for the small values a human types by hand.
+ *
+ * Returns 0 for MALFORMED and leaves *out untouched; returns 1 with
+ * *present 0 for ABSENT, and 1 with *present 1 for a value. Those three
+ * are different answers and a fallback cannot express them: a caller that
+ * refuses a bad cursor rather than reading it as zero needs to tell
+ * "absent" from "garbage".
+ *
+ * Written once here because two verbs parse arguments this way - P3's
+ * `qdtrace` and P5's `transitions`, both of which hand an A5 to a
+ * resident. Two parsers that disagree about what counts as malformed
+ * would arm different things for the same line. */
+int now_json_find_wide_u32(const char *json, const char *key,
+                           unsigned long *out, int *present);
+
 /* Returns the boolean value of "key", or fallback if the key is absent.
    Only a literal true reads as true; anything else is false. */
 int now_json_find_bool(const char *json, const char *key, int fallback);
+
+/* The wide form of the above: a boolean that may arrive as a typed JSON
+   boolean or through the host's older string form. Both shapes mean the
+   same thing; any other present value is MALFORMED rather than silently
+   false. Same three-way answer as now_json_find_wide_u32. */
+int now_json_find_wide_bool(const char *json, const char *key,
+                            int *out, int *present);
 
 /* Like now_json_find_string, but DECODES: \uXXXX escapes and raw UTF-8
    become MacRoman, which is the only thing this machine can draw or

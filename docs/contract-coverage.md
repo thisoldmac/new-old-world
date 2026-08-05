@@ -151,12 +151,18 @@ hides most of what a machine can be asked — the hardware, network, RAM
 and ROM facts do not have message types of their own. They live behind
 `gestalt` and `census`, one row each above and a whole subsystem below.
 
-The registry is `x-commands` in the contract: **36 verbs.** Sixteen of
+The registry is `x-commands` in the contract: **40 verbs.** Sixteen of
 them landed on 2026-07-31 and are grouped at the foot of the table; the
 Dialog Manager act joined that group on 2026-08-03: the
 act plane, the reference layer that mints what it addresses, two verbs
 about the machine's own state, the input plane's three, and the content
-plane's reader.
+plane's reader. The transition plane's reader joined on 2026-08-05.
+
+(That count read **36** here until 2026-08-05 while the paragraphs below
+it already said 39, which is this file's own rule failing in the small:
+a number nobody re-derived went stale beside numbers that had been.
+Re-derived from the greps at the foot, all three of them, rather than
+adjusted by one.)
 
 | Verb | What it asks the machine | PPC | 68K |
 |---|---|:--:|:--:|
@@ -196,6 +202,9 @@ plane's reader.
 | `script` | run one AppleScript | ✅ | ❌ |
 | `aesend` | send one of four core Apple Events | ✅ | ❌ |
 | `qdtrace` | what is drawing, from the content plane's ring | ✅ | ❌ |
+| `transitions` | what changed between two event passes, from the transition plane's ring | ✅ | ❌ |
+| `key` | post one keystroke | ✅ | ❌ |
+| `net` | this machine's networking, as it sees it | ✅ | ❌ |
 | `mirror` | one NOW Extension: lifecycle/build and P1-P4 support, format, request, active, freshness, generation, degradation and refusal | ✅ | ❌ |
 
 Eleven of those seventeen — the act plane and the reference layer — are one
@@ -216,21 +225,44 @@ Macintosh**, so a `status` on any machine today answers
 `content-plane-absent`, correctly, and that is the whole of what it has
 been seen to do.
 
-**PPC serves 36 of 39.** `put` is console-only there and `cancel` is
+`transitions` (2026-08-05) is in exactly that position and should be
+read the same way. Its plane IS live — the resident writer is installed
+and the fifth plane was confirmed reporting format 1 on a running guest
+that day — but at **generation 0**, because until this verb existed
+nothing armed it. Served and PROVEN are separate columns here, and this
+row has only the first: **no record from this ring has ever been
+observed crossing the wire**, on any machine, and the guest that would
+produce one has not been stood up since the verb landed. A `status`
+answers, a `start` writes a request; whether the resident then agrees
+inside the target is what `activity.passes` exists to say, and nobody
+has read it yet.
+
+**PPC serves 37 of 40.** `put` is console-only there and `cancel` is
 not a verb at all, both deliberately: the host reaches those
 capabilities through the `file.*` families and that guest's own
 Workshop. `shotdiag` is the third, and the newest: it diagnoses a raw
 framebuffer walk the PowerPC guest does not have.
 
-**NOW-68K serves 13 of 36** — `help`, `ls`, `sw`, `census`, `put`,
+**NOW-68K serves 13 of 40** — `help`, `ls`, `sw`, `census`, `put`,
 `cancel`, `vprobe`, `screenshot`, `shotdiag`, `ps`, `launch`, `quit`,
-`front`. The twenty-three it does not: `gestalt`, `catsearch`, `tail`,
-`reveal`, `vers`, `putstat`, the eleven of the act plane and the reference
-layer, and the six registered on 2026-07-31 — `activate`,
-`actselftest`, `mouseloc`, `script`, `aesend`, `qdtrace`. The last six
-are not a 68K debt: four of them reach for OSA, Apple Events or a
-content-plane ring that guest does not carry, and no one has asked for
-them there.
+`front`. The twenty-seven it does not: `gestalt`, `catsearch`, `tail`,
+`reveal`, `vers`, `putstat`, `key`, `net`, `mirror`, the eleven of the
+act plane and the reference layer, the six registered on 2026-07-31 —
+`activate`, `actselftest`, `mouseloc`, `script`, `aesend`, `qdtrace` —
+and `transitions`.
+
+`transitions` is a **declared asymmetry, not an omission**, and it is
+the same one `qdtrace` and `mirror` already carry: all three read the
+NOW Extension, and the NOW Extension is a PowerPC-era resident this
+project has never built for a System 7.1 machine. NOW-68K has no shared
+table to find a block address in, so the verb would have nothing to read
+and no way to say so beyond `unknown-command` — which is what it
+correctly answers today. If the resident ever reaches that machine, this
+row is where the debt comes back.
+
+The rest are not a 68K debt either: they reach for OSA, Apple Events, a
+content-plane ring or an Open Transport stack that guest does not carry,
+and no one has asked for them there.
 
 Every asymmetry is argued in [command-parity.md](command-parity.md) and
 named with its reason in `CommandRegistryTests.notOnThePowerPCGuest`.
@@ -532,7 +564,21 @@ keeps Dialog Manager selection distinct from `ctlact`; emulator
 verification is recorded by the UX loop rather than inferred from this
 served count.
 
-Last re-derived: **2026-08-04**, on `codex/recover-ptolemy-ux-loop`, by
+Last re-derived: **2026-08-05**, on `claude/p5-transitions-delivery`, by
+running the commands at the foot. The command registry contains **40**
+verbs, the PowerPC dispatch serves **37**, and NOW-68K serves **13** and
+remains the documented strict subset. `transitions` is the new one; `key`
+and `net` were ALREADY served by the PowerPC guest and already declared
+in the contract, and had simply never been given rows — which is why the
+registry line said 36 while the paragraphs under it said 39, and why
+"PPC serves 36 of 39" happened to read correctly out of two numbers that
+were each wrong by the same two. The table now derives row-for-row
+against `x-commands` with nothing on either side, which is the check that
+would have caught it: **count the table against the registry, not the
+registry against itself.**
+
+The derivation before that: **2026-08-04**, on
+`codex/recover-ptolemy-ux-loop`, by
 running the commands above. The inbound dispatches contain 42 unique PowerPC
 types and 23 unique NOW-68K types. The command registry contains 39 verbs; the
 PowerPC dispatch serves 36 and NOW-68K remains the documented strict subset.

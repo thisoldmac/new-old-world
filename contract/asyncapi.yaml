@@ -3944,6 +3944,217 @@ components:
                   process: the command never walks or mutates another
                   application's WindowList.
 
+    # THE TRANSITION PLANE'S READER (P5), declared 2026-08-05 with the
+    # dispatch that answers it. Deliberately shaped after `qdtrace` above:
+    # both are a ring an optional resident fills inside an armed process
+    # and the application reads, so the same four subcommands behind one
+    # `op`, the same default, the same "requested, not armed" claim, and
+    # the same object-shaped reply for the same reason.
+    #
+    # It is SIMPLER than qdtrace in three ways, and each absence is a
+    # decision rather than an omission. Records are fixed 24-byte structs,
+    # so there is no `size` to distrust, no torn record, and no `resync`.
+    # There is one thing to record, so there is no `mode`. And `maxBytes`
+    # is gone because fixed width makes `maxRecords` bound the reply
+    # exactly - two knobs for one bound is a second way to be wrong about
+    # the same number.
+    transitions:
+      description: >
+        What CHANGED on this Mac between two of its own event passes -
+        read from a ring the NOW Extension's resident half fills inside an
+        armed process, at the frequency of that process's event loop.
+
+        IT IS A SAMPLER, NOT A TAIL, and the distinction is the whole
+        reason it exists. The host's scene cycle runs at roughly 2.2 s, so
+        anything raised and dismissed inside that window is invisible to a
+        poll however good the memory reading is. This plane catches what
+        that poll misses because the guest's event loop is ~60 Hz - NOT
+        because it hooks anything. Something raised and dismissed between
+        two event passes is STILL missed. The honest claim is "faster
+        sampling"; it is never "every event". contract/event_tail.h argues
+        this at length and the name says transition for the same reason.
+
+        `status` (the default) counts without moving one record: it is the
+        cheap question - "is this plane producing at all, and for whom?" -
+        and a reader that could not answer it without a drain would have
+        made the cheap question expensive. `start` arms ONE process for a
+        bounded time; the caller normally names it by its
+        ProcessSerialNumber (or `front:true`) and the guest resolves its
+        own A5 through the same validated anchor oracle observation uses.
+        `stop` disarms; `drain` reads records from a cursor.
+
+        `start` answers `requested: true, armed: false`, and that is not
+        pessimism. Nothing records until the extension's own pass runs
+        INSIDE the target process and agrees, so this reply claims a
+        request was written and never that it was honoured. What tells
+        those apart afterwards is `activity.passes`: the resident counts
+        every event pass it saw while the request matched the world that
+        was pumping, so a moving `passes` is the extension's own word that
+        it ran and agreed, and a `passes` that never moves separates
+        "never ran" from "ran and declined". A misaddressed arm is
+        therefore VISIBLE as a live request beside a still `passes`,
+        rather than as an absence.
+
+        ARMING IS BOUNDED, NEVER ALWAYS-ON. The resident's filter runs on
+        every GetNextEvent and WaitNextEvent in whatever process is
+        pumping, so its cost falls on every application on the machine
+        whether or not anyone is mirroring. A deadline means a caller that
+        dies leaves no plane armed behind it.
+
+        OVERFLOW IS REPORTED, NEVER SILENT, and two different numbers say
+        so because they answer different questions. `ring.lost` is what
+        THIS cursor missed, derived from the caller's own position;
+        `activity.dropped` is the resident's count of writes made while
+        any reader was more than a ring behind. They usually agree. A tail
+        with an unadmitted gap is worse than no tail - the same rule that
+        prints an absent settle as `-` and never `0`.
+      args:
+        type: object
+        properties:
+          op:
+            type: string
+            enum: [status, start, stop, drain]
+            description: Absent means status.
+          a5:
+            type: string
+            description: >
+              start only. Raw-A5 fallback for a caller that has already
+              resolved the ONE process to instrument. A STRING (decimal or
+              0x-prefixed), not an integer, for `qdtrace`'s reason: an A5
+              routinely has its top bit set and the guest's `long` is 32
+              bits, so 0x80000000 would arrive as a negative number.
+              Normal callers send the process serial below and never
+              handle an A5. Zero is refused at the near end - the plane
+              reads it as "hook nothing", never as "hook everything".
+          serialHi:
+            type: integer
+            description: >
+              start only, required together with serialLo. The exact
+              ProcessSerialNumber of the application to instrument. The
+              guest resolves it to a validated current A5; half a serial
+              is refused rather than retargeted.
+          serialLo:
+            type: integer
+            description: start only, required together with serialHi.
+          front:
+            type: boolean
+            description: >
+              start only. When true and no serial is supplied, target the
+              process that is frontmost when the guest reads the request.
+              Serial identity takes precedence; false is not a selector.
+          name:
+            type: string
+            description: >
+              start only, and the CONSOLE's route to a target. A person
+              standing at the guest has a name and no way to read a
+              ProcessSerialNumber off this machine - nothing the console
+              prints carries one. Resolved by the same walk `quit` and
+              `front` resolve a name with; several matches are refused
+              rather than guessed. A serial takes precedence over it.
+          ttlTicks:
+            type: integer
+            description: >
+              start only. 60..36000, default 3600 (60 ticks = 1 second).
+              The default is 60 seconds because the resident writes one
+              heartbeat record a second on a quiet machine, so a 60 s arm
+              nobody drains costs 60 of the ring's 256 records and cannot
+              overrun on cadence alone. The maximum is 10 minutes, which
+              CAN overrun a ring left undrained - honestly, through
+              `dropped`, which is why the bound is where it is rather than
+              lower. Both numbers are JUDGEMENTS against the ring's size,
+              not measurements, and should move once someone has watched a
+              real drain.
+          cursor:
+            type: string
+            description: >
+              status and drain. A record count, not a byte count, and
+              monotonic - so it exceeds 2^31 after two billion records. A
+              string for the same reason `a5` is one.
+          maxRecords:
+            type: integer
+            description: >
+              drain only. 0 or absent means as many as the reply holds.
+              There is no maxBytes: records are fixed width, so this
+              bounds the reply's size exactly.
+      x-line: >
+        The op, then its arguments. Empty is status from cursor 0.
+        "transitions start" arms the front process - which, typed at the
+        guest's own console, is the guest; "transitions start Finder"
+        names another application, and that name is the only targeting a
+        console line can carry.
+      output:
+        type: object
+        description: >
+          NOT A ROW ARRAY, and the exception is `qdtrace`'s, declared for
+          the same reason rather than rediscovered: every count here is a
+          NUMBER a caller does arithmetic on - a cursor it passes back, a
+          loss it differences - and the row array is a string pair for a
+          human to read. The one place a reply about loss must not be
+          lossy is the reply about loss.
+
+          ADDRESSES ARE HEX STRINGS AND COUNTS ARE NUMBERS, throughout.
+          `a5`, `value` and `previous` name memory and routinely have
+          their top bit set, so they ride as "0x"-prefixed strings exactly
+          as `observe`'s `a5` does; everything else is a count and rides
+          as an integer.
+        properties:
+          transitions:
+            type: object
+            required: [cmd]
+            description: >
+              Discriminated by `cmd`, which is the op that answered.
+              `status` carries plane / request / activity / ring; `drain`
+              carries the cursor accounting and a `records` array; `start`
+              and `stop` carry what was requested. A subcommand that
+              cannot answer at all - no extension, a plane this resident
+              does not publish - refuses with `ok: false` and a code, and
+              never with an empty object.
+            properties:
+              cmd:
+                type: string
+                enum: [status, start, stop, drain]
+              resolvedVia:
+                type: string
+                enum: [serial, front, a5, name]
+                description: >
+                  start only. Which selector actually resolved the target;
+                  never inferred from other fields the caller also sent.
+              records:
+                type: array
+                description: >
+                  drain only, oldest first. Each record carries BOTH the
+                  new value and the previous one, so a reader needs no
+                  memory of its own to interpret a transition it did not
+                  see the other side of.
+                items:
+                  type: object
+                  required: [ticks, seq, kind, kindName, a5, value, previous]
+                  properties:
+                    ticks: { type: integer }
+                    seq:
+                      type: integer
+                      description: >
+                        Monotonic across the resident's life. A gap here
+                        is loss, which is why it is carried per record and
+                        not only summarised.
+                    kind:
+                      type: integer
+                      description: >
+                        1 windowList, 2 frontProcess, 3 menuList,
+                        4 heartbeat. The NUMBER is authoritative because a
+                        resident newer than this application is a real
+                        case - it loads at boot from a separately built
+                        binary - and a decoder that renamed an unknown
+                        kind to a known one would be plausible output.
+                    kindName:
+                      type: string
+                      description: >
+                        The word for `kind`, or "unknown" when this build
+                        has no word for it. Never a guess.
+                    a5: { type: string }
+                    value: { type: string }
+                    previous: { type: string }
+
     # THE REFERENCE LAYER, declared 2026-07-31 with the guest that serves
     # it. These four are not a second act plane; they are the half that
     # MINTS what the act plane takes, and the reason `elements` above is

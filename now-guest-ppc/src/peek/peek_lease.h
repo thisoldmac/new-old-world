@@ -8,6 +8,12 @@ typedef enum {
     kNowPeekOwnerProcesses,
     kNowPeekOwnerAct,
     kNowPeekOwnerContent,
+    /* P5's reader. Its own owner rather than sharing Content's, because
+       `transitions stop` must not take the content plane down with it —
+       the union is what keeps a plane armed while anyone wants it, and
+       two consumers behind one name is exactly the arrangement the
+       comment in peek.h was written about. */
+    kNowPeekOwnerEvents,
     kNowPeekOwnerCount
 } NowPeekOwner;
 

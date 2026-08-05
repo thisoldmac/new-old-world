@@ -175,6 +175,37 @@ static int gather_targets(const char *want, QuitTarget *out,
     return count;
 }
 
+/* One live process by name, for a caller that is not going to act on it
+   through an Apple Event - see proc_actions.h. The walk is `gather_targets`
+   because there is only one walk; what differs is what the caller does
+   with the result, and ambiguity is refused here exactly as it is for
+   quit rather than resolved to whichever copy the Process Manager listed
+   first. NOW itself is a fair target: reading a process is not quitting
+   it. */
+NowProcFindOutcome now_proc_find_by_name(const char *want,
+                                         ProcessSerialNumber *psn)
+{
+    QuitTarget targets[kMaxTargets];
+    Boolean skipped_self = false;
+    int found;
+
+    if (want == NULL || want[0] == '\0' || psn == NULL) {
+        return kProcFindNoName;
+    }
+    found = gather_targets(want, targets, &skipped_self, false);
+    if (found < 0) {
+        return kProcFindAmbiguous;
+    }
+    if (found == 0) {
+        return kProcFindNotRunning;
+    }
+    if (found > 1) {
+        return kProcFindAmbiguous;
+    }
+    *psn = targets[0].psn;
+    return kProcFindOne;
+}
+
 NowProcQuitOutcome now_proc_quit_by_name(const char *arg, char *msg, long cap)
 {
     ProcQuitArgs args;

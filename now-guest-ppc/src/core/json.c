@@ -74,6 +74,66 @@ unsigned long now_json_find_u32(const char *json, const char *key,
     return v;
 }
 
+int now_json_find_wide_u32(const char *json, const char *key,
+                           unsigned long *out, int *present)
+{
+    char buf[24];
+    const char *p;
+    unsigned long v = 0;
+    int digits = 0;
+    int base = 10;
+
+    if (out == NULL || present == NULL) {
+        return 0;
+    }
+    *present = 0;
+    if (now_json_find_string(json, key, buf, (long)sizeof buf)) {
+        p = buf;
+        while (*p == ' ') {
+            ++p;
+        }
+        if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) {
+            base = 16;
+            p += 2;
+        }
+        for (; *p != '\0'; ++p) {
+            int d;
+
+            if (*p >= '0' && *p <= '9') {
+                d = *p - '0';
+            } else if (base == 16 && *p >= 'a' && *p <= 'f') {
+                d = *p - 'a' + 10;
+            } else if (base == 16 && *p >= 'A' && *p <= 'F') {
+                d = *p - 'A' + 10;
+            } else {
+                return 0;   /* a malformed number is refused, not floored */
+            }
+            v = v * (unsigned long)base + (unsigned long)d;
+            ++digits;
+            if (digits > 10) {
+                return 0;
+            }
+        }
+        if (digits == 0) {
+            return 0;
+        }
+        *out = v & 0xFFFFFFFFUL;
+        *present = 1;
+        return 1;
+    }
+    if (now_json_value(json, key) != NULL) {
+        long n = now_json_find_int(json, key, 0);
+
+        if (n < 0) {
+            return 0;
+        }
+        *out = (unsigned long)n & 0xFFFFFFFFUL;
+        *present = 1;
+        return 1;
+    }
+    return 1;   /* absent is not malformed */
+}
+
 int now_json_find_bool(const char *json, const char *key, int fallback)
 {
     const char *p = now_json_value(json, key);
@@ -82,6 +142,33 @@ int now_json_find_bool(const char *json, const char *key, int fallback)
         return fallback;
     }
     return strncmp(p, "true", 4) == 0;
+}
+
+int now_json_find_wide_bool(const char *json, const char *key,
+                            int *out, int *present)
+{
+    char buf[8];
+
+    if (out == NULL || present == NULL) {
+        return 0;
+    }
+    *present = 0;
+    if (now_json_find_string(json, key, buf, (long)sizeof buf)) {
+        if (strcmp(buf, "true") == 0) {
+            *out = 1;
+        } else if (strcmp(buf, "false") == 0) {
+            *out = 0;
+        } else {
+            return 0;
+        }
+        *present = 1;
+        return 1;
+    }
+    if (now_json_value(json, key) != NULL) {
+        *out = now_json_find_bool(json, key, 0);
+        *present = 1;
+    }
+    return 1;
 }
 
 int now_json_type_is(const char *json, const char *type)

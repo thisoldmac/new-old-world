@@ -26,6 +26,7 @@
 #include "software.h"
 #include "proc_actions.h"
 #include "input_cmds.h"
+#include "transitions_cmd.h"
 #include "wire.h"
 
 enum {
@@ -750,6 +751,146 @@ static void console_model_dispatch(const char *input)
             console_model_append(line);
         }
         console_model_append("Policy belongs to the host; this view is read-only.");
+        return;
+    }
+    if (strcmp(name, "transitions") == 0) {
+        /* P5's reader, from the machine itself. The facts come from the
+           same now_transitions_* implementation the wire verb renders as
+           JSON — one producer, two renderers, so a person at the
+           PowerBook and the host cannot be told different things about
+           the same plane (docs/command-parity.md). */
+        char op[16];
+        const char *rest = now_transitions_parse_line(raw_args, op,
+                                                      (long)sizeof op);
+
+        if (strcmp(op, "status") == 0) {
+            NowTransitionsStatus st;
+
+            now_transitions_status(0, &st);
+            if (!st.usable) {
+                console_model_append(
+                    "transitions: no readable plane - the NOW Extension is "
+                    "absent, older than P5, or publishing a format this "
+                    "build does not read");
+                return;
+            }
+            snprintf(line, sizeof line,
+                     "  request        a5 0x%08lx  expiry %lu  %s",
+                     (unsigned long)st.arm_a5, (unsigned long)st.arm_expiry,
+                     st.arm_commit == 0 ? "not armed"
+                                        : (st.expired ? "EXPIRED" : "live"));
+            console_model_append(line);
+            /* `passes` before the record counts on purpose: it is what
+               separates "the resident never ran in that world" from "it
+               ran and had nothing to report", and a reader looking at an
+               empty ring needs that first. */
+            snprintf(line, sizeof line,
+                     "  resident       passes %lu  written %lu  dropped %lu",
+                     (unsigned long)st.passes,
+                     (unsigned long)st.write_cursor,
+                     (unsigned long)st.dropped);
+            console_model_append(line);
+            snprintf(line, sizeof line,
+                     "  ring           %lu of %lu pending  %lu lost",
+                     st.pending, st.capacity, st.lost);
+            console_model_append(line);
+            console_model_append(
+                "  A sampler, not a tail: what happens and un-happens");
+            console_model_append(
+                "  between two event passes is still missed.");
+            return;
+        }
+        if (strcmp(op, "start") == 0) {
+            NowTransitionsStartReq req;
+            NowTransitionsArm arm;
+            const char *code = "";
+            const char *message = "";
+
+            memset(&req, 0, sizeof req);
+            if (rest[0] != '\0') {
+                req.name = rest;
+            } else {
+                /* No name is the front process, which typed HERE is NOW
+                   itself. The reply names what it armed rather than
+                   leaving that to be discovered from an empty drain. */
+                req.has_front = 1;
+                req.front_true = 1;
+            }
+            if (!now_transitions_start(&req, &arm, &code, &message)) {
+                snprintf(line, sizeof line, "transitions: %.20s - %.90s",
+                         code, message);
+                console_model_append(line);
+                return;
+            }
+            snprintf(line, sizeof line,
+                     "  armed %.31s (a5 0x%08lx, via %s) until tick %lu",
+                     arm.process[0] != '\0' ? arm.process : "?",
+                     (unsigned long)arm.a5, arm.route,
+                     (unsigned long)arm.expiry);
+            console_model_append(line);
+            console_model_append(
+                "  Requested, not armed: nothing records until the resident");
+            console_model_append(
+                "  agrees inside that process. \"transitions\" shows passes.");
+            return;
+        }
+        if (strcmp(op, "stop") == 0) {
+            now_transitions_stop();
+            console_model_append(
+                "  withdrawn - the resident stops at its next pass in the "
+                "target");
+            return;
+        }
+        if (strcmp(op, "drain") == 0) {
+            /* Bounded to what a console page usefully shows in one go.
+               Draining is the one console subcommand that MOVES the
+               shared reader cursor, exactly as the wire's does, so a
+               person reading here and a host polling see one ring. */
+            enum { kShow = 16 };
+            NowEventRecord records[kShow];
+            NowTransitionsStatus st;
+            NowEventU32 next = 0;
+            unsigned long lost = 0;
+            unsigned long got;
+            unsigned long ri;
+
+            /* Resumes from the SHARED cursor rather than from zero, so a
+               person draining here and a host polling the same ring do
+               not each replay the other's records. The console has no
+               cursor of its own to carry between commands, and inventing
+               one would be a second reader the resident's drop accounting
+               knows nothing about. */
+            now_transitions_status(0, &st);
+            if (!st.usable) {
+                console_model_append(
+                    "transitions: no readable plane - see \"transitions\"");
+                return;
+            }
+            got = now_transitions_read(st.reader_cursor, records, kShow,
+                                       &next, &lost, NULL);
+            if (lost > 0) {
+                snprintf(line, sizeof line,
+                         "  %lu records were lost before these", lost);
+                console_model_append(line);
+            }
+            for (ri = 0; ri < got; ++ri) {
+                snprintf(line, sizeof line,
+                         "  %-8lu %-12.12s 0x%08lx -> 0x%08lx  tick %lu",
+                         (unsigned long)records[ri].seq,
+                         now_transitions_kind_name(records[ri].kind),
+                         (unsigned long)records[ri].previous,
+                         (unsigned long)records[ri].value,
+                         (unsigned long)records[ri].ticks);
+                console_model_append(line);
+            }
+            if (got == 0) {
+                console_model_append("  (no records)");
+            }
+            now_transitions_commit_read(next);
+            return;
+        }
+        console_model_append(
+            "transitions: op must be status, start, stop or drain");
         return;
     }
     if (strcmp(name, "census") == 0) {

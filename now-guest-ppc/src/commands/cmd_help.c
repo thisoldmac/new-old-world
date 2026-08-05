@@ -291,6 +291,30 @@ static const char *const d_qdtrace[] = {
     NULL
 };
 
+/* --- the transition plane's reader -------------------------------------
+   Same shape as qdtrace above, and the claim it makes is the one thing
+   worth reading twice: this is a SAMPLER. */
+static const char *const d_transitions[] = {
+    "  What CHANGED between two of this Mac's own event passes, read",
+    "  from the ring the NOW Extension's resident half fills inside",
+    "  an armed process.",
+    "  op status (the default) counts without moving one record;",
+    "  start arms ONE process for a bounded time; stop disarms;",
+    "  drain reads records from a cursor and says more when short.",
+    "  \"transitions start\" arms the FRONT process - typed here, that",
+    "  is NOW itself. \"transitions start Finder\" names another one,",
+    "  and a name is the only target a console line can carry: nothing",
+    "  this guest prints carries a ProcessSerialNumber.",
+    "  IT SAMPLES, IT DOES NOT TAIL. It catches what a 2.2 s poll",
+    "  misses because the event loop runs at ~60 Hz; something raised",
+    "  and dismissed BETWEEN two passes is still missed.",
+    "  start answers requested, never armed: nothing records until the",
+    "  extension agrees inside the target, and status's passes count",
+    "  is where that shows - a live request beside a still passes is",
+    "  an arm that named the wrong world.",
+    NULL
+};
+
 /* --- the reference layer -----------------------------------------------
    The half that MINTS what the act plane takes. `elements` above is the
    same walk aimed by a process rather than by a scope: there is exactly
@@ -492,6 +516,9 @@ const NowCommandDoc kNowCommandDocs[] = {
       "aesend <event> <serialHi> <serialLo> [path]", d_aesend },
     { "qdtrace", 1, "what is drawing on this Mac",
       "qdtrace [op] ...   (op = status | start | stop | drain)", d_qdtrace },
+    { "transitions", 1, "what changed between two of this Mac's event passes",
+      "transitions [op] [name]   (op = status | start | stop | drain)",
+      d_transitions },
     { "observe", 1, "walk this Mac's elements and mint a reference for each",
       "observe [scope]", d_observe },
     { "handle", 1, "take one reference back to a live element",

@@ -60,7 +60,7 @@ is. Slices 0–5 are done. What is NOT:
 | 8 | the lane amplifier | 5c item 2 | untouched |
 | 9 | **Hide does not work at all** | 5c item 3 | half done: it no longer blocks the lane. It still does nothing |
 | 10 | modal alerts refuse interaction | 5c item 4 | untouched |
-| 11 | the event tail's delivery half | 5b | mechanism built and gated; nothing arms the plane, no contract message carries records, host consumes none. Confirmed live 2026-08-05: `transitions` format 1, **generation 0** |
+| 11 | the event tail's delivery half | 5b | **guest half DONE 2026-08-05** (`claude/p5-transitions-delivery`): contract verb, both faces, native test, cross-build green. Host consumer deliberately deferred to a later slice. **Nothing observed live** — no record from this ring has crossed the wire on any machine, and no guest has been stood up since the verb landed |
 | 12 | all of slice 6 | 6 | not started |
 
 Two rig facts bound everything below: `scripts/spin-up-ppc` cannot complete
@@ -396,6 +396,30 @@ work will have to rule out.
 Contract-first, and the constraints from 009 are unchanged: ring buffer,
 ARMED rather than always-on, **overflow reported rather than silently
 dropped**, and it lives in the resident.
+
+**Done 2026-08-05, guest side, on `claude/p5-transitions-delivery`.** The
+contract declares `transitions` — four subcommands behind one `op`,
+shaped after `qdtrace` because they are the same kind of thing, and
+simpler in three stated ways (fixed-width records mean no torn, no
+resync, no `maxBytes`; one thing to record means no `mode`). The PowerPC
+guest answers it on both faces off one implementation, and the console's
+route to a target is a process NAME because nothing that guest prints
+carries a ProcessSerialNumber. Overflow reaches the caller twice, as this
+cursor's `lost` and the resident's `dropped`; arming carries a deadline;
+and every word written claims "faster sampling", never "every event".
+
+Three things were extracted rather than copied while doing it, each
+because a second copy would have been a second decision: the arm-time A5
+trust gate (P3 and P5 ask the same question of the same oracle), the
+wide-form JSON argument parsers, and one process-by-name lookup. `qdtrace`
+now calls all three.
+
+**What it did not do, and what nobody should read into it.** No guest was
+stood up — the cold boot could not run unattended — so nothing here has
+been seen working. No record from this ring has ever crossed the wire.
+The host consumer was left out on purpose (it would have collided with A
+and D) and is declared as a deferred gap in `docs/mcp-coverage.md` rather
+than left implicit.
 
 ### G — The debt that is just owed
 
