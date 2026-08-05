@@ -14,36 +14,45 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
-## The rearrangeable sidebar is entirely unverified (2026-08-04)
+## The rearrangeable sidebar: emulator-verified, never on metal (2026-08-04)
 
 The rail gained four things in one arc — a scroll bar that appears only
 on overflow, Option-drag reordering, a compact density, and a
-Preferences page — and **not one of them has been on a machine**. The
-gate that ran is `scripts/build-guests` (it compiles) plus the layout
-unit test here, whose new guards were watched to fail under four
-mutations. That is *builds* and *tested*; nobody has watched any of it
-work. What to look at first, in the order it is most likely to be
-wrong:
+Preferences page. **Emulator-verified** the same day (OS 9.1 under
+QEMU, a private `--instance 7` clone off the runner-ready snapshot, the
+build pushed over the harness's own `put` channel):
 
-- **The Option-drag itself.** A nested `StillDown`/`GetMouse` tracking
-  loop that pumps the wire and draws its insertion line in `patXor`.
-  XOR feedback has to erase exactly, so the thing to watch for is a
-  line left behind after the drop, or a smear when the mouse moves
-  fast. It has never tracked a real mouse.
-- **The scroll bar's first appearance.** It is created hidden and shown
-  only when the rows overflow, which at rich density happens at the
-  430-high minimum window and nowhere else. Growing the window past
-  the threshold and back is the case that exercises Show/Hide plus the
-  clamp; a bar that draws but does not hit-test is the classic symptom
-  of a control created at the wrong moment.
-- **Compact drawing.** 18-pixel rows with a hard-coded baseline of 13
-  and the icon still at its native 16. The baseline is arithmetic, not
-  a metrics query, so a system font that measures differently would
-  show as text riding high or clipped.
-- **The prefs v19 migration.** An old file must reopen on the page the
-  person actually had: Connection remaps 13 -> 14 and Logs 12 -> 13.
-  This is the fifth time that remap has been written and the ordering
-  trap (remap Connection first) has been the bug at least once.
+- the page renders and the pinned group draws with its new sliders icon;
+- **compact** fits all eleven nav rows plus the pinned three at the
+  standard window size, keeps the icons, and correctly gives the
+  Connection row its STATE rather than its title as its single line;
+- **Option-drag** arms, draws its XOR insertion line, tracks the
+  pointer, erases the line cleanly on drop, and moved Chat from the
+  foot of the list to just below MCP;
+- the **scroll bar** appears when the window is dragged down toward the
+  minimum in rich density, spans exactly the nav rows, stops above the
+  divider, narrows the rows to make room, and scrolls by one on its
+  arrow;
+- all of it **survives a quit and relaunch** — saved order, density and
+  window rectangle — and **Reset Order** puts the enum order back.
+
+That is the level below metal and it settles the drawing. What it does
+NOT settle, and what to watch for on the PowerBook:
+
+- **The drag against a real hand.** The emulator was driven with
+  synthesised relative motion in 3-pixel steps. A fast human drag is
+  the case where XOR feedback smears, and no synthetic mouse will show
+  that.
+- **Compact baselines under a different system font.** 18-pixel rows
+  with a hard-coded baseline of 13 — arithmetic, not a metrics query.
+  The emulator runs the same fonts the PowerBook does, so this is
+  likely fine and is listed because "likely" is not "watched".
+- **The prefs v19 migration from a file written by an OLDER build.**
+  What was exercised was v19 writing and reading its own record. The
+  remap that matters (Connection 13 -> 14, Logs 12 -> 13) needs a prefs
+  file from before this arc, which the throwaway VM did not have. This
+  is the fifth time that remap has been written and the ordering trap —
+  remap Connection first — has been the bug at least once.
 
 Two things are known limitations rather than suspicions:
 
