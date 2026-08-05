@@ -368,10 +368,23 @@ is refused (`-10000`, `-10006`), and this drive shows a third error,
 failing, not a capability the machine lacks, and calling it "impossible"
 was an overstatement of somebody else's measurement.
 
-Two things follow. The act plane driving the Application menu is the
-candidate route and has never been tried — that is the experiment, and it
-is cheap. And while a route is known-refused, it should refuse by NAME
-immediately rather than burn 15 s of the shared lane rediscovering it.
+**Driven 2026-08-05, and the candidate route fails too.** The Application
+menu was read live — `Hide Date & Time`, `Hide Others`, `Show All`, all
+present and enabled at menu `-16489` — and driving row 1 through
+`now_mirror_drive --gesture menuItem` returned `dispatched` and changed
+nothing: the paired screendump shows Date & Time still frontmost with its
+window up. `InteractionPolicy` already says why, and I re-derived it the
+slow way: visibility is kept typed precisely so it "cannot fall back to
+commanding menu -16489, the route that reported success without changing
+the machine."
+
+So BOTH known routes fail, each in its own way — AppleScript refuses, and
+the menu command dispatches without effect. What remains untried is
+delivering a real CLICK to that menu through the act plane rather than a
+`MenuSelect` command, which is the one thing a person does that neither
+route reproduces. Until something is watched working, Hide is unbuilt
+rather than broken, and it should refuse by NAME immediately rather than
+burn 15 s of the shared lane rediscovering a route already known to fail.
 
 **4. A modal alert still refuses interaction.** Opening Mail raises its
 "is this computer set up for Internet access" alert; the Mirror could not
