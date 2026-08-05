@@ -102,6 +102,14 @@ typedef struct {
     short sidebar_order[kNowSidebarOrderMax];
 } PrefsRecordV19;
 
+/* Format 20: the rail can now be collapsed to icons. One more field on
+   top of V19, and no renumbering - the collapse button is chrome, not a
+   module, so no id moved. */
+typedef struct {
+    PrefsRecordV19 v19;               /* format = 20 */
+    short sidebar_collapsed;
+} PrefsRecordV20;
+
 /* Format 16 reuses the V15 layout, bumping only the number to mark that
    Networking joined as nav id 9 (Logs and Connection shifted down
    again). It adds no persisted field, like formats 10, 11 and 14 before
@@ -204,7 +212,8 @@ void now_prefs_load(NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV19);
+    long count = sizeof(PrefsRecordV20);
+    PrefsRecordV20 v20;
     PrefsRecordV19 v19;
     PrefsRecordV15 v15;
     PrefsRecordV13 v13;
@@ -221,9 +230,10 @@ void now_prefs_load(NowPrefs *prefs)
     if (FSpOpenDF(&spec, fsRdPerm, &ref) != noErr) {
         return;
     }
-    memset(&v19, 0, sizeof v19);
-    err = FSRead(ref, &count, &v19);
+    memset(&v20, 0, sizeof v20);
+    err = FSRead(ref, &count, &v20);
     FSClose(ref);
+    v19 = v20.v19;
     v15 = v19.v15;
     v13 = v15.v13;
     v12 = v13.v12;
@@ -388,6 +398,9 @@ void now_prefs_load(NowPrefs *prefs)
             memcpy(prefs->sidebar_order, v19.sidebar_order,
                    sizeof prefs->sidebar_order);
         }
+        if (record.format >= 20 && count >= (long)sizeof(PrefsRecordV20)) {
+            prefs->sidebar_collapsed = v20.sidebar_collapsed != 0;
+        }
     } else if (record.console_open != 0) {
         /* Seed from the old window session: someone who kept the
            Console window open wants the Console page, not Screenshots.
@@ -400,7 +413,8 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV19);
+    long count = sizeof(PrefsRecordV20);
+    PrefsRecordV20 v20;
     PrefsRecordV19 v19;
     PrefsRecordV15 v15;
     PrefsRecordV13 v13;
@@ -411,10 +425,8 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 
     memset(&record, 0, sizeof record);
     record.magic = kPrefsMagic;
-    record.format = 19;               /* Preferences pinned above Logs,
-                                         shifting Logs and Connection down;
-                                         and the first new fields since 15,
-                                         the sidebar's order and density */
+    record.format = 20;               /* the rail's collapsed state; no id
+                                         moved, so nothing renumbers */
     record.port = prefs->port;
     strncpy(record.host, prefs->host, sizeof record.host - 1);
     record.shot_depth = prefs->shot_depth;
@@ -467,7 +479,10 @@ OSErr now_prefs_save(const NowPrefs *prefs)
     v19.sidebar_compact = prefs->sidebar_compact ? 1 : 0;
     memcpy(v19.sidebar_order, prefs->sidebar_order,
            sizeof v19.sidebar_order);
-    err = FSWrite(ref, &count, &v19);
+    memset(&v20, 0, sizeof v20);
+    v20.v19 = v19;
+    v20.sidebar_collapsed = prefs->sidebar_collapsed ? 1 : 0;
+    err = FSWrite(ref, &count, &v20);
     if (err == noErr) {
         SetEOF(ref, count);           /* what we wrote, not an older record */
     }

@@ -155,11 +155,17 @@ static void check_common(const Rect *content, const WorkshopLayout *lay,
     CHECK(lay->status.bottom == content->bottom, "status at the bottom");
     CHECK(lay->header.right == content->right, "header reaches the edge");
 
-    /* Row geometry: every row is the density in effect, and the pinned
-       group follows the nav rows rather than keeping its own height. */
+    /* Row geometry: every row is the height in effect, and the pinned
+       group follows the nav rows rather than keeping its own. Three
+       heights now - the two densities, and collapsed, which is not a
+       density but has its own row. */
     CHECK(lay->row_height == kWorkshopSidebarRowHeight
-              || lay->row_height == kWorkshopSidebarCompactRowHeight,
-          "row height is one of the two densities");
+              || lay->row_height == kWorkshopSidebarCompactRowHeight
+              || lay->row_height == kWorkshopSidebarIconRowHeight,
+          "row height is one of the three the rail can be in");
+    CHECK(!lay->collapsed
+              || lay->row_height == kWorkshopSidebarIconRowHeight,
+          "a collapsed rail always takes the icon row height");
     for (i = 0; i < lay->nav_visible; ++i) {
         CHECK(height(&lay->nav_rows[i]) == lay->row_height,
               "module row height");
@@ -172,6 +178,19 @@ static void check_common(const Rect *content, const WorkshopLayout *lay,
           "preferences row height");
     CHECK(lay->conn_row.bottom >= lay->rail_list.bottom - 2,
           "connection pinned at the panel bottom");
+
+    /* The collapse button sits inside the header, and the header's text
+       starts clear of it - the two must never overlap, whichever state
+       the rail is in. */
+    CHECK(contains(&lay->header, &lay->rail_toggle),
+          "collapse button inside the header");
+    CHECK(width(&lay->rail_toggle) == kWorkshopRailToggleSize
+              && height(&lay->rail_toggle) == kWorkshopRailToggleSize,
+          "collapse button is square");
+    CHECK(lay->header_text_left >= lay->rail_toggle.right,
+          "header text starts clear of the button");
+    CHECK(lay->header_text_left < lay->header.right,
+          "header text starts inside the header");
 
     /* The grow box corner is exactly the classic 15x15, and the status
        placard knows to stay out of it. */
@@ -217,6 +236,7 @@ int main(void)
         WorkshopLayout explicit_rich;
 
         rail.compact = 0;
+        rail.collapsed = 0;
         rail.scroll_top = 0;
         workshop_layout_compute(&content, &rail, &explicit_rich);
         check(explicit_rich.nav_rows[0].bottom == lay.nav_rows[0].bottom
@@ -235,6 +255,7 @@ int main(void)
     /* Compact density: shorter rows, and enough of them that the list
        that overflowed at this size no longer does. */
     rail.compact = 1;
+    rail.collapsed = 0;
     rail.scroll_top = 0;
     workshop_layout_compute(&content, &rail, &lay);
     check_common(&content, &lay, "minimum compact");
@@ -242,6 +263,53 @@ int main(void)
           "compact: rows take the compact height");
     check(!lay.rail_scrolls,
           "compact: every row fits at the minimum window size");
+
+    /* Collapsed: a narrow rail of icon-height rows, at every window size,
+       and the body gets back everything the rail gave up. */
+    {
+        WorkshopLayout wide;
+        WorkshopLayout tight;
+
+        set_content(&content, kWorkshopStdContentW, kWorkshopStdContentH);
+        rail.compact = 0;
+        rail.collapsed = 0;
+        rail.scroll_top = 0;
+        workshop_layout_compute(&content, &rail, &wide);
+
+        rail.collapsed = 1;
+        workshop_layout_compute(&content, &rail, &tight);
+        check_common(&content, &tight, "collapsed");
+        check(tight.collapsed, "collapsed: the layout says so");
+        check(width(&tight.sidebar) == kWorkshopRailCollapsed,
+              "collapsed: the rail is the collapsed width");
+        check(tight.row_height == kWorkshopSidebarIconRowHeight,
+              "collapsed: rows take the icon height");
+        check(width(&tight.body) > width(&wide.body),
+              "collapsed: the body gains what the rail gave up");
+        check(!tight.rail_scrolls,
+              "collapsed: every row fits, so no bar squeezes the icons");
+
+        /* Collapsed overrides the density rather than combining with it -
+           the words are gone either way, so compact must not shrink the
+           icon rows underneath it. */
+        rail.compact = 1;
+        workshop_layout_compute(&content, &rail, &tight);
+        check(tight.row_height == kWorkshopSidebarIconRowHeight,
+              "collapsed: compact does not change the icon row height");
+        check(width(&tight.sidebar) == kWorkshopRailCollapsed,
+              "collapsed: compact does not change the collapsed width");
+
+        /* The narrow-window rule must not shrink it further: an icon rail
+           is the same size whatever the window is doing. */
+        set_content(&content, kWorkshopMinContentW, kWorkshopMinContentH);
+        rail.compact = 0;
+        workshop_layout_compute(&content, &rail, &tight);
+        check_common(&content, &tight, "collapsed minimum");
+        check(width(&tight.sidebar) == kWorkshopRailCollapsed,
+              "collapsed: the narrow-window rule does not shrink it");
+        check(!tight.rail_scrolls,
+              "collapsed at the minimum: still no bar");
+    }
 
     /* Scrolling: a spec that asks for an offset gets one, the slots move
        by exactly one row height per step, and an offset past the end is
@@ -253,6 +321,7 @@ int main(void)
 
         set_content(&content, kWorkshopMinContentW, kWorkshopMinContentH);
         rail.compact = 0;
+        rail.collapsed = 0;
         rail.scroll_top = 0;
         workshop_layout_compute(&content, &rail, &unscrolled);
         check(unscrolled.rail_scrolls,

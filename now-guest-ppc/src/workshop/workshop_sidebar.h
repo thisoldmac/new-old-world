@@ -41,6 +41,23 @@ void workshop_sidebar_load_prefs(void);
    row. */
 Boolean workshop_sidebar_compact(void);
 void workshop_sidebar_set_compact(Boolean compact);
+
+/* Collapsed to icons only. Separate from the density: collapsing and
+   expanding again gives back the density the person chose. */
+Boolean workshop_sidebar_collapsed(void);
+void workshop_sidebar_set_collapsed(Boolean collapsed);
+
+/* The collapse button, drawn into the Workshop's header placard because
+   it must sit in the same place in both states and a 48-pixel rail has
+   no room for it. The window draws and routes it; the rail owns what it
+   means. */
+void workshop_sidebar_draw_toggle(void);
+Boolean workshop_sidebar_toggle_click(Point local);
+
+/* Hover help for the collapsed rail's icons, drawn by hand because
+   Carbon's help tags do not display under Mac OS 9. Cheap per pass and
+   silent while the rail is expanded. */
+void workshop_sidebar_tag_idle(void);
 /* Back to the order the enum declares. The escape hatch for a rail
    rearranged into confusion, and the only way back that does not require
    dragging every row. */

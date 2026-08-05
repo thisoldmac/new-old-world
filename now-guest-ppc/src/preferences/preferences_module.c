@@ -36,6 +36,7 @@ typedef struct {
     Rect sidebar_box;         /* group box around the rail settings */
     Rect compact_check;
     Rect compact_note;        /* one line under the checkbox */
+    Rect collapse_check;
     Rect arrange_note;        /* the Option-drag sentence */
     Rect reset_button;
 } PrefsRects;
@@ -47,6 +48,7 @@ static Boolean g_visible;
 
 static ControlRef g_group;
 static ControlRef g_compact;
+static ControlRef g_collapse;
 static ControlRef g_reset;
 
 static void compute_rects(const Rect *body, PrefsRects *out)
@@ -72,7 +74,13 @@ static void compute_rects(const Rect *body, PrefsRects *out)
     out->compact_note.right = (short)(right - kGroupPad);
     out->compact_note.bottom = (short)(y + kLineHeight);
 
-    y = (short)(out->compact_note.bottom + 10);
+    y = (short)(out->compact_note.bottom + 6);
+    out->collapse_check.left = inner_left;
+    out->collapse_check.top = y;
+    out->collapse_check.right = (short)(inner_left + kCheckWidth);
+    out->collapse_check.bottom = (short)(y + kCheckHeight);
+
+    y = (short)(out->collapse_check.bottom + 10);
     out->arrange_note.left = inner_left;
     out->arrange_note.top = y;
     out->arrange_note.right = (short)(right - kGroupPad);
@@ -117,10 +125,15 @@ static OSErr prefs_create(WindowRef owner, const Rect *body)
     g_compact = NewControl(owner, &g_r.compact_check, text, false,
                            workshop_sidebar_compact() ? 1 : 0, 0, 1,
                            checkBoxProc, 0);
+    CopyCStringToPascal("Collapse to icons", text);
+    g_collapse = NewControl(owner, &g_r.collapse_check, text, false,
+                            workshop_sidebar_collapsed() ? 1 : 0, 0, 1,
+                            checkBoxProc, 0);
     CopyCStringToPascal("Reset Order", text);
     g_reset = NewControl(owner, &g_r.reset_button, text, false, 0, 0, 0,
                          pushButProc, 0);
-    if (g_group == NULL || g_compact == NULL || g_reset == NULL) {
+    if (g_group == NULL || g_compact == NULL || g_collapse == NULL
+        || g_reset == NULL) {
         return memFullErr;
     }
     return noErr;
@@ -132,6 +145,7 @@ static void prefs_dispose(void)
     g_owner = NULL;
     g_group = NULL;
     g_compact = NULL;
+    g_collapse = NULL;
     g_reset = NULL;
 }
 
@@ -140,7 +154,11 @@ static void prefs_show(Boolean visible)
     g_visible = visible;
     show_control(g_group, visible);
     show_control(g_compact, visible);
+    show_control(g_collapse, visible);
     show_control(g_reset, visible);
+    if (visible && g_collapse != NULL) {
+        SetControlValue(g_collapse, workshop_sidebar_collapsed() ? 1 : 0);
+    }
     if (visible && g_compact != NULL) {
         /* The rail's density can change without this page: a saved
            setting is read at launch, so the box states what IS rather
@@ -165,6 +183,7 @@ static void prefs_layout(const Rect *body)
     compute_rects(body, &g_r);
     move_control(g_group, &g_r.sidebar_box);
     move_control(g_compact, &g_r.compact_check);
+    move_control(g_collapse, &g_r.collapse_check);
     move_control(g_reset, &g_r.reset_button);
 }
 
@@ -215,6 +234,17 @@ static Boolean prefs_click(const EventRecord *event, Point local)
         }
         return true;
     }
+    if (control == g_collapse) {
+        if (TrackControl(control, local, now_pump_action()) != 0) {
+            Boolean want = (Boolean)(GetControlValue(g_collapse) == 0);
+
+            SetControlValue(g_collapse, want ? 1 : 0);
+            /* Same shape as the density: the rail's WIDTH changes, so the
+               window relays out and nothing here invalidates by hand. */
+            workshop_sidebar_set_collapsed(want);
+        }
+        return true;
+    }
     if (control == g_reset) {
         if (TrackControl(control, local, now_pump_action()) != 0) {
             workshop_sidebar_reset_order();
@@ -226,13 +256,14 @@ static Boolean prefs_click(const EventRecord *event, Point local)
 
 static void prefs_activate(Boolean active)
 {
-    ControlRef controls[3];
+    ControlRef controls[4];
     int i;
 
     controls[0] = g_group;
     controls[1] = g_compact;
-    controls[2] = g_reset;
-    for (i = 0; i < 3; ++i) {
+    controls[2] = g_collapse;
+    controls[3] = g_reset;
+    for (i = 0; i < 4; ++i) {
         if (controls[i] == NULL) {
             continue;
         }

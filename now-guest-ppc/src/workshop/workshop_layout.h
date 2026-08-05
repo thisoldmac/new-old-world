@@ -30,6 +30,11 @@ enum {
     kWorkshopRailWide = 160,
     kWorkshopRailNarrow = 128,
     kWorkshopRailCompactBelow = 660,
+    /* Collapsed: the icons and nothing else. Wide enough that the panel
+       inside it still holds a 16-pixel icon with air either side, and -
+       just - a scroll bar beside one if the list ever overflowed, which
+       at 24-pixel rows it cannot at any window size this app allows. */
+    kWorkshopRailCollapsed = 48,
 
     kWorkshopHeaderHeight = 38,
     kWorkshopStatusHeight = 23,
@@ -44,7 +49,18 @@ enum {
        native 16, which is why compact keeps it rather than becoming a
        bare text list. */
     kWorkshopSidebarCompactRowHeight = 18,
+    /* Collapsed rows are square-ish around the icon. Its own height
+       rather than the density's, because collapsed is not a third
+       density - it is the rail with the words taken away, and a 30-pixel
+       icon-only row reads as a mistake. */
+    kWorkshopSidebarIconRowHeight = 24,
     kWorkshopGrowBoxSize = 15,
+
+    /* The collapse button, in the header placard's left edge - the one
+       piece of chrome that must stay put and stay reachable whichever
+       state the rail is in. */
+    kWorkshopRailToggleSize = 18,
+    kWorkshopRailToggleInset = 10,
 
     /* A real scroll bar's width. The rail reserves it only when the nav
        rows overflow, so nothing is spent on chrome at the sizes where
@@ -69,6 +85,10 @@ enum {
    arithmetic - it is compiled by the host cc for the native test. */
 typedef struct WorkshopRailSpec {
     Boolean compact;     /* one line per row instead of two */
+    /* Collapsed to icons only. NOT a third density: it overrides compact
+       rather than extending it, because the words are gone either way
+       and the row height it wants is its own. */
+    Boolean collapsed;
     short scroll_top;    /* first visible nav row; clamped on the way in */
 } WorkshopRailSpec;
 
@@ -95,7 +115,11 @@ typedef struct WorkshopLayout {
     Rect conn_row;      /* Connection, pinned at the panel's bottom */
     short row_height;   /* the density in effect, rich or compact */
 
+    Boolean collapsed;  /* the rail is showing icons only */
+    Rect rail_toggle;   /* the collapse button, in the header's left edge */
+
     Rect header;        /* module header placard */
+    short header_text_left;  /* where the title starts, clear of the button */
     Rect body;          /* module content */
     Rect status;        /* bottom status placard */
     Rect grow_safe;     /* corner square that status text must not enter */

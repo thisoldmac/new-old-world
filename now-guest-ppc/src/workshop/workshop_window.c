@@ -358,15 +358,16 @@ static void draw_header(void)
 
     DrawThemePlacard(&g_lay.header,
                      g_active ? kThemeStateActive : kThemeStateInactive);
+    workshop_sidebar_draw_toggle();
     UseThemeFont(kThemeEmphasizedSystemFont, smSystemScript);
-    MoveTo((short)(g_lay.header.left + 12), (short)(g_lay.header.top + 16));
+    MoveTo(g_lay.header_text_left, (short)(g_lay.header.top + 16));
     CopyCStringToPascal(k_module_info[g_selected].title, text);
     DrawString(text);
 
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-    MoveTo((short)(g_lay.header.left + 12), (short)(g_lay.header.top + 31));
+    MoveTo(g_lay.header_text_left, (short)(g_lay.header.top + 31));
     CopyCStringToPascal(k_module_info[g_selected].blurb, text);
-    TruncString((short)(right_edge - g_lay.header.left - 90), text,
+    TruncString((short)(right_edge - g_lay.header_text_left - 90), text,
                 truncEnd);
     DrawString(text);
 
@@ -497,6 +498,11 @@ void workshop_click(const EventRecord *event)
     }
     SetPortWindowPort(g_window);
     GlobalToLocal(&local);
+    /* Before the module: the button lives in the header placard, which
+       belongs to this window rather than to whatever page is showing. */
+    if (workshop_sidebar_toggle_click(local)) {
+        return;
+    }
     if (ops != NULL && g_created[g_selected] && ops->click != NULL
         && ops->click(event, local)) {
         return;
@@ -554,6 +560,7 @@ void workshop_idle(void)
         return;
     }
     workshop_sidebar_idle();
+    workshop_sidebar_tag_idle();
     peer[0] = '\0';
     if (conn_is_connected()) {
         conn_peer_label(peer, sizeof peer);

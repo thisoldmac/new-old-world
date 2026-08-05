@@ -102,7 +102,26 @@ static Boolean g_active = true;
    permutation of 1..kWorkshopNavRows no matter what was on disk. */
 static WorkshopModuleID g_order[kWorkshopNavRows];
 static Boolean g_compact;
+static Boolean g_collapsed;
 static short g_scroll_top;
+
+/* The hand-drawn help tag for a collapsed icon.
+
+   Carbon's Help Manager on this toolchain offers only HELP TAGS
+   (HMSetControlHelpContent / HMDisplayTag) - the classic HMShowBalloon
+   is not in these headers at all - and help tags are a Mac OS X
+   facility: under Mac OS 9 with CarbonLib nothing displays them. Wiring
+   them would have shipped a feature that is invisible on every machine
+   this app runs on, so the tag is drawn here, by the same hand that
+   draws every other pixel in this rail.
+
+   It is armed from idle, which must stay free: the work per pass is one
+   GetMouse and two comparisons, and nothing is drawn unless the row
+   under the pointer actually changed. */
+static WorkshopModuleID g_tag_module;   /* 0 = no tag showing */
+static Rect g_tag_rect;                 /* what to invalidate to take it back */
+static Point g_tag_mouse;               /* where the pointer was last seen */
+static short g_tag_dwell;               /* passes it has rested there */
 
 /* The scroll bar exists whenever the rail does, and is HIDDEN unless the
    list overflows - creating it lazily would mean creating a control
@@ -200,6 +219,7 @@ static void order_persist(void)
         prefs.sidebar_order[i] = (short)g_order[i];
     }
     prefs.sidebar_compact = g_compact;
+    prefs.sidebar_collapsed = g_collapsed;
     now_prefs_save(&prefs);
 }
 
@@ -517,6 +537,7 @@ void workshop_sidebar_load_prefs(void)
 
     now_prefs_load(&prefs);
     g_compact = prefs.sidebar_compact;
+    g_collapsed = prefs.sidebar_collapsed;
     order_adopt(prefs.sidebar_order);
     g_scroll_top = 0;
 }
@@ -526,9 +547,10 @@ void workshop_sidebar_rail_spec(WorkshopRailSpec *out)
     if (out == NULL) {
         return;
     }
-    /* An unseeded rail is the rich, unscrolled, enum-ordered one - the
-       shape this window had before any of it was a choice. */
+    /* An unseeded rail is the rich, expanded, unscrolled, enum-ordered
+       one - the shape this window had before any of it was a choice. */
     out->compact = g_compact;
+    out->collapsed = g_collapsed;
     out->scroll_top = g_scroll_top;
 }
 
@@ -645,6 +667,32 @@ static void selection_color(RGBColor *out)
     LMGetHiliteRGB(out);
 }
 
+/* One definition of what the link's colour means, read by both the
+   expanded row and the collapsed one. Two copies of this switch is
+   exactly how a lamp ends up green in one state and amber in the other. */
+static void connection_lamp_color(RGBColor *out)
+{
+    switch (g_shown_phase) {
+    case kConnConnected:
+        out->red = 0x0000;
+        out->green = 0xAAAA;
+        out->blue = 0x2222;
+        break;
+    case kConnConnecting:
+    case kConnHandshaking:
+    case kConnBackoff:
+        out->red = 0xFFFF;
+        out->green = 0x9999;
+        out->blue = 0x0000;
+        break;
+    default:
+        out->red = 0xCCCC;
+        out->green = 0x2222;
+        out->blue = 0x2222;
+        break;
+    }
+}
+
 static void draw_row_in(WorkshopModuleID module, const Rect *r)
 {
     Rect icon_rect;
@@ -654,6 +702,43 @@ static void draw_row_in(WorkshopModuleID module, const Rect *r)
     short text_left;
     short text_width;
     short title_base = g_compact ? kCompactBaseline : kTitleBaseline;
+
+    /* Collapsed: the band, the icon centred in it, and nothing else. The
+       lamp still rides on Connection, because the one thing a person
+       needs from a collapsed rail at a glance is whether the link is up -
+       that is the whole reason the row is pinned in the first place. */
+    if (g_collapsed) {
+        Rect icon;
+
+        if (module == g_selected) {
+            RGBColor band;
+
+            selection_color(&band);
+            RGBForeColor(&band);
+            PaintRect(r);
+            RGBForeColor(&black);
+        }
+        SetRect(&icon, (short)((r->left + r->right - kIconSize) / 2),
+                (short)((r->top + r->bottom - kIconSize) / 2),
+                (short)((r->left + r->right + kIconSize) / 2),
+                (short)((r->top + r->bottom + kIconSize) / 2));
+        plot_small_icon(k_rows[module].icon_id, &icon);
+        if (module == kWorkshopConnection) {
+            Rect lamp;
+            RGBColor lamp_color;
+
+            connection_lamp_color(&lamp_color);
+            SetRect(&lamp, (short)(r->right - 4 - kLampSize / 2),
+                    (short)(r->top + 3),
+                    (short)(r->right - 4 + kLampSize / 2),
+                    (short)(r->top + 3 + kLampSize));
+            RGBForeColor(&lamp_color);
+            PaintOval(&lamp);
+            RGBForeColor(&black);
+            FrameOval(&lamp);
+        }
+        return;
+    }
 
     if (module == g_selected) {
         RGBColor band;
@@ -693,25 +778,7 @@ static void draw_row_in(WorkshopModuleID module, const Rect *r)
 
         /* Lamp at the right edge, like the reference. The words beside
            it still carry the state on their own. */
-        switch (g_shown_phase) {
-        case kConnConnected:
-            lamp_color.red = 0x0000;
-            lamp_color.green = 0xAAAA;
-            lamp_color.blue = 0x2222;
-            break;
-        case kConnConnecting:
-        case kConnHandshaking:
-        case kConnBackoff:
-            lamp_color.red = 0xFFFF;
-            lamp_color.green = 0x9999;
-            lamp_color.blue = 0x0000;
-            break;
-        default:
-            lamp_color.red = 0xCCCC;
-            lamp_color.green = 0x2222;
-            lamp_color.blue = 0x2222;
-            break;
-        }
+        connection_lamp_color(&lamp_color);
         SetRect(&lamp, (short)(r->right - 6 - kLampSize),
                 (short)((r->top + r->bottom - kLampSize) / 2),
                 (short)(r->right - 6),
@@ -789,6 +856,67 @@ static void draw_nav_rows(void)
             draw_row_in(module, &g_lay.nav_rows[i]);
         }
     }
+}
+
+/* ---- the collapsed rail's help tag --------------------------------- */
+
+/* Takes back whatever the tag covered. It is drawn OUTSIDE the rail, over
+   the module's own pixels, so hiding it is an invalidation rather than an
+   erase: the page underneath - controls included - repaints itself. */
+static void hide_tag(void)
+{
+    if (g_tag_module == (WorkshopModuleID)0) {
+        return;
+    }
+    g_tag_module = (WorkshopModuleID)0;
+    if (g_owner != NULL) {
+        InvalWindowRect(g_owner, &g_tag_rect);
+    }
+}
+
+/* The classic help-tag look: pale yellow, one-pixel black frame, small
+   system font, sitting to the RIGHT of the icon it explains. */
+static void draw_tag(void)
+{
+    RGBColor cream = { 0xFFFF, 0xFFFF, 0xCCCC };
+    RGBColor black = { 0, 0, 0 };
+    RGBColor saved_back;
+    Str255 text;
+
+    if (g_tag_module == (WorkshopModuleID)0 || g_owner == NULL) {
+        return;
+    }
+    SetPortWindowPort(g_owner);
+    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    CopyCStringToPascal(k_rows[g_tag_module].title, text);
+
+    GetBackColor(&saved_back);
+    RGBBackColor(&cream);
+    EraseRect(&g_tag_rect);
+    RGBBackColor(&saved_back);
+    RGBForeColor(&black);
+    FrameRect(&g_tag_rect);
+    MoveTo((short)(g_tag_rect.left + 5), (short)(g_tag_rect.top + 12));
+    DrawString(text);
+}
+
+/* Where a tag for this row would sit, and how big. Kept beside the draw
+   so the rectangle the tag is ERASED by is the one it was drawn in. */
+static void tag_rect_for(WorkshopModuleID module, const Rect *row, Rect *out)
+{
+    short w;
+
+    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    {
+        Str255 text;
+
+        CopyCStringToPascal(k_rows[module].title, text);
+        w = (short)(StringWidth(text) + 10);
+    }
+    out->left = (short)(g_lay.sidebar.right + 4);
+    out->top = (short)(row->top + 2);
+    out->right = (short)(out->left + w);
+    out->bottom = (short)(out->top + 16);
 }
 
 void workshop_sidebar_draw(void)
@@ -1199,6 +1327,136 @@ void workshop_sidebar_idle(void)
     g_shown_phase = snap.phase;
     strcpy(g_shown_detail, detail);
     InvalWindowRect(g_owner, &g_lay.conn_row);
+}
+
+/* Runs every pass, so it costs one GetMouse and two comparisons unless
+   the answer actually changed. Only a COLLAPSED rail has anything to
+   explain - expanded rows carry their own names. */
+void workshop_sidebar_tag_idle(void)
+{
+    Point where;
+    WorkshopModuleID over = (WorkshopModuleID)0;
+    short i;
+
+    if (g_owner == NULL || !g_collapsed) {
+        hide_tag();
+        return;
+    }
+    if (FrontWindow() != g_owner) {
+        hide_tag();               /* a background window explains nothing */
+        return;
+    }
+    SetPortWindowPort(g_owner);
+    GetMouse(&where);
+    if (where.h != g_tag_mouse.h || where.v != g_tag_mouse.v) {
+        g_tag_mouse = where;
+        g_tag_dwell = 0;
+        hide_tag();               /* moving means the old tag is stale */
+        return;
+    }
+    if (g_tag_module != (WorkshopModuleID)0) {
+        return;                   /* already explaining this one */
+    }
+    /* Rest before speaking. Roughly a third of a second of event-loop
+       passes, which is the era's own tag delay and, more to the point,
+       stops a tag flashing at every icon a pointer crosses on its way
+       somewhere else. */
+    if (g_tag_dwell < 20) {
+        ++g_tag_dwell;
+        return;
+    }
+    for (i = 0; i < visible_slots(); ++i) {
+        if (PtInRect(where, &g_lay.nav_rows[i])) {
+            over = module_at_slot(i);
+            break;
+        }
+    }
+    if (over == (WorkshopModuleID)0) {
+        const WorkshopModuleID pinned[3] = {
+            kWorkshopPreferences, kWorkshopLogs, kWorkshopConnection
+        };
+
+        for (i = 0; i < 3; ++i) {
+            const Rect *r = row_rect(pinned[i]);
+
+            if (r != NULL && PtInRect(where, r)) {
+                over = pinned[i];
+                break;
+            }
+        }
+    }
+    if (over == (WorkshopModuleID)0) {
+        return;
+    }
+    {
+        const Rect *row = row_rect(over);
+
+        if (row == NULL) {
+            return;
+        }
+        tag_rect_for(over, row, &g_tag_rect);
+    }
+    g_tag_module = over;
+    draw_tag();
+}
+
+Boolean workshop_sidebar_collapsed(void)
+{
+    return g_collapsed;
+}
+
+void workshop_sidebar_set_collapsed(Boolean collapsed)
+{
+    if (collapsed == g_collapsed) {
+        return;
+    }
+    hide_tag();                   /* it belongs to the state being left */
+    g_collapsed = collapsed;
+    g_tag_dwell = 0;
+    order_persist();
+    /* The rail's WIDTH changes, so every module's body rect changes with
+       it - this is the window's to redo, not the rail's. */
+    if (g_on_relayout != NULL) {
+        g_on_relayout();
+    }
+}
+
+/* The collapse button: a small bevel button in the header's left edge,
+   pointing the way the rail will go. Guillemets are MacRoman C7/C8, so
+   they are safe through DrawString - a UTF-8 arrow would be mojibake. */
+void workshop_sidebar_draw_toggle(void)
+{
+    Str255 text;
+    Rect r = g_lay.rail_toggle;
+    ThemeButtonDrawInfo info;
+
+    if (g_owner == NULL) {
+        return;
+    }
+    /* A real draw info, not NULL: with no state to render, DrawThemeButton
+       draws no bevel at all and the glyph sits bare on the placard. */
+    info.state = g_active ? kThemeStateActive : kThemeStateInactive;
+    info.value = kThemeButtonOff;
+    info.adornment = kThemeAdornmentNone;
+    DrawThemeButton(&r, kThemeSmallBevelButton, &info, NULL, NULL, NULL, 0);
+    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    text[0] = 1;
+    text[1] = g_collapsed ? 0xC8 : 0xC7;      /* » expands, « collapses */
+    MoveTo((short)((r.left + r.right - StringWidth(text)) / 2),
+           (short)(r.top + 12));
+    DrawString(text);
+}
+
+Boolean workshop_sidebar_toggle_click(Point local)
+{
+    if (g_owner == NULL || !PtInRect(local, &g_lay.rail_toggle)) {
+        return false;
+    }
+    /* Tracked by hand rather than with a control, because this button is
+       drawn by hand: the header placard is ours, and a real control there
+       would be the only one in the window not owned by a module. */
+    workshop_sidebar_set_collapsed((Boolean)!g_collapsed);
+    return true;
 }
 
 void workshop_sidebar_set_selection(WorkshopModuleID module)

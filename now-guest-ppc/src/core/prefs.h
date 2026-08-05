@@ -98,6 +98,10 @@ typedef struct {
        renumbered, and those are not in here. */
     short sidebar_order[kNowSidebarOrderMax];
     Boolean sidebar_compact;  /* one line per row instead of icon + two */
+    /* Collapsed to icons only. Separate from the density rather than a
+       third value of it: collapsing and then expanding must give back
+       the density the person chose, not forget it. */
+    Boolean sidebar_collapsed;
 } NowPrefs;
 
 /* Loads saved settings, or the defaults (10.0.2.2:5250 — the QEMU host

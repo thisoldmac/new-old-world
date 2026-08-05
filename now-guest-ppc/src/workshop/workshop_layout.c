@@ -28,13 +28,16 @@ void workshop_layout_compute(const Rect *content, const WorkshopRailSpec *rail_s
                              WorkshopLayout *out)
 {
     short width = (short)(content->right - content->left);
-    short rail = (short)(width < kWorkshopRailCompactBelow
-                             ? kWorkshopRailNarrow
-                             : kWorkshopRailWide);
+    Boolean collapsed = (Boolean)(rail_spec != NULL && rail_spec->collapsed);
+    /* Collapsed wins over the width rule: a rail showing only icons needs
+       the same room whether the window is wide or narrow. */
+    short rail = (short)(collapsed
+                             ? kWorkshopRailCollapsed
+                             : (width < kWorkshopRailCompactBelow
+                                    ? kWorkshopRailNarrow
+                                    : kWorkshopRailWide));
     short rail_right = (short)(content->left + rail);
-    short row_h = (short)((rail_spec != NULL && rail_spec->compact)
-                              ? kWorkshopSidebarCompactRowHeight
-                              : kWorkshopSidebarRowHeight);
+    short row_h;
     short scroll_top = (short)(rail_spec != NULL ? rail_spec->scroll_top : 0);
     short row_left;
     short row_right;
@@ -45,7 +48,15 @@ void workshop_layout_compute(const Rect *content, const WorkshopRailSpec *rail_s
     short row_top;
     int i;
 
+    if (collapsed) {
+        row_h = kWorkshopSidebarIconRowHeight;
+    } else if (rail_spec != NULL && rail_spec->compact) {
+        row_h = kWorkshopSidebarCompactRowHeight;
+    } else {
+        row_h = kWorkshopSidebarRowHeight;
+    }
     out->row_height = row_h;
+    out->collapsed = collapsed;
 
     set_rect(&out->sidebar, content->left, content->top, rail_right,
              content->bottom);
@@ -126,6 +137,21 @@ void workshop_layout_compute(const Rect *content, const WorkshopRailSpec *rail_s
 
     set_rect(&out->header, rail_right, content->top, content->right,
              (short)(content->top + kWorkshopHeaderHeight));
+    /* The collapse button lives in the header rather than in the rail: it
+       has to be in the same place, at the same size, in both states, and
+       a 48-pixel rail has no room to spare. The header's text starts
+       clear of it, which is why that offset is computed here instead of
+       being a constant at the draw site. */
+    set_rect(&out->rail_toggle,
+             (short)(out->header.left + kWorkshopRailToggleInset),
+             (short)(out->header.top
+                     + (kWorkshopHeaderHeight - kWorkshopRailToggleSize) / 2),
+             (short)(out->header.left + kWorkshopRailToggleInset
+                     + kWorkshopRailToggleSize),
+             (short)(out->header.top
+                     + (kWorkshopHeaderHeight - kWorkshopRailToggleSize) / 2
+                     + kWorkshopRailToggleSize));
+    out->header_text_left = (short)(out->rail_toggle.right + 8);
     set_rect(&out->status, rail_right,
              (short)(content->bottom - kWorkshopStatusHeight),
              content->right, content->bottom);
