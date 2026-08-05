@@ -414,6 +414,128 @@ final class AgentIntegrationActLaneTests: XCTestCase {
         XCTAssertTrue(failure.message.contains("never called TrackControl"),
                       "the guest's own sentence is the distinction; a host "
                           + "that replaced it would delete the answer")
+        XCTAssertEqual(
+            failure.reach, .unknown,
+            "this refusal came from AFTER the act plane registered a "
+                + "correlation: it armed and was not taken, and whether "
+                + "anything landed is not something this side can say")
+    }
+
+    /// **A refusal raised before the guest registered an act cannot have
+    /// done anything, and says so in a field rather than in prose.**
+    ///
+    /// The guest draws the line structurally: `reply_error` answers a
+    /// malformed request or a reference that would not resolve and carries
+    /// no correlation, while `reply_registered_error` answers everything
+    /// after `now_act_submit` and carries the one submit registered. So an
+    /// error with no correlation is the machine saying nothing was armed.
+    ///
+    /// It matters because the caller on the other side of this is the
+    /// Mirror's mutation FIFO, which keeps the lane open waiting for
+    /// evidence of an effect that a `notSent` refusal can never produce —
+    /// measured at fifteen seconds of hold and eight seconds of queue wait
+    /// behind it on 2026-08-05.
+    func testARefusalBeforeTheActPlaneSaysNothingWasSent() async throws {
+        let (listener, guest) = try await connectedListener()
+        defer { guest.connection.cancel(); listener.stop() }
+        installResponder(on: guest, verb: "winact") { id in
+            .init(id: id, ok: false, output: nil,
+                  error: .init(
+                    code: "element-not-found",
+                    message: "nothing in this process answers to that name "
+                        + "any more",
+                    correlation: nil, settlement: nil))
+        }
+
+        let result = await adapter(listener).windowAct(
+            .init(window: Self.window, action: .close))
+
+        guard case .refused(let failure) = result else {
+            return XCTFail("a guest that said no is a refusal: \(result)")
+        }
+        XCTAssertEqual(failure.reach, .notSent)
+        XCTAssertNil(failure.correlation,
+                     "the absence of a correlation IS the evidence; a test "
+                         + "that let one through would be asserting about "
+                         + "the wrong reply")
+    }
+
+    /// The classification is the guest's structure, not a list of codes
+    /// this side maintains — a code added to the guest tomorrow lands on
+    /// the right side of it without anyone remembering this file.
+    func testReachIsReadFromTheCorrelationRatherThanTheCode() {
+        XCTAssertEqual(
+            AgentIntegrationActControl.reach(ofGuestRefusal: .init(
+                code: "a-code-this-host-has-never-heard-of",
+                message: "", correlation: nil, settlement: nil)),
+            .notSent)
+        XCTAssertEqual(
+            AgentIntegrationActControl.reach(ofGuestRefusal: .init(
+                code: "a-code-this-host-has-never-heard-of",
+                message: "", correlation: "A5A50001-00000008",
+                settlement: "refused")),
+            .unknown)
+    }
+
+    /// **"Nobody to ask" is two different facts, and only one of them
+    /// leaves a caller waiting.**
+    ///
+    /// No guest at all means the act never left this host. A guest that
+    /// went away DURING the act means it did leave and this side can no
+    /// longer see what became of it. Both arrive as `unavailable`, and
+    /// before they carried a reach the second one's honesty made the first
+    /// one hold the Mirror's lane for a machine that was never asked.
+    func testNoGuestAtAllAndAGuestThatLeftMidActAreDifferentReaches()
+        async throws {
+        let (listener, guest) = try await connectedListener()
+        defer { guest.connection.cancel(); listener.stop() }
+
+        let never = AgentIntegrationActControl(
+            listener: listener, currentSessionID: { nil })
+        guard case .unavailable(let nobody) = await never.windowAct(
+            .init(window: Self.window, action: .close)) else {
+            return XCTFail("no session is unavailable, not a refusal")
+        }
+        XCTAssertEqual(nobody.reach, .notSent)
+
+        /* The session changes between the request and the reply, which is
+           what a guest disconnecting mid-act looks like from here. */
+        installResponder(on: guest, verb: "winact") { id in
+            .init(id: id, ok: true,
+                  output: ["winact": [["Dispatch", "dispatched"]]],
+                  error: nil)
+        }
+        var reads = 0
+        let changing = AgentIntegrationActControl(
+            listener: listener,
+            currentSessionID: {
+                reads += 1
+                return UUID(uuidString: reads == 1
+                    ? Self.session
+                    : "5b6d9a44-0000-4000-8000-000000000002")
+            })
+        guard case .unavailable(let vanished) = await changing.windowAct(
+            .init(window: Self.window, action: .close)) else {
+            return XCTFail("a guest that changed mid-act is unavailable")
+        }
+        XCTAssertEqual(vanished.reach, .unknown,
+                       "this act reached a Macintosh; writing it off as "
+                           + "never-sent would lose a real effect")
+    }
+
+    /// An act this side refused for its shape never reached a socket, so
+    /// the caller may stop waiting immediately.
+    func testAnActRefusedForItsShapeWasNotSent() async throws {
+        let (listener, guest) = try await connectedListener()
+        defer { guest.connection.cancel(); listener.stop() }
+
+        let result = await adapter(listener).windowAct(
+            .init(window: "the frontmost", action: .close))
+
+        guard case .refused(let failure) = result else {
+            return XCTFail("a malformed act is refused: \(result)")
+        }
+        XCTAssertEqual(failure.reach, .notSent)
     }
 
     /// Silence is bounded, and the bound is this side's. The guest's own act
@@ -432,6 +554,10 @@ final class AgentIntegrationActLaneTests: XCTestCase {
             return XCTFail("silence is a bounded refusal: \(result)")
         }
         XCTAssertEqual(failure.code, "now-text-get-outcome-unknown")
+        XCTAssertEqual(
+            failure.reach, .unknown,
+            "a guest that never answered may still have acted; only a "
+                + "refusal this side can attribute is `notSent`")
     }
 
     // MARK: - The reading

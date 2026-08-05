@@ -22,17 +22,57 @@ public protocol AgentIntegrationSettledActReceipt {
 /// and collapsing the two would let a caller read a real answer as a bug.
 public struct AgentIntegrationProjectionFailure:
     Codable, Equatable, Sendable {
+    /// **Did the refused call reach the machine's act plane?**
+    ///
+    /// A refusal answers two different questions at once, and only one of
+    /// them was ever readable here: *why* it was refused, and *whether
+    /// anything might have happened anyway*. The second decides whether a
+    /// caller may stop waiting, so it is a value rather than a sentence to
+    /// be pattern-matched — reading "was not sent" out of prose is how the
+    /// Mirror's FIFO came to hold itself open for fifteen seconds after a
+    /// refusal that had demonstrably done nothing.
+    ///
+    /// `notSent` is a claim about the machine and is only made where this
+    /// side can prove it: the request never left (a local refusal), or the
+    /// guest refused it before its act plane registered a correlation.
+    /// Everything else is `unknown`, which is the safe direction — a
+    /// caller that waits needlessly loses time, a caller that stops waiting
+    /// wrongly loses the effect.
+    public enum Reach: String, Codable, Equatable, Sendable {
+        case notSent
+        case unknown
+    }
+
     public let code: String
     public let message: String
     public let correlation: String?
     public let settlement: String?
+    public let reach: Reach
 
     public init(code: String, message: String,
-                correlation: String? = nil, settlement: String? = nil) {
+                correlation: String? = nil, settlement: String? = nil,
+                reach: Reach = .unknown) {
         self.code = code
         self.message = message
         self.correlation = correlation
         self.settlement = settlement
+        self.reach = reach
+    }
+
+    /* Decoded tolerantly, because `reach` is newer than the callers that
+       read this shape: a refusal written before the field existed says
+       nothing about whether it reached the machine, and "nothing" is
+       exactly `unknown`. */
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        code = try container.decode(String.self, forKey: .code)
+        message = try container.decode(String.self, forKey: .message)
+        correlation = try container.decodeIfPresent(String.self,
+                                                    forKey: .correlation)
+        settlement = try container.decodeIfPresent(String.self,
+                                                   forKey: .settlement)
+        reach = try container.decodeIfPresent(Reach.self, forKey: .reach)
+            ?? .unknown
     }
 }
 

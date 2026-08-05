@@ -14,6 +14,115 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## THE STALE-REF REFUSAL NO LONGER HOLDS THE LANE (2026-08-05)
+
+**Fixed, tested, and watched on an emulated guest.** During the first human
+drive, `winact` refusals against windows the Mirror was still displaying
+held the mutation FIFO for its whole 15 s timeout. Measured in
+`~/Library/Logs/NewOldWorld/acts.log`: a close refused at 02:03:47.753
+held the lane 15 128 ms, and the next click on the same window waited
+8 025 ms behind it. The cause was a substring test — a refusal was
+treated as "the effect may have landed" unless its wording contained
+"was not sent" — so a refusal the guest raised *before* it armed anything
+became non-terminal. The same reading produced a false green: a refused
+close was recorded `confirmedAfterRefusal` 3 ms later, settled by a scene
+that showed the window absent because a PREVIOUS close had closed it.
+
+Two changes, both host-side. A guest act refusal now carries a typed
+`AgentIntegrationProjectionFailure.Reach`, read from whether the guest's
+error carries a correlation — the guest registers one only after
+`now_act_submit`, so its absence is the machine saying nothing was armed.
+And the target is re-read against the newest scene at dispatch time
+rather than the displayed one, so a click that waited in the queue while
+the window closed is refused here instead of on the machine.
+
+Answered along the way, because the arc began by suspecting it: **window
+references do not churn on republish.** The guest interns them
+(`now_obs_intern` / `identity_same` excludes only `minted_ticks`), and one
+token in the same log confirmed an act fifteen seconds and a dozen scene
+generations after it was minted.
+
+### The drive that proved it, and how to run one beside somebody else
+
+Driven headlessly on an emulated Power Mac G4 at 03:09 on 2026-08-05 —
+three `close`s at one Finder window, 300 ms apart, which is the incident's
+own shape. The third one:
+
+    NOT DISPATCHED: the scene moved on — that window is no longer on the
+    machine, so the act was not sent. Read it again.
+    NOWBASE act ... outcome=refused depth=2 waited_ms=8596
+                    dispatch_ms=12 settle_ms=- total_ms=8608
+
+Twelve milliseconds and no guest round trip, against ~89 ms and a 15 s
+lane hold before. And `refused`, terminal: the 02:04 equivalent of this
+act was recorded `confirmedAfterRefusal` by a scene that another close
+had produced.
+
+**The conservative branch earned its keep in the same run.** The FIRST
+close was refused `the target served the request and did not arm` — a
+refusal the guest raises after `now_act_submit` registered a correlation,
+so this side calls it `unknown` and keeps waiting. It held the lane the
+full 15 s… and then settled `confirmedAfterTimeout` at 16 503 ms. The
+close had landed. Had the rule been "any refusal is terminal", that act
+would have been written off as failed while the window was closing.
+
+**Two hosts on one Mac, without touching each other** (this run shared
+the desk with another session's verification host, which owned 5250):
+
+- `NOW_PREFS_SUFFIX=<slug>` gives the second host its own settings and
+  guest registry — it already existed for exactly this, see
+  `ProductIdentity`. Put the port in that domain:
+  `defaults write dev.newoldworld.now.settings.<slug> listenPort -int 5262`.
+- The guest dials `10.0.2.2:5250` from saved preferences with
+  `auto_connect` on, and QEMU refuses a `guestfwd` on `10.0.2.2` because
+  it is the gateway. Move the gateway instead, and the address is free to
+  forward:
+
+      TBT_EXTRA_HOSTFWD="net=10.0.2.0/24,host=10.0.2.5,dns=10.0.2.6,\
+      guestfwd=tcp:10.0.2.2:5250-tcp:127.0.0.1:5262" tools/launch --instance 91
+
+  The guest's own preferences never change, and its dial cannot reach the
+  other host. `guestfwd` connects eagerly at launch, so start the host
+  first.
+- **The agent socket is the one thing that cannot be shared.** It is
+  `<darwin-user-temp>/dev.newoldworld.now-agent-<uid>/host.sock`, one per
+  user, and `FileManager.temporaryDirectory` ignores `TMPDIR` on macOS
+  even though `tools/now-agent` derives its path from `TMPDIR` and says
+  so in a docstring. The second host logs `local agent integration
+  unavailable` and runs on without an MCP surface. This drive used a
+  build-only patch (an env override, reverted before committing) to move
+  it. **A supported override belongs in the product**, and the two sides
+  should agree on how the path is computed.
+
+**A second false green, found by the test that closed the first.**
+Writing the brokered-path test surfaced the same defect entering by
+another door: `AgentIntegrationUnavailable` — "there was nobody to ask" —
+said nothing about reach, so an act refused because NO GUEST WAS
+CONNECTED was held open and then confirmed by a later scene. Nothing had
+been sent. That type now carries a reach too, defaulting to `notSent`,
+because every one of its statics means the request never left this host;
+the single exception is a guest that vanished mid-act, which is built
+from a failure and inherits its `unknown`. Both directions are tested,
+and the passthrough was watched to fail.
+
+Still open from this:
+
+- **A refusal AFTER the act plane armed nothing still holds the lane
+  15 s.** `the target served the request and did not arm` carries a
+  correlation, so this side calls it `unknown` — and in the 03:09 drive
+  that was right: the act settled `confirmedAfterTimeout` at 16 503 ms,
+  it HAD landed. But the guest can sometimes tell the two apart
+  (`kNowActNotArmed` means no patch was installed, so no click can be
+  delivered), and it says so only in prose. If that distinction is worth
+  the 15 s, it belongs in the contract as a field, not in host
+  guesswork over the guest's sentences.
+- **A guest mis-attribution, noted not fixed.** `now_act_submit` returns
+  `kNowActNoExtension` before it registers a correlation, and
+  `act_cmds.c:546` answers that with `reply_registered_status`, which
+  attaches the PREVIOUS command's correlation. It is conservative for the
+  host rule above — a stale correlation reads as "may have landed", which
+  only costs a wait — but it is wrong.
+
 ## CYCLE 27 RETAINED-STATE CHECKPOINT; TWO ADVANCES, TWO BLOCKERS (2026-08-04)
 
 The exact `d0a3e1a` host was driven through native Mirror mouse input and

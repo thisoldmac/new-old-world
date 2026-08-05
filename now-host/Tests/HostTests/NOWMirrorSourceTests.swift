@@ -595,6 +595,338 @@ final class NOWMirrorSourceTests: XCTestCase {
                       + "window, so this asserted nothing - recapture with "
                       + "scripts/probes/capture-scene-fixture.py")
     }
+
+    // MARK: - The picture is older than the act
+
+    private func fixtureScene() throws -> MirrorKit.Scene {
+        let url = try XCTUnwrap(
+            Bundle.module.url(forResource: "now-scene-ir-v1",
+                              withExtension: "json",
+                              subdirectory: "Fixtures"))
+        return try JSONDecoder().decode(MirrorKit.Scene.self,
+                                        from: Data(contentsOf: url))
+    }
+
+    /// **A click on a window the newest scene no longer carries is refused
+    /// here, not on the machine.**
+    ///
+    /// The Mirror draws a scene a poll old and an act can wait seconds in
+    /// the FIFO behind others, so by dispatch time the host often already
+    /// knows the target is gone. On 2026-08-05 it sent anyway: three
+    /// closes of one window, two of them answered "nothing in this process
+    /// answers to that name any more" — a round trip each, and a lane slot
+    /// each, to be told what the host could see.
+    func testAWindowTheNewestSceneHasLostIsNotSent() throws {
+        let scene = try fixtureScene()
+        let live = try XCTUnwrap(scene.windows.first?.ref,
+                                 "the fixture must carry a window reference")
+
+        XCTAssertNil(
+            NOWMirrorSource.staleTargetComplaint(
+                for: .windowAct(ref: live, act: .close), in: scene),
+            "a window the scene still carries is the caller's to act on")
+
+        let gone = NOWMirrorSource.staleTargetComplaint(
+            for: .windowAct(ref: "now-window-00000000-0000-4000-8000-"
+                                 + "000000000000", act: .close),
+            in: scene)
+        XCTAssertNotNil(gone)
+        XCTAssertTrue(gone?.contains("was not sent") == true,
+                      "a person needs to know their click did nothing, not "
+                          + "just that something was wrong")
+    }
+
+    /// Two boundaries on the re-read, both deliberate. No scene is not
+    /// evidence of absence, and a plan that names no window has nothing
+    /// here to check — an element reference is not looked up, because a
+    /// structural walk may publish a window without its controls and
+    /// "absent" would then describe the walk rather than the machine.
+    func testTheRereadRefusesOnlyWhatItCanActuallySee() throws {
+        XCTAssertNil(NOWMirrorSource.staleTargetComplaint(
+            for: .windowAct(ref: "now-window-1", act: .close), in: nil))
+
+        let scene = try fixtureScene()
+        XCTAssertNil(NOWMirrorSource.staleTargetComplaint(
+            for: .controlPart(ref: "now-element-1", part: 10, mods: 0),
+            in: scene))
+        XCTAssertNil(NOWMirrorSource.staleTargetComplaint(
+            for: .keystroke(code: 36, char: 13, mods: 0), in: scene))
+    }
+
+    /// The line that holds the lane. A dispatched attempt waits for
+    /// observation; a refusal waits only when this side cannot say the act
+    /// never left.
+    func testOnlyAProvablyUnsentRefusalStopsTheLaneWaiting() {
+        XCTAssertTrue(NOWMirrorSource.effectMayHaveLanded(
+            complaint: nil, reach: .notSent),
+            "a successful dispatch settles from a later scene, whatever a "
+                + "stale reach field says")
+        XCTAssertTrue(NOWMirrorSource.effectMayHaveLanded(
+            complaint: "act-timeout: armed, and nothing called it",
+            reach: .unknown))
+        XCTAssertFalse(NOWMirrorSource.effectMayHaveLanded(
+            complaint: "element-not-found: nothing in this process answers "
+                + "to that name any more",
+            reach: .notSent))
+    }
+
+    /// **The guard is reached, not merely present.**
+    ///
+    /// The re-read is covered above as a function and watched to fail by
+    /// mutation, but a function nobody calls passes its own tests — and
+    /// the rule this replaces lived in exactly such an uncalled-looking
+    /// place. So this drives a real source over a scene from the machine
+    /// and clicks a window that scene does not carry.
+    ///
+    /// It exercises the direct path, which is the one this fixture can
+    /// reach: with no incarnations in it, no window has a stable identity
+    /// and nothing brokered can be planned from it. The brokered path's
+    /// own call site is exercised only by hand so far — see
+    /// docs/open-issues.md.
+    func testAStaleClickIsAnsweredWithoutTouchingTheActLane() async throws {
+        let (listener, guest) = try await connectedListener()
+        defer { guest.connection.cancel(); listener.stop() }
+        try await waitUntil("the guest is the active Mac") {
+            listener.activeKey != nil
+        }
+        let key = try XCTUnwrap(listener.activeKey)
+        let harness = CycleHarness(activeKey: key)
+        let source = NOWMirrorSource(
+            listener: listener, engineRegistry: MirrorStateEngineRegistry(),
+            act: testAct(listener), interval: 3_600,
+            finderRefreshOverride: { _, _, completion in completion() },
+            visibilityRefreshOverride: { _, _, completion in completion() },
+            cycleIO: harness.io)
+
+        source.start()
+        harness.completeScene(0, with: .success(try fixtureDelivery(for: key)))
+        let scene = try XCTUnwrap(source.scene)
+        XCTAssertFalse(scene.windows.isEmpty,
+                       "the fixture must carry windows or this asserts "
+                           + "nothing about a window that is missing")
+
+        let gone = MirrorObject.Window(
+            id: "0.1/Gone#0",
+            ref: "now-window-00000000-0000-4000-8000-000000000000",
+            psn: scene.windows[0].psn, title: "Gone",
+            rect: scene.windows[0].rect, kind: scene.windows[0].kind,
+            isFront: false, part: .zoomBox)
+        source.perform(.init(
+            object: .window(gone),
+            gesture: .click(count: 1, mods: 0, at: .init(x: 0, y: 0))))
+
+        XCTAssertTrue(source.lastAct.contains("scene moved on"),
+                      source.lastAct)
+        XCTAssertEqual(source.actTimeline.records.count, 0,
+                       "an act that was never sent has no timing to "
+                           + "report, and reporting one would put a "
+                           + "refusal this side raised into the machine's "
+                           + "own measurements")
+    }
+
+    // MARK: - The brokered path, where the incident happened
+
+    /// The captured fixture with identities added, so a brokered operation
+    /// can be planned from it.
+    ///
+    /// The real guest sends `incarnation` on processes and windows and a
+    /// `coverage` claim per scope; this fixture predates both, which is
+    /// why every other test here exercises only the direct path. Rather
+    /// than recapture (a guest and a person), the identities are stamped
+    /// on deterministically — the values are opaque to everything under
+    /// test, which only ever compares them for equality.
+    private func identifiedScene(seq: Int, without absent: String? = nil)
+        throws -> Data {
+        let fixture = try XCTUnwrap(
+            Bundle.module.url(forResource: "now-scene-ir-v1",
+                              withExtension: "json",
+                              subdirectory: "Fixtures"))
+        var scene = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: try Data(contentsOf: fixture)) as? [String: Any])
+        scene["seq"] = seq
+        /* IR v2, because v1 is `isApproximateReadOnly` — identities and
+           coverage are what v2 added, and they are the whole point here. */
+        scene["version"] = 2
+
+        func incarnation(_ psn: String) -> String {
+            "process-" + psn.replacingOccurrences(of: ".", with: "-")
+        }
+        /* Both rosters, and that is not belt-and-braces: the replica's
+           applications come from `apps` while the window/owner join reads
+           `processes`, so stamping one leaves every window ownerless and
+           nothing can ever be proven absent. */
+        for roster in ["apps", "processes"] {
+            var rows = try XCTUnwrap(scene[roster] as? [[String: Any]])
+            for index in rows.indices {
+                let psn = try XCTUnwrap(rows[index]["psn"] as? String)
+                rows[index]["incarnation"] = incarnation(psn)
+            }
+            scene[roster] = rows
+        }
+
+        var windows = try XCTUnwrap(scene["windows"] as? [[String: Any]])
+        if let absent {
+            windows.removeAll { $0["title"] as? String == absent }
+        }
+        var owners = Set<String>()
+        for index in windows.indices {
+            let psn = try XCTUnwrap(windows[index]["psn"] as? String)
+            let id = try XCTUnwrap(windows[index]["id"] as? String)
+            windows[index]["incarnation"] = "window-" + id
+            owners.insert(incarnation(psn))
+        }
+        scene["windows"] = windows
+
+        /* A settlement needs a claim whose scope is COMPLETE: retained
+           stale state must never settle a mutation, so an absent window in
+           a scene that does not claim to have walked that process proves
+           nothing. Every owner that had windows in the FULL scene claims
+           one, including the owner whose last window this scene drops —
+           that claim is exactly the evidence the close is waiting for. */
+        var meta = try XCTUnwrap(scene["meta"] as? [String: Any])
+        let full = try XCTUnwrap(
+            (try JSONSerialization.jsonObject(with: try Data(
+                contentsOf: fixture)) as? [String: Any])?["windows"]
+                as? [[String: Any]])
+        for window in full {
+            owners.insert(incarnation(
+                try XCTUnwrap(window["psn"] as? String)))
+        }
+        meta["coverage"] = owners.sorted().map {
+            ["scope": "windows", "owner": $0, "status": "complete"]
+        } + [["scope": "processes", "status": "complete"]]
+        scene["meta"] = meta
+
+        return try JSONSerialization.data(withJSONObject: scene)
+    }
+
+    private func delivery(_ document: Data, seq: Int, for key: GuestKey)
+        -> GuestListener.SceneDelivery {
+        .init(document: document, irVersion: 2, seq: seq, capturedAt: 1,
+              source: "test", walkMs: 1, settlements: nil, transferMs: 1,
+              guestName: "Test Mac", guestKey: key)
+    }
+
+    /// **The incident, reproduced: a queued close whose window closes
+    /// while it waits.**
+    ///
+    /// This is the sequence measured on 2026-08-05 at 02:04 and again,
+    /// after the fix, at 03:09. Two closes of one window; the first holds
+    /// the lane; a newer scene arrives without that window while the
+    /// second is still queued; the second then dispatches into a machine
+    /// where its target no longer exists.
+    ///
+    /// Before the fix it went to the guest, came back
+    /// `element-not-found`, held the FIFO for the broker's full timeout,
+    /// and was then recorded `confirmedAfterRefusal` — green, on the
+    /// strength of a scene the FIRST close had produced. All three of
+    /// those are asserted against here.
+    func testAQueuedActWhoseWindowClosedIsRefusedRatherThanSent()
+        async throws {
+        let (listener, guest) = try await connectedListener()
+        defer { guest.connection.cancel(); listener.stop() }
+        try await waitUntil("the guest is the active Mac") {
+            listener.activeKey != nil
+        }
+        let key = try XCTUnwrap(listener.activeKey)
+        let harness = CycleHarness(activeKey: key)
+        /* A guest that takes the act and never answers, which is what
+           holds the lane here — the same thing a real slow Macintosh
+           does, and the only honest way to have a second act still be
+           QUEUED when a newer scene lands. The fake never installs a
+           `winact` responder, so the act control's own bound is what
+           ends it; a short one keeps the test in milliseconds. */
+        let session = UUID()
+        let act = AgentIntegrationActControl(
+            listener: listener, currentSessionID: { session },
+            commandTimeout: 0.3)
+        let source = NOWMirrorSource(
+            listener: listener, engineRegistry: MirrorStateEngineRegistry(),
+            act: act, interval: 3_600,
+            finderRefreshOverride: { _, _, completion in completion() },
+            visibilityRefreshOverride: { _, _, completion in completion() },
+            cycleIO: harness.io)
+
+        // The scene a person is looking at, with the window still open.
+        source.start()
+        harness.completeScene(0, with: .success(
+            delivery(try identifiedScene(seq: 1), seq: 1, for: key)))
+        harness.joinCompletions[0](.init(
+            scene: try XCTUnwrap(harness.joinedScenes.first),
+            sentence: "content"))
+        let engine = try XCTUnwrap(source.shadowEngine)
+        let displayed = try XCTUnwrap(source.scene)
+        let target = try XCTUnwrap(displayed.windows.first {
+            $0.title == "System Folder"
+        })
+
+        // Two clicks on its close box, the second while the first is in
+        // flight — which is what a person does to a mirror that lags.
+        for _ in 0..<2 {
+            source.perform(.init(
+                object: .window(.init(
+                    id: target.id, ref: target.ref, psn: target.psn,
+                    title: target.title, rect: target.rect,
+                    kind: target.kind, isFront: target.front,
+                    part: .closeBox)),
+                gesture: .click(count: 1, mods: 0,
+                                at: .init(x: target.rect.l,
+                                          y: target.rect.t))))
+        }
+        XCTAssertEqual(engine.operations.records.count, 2,
+                       "both clicks must be planned as operations, or this "
+                           + "test is about something else entirely")
+        // Long enough for the first act's own bound to pass, so it is
+        // waiting on EVIDENCE rather than on the socket.
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertEqual(engine.operations.records.first?.outcome,
+                       .awaitingEvidenceAfterRefusal,
+                       "the first act must still hold the lane, or the "
+                           + "second one never queues and this proves "
+                           + "nothing about a queued act")
+
+        // The machine moves on: a newer scene, without that window.
+        source.planePolicyDidChange()          // the test's way to ask for one
+        harness.completeScene(1, with: .success(delivery(
+            try identifiedScene(seq: 2, without: "System Folder"),
+            seq: 2, for: key)))
+        harness.joinCompletions[1](.init(
+            scene: try XCTUnwrap(harness.joinedScenes.last),
+            sentence: "content"))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        let second = try XCTUnwrap(engine.operations.records.last)
+        XCTAssertEqual(second.outcome, .refused,
+                       "not awaitingEvidenceAfterRefusal, which is how a "
+                           + "click that did nothing came to be confirmed "
+                           + "by another click's effect")
+        XCTAssertTrue(second.reason?.contains("scene moved on") == true,
+                      second.reason ?? "(no reason)")
+        XCTAssertEqual(source.actTimeline.records.filter {
+            $0.operationID == second.id
+        }.first?.outcome, .refused)
+        XCTAssertNotEqual(second.outcome, .confirmedAfterRefusal,
+                          "a refusal this side raised can never be "
+                              + "confirmed by a later scene: nothing was "
+                              + "sent for that scene to be evidence of")
+        /* The FIRST act keeps waiting and may still settle, and that is
+           the other half of the rule: it reached a guest that never
+           answered, so whether it landed is not this side's to say. */
+        XCTAssertEqual(engine.operations.records.first?.outcome,
+                       .confirmedAfterRefusal)
+    }
+
+    /// Activation names a window too, and it is the same question.
+    func testActivationIsRereadLikeAnyOtherWindowAct() throws {
+        let scene = try fixtureScene()
+        XCTAssertEqual(
+            NOWMirrorSource.windowReference(
+                in: .activateWindow(psn: "0.1", ref: "now-window-9")),
+            "now-window-9")
+        XCTAssertNotNil(NOWMirrorSource.staleTargetComplaint(
+            for: .activateWindow(psn: "0.1", ref: "now-window-9"),
+            in: scene))
+    }
 }
 
 /// The icon reader, pinned against what the machine actually returned.

@@ -108,6 +108,68 @@ final class MirrorMutationBrokerTests: XCTestCase {
                        .confirmed)
     }
 
+    /// **A refusal that did nothing IS the settlement, and the lane must
+    /// say so at once.**
+    ///
+    /// Measured on 2026-08-05: a `winact close` the guest refused before it
+    /// armed anything held the FIFO for its whole 15 s timeout, and the
+    /// next click on the same window waited 8 025 ms behind it. Nothing
+    /// was ever going to arrive — the act never reached the act plane —
+    /// so the wait bought nothing and cost a person two gestures.
+    func testARefusalThatNeverReachedTheMachineReleasesTheLaneAtOnce()
+        async {
+        let process = MirrorProcessIdentity(session: session,
+                                            incarnation: "finder")
+        let broker = MirrorMutationBroker(timeout: 30)
+        var dispatched: [String] = []
+        var outcomes: [MirrorOperationOutcome] = []
+
+        XCTAssertTrue(broker.enqueue(operation(id: "stale", process: process),
+          execute: {
+            dispatched.append("stale")
+            return .init(complaint: "the scene moved on",
+                         effectMayHaveLanded: false)
+          }, report: { operation, _ in outcomes.append(operation.outcome) }))
+        XCTAssertTrue(broker.enqueue(operation(id: "next", process: process),
+          execute: {
+            dispatched.append("next")
+            return .init(complaint: nil, effectMayHaveLanded: true)
+          }, report: { operation, _ in outcomes.append(operation.outcome) }))
+        /* Far shorter than the lane's 30 s timeout and far longer than the
+           handful of hops a release takes, so a failure here means the
+           second act is waiting on the timeout rather than on the clock. */
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertEqual(dispatched, ["stale", "next"],
+                       "the second act must not wait on a timeout for an "
+                           + "effect the first could not have had")
+        XCTAssertEqual(outcomes.first, .refused)
+        XCTAssertEqual(broker.depth, 1,
+                       "only the dispatched act still holds the lane")
+    }
+
+    /// The other half of the same rule: such an operation is terminal, so a
+    /// later scene that satisfies its postcondition — because some OTHER
+    /// act produced that state — cannot turn it green. That false green is
+    /// what `confirmedAfterRefusal` did to a refused close on 2026-08-05,
+    /// three milliseconds after a previous close had closed the window.
+    func testARefusalThatNeverReachedTheMachineCannotBeConfirmedLater()
+        async {
+        let process = MirrorProcessIdentity(session: session,
+                                            incarnation: "finder")
+        let broker = MirrorMutationBroker(timeout: 30)
+        XCTAssertTrue(broker.enqueue(operation(id: "stale", process: process),
+          execute: { .init(complaint: "the scene moved on",
+                           effectMayHaveLanded: false) },
+          report: { _, _ in }))
+        await Task.yield()
+
+        broker.observe([processEvidence(process, sequence: 2)])
+
+        XCTAssertEqual(broker.journal.operation(id: "stale")?.outcome,
+                       .refused)
+    }
+
     private func operation(id: String, process: MirrorProcessIdentity)
         -> MirrorOperation {
         .init(id: id, source: .human, displayedSnapshotID: 1,

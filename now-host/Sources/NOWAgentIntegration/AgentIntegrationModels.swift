@@ -88,10 +88,34 @@ public struct AgentIntegrationUnavailable: Codable, Equatable, Sendable {
 
     public let code: String
     public let message: String
+    /// **Whether the call this answers reached the machine.**
+    ///
+    /// The same question `AgentIntegrationProjectionFailure.Reach` answers
+    /// for a refusal, asked of "there was nobody to ask". It is not
+    /// rhetorical: every static above means the request never left this
+    /// host, and a caller that is holding a lane open waiting for evidence
+    /// of an effect can stop. The one case that is genuinely unknown is a
+    /// guest that went away DURING a call, which is built from a failure
+    /// (`asUnavailable`) and inherits that failure's reach.
+    public let reach: AgentIntegrationProjectionFailure.Reach
 
-    public init(code: String, message: String) {
+    public init(code: String, message: String,
+                reach: AgentIntegrationProjectionFailure.Reach = .notSent) {
         self.code = code
         self.message = message
+        self.reach = reach
+    }
+
+    /* Tolerant, for the same reason the failure's decode is: a value
+       written before this field existed says nothing about reach, and
+       "nothing" for a shape that means "nobody was asked" is notSent. */
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        code = try container.decode(String.self, forKey: .code)
+        message = try container.decode(String.self, forKey: .message)
+        reach = try container.decodeIfPresent(
+            AgentIntegrationProjectionFailure.Reach.self,
+            forKey: .reach) ?? .notSent
     }
 }
 
