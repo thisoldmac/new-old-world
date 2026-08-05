@@ -151,6 +151,91 @@ final class MirrorStateProjectionServiceTests: XCTestCase {
         XCTAssertEqual(engine.store.entries.count, 1)
     }
 
+    // MARK: - surfaces: what the renderer draws, for the client that doesn't
+
+    func testSnapshotCarriesGeometryAndTheControlKindThatDecidesTheDrawing()
+        async throws {
+        let document = #"""
+        {
+          "version":2,"seq":3,"capturedAt":3,"source":"peek",
+          "screen":{"w":640,"h":480},
+          "apps":[{"psn":"0.9","name":"Date & Time","front":true,
+                   "incarnation":"process-dt"}],
+          "processes":[{"psn":"0.9","name":"Date & Time","front":true,
+                        "signature":"dtcp","incarnation":"process-dt"}],
+          "menubar":{"app":"Date & Time","menus":[]},
+          "windows":[{
+            "id":"0.9/Date & Time#0","app":"Date & Time","psn":"0.9",
+            "title":"Date & Time",
+            "rect":{"l":40,"t":60,"r":440,"b":400},
+            "front":true,"z":0,"visible":true,
+            "ref":"window-dt",
+            "controls":[
+              {"ref":"ctl-1","role":"control","title":"On",
+               "rect":{"l":10,"t":10,"r":60,"b":26},
+               "enabled":true,"visible":true,"value":1,"checked":true,
+               "semantic":{"knowledge":"known","kind":"radioButton",
+                           "state":"on","value":"On"}},
+              {"ref":"","role":"control","title":"Region",
+               "rect":{"l":10,"t":40,"r":160,"b":60},
+               "enabled":true,"visible":true,
+               "semantic":{"knowledge":"known","kind":"popupButton",
+                           "value":"U.S."}}
+            ],
+            "dialogItems":[
+              {"number":4,"title":"Separator",
+               "rect":{"l":10,"t":80,"r":120,"b":96},
+               "enabled":true,"visible":true,
+               "semantic":{"knowledge":"known","kind":"editText",
+                           "value":"/"}}
+            ],
+            "incarnation":"process-dt/window-dt"
+          }],
+          "meta":{"errors":[],"coverage":[]}
+        }
+        """#
+        let registry = MirrorStateEngineRegistry()
+        let engine = registry.engine(for: key)
+        _ = engine.accept(try JSONDecoder().decode(
+            Scene.self, from: Data(document.utf8)))
+
+        let result = await service(registry).read(.init(intention: .snapshot))
+        let snapshot = try XCTUnwrap(result.value?.snapshot)
+
+        XCTAssertEqual(snapshot.screen?.w, 640)
+        let surface = try XCTUnwrap(snapshot.surfaces.first)
+        XCTAssertEqual(surface.rect, .init(l: 40, t: 60, r: 440, b: 400))
+        XCTAssertEqual(surface.z, 0)
+        XCTAssertEqual(surface.itemTotal, 3)
+
+        /* The three readings no entity-level projection could give, and
+           each one is a red row from the 2026-08-03 sweep: what KIND a
+           control is drawn as, what a popup's chosen value is, and what
+           text a field is holding. */
+        let radio = try XCTUnwrap(surface.items.first { $0.title == "On" })
+        XCTAssertEqual(radio.kind, "radioButton")
+        XCTAssertEqual(radio.state, "on")
+        XCTAssertEqual(radio.checked, true)
+
+        let popup = try XCTUnwrap(surface.items.first {
+            $0.title == "Region"
+        })
+        XCTAssertEqual(popup.kind, "popupButton")
+        XCTAssertEqual(popup.text, "U.S.")
+        /* NOW's producer emits "" for a control ref. Carried as absent
+           rather than as an empty string, so a caller can see that this
+           control cannot be addressed — the drift the mutation slice has
+           to close, made visible rather than papered over. */
+        XCTAssertNil(popup.ref)
+
+        let field = try XCTUnwrap(surface.items.first {
+            $0.source == "dialogItem"
+        })
+        XCTAssertEqual(field.number, 4)
+        XCTAssertEqual(field.kind, "editText")
+        XCTAssertEqual(field.text, "/")
+    }
+
     // MARK: - metrics: the Mirror page's numbers, headless
 
     func testMetricsCarryTheSameClocksTheMirrorPageShows() async {

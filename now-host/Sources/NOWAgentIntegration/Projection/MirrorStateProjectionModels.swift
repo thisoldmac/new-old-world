@@ -158,21 +158,141 @@ public struct AgentIntegrationMirrorMenu:
     }
 }
 
+public struct AgentIntegrationMirrorRect: Codable, Equatable, Sendable {
+    public let l: Int
+    public let t: Int
+    public let r: Int
+    public let b: Int
+
+    public init(l: Int, t: Int, r: Int, b: Int) {
+        self.l = l
+        self.t = t
+        self.r = r
+        self.b = b
+    }
+}
+
+/// One drawable thing inside a window, as the renderer receives it.
+///
+/// `kind` is the field that decides how it is DRAWN — a checkbox, a radio,
+/// a popup, a push button — and it comes from the IR's semantic evidence
+/// rather than from the role. Absent means the producer could not read the
+/// control's defProc and so cannot say; that is a different fact from
+/// "a plain control", and it is the fact behind a Date & Time panel whose
+/// radios rendered as push buttons.
+public struct AgentIntegrationMirrorSurfaceItem:
+    Codable, Equatable, Sendable {
+    /// `control` or `dialogItem` — different actuation paths on the Mac,
+    /// so never flattened into one list without saying which.
+    public let source: String
+    public let ref: String?
+    public let role: String?
+    public let title: String
+    public let rect: AgentIntegrationMirrorRect?
+    public let enabled: Bool
+    public let visible: Bool
+    public let value: Int?
+    public let checked: Bool?
+    public let kind: String?
+    public let state: String?
+    /// The semantic VALUE — a field's text, a popup's chosen row. The thing
+    /// that was missing from every rendered form in the 2026-08-03 sweep,
+    /// and which no entity-level projection could ever have shown.
+    public let text: String?
+    public let knowledge: String?
+    /// 1-based DITL number, for a dialog item.
+    public let number: Int?
+
+    public init(source: String, ref: String?, role: String?, title: String,
+                rect: AgentIntegrationMirrorRect?, enabled: Bool,
+                visible: Bool, value: Int?, checked: Bool?, kind: String?,
+                state: String?, text: String?, knowledge: String?,
+                number: Int?) {
+        self.source = source
+        self.ref = ref
+        self.role = role
+        self.title = title
+        self.rect = rect
+        self.enabled = enabled
+        self.visible = visible
+        self.value = value
+        self.checked = checked
+        self.kind = kind
+        self.state = state
+        self.text = text
+        self.knowledge = knowledge
+        self.number = number
+    }
+}
+
+/// A window's render-relevant detail, keyed to the entity of the same id.
+public struct AgentIntegrationMirrorSurface:
+    Codable, Equatable, Sendable {
+    public let entityID: String
+    public let title: String
+    public let rect: AgentIntegrationMirrorRect?
+    public let z: Int
+    public let front: Bool
+    public let visible: Bool
+    public let items: [AgentIntegrationMirrorSurfaceItem]
+    /// How many items the window actually has. A bounded list that did not
+    /// say so would read as a complete window with fewer controls than the
+    /// Mac is drawing — the silent-truncation defect this project has
+    /// already paid for once in the Finder's item roster.
+    public let itemTotal: Int
+
+    public init(entityID: String, title: String,
+                rect: AgentIntegrationMirrorRect?, z: Int, front: Bool,
+                visible: Bool, items: [AgentIntegrationMirrorSurfaceItem],
+                itemTotal: Int) {
+        self.entityID = entityID
+        self.title = title
+        self.rect = rect
+        self.z = z
+        self.front = front
+        self.visible = visible
+        self.items = items
+        self.itemTotal = itemTotal
+    }
+}
+
+public struct AgentIntegrationMirrorScreen: Codable, Equatable, Sendable {
+    public let w: Int
+    public let h: Int
+
+    public init(w: Int, h: Int) {
+        self.w = w
+        self.h = h
+    }
+}
+
 public struct AgentIntegrationMirrorSnapshot:
     Codable, Equatable, Sendable {
     public let metadata: AgentIntegrationMirrorSnapshotMetadata
     public let coverage: [AgentIntegrationMirrorCoverage]
     public let entities: [AgentIntegrationMirrorEntity]
     public let menus: [AgentIntegrationMirrorMenu]
+    /// The guest's own screen, so a headless caller can reason about
+    /// geometry at all.
+    public let screen: AgentIntegrationMirrorScreen?
+    /// What the renderer draws inside each window. Absent from this
+    /// projection until 2026-08-05, which made the render workflow —
+    /// read the state, confirm it is there, then implement the drawing —
+    /// impossible for anything but windows and menus.
+    public let surfaces: [AgentIntegrationMirrorSurface]
 
     public init(metadata: AgentIntegrationMirrorSnapshotMetadata,
                 coverage: [AgentIntegrationMirrorCoverage],
                 entities: [AgentIntegrationMirrorEntity],
-                menus: [AgentIntegrationMirrorMenu]) {
+                menus: [AgentIntegrationMirrorMenu],
+                screen: AgentIntegrationMirrorScreen? = nil,
+                surfaces: [AgentIntegrationMirrorSurface] = []) {
         self.metadata = metadata
         self.coverage = coverage
         self.entities = entities
         self.menus = menus
+        self.screen = screen
+        self.surfaces = surfaces
     }
 }
 

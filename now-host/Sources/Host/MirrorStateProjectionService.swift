@@ -156,7 +156,74 @@ final class MirrorStateProjectionService {
         return .init(
             metadata: metadata(projection), coverage: coverage,
             entities: (applications + windows).sorted { $0.id < $1.id },
-            menus: menus)
+            menus: menus,
+            screen: .init(w: projection.scene.screen.w,
+                          h: projection.scene.screen.h),
+            surfaces: surfaces(projection.scene, records: windowRecords))
+    }
+
+    /// **What the renderer draws, for the client that draws nothing.**
+    ///
+    /// Composed from the same `Scene` the renderer composes from, so the
+    /// two cannot disagree about what the Mac is showing. Until this
+    /// existed the projection carried window ENTITIES — id, title, front,
+    /// freshness — and none of the state a person actually reads off a
+    /// window: no rects, no controls, no field values, no dialog items. So
+    /// the workflow this arc exists for, confirm the state is there and
+    /// only then implement the drawing, could not be run for anything but
+    /// windows and menus.
+    private func surfaces(_ scene: MirrorKit.Scene,
+                          records: [MirrorWindowRecord])
+        -> [AgentIntegrationMirrorSurface] {
+        /* Bounded because the protocol caps one message at 64 KB and a
+           Finder window can hold hundreds of rows. The cap is stated in
+           `itemTotal` rather than applied silently: a truncated list that
+           did not say so reads as a window with fewer controls than the
+           Mac is drawing, which is the defect the Finder's own roster
+           paging already had to learn. */
+        let perWindow = 64
+        return scene.windows.map { window in
+            let controls = window.controls.map { control in
+                AgentIntegrationMirrorSurfaceItem(
+                    source: "control",
+                    ref: control.ref.isEmpty ? nil : control.ref,
+                    role: control.role, title: control.title,
+                    rect: control.rect.map(Self.rect),
+                    enabled: control.enabled, visible: control.visible,
+                    value: control.value, checked: control.checked,
+                    kind: control.semantic?.kind,
+                    state: control.semantic?.state,
+                    text: control.semantic?.value,
+                    knowledge: control.semantic?.knowledge.rawValue,
+                    number: nil)
+            }
+            let dialogItems = (window.dialogItems ?? []).map { item in
+                AgentIntegrationMirrorSurfaceItem(
+                    source: "dialogItem",
+                    ref: item.ref, role: nil, title: item.title,
+                    rect: Self.rect(item.rect),
+                    enabled: item.enabled, visible: item.visible,
+                    value: nil, checked: nil,
+                    kind: item.semantic.kind, state: item.semantic.state,
+                    text: item.semantic.value,
+                    knowledge: item.semantic.knowledge.rawValue,
+                    number: item.number)
+            }
+            let all = controls + dialogItems
+            return .init(
+                entityID: records.first {
+                    $0.window.id == window.id
+                }.map { windowID($0.identity) } ?? window.id,
+                title: window.title,
+                rect: Self.rect(window.rect), z: window.z,
+                front: window.front, visible: window.visible,
+                items: Array(all.prefix(perWindow)), itemTotal: all.count)
+        }
+    }
+
+    private static func rect(_ rect: MirrorKit.Rect)
+        -> AgentIntegrationMirrorRect {
+        .init(l: rect.l, t: rect.t, r: rect.r, b: rect.b)
     }
 
     private func metadata(_ projection: MirrorProjection)
