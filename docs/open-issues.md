@@ -14,6 +14,58 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## THE STALE-REF REFUSAL NO LONGER HOLDS THE LANE (2026-08-05)
+
+**Fixed, tested, not yet watched on a live guest.** During the first human
+drive, `winact` refusals against windows the Mirror was still displaying
+held the mutation FIFO for its whole 15 s timeout. Measured in
+`~/Library/Logs/NewOldWorld/acts.log`: a close refused at 02:03:47.753
+held the lane 15 128 ms, and the next click on the same window waited
+8 025 ms behind it. The cause was a substring test — a refusal was
+treated as "the effect may have landed" unless its wording contained
+"was not sent" — so a refusal the guest raised *before* it armed anything
+became non-terminal. The same reading produced a false green: a refused
+close was recorded `confirmedAfterRefusal` 3 ms later, settled by a scene
+that showed the window absent because a PREVIOUS close had closed it.
+
+Two changes, both host-side. A guest act refusal now carries a typed
+`AgentIntegrationProjectionFailure.Reach`, read from whether the guest's
+error carries a correlation — the guest registers one only after
+`now_act_submit`, so its absence is the machine saying nothing was armed.
+And the target is re-read against the newest scene at dispatch time
+rather than the displayed one, so a click that waited in the queue while
+the window closed is refused here instead of on the machine.
+
+Answered along the way, because the arc began by suspecting it: **window
+references do not churn on republish.** The guest interns them
+(`now_obs_intern` / `identity_same` excludes only `minted_ticks`), and one
+token in the same log confirmed an act fifteen seconds and a dozen scene
+generations after it was minted.
+
+Still open from this:
+
+- **Not driven live.** The verification was to be headless
+  (`tools/now-agent mirror_drive`) against a VM. It could not run:
+  another session's NOW host owned TCP 5250 and the local agent endpoint
+  (`/tmp/dev.newoldworld.now-agent-<uid>/host.sock`), the guest dials
+  10.0.2.2:5250 with `auto_connect` on, and launching a guest would have
+  connected it into that other session's host. The VM was stopped rather
+  than pointed at a stranger. What a live drive must show: the refusal
+  class settles in milliseconds, and two quick closes do not stack ~8 s
+  of queue wait.
+- **One call site is unwatched.** Both decisions are functions, each
+  watched to fail by mutation, and the direct path's call site is
+  covered. The BROKERED path's call site is not: the scene fixture
+  carries no incarnations, so no window in it has the stable identity a
+  brokered operation needs, and the test that would cover it has to hold
+  one act in the lane while a second scene arrives.
+- **A guest mis-attribution, noted not fixed.** `now_act_submit` returns
+  `kNowActNoExtension` before it registers a correlation, and
+  `act_cmds.c:546` answers that with `reply_registered_status`, which
+  attaches the PREVIOUS command's correlation. It is conservative for the
+  host rule above — a stale correlation reads as "may have landed", which
+  only costs a wait — but it is wrong.
+
 ## CYCLE 27 RETAINED-STATE CHECKPOINT; TWO ADVANCES, TWO BLOCKERS (2026-08-04)
 
 The exact `d0a3e1a` host was driven through native Mirror mouse input and

@@ -670,6 +670,60 @@ final class NOWMirrorSourceTests: XCTestCase {
             reach: .notSent))
     }
 
+    /// **The guard is reached, not merely present.**
+    ///
+    /// The re-read is covered above as a function and watched to fail by
+    /// mutation, but a function nobody calls passes its own tests — and
+    /// the rule this replaces lived in exactly such an uncalled-looking
+    /// place. So this drives a real source over a scene from the machine
+    /// and clicks a window that scene does not carry.
+    ///
+    /// It exercises the direct path, which is the one this fixture can
+    /// reach: with no incarnations in it, no window has a stable identity
+    /// and nothing brokered can be planned from it. The brokered path's
+    /// own call site is exercised only by hand so far — see
+    /// docs/open-issues.md.
+    func testAStaleClickIsAnsweredWithoutTouchingTheActLane() async throws {
+        let (listener, guest) = try await connectedListener()
+        defer { guest.connection.cancel(); listener.stop() }
+        try await waitUntil("the guest is the active Mac") {
+            listener.activeKey != nil
+        }
+        let key = try XCTUnwrap(listener.activeKey)
+        let harness = CycleHarness(activeKey: key)
+        let source = NOWMirrorSource(
+            listener: listener, engineRegistry: MirrorStateEngineRegistry(),
+            act: testAct(listener), interval: 3_600,
+            finderRefreshOverride: { _, _, completion in completion() },
+            visibilityRefreshOverride: { _, _, completion in completion() },
+            cycleIO: harness.io)
+
+        source.start()
+        harness.completeScene(0, with: .success(try fixtureDelivery(for: key)))
+        let scene = try XCTUnwrap(source.scene)
+        XCTAssertFalse(scene.windows.isEmpty,
+                       "the fixture must carry windows or this asserts "
+                           + "nothing about a window that is missing")
+
+        let gone = MirrorObject.Window(
+            id: "0.1/Gone#0",
+            ref: "now-window-00000000-0000-4000-8000-000000000000",
+            psn: scene.windows[0].psn, title: "Gone",
+            rect: scene.windows[0].rect, kind: scene.windows[0].kind,
+            isFront: false, part: .zoomBox)
+        source.perform(.init(
+            object: .window(gone),
+            gesture: .click(count: 1, mods: 0, at: .init(x: 0, y: 0))))
+
+        XCTAssertTrue(source.lastAct.contains("scene moved on"),
+                      source.lastAct)
+        XCTAssertEqual(source.actTimeline.records.count, 0,
+                       "an act that was never sent has no timing to "
+                           + "report, and reporting one would put a "
+                           + "refusal this side raised into the machine's "
+                           + "own measurements")
+    }
+
     /// Activation names a window too, and it is the same question.
     func testActivationIsRereadLikeAnyOtherWindowAct() throws {
         let scene = try fixtureScene()
