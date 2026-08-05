@@ -52,7 +52,7 @@ is. Slices 0–5 are done. What is NOT:
 |---|---|---|---|
 | 1 | a field-by-field DIFF of the operation record between faces | 009 § Verification, narrowed 2026-08-05 | **DONE (tested).** `MirrorFaceParityTests` drives one interaction through `perform` twice against one engine and diffs the records by reflection, so a field added later cannot escape it. Watched failing on both 2026-08-05 defects and on a synthetic third |
 | 2 | slice 1's page-versus-reply check | slice 1 | compared against a log sharing the same source; testing one half twice. **This is the part that needs the screen** |
-| 3 | `window.display` — per-window QuickDraw ops in the snapshot | slice 2 | **not projected.** The content plane is live (generation 384 on the 2026-08-05 guest), so the drawing IS captured and MCP simply cannot see it |
+| 3 | `window.display` — per-window QuickDraw ops in the snapshot | slice 2 | **projected 2026-08-05** (workstream D), with `kind`, `ref` and `text` — three more of the same omission, found by writing the roster guard. TESTED, not driven live: no VM today |
 | 4 | does the MCP drive path hold an engine? | 2026-08-05 | **ANSWERED: yes, always.** `shadowEngine` and `pinnedGuestKey` are set and cleared together, and a nil pin is refused BEFORE the engine is read — so a nil engine cannot produce `id: "direct"`. The cause was the deferred branch reporting a HELD act as the direct path. Fixed. **No measurement needs re-reading** |
 | 5 | source attribution through a held act | 2026-08-05 | **DONE (tested).** The harness needed the content join left OPEN — that is the deferred case. Green, and watched failing by reverting the argument |
 | 6 | `finderDeselect`; a `dialogItem` that does something | slice 4 | never driven live (the one exercised was a separator) |
@@ -318,6 +318,31 @@ Same omission shape three times in slice 2 (`window.items`, twice; now
 than what the model holds. **Worth fixing the shape, not just the field** —
 a test that walks `Scene.Window`'s stored properties and fails on one the
 projection does not carry would end the class.
+
+**Landed 2026-08-05.** Three things worth carrying forward:
+
+- **The roster found three more omissions immediately.** `kind` (which
+  decides how the window FRAME is drawn), `ref` (whether the window can be
+  addressed at all) and `text` (a dialog's own content) were all missing
+  for the same reason `display` was. Rostering them as declined-with-a-TODO
+  would have made the guard a rubber stamp, so they are projected too. Only
+  `psn`, `addr` and `island` are declined, each with a checkable reason.
+- **The guard needed its own guard.** A roster check that asks whether a
+  key EXISTS passes for a field that arrives empty, which is coverage the
+  roster does not have. Every `.carried` check is therefore also run
+  against a window whose fields are all present and all empty, and must
+  fail there.
+- **The bound had to be measured, and the measurement was the finding.**
+  The item projection alone already encoded **54.6 KB of the 64 KB
+  ceiling** in its worst case, so an independently-bounded addition of any
+  size overflowed it — and overflow is not a truncated reply here, it is
+  the writer throwing and the connection closing with no reply. Item and
+  content families now hold separate stated byte shares of one ceiling.
+  Anything further added to this payload must take a share, not assume
+  headroom: there is none.
+
+**Not verified live.** No snapshot has been read off a real guest with ops
+in it, so the shape is proven and the content is not.
 
 ### E — Slice 6 proper, split by GOAL
 

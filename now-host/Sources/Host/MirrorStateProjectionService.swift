@@ -210,6 +210,8 @@ final class MirrorStateProjectionService {
         let perWindow = 64
         let budget = 240
         var spent = 0
+        var itemBytes = Self.itemBudgetBytes
+        var contentBytes = Self.contentBudgetBytes
         return scene.windows.map { window in
             let controls = window.controls.map { control in
                 AgentIntegrationMirrorSurfaceItem(
@@ -261,17 +263,133 @@ final class MirrorStateProjectionService {
                     state: item.placed ? "placed" : "unplaced",
                     text: item.type, knowledge: nil, number: nil)
             }
+            /* **The drawing itself, which only the Mirror window could
+               see.** `Scene.Window.display` has carried the content
+               plane's QuickDraw ops since slice 2 and this projection
+               never read it, so the one face that draws nothing was also
+               the one face that could not be told what was drawn. That
+               makes slice 6's render rule — replay the ops rather than
+               classify the control — available to a headless caller for
+               the first time. Third instance of the same omission shape;
+               `testEveryWindowFieldIsCarriedOrConsciouslyDeclined` is the
+               guard that is meant to end it. */
+            let display = window.display.map {
+                Self.replayable($0, within: &contentBytes)
+            }
             let all = controls + dialogItems + finderItems
             let room = max(0, min(perWindow, budget - spent))
-            spent += min(all.count, room)
+            let candidates = Array(all.prefix(room))
+            let items = Array(candidates.prefix(
+                Self.affording(candidates, within: &itemBytes)))
+            spent += items.count
             return .init(
                 entityID: MirrorEntityID.window(window, in: scene)
                     ?? window.id,
                 title: window.title,
                 rect: Self.rect(window.rect), z: window.z,
                 front: window.front, visible: window.visible,
-                items: Array(all.prefix(room)), itemTotal: all.count)
+                items: items, itemTotal: all.count,
+                display: display,
+                /* The TRUE count, always — `display.count` short of this
+                   is a bounded tail and the caller can see exactly that. */
+                displayTotal: window.display?.count,
+                /* Found by the roster test rather than by a reader: the
+                   same omission as `display`, one field over. `kind`
+                   decides how the FRAME is drawn, `ref` says whether the
+                   window can be addressed at all, and `text` is a dialog's
+                   own content — none of which the entity list can hold. */
+                kind: window.kind,
+                ref: window.ref.flatMap { $0.isEmpty ? nil : $0 },
+                text: window.text.map {
+                    Self.windowText($0, within: &contentBytes)
+                })
         }
+    }
+
+    /* **One ceiling, and every family gets a STATED share of it.**
+
+       The protocol caps a message at 64 KB, and past that the writer
+       throws and the connection closes with NO reply — so `snapshot`
+       stops answering while `status` still does, which reads as a broken
+       host rather than an oversized payload (open-issues, 2026-08-05).
+
+       These are byte budgets rather than counts because an element's size
+       is not something this side controls: a `text` draw op carries an
+       arbitrary DrawString, a TE body has no promised length, and a
+       control's semantic value is whatever the panel put there. A count
+       that comfortably fits three hundred short ops overflows the same
+       ceiling on three hundred long strings.
+
+       They are also SEPARATE budgets rather than one shared pool, because
+       a shared pool would let the first family served starve the rest —
+       and the measured worst case says that is not hypothetical: the item
+       projection alone encoded 54.6 KB of the 64 KB ceiling before any of
+       this was added, so an independently-bounded addition of any size
+       overflowed it. Both numbers are pinned by
+       `testAWholeSceneOfItemsAndDrawOpsStillFitsOneMessage`, which
+       measures rather than reasons; the rest of the ceiling is the
+       snapshot's metadata, entities and menus. */
+    private static let itemBudgetBytes = 40 * 1024
+    private static let contentBudgetBytes = 12 * 1024
+
+    /// The window's drawing, bounded — **newest last, oldest dropped
+    /// first.**
+    ///
+    /// That is the producer's own rule when its 600-op accumulator
+    /// overflows, and it is the one that survives a replay: later ops
+    /// paint over earlier, so a tail still reaches the state the window is
+    /// in, where a head stops partway through a redraw that has since been
+    /// painted over.
+    private static func replayable(_ ops: [MirrorKit.DisplayOp],
+                                   within budget: inout Int)
+        -> [AgentIntegrationMirrorDisplayOp] {
+        let newestFirst = ops.reversed().map(displayOp)
+        let fits = affording(newestFirst, within: &budget)
+        return Array(newestFirst.prefix(fits).reversed())
+    }
+
+    /// How many of `values`, in the order given, the remaining budget can
+    /// afford — measured by encoding them, because the failure this
+    /// prevents is counted in real bytes and an estimate that is wrong in
+    /// the cheap direction is what a 64 KB ceiling punishes.
+    private static func affording<T: Encodable>(_ values: [T],
+                                                within budget: inout Int)
+        -> Int {
+        let encoder = JSONEncoder()
+        var fits = 0
+        for value in values {
+            // +1 for the array separator this element brings with it.
+            let size = ((try? encoder.encode(value).count) ?? 0) + 1
+            guard size <= budget else { break }
+            budget -= size
+            fits += 1
+        }
+        return fits
+    }
+
+    /// A TE body, bounded, with its true length beside it.
+    private static func windowText(_ text: MirrorKit.Scene.TextContent,
+                                   within budget: inout Int)
+        -> AgentIntegrationMirrorWindowText {
+        /* 64 bytes covers the wrapper keys, and the /4 is the worst case
+           for a multi-byte character — pessimistic only once the budget is
+           nearly gone, which is exactly when pessimism is the safe error. */
+        let room = max(0, min(2048, (budget - 64) / 4))
+        let projected = AgentIntegrationMirrorWindowText(
+            content: String(text.content.prefix(room)),
+            active: text.active, contentTotal: text.content.count)
+        let size = ((try? JSONEncoder().encode(projected).count) ?? 0) + 1
+        budget = max(0, budget - size)
+        return projected
+    }
+
+    private static func displayOp(_ op: MirrorKit.DisplayOp)
+        -> AgentIntegrationMirrorDisplayOp {
+        .init(op: op.op, ticks: op.ticks, text: op.text, pen: op.pen,
+              font: op.font, size: op.size, face: op.face, verb: op.verb,
+              rect: op.rect, ext: op.ext, from: op.from, to: op.to,
+              kind: op.kind, origin: op.origin, rgb: op.rgb, src: op.src,
+              dst: op.dst)
     }
 
     /// The journal's own record, rendered. `target` and `postcondition`
