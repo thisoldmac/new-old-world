@@ -47,9 +47,16 @@ date: 2026-08-04
   is not on the machine, a dialog item that does not exist, and an unpublished
   window each refuse by name and say where to look.
 
-  **Still owed:** the paired hand-versus-MCP comparison (§ Verification), and
-  slices 5, 5b and 6. Not yet driven live: `finderDeselect`, and `dialogItem`
-  against an item that does something (the one exercised was a separator).
+  Slice 5 ran on 2026-08-05 and produced
+  [the element gap ledger](../mirror-element-coverage.md): 62% of items carry
+  no determined kind, a known `listBox` carries no cells, and dialog items are
+  addressable 75/186 against controls at 96/122.
+
+  **Still owed:** the paired hand-versus-MCP comparison (§ Verification);
+  slice 1's page-versus-reply check, which was compared against a log sharing
+  the same source; slice 2's `window.display` debt; and slices 5b and 6. Not
+  yet driven live: `finderDeselect`, and `dialogItem` against an item that
+  does something (the one exercised was a separator).
 
 ---
 
@@ -89,7 +96,7 @@ Three consequences, and every slice below is one of them:
 
 ## Slices
 
-### Slice 0 — metrics (done, unproven live)
+### Slice 0 — metrics · **DONE, proven live**
 
 `now_mirror_metrics`: both clock families and the lane depth. Landed at
 `cafa61e`. Metrics answer even when no scene has arrived (a declined or
@@ -98,10 +105,10 @@ timed-out walk is exactly when the numbers matter); an absent measurer is
 Mirror, or asking what was measured would create the measurer and return an
 empty answer that reads like a quiet machine.
 
-**Owed:** one end-to-end call over the agent socket. Until then this is
-*tested*, not *works* — the distinction AGENTS.md asks for.
+Answered over the agent socket from a live host on 2026-08-05, so this is
+*works* and not merely *tested*.
 
-### Slice 1 — prove the socket, and give the arc its harness
+### Slice 1 — prove the socket, and give the arc its harness · **DONE**
 
 A small host-side client that speaks the agent unix socket
 (`$TMPDIR/dev.newoldworld.now-agent-<uid>/host.sock`), so every later slice can
@@ -109,17 +116,27 @@ be verified headless rather than by eye. This is also the benchmark driver:
 scripted, repeatable, and — once slice 3 lands — driving the same path a hand
 does.
 
-Done means: `now_mirror_metrics` answered over the socket from a live host, and
-the reply's numbers match the Mirror page's for the same moment.
+`tools/now-agent` landed at `ef955b3`; `now_mirror_metrics` answered from a
+live host. It also found two things no test had: an empty answer could not be
+told from a Mirror that never ran (hence `running`), and there was no way to
+open the Mirror without a click, so a headless run could reach a state no call
+of its own could leave (hence `--open-mirror`).
 
-### Slice 2 — the snapshot carries the renderer's whole input
+**Still owed, and not quietly closed:** the reply was compared against the
+`NOWBASE` lines in `acts.log`, which derive from the same records — that is
+testing one half twice. Confirming the Mirror PAGE shows the same numbers at
+the same moment needs the screen.
 
-Today `now_mirror_snapshot` carries process and window *entities*, coverage and
-the menu bar. It does not carry window rects or z, controls (kind, title,
-value, rect, enabled, ref), dialog items, desktop items, screen size, or the P3
-content plane. Those are exactly the things the drive loop scores — a field
-whose value is missing, a checkbox drawn as a push button, a label truncated
-mid-word — so the render workflow in consequence (1) is impossible today.
+### Slice 2 — the snapshot carries the renderer's whole input · **DONE, with debt**
+
+Before this slice `now_mirror_snapshot` carried process and window *entities*,
+coverage and the menu bar — and not window rects or z, controls, dialog items,
+desktop items, or screen size. Those are exactly what the drive loop scores: a
+field whose value is missing, a checkbox drawn as a push button, a label
+truncated mid-word. So the render workflow in consequence (1) was impossible
+for anything but windows and menus. Landed `2909299`; surfaces now carry
+geometry, controls, dialog items and Finder items with the semantic `kind`,
+`state` and `value`.
 
 Projected from the same engine snapshot the renderer composes from, so the two
 cannot disagree.
@@ -140,7 +157,7 @@ is empty from NOW's producer. The window hides it behind positional resolution;
 an agent will be able to see a control it cannot name. Record it, do not paper
 over it — slice 3 depends on it.
 
-### Slice 3 — one executor behind both mutation faces
+### Slice 3 — one executor behind both mutation faces · **DONE, proven live**
 
 `now_mirror_act` builds an `Interaction` against scene-object identity, runs it
 through `MirrorActionExecutor` and the broker, and returns the `MirrorOperation`
@@ -152,7 +169,7 @@ answer the UI gets.
 A dispatch still may not claim an effect. That rule is older than this arc and
 survives it.
 
-### Slice 4 — the remaining rows
+### Slice 4 — the remaining rows · **DONE, proven live**
 
 Cheap once slice 3 exists, and mechanical:
 
@@ -167,7 +184,7 @@ Resident identity is worth its own line: on 2026-08-04 a PowerBook with an old
 refused as *the anchor plane is absent or not armed*, and the host knew the
 resident's build the whole time without saying it.
 
-### Slice 5 — the control-panel corpus, and the gap ledger
+### Slice 5 — the control-panel corpus, and the gap ledger · **DONE**
 
 **Parity is a floor, not a ceiling, and this is the slice that says so.** The
 renderer and MCP read the same IR; if the producer never captured a list's
@@ -194,6 +211,13 @@ on every OS 9 machine, so a captured scene is a permanent regression fixture in
 a way "whatever was open that day" never is. Capture them **garbage and all** —
 Mirror's corpus rule is explicit that a corpus of only healthy scenes tests
 nothing.
+
+**Ran 2026-08-05** with `tools/mirror-corpus`; the ledger is
+[mirror-element-coverage.md](../mirror-element-coverage.md). Ten captures, 308
+items across seven distinct panel windows, and it falsified two of this plan's
+own claims — see that document's "Two claims of mine the corpus falsified".
+Known limits of the run: captures are cumulative (panels were left open), two
+panels never launched, and no memory-discovery pass has happened.
 
 Pick for **variety of control class**, not for ten panels: Extensions Manager
 (the best real list on the machine), Monitors and Sound (lists and sliders),
@@ -229,7 +253,7 @@ a control here and could not determine its kind" would make the coverage gap
 visible in the data instead of inferred from a bad-looking render. That is the
 cheapest move in this whole arc and it introduces no new mechanism.
 
-### Slice 5b — the event tail: what memory cannot hold
+### Slice 5b — the event tail: what memory cannot hold · **NOT STARTED**
 
 **Memory answers "what is"; events answer "what happened",** and a class of
 thing has no answer to the first question at all:
@@ -286,7 +310,7 @@ records how a window came to look that way rather than only how it ended up,
 which is exactly the evidence a producer gap and a sampling gap are told apart
 by.
 
-### Slice 6 — close the gaps, metal-first
+### Slice 6 — close the gaps, metal-first · **NOT STARTED**
 
 **Re-ordered 2026-08-05 by what the corpus actually said.** The honesty bullet
 this slice used to open with is void: the producer ALREADY emits
