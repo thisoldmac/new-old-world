@@ -181,10 +181,17 @@ def main() -> int:
                         help="mirror_read wait: afterSnapshotID")
     parser.add_argument("--timeout-ms", type=int,
                         help="mirror_read wait: timeoutMs")
+    # The gesture NAMES are not validated here — the host's own vocabulary
+    # is the authority and this tool must not learn a copy of it (a verb the
+    # host gained this morning stays reachable from a script written last
+    # month). So this string is documentation, and documentation of an
+    # enumeration rots: it was missing dialogItem, appleMenuItem and
+    # finderDeselect for three slices before anyone noticed.
     parser.add_argument("--gesture",
                         help="mirror_drive: select|close|zoom|activate|"
                              "menuItem|hide|hideOthers|showAll|key|type|"
-                             "finderOpen|finderSelect")
+                             "finderOpen|finderSelect|finderDeselect|"
+                             "dialogItem|appleMenuItem|cancel")
     parser.add_argument("--entity", help="mirror_drive: published entity id")
     parser.add_argument("--menu", type=int, help="mirror_drive: menu id")
     parser.add_argument("--item", type=int, help="mirror_drive: 1-based item")
