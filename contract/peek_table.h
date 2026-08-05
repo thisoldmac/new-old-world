@@ -690,6 +690,95 @@ typedef struct {
     NowPeekSemanticRecord records[kNowPeekSemanticMaxRecords];
 } NowPeekSemanticCell;
 
+/* P2's SECOND cell: batched control classification.
+   ------------------------------------------------------------------
+   The cell above answers one question about one object. That is the
+   right shape for a list or a menu - the answer is large and the
+   question is rare - and the wrong shape for control classification,
+   where the answer is 48 bytes and the question is asked of every
+   control on the screen. A ten-panel corpus measured on 2026-08-05
+   made the difference concrete: of 122 Control Manager controls,
+   exactly ONE carried a determined kind. The classifier was never
+   missing; it was starved by a transport that could ask about one
+   control per scene and had to spend that one request on the list
+   cells and menu rows that expire fastest.
+
+   Classification is also the only P2 fact that is a PREREQUISITE for
+   another: a list request cannot be made until a control is known to
+   be a list box. Starving it stalls the plane behind it.
+
+   Why a batch is not a bounds increase. Serving one class request
+   already walks up to kSemanticWalkMax controls to prove the requested
+   one is live and in the window, then discards the walk and classifies
+   a single control. This cell keeps that one walk and classifies up to
+   32 of the controls it already enumerated, so a 32-control window
+   costs ONE walk instead of 32. The resolver's own bound - at most 32
+   classifications and at most 32 copied text bytes each - is the bound
+   already granted to the list-cell and menu-row resolvers in
+   docs/p2-semantic-evidence.md. The per-fact cost falls; it does not
+   rise.
+
+   Why a second cell rather than a bigger one. `semantic` is not at the
+   table's tail: act_v2 and event_block follow it, and the assert below
+   pins act_v2 to semantic's end. Widening the record or the cell would
+   move both and break an older reader silently - which is the reason
+   act_v2 was itself appended rather than grown. So this is accretive,
+   at the tail, gated by length plus its own format word. An older or
+   shorter resident simply does not have it, and the application falls
+   back to the single-control op with no loss of correctness. */
+enum {
+    kNowPeekSemanticBatchFormatNone = 0,
+    kNowPeekSemanticBatchFormatV1 = 1
+};
+
+/* Same 48 bytes as NowPeekSemanticRecord, and deliberately NOT that
+   type. A batched reply describes MANY controls, so every record has to
+   name the one it describes. `control` is that name: the exact
+   ControlRef the resident classified, echoed as evidence. It is never a
+   walk ordinal - an ordinal would require both sides to derive the same
+   traversal order and would attach a role to the wrong control, in
+   silence, the day they diverged. */
+typedef struct {
+    NowPeekU32 control;
+    NowPeekU16 kind;
+    NowPeekU16 status;
+    NowPeekU32 flags;
+    NowPeekU16 text_length;
+    NowPeekU16 text_copied;
+    unsigned char text[kNowPeekSemanticTextMax];
+} NowPeekSemanticClassRecord;
+
+/* Same request/reply discipline as the cell above, and the same reader
+   rule: copy only between two equal even generation reads, then recheck
+   every echoed identity. The request names a WINDOW rather than an
+   object, because the batch's subject is the window's control
+   hierarchy. `request_start` is the 0-based walk ordinal to resume
+   from, so a window with more controls than fit in one reply is drained
+   by successive requests instead of truncated forever;
+   response_total_count reports how many the walk found in all. */
+typedef struct {
+    NowPeekU32 request_generation;
+    NowPeekU32 request_writer_epoch;
+    NowPeekU32 request_target_a5;
+    NowPeekU32 request_scene_generation;
+    NowPeekU32 request_window;
+    NowPeekU32 request_start;
+    NowPeekU32 request_deadline_ticks;
+
+    NowPeekU32 response_generation;
+    NowPeekU32 response_request_generation;
+    NowPeekU32 response_status;
+    NowPeekU32 response_writer_epoch;
+    NowPeekU32 response_target_a5;
+    NowPeekU32 response_scene_generation;
+    NowPeekU32 response_window;
+    NowPeekU32 response_start;
+    NowPeekU32 response_served_ticks;
+    NowPeekU16 response_record_count;
+    NowPeekU16 response_total_count;
+    NowPeekSemanticClassRecord records[kNowPeekSemanticMaxRecords];
+} NowPeekSemanticBatchCell;
+
 /* V2 continuation of NowPeekActCell. It lives at the END of NowPeekTable:
    growing the embedded V1 cell would move content_block and every U2/U3
    field, silently breaking an older reader. The request identity is written
@@ -808,6 +897,13 @@ typedef struct {
        every other plane carries past. 0 means the plane is absent, which
        is what an older resident reports simply by being shorter. */
     NowPeekU32 event_block;
+    /* U7 P2 append. The second P2 cell, not a second plane: it is armed
+       by kNowPeekTableCapTree like the first and gated by length plus
+       the format word beside it. A resident that predates it is shorter
+       and says so by being shorter. */
+    NowPeekU16 semantic_batch_format;
+    NowPeekU16 semantic_batch_length;
+    NowPeekSemanticBatchCell semantic_batch;
 } NowPeekTable;
 
 /* The offsets ARE the contract; a drift here is a defect on the other
@@ -905,7 +1001,8 @@ _Static_assert(sizeof(NowPeekActV2Cell) == 32 * 4,
    this line, and that is the point: it is the one assert that notices a
    field added anywhere but the tail. */
 _Static_assert(sizeof(NowPeekTable)
-                   == offsetof(NowPeekTable, event_block) + 4,
+                   == offsetof(NowPeekTable, semantic_batch)
+                    + sizeof(NowPeekSemanticBatchCell),
                "table size");
 _Static_assert(sizeof(NowPeekSemanticRecord) == 48,
                "semantic record size");
@@ -920,6 +1017,30 @@ _Static_assert(offsetof(NowPeekSemanticCell, records) == 80,
 _Static_assert(sizeof(NowPeekSemanticCell)
                    == 80 + 48 * kNowPeekSemanticMaxRecords,
                "semantic cell size");
+
+/* P2's second cell. The batch record is the same 48 bytes as the record
+   above - one 32-bit control name in place of the index/aux pair - so a
+   reader that knows one record's width is not surprised by the other's,
+   and neither compiler pads either. The cell's header is 16 four-byte
+   fields plus one 16-bit pair: 68, which is 4-aligned, so the record
+   array starts clean. */
+_Static_assert(sizeof(NowPeekSemanticClassRecord) == 48,
+               "semantic class record size");
+_Static_assert(offsetof(NowPeekSemanticClassRecord, text) == 16,
+               "semantic class record text offset");
+_Static_assert(offsetof(NowPeekSemanticBatchCell, records) == 68,
+               "semantic batch records offset");
+_Static_assert(sizeof(NowPeekSemanticBatchCell)
+                   == 68 + 48 * kNowPeekSemanticMaxRecords,
+               "semantic batch cell size");
+/* The append is at the tail, after P5's one word - so every offset
+   above, including act_v2's, is byte-for-byte what it was. */
+_Static_assert(offsetof(NowPeekTable, semantic_batch_format)
+                   == offsetof(NowPeekTable, event_block) + 4,
+               "semantic batch append offset");
+_Static_assert(offsetof(NowPeekTable, semantic_batch)
+                   == offsetof(NowPeekTable, semantic_batch_format) + 4,
+               "semantic batch cell offset");
 
 _Static_assert(offsetof(NowPeekTable, event_block)
                    == offsetof(NowPeekTable, act_v2)
