@@ -1110,6 +1110,24 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 if let correlation = self.planCorrelation {
                     self.track(correlation, label: label)
                 }
+                /* **The other half of the acts.** Only a handful of plans
+                   need a typed postcondition and therefore the FIFO; move,
+                   resize, select, control clicks, keystrokes and most menu
+                   commands dispatch straight from here. Measuring only the
+                   brokered ones would have described a machine whose
+                   commonest gestures are free — and the acts that filled
+                   the 2026-08-04 PowerBook log were almost all of this
+                   kind. There is no queue wait to report because this path
+                   never queues, and no settle time because nothing here
+                   claims an observed effect. */
+                self.actTimeline.record(.init(
+                    kind: .released, operationID: "direct",
+                    label: label,
+                    outcome: complaint == nil ? .dispatched : .refused,
+                    queueDepthAtEntry: 0,
+                    enqueuedAt: started, dispatchStartedAt: started,
+                    dispatchReturnedAt: Date(), settledAt: nil,
+                    releasedAt: Date()))
                 ActLog.note(action: "\(label)  plan=\(plan)",
                             outcome: complaint ?? self.planSettlement,
                             ms: Int(Date().timeIntervalSince(started) * 1000))
