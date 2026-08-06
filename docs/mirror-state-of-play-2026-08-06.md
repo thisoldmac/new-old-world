@@ -59,6 +59,19 @@ All of it emulator-only.
 
 ### 1. Window interiors are blank or hatched — and this is the biggest one
 
+> **SUPERSEDED, later the same day (2026-08-06).** This section was
+> written before the composition arc merged into
+> `claude/gworld-interior-host-render-98ddd5`. The experiment below is
+> answered and outcome 1 shipped: an offscreen world's per-item drawing
+> IS recoverable, worlds are hooked at birth by a `_QDExtensions`
+> (`$AB1D`) patch in the target's own context, and the host re-homes the
+> held ops into the window — nested worlds included. What remains true
+> is the *evidence class*: all of it is emulator-only, and **the live
+> host application has never been watched composing.** Read
+> [render-composition.md](render-composition.md) and
+> [status.md](status.md) for the current picture; the paragraph below is
+> kept because it is the measurement that motivated the arc.
+
 The OS 9 Finder composites its icon views into an **offscreen GWorld**
 and `CopyBits` the finished composite into the window, so the content
 plane sees one opaque rectangle instead of icons and labels. Measured on

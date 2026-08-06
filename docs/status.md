@@ -35,10 +35,21 @@ says so at the point of claim rather than in a footnote.
   `knowledge: unknown`**, which is the root of most remaining Mirror
   render defects, and the file carries the diagnosis as well as the
   count.
-- [docs/gworld-probe-brief.md](gworld-probe-brief.md) is the open
-  experiment behind most blank and hatched window interiors: whether an
+- [docs/gworld-probe-brief.md](gworld-probe-brief.md) was the open
+  experiment behind most blank and hatched window interiors — whether an
   offscreen GWorld's drawing can be seen at all, or whether pixels are
-  the only answer.
+  the only answer. **It is ANSWERED as of 2026-08-06** and the page says
+  so at its top: the drawing is recoverable, and the composition arc
+  shipped it. Read it as a brief that was closed, not as work waiting.
+  The architecture that came out of it is
+  [render-composition.md](render-composition.md).
+- The two pages written as dated snapshots during the 2026-08-05/06
+  session — [mirror-state-of-play-2026-08-06.md](mirror-state-of-play-2026-08-06.md)
+  and [mirror-drive-loop.md](mirror-drive-loop.md) — both name blank
+  window interiors as the largest live defect. **That was true when they
+  were written and is superseded by the composition arc landing on the
+  same day.** Each now carries a dated correction at the point of the
+  claim; this file outranks both.
 - [docs/contract-coverage.md](contract-coverage.md) is the inventory of
   who serves what, per guest, message by message.
 - [docs/mcp-coverage.md](mcp-coverage.md) is the other half of that: what

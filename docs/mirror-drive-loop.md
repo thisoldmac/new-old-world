@@ -14,7 +14,11 @@ functional, accurate mirror of the guest** — one a person can operate.
 once: what is already known to be wrong, so a cycle is not spent
 rediscovering it. Three things in particular will cost you a pass each
 if you meet them cold — blank window interiors (an offscreen GWorld,
-[gworld-probe-brief.md](gworld-probe-brief.md)), widgets drawn as the
+[gworld-probe-brief.md](gworld-probe-brief.md); **that brief is answered
+and the composition arc shipped its outcome on 2026-08-06, so an
+interior you find blank today is a NEW observation, not this known
+one** — and the host app has never been watched composing live, so
+expect to be the first), widgets drawn as the
 wrong widget (62% of elements have no determined kind,
 [mirror-element-coverage.md](mirror-element-coverage.md)), and a clone
 on which no foreign process binds (`actselftest` →

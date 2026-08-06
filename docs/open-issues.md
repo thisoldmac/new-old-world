@@ -923,13 +923,23 @@ first; it is the short version of this list with the wins beside it.
    scene, and 121 controls never got one (2026-08-05)"* below, which is
    marked fixed-pending-verification and is **not** the whole of row 2.
 
-**And one open experiment, which is not a defect.** Most blank and
-hatched window interiors trace to the OS 9 Finder compositing its icon
-views in an offscreen GWorld — 25 ops and zero text for a full repaint.
-Whether that is recoverable semantically is one unanswered question with
-a written brief: [gworld-probe-brief.md](gworld-probe-brief.md). It is
-an experiment to run before it is an architecture to design, and as of
-2026-08-06 a separate worktree owns it — check before starting.
+**The open experiment that used to be item 5 is CLOSED (updated
+2026-08-06, after the merge).** Most blank and hatched window interiors
+traced to the OS 9 Finder compositing its icon views in an offscreen
+GWorld — 25 ops and zero text for a full repaint. Whether that was
+recoverable semantically was the one unanswered question here, with a
+written brief: [gworld-probe-brief.md](gworld-probe-brief.md). **It is
+answered and outcome 1 shipped.** The brief's own header says so; the
+architecture is [render-composition.md](render-composition.md). Do not
+start it.
+
+5. **What replaces it: nothing in the composition arc has been watched
+   in the live host application.** Every composition result comes from
+   replaying committed captures inside tests, and every guest-side
+   number is QEMU mac99. That is the single largest gap in the arc that
+   just landed, and it is a *watching* task, not a building one — see
+   *"Nothing in the content-plane arc has touched metal (2026-08-06)"*
+   at the foot of this file, which is the fuller statement.
 
 ## FIXED in the host and the guest, UNVERIFIED by any drive: an alert rendered the wrong buttons, and they did nothing (2026-08-06)
 
@@ -11974,3 +11984,37 @@ A PowerBook 1400c is far slower than the emulator, and a trap patch on
 `_QDExtensions` in a foreign process is the highest-risk thing here.
 Treat every number in this arc as an emulator number until someone
 writes a line below this one saying otherwise.
+
+### A green suite plus a green suite is not a green tree (2026-08-06)
+
+Recorded as a defect class rather than as a fix, because the fix was
+nine lines and the class has now cost this session twice.
+
+Two branches were each green alone. One added a second `swift test`
+pass with `NOW_MIRROR_ASSETS=none`, so the degradation path is watched
+rather than assumed. The other added seven `RendererTextFidelityTests`
+that assert against the guest's own font strikes, which live in the
+asset pack. Neither tree could run the other's half, so **the merged
+tree was the first place the pair could meet** — and it met as eighteen
+failures reading "the renderer is broken" when they meant "the
+dependency is absent". They now skip by name through the same contract
+the MirrorKit suite uses: a VISIBLE skip when the pack is absent, a
+FAILURE when `NOW_REQUIRE_ASSET_PACK` says a machine that has the pack
+should be biting (commit `d18ab259`).
+
+The general shape, which is worth more than this instance: **a test's
+hidden dependency is invisible until something removes it, and a
+parallel branch is the thing most likely to remove it.** A merge of two
+green branches deserves a full gate run on the merged tree before it is
+called green, and this closing pass exists partly for that.
+
+### The closing pass on the merged tree (2026-08-06)
+
+`scripts/test-all` was run against the tree with all ten agent branches
+and the perf thread merged. Status is recorded in the session's handoff
+([plans/2026-08-06-016-handoff.md](plans/2026-08-06-016-handoff.md)),
+including which stage, if any, needed a `--skip` and why.
+
+Nothing in this closing pass changed behaviour. Nothing in it is
+metal-verified, and the live host application has still never been
+watched composing an interior.
