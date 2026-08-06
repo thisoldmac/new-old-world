@@ -32,6 +32,30 @@ Cycle 18 is a SCORING exercise, and a machine that wedges cannot be
 scored — so survivability precedes fidelity, and 011 is deliberately
 narrow so it does not become this plan.
 
+**Update, later on 2026-08-05: the survivability detour is far enough
+along that scoring can resume.** 011 § A and § F landed — the lane is
+bounded and cancellable, and `serve` has a test seam, so a fix in that
+band can be told from its neighbours. A deliberate re-drive of the same
+wedge: **five acts across it answered in 2.1 s, none blocked**, against
+87.5 s before.
+
+It also found something 011 could not fix, which became
+[012, Liveness below the application](2026-08-05-012-feat-liveness-below-the-application-plan.md):
+the guest's deafness OUTLIVES the host's 75 s silence window, so the wire
+died against a healthy Macintosh. 012's host half is done — a starved Mac
+is now told apart from a gone one and the Mirror says which — and its
+guest half is parked: the resident cannot be an OT client from a flat
+INIT (a linker fact, not a metal one), and its interrupt-time vehicle
+hung a boot and ships disarmed. See
+[docs/local/012-liveness-handoff.md](../local/012-liveness-handoff.md).
+
+**What that means for THIS plan: nothing is blocked.** A modal still ends
+a session when the extension cannot answer for the machine, and that is a
+known, documented gap rather than a wedge that stops work — the drive
+loop's own rule is to record a blocker and step over it. U2 and U6 are
+the live work, and **the Cycle 18 re-score is still the first thing U6
+should do.**
+
 **The Problem Frame below has aged well, which is the useful part.** Its
 three named symptoms were re-observed by a person on 2026-08-05, two days
 after they were written: Date & Time's controls, a popup that invokes the
