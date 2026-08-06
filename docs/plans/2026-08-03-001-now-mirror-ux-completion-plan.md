@@ -49,6 +49,18 @@ INIT (a linker fact, not a metal one), and its interrupt-time vehicle
 hung a boot and ships disarmed. Its "Picking this up cold" section
 carries the state, the two named suspects and the rig commands.
 
+**Update, 2026-08-06: two more subordinate slices, both landed.**
+[013, A guest that notices instead of polling](2026-08-06-013-feat-a-guest-that-notices-instead-of-polling-plan.md)
+took the guest's own cost apart, and
+[014, A frame that does not wait for the Finder](2026-08-06-014-feat-a-frame-that-does-not-wait-for-the-finder-plan.md)
+took the host's: the Mirror's cycle went from a 364 ms median to 25 ms,
+and the symptom it was chasing — acts refusing because a long cycle
+lapsed the act plane's ten-second lease — has its cause removed. Both
+are emulator-verified and neither has run on metal. Relevant here
+because a re-score is only meaningful on a machine whose acts bind; the
+one thing still unproven is Michelle's own dialog act, which a drive
+should re-test first.
+
 **What that means for THIS plan: nothing is blocked.** A modal still ends
 a session when the extension cannot answer for the machine, and that is a
 known, documented gap rather than a wedge that stops work — the drive

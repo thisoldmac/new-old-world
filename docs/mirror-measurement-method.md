@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-31, extended 2026-08-06 · **Status:** recorded
 knowledge. Rules 1–12 are **inherited** from the parked upstream project
-`timbottu/mirror`, mostly dug out of its 55 KB `STATUS.md`. Rules 13–18
+`timbottu/mirror`, mostly dug out of its 55 KB `STATUS.md`. Rules 13–19
 are **NOW's own**, paid for in a single night, and they are the reason
 this file no longer carries Mirror's name in its title.
 
@@ -181,8 +181,8 @@ operation `5`.
 
 ## The rules NOW paid for itself
 
-Rules 1–12 came in from outside. **13–18 were bought here**, all of them
-on the night of 2026-08-05/06, and all of them the same shape: the
+Rules 1–12 came in from outside. **13–19 were bought here**, all of them
+on 2026-08-05/06, and all of them the same shape: the
 instrument was wrong, and the wrong answer it gave was plausible enough
 to act on. Between them they cost this project four wrong conclusions,
 two of which were written down and had to be retracted.
@@ -240,6 +240,18 @@ The name was accurate when the bracket was written. Nothing renamed it
 when the waits moved inside. Check what a timer *encloses* before
 quoting it, not what it is called.
 
+**Split, and answered live the same day.** Once the bracket was broken
+into its four stages, one run (n=85, Finder healthy) said which one it
+was: `dc_vis_ms` **338 ms of a 353 ms median — ~96%** — the visibility
+census, paid every cycle for state that changes only when a process
+starts, quits, hides or shows. This side's own CPU was 9 ms. Nobody had
+guessed the census; the three arguments in flight were all about the
+icon roster, which measures **0 ms** until the layout changes. The
+lesson under the lesson: splitting a bracket is cheap, and it beats
+arguing about which of its parts is the expensive one. Evidence and the
+after-numbers are in [open-issues.md](open-issues.md) under *"ANSWERED,
+live (2026-08-06): the visibility census dominates"*.
+
 ### 16. A check next to the question is not the question
 
 Three stage images were preserved **dirty**, and the two receipts that
@@ -293,6 +305,34 @@ A heartbeat must be driven by the condition it asserts, and by nothing
 else. If it is renewed by the peer's traffic, it is a traffic detector
 wearing a heartbeat's name.
 
+### 19. The end of a shared log is not your run
+
+`acts.log` is appended to by **every** host process on this Mac, and its
+`NOWBASE cycle` lines carry no guest identity — no wire port, no guest
+build, no pid. Reading the tail of that file therefore answers "what did
+some host do most recently", which is a different question from "what
+did the build I just made do".
+
+The bill: the four stage fields of rule 15 were reported **absent from
+every live cycle**, an instrument-is-broken finding, written into a plan
+as its blocking §1. The instrument was fine. The last `cycle` line in
+the file was written at `13:58:19`; the app containing the new fields
+started at `13:58:24` and had not yet run a cycle. Every line examined
+predated the code being examined. (`nm` on the packaged executable
+showed the symbol present all along.)
+
+What makes it worth a rule of its own is *who* paid it: the session
+reading the log had, hours earlier, written the rule that a shared
+surface has to be attributed before it can be quoted (drive-loop §2m).
+Knowing the rule is not the same as having a habit that applies it.
+
+So: attribute a reading before believing it. A mark you wrote yourself,
+a process start time, a guest build stamp — something that ties the line
+to the run. And prefer instruments that carry their own identity: the
+metal gates already refuse a guest that is not the build under test
+(`requireTheBuildUnderTest()`), and a log line that named its guest
+would have made this impossible rather than merely avoidable.
+
 ## What this looks like in NOW
 
 NOW already holds the same convictions from its own scars — the contract
@@ -301,7 +341,7 @@ verification is a status and not an adjective. Rules 1–12 are the same
 lessons learned on a different machine, and the ones NOW did not already
 have written down are **1, 2, 4, 6 and 11.**
 
-Rules 13–18 it now has written down because it made them. The
-transferable core of all six, and the sentence worth carrying out of
+Rules 13–19 it now has written down because it made them. The
+transferable core of all seven, and the sentence worth carrying out of
 this file: **before believing a number, say what the instrument could
 not have seen.**

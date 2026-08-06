@@ -67,6 +67,44 @@ says so at the point of claim rather than in a footnote.
   emulator-verified. Idle wire traffic fell about 90% with scene deltas,
   whose baseline is a digest of what the consumer actually holds, so a
   drifted host repairs itself on the next round trip.
+- **The frame no longer waits for the Finder** (2026-08-06,
+  emulator-verified; **nothing here has run on metal, and a 1400c's
+  Finder is slower than an emulated G4's, so every number below is the
+  optimistic one**). The host's cycle used to hold a frame open until
+  two paged AppleScript conversations with the guest's Finder came
+  back — a priority inversion, since a frame is the product and an icon
+  roster is enrichment, and a stalled frame lapsed the act plane's
+  ten-second lease, which is how a slow Finder turned into acts that did
+  not bind.
+
+  Splitting the `decode_ms` bracket into its four stages named the
+  culprit in one run, and it was not the one being argued about: the
+  **visibility census, ~338 ms of a 353 ms median — about 96%** — paid
+  every cycle for state that changes only when a process starts, quits,
+  hides or shows. The icon roster measures **0 ms** until the layout
+  changes, and 1.3–1.6 s when it does. This side's own CPU was 9 ms.
+
+  The frame now publishes on decode and the complements fold in beside
+  it. Across 258 cycles on a fresh clone, every one `outcome=ok`:
+  `decode_ms` median **353 → 16 ms**, whole cycle **364 → 25 ms**, and a
+  cycle in which a Finder window opened **1,936 → 26 ms**; the planes
+  read 15/15 on 257 of 258 samples. The Finder still takes ~1.5 s to
+  read a roster — that is the machine's nature and cannot be optimised —
+  but a 1,478 ms roster read now sits *beside* a 26 ms cycle instead of
+  becoming one, and the census fires 17 times in 62 cycles rather than
+  62.
+
+  Two honesty notes. A frame published before its roster **says so**: a
+  `finder-items` coverage claim with a typed status and reason, and
+  `awaiting icons` on the status line. And `runCommand` — the family
+  every complement travels on — had **no watchdog at all**; it now has
+  one at 20 s, deliberately longer than the guest's own 15 s script
+  ceiling so a typed refusal always beats a bare host timeout, with
+  `timeouts=N` reported on the cycle line. **The symptom that started
+  this — Michelle's dialog act settling rather than refusing — has NOT
+  been driven**; only the whole causal chain beneath it. And the
+  watchdog has never been watched firing. Plan
+  [014](plans/2026-08-06-014-feat-a-frame-that-does-not-wait-for-the-finder-plan.md).
 - **The guest is woken by its socket, not by a timer expiring**
   (2026-08-06, emulator-verified; **a metal pass is owed and this is the
   change most likely to behave differently there**). A request arriving
@@ -520,25 +558,28 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
 
 ## What does not work
 
-- **The host's own cycle is now the dominant cost, and its shape is a
-  priority inversion** (2026-08-06, measured, NOT fixed). `decode_ms`
-  does not measure decoding: it brackets publish-minus-deliver, and
-  inside that bracket the host waits on `joinContent` plus **two paged
-  AppleScript round trips into the guest's Finder, run every cycle**.
-  This side's own CPU work in there is **4 ms**. Twelve windows measured
-  **714 ms**; three windows measured **12,559 ms** — the count of
-  windows is not the variable, the Finder's responsiveness is. The
-  inversion is that *optional enrichment stalls the frame*, and a
-  stalled frame lapses the act plane's ten-second lease, which is how a
-  slow Finder turns into acts that do not bind. Plan 014
-  ([2026-08-06-014](plans/2026-08-06-014-feat-a-frame-that-does-not-wait-for-the-finder-plan.md))
-  is the fix and is **in progress**; it is deliberately unfixed here
-  pending that design.
+- **A modal owned by the FINDER ITSELF stops everything, and no
+  host-side repair can help** (2026-08-06, emulator, reproduced
+  deliberately). The Finder inside `ModalDialog` services no Apple
+  events, and on a cooperatively scheduled Macintosh it starves NOW as
+  well: `outcome=starved`, `decode_ms=0`, and the anchor worker stopped
+  answering even `hello`, so the machine could not be driven at all.
+  This is a **different and worse case** than the one plan 014 repaired
+  — Michelle's own modal belonged to a *foreign* application, and her
+  log shows `request_ms=82` beside `decode_ms=12457`, NOW answering
+  promptly while the Finder was merely busy. Anyone measuring 014
+  against a Finder-owned modal will see it change nothing, correctly,
+  and should not conclude the fix did nothing. The only door is getting
+  a modal in front of the operator, which is
+  [open-issues.md](open-issues.md) item 2 under *"one modal wedges the
+  whole Mirror"* and is still shut.
 
-  *(This bullet replaced "a Mirror round trip waits ~115 ms before it
-  works for 3–8 ms", which was true when written and stopped being true
-  the same day: the ~115 ms was the guest's own sleep and the wake
-  removed it. What that exposed is the entry above.)*
+  *(This bullet replaced "the host's own cycle is the dominant cost and
+  its shape is a priority inversion", which was true when written and
+  was fixed the same day — see "The frame no longer waits for the
+  Finder" under What works today. That bullet had in turn replaced "a
+  Mirror round trip waits ~115 ms before it works for 3–8 ms". Two
+  bottlenecks removed in one day, each exposing the next.)*
 - **Twelve verbs render correctly at the guest's console and cannot be
   given an argument** (2026-08-06, emulator). `console_model.c` handles
   27 verbs with a `strcmp` of its own and falls through for eighteen

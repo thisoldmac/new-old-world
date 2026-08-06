@@ -100,6 +100,13 @@ another, and now a bracket named `decode` containing guest round-trips.
 So: fix the instrument, take ONE live run, and only then choose where
 the work goes.
 
+> **2026-08-06, and it is the fourth time rather than the third.** The
+> bolded claim above is FALSE and was the misread number itself. The
+> fields populated on the live path all along; the cycle lines that
+> lacked them had been written by an earlier app instance. Left standing
+> because the paragraph's own conclusion — take one live run before
+> choosing — is what caught it.
+
 ### B — a watchdog is correct on its own terms, and is NOT the fix
 
 `GuestListener.runCommand` arms no watchdog at all; the nearby comment
@@ -136,7 +143,7 @@ question should be asked here before any of it is made asynchronous.
 
 ## The work
 
-### 1 · Make the instrument tell the truth · ~~**START HERE**~~ · **UNDER WAY on `claude/frame-no-finder-wait`; `1bb7fdcf` already split the bracket. See "Picking this up cold" below before touching this.**
+### 1 · Make the instrument tell the truth · ~~**START HERE**~~ · **DONE (`1bb7fdcf`, answered in `bde9ee9f`). See "Picking this up cold" below for the answer.**
 
 The per-stage fields must populate on the LIVE path. Watched, on a real
 cycle, not in a test. Then one run with the Finder healthy and one with
@@ -147,14 +154,14 @@ by how much.
 numbers, they sum to about `decode_ms`, and the dominant stage is named
 from data rather than argued.
 
-### 2 · Bound the wait
+### 2 · Bound the wait · **DONE** (`bde9ee9f`)
 
 A watchdog on `runCommand`, with the existing wrong comment corrected in
 the same commit. Choose the bound from § 1's data rather than by taste,
 and make a timeout a REPORTED outcome — a cycle that gave up must say so
 on the line, or this becomes another silent truncation.
 
-### 3 · Take the complements out of the cycle
+### 3 · Take the complements out of the cycle · **DONE** (`bb5e58e0`, honesty half in `bde9ee9f`)
 
 Publish the frame on decode. Fold the icon roster and the visibility
 census in when they arrive, and mark what has not arrived using the
@@ -165,13 +172,13 @@ recheck is what the cycle-hold was really protecting; preserve it.
 as current. The reducer's retention rules already distinguish these, and
 the status line already has the words.
 
-### 4 · Ask less often
+### 4 · Ask less often · **DONE** (`bb5e58e0`)
 
 Whether the visibility census needs to run every cycle at all. Cheapest
 of the four and possibly the largest win; it is § D's question and it
 may make § 3 smaller.
 
-### 5 · The asynchronous content plane — NOT THIS PLAN
+### 5 · The asynchronous content plane — NOT THIS PLAN, and now DEFERRED WITH A REASON
 
 Scoped in `docs/open-issues.md` against the state engine, acts, the
 status line and serialisation. It earns its own plan once § 1–4 have
@@ -179,41 +186,87 @@ shown what is left.
 
 ## Picking this up cold
 
-**Written 2026-08-06 during the durability pass, by a session that is
-not implementing this plan.** If this section and the code disagree, the
-code is right; if it and [open-issues.md](../open-issues.md) disagree,
-the ledger is right.
+**§§ 1–4 are DONE.** Landed on `claude/frame-no-finder-wait` and merged
+into `claude/mirror-thread-content` on 2026-08-06 (`1bb7fdcf`,
+`bb5e58e0`, `bde9ee9f`, `75ac752f`). **§ 5 is DEFERRED with a reason,
+not open** — see below. There is nothing here to start. If this section
+and the code disagree, the code is right; if it and
+[open-issues.md](../open-issues.md) disagree, the ledger is right, and
+the ledger's four dated sections under the `decode_ms` entry are the
+full account with every number in it.
 
-**This plan is IN PROGRESS. Do not start § 1.** Work is live on the
-branch `claude/frame-no-finder-wait`, in the worktree of the same name,
-under another session's hand as of 2026-08-06. A reader who takes § 1's
-`**START HERE**` at face value will build a second implementation of the
-instrument on top of an in-flight one.
+*(This section previously read "IN PROGRESS. Do not start § 1", written
+while the work was live under another session's hand. It was accurate
+for about three hours.)*
 
-- **§ 1's instrument work has already landed in part.** `1bb7fdcf`
-  (*"diag(host): split the `decode_ms` bracket, and the investigation
-  behind it"*) is the split this plan asks for. The `**START HERE**`
-  marker on § 1 is therefore stale; treat it as "this is where the other
-  session started", not as an invitation.
-- **§§ 2–4 are unstarted** as far as this session can see. Ask the
-  branch before assuming so — a plan committed and begun on the same day
-  is exactly the window where a status paragraph is least reliable.
-- **§ 5 is explicitly not this plan** and has not moved.
+**Tier: TESTED and EMULATOR-VERIFIED. Nothing here is metal-verified.**
+A 1400c's Finder is slower than an emulated G4's, so every number below
+is the optimistic one.
 
-**The measurement this plan exists for stands and is not in dispute:**
-`decode_ms` does not measure decoding — it brackets publish-minus-deliver
-around `joinContent` plus two paged AppleScript round trips into the
-guest's Finder, run every cycle; this side's own CPU work is 4 ms; 12
-windows cost 714 ms and 3 windows cost 12,559 ms, so the variable is the
-Finder's responsiveness rather than the window count. The ledger entry
-is *"`decode_ms` hits 12.5 s, none of it is decoding, and the shape of
-the bug is a priority inversion"*.
+### What each section did
 
-**Nothing here is metal-verified, and nothing here is fixed.** The
-`## Verification` section below is accurate as written and needs no
-change — in particular its last bullet, that a 1400c's Finder is slower
-than an emulated G4's, so every number in this plan is the optimistic
-one.
+- **§ 1 — answered, and the instrument was never broken.** All four
+  `dc_*` stage fields populated on the live path all along. The report
+  that they were "absent from every live cycle" came from reading
+  `acts.log` lines written by the PREVIOUS app instance — last line
+  13:58:19, the build that added them started 13:58:24 with no cycle
+  yet run. That misreading is now
+  [measurement rule 19](../mirror-measurement-method.md): the end of a
+  shared append-only log is not your run. **The answer** (n=85, Finder
+  healthy, one window): `dc_own_ms` 9, `dc_content_ms` 5, `dc_icons_ms`
+  0, `dc_vis_ms` **338**, summing to `decode_ms` 353. The visibility
+  census is **~96% of the bracket on every steady-state cycle**; the
+  icon roster is 0 while the layout holds and 1349–1565 ms when it
+  changes — 4× the census, but only on change, where the census was paid
+  forever. § 4 was therefore done beside § 3 rather than after it.
+- **§ 2 — done.** `runCommand` arms a watchdog at **20 s**, chosen
+  against the guest's own `kNowScriptDefaultMs` (15 s) so a typed
+  refusal always beats a bare host timeout; the 3 s this plan's ledger
+  entry proposed now FAILS a test that explains why. The wrong "the 15s
+  a command.request gets" comment is corrected — that 15 s belongs to
+  `file.list` / `process.list` / `process.drive`, which merely share an
+  id sequence. Timeouts are reported as `timeouts=N` on the cycle line,
+  omitted at zero.
+- **§ 3 — done, including the honesty half.** The cycle publishes on
+  decode; a frame published before its roster carries a `finder-items`
+  `meta.coverage` claim with typed status and reason, and the status
+  line says `awaiting icons`.
+- **§ 4 — done.** The census is keyed on the process roster with a 3 s
+  floor, invalidated explicitly by the hide act. It fired 17 times in 62
+  cycles instead of 62.
+- **The result**, 258 cycles on a fresh clone, every one `outcome=ok`:
+  `decode_ms` median 353 → **16**, `total_ms` 364 → **25**, a
+  layout-change cycle 1936 → **26**, planes 15/15 on 257 of 258 samples.
+  The complements still cost what they cost — `NOWBASE finder
+  containers=2 complete=yes ms=1478` sits beside a 26 ms cycle — which
+  is the POINT of the plan, not a caveat against it.
+
+### § 5 is a decision, not a to-do
+
+The asynchronous content plane was scoped and **argued against on § 1's
+own numbers**: the content join is 5–12 ms, three orders below the
+census, so it buys nothing measurable on a healthy guest; and in the
+starved case the guest never answered `scene.request` either, so the
+cycle was already lost upstream of P3. Do not write a plan from the
+argument in § 5 above. What would reopen it is one specific measurement
+— a guest answering `scene.request` promptly while the content join does
+not — and no such case has been observed. The scope, if it is ever
+wanted, is Option 3's four bullets in the ledger.
+
+### What is still UNVERIFIED
+
+- **Michelle's own act was never driven.** "A dialog act that settles
+  rather than refusing" is the symptom this plan started from, and it is
+  verified only down to its cause: `tools/now-agent` reaches ONE host
+  per user and her packaged app holds the socket, so taking it would
+  have disturbed a live session. **The first thing a drive should
+  re-test.**
+- **The watchdog has never been watched FIRING.** Its bound and its
+  reporting are guarded by tests; the expiry settling a stored
+  completion is not, because the suite would have to wait 20 s for it.
+- **A Finder-OWNED modal is not repaired by any of this** and cannot be
+  — it starves NOW too. See the ledger's dated 2026-08-06 line under
+  *"one modal wedges the whole Mirror"*.
 
 ## What would make this wrong
 

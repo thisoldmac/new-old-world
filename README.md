@@ -104,15 +104,29 @@ process when its socket has something to say, taking the round trip to
 ~10 ms while **keeping** the idle sleep, so the rest of the Macintosh is
 not starved to make NOW quick. That is tested here and **has not run on
 metal**; `wirestat wake off` disables it if it misbehaves there. What it
-exposes is the host's own cycle: `decode_ms` never measured decoding — it
-brackets publish-minus-deliver, and inside that bracket the host waits
-on content joining plus **two paged AppleScript round trips into the
-guest's Finder, run every cycle**. Our own CPU work in there is 4 ms; 12
-windows measured 714 ms and 3 windows measured 12,559 ms, because the
-variable is the Finder's responsiveness, not the window count. It is a
-priority inversion — optional enrichment stalls the frame, and a stalled
-frame lapses the act plane's lease. Being fixed now, in
-[plan 014](docs/plans/2026-08-06-014-feat-a-frame-that-does-not-wait-for-the-finder-plan.md).
+exposed was the host's own cycle: `decode_ms` never measured decoding —
+it brackets publish-minus-deliver, and inside that bracket the host
+waited on content joining plus **two paged AppleScript round trips into
+the guest's Finder, run every cycle**. Our own CPU work in there is 4 ms;
+12 windows measured 714 ms and 3 windows measured 12,559 ms, because the
+variable is the Finder's responsiveness, not the window count. It was a
+priority inversion — optional enrichment stalled the frame, and a
+stalled frame lapsed the act plane's lease.
+
+**That is fixed** ([plan 014](docs/plans/2026-08-06-014-feat-a-frame-that-does-not-wait-for-the-finder-plan.md),
+2026-08-06). Splitting the bracket named the culprit: the visibility
+census, ~96% of it, paid every cycle for state that changes only when a
+process starts, quits, hides or shows. The frame now publishes on decode
+and the Finder complements fold in beside it, saying so honestly when
+they have not arrived yet. Measured on an emulator across 258 cycles,
+every one `outcome=ok`: `decode_ms` median **353 ms → 16 ms**, whole
+cycle **364 ms → 25 ms**, and a cycle in which a Finder window opened
+**1,936 ms → 26 ms**. The Finder still takes 1.5 s to read a roster —
+that has not changed and cannot be — but a 1.5 s roster read now sits
+beside a 26 ms cycle instead of becoming one. **Emulator only; no part
+of this has run on metal.** One Macintosh case is beyond any host-side
+repair: a modal owned by the *Finder itself* starves the whole
+cooperative machine, NOW included, and nothing here helps it.
 
 **Acts stop binding when the host's cycle runs long.** The anchor
 plane's OWNER lease is 10 seconds and only a `scene.request` renewed it,

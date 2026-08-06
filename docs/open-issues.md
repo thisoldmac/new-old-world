@@ -14,7 +14,39 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
-## INVESTIGATED, NOT FIXED: `decode_ms` hits 12.5 s, none of it is decoding, and the shape of the bug is a priority inversion (2026-08-06)
+## BROKEN, latent, found in passing: two request families draw ids from separate counters and share one watchdog map (2026-08-06)
+
+Found while reviewing plan 014's watchdog, not by a failure. **Nothing
+has been observed to go wrong**, and the entry exists because the shape
+is a collision waiting for load rather than a bug waiting to be seen.
+
+`GuestListener.armWatchdog(id:seconds:…)` stores into
+`watchdogs: [Int: Watchdog]`, keyed on the request id alone. But the
+listener runs **three independent id sequences**, each starting at 1 and
+incrementing on its own: `nextCommandId`, `nextExecId` and
+`nextCensusId`. Two of them arm watchdogs — `runCommand` (20 s, plan
+014 §2) and `runExec` (60 s) — so command #7 and exec #7 are the *same
+key*. The second to arm calls `clearWatchdog(7)` and takes the slot; the
+first is then never expired, and if the second finishes normally the
+first's entry is removed by `clearWatchdog` on a completion that was
+never its own.
+
+The failure it would produce is the one 014 exists to stop: a request
+that never comes back and never times out either, i.e. an unbounded wait
+the report says nothing about. It is invisible today only because exec
+is human-driven and rare, so the two counters seldom meet.
+
+The other half of the same observation: **`requestCensus` arms no
+watchdog at all**, exactly as `runCommand` did before 014. Its
+completion is stored in `pendingCensus` with nothing to expire it.
+
+The fix is a single monotonic counter for everything the listener sends,
+or a composite key naming the family. Either is small; neither has been
+written, and no test covers the collision. A guard for it would have to
+arm two families to the same number deliberately — which is also the
+mutation that proves it, and the reason to write the test first.
+
+## INVESTIGATED, NOT FIXED: `decode_ms` hits 12.5 s, none of it is decoding, and the shape of the bug is a priority inversion (2026-08-06) — FIXED by plan 014 the same day, emulator-verified; see the four dated sections at the end of this entry
 
 Investigation only — **no product behaviour was changed**. What landed is
 diagnostic instrumentation and a fixture harness, both labelled as such
@@ -339,7 +371,7 @@ and no other request family's watchdog is covered either. Watched only in
 the sense that the code path is the one `exec` has used since it was
 written.
 
-### Scope for the asynchronous content plane (plan 014 §5, NOT DONE)
+### DEFERRED with a reason, not open: the asynchronous content plane (plan 014 §5)
 
 Explicitly out of 014. What §1's numbers say about it: the content join
 is **5–12 ms**, three orders below the census, so making it asynchronous
@@ -349,6 +381,17 @@ in the starved case measured here the guest did not answer `scene.request`
 either, so the cycle was already lost upstream of P3. **Ordinary evidence
 does not currently justify the plan**; the four bullets under Option 3
 above remain the scope if one is written.
+
+**Read this as a decision, not as a to-do.** It was scoped, argued
+against on §1's own numbers, and left unbuilt on purpose — the item that
+would be dropped by building it is the frame's simplicity, and the item
+that would be bought is 5–12 ms on a machine where the next cheapest
+thing costs 1,478 ms. What would REOPEN it is new evidence, and the
+evidence would have to be of one specific shape: a guest that answers
+`scene.request` promptly while the content join does not. Every starved
+case measured so far had the guest silent on both, which no amount of
+host-side asynchrony repairs. Measure that first; do not build from the
+argument alone.
 
 ## FIXED, emulator only: the 115 ms round trip was the guest's own sleep (2026-08-06)
 
@@ -2318,6 +2361,25 @@ Item 2 is unchanged and got harder: the posted click that dismissed this
 modal on 2026-08-05 was refused four times on the second drive, because
 the anchor worker is itself starved by the alert (top entry). Item 3 is
 untouched.
+
+**2026-08-06: the same modal, reproduced deliberately, and it is a
+STRICTLY worse case than the one plan 014 repairs.** Raising this exact
+alert on a private clone gave `outcome=starved`, `request_ms`
+20,008–21,318 and `decode_ms=0` for as long as it was up — and the anchor
+worker stopped answering even `hello`, so the machine could not be driven
+at all and the clone was discarded. Compare Michelle's own 2026-08-06
+log: `request_ms=82` with `decode_ms=12457`, i.e. NOW answering promptly
+while the Finder was merely busy. Her modal belonged to a **foreign**
+application; this one belongs to the **Finder**.
+
+The distinction is load-bearing for anyone reproducing either. A
+foreign-owned modal starves the Finder, which is what 014 took out of the
+cycle — measured 353 ms → 16 ms. A **Finder**-owned modal starves the
+whole cooperative machine *including NOW*, so no complement runs, no
+scene is answered, and **no host-side repair helps** — item 2 above is
+still the only door, and it is still shut. Someone measuring 014 against
+a Finder-owned modal will correctly observe that it changed nothing, and
+draw the wrong conclusion from it.
 
 ## BROKEN: the host face can HIDE and cannot SHOW (2026-08-05)
 
