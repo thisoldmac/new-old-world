@@ -231,6 +231,92 @@ final class NOWMirrorSourceTests: XCTestCase {
                        "all toggles coalesce into one follow-up scene")
     }
 
+    /// **THE CADENCE INVARIANT: a slow Finder may not slow the scene.**
+    ///
+    /// The anchor plane's owner lease is 600 ticks — ten seconds — and the
+    /// only thing that renews it is a `scene.request`. So the poll's
+    /// period is not a comfort setting: go quieter than the lease and
+    /// every plane lapses between cycles, and every act that needs an
+    /// anchor refuses `element-not-found: the anchor plane is absent or
+    /// not armed`.
+    ///
+    /// It happened. Measured 2026-08-06 on the live session, guest build
+    /// `711abdbd25ec`: the Finder complements ran INSIDE the structural
+    /// cycle and held it open, so with a modal up starving the Finder the
+    /// cycle's period went to 12.6 s. The log reads `requested=15
+    /// active=8`, and Cancel on that modal refused five times running.
+    ///
+    /// This is that shape as a test. Both complements are given overrides
+    /// that NEVER answer — the starved Finder, exactly — and the cycle
+    /// must still close, publish, and let the next scene request go out.
+    /// Put `refreshComplements` back inside the cycle and this hangs at
+    /// one request, which is what the machine did.
+    func testAStarvedFinderCannotHoldTheSceneCycleOpen() throws {
+        let key = GuestKey.synthetic("starved-finder")
+        let harness = MirrorCycleHarness(activeKey: key)
+        let listener = testListener()
+        let source = NOWMirrorSource(
+            listener: listener, engineRegistry: MirrorStateEngineRegistry(),
+            act: testAct(listener), interval: 3_600,
+            finderRefreshOverride: { _, _, _ in },
+            visibilityRefreshOverride: { _, _, _ in },
+            cycleIO: harness.io)
+
+        source.start()
+        XCTAssertEqual(harness.sceneRequests.count, 1)
+
+        harness.completeScene(0, with: .success(try fixtureDelivery(for: key)))
+        let joined = try XCTUnwrap(harness.joinedScenes.first)
+        harness.joinCompletions[0](.init(scene: joined,
+                                         sentence: "content joined"))
+
+        XCTAssertEqual(source.cycleTimeline.records.count, 1,
+                       "the cycle must be measured and closed once the "
+                       + "scene is published — not when the Finder gets "
+                       + "round to answering")
+        source.planePolicyDidChange()
+        XCTAssertEqual(harness.sceneRequests.count, 2,
+                       "and the next scene request must go out, because it "
+                       + "is the only thing that renews the anchor plane's "
+                       + "ten-second lease")
+    }
+
+    /// The other half of the same repair, and the reason it is safe.
+    ///
+    /// The cycle-hold was buying one real thing: a Finder roster read for
+    /// one layout could never land on a different one — a roster carries
+    /// window-content-local, scroll-compensated positions, so applying a
+    /// stale one puts a click on the wrong file. The bracket now records
+    /// its own split so the next person reads where the time went instead
+    /// of deriving it from a field called `decode`.
+    func testTheCycleLineSplitsItsOwnWorkFromTheGuestsRoundTrip() throws {
+        let key = GuestKey.synthetic("cycle-split")
+        let harness = MirrorCycleHarness(activeKey: key)
+        let listener = testListener()
+        let source = NOWMirrorSource(
+            listener: listener, engineRegistry: MirrorStateEngineRegistry(),
+            act: testAct(listener), interval: 3_600,
+            finderRefreshOverride: { _, _, completion in completion() },
+            visibilityRefreshOverride: { _, _, completion in completion() },
+            cycleIO: harness.io)
+
+        source.start()
+        harness.completeScene(0, with: .success(try fixtureDelivery(for: key)))
+        let joined = try XCTUnwrap(harness.joinedScenes.first)
+        harness.joinCompletions[0](.init(scene: joined, sentence: "joined"))
+
+        let record = try XCTUnwrap(source.cycleTimeline.records.first)
+        XCTAssertNotNil(record.ownWork,
+                        "decode/reduce/project must be measured separately: "
+                        + "12,457ms once read as `decode_ms` and cost an "
+                        + "evening aimed at a JSON parser that takes 4ms")
+        XCTAssertNotNil(record.contentJoin)
+        XCTAssertTrue(record.baselineLine.contains("dc_own_ms="),
+                      record.baselineLine)
+        XCTAssertTrue(record.baselineLine.contains("dc_content_ms="),
+                      record.baselineLine)
+    }
+
     /// The status line is the only thing a person driving the Mirror
     /// reads, so it says when a gesture is waiting on the lane rather than
     /// on the Macintosh — and stays quiet when nothing is.

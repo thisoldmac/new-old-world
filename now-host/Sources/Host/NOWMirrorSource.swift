@@ -334,6 +334,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private var fetchingIcons = false
     private var iconTask: Task<Void, Never>?
     private var visibilityTask: Task<Void, Never>?
+    /// The process roster the last visibility census was read for, and
+    /// when. See `refreshVisibilityIfStale` — this census used to be the
+    /// only unconditional multi-round-trip in the lane.
+    private var visibilityKey: String = "<none>"
+    private var visibilityReadAt: Date?
     private var actGeneration = 0
     private var settlementTracker = MirrorSettlementTracker()
     private var planCorrelation: String?
@@ -356,14 +361,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// Cleared with the rest of the cycle so a slow scene's phases can
     /// never be charged to the next cycle that failed to answer.
     private var cyclePhases: NOWSceneDocument.Phases?
-    /* DIAGNOSTIC (2026-08-06), see MirrorCycleClocks.ownWork: the four
-       stages the `decode_ms` bracket actually contains. Cleared with the
-       rest of the cycle, so a stage a cycle never reached reports absent
-       rather than the previous cycle's number. */
+    /// This cycle's own split of the `decode_ms` bracket. See
+    /// `MirrorCycleClocks.ownWork`.
     private var cycleOwnWork: TimeInterval?
     private var cycleContentJoin: TimeInterval?
-    private var cycleIconRoster: TimeInterval?
-    private var cycleVisibility: TimeInterval?
     private var lastCyclePublishedAt: Date?
     private var mutationWaiting = false
     private var sceneGuestKey: GuestKey?
@@ -598,7 +599,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private func accept(_ delivery: GuestListener.SceneDelivery,
                         generation: Int) {
         guard isCurrentCycle(generation) else { return }
-        let ownWorkStarted = Date()          /* DIAGNOSTIC */
+        let ownWorkStarted = Date()
         do {
             var decoded = try NOWMirrorSceneDecoder.decode(
                 irVersion: delivery.irVersion, document: delivery.document)
@@ -620,9 +621,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             decoded = withIcons(decoded)
             _ = shadowEngine?.enrichFinder(decoded)
             scene = projectedScene(fallback: decoded)
-            /* DIAGNOSTIC: everything above is this host's own CPU on the
-               delivery; everything below it is a guest round-trip. That is
-               the line `dc_own_ms` draws. */
+            /* Everything above is this host's own CPU on the delivery;
+               everything below it is a guest round-trip. That is the
+               line `dc_own_ms` draws. */
             cycleOwnWork = Date().timeIntervalSince(ownWorkStarted)
             let menuStatus = continuity.retainedAppleItems
                 ? " · Apple menu expected-stale" : ""
@@ -637,70 +638,61 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 lifecycleDidChange()
                 return
             }
-            let contentStarted = Date()      /* DIAGNOSTIC */
             if !planes.contains(.content) {
                 cycleIO.disableContent { [weak self] failure in
                     guard let self else { return }
-                    self.cycleContentJoin = Date()
-                        .timeIntervalSince(contentStarted)
                     guard self.isCurrentCycle(generation) else { return }
                     self.shadowEngine?.compareVisible(decoded)
                     self.scene = self.projectedScene(fallback: decoded)
-                    self.refreshComplements(decoded,
-                                            generation: generation) {
-                        guard self.isCurrentCycle(generation) else { return }
-                        self.ambient =
-                            self.observationPhrase(decoded.windows.count)
-                            + " · "
-                            + (failure.map {
-                                "content release refused: \($0)"
-                            } ?? "content off") + menuStatus
-                        self.finishCycle(generation)
-                        self.lifecycleDidChange()
-                    }
+                    self.ambient =
+                        self.observationPhrase(decoded.windows.count)
+                        + " · "
+                        + (failure.map {
+                            "content release refused: \($0)"
+                        } ?? "content off") + menuStatus
+                    self.finishCycle(generation)
+                    self.lifecycleDidChange()
+                    self.refreshComplements(decoded)
                 }
                 return
             }
+            let contentStarted = Date()
             cycleIO.joinContent(decoded) { [weak self] update in
                 guard let self else { return }
+                guard self.isCurrentCycle(generation) else { return }
                 self.cycleContentJoin = Date()
                     .timeIntervalSince(contentStarted)
-                guard self.isCurrentCycle(generation) else { return }
                 _ = self.shadowEngine?.enrichContent(update.scene)
                 self.observeOperations()
                 self.shadowEngine?.compareVisible(update.scene)
                 self.scene = self.projectedScene(fallback: update.scene)
-                /* The Finder roster is part of this structural cycle. The
-                   old code launched it after P3 and immediately rearmed the
-                   next poll, so a later scene could win while the older
-                   roster was still in flight. Keep the cycle open until the
-                   exact layout's bounded pages have settled. */
-                self.refreshComplements(update.scene,
-                                        generation: generation) {
-                    guard self.isCurrentCycle(generation) else { return }
-                    /* THE WIRE COST, beside the walk and the transfer,
-                       because the whole argument for deltas is a byte
-                       count and a claim is not a measurement. "same"
-                       means no bulk lane was used at all. */
-                    let wire: String
-                    switch delivery.form {
-                    case .unchanged:
-                        wire = "same"
-                    case .delta:
-                        wire = "delta \(delivery.wireBytes)B"
-                            + (delivery.wholeBytes.map { "/\($0)B" } ?? "")
-                    case .whole:
-                        wire = "whole \(delivery.wireBytes)B"
-                    }
-                    self.ambient =
-                        self.observationPhrase(update.scene.windows.count)
-                        + " · walk "
-                        + "\(delivery.walkMs.map { "\($0)ms" } ?? "?") · transfer "
-                        + "\(delivery.transferMs)ms · \(wire) · \(update.sentence)"
-                        + menuStatus
-                    self.finishCycle(generation)
-                    self.lifecycleDidChange()
+                /* THE WIRE COST, beside the walk and the transfer,
+                   because the whole argument for deltas is a byte
+                   count and a claim is not a measurement. "same"
+                   means no bulk lane was used at all. */
+                let wire: String
+                switch delivery.form {
+                case .unchanged:
+                    wire = "same"
+                case .delta:
+                    wire = "delta \(delivery.wireBytes)B"
+                        + (delivery.wholeBytes.map { "/\($0)B" } ?? "")
+                case .whole:
+                    wire = "whole \(delivery.wireBytes)B"
                 }
+                self.ambient =
+                    self.observationPhrase(update.scene.windows.count)
+                    + " · walk "
+                    + "\(delivery.walkMs.map { "\($0)ms" } ?? "?") · transfer "
+                    + "\(delivery.transferMs)ms · \(wire) · \(update.sentence)"
+                    + menuStatus
+                /* **The cycle ENDS here, before the Finder complements.**
+                   They used to be inside it, and that is what cost this
+                   project a whole evening of refused acts — see
+                   `refreshComplements`. */
+                self.finishCycle(generation)
+                self.lifecycleDidChange()
+                self.refreshComplements(update.scene)
             }
             return
         } catch IR.CompatError.unknownMajor {
@@ -793,16 +785,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             },
             phases: cyclePhases,
             ownWork: cycleOwnWork,
-            contentJoin: cycleContentJoin,
-            iconRoster: cycleIconRoster,
-            visibilityCensus: cycleVisibility))
+            contentJoin: cycleContentJoin))
         lastCyclePublishedAt = published
         cycleAsked = nil
         cyclePhases = nil
         cycleOwnWork = nil
         cycleContentJoin = nil
-        cycleIconRoster = nil
-        cycleVisibility = nil
     }
 
     private func rearm() {
@@ -847,30 +835,49 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             .joined(separator: "|")
     }
 
-    /// Asynchronous planes settle one structural generation before the next
-    /// starts. Each contribution remains independently retained by the state
-    /// engine; this ordering only prevents two guest commands from racing on
-    /// the cooperative wire lane.
-    private func refreshComplements(_ scene: MirrorKit.Scene,
-                                    generation: Int,
-                                    completion: @escaping () -> Void) {
-        /* DIAGNOSTIC (2026-08-06): both of these are AppleScript to the
-           Finder, both are inside the `decode_ms` bracket, and neither has
-           ever been timed separately. `dc_icons_ms` is 0 on a cycle whose
-           layout key was unchanged — that is the guard doing its job, and
-           it is worth being able to SEE it rather than infer it. */
-        let iconsStarted = Date()
-        refreshIconsIfStale(scene, generation: generation) { [weak self] in
-            guard let self else { return }
-            self.cycleIconRoster = Date().timeIntervalSince(iconsStarted)
-            let visibilityStarted = Date()
-            self.refreshVisibility(scene, generation: generation) {
-                [weak self] in
-                self?.cycleVisibility = Date()
-                    .timeIntervalSince(visibilityStarted)
-                completion()
-            }
+    /// **The Finder complements are SESSION work, not cycle work.**
+    ///
+    /// Both of these are AppleScript to the Finder, and a Finder Apple
+    /// event costs ~1–2 s of Finder time on a healthy Mac OS 9 guest (see
+    /// `FinderItems`) — far more when the Finder is being starved. They
+    /// used to run INSIDE the structural cycle, which held the cycle open
+    /// until they had all settled, so the scene poll's period was
+    /// whatever the Finder felt like today.
+    ///
+    /// Measured 2026-08-06 on Michelle's session, guest build
+    /// `711abdbd25ec`: `decode_ms` 324 at five windows and **12,457 at
+    /// six**, with a modal up starving the Finder. Nothing in this host's
+    /// own decode is involved — decoding, reducing and projecting the
+    /// captured six-window document costs 4 ms (`MirrorDecodeCostTests`).
+    /// The whole 12.4 s was Finder round-trips held inside the bracket.
+    ///
+    /// And it did not merely read badly. The anchor plane's owner lease is
+    /// **600 ticks — ten seconds** (`peek.c :: kNowPeekOwnerLeaseTicks`),
+    /// renewed by `scene.request`. A 13-second cycle is a cycle that lets
+    /// the lease expire every single time, so the same log reads
+    /// `requested=15 active=8` with structure, semantics and interaction
+    /// all back to `requested`, and every act that needs an anchor refuses
+    /// `element-not-found: the anchor plane is absent or not armed`. The
+    /// cure for that is not a longer lease; it is not going quiet.
+    ///
+    /// So the cycle publishes and rearms, and these run beside it. What
+    /// the cycle-hold was really buying — that a roster read for one
+    /// layout never lands on a different one — is bought directly instead,
+    /// by re-checking the layout key at apply time, which is the actual
+    /// correctness condition rather than a proxy for it.
+    private func refreshComplements(_ scene: MirrorKit.Scene) {
+        let run = runGeneration
+        refreshIconsIfStale(scene, generation: run) { [weak self] in
+            guard let self, self.isCurrentRun(run) else { return }
+            self.refreshVisibilityIfStale(scene, generation: run) {}
         }
+    }
+
+    /// A complement outlives the cycle that asked for it, so it is guarded
+    /// by the RUN — the pinned session — and not by `cycleGeneration`,
+    /// which is nil again before any of this lands.
+    private func isCurrentRun(_ generation: Int) -> Bool {
+        running && runGeneration == generation
     }
 
     private func refreshIconsIfStale(_ scene: MirrorKit.Scene,
@@ -895,6 +902,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             return completion()
         }
         fetchingIcons = true
+        let started = Date()
         iconTask = Task { @MainActor [weak self] in
             guard let self else { return }
             var fresh: [String: [MirrorKit.Scene.DesktopItem]] = [:]
@@ -914,13 +922,38 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                     complete = false
                 }
             }
+            self.fetchingIcons = false
+            self.iconTask = nil
+            ActLog.note(action: "complements\n    "
+                        + BaselineLine.line("finder", [
+                            ("containers", String(folders.count + 1)),
+                            ("complete", complete ? "yes" : "no"),
+                            ("ms", String(Int(Date()
+                                .timeIntervalSince(started) * 1000))),
+                        ]),
+                        outcome: complete ? "ok" : "partial",
+                        ms: Int(Date().timeIntervalSince(started) * 1000))
             guard !Task.isCancelled,
-                  self.isCurrentCycle(generation) else { return }
+                  self.isCurrentRun(generation) else { return }
+            /* **The layout the roster was read FOR must still be the
+               layout on screen.** Positions are window-content-local and
+               scroll-compensated, so a roster that lands after the window
+               scrolled describes icons that are no longer where it says —
+               and a click computed from it hits the wrong file. Holding
+               the whole cycle open used to prevent this by preventing a
+               newer scene; this asks the question directly, which is both
+               cheaper and stricter. */
+            if let current = self.scene,
+               Self.iconLayoutKey(current) != key {
+                self.note("the Finder roster arrived for a layout the "
+                          + "machine has already left; discarded rather "
+                          + "than drawn at stale positions")
+                return completion()
+            }
             for (container, items) in fresh {
                 self.icons[container] = items
             }
             if complete { self.iconLayout = key }
-            self.fetchingIcons = false
             if let current = self.scene {
                 let enriched = self.withIcons(current)
                 _ = self.shadowEngine?.enrichFinder(enriched)
@@ -928,7 +961,6 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 self.shadowEngine?.compareVisible(enriched)
                 self.scene = self.projectedScene(fallback: enriched)
             }
-            self.iconTask = nil
             completion()
         }
     }
@@ -1159,6 +1191,52 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         return (total, byName, rowCount, unique)
     }
 
+    /// **A census the machine has not changed is not evidence, it is
+    /// spending.**
+    ///
+    /// This ran on EVERY poll — several Finder Apple events, four times a
+    /// second on a cooperative Mac OS 9 guest, for an answer that changes
+    /// only when an application starts, quits, hides or shows. The icon
+    /// roster beside it has been keyed against its own staleness since it
+    /// was written; this one never was, and it is the only unconditional
+    /// multi-round-trip in the lane.
+    ///
+    /// Two triggers, because the two ways the answer changes are not
+    /// alike. A roster change (a process appeared or went away) is visible
+    /// in the scene the guest just sent, so it refreshes at once. A
+    /// hide/show leaves the roster identical and is invisible until we
+    /// ask — so a floor interval asks anyway, and an act that MEANT to
+    /// change visibility marks the census dirty (`invalidateVisibility`)
+    /// rather than waiting for the floor.
+    private static let visibilityFloor: TimeInterval = 3
+
+    private func visibilityRosterKey(_ scene: MirrorKit.Scene) -> String {
+        scene.apps.map { "\($0.psn)/\($0.name)" }.sorted()
+            .joined(separator: "|")
+    }
+
+    /// The next census must actually go to the guest: an act has just
+    /// tried to change what this measures, and a cached answer would
+    /// report the machine as it was before the act.
+    func invalidateVisibility() {
+        visibilityKey = "<dirty>"
+        visibilityReadAt = nil
+    }
+
+    private func refreshVisibilityIfStale(_ scene: MirrorKit.Scene,
+                                          generation: Int,
+                                          completion: @escaping () -> Void) {
+        let key = visibilityRosterKey(scene)
+        let aged = visibilityReadAt.map {
+            Date().timeIntervalSince($0) >= Self.visibilityFloor
+        } ?? true
+        guard key != visibilityKey || aged else { return completion() }
+        visibilityKey = key
+        visibilityReadAt = Date()
+        refreshVisibility(scene, generation: generation,
+                          completion: completion)
+    }
+
     private func refreshVisibility(_ scene: MirrorKit.Scene,
                                    generation: Int,
                                    completion: @escaping () -> Void) {
@@ -1166,6 +1244,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             visibilityRefreshOverride(scene, generation, completion)
             return
         }
+        let started = Date()
         visibilityTask = Task { @MainActor [weak self] in
             guard let self else { return }
             var observed: [String: Bool] = [:]
@@ -1199,15 +1278,25 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 offset += page.rowCount
                 if total == 0 { break }
             }
+            self.visibilityTask = nil
+            ActLog.note(action: "complements\n    "
+                        + BaselineLine.line("visibility", [
+                            ("processes", expectedTotal.map(String.init)
+                                ?? "-"),
+                            ("complete", complete ? "yes" : "no"),
+                            ("ms", String(Int(Date()
+                                .timeIntervalSince(started) * 1000))),
+                        ]),
+                        outcome: complete ? "ok" : "partial",
+                        ms: Int(Date().timeIntervalSince(started) * 1000))
             guard !Task.isCancelled,
-                  self.isCurrentCycle(generation) else { return }
+                  self.isCurrentRun(generation) else { return }
             _ = self.shadowEngine?.enrichVisibility(
                 observed, complete: complete
                     && observed.count == expectedTotal,
                 sequence: scene.seq)
             self.scene = self.projectedScene(fallback: scene)
             self.observeOperations()
-            self.visibilityTask = nil
             completion()
         }
     }
@@ -1970,6 +2059,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             let read = await readingOutput("hide",
                                            ["target": .text(name)],
                                            row: "Outcome")
+            /* The census that would notice this is rate-limited against a
+               roster that a hide does not change, so the act says so
+               rather than leaving the answer up to a floor interval. */
+            invalidateVisibility()
             if let error = read.error {
                 /* The guest's own outcome vocabulary is typed, so a
                    refusal here says which half moved without guessing. */
