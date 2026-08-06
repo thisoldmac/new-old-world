@@ -6,6 +6,7 @@
 #include "census_module.h"
 #include "connection_module.h"
 #include "console_module.h"
+#include "control_kind.h"
 #include "diagnostics_module.h"
 #include "network_module.h"
 #include "chat_module.h"
@@ -258,7 +259,7 @@ Boolean workshop_open(void)
        Dialog-Manager text handling. */
     compute_layout();
     if (!workshop_sidebar_create(g_window, &g_lay, on_sidebar_select)) {
-        DisposeWindow(g_window);
+        now_control_dispose_window(g_window);
         g_window = NULL;
         workshop_sidebar_dispose();
         return false;
@@ -305,7 +306,7 @@ void workshop_close(void)
         }
         g_created[i] = false;
     }
-    DisposeWindow(g_window);          /* takes the controls with it */
+    now_control_dispose_window(g_window);          /* takes the controls with it */
     g_window = NULL;
     workshop_sidebar_dispose();       /* after, never before */
 }

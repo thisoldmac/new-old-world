@@ -215,40 +215,52 @@ static void add_control_tree(NowScene *s, int window, ControlRef control,
     }
 }
 
-/* --- the sweep, and why its RESULT is remembered ------------------------
+/* --- how this window's controls are discovered --------------------------
  *
- * Every control the Control Manager will admit to, found by asking where
- * they are rather than by reading how they are stored. The step is the
- * smallest widget this can miss: a checkbox is 12pt tall and a scroll
- * arrow 16, so 10 finds both. Controls are deduplicated by ControlRef,
- * which is the identity the Control Manager itself uses.
+ * TWO WAYS, and the first one is used for every window this application
+ * built itself.
  *
- * WHAT IT COST. The sweep over the Workshop's 757x487 content is 3,724
- * points, and FindControl on an ACTIVE window is ~240us a point on a
- * G4-class machine: ~900ms, every scene, spent to rediscover seven
- * controls that had not moved. Measured 2026-08-06 with a per-step
- * microsecond breakdown - and it is invisible in the obvious A/B, because
- * FindControl answers an INACTIVE window immediately (~2.7us a point), so
- * the identical sweep costs 10ms whenever anything else is in front. NOW
- * being frontmost is what a person does; it put a second on every poll.
+ * **The list we kept.** Every control this application makes goes through
+ * `control_kind.c` - `now_control_new`, or `now_control_adopt` for a
+ * DataBrowser - and every one it destroys goes back out through
+ * `now_control_dispose` / `now_control_dispose_window`, with
+ * `control_kind_source_test.py` failing the build if a call site skips
+ * either. So the registry IS the answer to "which controls does this
+ * window have", and asking the Control Manager to rediscover them is work
+ * this process did not need to do. Only EXISTENCE comes from the
+ * registry: title, bounds, value, enabled and visible are read live from
+ * the Toolbox on every pass, so nothing a person changes goes stale.
  *
- * WHAT IS CACHED IS THE DISCOVERY, NOT THE ANSWER. The rows are rebuilt
- * from the live Toolbox on every pass - title, bounds, value, enabled,
- * visible - so nothing a person changes goes stale. Only the QUESTION
- * "which controls does this window have, and where do I find each one" is
- * remembered, and it is re-proved every pass at one point per control:
+ * **The sweep, still here, for windows we did not build.** A Dialog
+ * Manager window's items are controls this application never made, and
+ * `GetRootControl` fails because nothing here calls `CreateRootControl` -
+ * so `FindControl` over a grid is the only public question left. Its
+ * result is cached and re-proved at one point per control per pass.
  *
- *   - a control that went away, moved or was hidden no longer answers at
- *     the point that found it, and the sweep runs again;
- *   - a control that ARRIVED disturbs nothing that is cached, so
- *     revalidation cannot see it - now_control_generation() can, because
- *     every control this application makes goes through now_control_new
- *     and the source test enforces that;
- *   - a window that was resized is a different question and is re-asked.
+ * WHY THE ORDER MATTERS, measured 2026-08-06 with a microsecond phase
+ * breakdown. The sweep over the Workshop's 757x487 content is 3,724
+ * points and `FindControl` costs ~240us a point on an ACTIVE window:
+ * ~900ms. The cache hid that in steady state and could not hide it at the
+ * moment it mattered, because `FindControl` answers an INACTIVE window
+ * with NOTHING - so a backgrounded NOW cached zero controls, and the
+ * first scene after a person clicked into NOW paid the full sweep in the
+ * foreground: **1,891,174us**, against 5,090us for a steady-state scene.
+ * That was the hitch on clicking into NOW and on switching Workshop
+ * pages.
  *
- * A cached ControlRef is only ever COMPARED, never dereferenced, until
- * FindControl has answered with it - so a ref left dangling by a
- * DisposeControl is a failed match rather than a read of freed memory.
+ * The same refusal was also a CORRECTNESS defect, and the worse of the
+ * two: with anything else in front, the sweep walked all 3,724 points,
+ * found nothing, and the scene reported NOW's own window as EMPTY. That
+ * is an absence nobody observed, which is the one thing the coverage
+ * rules forbid. The registry answers it properly - it does not care which
+ * window is in front - and where the registry cannot help (a dialog we
+ * did not build, seen while inactive) the control plane is RETRACTED, so
+ * the key is absent and `meta.errors` says so.
+ *
+ * A cached ControlRef from the SWEEP is only ever COMPARED, never
+ * dereferenced, until FindControl has answered with it. A ControlRef from
+ * the REGISTRY is dereferenced, and may be, because the registry is told
+ * about disposal - that is the whole reason disposal is wrapped.
  */
 enum {
     kSelfProbeStep = 10,
@@ -320,6 +332,42 @@ static Boolean probe_cache_still_true(const SelfProbeCache *slot,
                 || hit != slot->control[i]) {
             return false;
         }
+    }
+    return true;
+}
+
+/* The controls this application remembers making in this window. Returns
+   false when it made none - which is a Dialog Manager window, or a
+   registry that overflowed - and the caller then has to go and look. */
+static Boolean find_controls_from_registry(NowScene *s, int index,
+                                           WindowRef window,
+                                           const Rect *content, int *budget,
+                                           NowObsWalk *refs)
+{
+    short count = now_control_count(window);
+    short i;
+
+    if (count <= 0 || !now_control_registry_complete()) {
+        return false;
+    }
+    for (i = 0; i < count && *budget > 0; ++i) {
+        ControlRef control = now_control_indexed(window, i);
+
+        if (control == NULL) {
+            continue;
+        }
+        /* Hidden controls are skipped rather than carried. Every module
+           builds its widgets once and HIDES them when its page is not
+           the current one, so this window's registry holds every page's
+           worth at once - carrying them all would spend the scene's
+           64-control budget on things nobody can see and push the
+           visible ones out. It is also what the sweep did: FindControl
+           never reported an invisible control either. */
+        if (!IsControlVisible(control)) {
+            continue;
+        }
+        add_control_tree(s, index, control, content, kSelfMaxDepth,
+                         budget, refs, window);
     }
     return true;
 }
@@ -681,9 +729,28 @@ void now_scene_collect_self(NowScene *s, int row,
              * is under this point", and a grid over the content area asks
              * it often enough to meet every control wider than the step.
              * It is O(points x controls) of rect tests on one window and
-             * costs less than the transfer that carries the answer. */
-            find_controls_by_probe(s, index, window, &content, &budget,
-                                   refs);
+             * costs less than the transfer that carries the answer.
+             *
+             * That was the WHOLE answer until 2026-08-06, and it cost a
+             * second per scene with NOW in front. It is now the fallback:
+             * the first question is the list this application kept of the
+             * controls it made, which needs no probing at all. */
+            if (!find_controls_from_registry(s, index, window, &content,
+                                             &budget, refs)) {
+                /* Not ours to remember - a Dialog Manager window, or a
+                   registry that overflowed. FindControl is the only way
+                   left, and it REFUSES an inactive window: it walks every
+                   point and answers nothing. Sweeping anyway would report
+                   "this window has no controls", which is an absence
+                   nobody observed. Retract instead, so the key is absent
+                   and meta.errors carries the notice. */
+                if (IsWindowHilited(window)) {
+                    find_controls_by_probe(s, index, window, &content,
+                                           &budget, refs);
+                } else {
+                    now_scene_retract_controls(s, index);
+                }
+            }
         }
         now_scene_phase_leave(kNowScenePhaseControls);
         if (workshop_is(window)) {

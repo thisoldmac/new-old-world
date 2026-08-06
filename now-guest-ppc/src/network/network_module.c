@@ -449,12 +449,12 @@ static void network_dispose(void)
 
     for (i = 0; i < (int)kNetSectionCount; ++i) {
         if (g_buttons[i] != NULL) {
-            DisposeControl(g_buttons[i]);
+            now_control_dispose(g_buttons[i]);
             g_buttons[i] = NULL;
         }
     }
     if (g_scroll != NULL) {
-        DisposeControl(g_scroll);
+        now_control_dispose(g_scroll);
         g_scroll = NULL;
     }
     g_owner = NULL;

@@ -453,13 +453,16 @@ static OSErr view_create(WindowRef owner)
                                  &g_pbrowser) != noErr) {
         g_pbrowser = NULL;
     } else {
+        /* Recorded, or the mirror never sees it: the scene lists
+           the controls this application remembers making. */
+        now_control_adopt(owner, g_pbrowser, kNowControlProcDataBrowser);
         g_pbrowser_data_upp = NewDataBrowserItemDataUPP(item_data);
         if (g_pbrowser_data_upp == NULL || g_host.notify_upp == NULL) {
             if (g_pbrowser_data_upp != NULL) {
                 DisposeDataBrowserItemDataUPP(g_pbrowser_data_upp);
                 g_pbrowser_data_upp = NULL;
             }
-            DisposeControl(g_pbrowser);
+            now_control_dispose(g_pbrowser);
             g_pbrowser = NULL;
         } else {
             memset(&callbacks, 0, sizeof callbacks);
@@ -836,7 +839,7 @@ void cloud_photos_view_dispose(void)
        (g_host.notify_upp) still fires safely here too: cloud_module.c
        disposes it only after this call returns. */
     if (g_pbrowser != NULL) {
-        DisposeControl(g_pbrowser);
+        now_control_dispose(g_pbrowser);
         g_pbrowser = NULL;
     }
     if (g_pbrowser_data_upp != NULL) {

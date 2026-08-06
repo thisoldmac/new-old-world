@@ -187,6 +187,18 @@ run_py now-guest-shared act_correlation_source_test.py
 run_py now-guest-shared act_install_reentrant_source_test.py
 run_py now-guest-shared arg_shadow_source_test.py
 run_py now-guest-shared control_kind_source_test.py
+# That gate says every control's making and unmaking goes through one
+# file; this one says the file does the right thing with them. It is here
+# rather than with the other PowerPC tests because the two are one
+# argument: since 2026-08-06 the scene READS this table instead of
+# sweeping a FindControl grid, and dereferences what it hands out, so a
+# disposal the table misses is a read of freed memory. It compiles
+# control_kind.c against a four-header Toolbox stand-in (tests/toolbox_shim)
+# - the only native test in this tree that does, and the shim is on the
+# include path of this line alone.
+run_c now-guest-ppc control_kind_registry_test.c \
+      "-I $repo_root/now-guest-ppc/tests/toolbox_shim" \
+      src/workshop/control_kind.c
 run_py now-guest-shared semantic_flat_init_source_test.py
 
 echo "== Mirror UX gate =="

@@ -201,13 +201,13 @@ void cloud_contacts_view_dispose(void)
        notifications through them (files_browser_view.c and the
        finding carbon-upp-is-not-a-cast-on-cfm carry the full story). */
     if (g_browser != NULL) {
-        DisposeControl(g_browser);
+        now_control_dispose(g_browser);
         g_browser = NULL;
     }
     dispose_callbacks();
     for (i = 0; i < kCloudContactsMaxSections; ++i) {
         if (g_box[i] != NULL) {
-            DisposeControl(g_box[i]);
+            now_control_dispose(g_box[i]);
             g_box[i] = NULL;
         }
         g_box_title[i] = NULL;
@@ -619,6 +619,11 @@ static OSErr view_create(WindowRef owner)
         g_browser = NULL;             /* the shell says so; no hard fail */
         return noErr;
     }
+    /* The scene's list of this window's controls is what this
+       application remembered making, not a FindControl sweep - so a
+       browser made by a constructor with no procID still has to be
+       recorded, or it goes missing from the mirror. */
+    now_control_adopt(owner, g_browser, kNowControlProcDataBrowser);
     memset(&callbacks, 0, sizeof callbacks);
     callbacks.version = kDataBrowserLatestCallbacks;
     InitDataBrowserCallbacks(&callbacks);
@@ -626,7 +631,7 @@ static OSErr view_create(WindowRef owner)
     g_notify_upp = NewDataBrowserItemNotificationUPP(item_notify);
     if (g_data_upp == NULL || g_notify_upp == NULL) {
         dispose_callbacks();
-        DisposeControl(g_browser);
+        now_control_dispose(g_browser);
         g_browser = NULL;
         return noErr;
     }

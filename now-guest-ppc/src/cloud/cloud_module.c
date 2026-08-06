@@ -1025,6 +1025,9 @@ static OSErr cloud_create(WindowRef owner, const Rect *body)
                                  &g_browser) != noErr) {
         g_browser = NULL;             /* the pane says so; no hard fail */
     } else {
+        /* Recorded, or the mirror never sees it: the scene lists
+           the controls this application remembers making. */
+        now_control_adopt(owner, g_browser, kNowControlProcDataBrowser);
         memset(&callbacks, 0, sizeof callbacks);
         callbacks.version = kDataBrowserLatestCallbacks;
         InitDataBrowserCallbacks(&callbacks);
@@ -1032,7 +1035,7 @@ static OSErr cloud_create(WindowRef owner, const Rect *body)
         g_notify_upp = NewDataBrowserItemNotificationUPP(item_notify);
         if (g_data_upp == NULL || g_notify_upp == NULL) {
             dispose_callbacks();
-            DisposeControl(g_browser);
+            now_control_dispose(g_browser);
             g_browser = NULL;
         } else {
             callbacks.u.v1.itemDataCallback = g_data_upp;
@@ -1110,7 +1113,7 @@ static void cloud_dispose(void)
        notifications through them (files_browser_view.c and the finding
        carbon-upp-is-not-a-cast-on-cfm carry the full story). */
     if (g_browser != NULL) {
-        DisposeControl(g_browser);
+        now_control_dispose(g_browser);
         g_browser = NULL;
     }
     dispose_callbacks();

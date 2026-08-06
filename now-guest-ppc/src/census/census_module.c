@@ -671,6 +671,11 @@ static OSErr census_create(WindowRef owner, const Rect *body)
         g_browser = NULL;
         return memFullErr;
     }
+    /* The scene's list of this window's controls is what this
+       application remembered making, not a FindControl sweep - so a
+       browser made by a constructor with no procID still has to be
+       recorded, or it goes missing from the mirror. */
+    now_control_adopt(owner, g_browser, kNowControlProcDataBrowser);
     g_data_upp = NewDataBrowserItemDataUPP(rows_data);
     g_notify_upp = NewDataBrowserItemNotificationUPP(rows_notify);
     if (g_data_upp == NULL || g_notify_upp == NULL) {
@@ -709,7 +714,7 @@ static void census_dispose(void)
        Freeing them first let DisposeWindow later call a freed transition
        vector - an intermittent system crash on quit. */
     if (g_browser != NULL) {
-        DisposeControl(g_browser);
+        now_control_dispose(g_browser);
         g_browser = NULL;
     }
     dispose_upps();
