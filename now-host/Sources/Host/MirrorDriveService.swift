@@ -184,7 +184,10 @@ struct MirrorDriveService {
                 object: .menuItem(.init(
                     menu: shape, index: item.index, title: item.title,
                     cmd: item.cmd, isEnabled: item.enabled,
-                    isSeparator: item.separator)),
+                    isSeparator: item.separator,
+                    isAppleMenuItemsEntry:
+                        ObjectResolver.isAppleMenuItemsEntry(item,
+                                                             in: menu))),
                 gesture: .click(count: 1, mods: 0,
                                 at: .init(x: menu.left, y: 0))))
 
@@ -284,7 +287,10 @@ struct MirrorDriveService {
                     menu: .init(id: apple.id, title: apple.title,
                                 left: apple.left, isApple: true),
                     index: row.index, title: row.title, cmd: row.cmd,
-                    isEnabled: row.enabled, isSeparator: row.separator)),
+                    isEnabled: row.enabled, isSeparator: row.separator,
+                    isAppleMenuItemsEntry:
+                        ObjectResolver.isAppleMenuItemsEntry(row,
+                                                             in: apple))),
                 gesture: .click(count: 1, mods: 0,
                                 at: .init(x: apple.left, y: 0))))
 

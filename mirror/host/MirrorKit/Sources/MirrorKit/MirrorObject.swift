@@ -197,11 +197,22 @@ public enum MirrorObject: Equatable, Sendable {
         public var cmd: String
         public var isEnabled: Bool
         public var isSeparator: Bool
+        /// **This row names a file in the Apple Menu Items folder**, rather
+        /// than a command the front application serves itself.
+        ///
+        /// Decided where the whole menu is in hand (`ObjectResolver`),
+        /// because a single row cannot see the separator that divides the
+        /// About item from the folder's contents. False whenever the menu
+        /// does not have that shape, which keeps an unrecognised Apple menu
+        /// on the command route it has always taken.
+        public var isAppleMenuItemsEntry: Bool
         public init(menu: Menu, index: Int, title: String, cmd: String,
-                    isEnabled: Bool, isSeparator: Bool) {
+                    isEnabled: Bool, isSeparator: Bool,
+                    isAppleMenuItemsEntry: Bool = false) {
             self.menu = menu; self.index = index; self.title = title
             self.cmd = cmd; self.isEnabled = isEnabled
             self.isSeparator = isSeparator
+            self.isAppleMenuItemsEntry = isAppleMenuItemsEntry
         }
     }
 
