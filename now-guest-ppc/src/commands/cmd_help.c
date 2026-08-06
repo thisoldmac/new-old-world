@@ -62,6 +62,18 @@ static const char *const d_putstat[] = {
     NULL
 };
 
+static const char *const d_wirestat[] = {
+    "  How long this Mac takes to NOTICE a request, as two",
+    "  histograms: the interval between wire service passes,",
+    "  and the delay from Open Transport announcing data to",
+    "  this loop reading it. A round trip cannot tell those",
+    "  apart from the work; only this Mac can.",
+    "  `sleep N` sets the idle WaitNextEvent sleep in ticks,",
+    "  `wake on|off` the Open Transport wake, `reset` clears",
+    "  the counts. None of the three is saved.",
+    NULL
+};
+
 static const char *const d_vprobe[] = {
     "  Times raw framebuffer reads (8/16/32/64-bit) against",
     "  the CopyBits baseline, checks reread caching, partial-",
@@ -489,6 +501,8 @@ const NowCommandDoc kNowCommandDocs[] = {
       "net", d_net },
     { "putstat", 1, "where the last file received spent its time",
       "putstat", d_putstat },
+    { "wirestat", 1, "how long this Mac takes to notice a request",
+      "wirestat [reset | sleep N | wake on|off]", d_wirestat },
     { "mv", 0, "move or rename something in the shared files",
       "mv <path> <new path>", d_mv },
     { "trash", 0, "move something to the Trash",

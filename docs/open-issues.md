@@ -14,6 +14,135 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED, emulator only: the 115 ms round trip was the guest's own sleep (2026-08-06)
+
+The deltas arc took the scene walk from ~950 ms to 3–8 ms and cut idle
+wire bytes by ~90%, and left one number standing: **a round trip cost a
+115 ms median even when the answer was a zero-byte "nothing changed".**
+Neither the work nor the bytes. This is what it was.
+
+**The mechanism, measured rather than inferred.** `main.c` asked
+`WaitNextEvent` for a six-tick sleep — nominally ~100 ms — unless a
+transfer, stream, offer, put or non-empty control queue was ALREADY in
+flight. A request arriving into a QUIET connection therefore sat readable
+on the socket until that sleep expired, before `conn_service` looked at
+it. The guest now measures both halves of that itself
+(`wirestat`): the interval between its own service passes, and the delay
+from Open Transport announcing data to the loop reading it.
+
+| condition | round trip | notice mean | notice max | pass mean |
+|---|---|---|---|---|
+| 6-tick sleep, no wake (as shipped) | **86 ms** | 48.5 ms | 103 ms | 111 ms |
+| 6-tick sleep + wake | **10 ms** | 7.5 ms | 105 ms | 104 ms |
+| 1-tick sleep, no wake | 15 ms | 10.8 ms | 28 ms | 27 ms |
+| 1-tick sleep + wake | 10 ms | 2.2 ms | 22 ms | 27 ms |
+
+Mid-drive (fronting Finder and NOW alternately, 25 KB deltas rather than
+zero-byte answers): 58 ms → 15 ms, notice 48.5 ms → 4.5 ms.
+
+`notice` is the finding. At a 48.5 ms mean into a ~111 ms loop it is
+uniform arrival into the sleep, which is exactly the shape a poll
+produces, and it is 100% of the unexplained time.
+
+**Why the wake and not simply a shorter sleep.** Both fix the latency.
+Only the wake fixes it without paying for it: with a 6-tick sleep AND the
+wake, the loop still sleeps ~104 ms when nothing is happening, so the
+rest of the Macintosh keeps the time the anchor plane needs — a
+process's A5 is captured when that process pumps. The 1-tick condition
+runs the loop 37 times a second on a machine that is usually idle, which
+is affordable on an emulated G4 and is precisely the kind of cost plan
+013 exists to stop paying on a 1400c.
+
+**The instrument's own trap, worth keeping.** A bench that sends
+requests back-to-back measures nothing here: answering one leaves a
+queued control frame, `conn_wants_fast_pump()` goes true, and the next
+request lands in an already-fast loop. The first run of
+`tools/local-wire-latency.py` reported a 10 ms median for the SHIPPED
+build for this reason. Every number above is from gap-separated requests
+into a quiet connection, which is the cadence the product actually has.
+
+**What is NOT proven, and it is the whole risk.** Every number is from an
+emulated G4 (`os91-runner.qcow2`, mac99, wire 5470, anchor 1706, builds
+`e207f041daa0` → `dc2900a44991`). Nobody has watched this on a PowerBook
+1400c. The wake is an Open Transport notifier — interrupt-time
+discipline, where a mistake is a crash rather than a slow answer — that
+does two things and only two: stamp the microsecond clock, and call
+`WakeUpProcess` on a PSN captured at startup on the main thread. It
+acknowledges nothing, so disconnects stay pending for the main loop's
+`OTLook` path where they have always been handled. **It also keeps the
+notifier installed after the dial**, which it did not before; that is the
+larger behavioural change of the two. Failure modes are graceful by
+construction — a notifier that never fires, or a `WakeUpProcess` that
+does nothing, leaves exactly the behaviour that shipped before — and
+`wirestat wake off` restores it from either face without a rebuild. **A
+metal pass is owed**, and until it happens the emulator's own advantage
+cuts the other way for once: on loopback the byte term is nearly free
+and the latency term is not, so this win probably UNDERSTATES what a
+slower machine gets.
+
+Two residuals, both small and both honest:
+
+- One notification in eleven or so still costs ~100 ms with the wake on.
+  A notification that lands while the process is already awake finds
+  `WakeUpProcess` with nothing to wake. `now_wire_sleep_ticks` closes
+  most of it by sleeping one tick whenever bytes are announced and
+  unread, and it did not close all of it.
+- The anchor-plane CANARY (how many applications the scene could bind,
+  how many windows it saw) **did not move in any condition** — but it
+  was pinned at its floor (1 app idle, 2 mid-drive) in the SHIPPED
+  condition too, so the run says nothing about starvation either way.
+  Anyone repeating this should drive a machine with several applications
+  and real windows before quoting the canary.
+
+Where: `now-guest-ppc/src/core/wire.c` (the notifier's data era,
+`g_wake_enabled`), `src/core/wire_sleep.c` (the sleep rule, natively
+tested), `src/core/loopstat.c` (the histogram, natively tested),
+`src/core/wirestat_cmd.c` (the grammar both faces share),
+`tools/local-wire-latency.py` (the bench).
+
+## BROKEN: `putstat` has no console face, and probably not only `putstat` (2026-08-06)
+
+Found while giving `wirestat` its second face. Typed at the guest's own
+console — or through the exec plane, which runs the same dispatch —
+`putstat` answers **"command failed"**. Over the wire the same verb
+returns its full row table. Reproduced 2026-08-06 on an emulated G4,
+build `dc2900a44991`.
+
+The cause is a buffer, not a missing case.
+`console_model.c :: console_model_dispatch` falls through to
+`now_command_run(name, NULL, 0, result, sizeof result)` with
+`char result[512]`. A verb whose `command.result` JSON exceeds 512 bytes
+is truncated, the reply then has no `message` key, and the console
+prints the generic failure. `putstat`'s table is over that; `gestalt`,
+`net` and `ps` are unaffected because each has an explicit console case
+that reads the producer directly.
+
+This violates [command-parity.md](command-parity.md) — a capability on
+one face is half a feature — and `CommandParityTests` does not catch it,
+because that gate checks specific message families textually rather than
+every verb's console rendering. It is also invisible from the Workshop:
+the Diagnostics page reads the same counters through
+`diag_putstat_rows`, so the numbers ARE on that machine's screen; it is
+only the typed verb that fails.
+
+What a fix has to decide, in the order it should be decided:
+
+1. **Which verbs are affected.** Anything routed through the generic
+   tail whose result can exceed 512 bytes. That set has never been
+   enumerated, and "probably not only `putstat`" is the honest state of
+   this entry.
+2. **The renderer.** Either a rowArray renderer on the generic tail
+   (`json.h` has `now_json_array` / `now_json_next_array` for
+   `[label, value]` rows) with a larger reply buffer — note the buffer
+   is on the stack of a classic Mac application, so growing it is not
+   free — or an explicit console case per affected verb reading the same
+   producer the wire verb reads. The second is the `net` precedent
+   ("three faces, one producer") and is what `wirestat` does, at
+   `console_model.c :: console_show_loopstat`.
+3. **A gate that would have caught it.** The shape is probably a source
+   test over `kNowCommandDocs` (`cmd_help.c`) asserting every verb
+   either has an explicit console case or provably fits the generic
+   path. Without one this returns the next time a verb grows a row.
 ## BROKEN: no verb reached through the PowerPC console's fallback can be given an ARGUMENT (2026-08-06)
 
 Found while fixing the renderer half of the same seam (see

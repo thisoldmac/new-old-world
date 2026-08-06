@@ -220,6 +220,44 @@ both conditions, in `docs/open-issues.md`. Three things it settled:
   window empty whenever NOW is not frontmost — a correctness hole, found
   by a measurement, and it is not a performance question.
 
+### 1a · The cost was not the work at all — it was the WAIT
+
+**DONE 2026-08-06** (`claude/wire-latency`), and it reframes what is left
+of this plan.
+
+§ 1 made the walk cheap (3–8 ms) and the deltas arc made the idle answer
+free (zero bytes), which left a round trip still costing a 115 ms median.
+Neither term explained it. It was the guest's own `WaitNextEvent` sleep:
+six ticks, ~111 ms measured, taken whenever no transfer was already in
+flight — so a request arriving into a quiet connection sat readable on
+the socket until the sleep expired.
+
+The guest now measures that itself, which is the part worth keeping:
+`wirestat` reports the interval between its own service passes and the
+delay from Open Transport announcing data to the loop reading it, as
+histograms. The second one — `notice` — was a 48.5 ms mean and a 103 ms
+maximum, i.e. **uniform arrival into the sleep, and 100% of the missing
+time.** An Open Transport notifier calling `WakeUpProcess` takes the
+round trip to 10 ms idle and 15 ms mid-drive. Numbers, conditions and
+what is unverified: [open-issues.md](../open-issues.md).
+
+**What this says about §§ 3–5.** It is a tier-2 change by § B's ranking —
+be told instead of asking — and it is the same thesis as § A applied to
+the WIRE rather than to the machine's interface, one layer lower than
+this plan was looking. It also lands the argument § A's own measurement
+could not: **being told works and is cheap**, when the thing doing the
+telling is already running (Open Transport's notifier) rather than
+waiting to be scheduled (a foreign process's event loop). That is the
+distinction the arm-handshake measurement was really about, and it is
+worth carrying into any § 3 design: a notifier is only as good as the
+context it runs in.
+
+**And it does NOT strengthen the case for a shadow model.** The remaining
+guest-side cost in the steady state is a 3–8 ms walk against a 10 ms
+round trip on an emulated G4. § 5's "what would make this wrong" still
+stands unamended: that case rests entirely on the vintage-hardware
+multiplier, and nobody has taken a reading from a 1400c.
+
 ### 2 · Tier-1 wins, taken on evidence
 
 Whatever § 1 names. The candidates already visible: the per-menu root

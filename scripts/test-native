@@ -216,6 +216,22 @@ run_c now-guest-ppc conn_fields_test.c       ""  src/connection/conn_fields.c
 run_c now-guest-ppc diag_layout_test.c       ""  src/diagnostics/diag_layout.c
 run_c now-guest-ppc mcp_layout_test.c        ""  src/mcp/mcp_layout.c
 run_c now-guest-ppc json_native_test.c       ""  src/core/json.c
+# The wire-latency histogram. It is an INSTRUMENT, and an instrument that
+# miscounts reports a plausible wrong number rather than failing - so its
+# bucket edges, its unstarted minimum and its median rule are asserted
+# here instead of being inferred from a guest's own output.
+run_c now-guest-ppc loopstat_test.c          ""  src/core/loopstat.c
+# The sleep rule, which was the whole of a scene round trip's
+# unexplained 115 ms. Two of its three branches have each already been a
+# defect on their own - a zero sleep starves the anchor plane, and a
+# missing "bytes already announced" leaves the wake racing its own
+# notification - so the rule is a function with a test rather than a
+# ternary in an event loop.
+run_c now-guest-ppc wire_sleep_test.c        ""  src/core/wire_sleep.c
+# `wirestat`'s grammar, shared by its two faces. It SETS the conditions
+# every number in this arc was taken under, so a misparse does not fail -
+# it measures a condition nobody chose.
+run_c now-guest-ppc wirestat_cmd_test.c      ""  src/core/wirestat_cmd.c
 run_c now-guest-ppc peek_table_test.c \
       "-DNOW_PEEK_TABLE_HOST"
 run_c now-guest-ppc peek_validate_test.c     ""  src/peek/peek_validate.c
