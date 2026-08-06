@@ -88,7 +88,15 @@ final class NOWMirrorContentPlane {
     /// (measured 2026-08-06). A destination is not always a window, and
     /// a claim belongs to the port it was made on.
     private var pendingBlitSource: [UInt32: UInt32] = [:]
-    private var windowPortState = PortState()
+    /// Live drawing state per DESTINATION port. The window's is the one
+    /// a splice restores; an offscreen world's matters for a different
+    /// reason — its ORIGIN is part of the join's arithmetic. Sherlock 2
+    /// blits its list into the composite at `dst [0,0,451,76]` while
+    /// the destination's origin is shifted, which is the same SetOrigin
+    /// idiom its channel grid uses; a join that ignores the origin
+    /// places that list at the window's top-left instead of inside the
+    /// list area, and the render says so plainly.
+    private var portStates: [UInt32: PortState] = [:]
     private var evictedSourceCount = 0
 
     /// Keep enough ordered drawing to include a full repaint without allowing
@@ -118,7 +126,7 @@ final class NOWMirrorContentPlane {
         sourceOperations.removeAll()
         sourceOrder.removeAll()
         pendingBlitSource.removeAll()
-        windowPortState = PortState()
+        portStates.removeAll()
         armedAt = nil
     }
 
@@ -183,7 +191,7 @@ final class NOWMirrorContentPlane {
             sourceOperations.removeAll()
             sourceOrder.removeAll()
             pendingBlitSource.removeAll()
-            windowPortState = PortState()
+            portStates.removeAll()
             armedAt = nil
         }
         if needsTarget || needsRenewal {
@@ -413,13 +421,16 @@ final class NOWMirrorContentPlane {
                     pendingBlitSource[address] = record.srcPort
                     continue
                 }
+                portStates[address, default: PortState()].absorb(record.op)
                 if record.op.op == "bits",
                    let inner = pendingBlitSource.removeValue(forKey: address),
                    let heldOps = sourceOperations[
                        SourceKey(port: inner, generation: record.generation)],
                    !heldOps.isEmpty,
-                   let rehomed = Self.rehome(heldOps, bits: record.op,
-                                             restoring: PortState()) {
+                   let rehomed = Self.rehome(
+                       heldOps, bits: record.op,
+                       restoring: portStates[address] ?? PortState(),
+                       into: portStates[address] ?? PortState()) {
                     appendSource(destKey, rehomed)
                     joined += 1
                     held += rehomed.count
@@ -483,14 +494,14 @@ final class NOWMirrorContentPlane {
                                     generation: record.generation)
                 if let heldOps = sourceOperations[key], !heldOps.isEmpty,
                    let rehomed = Self.rehome(heldOps, bits: record.op,
-                                             restoring: windowPortState) {
+                                             restoring: portStates[address] ?? PortState()) {
                     toAppend = rehomed
                     joined += 1
                 }
             } else {
                 pendingBlitSource[address] = nil
             }
-            for op in toAppend { windowPortState.absorb(op) }
+            for op in toAppend { portStates[address, default: PortState()].absorb(op) }
             operations[identity, default: []].append(contentsOf: toAppend)
             if operations[identity, default: []].count
                     > Self.operationCapPerWindow {
@@ -622,11 +633,23 @@ final class NOWMirrorContentPlane {
     /// the bits op and the renderer hatches it, which is the honest
     /// degradation.
     static func rehome(_ heldOps: [DisplayOp], bits: DisplayOp,
-                       restoring state: PortState) -> [DisplayOp]? {
+                       restoring state: PortState,
+                       into destination: PortState? = nil) -> [DisplayOp]? {
         guard let src = bits.src, src.count == 4,
               let dst = bits.dst, dst.count == 4 else { return nil }
-        let dx = dst[0] - src[0]
-        let dy = dst[1] - src[1]
+        /* THE DESTINATION'S ORIGIN IS PART OF THE TRANSLATION, and
+           leaving it out is what put Sherlock's list at the top of its
+           window instead of inside the list area. The replay draws a
+           coordinate x at (x - origin), so for a held op at source
+           coordinate s to land where the blit put it, the prologue
+           origin must be src - dst + the destination's own origin.
+           Sherlock blits every composed element to a constant dst under
+           a shifted origin (the same idiom its channel grid uses), so
+           without this term every one of them collapses onto the same
+           corner. */
+        let into = destination?.origin ?? [0, 0]
+        let dx = dst[0] - src[0] - (into.count == 2 ? into[0] : 0)
+        let dy = dst[1] - src[1] - (into.count == 2 ? into[1] : 0)
 
         func stateOp(_ kind: String, _ build: (inout DisplayOp) -> Void)
             -> DisplayOp {

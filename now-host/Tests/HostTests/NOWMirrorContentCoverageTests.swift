@@ -223,6 +223,8 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
              0x1f6fd220, "0.35520514", "Date & Time"),
             ("cp-datetime-hooked", "qdtrace-drain-cp-datetime-hooked",
              0x1f6fd590, "0.34734082", "Date & Time"),
+            ("sherlock-live", "qdtrace-drain-sherlock-live",
+             0x1e9a0780, "0.35979266", "Sherlock 2"),
             ("cp-memory", "qdtrace-drain-cp-memory",
              0x1e9dffa0, "0.36438017", "Memory"),
             ("now-window", "qdtrace-drain-now-window",
