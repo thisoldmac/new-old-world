@@ -14,6 +14,46 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## UNRESOLVED: the GWorld probe's own control fails, so it has no verdict (2026-08-06)
+
+`qdtrace start mode=probe` exists and is emulator-run: it sights a blit
+into the armed window, then sweeps the application and system zones for
+the CGrafPort that owns those pixels and hooks it as an offscreen row.
+[The brief](gworld-probe-brief.md) is what it answers; scratch log in
+docs/local/gworld-probe-run-notes.md.
+
+**Working**: the recorder (SimpleText, the positive control, gives 22
+text ops at their true pens). **Re-confirmed**: the Finder's icon view
+emits one content-sized blit, `src == dst`, zero text, zero per-icon
+ops — an independent reproduction of
+`finder-window-icons-are-offscreen-blits` on a new binary.
+
+**BROKEN — the chase.** NOW's own Screenshots module blits a GWorld
+preview into its own window through a dereferenced handle
+(`screenshots_module.c:383`), and the probe cannot find that port
+either: 7 sightings, 14 zone scans, 0 hits, and 0 blocks anywhere in
+either heap whose pixmap points at the sighted pixels. **A chase that
+cannot find a GWorld we allocated ourselves says nothing about anyone
+else's**, so the Finder's identical zero is NOT evidence, and no
+outcome — 1, 2 or 3 — is reported for any application. Suspects,
+untested: `useTempMem` pixels living outside both swept zones; the
+system zone's 64 MB sanity bound silently skipping it (`scans` proves
+the loops ran, never that they covered anything); a port reachable only
+through a master pointer the 2-byte walk never lands on.
+
+**Paid for on the way**: the scan crashed the Finder. It dereferenced a
+`portPixMap` read out of arbitrary heap bytes with only a NULL/odd
+check, and a wild pointer into unmapped space is a bus error taken
+inside the application the resident is a guest in. Now range-checked to
+physical RAM on both hops — the general rule being that resident code
+walking a heap for a shape dereferences pointers it did not compute.
+
+Two instrument lessons worth more than the probe: the counters encoded
+that crash a full run before anyone read the screen (a scan that
+increments its entry counter and none of its exit counters never
+returned), and nothing on the wire reports a guest-side alert at all —
+every counter read green while a crash dialog sat on screen.
+
 ## The folding sidebar, both halves (2026-08-05)
 
 The rail folds to icons on the guest and the sidebar does the same on the
