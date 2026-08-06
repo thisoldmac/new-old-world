@@ -29,6 +29,44 @@ nothing about behaviour, **tested** means the suites pass, and
 
 ## What works today
 
+- **A mirrored window has an interior** (2026-08-06, emulator only).
+  Until this landed, the Mirror knew a window existed, where it was, and
+  what controls it declared — and nothing about what the application had
+  actually DRAWN inside it. The content plane carries that: the resident
+  records QuickDraw operations into a 64 KiB ring in the armed process,
+  the host drains it and replays them. Watched crossing the wire on
+  mac99/OS 9.1 from a live CFM Finder and from Sherlock 2; the Finder
+  capture is a committed fixture. `qdtrace` is the verb, and
+  [contract-coverage.md](contract-coverage.md) expands it record by
+  record.
+- **An offscreen world is joined to the window it lands in** (2026-08-06,
+  emulator only). This is the hard half. An application that composes
+  its picture in a GWorld and blits the finished thing used to present
+  as one opaque rectangle, and the after-the-fact chase that looked for
+  the source could not reach a world created, drawn, blitted and
+  disposed inside a single event pass — which is how Sherlock 2 and the
+  Appearance control panels draw. The resident therefore patches
+  `_QDExtensions` (`$AB1D`) in the target's own context and hooks each
+  world **at creation**: `worldborn` when `NewGWorld` returns,
+  `worlddied` at disposal, and a `blitsrc` record naming the source port
+  before the `bits` that reveals its work. The host re-homes the held
+  ops into the destination — nested worlds included, an inner world
+  spliced into an outer one before the outer reaches the window.
+  Measured against Sherlock 2 on the emulator: 77 born, 77 died, 0
+  missed. **The patch is never removed** — disarming makes it decline —
+  because a patch withdrawn from a foreign process is how you crash one.
+- **The render has Platinum's own numbers in it** (2026-08-06, tested).
+  The 21 accent ramps come from the guest's `Apple platinum` theme file
+  rather than from a spec or a guess, extracted straight off a disk
+  image with no VM in the loop (`tools/extract-assets-offline`), and
+  selection and highlight are read from the active ramp. The same route
+  ships 914 per-application icons and 127 System-file icons, at 16×16
+  beside 32×32 so a small slot gets small art instead of a downsample.
+  Scrollbar arrows and cell grids are DERIVED — the grid from the
+  drawing's own idiom, marked `drawing-derivation`, claiming no action.
+  Where the host has no art it draws a placeholder graded to the
+  evidence, never a claim stronger than what it knows
+  ([render-composition.md](render-composition.md)).
 - **The scene says where its own time went** (2026-08-06). Every scene
   carries `meta.phases`: eight non-overlapping phases in MICROSECONDS,
   plus the measurement's own weight so "cheap enough to leave on" is
@@ -456,6 +494,42 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
 
 ## What does not work
 
+- **No part of the content plane has touched metal** (2026-08-06). Every
+  claim in the three interior bullets above is emulator-verified on
+  mac99/OS 9.1 and nothing more. The resident that writes the ring has
+  never run on a Macintosh; no `qdext` counter has been read on one; and
+  **the live host application has never been watched composing an
+  interior** — the composition is proven by replaying committed captures
+  inside tests, which is a different and weaker thing. A PowerBook 1400c
+  is far slower than the emulator and the trap patch is the most
+  invasive thing this project installs in a foreign process, so this is
+  the gap most worth closing next.
+- **The content plane needs the optional resident, and NOW-68K will
+  never have it** (2026-08-06). Without the NOW Extension there is no
+  interior at all — the verb answers `content-plane-absent`, correctly,
+  rather than an empty picture. On System 7.1 there is no resident to
+  install, so `qdtrace` answers `unknown-command`: a declared asymmetry,
+  not a to-do.
+- **A busy application can outrun the ring** (2026-08-06). It is 64 KiB
+  and the host drains twelve pages a cycle, each page bounded by the
+  4096-byte control frame rather than by a record count. The drain
+  reports what it lost instead of presenting a gap as a picture, which
+  is the honest behaviour and not a fix — a window that repaints faster
+  than the drain still renders incomplete.
+- **How close the render actually LOOKS is measured once and is not
+  good** (2026-08-06). Every gate before that day proved that strings
+  cross, not that the window resembles the window.
+  [fidelity-sweep-2026-08-06.md](fidelity-sweep-2026-08-06.md) is the
+  first pass that judged appearance — eleven windows against the
+  machine's own pixels — and its deliverable is a RED LIST that is open
+  work. Note that its scores describe a deliberately pinned tree taken
+  *before* the icon pack grew from 186 to 914, so every icon row there is
+  expected to move.
+- **Two things the plane produces have no consumer** (2026-08-06).
+  `srcPixmap` is printed by the guest and decoded by nothing on the
+  host, and the whole `qdext` counter object is operator- and
+  agent-facing only — no Swift code reads it. Reachable is not the same
+  as used, and a tick in a coverage table should not imply otherwise.
 - **A Mirror round trip waits ~115 ms before it works for 3–8 ms**
   (2026-08-06, emulator). The guest's event loop sleeps up to 100 ms
   before it notices a request, so a zero-byte "nothing changed" answer

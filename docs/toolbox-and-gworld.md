@@ -328,9 +328,16 @@ rather than assumed for the two applications that beat the chase.
 - Whether the Finder's composite survives its repaint at all — the
   transient hypothesis. The static evidence (no `UpdateGWorld`) points
   at create-and-destroy, but it has not been observed.
-- Whether a 68K trap patch on a QuickDraw call is seen by a native
+- ~~Whether a 68K trap patch on a QuickDraw call is seen by a native
   PowerPC caller. The spike proves 68K-installed `grafProcs` fire for a
   68K program; it does not establish what happens when the *caller* is
-  native.
+  native.~~ **ANSWERED 2026-08-06 (measured): yes.** The resident patches
+  `_QDExtensions` (`$AB1D`) as a ToolTrap with a 68K shim
+  (`ext/src/now_content_qdext.S`), and it fired for Sherlock 2 — which
+  the table above records as resolving `NewGWorld` against InterfaceLib,
+  i.e. a native CFM caller — 77 births and 77 disposals with 0 missed.
+  The InterfaceLib glue reading the trap dispatch table at call time,
+  which section 8 above establishes as the precondition, is what makes
+  this work. Emulator only.
 - The route from an `IconSuite`/`IconRef` to a resource ID that a host
   could compose from.

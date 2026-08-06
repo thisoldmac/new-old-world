@@ -4,6 +4,28 @@
 parked upstream project `timbottu/mirror`. Nothing on this page was
 measured by NOW.
 
+> **NOW has since measured this, and the central open question came back
+> YES (2026-08-06).** This page records what *upstream* knew on
+> 2026-07-31 and is still the best account of the bottleneck mechanism,
+> the op vocabulary and the island design — but read two of its
+> conclusions as overtaken:
+>
+> - Where it treats an offscreen composite as unreplayable and **pixel
+>   islands as the answer** for window interiors, that is no longer the
+>   floor. Hooking an offscreen GWorld's `grafProcs` yields the per-item
+>   drawing, and a `blitsrc` record joins those ops back into the window
+>   at the blit's destination. Worlds that live and die inside a single
+>   event pass — which the sighting route cannot reach — are hooked at
+>   creation by a `_QDExtensions` trap patch. Islands remain a genuine
+>   fallback rather than the plan.
+> - The op vocabulary has grown by three records and a status object
+>   since; [contract-coverage.md](contract-coverage.md) expands them.
+>
+> The evidence is [gworld-probe-brief.md](gworld-probe-brief.md) and
+> [toolbox-and-gworld.md](toolbox-and-gworld.md); the composition rule
+> is [render-composition.md](render-composition.md). All emulator, no
+> metal.
+
 Source documents, now superseded by this one:
 `mirror/docs/QUICKDRAW-CONTENT-PLANE.md` (the design brief),
 `QDPEEK-SPEC.md` (the build contract), `TIMBUKTU-QD-FINDINGS.md` and

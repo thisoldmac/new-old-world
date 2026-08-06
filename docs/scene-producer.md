@@ -29,7 +29,8 @@ travel; this note records what was built and what it refuses to claim.
 | `windows[].controls[]`, `.text`, `.kind` | **conditional** — per window, when that window's walk ran and completed |
 | `windows[].ref`, `windows[].controls[].ref` | **conditional** — per element, when the reference layer could name it |
 | `menus[].apple`, `controls[].{role,checked}` | **absent** — nothing this walk reads determines them |
-| `windows[].display[]`, `.items[]` | **absent** |
+| `windows[].display[]` | **absent** — by design, and for the same reason as `desktopItems[]`: the HOST fills it, from a different plane (2026-08-06) |
+| `windows[].items[]` | **absent** |
 | `desktopItems[]` | **absent** — by design; the HOST reads it (see below) |
 
 **Absent, not empty, and the difference is the whole point.** An empty
@@ -49,7 +50,7 @@ did happen, and zero of them is a real answer.
 ### `desktopItems[]` is absent here and always will be
 
 Worth saying out loud, because this row's absence was read as a failure
-for a week (docs/open-issues.md, 2026-08-06). **No guest can produce this
+from 2026-07-30 to 2026-08-06 (docs/open-issues.md). **No guest can produce this
 plane.** This walk reads the Toolbox — windows, controls, menus — and a
 desktop icon is none of those: it is a file the Finder draws, and only
 the Finder knows where. So the row is `absent` as a permanent statement
@@ -61,6 +62,28 @@ merges it into the scene on that side. A capture taken by speaking
 **cannot** carry `desktopItems`, and its absence there is evidence of
 nothing. Two live captures were once cited as proof the desktop read was
 broken; they were proof only that a probe is not the Mirror.
+
+### `windows[].display[]` is absent here for the same reason (2026-08-06)
+
+The lesson above generalised within the week, so it is worth stating
+before someone reads a bare `absent` the same wrong way twice.
+
+A window's interior — what the application actually drew — is real and
+the host renders it. It does not come from this walk. It comes from the
+content plane: the resident records QuickDraw operations into a ring in
+the armed process, the host drains that ring with the `qdtrace` verb,
+and `NOWMirrorContentPlane` attaches the ops to the matching window
+*after* the scene arrives. So the same rule applies exactly: a capture
+taken by speaking `scene.request` to a guest directly carries no
+`display`, and its absence there is evidence of nothing about whether
+interiors work.
+
+The difference from `desktopItems` is worth keeping straight. That one
+is absent *permanently*, because no Toolbox walk can ever see a desktop
+icon. This one is absent because it is a **different plane on a
+different clock** — the drain is paced and spans several round trips,
+and folding it into the scene walk would make one slow answer out of two
+fast ones. See [render-composition.md](render-composition.md).
 
 ### Coverage is what permits deletion
 

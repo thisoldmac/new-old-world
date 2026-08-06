@@ -98,6 +98,36 @@ The general lesson is the one this repository keeps re-paying for: a
 total failure wore a partial failure's words. A coverage claim should
 distinguish *nobody answered* from *the answer did not cover everyone*.
 
+### The same defect was in the item roster, and cost more (2026-08-06)
+
+Worth recording here rather than in a commit message, because it is the
+identical mechanism one pass over and it produced this project's
+longest-running wrong diagnosis.
+
+The roster pass — the one that reads a container's items, and the one
+`desktopItems` depends on — did not opt in. So a script that raised
+answered `ok: true` with an empty output row, the empty answer fell
+through to the roster guard, and **every** distinct failure (a raise, a
+refusal, a Finder that could not name its own desktop) came back as the
+one sentence `"incomplete or changing item roster"`. That sentence was
+all the mirror ever said about why `desktopItems` was empty, and it was
+read for a week as evidence the guest could not answer. It could: the
+guest had been answering all along — three pages and a type pass, with
+`osaErr` 0.
+
+The pass now opts in and reports the guest's own refusal by code. Two
+rules came out of it:
+
+- **A refusal must carry the refuser's own words.** A caller that
+  collapses distinct failures into one sentence has not simplified an
+  error, it has deleted the evidence for the next diagnosis.
+- **Opt-in was right, and incomplete is how opt-in fails.** The switch
+  exists because one caller is built on a script that is *expected* to
+  raise. But a default that hides failures means every new caller is
+  wrong until someone remembers; the art pass still does not opt in,
+  deliberately, and that is now a stated decision rather than an
+  oversight.
+
 ## What is still open
 
 A complete census is not reachable today. `enrichVisibility` requires

@@ -84,10 +84,19 @@ Both: comments say **why**, not what. Match the surrounding density.
 
 ## Testing
 
-- **`scripts/test-all` is the gate.** It runs the three below in order,
+- **`scripts/test-all` is the gate.** It runs the four below in order,
   cheapest first, and stops at the first failure naming it. A broken
   frame codec should cost two seconds to find, not the four minutes
   xcodebuild takes to reach the same conclusion by a longer route.
+- MirrorKit: `scripts/test-mirrorkit` — the vendored `mirror/` package's
+  own suite. It became stage 2 on 2026-08-06 **because it was missing**:
+  `mirror/` is tracked in this tree and carries a full SwiftPM package,
+  and no gate ran it, so `test-all` read green for three days with seven
+  of those tests red. That is the same hole as "every other gate can be
+  green while neither guest compiles" — a gate is only as wide as the
+  tools it invokes. Its output is logged rather than shown, but a SKIP is
+  pulled back out and echoed, because a gate that quietly declines to run
+  is how this one came to be missing in the first place.
 - Guest builds: `scripts/build-guests` cross-compiles both guests.
   Nothing else in this tree does — every other gate can be green while
   neither guest compiles, because none of them invokes a cross-compiler,

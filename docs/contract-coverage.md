@@ -299,17 +299,83 @@ The GWorld probe arc has since moved `qdtrace` past that position on the
 emulator: probe-mode drains on mac99/OS 9.1 (2026-08-06) carried real
 records from a hooked offscreen port — 8 text, 24 rect, 11 rgn, 8 bits
 across one Finder resize, with the true filenames at their true pens.
-The drain's record vocabulary gained `blitsrc` the same week (plan 013,
-slice A): probe mode only, emitted immediately before a `bits` record
-whose source resolves to a hooked offscreen port, carrying `srcPort` —
-the join the host needs to re-home offscreen ops into a window. It is a
-separate record rather than a wider bits payload so an older reader
-steps over it whole and loses only the join it never had. **Proven on
-the emulator the same day**: 1000 `blitsrc` records crossed the wire
-against the loop control (every one naming the port the applet reported
-for itself, every one immediately preceding its `bits` record), and one
-against the live CFM Finder, whose capture is now the committed fixture
-behind the host's slice-D test. Nothing here has touched metal.
+
+#### `qdtrace` is a SUBSYSTEM, not a row (2026-08-06)
+
+The rule at the foot of this file — expand any row that is really a
+subsystem — applies here, and the first version of this section broke
+it: it named `blitsrc` and stopped, while three more additions had
+landed the same day. `qdtrace` is four subcommands (`status`, `start`,
+`stop`, `drain`) over a record vocabulary of **fourteen** ops, and the
+vocabulary is where the arc's work actually shows. Derive it the way
+this file derives everything else:
+
+```
+grep -oE 'case kNowContentOp[A-Za-z]+: *return "[a-z]+";' \
+  now-guest-ppc/src/content/qdtrace_json.c
+```
+
+That prints fourteen lines, which is the count this section claims. It
+is the guest's own `op_name()` table, so it cannot drift from what the
+wire says the way a remembered list can.
+
+Eleven are the drawing ops that were there from the start — `text`,
+`line`, `rect`, `rrect`, `oval`, `arc`, `poly`, `rgn`, `bits`,
+`comment`, `state`. Three are the join, and all three are new:
+
+| Record | What it carries | Why it exists |
+|---|---|---|
+| `blitsrc` (op 12) | `srcPort`, `srcPixmap` | Emitted immediately before a `bits` record whose source resolves to a port this plane hooked. `srcPort` is the join the host needs to re-home the offscreen ops into the window at the blit's destination. A separate record rather than a wider `bits` payload, so an older reader steps over it whole and loses only the join it never had. |
+| `worldborn` (op 13) | `world`, `pixmap`, `rect` | An offscreen world hooked at the instant `NewGWorld` returned — before the application has drawn a thing into it. |
+| `worlddied` (op 14) | `world` only | That world at disposal. It deliberately carries no shape: after `DisposeGWorld` there is nothing left to read, and a remembered rectangle would be a claim about a port that no longer exists. |
+
+**The two `world` records come from a trap patch, not from a search.**
+The resident patches `_QDExtensions` (`$AB1D`, a ToolTrap) in the
+target's own context: selector 0 (`NewGWorld`) is wrapped at its tail so
+the brand-new port is hooked at birth, selector 4 (`DisposeGWorld`) at
+its head so the row is dropped and the port's `grafProcs` restored
+before the world goes. It is never removed — disarming makes the note
+function decline instead, which is the only safe shape for a patch in a
+foreign process. This is what reaches a world created, drawn, blitted
+and disposed inside one event pass, which the older sight-then-chase
+route cannot reach by construction; that route stays probe-only, because
+walking two heaps at draw time inside another process is not something
+to arm by default.
+
+**`status` gained a `qdext` object** — `installed`, `calls`,
+`newGWorld`, `lastSelector`, `foreign`, `born`, `died`, `bornMissed` —
+which is that patch's own account of itself, and the only way to tell a
+patch that never installed from one that installed and never fired. It
+is read back under a length gate (`qdtrace_read.c`), so a build talking
+to an older resident reports the object absent rather than reading past
+the block.
+
+**Correction to what this file said before (2026-08-06):** the three new
+records were described here, and in `contract/asyncapi.yaml`, as **probe
+mode only**. They are not. All three are gated on
+`content_mode_records()` in `ext/src/now_content.c`, which is record mode
+**or** probe mode, and the QDExtensions patch is installed under the same
+gate — while the host arms with `"mode": "record"`. Read literally, the
+old wording said the host's own arming mode gets none of this, which is
+backwards. The contract's prose has been corrected to match the code;
+no schema, field or behaviour changed.
+
+**How far it is proven.** 1000 `blitsrc` records crossed the wire
+against the loop control on the emulator the same day — every one naming
+the port the applet reported for itself, every one immediately preceding
+its `bits` record — and one against the live CFM Finder, whose capture is
+the committed fixture behind the host's slice-D test. The trap-patch path
+was watched against Sherlock 2 on the same emulator: 77 born, 77 died, 0
+missed. **Nothing here has touched metal**, and no `qdext` counter has
+been read on a Macintosh.
+
+**Served is not consumed.** Two of these are guest-side only today:
+`srcPixmap` is printed by the guest and decoded by nothing on the host,
+and the whole `qdext` object has **no host consumer** — it is
+operator- and agent-facing, reachable from the console and over the
+wire, and no Swift code reads it. That is a deliberate diagnosis surface
+rather than a gap, but it is not the same as being used, and this file
+should not let the tick imply otherwise.
 
 `transitions` (2026-08-05) began in exactly that position and **no
 longer is**, which is worth stating precisely because the distinction
@@ -786,3 +852,30 @@ The command registry came from `x-commands` in
 `now-guest-68k/src/commands/commands68.c`, and the probe list from `k_probes` in
 `now-guest-ppc/src/census/census_probes.c` with NOW-68K's beside it from
 `k_probes68` in `now-guest-68k/src/census/census68.c`.
+
+## Re-derived 2026-08-06
+
+Every command above was run again against this tree. What the numbers
+are today:
+
+| | Derived | Was |
+|---|---|---|
+| PowerPC inbound message types | **48** | 42 |
+| NOW-68K inbound message types | **23** | 23 |
+| `x-commands` registry | **41** | 39 |
+| PowerPC verbs served | **38** | 36 |
+| NOW-68K verbs served | **13** | 13 |
+
+**The tables were right and the counts at the foot were stale**, which is
+worth recording because it is the less obvious direction for this file to
+drift. The six inbound types are the `chat.*` family (four) and
+`preview.begin` / `preview.end` (two); all six already have rows in the
+inbound table above, and both new registry verbs (`qdtrace`,
+`transitions`) already have rows in the verb table. Nobody who read the
+tables was misled — only someone who quoted a total was. A count is the
+part of this document that no reader can check by looking at the row
+next to it, so it is the part most worth re-running.
+
+`qdtrace` is now expanded as a subsystem above, per this file's own rule.
+It was ticked as one row while its record vocabulary had grown by three
+and its `status` by a whole object.
