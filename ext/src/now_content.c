@@ -415,6 +415,45 @@ static void content_record_bits(const BitMap *src_bits, const Rect *src_rect,
         return;
     }
     content_emit_state(port);
+    /* THE JOIN, probe mode only (013 A2.2): name the source port before
+       the bits record that reveals its work. Each offscreen row's handle
+       is dereferenced HERE, at the same instant the comparison runs -
+       never stashed at hook time - because LockPixels relocates the
+       PixMap record and a stored deref is a snapshot of a moved block
+       (013 A2.1). A source that resolves to no hooked row emits nothing:
+       absence is the pre-join behaviour, not a zero. */
+    if (gArmedMode == (NowPeekU32)kNowContentModeProbe && src_bits != NULL) {
+        NowContentBlitSourceRow rows[kNowContentMaxPorts];
+        NowContentU32 src_port;
+        short i;
+
+        for (i = 0; i < gPortCount; ++i) {
+            rows[i].port = (NowPeekU32)gPorts[i].port;
+            rows[i].a5 = gPorts[i].a5;
+            rows[i].offscreen = gPorts[i].offscreen;
+            rows[i].pixmap = gPorts[i].pixmap;
+            rows[i].pixmap_deref =
+                (gPorts[i].offscreen && gPorts[i].pixmap != 0)
+                    ? (NowPeekU32)*(Handle)gPorts[i].pixmap : 0;
+        }
+        src_port = now_content_blit_source(rows, (int)gPortCount, gArmedA5,
+                                           (NowPeekU32)src_bits);
+        if (src_port != 0) {
+            NowContentBlitSourcePayload sp;
+
+            sp.src_port = src_port;
+            sp.src_pixmap = 0;
+            for (i = 0; i < gPortCount; ++i) {
+                if ((NowPeekU32)gPorts[i].port == src_port
+                    && gPorts[i].offscreen) {
+                    sp.src_pixmap = gPorts[i].pixmap;
+                    break;
+                }
+            }
+            (void)now_content_ring_put(gBlock, kNowContentOpBlitSource, 0,
+                                       (NowPeekU32)port, &sp, sizeof(sp));
+        }
+    }
     pl.sl = src_rect->left; pl.st = src_rect->top;
     pl.sr = src_rect->right; pl.sb = src_rect->bottom;
     pl.dl = dst_rect->left; pl.dt = dst_rect->top;

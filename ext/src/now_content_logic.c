@@ -353,3 +353,38 @@ int now_content_probe_pixmap_match(NowContentU16 cand_port_version,
     return pm_l == want_l && pm_t == want_t
         && pm_r == want_r && pm_b == want_b;
 }
+
+/* Which hooked offscreen port owns the blit's source PixMap. The caller
+   dereferences each row's handle at the same instant it captures
+   `src_bits` (013 A2.1: both sides read NOW, so LockPixels relocation
+   cannot separate them); this only compares. A row qualifies when it is
+   offscreen, in the armed context, holds a handle, and that handle's
+   master pointer IS the sighted source. Exactly one may: a second
+   claimant means the table holds two rows for one pixmap, and a join
+   picked between them draws one window's content inside another - the
+   plan's own stop condition - so ambiguity refuses rather than picks. */
+NowContentU32 now_content_blit_source(const NowContentBlitSourceRow *rows,
+                                      int count,
+                                      NowContentU32 armed_a5,
+                                      NowContentU32 src_bits)
+{
+    NowContentU32 found = 0;
+    int i;
+
+    if (rows == NULL || src_bits == 0 || armed_a5 == 0) {
+        return 0;
+    }
+    for (i = 0; i < count; ++i) {
+        if (!rows[i].offscreen
+            || rows[i].a5 != armed_a5
+            || rows[i].pixmap == 0
+            || rows[i].pixmap_deref != src_bits) {
+            continue;
+        }
+        if (found != 0) {
+            return 0;
+        }
+        found = rows[i].port;
+    }
+    return found;
+}

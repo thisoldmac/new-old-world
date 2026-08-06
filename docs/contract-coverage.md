@@ -236,6 +236,19 @@ Macintosh**, so a `status` on any machine today answers
 `content-plane-absent`, correctly, and that is the whole of what it has
 been seen to do.
 
+The GWorld probe arc has since moved `qdtrace` past that position on the
+emulator: probe-mode drains on mac99/OS 9.1 (2026-08-06) carried real
+records from a hooked offscreen port — 8 text, 24 rect, 11 rgn, 8 bits
+across one Finder resize, with the true filenames at their true pens.
+The drain's record vocabulary gained `blitsrc` the same week (plan 013,
+slice A): probe mode only, emitted immediately before a `bits` record
+whose source resolves to a hooked offscreen port, carrying `srcPort` —
+the join the host needs to re-home offscreen ops into a window. It is a
+separate record rather than a wider bits payload so an older reader
+steps over it whole and loses only the join it never had. Declared and
+served by the PPC guest's drain path; **no `blitsrc` record has been
+observed crossing the wire yet**, and nothing here has touched metal.
+
 `transitions` (2026-08-05) began in exactly that position and **no
 longer is**, which is worth stating precisely because the distinction
 this section draws is the one that moved. Served and PROVEN are separate

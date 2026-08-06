@@ -365,6 +365,58 @@ static void test_probe_pixmap_match(void)
           "zero-area matches nothing on this route too");
 }
 
+/* The blit's source port (013 slice B): which hooked offscreen row owns
+   the composite a bits hook was handed. Every refusal here is a blitsrc
+   record that must NOT be emitted - absence is the pre-join behaviour,
+   and a wrong join draws one window's content inside another. */
+static void test_blit_source(void)
+{
+    NowContentBlitSourceRow rows[3];
+    int i;
+
+    for (i = 0; i < 3; ++i) {
+        rows[i].port = 0x1f470000u + (NowContentU32)i * 0x100u;
+        rows[i].a5 = 0x00123456u;
+        rows[i].offscreen = 1;
+        rows[i].pixmap = 0x00445500u + (NowContentU32)i * 4u;
+        rows[i].pixmap_deref = 0x1e950000u + (NowContentU32)i * 0x1000u;
+    }
+
+    check_eq((long)now_content_blit_source(rows, 3, 0x00123456u, 0x1e951000u),
+             (long)0x1f470100u, "the owning offscreen row names its port");
+    check_eq((long)now_content_blit_source(rows, 3, 0x00123456u, 0x1e953000u),
+             0, "an unhooked source resolves to nothing, not to a guess");
+    check_eq((long)now_content_blit_source(rows, 3, 0x00123456u, 0u),
+             0, "a NULL source pointer matches nothing");
+    check_eq((long)now_content_blit_source(rows, 3, 0u, 0x1e951000u),
+             0, "no armed context, no join");
+    check_eq((long)now_content_blit_source(NULL, 3, 0x00123456u, 0x1e951000u),
+             0, "a NULL table matches nothing");
+    check_eq((long)now_content_blit_source(rows, 0, 0x00123456u, 0x1e951000u),
+             0, "an empty table matches nothing");
+
+    rows[1].offscreen = 0;
+    check_eq((long)now_content_blit_source(rows, 3, 0x00123456u, 0x1e951000u),
+             0, "a window row never claims a blit source");
+    rows[1].offscreen = 1;
+
+    rows[1].a5 = 0x00999999u;
+    check_eq((long)now_content_blit_source(rows, 3, 0x00123456u, 0x1e951000u),
+             0, "a row from another armed context never claims one");
+    rows[1].a5 = 0x00123456u;
+
+    rows[1].pixmap = 0;
+    check_eq((long)now_content_blit_source(rows, 3, 0x00123456u, 0x1e951000u),
+             0, "a row that lost its handle cannot vouch for a deref");
+    rows[1].pixmap = 0x00445504u;
+
+    /* Two rows claiming one pixmap is a table defect, and picking either
+       is the plan's own stop condition: refuse the join instead. */
+    rows[2].pixmap_deref = 0x1e951000u;
+    check_eq((long)now_content_blit_source(rows, 3, 0x00123456u, 0x1e951000u),
+             0, "an ambiguous claim refuses rather than picks a window");
+}
+
 static void test_arm_expiry(void)
 {
     NowContentRequest r = good_request();
@@ -807,6 +859,7 @@ int main(void)
     test_arm_probe_mode();
     test_probe_match();
     test_probe_pixmap_match();
+    test_blit_source();
 
     test_ring_basic_append();
     test_ring_odd_payload_pads_even();

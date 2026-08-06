@@ -329,6 +329,14 @@ typedef struct {
 #define kNowContentOpBits    9
 #define kNowContentOpComment 10
 #define kNowContentOpState   11
+/* Emitted in probe mode only, immediately BEFORE the bits record whose
+   source it names (plan 013, slice A, option 2): a separate record
+   rather than a wider bits payload, because a ring reader steps records
+   by their own `size` and reads each payload at a fixed width - a
+   longer NowContentBitsPayload written by a new resident and read by an
+   old host is a misparse, while an unknown op is stepped over whole and
+   the old reader loses only the join it never had. */
+#define kNowContentOpBlitSource 12
 #define kNowContentOpWrap    255
 
 #define kNowContentFlagTruncText 0x01  /* run longer than kNowContentTextMax */
@@ -392,6 +400,23 @@ typedef struct {
     NowContentS16 a, b, c, d, e, f;
 } NowContentStatePayload;
 
+/* The join the host could never make (plan 013): the bits payload
+   deliberately carries no source identity, so ops recorded under an
+   offscreen port's key and the blit that reveals them in a window were
+   two piles nothing connected. This record precedes that blit and names
+   the source. `src_port` is the offscreen CGrafPtr this plane HOOKED -
+   resolved at the instant the blit runs by dereferencing each offscreen
+   row's stored PixMapHandle and comparing against the blit's own source
+   pointer, both read in the same moment so LockPixels relocation cannot
+   separate them (013 A2.1). `src_pixmap` is that row's handle, for
+   diagnosis. Absence of this record before a bits op is the existing
+   behaviour: an unhooked source, a hand-built PixMap, or an older
+   resident - never a zero pretending to be an answer. */
+typedef struct {
+    NowContentU32 src_port;
+    NowContentU32 src_pixmap;
+} NowContentBlitSourcePayload;
+
 /* The offsets ARE the contract. */
 _Static_assert(sizeof(NowContentRecHeader) == 32, "rec header layout");
 _Static_assert(offsetof(NowContentRecHeader, port) == 4, "rec port offset");
@@ -403,6 +428,8 @@ _Static_assert(sizeof(NowContentLinePayload) == 12, "line payload layout");
 _Static_assert(sizeof(NowContentRectPayload) == 14, "rect payload layout");
 _Static_assert(sizeof(NowContentBitsPayload) == 20, "bits payload layout");
 _Static_assert(sizeof(NowContentStatePayload) == 14, "state payload layout");
+_Static_assert(sizeof(NowContentBlitSourcePayload) == 8,
+               "blit source payload layout");
 
 _Static_assert(sizeof(NowContentCounters) == 84, "counters layout");
 _Static_assert(offsetof(NowContentBlock, arm_a5) == 12, "arm a5 offset");
@@ -563,5 +590,31 @@ int now_content_probe_pixmap_match(NowContentU16 cand_port_version,
                                    NowContentU16 want_row_bytes,
                                    NowContentS16 want_l, NowContentS16 want_t,
                                    NowContentS16 want_r, NowContentS16 want_b);
+
+/* ---- the blit's source port (now_content_logic.c) ------------------
+   The decision behind the blit-source record: given the port table's
+   offscreen rows with each row's PixMapHandle DEREFERENCED at this same
+   instant, and the source pointer the bits hook was handed, which
+   hooked port owns the composite? The deref-now rule is 013 A2.1: a
+   stored deref is a snapshot of a block LockPixels has moved, so the
+   caller reads *(PixMapHandle)row.pixmap in the same moment it compares.
+   Pure so the ambiguity rule is testable: exactly one row may claim the
+   pixmap; zero rows is the ordinary unhooked source, and two rows
+   claiming one pixmap is a table defect that must refuse the join
+   rather than pick a window to draw someone else's content into. */
+typedef struct {
+    NowContentU32 port;         /* gPorts[i].port                        */
+    NowContentU32 a5;           /* gPorts[i].a5                          */
+    int offscreen;              /* gPorts[i].offscreen                   */
+    NowContentU32 pixmap;       /* gPorts[i].pixmap - the handle         */
+    NowContentU32 pixmap_deref; /* *(PixMapHandle)pixmap, read NOW       */
+} NowContentBlitSourceRow;
+
+/* Returns the owning row's port, or 0: no match, an ambiguous match,
+   or a NULL/zero source. Zero is the record NOT being emitted. */
+NowContentU32 now_content_blit_source(const NowContentBlitSourceRow *rows,
+                                      int count,
+                                      NowContentU32 armed_a5,
+                                      NowContentU32 src_bits);
 
 #endif /* NOW_CONTENT_TABLE_H */

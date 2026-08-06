@@ -232,6 +232,43 @@ static void test_families(void)
     check_eq(c.recs[4].p.state.kind, kNowContentStateFg, "state kind");
 }
 
+/* The blit-source record (013 slice A): probe mode's join key decodes
+   like any family, and a short one still arrives as a header. */
+static void test_blit_source_record(void)
+{
+    NowQDDrainResult r;
+    Collector c;
+    NowContentBlitSourcePayload jp;
+    unsigned char stub[2] = { 0, 0 };
+
+    memset(&c, 0, sizeof c);
+    init_block(256);
+    memset(&jp, 0, sizeof jp);
+    jp.src_port = 0x1f472e60u;
+    jp.src_pixmap = 0x00445566u;
+    (void)now_content_ring_put(&g_block, kNowContentOpBlitSource, 0,
+                               0x00AC7AF0u, &jp, (NowContentU16)sizeof jp);
+    now_qdtrace_drain(&g_block, 0, 0, 0, collect, &c, &r);
+    check_eq(r.outcome, kNowQDDrainOk, "blitsrc drains ok");
+    check_eq(c.n, 1, "blitsrc record delivered");
+    check_eq(c.recs[0].op, kNowContentOpBlitSource, "blitsrc keeps its op");
+    check_eq(c.recs[0].payload_ok, 1, "blitsrc payload readable");
+    check((unsigned long)c.recs[0].port == 0x00AC7AF0u,
+          "blitsrc is keyed by the DESTINATION port");
+    check((unsigned long)c.recs[0].p.blitsrc.src_port == 0x1f472e60u,
+          "blitsrc names the source port");
+    check((unsigned long)c.recs[0].p.blitsrc.src_pixmap == 0x00445566u,
+          "blitsrc carries the source handle");
+
+    memset(&c, 0, sizeof c);
+    init_block(256);
+    (void)now_content_ring_put(&g_block, kNowContentOpBlitSource, 0,
+                               0x00AC7AF0u, stub, (NowContentU16)sizeof stub);
+    now_qdtrace_drain(&g_block, 0, 0, 0, collect, &c, &r);
+    check_eq(c.n, 1, "a short blitsrc still arrives");
+    check_eq(c.recs[0].payload_ok, 0, "marked detail-less");
+}
+
 /* A record whose payload is shorter than its family needs still ARRIVES,
    with payload_ok clear. An op that happened and could not be read in
    full is a fact; dropping it would understate the traffic, which is the
@@ -818,6 +855,7 @@ int main(void)
     test_block_acceptance();
     test_empty();
     test_families();
+    test_blit_source_record();
     test_short_payload_still_reports_the_op();
     test_unknown_op_is_reported();
     test_tail_absorption();

@@ -251,6 +251,42 @@ static void test_drain_json(void)
     check_has(g_out, "\"nextCursor\":", "a cursor to resume from");
 }
 
+/* The blit-source record (013): the join key precedes its bits record
+   on the wire, as hex strings for `port`'s top-bit reason. */
+static void test_drain_blit_source(void)
+{
+    NowContentBlitSourcePayload jp;
+    NowContentBitsPayload bp;
+    const char *src;
+    const char *bits;
+
+    init_block(4096);
+    memset(&jp, 0, sizeof jp);
+    jp.src_port = 0x1f472e60u;
+    jp.src_pixmap = 0x00445566u;
+    (void)now_content_ring_put(&g_block, kNowContentOpBlitSource, 0,
+                               0x00AC7AF0u, &jp, (NowContentU16)sizeof jp);
+    memset(&bp, 0, sizeof bp);
+    bp.sl = 0; bp.st = 0; bp.sr = 404; bp.sb = 203;
+    bp.dl = 4; bp.dt = 24; bp.dr = 408; bp.db = 227;
+    bp.mode = 0; bp.src_row_bytes = 0x0660u;
+    (void)now_content_ring_put(&g_block, kNowContentOpBits, 0, 0x00AC7AF0u,
+                               &bp, (NowContentU16)sizeof bp);
+
+    now_qdtrace_drain_json(&g_block, 0, 0, 0, 5, g_out, (long)sizeof g_out);
+    check_balanced(g_out, "a blitsrc drain is balanced");
+    check_has(g_out, "\"op\":\"blitsrc\"", "blitsrc decoded");
+    check_has(g_out, "\"srcPort\":\"0x1f472e60\"", "the source port, hex");
+    check_has(g_out, "\"srcPixmap\":\"0x00445566\"", "the source handle, hex");
+    src = strstr(g_out, "\"op\":\"blitsrc\"");
+    bits = strstr(g_out, "\"op\":\"bits\"");
+    if (src == NULL || bits == NULL || src > bits) {
+        printf("FAIL blitsrc precedes the bits record it names\n  %s\n",
+               g_out);
+        failures++;
+    }
+}
+
 static void test_drain_truncation_flag(void)
 {
     init_block(4096);
@@ -395,6 +431,7 @@ int main(void)
     test_status_json();
     test_status_absent_and_mismatched();
     test_drain_json();
+    test_drain_blit_source();
     test_drain_truncation_flag();
     test_more_is_not_silence();
     test_output_budget_ends_it_honestly();

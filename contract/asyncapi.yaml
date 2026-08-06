@@ -4387,8 +4387,15 @@ components:
               the armed window back to the offscreen GWorld that sourced
               it, hooks that port too in the same armed context, and
               records what is drawn there under the GWorld's own port
-              key. An experiment with its own honesty counters
-              (`status`'s `probe` object); not a shipping mode.
+              key. In this mode, a `bits` record whose source resolves to
+              a port this plane hooked is PRECEDED by a `blitsrc` record
+              naming that port (`srcPort`), which is the join the host
+              needs to re-home the offscreen ops into the window at the
+              blit's destination. The record's absence is the existing
+              behaviour — an unhooked source, a hand-built PixMap, or an
+              older resident — never a zero pretending to be an answer.
+              An experiment with its own honesty counters (`status`'s
+              `probe` object); not a shipping mode.
           ttlTicks:
             type: integer
             description: >
@@ -4434,8 +4441,13 @@ components:
               Discriminated by `cmd`, which is the op that answered.
               `status` carries plane / request / active / ring / ops /
               loss / lifecycle / refused; `drain` carries the cursor
-              accounting and an `ops` array of records; `start` and
-              `stop` carry what was requested. A subcommand that cannot
+              accounting and an `ops` array of records — each record's
+              `op` is one of text / line / rect / rrect / oval / arc /
+              poly / rgn / bits / comment / state, plus `blitsrc`
+              (probe mode only: carries `srcPort` and `srcPixmap`,
+              0x-hex strings, and joins the ops recorded under that
+              offscreen port to the `bits` record that follows it);
+              `start` and `stop` carry what was requested. A subcommand that cannot
               answer at all — no extension, a block this build does not
               read — refuses with `ok: false` and a code, and never with
               an empty object.

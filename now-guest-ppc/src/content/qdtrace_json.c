@@ -107,6 +107,7 @@ static const char *op_name(unsigned char op)
     case kNowContentOpBits:    return "bits";
     case kNowContentOpComment: return "comment";
     case kNowContentOpState:   return "state";
+    case kNowContentOpBlitSource: return "blitsrc";
     default:                   return "unknown";
     }
 }
@@ -399,6 +400,18 @@ static int drain_sink(void *ctx, const NowQDRecord *rec)
             (int)rec->p.bits.dr, (int)rec->p.bits.db,
             (unsigned)rec->p.bits.mode,
             (unsigned)rec->p.bits.src_row_bytes)) {
+            e->pos = before;
+            return 0;
+        }
+        break;
+    case kNowContentOpBlitSource:
+        /* The join key for the bits record that follows: which hooked
+           offscreen port drew the composite this blit reveals. Hex
+           strings for `port`'s reason - a heap address routinely has
+           its top bit set. */
+        if (!emit(e, ",\"srcPort\":\"0x%08lx\",\"srcPixmap\":\"0x%08lx\"}",
+                  (unsigned long)rec->p.blitsrc.src_port,
+                  (unsigned long)rec->p.blitsrc.src_pixmap)) {
             e->pos = before;
             return 0;
         }

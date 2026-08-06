@@ -154,6 +154,7 @@ typedef struct {
         NowContentRectPayload rect;
         NowContentBitsPayload bits;
         NowContentStatePayload state;
+        NowContentBlitSourcePayload blitsrc;
     } p;
     /* TEXT only: the inline bytes, NUL-terminated for the emitter's
        convenience. `p.text.len` is the byte count that is real;

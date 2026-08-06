@@ -145,6 +145,13 @@ static int decode_payload(NowQDRecord *rec, const unsigned char *body,
         }
         copy_out(&rec->p.state, body, want);
         return 1;
+    case kNowContentOpBlitSource:
+        want = (NowContentU32)sizeof(NowContentBlitSourcePayload);
+        if (body_len < want) {
+            return 0;
+        }
+        copy_out(&rec->p.blitsrc, body, want);
+        return 1;
     default:
         /* kNowContentOpComment carries its kind in the record-header flags
            and has no payload struct; an unknown op is a newer writer
