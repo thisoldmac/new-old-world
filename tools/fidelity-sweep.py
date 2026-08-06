@@ -130,8 +130,32 @@ class Sweep:
             time.sleep(4)
         return None, scene
 
+    def act(self, spec):
+        """verb[:k=v,...] issued at the guest. `k` is int where it parses
+        as one, because `menuact` wants numbers and `front` wants names
+        and the spec cannot tell them apart on its own."""
+        name, _, rest = spec.partition(":")
+        args = {}
+        for pair in filter(None, rest.split(",")):
+            key, _, value = pair.partition("=")
+            try:
+                args[key] = int(value)
+            except ValueError:
+                args[key] = value
+        reply = self.guest.command(name, args)
+        print("  act %s -> %s" % (name, json.dumps(reply)[:200]), flush=True)
+        return reply
+
     def capture(self, label, app, path):
         print("\n=== %s (%s) ===" % (label, app), flush=True)
+        if self.args.reveal:
+            # A reveal opens the enclosing window AND SELECTS the item,
+            # which is the cheapest way to get a selected row into a
+            # capture. Selection is drawn by INVERT on this machine, and
+            # a corpus with no selection in it cannot show a fix to
+            # invert working.
+            self.act("reveal:target=%s" % self.args.reveal)
+            time.sleep(5)
         if path and path != "-":
             if self.harness is not None:
                 print("  launch: %s"
@@ -176,6 +200,15 @@ class Sweep:
             return {"label": label, "app": app, "status": "arm-refused",
                     "reply": started}
         time.sleep(4)
+
+        # Anything that puts the window into a NON-RESTING state goes
+        # here, after the arm, so the transition itself is recorded.
+        for spec in self.args.after:
+            self.act(spec)
+            time.sleep(3)
+        for char in self.args.type_text or "":
+            self.guest.command("key", {"char": ord(char)})
+            time.sleep(0.3)
 
         records = []
 
@@ -326,6 +359,20 @@ def main():
     parser.add_argument("--ttl", type=int, default=7200)
     parser.add_argument("--wait", type=int, default=180)
     parser.add_argument("--outdir", required=True)
+    parser.add_argument("--reveal",
+                        help="reveal this HFS path first: it opens the "
+                             "enclosing Finder window AND selects the item, "
+                             "which is how a SELECTED row gets into a "
+                             "capture at all")
+    parser.add_argument("--after", action="append", default=[],
+                        help="verb[:k=v,...] issued AFTER arming, so the "
+                             "transition into a non-resting state is "
+                             "recorded. Repeatable.")
+    parser.add_argument("--type", dest="type_text",
+                        help="after arming, post these characters to the "
+                             "front window — a caret and selected text are "
+                             "drawn by invert and nothing in the corpus "
+                             "has either")
     parser.add_argument("--quit-after", action="store_true",
                         help="ask each app to quit once captured, so a long "
                              "sweep does not exhaust the guest's heap")
