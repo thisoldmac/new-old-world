@@ -278,6 +278,17 @@ typedef struct {
     NowContentU32 probe_first_candidate;
     NowContentS16 probe_cand_l, probe_cand_t;   /* its portRect, so a  */
     NowContentS16 probe_cand_r, probe_cand_b;   /* near-miss is legible */
+    /* WHAT THE SIGHTING SAW, which is a different question from what the
+       search found and was indistinguishable from it until now. A
+       control run that chased seven pixmaps and found none of them is a
+       broken search; a control run that never sighted the blit it was
+       aimed at tested nothing at all. These four separate the two. */
+    NowContentU32 probe_sight_offers;  /* qualifying blits sighted       */
+    NowContentU32 probe_sight_busy;    /* dropped: a chase was pending   */
+    NowContentU32 probe_sight_seen;    /* dropped: already chased once   */
+    NowContentU32 probe_last_sight;    /* the most recent offer's PixMap */
+    NowContentS16 probe_sight_l, probe_sight_t;
+    NowContentS16 probe_sight_r, probe_sight_b;
 } NowContentBlock;
 
 /* ---- ring records --------------------------------------------------
@@ -396,7 +407,7 @@ _Static_assert(offsetof(NowContentBlock, arm_window)
 _Static_assert(offsetof(NowContentBlock, probe_pending_pixmap)
                    == 192 + kNowContentRingCap,
                "probe append offset");
-_Static_assert(sizeof(NowContentBlock) == 260 + kNowContentRingCap,
+_Static_assert(sizeof(NowContentBlock) == 284 + kNowContentRingCap,
                "block size");
 
 /* ---- the arm verdict (now_content_logic.c) -------------------------

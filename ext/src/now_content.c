@@ -448,12 +448,20 @@ static void content_probe_sight(const BitMap *src_bits)
     if (port == NULL || (NowPeekU32)port != gBlock->active_window) {
         return;
     }
+    gBlock->probe_sight_offers++;
+    gBlock->probe_last_sight = (NowPeekU32)src_bits;
+    gBlock->probe_sight_l = src_bits->bounds.left;
+    gBlock->probe_sight_t = src_bits->bounds.top;
+    gBlock->probe_sight_r = src_bits->bounds.right;
+    gBlock->probe_sight_b = src_bits->bounds.bottom;
     for (i = 0; i < gProbeSeenCount; ++i) {
         if (gProbeSeen[i] == (NowPeekU32)src_bits) {
+            gBlock->probe_sight_seen++;
             return;
         }
     }
     if (gBlock->probe_pending_pixmap != 0) {
+        gBlock->probe_sight_busy++;
         return;               /* one chase in flight; a later blit re-offers */
     }
     gBlock->probe_pending_pixmap = (NowPeekU32)src_bits;

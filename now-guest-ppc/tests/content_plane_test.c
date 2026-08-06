@@ -776,7 +776,7 @@ static void test_state_null_live(void)
 static void test_layout(void)
 {
     check_eq((long)sizeof(NowContentRecHeader), 32, "v2 record header is 32");
-    check_eq((long)sizeof(NowContentBlock), 260 + kNowContentRingCap,
+    check_eq((long)sizeof(NowContentBlock), 284 + kNowContentRingCap,
              "block is v1 prefix + ring + v2 identity tail + probe tail");
     check_eq((long)offsetof(NowContentBlock, probe_pending_pixmap),
              192 + kNowContentRingCap,

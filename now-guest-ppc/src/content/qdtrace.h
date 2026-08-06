@@ -253,6 +253,11 @@ typedef struct {
     NowContentU32 probe_base_candidates;
     NowContentU32 probe_first_candidate;
     NowContentS16 probe_cand_l, probe_cand_t, probe_cand_r, probe_cand_b;
+    NowContentU32 probe_sight_offers;
+    NowContentU32 probe_sight_busy;
+    NowContentU32 probe_sight_seen;
+    NowContentU32 probe_last_sight;
+    NowContentS16 probe_sight_l, probe_sight_t, probe_sight_r, probe_sight_b;
 } NowQDStatus;
 
 void now_qdtrace_status(const NowContentBlock *block,

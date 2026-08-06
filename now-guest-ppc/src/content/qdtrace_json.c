@@ -275,7 +275,9 @@ void now_qdtrace_status_json(const NowQDStatus *st, long id,
             "\"pendingPixmap\":\"0x%08lx\","
             "\"lastMatch\":\"0x%08lx\",\"alreadyOurs\":%lu,"
             "\"baseCandidates\":%lu,\"firstCandidate\":\"0x%08lx\","
-            "\"candRect\":[%d,%d,%d,%d]}",
+            "\"candRect\":[%d,%d,%d,%d],"
+            "\"sightOffers\":%lu,\"sightBusy\":%lu,\"sightSeen\":%lu,"
+            "\"lastSight\":\"0x%08lx\",\"sightRect\":[%d,%d,%d,%d]}",
             (unsigned long)st->probe_pixmaps_seen,
             (unsigned long)st->probe_scans,
             (unsigned long)st->probe_hits,
@@ -288,7 +290,13 @@ void now_qdtrace_status_json(const NowQDStatus *st, long id,
             (unsigned long)st->probe_base_candidates,
             (unsigned long)st->probe_first_candidate,
             (int)st->probe_cand_l, (int)st->probe_cand_t,
-            (int)st->probe_cand_r, (int)st->probe_cand_b);
+            (int)st->probe_cand_r, (int)st->probe_cand_b,
+            (unsigned long)st->probe_sight_offers,
+            (unsigned long)st->probe_sight_busy,
+            (unsigned long)st->probe_sight_seen,
+            (unsigned long)st->probe_last_sight,
+            (int)st->probe_sight_l, (int)st->probe_sight_t,
+            (int)st->probe_sight_r, (int)st->probe_sight_b);
     }
 
     e.reserve = 0;
