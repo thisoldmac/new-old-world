@@ -502,6 +502,16 @@ static void content_probe_sight(const BitMap *src_bits, const Rect *dst_rect)
     gBlock->probe_pending_t = src_bits->bounds.top;
     gBlock->probe_pending_r = src_bits->bounds.right;
     gBlock->probe_pending_b = src_bits->bounds.bottom;
+    /* While the pointer is still live: a handle survives the gap to the
+       GNE moment, a master pointer does not. RecoverHandle neither
+       allocates nor moves memory, so it is safe on this path. */
+    {
+        Handle recovered = RecoverHandle((Ptr)src_bits);
+
+        gBlock->probe_pending_handle =
+            (recovered != NULL && (Ptr)*recovered == (Ptr)src_bits)
+                ? (NowPeekU32)recovered : 0;
+    }
     gBlock->probe_pending_base = (NowPeekU32)src_bits->baseAddr;
     gBlock->probe_pending_row_bytes =
         (NowContentU16)(unsigned short)src_bits->rowBytes;
@@ -1052,9 +1062,15 @@ static void content_probe_service(NowPeekU32 a5, NowPeekU32 generation)
        zero scans) - a stack or nonrelocatable PixMap record aimed at the
        GWorld's pixels is an ordinary CopyBits idiom, and the handle was
        an assumption, not a fact. */
-    h = RecoverHandle(pm);
-    if (h != NULL && (Ptr)*h != pm) {
-        h = NULL;
+    /* The handle recovered AT SIGHT TIME is the trustworthy one. A late
+       RecoverHandle on a pointer that has since moved cannot find it,
+       which is precisely how this chase failed its own control. */
+    h = (Handle)gBlock->probe_pending_handle;
+    if (h == NULL) {
+        h = RecoverHandle(pm);
+        if (h != NULL && (Ptr)*h != pm) {
+            h = NULL;
+        }
     }
     /* TWO ZONES, and the second is not a guess. RecoverHandle searches
        the CURRENT zone only, so a GWorld whose pixmap handle lives in

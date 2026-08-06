@@ -57,3 +57,15 @@ add_application(NowAnatomy
     src/anatomy.c)
 
 target_compile_options(NowAnatomy PRIVATE -mcpu=68000 -Wall -Wextra -Werror -Os)
+
+# The chase's positive control: one GWorld held for the program's whole
+# life, blitted into its own window on a cadence, in a cooperative loop
+# so the extension's filter runs in this context repeatedly with the
+# world still alive. If the chase cannot find THIS, no null from any
+# application means anything. src/loop.c says why at length.
+add_application(NowGWorldLoop
+    TYPE "APPL"
+    CREATOR "NOWl"
+    src/loop.c)
+
+target_compile_options(NowGWorldLoop PRIVATE -mcpu=68000 -Wall -Wextra -Werror -Os)

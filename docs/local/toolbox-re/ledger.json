@@ -102,6 +102,20 @@
       "provenance": "measured",
       "evidence": "docs/local/toolbox-re/anatomy-report.txt",
       "at": "2026-08-06T03:43:23-0400"
+    },
+    {
+      "phase": "P2",
+      "claim": "THE CHASE'S REAL DEFECT, caught by a purpose-built control (tools/guest-gworld/src/loop.c: one GWorld held for the process's whole life, blitted into its own window on a cadence). The chase sighted the right blit 869 times - sightRect [0,0,200,180], exactly the control's GWorld - chased it, and found nothing. With the target GUARANTEED alive, that is not lifetime and not the Finder: it is the instrument. The cause is that the probe stashes a DEREFERENCED pixmap pointer at draw time and uses it at the next event-loop pass, but a PixMap record is a relocatable block - the deref is a snapshot, not an identity. Every comparison downstream was against a pointer that may have moved.",
+      "provenance": "measured",
+      "evidence": "gwprobe-out/CONTROL-loop/summary.json",
+      "at": "2026-08-06T03:50:39-0400"
+    },
+    {
+      "phase": "P1",
+      "claim": "General rule this arc paid for: on classic Mac OS a dereferenced handle is only valid until the next thing that can move memory. Resident code that observes at draw time and acts at event-loop time must carry HANDLES across that gap, never master pointers - and RecoverHandle called later on a stale pointer cannot recover what has moved.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy-report.txt",
+      "at": "2026-08-06T03:50:39-0400"
     }
   ],
   "blockers": [],

@@ -294,6 +294,14 @@ typedef struct {
        dropped as busy because a scroll arrow claimed the slot ahead of
        the content-sized blit we are actually hunting. */
     NowContentU32 probe_sight_small;
+    /* THE HANDLE, recovered at SIGHT time. A PixMap record is a
+       relocatable block, so the pointer a blit hands us is valid only
+       until the next thing that moves memory - and the chase runs one
+       event-loop pass later. Recovering the handle while the pointer is
+       still live carries an identity across that gap instead of a
+       snapshot. 0 = the source did not recover (a stack or
+       nonrelocatable PixMap, which is a legitimate CopyBits idiom). */
+    NowContentU32 probe_pending_handle;
 } NowContentBlock;
 
 /* ---- ring records --------------------------------------------------
@@ -412,7 +420,7 @@ _Static_assert(offsetof(NowContentBlock, arm_window)
 _Static_assert(offsetof(NowContentBlock, probe_pending_pixmap)
                    == 192 + kNowContentRingCap,
                "probe append offset");
-_Static_assert(sizeof(NowContentBlock) == 288 + kNowContentRingCap,
+_Static_assert(sizeof(NowContentBlock) == 292 + kNowContentRingCap,
                "block size");
 
 /* ---- the arm verdict (now_content_logic.c) -------------------------
