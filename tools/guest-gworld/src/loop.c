@@ -204,6 +204,7 @@ int main(void)
     EventRecord event;
     long seconds;
     unsigned long deadline;
+    unsigned long nextBuild;
     Rect wr;
 
     InitGraf(&qd.thePort); InitFonts(); InitWindows(); InitMenus();
@@ -224,6 +225,7 @@ int main(void)
         return 0;
     }
     BuildWorld();
+    nextBuild = TickCount() + 60;
     ReportIdentity();
     BlitWorld();
 
@@ -246,7 +248,14 @@ int main(void)
            silent, which reads exactly like a hook that does not work.
            Rebuilding on a cadence is what makes "can we see the drawing
            that BUILT the composite" answerable at all. */
-        BuildWorld();
+        /* Once a second, not once a pass. The first cadence overran the
+           64 KiB ring inside one settle (lostBytes 835410) and a lost
+           record is worse than a slow one: the whole point is to read
+           the drawing back. */
+        if ((long)(TickCount() - nextBuild) >= 0) {
+            BuildWorld();
+            nextBuild = TickCount() + 60;
+        }
         BlitWorld();
     }
 

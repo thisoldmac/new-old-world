@@ -214,6 +214,13 @@
       "provenance": "measured",
       "evidence": "docs/local/toolbox-re/ledger.json",
       "at": "2026-08-06T04:10:04-0400"
+    },
+    {
+      "phase": "P2",
+      "claim": "OUTCOME 1 WITH THE RECORDS THEMSELVES, not just counters. One drain, two ports cleanly separated: the WINDOW port 0x1e82c5e0 emitted 612 bits and nothing else - the opaque composite - while the OFFSCREEN port 0x1e82c7a0 emitted 60 text, 70 rect and 10 line ops. The text records carry the real string 'offscreen row' at its true pen ([14,24], [14,52], [14,80], [14,108], [14,136], [14,164] - the six rows, repeating per rebuild). A host can compose that with real strikes and no pixels on the wire.",
+      "provenance": "measured",
+      "evidence": "gwprobe-out/OUTCOME1/summary.json",
+      "at": "2026-08-06T04:11:41-0400"
     }
   ],
   "blockers": [],
