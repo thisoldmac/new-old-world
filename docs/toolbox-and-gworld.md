@@ -301,6 +301,25 @@ What remains genuinely untouched is breadth: region algebra, colour
 matching, the blitter's inner loops. Those are now a matter of reading
 more of the same, not of finding a way in.
 
+## 8b. E0: the targets link InterfaceLib, so the glue path applies
+
+Read statically from each application's own PEF import table
+(`tools/pef.py --imports`, which now reports WHICH library a symbol
+resolves against, not merely which libraries are imported):
+
+| Binary | `NewGWorld` resolves against |
+|---|---|
+| Finder | InterfaceLib |
+| Sherlock 2 | InterfaceLib (also `DisposeGWorld`, `SetGWorld`, `GetGWorld`, `SetStdCProcs`, `CopyBits`) |
+| Appearance | InterfaceLib (also `CopyBits`) |
+| **New Old World (ours)** | **CarbonLib** |
+
+So the CarbonLib hole is ours alone: every application this arc wants to
+instrument calls QuickDraw through InterfaceLib, whose glue is
+documented to read the trap dispatch table at call time. That is the
+precondition plan 014's trap patch rests on, and it is now measured
+rather than assumed for the two applications that beat the chase.
+
 ## 9. What is still open
 
 - Whether the fix (recovering the handle at sight time) makes the
