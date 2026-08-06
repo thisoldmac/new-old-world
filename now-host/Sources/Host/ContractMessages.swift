@@ -60,6 +60,7 @@ enum ControlMessage: Equatable, Sendable {
     case sceneRequest(SceneRequest)
     case sceneBegin(SceneBegin)
     case sceneEnd(SceneEnd)
+    case sceneSame(SceneSame)
     case processList(ProcessList)
     case processListing(ProcessListing)
     case softwareList(SoftwareList)
@@ -1136,6 +1137,16 @@ struct SceneRequest: Codable, Equatable, Sendable {
     var semantics: Bool? = nil
     /// Host policy for this open scene owner's optional P4 claim.
     var interaction: Bool? = nil
+    /// THE BASELINE THIS HOST ALREADY HOLDS, as the body digest of the
+    /// last scene it *fully applied* — never a sequence number. A
+    /// sequence says which document the producer thinks we have; a digest
+    /// says which one we actually hold, and those differ exactly when a
+    /// consumer mis-applied a delta. Absent asks for a whole document.
+    var since: String? = nil
+    /// Re-prove the mirror whole even though `since` matches. The chain
+    /// is bounded by the guest too; this is our own handle on the same
+    /// worry (docs/scene-deltas.md).
+    var full: Bool? = nil
 }
 
 struct SceneBegin: Codable, Equatable, Sendable {
@@ -1155,6 +1166,44 @@ struct SceneBegin: Codable, Equatable, Sendable {
     var walkMs: Int?
     /// Optional/accretive: older guests omit it. Only `confirmed` is green;
     /// residentStage is mechanism evidence, not an effect verdict.
+    var settlements: [ActSettlement]?
+    /// The body digest of the document this transfer carries. We
+    /// recompute it over whatever we reconstruct and refuse to publish a
+    /// reconstruction that does not match — see MirrorSceneDelta.
+    var digest: String?
+    /// True when the bulk bytes are a DELTA against `baseline`, not a
+    /// whole IR document.
+    var delta: Bool?
+    /// The `since` this delta was computed against, echoed so we can
+    /// prove the answer is about the baseline we named.
+    var baseline: String?
+    /// What the whole document would have measured, beside `bytes` for
+    /// what the delta cost. Present only on a delta; it is how the saving
+    /// stays a measurement rather than a claim.
+    var wholeBytes: Int?
+}
+
+/// THE NO-CHANGE ANSWER. The guest walked the machine, encoded what it
+/// found, and the body digest equals the `since` we quoted: the mirror we
+/// are already showing is the mirror the machine still has.
+///
+/// It takes NO TRANSFER — no transfer id, no bulk lane, no scene.end. It
+/// is deliberately not a flag on scene.end, which would have made the
+/// cheapest and most common outcome in the protocol share a code path
+/// with failure.
+///
+/// It is still a fresh observation: `capturedAt` moves and the phases
+/// describe this walk. A consumer republishes what it holds with the new
+/// moment; it does not treat the machine as unobserved.
+struct SceneSame: Codable, Equatable, Sendable {
+    var id: Int
+    var seq: Int
+    /// Equal to the `since` we sent, restated rather than implied. A
+    /// consumer that finds it different has met a guest confused about
+    /// what it just compared, and must ask again without `since`.
+    var digest: String
+    var capturedAt: Double
+    var walkMs: Int?
     var settlements: [ActSettlement]?
 }
 
@@ -1375,6 +1424,8 @@ enum ControlMessageCodec {
                 try decoder.decode(SceneBegin.self, from: data))
         case "scene.end":
             return .sceneEnd(try decoder.decode(SceneEnd.self, from: data))
+        case "scene.same":
+            return .sceneSame(try decoder.decode(SceneSame.self, from: data))
         case "process.list":
             return .processList(
                 try decoder.decode(ProcessList.self, from: data))
@@ -1489,6 +1540,7 @@ enum ControlMessageCodec {
         case .sceneRequest(let m): return try tagged("scene.request", m)
         case .sceneBegin(let m): return try tagged("scene.begin", m)
         case .sceneEnd(let m): return try tagged("scene.end", m)
+        case .sceneSame(let m): return try tagged("scene.same", m)
         case .processList(let m): return try tagged("process.list", m)
         case .processListing(let m): return try tagged("process.listing", m)
         case .softwareList(let m): return try tagged("software.list", m)

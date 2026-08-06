@@ -1984,8 +1984,29 @@ final class GuestListener: ObservableObject {
         /// nil means an older guest, never an implicit success.
         var settlements: [ActSettlement]?
         var transferMs: Int
+        /// What actually crossed the bulk lane for this scene: the whole
+        /// document's bytes, the delta's bytes, or zero for a no-change
+        /// answer. Recorded rather than inferred, because "deltas save
+        /// bytes" is a measurement and this is the number that makes it
+        /// one.
+        var wireBytes: Int = 0
+        /// What the WHOLE document would have measured, on a delta. nil on
+        /// every other form.
+        var wholeBytes: Int?
+        /// Which of the three answers this was.
+        var form: SceneForm = .whole
         var guestName: String = Session.unnamedGuest
         var guestKey: GuestKey?
+    }
+
+    /// The three answers a scene.request can have. They differ in what
+    /// crossed the wire and in nothing else: every one of them delivers a
+    /// whole document to everything above this layer, which is why the
+    /// reducer never learned that deltas exist.
+    enum SceneForm: String, Sendable {
+        case whole
+        case delta
+        case unchanged
     }
 
     /// A scene that could not be had. `message` is written for a human — it

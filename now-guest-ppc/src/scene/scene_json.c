@@ -1121,12 +1121,25 @@ NowSceneEncodeStatus now_scene_encode_spans(const NowScene *s, char *out,
     put(&k, ",\"capturedAt\":");
     put_captured_at(&k, s->captured_at);
     put(&k, ",\"source\":");
+    if (spans != NULL) {
+        spans->source_off = k.len;
+    }
     put_str(&k, s->source);
-    put(&k, ",\"screen\":{\"w\":");
+    if (spans != NULL) {
+        spans->source_len = k.len - spans->source_off;
+    }
+    put(&k, ",\"screen\":");
+    if (spans != NULL) {
+        spans->screen_off = k.len;
+    }
+    put(&k, "{\"w\":");
     put_num(&k, s->screen_w);
     put(&k, ",\"h\":");
     put_num(&k, s->screen_h);
     put(&k, "}");
+    if (spans != NULL) {
+        spans->screen_len = k.len - spans->screen_off;
+    }
     put_apps(&k, s);
     put_processes(&k, s);
     put_menubar(&k, s);
