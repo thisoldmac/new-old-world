@@ -16,7 +16,7 @@ paid for once, in the archived port:
 
 The fix is an ordering fact, invisible to an after-the-fact inspection
 of any single run: each hook calls content_stamp() unconditionally,
-after its counter and before the kNowContentModeRecord branch. This
+after its counter and before the content_mode_records() branch. This
 reads that order out of the source. What it can catch is the exact
 regression that shipped once - a tidy-up moving the stamp back into an
 else-branch. What it cannot do is prove the stamp's value on a machine;
@@ -75,7 +75,10 @@ def main():
 
     for name, body in bodies(text).items():
         stamp = body.find("content_stamp();")
-        branch = body.find("kNowContentModeRecord")
+        # The mode branch became content_mode_records() when probe mode
+        # joined record mode as a recording mode (the GWorld probe); the
+        # order property this file pins is unchanged.
+        branch = body.find("content_mode_records()")
         counter = body.find("gBlock->counters.")
         check(stamp != -1,
               "%s never stamps ticks - a Record session drains records "

@@ -233,12 +233,75 @@ static void test_arm_mode_is_fail_closed(void)
     r.mode = (NowContentU32)kNowContentModeOff;
     check_eq(now_content_arm_verdict(&r, 0x00123456u, 1u),
              kNowContentVerdictIdle, "mode off does not arm");
-    r.mode = 3u;
+    r.mode = 4u;
     check_eq(now_content_arm_verdict(&r, 0x00123456u, 1u),
              kNowContentVerdictIdle, "an unknown mode does not arm");
     r.mode = 0xFFFFFFFFu;
     check_eq(now_content_arm_verdict(&r, 0x00123456u, 1u),
              kNowContentVerdictIdle, "a garbage mode does not arm");
+}
+
+/* Probe mode is a real mode: it arms on its named target and refuses
+   everywhere count and record refuse. It used to be the first unknown
+   value (3) in the fail-closed test above, which is exactly the compat
+   story: an older extension reads it as unrecognised and stays idle. */
+static void test_arm_probe_mode(void)
+{
+    NowContentRequest r = good_request();
+
+    r.mode = (NowContentU32)kNowContentModeProbe;
+    check_eq(now_content_arm_verdict(&r, 0x00123456u, 1u),
+             kNowContentVerdictArmed, "probe mode arms its named target");
+    check_eq(now_content_arm_verdict(&r, 0x00999999u, 1u),
+             kNowContentVerdictOtherContext,
+             "probe mode refuses a foreign context like any other");
+    r.arm_a5 = 0;
+    check_eq(now_content_arm_verdict(&r, 0x00123456u, 1u),
+             kNowContentVerdictNoTarget,
+             "probe mode without a target instruments nothing");
+}
+
+/* The probe's port match: what earns a grafProcs write after a linear
+   zone scan. Every refusal here is a heap block the probe must not
+   touch. */
+static void test_probe_match(void)
+{
+    check(now_content_probe_match(0x00445566u, 0xC000u,
+                                  0, 0, 404, 203,
+                                  0x00445566u, 0, 0, 404, 203),
+          "the owning port matches on handle, version and rect");
+    check(!now_content_probe_match(0x00445568u, 0xC000u,
+                                   0, 0, 404, 203,
+                                   0x00445566u, 0, 0, 404, 203),
+          "a different handle is a different pixmap");
+    check(!now_content_probe_match(0u, 0xC000u,
+                                   0, 0, 404, 203,
+                                   0u, 0, 0, 404, 203),
+          "a zero handle never matches, even a zeroed candidate");
+    check(!now_content_probe_match(0x00445566u, 0x0000u,
+                                   0, 0, 404, 203,
+                                   0x00445566u, 0, 0, 404, 203),
+          "a block without the CGrafPort discriminator is not a port");
+    check(!now_content_probe_match(0x00445566u, 0x8000u,
+                                   0, 0, 404, 203,
+                                   0x00445566u, 0, 0, 404, 203),
+          "half the discriminator is not the discriminator");
+    check(now_content_probe_match(0x00445566u, 0xC001u,
+                                  0, 0, 404, 203,
+                                  0x00445566u, 0, 0, 404, 203),
+          "low version bits vary and are not the test");
+    check(!now_content_probe_match(0x00445566u, 0xC000u,
+                                   0, 0, 404, 202,
+                                   0x00445566u, 0, 0, 404, 203),
+          "a stale copy of the handle without the rect is refused");
+    check(!now_content_probe_match(0x00445566u, 0xC000u,
+                                   0, 0, 0, 0,
+                                   0x00445566u, 0, 0, 0, 0),
+          "a zero-area pixmap matches nothing - a GWorld has extent");
+    check(!now_content_probe_match(0x00445566u, 0xC000u,
+                                   10, 10, 10, 40,
+                                   0x00445566u, 10, 10, 10, 40),
+          "an empty-width rect is refused the same way");
 }
 
 static void test_arm_expiry(void)
@@ -656,8 +719,11 @@ static void test_state_null_live(void)
 static void test_layout(void)
 {
     check_eq((long)sizeof(NowContentRecHeader), 32, "v2 record header is 32");
-    check_eq((long)sizeof(NowContentBlock), 192 + kNowContentRingCap,
-             "block is v1 prefix + ring + v2 identity tail");
+    check_eq((long)sizeof(NowContentBlock), 228 + kNowContentRingCap,
+             "block is v1 prefix + ring + v2 identity tail + probe tail");
+    check_eq((long)offsetof(NowContentBlock, probe_pending_pixmap),
+             192 + kNowContentRingCap,
+             "the probe tail starts where the v2 tail ended");
     check_eq((long)kNowContentArmCommit, 0x4E576361L, "'NWca'");
     check_eq((long)kNowContentBlockMagic, 0x4E576362L, "'NWcb'");
     check(kNowContentArmCommit != 1 && kNowContentArmCommit != 0,
@@ -677,6 +743,8 @@ int main(void)
     test_arm_mode_is_fail_closed();
     test_arm_expiry();
     test_arm_null_request();
+    test_arm_probe_mode();
+    test_probe_match();
 
     test_ring_basic_append();
     test_ring_odd_payload_pads_even();
