@@ -607,6 +607,20 @@ final class Session {
             finish(reason: byeDescription(bye, guest: name))
         case .hello:
             protocolError("duplicate hello")
+        case .refuse(let refusal):
+            /* The other half of the revision gate. A guest refuses the
+               hello it was just answered when it cannot speak this
+               revision — the contract binds the rule to whoever RECEIVES
+               a hello, not to the host alone — and `refuse` is worded
+               "never swallowed" for a reason: this used to land in the
+               default arm below, so a peer that had said exactly why it
+               was leaving reached a person as a link that simply went
+               away. The refusal carries the GUEST's revision, which is
+               the number a stale side needs to be told. */
+            onLog("Refused by the guest: \(refusal.reason) "
+                  + "(it speaks contract \(refusal.contract), "
+                  + "this host \(Contract.revision))", "wire", .warn)
+            finish(reason: "Refused by the guest: \(refusal.reason)")
         case .error(let problem):
             // The contract's answer to a message a peer does not
             // implement, and the host used to drop it here. NOW-68K

@@ -761,8 +761,63 @@ static int next_frame(char *payload_out, long cap)
     return 1;
 }
 
-static void on_hello(const char *reply)
+/* Returns 0 when the host's hello is refused and the caller must tear the
+   connection down.
+
+   THE REVISION GATE, on the receiving side. The contract's connection
+   rules bind whoever receives a hello, and this half used to read `name`
+   and `version` and nothing else — so this guest would serve a full
+   session to any peer at all, and find out about the skew later, in the
+   middle of a message it could not decode. It cost more than a session:
+   harnesses stuck on revision 1 could never hold a link to NOW-68K, which
+   gates, and held one here for a whole revision, so the missing check is
+   what made a year-stale harness look healthy.
+
+   Shaped after NOW-68K's handle_host_hello so the two guests answer the
+   same way for the same reason, with two additions the contract now
+   states: the reason names both numbers (a peer that is merely stale
+   learns which one to be), and it goes out as a `refuse` rather than a
+   silent hang-up, which from the far end is indistinguishable from a
+   dropped network. An ABSENT `contract` lands here too — the field is
+   required, and there is no revision to compare — but says so rather
+   than reporting a number nobody sent. */
+static int on_hello(const char *reply)
 {
+    long revision = 0;
+    int read = now_json_read_int(reply, "contract", &revision);
+
+    if (read != kNowJsonIntOk || revision != (long)kNowContractRevision) {
+        char reason[96];
+        char json[192];
+
+        if (read == kNowJsonIntAbsent) {
+            snprintf(reason, sizeof reason,
+                     "host hello states no contract revision; this guest "
+                     "speaks %d", (int)kNowContractRevision);
+        } else if (read != kNowJsonIntOk) {
+            snprintf(reason, sizeof reason,
+                     "host hello's contract revision is not a number; this "
+                     "guest speaks %d", (int)kNowContractRevision);
+        } else {
+            snprintf(reason, sizeof reason,
+                     "contract revision %ld != %d",
+                     revision, (int)kNowContractRevision);
+        }
+        snprintf(g.status, sizeof g.status, "Protocol error: %s", reason);
+        now_log(kLogWarn, "wire", "refused the host's hello: %s", reason);
+        /* Best effort, like every other frame this guest sends: the
+           reason is already on this machine's own status line, and a
+           refusal that could not be queued must not turn into a session
+           that gets served anyway. `contract` is OURS — that is what the
+           other side needs from this message. Nothing here is
+           peer-controlled text, so no escaping is involved. */
+        snprintf(json, sizeof json,
+                 "{\"type\":\"refuse\",\"contract\":%d,\"reason\":\"%s\"}",
+                 (int)kNowContractRevision, reason);
+        (void)send_control(json);
+        return 0;
+    }
+
     if (!now_json_find_string(reply, "name", g.peer_name, sizeof g.peer_name)) {
         g.peer_name[0] = '\0';
     }
@@ -792,6 +847,7 @@ static void on_hello(const char *reply)
         snprintf(g.status, sizeof g.status, "Connected: %s (v%s)",
                  g.peer_name, g.peer_version);
     }
+    return 1;
 }
 
 /* --- bulk transfer -----------------------------------------------------
@@ -5674,8 +5730,10 @@ static int handle_frame(const char *reply)
     }
     if (g.phase == kConnHandshaking) {
         if (now_json_type_is(reply, "hello")) {
-            on_hello(reply);
-            return 1;
+            /* Not unconditionally 1: on_hello gates the contract revision
+               and a refused hello tears the connection down here, the
+               same way a `refuse` from the host does below. */
+            return on_hello(reply);
         }
         if (now_json_type_is(reply, "refuse")) {
             char reason[96];

@@ -110,6 +110,67 @@ final class WireLimitsAgreementTests: XCTestCase {
                        "this side sends a revision the contract does not state")
     }
 
+    // MARK: - the guests' own hello gate
+
+    /// The body of a C function, from its signature to the closing brace in
+    /// column 1 — enough to ask what a specific handler does, rather than
+    /// what its file mentions somewhere.
+    private func body(of signature: String, inFileAt path: String) throws -> String {
+        let text = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent(path),
+            encoding: .utf8)
+        guard let start = text.range(of: signature) else {
+            XCTFail("no \(signature) in \(path)")
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        let rest = text[start.upperBound...]
+        guard let end = rest.range(of: "\n}\n") else {
+            XCTFail("\(signature) in \(path) has no closing brace")
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        return String(rest[..<end.lowerBound])
+    }
+
+    /// **Both guests gate the revision, and both answer with a `refuse`.**
+    ///
+    /// The contract's connection rules bind the check to whoever RECEIVES a
+    /// hello, and for a whole revision only one guest did it: NOW-PPC's
+    /// `on_hello` read `name` and `version` and served the session, so a
+    /// harness stuck on revision 1 held a link here that it could never
+    /// have held against NOW-68K. The missing check is what made the stale
+    /// harness look healthy — the `two-halves-never-met-in-a-test` shape,
+    /// where nothing is visibly wrong until a message changes.
+    ///
+    /// Source-read rather than driven, for the reason
+    /// `GuestWireConformanceTests` is: no gate in this tree cross-compiles a
+    /// guest, let alone runs one, so the only thing that can hold both
+    /// guests to a rule on every commit is their own source.
+    func testBothGuestsGateTheContractRevisionInTheirHelloHandler() throws {
+        let ppc = try body(of: "static int on_hello(const char *reply)",
+                           inFileAt: "now-guest-ppc/src/core/wire.c")
+        XCTAssertTrue(ppc.contains("\"contract\""),
+                      "now-guest-ppc on_hello never reads the host's "
+                      + "contract revision")
+        XCTAssertTrue(ppc.contains("kNowContractRevision"),
+                      "now-guest-ppc on_hello reads a contract revision but "
+                      + "compares it against nothing")
+        XCTAssertTrue(ppc.contains("\\\"type\\\":\\\"refuse\\\""),
+                      "now-guest-ppc on_hello rejects a revision without "
+                      + "sending the refuse the contract requires")
+
+        let m68k = try body(of: "static void handle_host_hello(",
+                            inFileAt: "now-guest-68k/src/core/wire68.c")
+        XCTAssertTrue(m68k.contains("\"contract\""),
+                      "now-guest-68k handle_host_hello never reads the "
+                      + "host's contract revision")
+        XCTAssertTrue(m68k.contains("NOW68K_CONTRACT_REVISION"),
+                      "now-guest-68k handle_host_hello reads a contract "
+                      + "revision but compares it against nothing")
+        XCTAssertTrue(m68k.contains("send_refuse_and_close"),
+                      "now-guest-68k handle_host_hello rejects a revision "
+                      + "without sending the refuse the contract requires")
+    }
+
     // MARK: - the Python harnesses
 
     /// The harnesses are the fourth reader of these numbers and the only one
