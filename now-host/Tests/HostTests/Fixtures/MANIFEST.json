@@ -451,6 +451,18 @@
    }
   },
   {
+   "path": "now-host/Tests/HostTests/Fixtures/scene-ie-error-alert.json",
+   "sha256": "a529d0747502cad96cc9a21ff1753a8fb7a7b2b25fec7d12ab4486fd78380649",
+   "bytes": 53387,
+   "ops": null,
+   "provenanceIsWeak": true,
+   "provenance": {
+    "source": "peek",
+    "capturedAt": 1786034248.0,
+    "version": 2
+   }
+  },
+  {
    "path": "now-host/Tests/HostTests/Fixtures/scene-plane-held.json",
    "sha256": "17042672aa8f081b7489aa7f31542f70d4d19fd720dad8f560ab105ee4be4fe9",
    "bytes": 42329,
