@@ -71,6 +71,38 @@ uncover repaint is total, and typing (`key`) gives only direct window
 drawing — selection redraw worlds are too transient for the chase
 (sighted, chased, gone: measured `misses`).
 
+## VOID, and the rule that would have caught it: two late findings came from someone else's machine (2026-08-06)
+
+Two results recorded near the end of the plan-014 arc are **void** and
+must not be built on:
+
+- a Date & Time re-capture in record mode, and
+- a `qdext` check reporting `installed 0x00000000` with `active mode
+  off`, read as a regression in the record-mode graduation.
+
+`scripts/spin-up-ppc` had refused to boot — *"requested anchor port 1720
+is in use (another session?)"* — so no VM of mine existed, and the wire
+listener on 5340 was answered by **another session's guest running
+another branch's build**. The tells were all present and I read past
+every one: an identical build stamp across two supposedly fresh boots, a
+`psn` belonging to a process from a previous run, and finally an empty
+`/private/tmp/nowvm-kg01` with no `qemu.pid` in it.
+
+AGENTS.md states the cure exactly — *"a metal gate must check WHICH
+guest answered ... assert a capability only the build under test has
+before believing anything it says"* — and it was written after
+`Metal68KSendTests` was fooled the same way. The rule exists; nothing
+made following it automatic for an ad-hoc harness, which is the real
+gap. **`tools/gwprobe.py` and the scratch drivers assert nothing about
+who answered**, and until they do, any result from them is a claim about
+an unidentified machine.
+
+What is NOT void: E0 (static, no machine), and the E1/E2/E3 runs, whose
+boots each produced a distinct build stamp and whose counters moved
+consistently with the code under test. The record-mode graduation
+compiles and its gates pass, but it has **not** been watched working on
+a machine, and the entry below should be read with that scope.
+
 ## ANSWERED: worlds hooked at BIRTH, and Sherlock's interior crosses (2026-08-06, plan 014 complete)
 
 Plan 014 ran end to end the same day it was written, and every slice
