@@ -91,18 +91,31 @@ So the resident registers as its own Open Transport client and holds its
 own connection. That costs a listener change and a contract addition, and
 it is the only version that cannot corrupt the application's wire.
 
-### B — the channel is ALWAYS present and carries staleness as data
+### B — the channel is ALWAYS present and carries NOTHING
 
-Not "ping only when the application looks stale". Once the resident holds
+Not "ping only when the application looks stale": once the resident holds
 its own connection it must keep that alive regardless, so a conditional
-send does not arise; and a bare keepalive would answer less than we
-already know.
+send does not arise.
 
-The resident reports, on its own cadence: *the machine is alive, and the
-application writer's `heartbeat_ticks` was last updated N ticks ago.*
-That is strictly more than liveness — it is the **deaf-but-alive** state,
-which is what a person driving needs to see and what no host-side timer
-can infer.
+**Corrected 2026-08-05, while writing the contract change.** This section
+said the channel should carry the application's staleness —
+`heartbeat_ticks` age — as data. It should not, because **the receiver
+already knows it**: the host's own `health.lastTraffic` is how long the
+application has been silent, and it is what drives the silence window in
+the first place. Putting it on the wire would be a second account of a
+fact the reader holds, which is the shape this project already paid for
+when the control-frame cap lived in three places.
+
+So the channel carries its own existence and its pings, and nothing else.
+It licenses exactly one inference: **traffic here means the machine is
+alive**, so a silent session for that machine is *starved* rather than
+*gone*. That deletes a whole message family from the contract addition and
+leaves one optional `hello` field.
+
+The resident's own view of `heartbeat_ticks` is still interesting later —
+it distinguishes "the app is starved" from "the app is running and its
+wire broke" — but nothing needs that distinction yet, and it can be added
+without re-shaping anything.
 
 ### C — PPC/OT first, and the 68K asymmetry is DECLARED
 
@@ -114,6 +127,20 @@ and do not let it read as an oversight (AGENTS.md: declare asymmetries,
 do not just leave them missing).
 
 ## The work
+
+### 0 · The contract, because a behaviour change starts there · **DONE**
+
+One optional `hello` field, `role: [session, resident]`, absent meaning
+`session` — which is every connection that has ever existed. Additive, no
+revision bump.
+
+Writing it surfaced a blocker the plan had missed: **identity is the
+name**, and the contract refuses *"a dial repeating the name of a LIVE
+session"* as busy. The resident shares its machine's name by design, so
+without a declared role it would be refused busy **by its own
+application**. The role field is therefore not decoration; it is what
+makes the channel possible at all, and the exemption is stated where the
+busy rule is stated.
 
 ### 1 · Host first — the policy, with no guest at all · **START HERE**
 

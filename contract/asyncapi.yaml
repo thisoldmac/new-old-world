@@ -52,6 +52,37 @@
 #   machines calling themselves the same thing are one guest to this rule,
 #   and the second is refused busy. A stable per-machine id, if that ever
 #   bites, is a new optional `hello` field and a change to both halves.
+# - A connection may declare a ROLE in its hello. Absent or `session` is a
+#   normal guest session and is everything above. `resident` is a LIVENESS
+#   CHANNEL opened by an optional resident component on the same machine,
+#   and it exists for one reason: on a cooperatively-scheduled Macintosh a
+#   blocked callee starves EVERY application, so the guest app cannot send
+#   its own keepalive precisely when the host most needs to know the
+#   machine is alive. Measured 2026-08-05: a Finder modal starved every
+#   process on the guest — including an unrelated background application on
+#   its own port — for over 90s, past the host's ~75s silence window, so
+#   the wire died against a healthy machine.
+#   A resident connection therefore:
+#     * is NOT a guest session. It never becomes the active guest, is never
+#       offered a command, and does not count against a host's guest bound.
+#     * SHARES the name of the machine's guest app deliberately — that name
+#       is what associates the two — and is exempt from the busy refusal
+#       for exactly that reason. It is the one dial that may repeat a live
+#       session's name.
+#     * may send only `hello`, `ping` and `bye`, and is answered `pong`. It
+#       carries no state and reports nothing about the application: how
+#       long the app has been silent is something the RECEIVER already
+#       knows, and a second account of it on the wire would be a second
+#       place to be wrong.
+#   What it licenses is one inference and no more: traffic on a live
+#   resident channel means THE MACHINE IS ALIVE, so a silent guest session
+#   for that machine is STARVED rather than GONE. A host may hold such a
+#   session open past its silence window and must say which state it is in.
+#   With no resident channel the old rule stands unchanged, which is what
+#   keeps a resident component optional.
+#   ADDITIVE — no revision bump. A host that has never heard of the field
+#   sees a hello it will refuse busy, which is the previous behaviour and
+#   costs a machine nothing it had.
 # - Control messages that expect an answer carry `id`; answers echo it.
 # - Bulk transfers are announced on control (`capture.begin`), stream on the
 #   bulk channel in chunks (default 8192 bytes, negotiable in hello), and
@@ -938,6 +969,25 @@ components:
           type: integer
           description: Contract revision; unequal revisions are refused.
         side: { enum: [guest, host] }
+        role:
+          enum: [session, resident]
+          description: >
+            WHAT THIS CONNECTION IS FOR, where `side` says which half opened
+            it. ABSENT means `session` — a normal guest session, which is
+            every connection that existed before this field and remains the
+            only kind a guest application opens.
+            `resident` is a liveness channel from an optional resident
+            component, and it is a claim about the MACHINE rather than about
+            any application on it. The rules it follows are in the preamble;
+            the two that a receiver must not get wrong are that it may never
+            be treated as a guest — not offered a command, never the active
+            one, never counted against a guest bound — and that it is the
+            one dial permitted to repeat a live session's name, because
+            sharing that name is how the two are associated.
+            A receiver that does not recognise this value must refuse the
+            connection rather than serve it as a session: an unknown role is
+            a NEWER sender, and serving it as a guest would give a
+            liveness-only channel a command lane it cannot answer.
         version:
           type: string
           description: Sending app's own version, for display only.
