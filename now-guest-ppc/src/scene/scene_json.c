@@ -5,6 +5,8 @@
 
 #include "axwalk.h"    /* NowAxDefProcOrigin: scene.h stores one as a short */
 #include "json.h"
+#include "scene_digest.h"
+#include "scene_phase.h"
 
 /* The IR v2 encoder.
 
@@ -23,7 +25,66 @@ typedef struct {
     long cap;                     /* bytes available including terminator */
     long len;                     /* bytes a complete encode needs, so far */
     int over;
+    /* WHERE EACH PIECE LANDED, filled only when a caller asks for it.
+       The delta plane needs to name one window's bytes without knowing
+       how a window is encoded, and this is the seam that keeps that
+       knowledge here: scene_digest.c is handed offsets and never learns
+       the shape of what it is copying. NULL costs one branch per piece
+       and changes nothing about the bytes. */
+    NowSceneSpans *sp;
 } Sink;
+
+/* Marks are taken from `len`, which counts identically in the sizing and
+   the writing pass - so an offset is right in both. A HASH is not: it
+   needs the bytes, so it is taken only when this pass actually wrote
+   them and stays 0 otherwise. A caller that used a sizing pass's spans
+   for anything but sizes would be comparing zeroes. */
+static void entity_end(Sink *k, NowSceneSpan *e, long off, const char *key)
+{
+    if (e == NULL) {
+        return;
+    }
+    e->off = off;
+    e->len = k->len - off;
+    e->hash = (k->out != NULL && !k->over)
+        ? now_scene_fnv1a(kNowSceneFnvSeed, k->out + off, e->len) : 0;
+    if (key == NULL || key[0] == '\0') {
+        e->key[0] = '\0';
+        if (k->sp != NULL) {
+            k->sp->keyed_all = 0;
+        }
+    } else {
+        strncpy(e->key, key, kNowSceneKeyMax - 1);
+        e->key[kNowSceneKeyMax - 1] = '\0';
+    }
+}
+
+/* An entity's key is its IR incarnation and nothing else. A row without
+   one gets an empty key, which clears keyed_all and makes the whole
+   scene ineligible as a delta baseline - deliberately, because
+   MirrorReplicaReducer already refuses to key an incarnation-less row
+   into its durable maps. A row the reducer will not key is a row a delta
+   must not key either. */
+static void proc_key(char *out, const NowSceneProc *p)
+{
+    if (p->incarnation == 0) {
+        out[0] = '\0';
+        return;
+    }
+    snprintf(out, kNowSceneKeyMax, "process-%08lx",
+             p->incarnation & 0xffffffffUL);
+}
+
+static void window_key(char *out, const NowSceneProc *p,
+                       const NowSceneWindow *w)
+{
+    if (p->incarnation == 0 || w->addr == 0) {
+        out[0] = '\0';
+        return;
+    }
+    snprintf(out, kNowSceneKeyMax, "process-%08lx/window-%08lx",
+             p->incarnation & 0xffffffffUL, w->addr & 0xffffffffUL);
+}
 
 static void put(Sink *k, const char *s)
 {
@@ -124,12 +185,22 @@ static void put_apps(Sink *k, const NowScene *s)
 {
     short i;
 
-    put(k, ",\"apps\":[");
+    put(k, ",\"apps\":");
+    if (k->sp != NULL) {
+        k->sp->apps_off = k->len;
+    }
+    put(k, "[");
     for (i = 0; i < s->proc_count; ++i) {
         const NowSceneProc *p = &s->procs[i];
         const char *err = now_scene_proc_error(p);
+        long at;
+        char key[kNowSceneKeyMax];
 
-        put(k, i > 0 ? ",{\"psn\":" : "{\"psn\":");
+        if (i > 0) {
+            put(k, ",");
+        }
+        at = k->len;
+        put(k, "{\"psn\":");
         put_psn(k, &p->psn);
         put(k, ",\"name\":");
         put_str(k, p->name);
@@ -147,19 +218,35 @@ static void put_apps(Sink *k, const NowScene *s)
             put_str(k, err);
         }
         put(k, "}");
+        proc_key(key, p);
+        entity_end(k, (k->sp != NULL) ? &k->sp->apps[i] : NULL, at, key);
     }
     put(k, "]");
+    if (k->sp != NULL) {
+        k->sp->apps_len = k->len - k->sp->apps_off;
+        k->sp->app_count = s->proc_count;
+    }
 }
 
 static void put_processes(Sink *k, const NowScene *s)
 {
     short i;
 
-    put(k, ",\"processes\":[");
+    put(k, ",\"processes\":");
+    if (k->sp != NULL) {
+        k->sp->procs_off = k->len;
+    }
+    put(k, "[");
     for (i = 0; i < s->proc_count; ++i) {
         const NowSceneProc *p = &s->procs[i];
+        long at;
+        char key[kNowSceneKeyMax];
 
-        put(k, i > 0 ? ",{\"psn\":" : "{\"psn\":");
+        if (i > 0) {
+            put(k, ",");
+        }
+        at = k->len;
+        put(k, "{\"psn\":");
         put_psn(k, &p->psn);
         put(k, ",\"name\":");
         put_str(k, p->name);
@@ -172,8 +259,14 @@ static void put_processes(Sink *k, const NowScene *s)
             put_process_incarnation(k, p->incarnation);
         }
         put(k, "}");
+        proc_key(key, p);
+        entity_end(k, (k->sp != NULL) ? &k->sp->procs[i] : NULL, at, key);
     }
     put(k, "]");
+    if (k->sp != NULL) {
+        k->sp->procs_len = k->len - k->sp->procs_off;
+        k->sp->proc_count = s->proc_count;
+    }
 }
 
 /* The menu bar, and only when the front process's walk produced one.
@@ -195,7 +288,11 @@ static void put_menubar(Sink *k, const NowScene *s)
     if (!s->menubar_present) {
         return;
     }
-    put(k, ",\"menubar\":{\"app\":");
+    put(k, ",\"menubar\":");
+    if (k->sp != NULL) {
+        k->sp->menubar_off = k->len;
+    }
+    put(k, "{\"app\":");
     put_str(k, (s->menubar_proc >= 0 && s->menubar_proc < s->proc_count)
             ? s->procs[s->menubar_proc].name : "");
     put(k, ",\"menus\":[");
@@ -264,6 +361,9 @@ static void put_menubar(Sink *k, const NowScene *s)
         put(k, "}");
     }
     put(k, "]}");
+    if (k->sp != NULL) {
+        k->sp->menubar_len = k->len - k->sp->menubar_off;
+    }
 }
 
 /* An observation reference, and ONLY when there is one.
@@ -663,13 +763,23 @@ static void put_windows(Sink *k, const NowScene *s)
 {
     short i;
 
-    put(k, ",\"windows\":[");
+    put(k, ",\"windows\":");
+    if (k->sp != NULL) {
+        k->sp->windows_off = k->len;
+    }
+    put(k, "[");
     for (i = 0; i < s->window_count; ++i) {
         const NowSceneWindow *w = &s->windows[i];
         const NowSceneProc *p = &s->procs[w->proc];
         char rect[64];
+        char key[kNowSceneKeyMax];
+        long at;
 
-        put(k, i > 0 ? ",{\"id\":" : "{\"id\":");
+        if (i > 0) {
+            put(k, ",");
+        }
+        at = k->len;
+        put(k, "{\"id\":");
         put_str(k, w->id);
         put(k, ",\"app\":");
         put_str(k, p->name);
@@ -740,8 +850,14 @@ static void put_windows(Sink *k, const NowScene *s)
             put(k, "}");
         }
         put(k, "}");
+        window_key(key, p, w);
+        entity_end(k, (k->sp != NULL) ? &k->sp->windows[i] : NULL, at, key);
     }
     put(k, "]");
+    if (k->sp != NULL) {
+        k->sp->windows_len = k->len - k->sp->windows_off;
+        k->sp->window_count = s->window_count;
+    }
 }
 
 static const char *coverage_status(NowSceneCoverage coverage)
@@ -795,7 +911,11 @@ static void put_coverage(Sink *k, const NowScene *s)
     const NowSceneProc *front = NULL;
     NowSceneCoverage menubar_coverage;
 
-    put(k, ",\"coverage\":[");
+    put(k, ",\"coverage\":");
+    if (k->sp != NULL) {
+        k->sp->coverage_off = k->len;
+    }
+    put(k, "[");
     put_coverage_claim(k, "processes", NULL, s->processes_coverage, 1);
     for (i = 0; i < s->proc_count; ++i) {
         const NowSceneProc *p = &s->procs[i];
@@ -817,6 +937,9 @@ static void put_coverage(Sink *k, const NowScene *s)
     }
     put_coverage_claim(k, "menubar", front, menubar_coverage, 0);
     put(k, "]");
+    if (k->sp != NULL) {
+        k->sp->coverage_len = k->len - k->sp->coverage_off;
+    }
 }
 
 /* meta.errors carries what the scene could not do, in upstream's
@@ -828,7 +951,11 @@ static void put_meta(Sink *k, const NowScene *s)
     short i;
     int first = 1;
 
-    put(k, ",\"meta\":{\"errors\":[");
+    put(k, ",\"meta\":{\"errors\":");
+    if (k->sp != NULL) {
+        k->sp->errors_off = k->len;
+    }
+    put(k, "[");
     for (i = 0; i < s->proc_count; ++i) {
         const char *err = now_scene_proc_error(&s->procs[i]);
         char line[kNowSceneNameMax + 40];
@@ -904,7 +1031,13 @@ static void put_meta(Sink *k, const NowScene *s)
         first = 0;
     }
     put(k, "]");
+    if (k->sp != NULL) {
+        k->sp->errors_len = k->len - k->sp->errors_off;
+    }
     put_coverage(k, s);
+    if (k->sp != NULL) {
+        k->sp->tail_off = k->len;
+    }
     if (s->plane[0] != '\0') {
         put(k, ",\"plane\":");
         put_str(k, s->plane);
@@ -912,6 +1045,39 @@ static void put_meta(Sink *k, const NowScene *s)
     if (s->latency_ms >= 0) {
         put(k, ",\"latencyMs\":");
         put_num(k, s->latency_ms);
+    }
+    /* WHERE THE TIME WENT, and it is ABSENT rather than zeroed when this
+       producer did not measure. That distinction is the same one the IR
+       already makes everywhere else: an absent `phases` says "this
+       producer does not report phases", never "these phases took no
+       time". Eight zeroes would be a measurement, and a false one.
+       See scene_phase.h and contract/asyncapi.yaml. */
+    if (now_scene_phase_reporting()) {
+        int p;
+
+        put(k, ",\"phases\":{\"us\":{");
+        for (p = 0; p < kNowScenePhaseCount; ++p) {
+            if (p) {
+                put(k, ",");
+            }
+            put_str(k, now_scene_phase_name(p));
+            put(k, ":");
+            put_num(k, (long)now_scene_phase_us(p));
+        }
+        /* The breakdown's own weight, published beside the numbers it
+           produced so nobody has to take "cheap enough to leave on" on
+           trust. clockUs is the read count at the calibrated per-read
+           price - an estimate, and named one in the contract. */
+        put(k, "},\"clockReads\":");
+        put_num(k, (long)now_scene_phase_clock_reads());
+        put(k, ",\"clockUs\":");
+        put_num(k, (long)now_scene_phase_clock_us());
+        put(k, ",\"faults\":");
+        put_num(k, (long)now_scene_phase_faults());
+        put(k, "}");
+    }
+    if (k->sp != NULL) {
+        k->sp->tail_len = k->len - k->sp->tail_off;
     }
     /* `bytes` is absent, not zero: it is the encoded size, and the
        encode is what is happening right now. */
@@ -921,10 +1087,24 @@ static void put_meta(Sink *k, const NowScene *s)
 NowSceneEncodeStatus now_scene_encode(const NowScene *s, char *out, long cap,
                                       long *needed)
 {
+    return now_scene_encode_spans(s, out, cap, needed, NULL);
+}
+
+NowSceneEncodeStatus now_scene_encode_spans(const NowScene *s, char *out,
+                                            long cap, long *needed,
+                                            NowSceneSpans *spans)
+{
     Sink k;
 
     if (needed != NULL) {
         *needed = 0;
+    }
+    if (spans != NULL) {
+        memset(spans, 0, sizeof *spans);
+        /* Starts TRUE and is cleared by the first unkeyed entity. The
+           other way round - proving every row keyed at the end - would
+           need a second walk of the tables to say the same thing. */
+        spans->keyed_all = 1;
     }
     if (s == NULL) {
         return kNowSceneEncodeOverflow;
@@ -932,6 +1112,7 @@ NowSceneEncodeStatus now_scene_encode(const NowScene *s, char *out, long cap,
     memset(&k, 0, sizeof k);
     k.out = (cap > 0) ? out : NULL;
     k.cap = (out != NULL) ? cap : 0;
+    k.sp = spans;
 
     put(&k, "{\"version\":");
     put_num(&k, s->version);
@@ -940,12 +1121,25 @@ NowSceneEncodeStatus now_scene_encode(const NowScene *s, char *out, long cap,
     put(&k, ",\"capturedAt\":");
     put_captured_at(&k, s->captured_at);
     put(&k, ",\"source\":");
+    if (spans != NULL) {
+        spans->source_off = k.len;
+    }
     put_str(&k, s->source);
-    put(&k, ",\"screen\":{\"w\":");
+    if (spans != NULL) {
+        spans->source_len = k.len - spans->source_off;
+    }
+    put(&k, ",\"screen\":");
+    if (spans != NULL) {
+        spans->screen_off = k.len;
+    }
+    put(&k, "{\"w\":");
     put_num(&k, s->screen_w);
     put(&k, ",\"h\":");
     put_num(&k, s->screen_h);
     put(&k, "}");
+    if (spans != NULL) {
+        spans->screen_len = k.len - spans->screen_off;
+    }
     put_apps(&k, s);
     put_processes(&k, s);
     put_menubar(&k, s);

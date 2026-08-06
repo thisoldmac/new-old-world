@@ -108,6 +108,32 @@ final class MirrorStateEngineTests: XCTestCase {
         XCTAssertEqual(empty.windows.count, 0)
     }
 
+    /// **Every difference says so where someone can read it afterwards.**
+    ///
+    /// The ring was recorded and never surfaced, so the one instrument that
+    /// can name WHICH field the projection and the visible scene disagreed
+    /// about kept its answer in memory until the app quit. That is precisely
+    /// what the empty-menu-bar report of 2026-08-06 needed and could not get:
+    /// the guest, the wire, the decoder, the reducer and the renderer were
+    /// each cleared by a test, and the remaining question — what the running
+    /// app was projecting at that moment — left no trace at all.
+    func testEveryShadowDifferenceIsAnnounced() throws {
+        var announced: [MirrorEngineDiagnostics.Difference] = []
+        let diagnostics = MirrorEngineDiagnostics { announced.append($0) }
+        let engine = MirrorStateEngine(guestKey: key,
+                                       diagnostics: diagnostics)
+        _ = engine.accept(try scene(seq: 1))
+        engine.compareVisible(try scene(seq: 2, includeWindow: false,
+                                        windowsStatus: "partial"))
+
+        XCTAssertEqual(announced.count, 1, """
+            A shadow difference was recorded and nothing announced it. \
+            Whoever meets it next has the same ring nobody can read.
+            """)
+        XCTAssertEqual(announced.first?.summary, "windows")
+        XCTAssertEqual(announced.first?.sequence, 1)
+    }
+
     func testSameSequenceContentEnrichmentPublishesThroughTheEngine() throws {
         let engine = MirrorStateEngine(guestKey: key)
         let structural = try scene(seq: 1)

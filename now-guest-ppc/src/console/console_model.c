@@ -1,4 +1,5 @@
 #include "console_model.h"
+#include "console_reply.h"
 
 #include "mirror_layout.h"
 #include "mirror_probe.h"
@@ -80,6 +81,16 @@ void console_model_append(const char *text)
     strncpy(g_lines[g_count], text, kMaxCols - 1);
     g_lines[g_count][kMaxCols - 1] = '\0';
     ++g_count;
+}
+
+/* console_reply.c is Toolbox-free and knows nothing about this file's
+   scrollback, so it emits through the same callback shape the exec plane
+   uses. This hands it straight back to console_model_append, which is
+   where the redirect above then decides which face is listening. */
+static void append_thunk(void *ctx, const char *text)
+{
+    (void)ctx;
+    console_model_append(text);
 }
 
 /* --- command line: name + unix-style flags ------------------------------ */
@@ -620,8 +631,7 @@ static void console_model_dispatch(const char *input)
     char tok[48];
     char target[48];
     char target2[48];
-    char result[512];
-    char message[96];
+    char result[kNowCommandResultCap];
     const char *p;
     const char *raw_args;
     const char *group = NULL;
@@ -1308,12 +1318,11 @@ static void console_model_dispatch(const char *input)
             g_last_unknown = 1;
         }
     }
-    if (now_json_find_string(result, "message", message, sizeof message)) {
-        snprintf(line, sizeof line, "%s", message);
-        console_model_append(line);
-    } else {
-        console_model_append("command failed");
-    }
+    /* Rows, not one field. This used to read a top-level "message" and say
+       "command failed" when it was absent — and no verb on this guest has
+       ever carried one on success, so the branch that ran was the failure
+       branch for every command that WORKED. See console_reply.h. */
+    console_reply_render(result, append_thunk, NULL);
 }
 
 void console_model_run(const char *input)

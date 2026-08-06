@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "conn_fields.h"
+#include "control_kind.h"
 #include "pump.h"
 
 /* Item numbers must match DITL 301 in resources/app.r. */
@@ -109,6 +110,6 @@ Boolean now_conn_edit(char *host, long host_cap, unsigned short *port)
         }
     }
 
-    DisposeDialog(dialog);
+    now_control_dispose_dialog(dialog);
     return saved;
 }

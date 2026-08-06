@@ -294,7 +294,16 @@ public enum InteractionPolicy {
         guard i.isEnabled else {
             return .nothing(why: "\"\(i.title)\" is disabled")
         }
-        if i.menu.isApple, i.title == "Key Caps" {
+        /* **An Apple Menu Items row is a FILE, and no application's menu
+           dispatch opens one.** This used to name Key Caps alone, so every
+           other row took the command route below and was answered by a
+           front application that has no Apple-menu case — silently, and
+           looking exactly like an act that never left. Michelle,
+           2026-08-06: "apple menu items dont work (apple menu -> control
+           panels, sherlock, system profiler etc)". The act did leave, and
+           `ObjectResolver.isAppleMenuItemsEntry` carries the reason it had
+           nowhere to land. */
+        if i.isAppleMenuItemsEntry {
             return .openAppleMenuItem(name: i.title)
         }
         /* A ⌘ item goes as a keystroke ONLY where a keystroke can carry

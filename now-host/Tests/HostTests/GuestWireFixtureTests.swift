@@ -56,6 +56,49 @@ final class GuestWireFixtureTests: XCTestCase {
                        "late confirmation keeps its earlier timeout")
     }
 
+    /// send_scene_same() in now-guest-ppc/src/core/wire.c, built across
+    /// several snprintf calls because its phases block loops over the
+    /// phase table. This is the answer a guest gives when the machine did
+    /// not change — the cheapest and most common one in the family, and
+    /// the only one that costs no transfer at all.
+    func testSceneSameAsTheGuestWritesIt() throws {
+        let json = """
+        {"type":"scene.same","id":7,"seq":412,"digest":"9017d2cd",\
+        "capturedAt":712345.5,"walkMs":4,"phases":{"us":{"enumerate":812,\
+        "bind":1904,"windows":2201,"controls":63,"menubar":1044,\
+        "semantics":0,"refs":190,"encode":589},"clockReads":42,\
+        "clockUs":21,"faults":0},"settlements":[]}
+        """
+        guard case .sceneSame(let same) = try decode(json) else {
+            return XCTFail("not a scene.same")
+        }
+        XCTAssertEqual(same.id, 7)
+        XCTAssertEqual(same.seq, 412, "the producer's counter still moves")
+        XCTAssertEqual(same.digest, "9017d2cd",
+                       "the digest is restated rather than implied, so a "
+                           + "consumer can prove the answer is about the "
+                           + "baseline it named")
+        XCTAssertEqual(same.walkMs, 4)
+        XCTAssertEqual(same.settlements?.count, 0)
+    }
+
+    /// The same message from a guest with no clock installed. `phases` is
+    /// ABSENT rather than zeroed, and the settlement tail is empty — which
+    /// is the shortest form the guest can emit, and the one whose trailing
+    /// comma had to be stepped back over.
+    func testSceneSameWithoutPhasesAsTheGuestWritesIt() throws {
+        let json = """
+        {"type":"scene.same","id":8,"seq":413,"digest":"deadbeef",\
+        "capturedAt":712399.5,"walkMs":3}
+        """
+        guard case .sceneSame(let same) = try decode(json) else {
+            return XCTFail("not a scene.same")
+        }
+        XCTAssertNil(same.settlements,
+                     "absent is not empty: an older guest said nothing about "
+                         + "settlements, it did not report none")
+    }
+
     /// now_wire_chat_send() in now-guest-ppc/src/core/wire.c, its prompt
     /// carrying the one guest-emitted chat string with arbitrary human
     /// text. Pinned for exec.output's reason: escaping is the one place
@@ -1055,6 +1098,30 @@ final class GuestWireFixtureTests: XCTestCase {
         }
     }
 
+    /// **A guest can refuse too**, and this side has to be able to read it.
+    /// The contract binds the revision gate to whoever RECEIVES a hello,
+    /// so `refuse` is no longer only the host's message — and its
+    /// `contract` is the SENDER's revision, which is the number a stale
+    /// peer needs to be told. Decoded rather than pattern-matched because
+    /// the failure this pins is the one the file family keeps producing:
+    /// a message one side sends and the other cannot decode at all, which
+    /// arrives as a link that simply died.
+    func test68KRefuseAsTheGuestWritesIt() throws {
+        for (json, reason) in [
+            (Guest68KWire.refuseRevision, "contract revision 1 != 2"),
+            (Guest68KWire.refuseAbsentRevision,
+             "host hello states no contract revision; this guest speaks 2"),
+        ] {
+            guard case .refuse(let refusal) = try decode(json) else {
+                return XCTFail("not a refuse")
+            }
+            // The literal 2 is the guest's own revision, held to the
+            // contract by WireLimitsAgreementTests rather than here.
+            XCTAssertEqual(refusal.contract, Contract.revision)
+            XCTAssertEqual(refusal.reason, reason)
+        }
+    }
+
     // MARK: - NOW-68K's file family (the send half)
 
     /// The offer this guest makes when a person types `put`. Decoded
@@ -1418,6 +1485,16 @@ enum Guest68KWire {
     static let byeNormal = #"{"type":"bye","code":"normal"}"#
     static let byeProtocolError = #"{"type":"bye","code":"protocol-error"}"#
     static let byeShuttingDown = #"{"type":"bye","code":"shutting-down"}"#
+
+    /// The guest's own refusal of a host hello it cannot speak to, as
+    /// send_refuse_and_close() assembles it. Both reasons handle_host_hello
+    /// can produce, because they are different findings: a revision that
+    /// disagrees, and a hello that states none at all.
+    static let refuseRevision = #"{"type":"refuse","contract":2,"#
+        + #""reason":"contract revision 1 != 2"}"#
+    static let refuseAbsentRevision = #"{"type":"refuse","contract":2,"#
+        + #""reason":"host hello states no contract revision; "#
+        + #"this guest speaks 2"}"#
 
     static let pingFirst = #"{"type":"ping","id":1}"#
     static let pingLater = #"{"type":"ping","id":7}"#

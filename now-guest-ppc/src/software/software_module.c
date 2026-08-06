@@ -831,6 +831,11 @@ static Boolean create_browser(void)
         g_browser = NULL;
         return false;
     }
+    /* The scene's list of this window's controls is what this
+       application remembered making, not a FindControl sweep - so a
+       browser made by a constructor with no procID still has to be
+       recorded, or it goes missing from the mirror. */
+    now_control_adopt(g_owner, g_browser, kNowControlProcDataBrowser);
     memset(&callbacks, 0, sizeof callbacks);
     callbacks.version = kDataBrowserLatestCallbacks;
     InitDataBrowserCallbacks(&callbacks);
@@ -840,7 +845,7 @@ static Boolean create_browser(void)
     if (g_data_upp == NULL || g_notify_upp == NULL
         || g_compare_upp == NULL) {
         dispose_callbacks();
-        DisposeControl(g_browser);
+        now_control_dispose(g_browser);
         g_browser = NULL;
         return false;
     }
@@ -1298,7 +1303,7 @@ static void software_dispose(void)
        browser still holds them let DisposeWindow later call through a
        freed transition vector - an intermittent system crash on quit. */
     if (g_browser != NULL) {
-        DisposeControl(g_browser);
+        now_control_dispose(g_browser);
         g_browser = NULL;
     }
     dispose_callbacks();

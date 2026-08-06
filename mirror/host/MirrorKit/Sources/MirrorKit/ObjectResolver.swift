@@ -167,7 +167,40 @@ public enum ObjectResolver {
         return .menuItem(.init(menu: shape(menu), index: index,
                                title: item.title, cmd: item.cmd,
                                isEnabled: item.enabled,
-                               isSeparator: item.separator))
+                               isSeparator: item.separator,
+                               isAppleMenuItemsEntry:
+                                   isAppleMenuItemsEntry(item, in: menu)))
+    }
+
+    /// **Which Apple-menu rows are files rather than commands.**
+    ///
+    /// On Mac OS 8/9 the Apple menu is one About item, a separator, then
+    /// the contents of the Apple Menu Items folder. Only the front
+    /// application serves the About row; everything below the separator is
+    /// a file the FINDER opens, and no application's menu dispatch does
+    /// anything with it unless it calls `OpenDeskAcc` itself.
+    ///
+    /// That is why this exists. NOW's guest has no Apple-menu case in
+    /// `handle_menu_choice` at all, so choosing Control Panels, Sherlock 2
+    /// or Apple System Profiler while NOW was frontmost dispatched a menu
+    /// command into its main loop and fell off the end of the switch —
+    /// measured 2026-08-06 in `acts.log`, where those three rows each
+    /// answered in 18–50 ms with settlement `unknown` (the self branch of
+    /// `menuact`) while the Finder's own File > Quit took ~800 ms and
+    /// settled `dispatched-but-unconfirmed` (the foreign act plane). The
+    /// act reached the guest and was dispatched; there was simply nothing
+    /// at the other end of it.
+    ///
+    /// The separator is required, not assumed: a menu that does not have
+    /// this shape yields false for every row and keeps the command route,
+    /// because guessing an Apple Menu Items filename for a row that is not
+    /// one would ask the Finder to open something that does not exist.
+    public static func isAppleMenuItemsEntry(_ item: Scene.MenuItem,
+                                             in menu: Scene.Menu) -> Bool {
+        guard menu.apple, !item.separator,
+              let divider = menu.items.first(where: { $0.separator })
+        else { return false }
+        return item.index > divider.index
     }
 
     /// The system's Application menu. Named once, here and in

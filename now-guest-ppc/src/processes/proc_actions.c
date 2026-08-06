@@ -638,3 +638,29 @@ NowProcHideOutcome now_proc_hide_by_name(const char *arg, char *msg, long cap)
     return kProcHideUnavailable;
 #endif
 }
+
+/* --- this application's own visibility ----------------------------------
+
+   See proc_actions.h for the measurement this exists for. Deliberately
+   silent: every caller is a route with its own reporting, and a machine
+   whose CarbonLib cannot show a process is one where the window simply
+   does not come back — which the caller's own read-back already says. */
+void now_proc_show_self(void)
+{
+#if NOW_HAVE_SHOWHIDEPROCESS
+    ProcessSerialNumber self;
+
+    if (!now_proc_hide_available(NULL)) {
+        return;
+    }
+    if (GetCurrentProcess(&self) != noErr) {
+        return;
+    }
+    /* Normalised the way now_proc_hide_by_name normalises it: a classic
+       Toolbox Boolean is "nonzero is true". */
+    if (IsProcessVisible(&self) != 0) {
+        return;
+    }
+    (void)ShowHideProcess(&self, true);
+#endif
+}

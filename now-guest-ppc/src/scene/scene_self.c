@@ -4,6 +4,7 @@
 
 #include "control_kind.h"
 #include "observe.h"
+#include "scene_phase.h"
 #include "workshop_window.h"
 #include <MacWindows.h>
 #include <Menus.h>
@@ -185,12 +186,18 @@ static void add_control_tree(NowScene *s, int window, ControlRef control,
                                                          cvalue);
                 }
             }
+            /* Timed per control here where the foreign walk times a whole
+               window's worth at once, because the counts are different in
+               kind: a foreign process can present hundreds and this
+               application presents the widgets it was written with. */
+            now_scene_phase_enter(kNowScenePhaseRefs);
             if (refs != NULL
                     && now_obs_walk_self_control_ref(
                            refs, (unsigned long)owner,
                            (unsigned long)control, token, sizeof token)) {
                 now_scene_set_control_ref(s, window, index, token);
             }
+            now_scene_phase_leave(kNowScenePhaseRefs);
         }
         --*budget;
     }
@@ -208,22 +215,171 @@ static void add_control_tree(NowScene *s, int window, ControlRef control,
     }
 }
 
-/* Every control the Control Manager will admit to, found by asking
-   where they are rather than by reading how they are stored.
+/* --- how this window's controls are discovered --------------------------
+ *
+ * TWO WAYS, and the first one is used for every window this application
+ * built itself.
+ *
+ * **The list we kept.** Every control this application makes goes through
+ * `control_kind.c` - `now_control_new`, or `now_control_adopt` for a
+ * DataBrowser - and every one it destroys goes back out through
+ * `now_control_dispose` / `now_control_dispose_window`, with
+ * `control_kind_source_test.py` failing the build if a call site skips
+ * either. So the registry IS the answer to "which controls does this
+ * window have", and asking the Control Manager to rediscover them is work
+ * this process did not need to do. Only EXISTENCE comes from the
+ * registry: title, bounds, value, enabled and visible are read live from
+ * the Toolbox on every pass, so nothing a person changes goes stale.
+ *
+ * **The sweep, still here, for windows we did not build.** A Dialog
+ * Manager window's items are controls this application never made, and
+ * `GetRootControl` fails because nothing here calls `CreateRootControl` -
+ * so `FindControl` over a grid is the only public question left. Its
+ * result is cached and re-proved at one point per control per pass.
+ *
+ * WHY THE ORDER MATTERS, measured 2026-08-06 with a microsecond phase
+ * breakdown. The sweep over the Workshop's 757x487 content is 3,724
+ * points and `FindControl` costs ~240us a point on an ACTIVE window:
+ * ~900ms. The cache hid that in steady state and could not hide it at the
+ * moment it mattered, because `FindControl` answers an INACTIVE window
+ * with NOTHING - so a backgrounded NOW cached zero controls, and the
+ * first scene after a person clicked into NOW paid the full sweep in the
+ * foreground: **1,891,174us**, against 5,090us for a steady-state scene.
+ * That was the hitch on clicking into NOW and on switching Workshop
+ * pages.
+ *
+ * The same refusal was also a CORRECTNESS defect, and the worse of the
+ * two: with anything else in front, the sweep walked all 3,724 points,
+ * found nothing, and the scene reported NOW's own window as EMPTY. That
+ * is an absence nobody observed, which is the one thing the coverage
+ * rules forbid. The registry answers it properly - it does not care which
+ * window is in front - and where the registry cannot help (a dialog we
+ * did not build, seen while inactive) the control plane is RETRACTED, so
+ * the key is absent and `meta.errors` says so.
+ *
+ * A cached ControlRef from the SWEEP is only ever COMPARED, never
+ * dereferenced, until FindControl has answered with it. A ControlRef from
+ * the REGISTRY is dereferenced, and may be, because the registry is told
+ * about disposal - that is the whole reason disposal is wrapped.
+ */
+enum {
+    kSelfProbeStep = 10,
+    kSelfProbeSeenMax = 64,
+    /* Only windows with no root control take this path, and in this
+       application that is all of them; four is the Workshop and any
+       dialogs a person has open at once. A fifth evicts the oldest and
+       costs it one sweep. */
+    kSelfProbeCacheWindows = 4
+};
 
-   The step is the smallest widget this can miss: a checkbox is 12pt
-   tall and a scroll arrow 16, so 6 finds both with room. Controls are
-   deduplicated by ControlRef, which is the identity the Control Manager
-   itself uses. */
+typedef struct {
+    WindowRef     window;              /* NULL = free slot */
+    Rect          content;
+    unsigned long generation;
+    short         count;
+    ControlRef    control[kSelfProbeSeenMax];
+    Point         where[kSelfProbeSeenMax];
+    unsigned long used;                /* for eviction: last scene seen */
+} SelfProbeCache;
+
+static SelfProbeCache g_probe_cache[kSelfProbeCacheWindows];
+static unsigned long g_probe_clock;
+
+static SelfProbeCache *probe_slot_for(WindowRef window)
+{
+    int i;
+    int oldest = 0;
+
+    for (i = 0; i < kSelfProbeCacheWindows; ++i) {
+        if (g_probe_cache[i].window == window) {
+            return &g_probe_cache[i];
+        }
+    }
+    for (i = 0; i < kSelfProbeCacheWindows; ++i) {
+        if (g_probe_cache[i].window == NULL) {
+            oldest = i;
+            break;
+        }
+        if (g_probe_cache[i].used < g_probe_cache[oldest].used) {
+            oldest = i;
+        }
+    }
+    memset(&g_probe_cache[oldest], 0, sizeof g_probe_cache[oldest]);
+    g_probe_cache[oldest].window = window;
+    return &g_probe_cache[oldest];
+}
+
+/* Does every control this slot remembers still answer where it was
+   found? One FindControl per control, against a live window. */
+static Boolean probe_cache_still_true(const SelfProbeCache *slot,
+                                      WindowRef window, const Rect *content)
+{
+    short i;
+
+    if (slot->count <= 0 || slot->generation != now_control_generation()) {
+        return false;
+    }
+    if (slot->content.top != content->top
+            || slot->content.left != content->left
+            || slot->content.bottom != content->bottom
+            || slot->content.right != content->right) {
+        return false;
+    }
+    for (i = 0; i < slot->count; ++i) {
+        ControlRef hit = NULL;
+
+        if (FindControl(slot->where[i], window, &hit) == 0
+                || hit != slot->control[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* The controls this application remembers making in this window. Returns
+   false when it made none - which is a Dialog Manager window, or a
+   registry that overflowed - and the caller then has to go and look. */
+static Boolean find_controls_from_registry(NowScene *s, int index,
+                                           WindowRef window,
+                                           const Rect *content, int *budget,
+                                           NowObsWalk *refs)
+{
+    short count = now_control_count(window);
+    short i;
+
+    if (count <= 0 || !now_control_registry_complete()) {
+        return false;
+    }
+    for (i = 0; i < count && *budget > 0; ++i) {
+        ControlRef control = now_control_indexed(window, i);
+
+        if (control == NULL) {
+            continue;
+        }
+        /* Hidden controls are skipped rather than carried. Every module
+           builds its widgets once and HIDES them when its page is not
+           the current one, so this window's registry holds every page's
+           worth at once - carrying them all would spend the scene's
+           64-control budget on things nobody can see and push the
+           visible ones out. It is also what the sweep did: FindControl
+           never reported an invisible control either. */
+        if (!IsControlVisible(control)) {
+            continue;
+        }
+        add_control_tree(s, index, control, content, kSelfMaxDepth,
+                         budget, refs, window);
+    }
+    return true;
+}
+
 static void find_controls_by_probe(NowScene *s, int index, WindowRef window,
                                    const Rect *content, int *budget,
                                    NowObsWalk *refs)
 {
-    enum { kStep = 10, kSeenMax = 64 };
-    ControlRef seen[kSeenMax];
-    int seen_count = 0;
+    SelfProbeCache *slot;
     GrafPtr saved = NULL;
     short x, y;
+    short i;
     short w = (short)(content->right - content->left);
     short h = (short)(content->bottom - content->top);
 
@@ -232,11 +388,28 @@ static void find_controls_by_probe(NowScene *s, int index, WindowRef window,
     GetPort(&saved);
     SetPortWindowPort(window);
 
-    for (y = 0; y < h && *budget > 0; y = (short)(y + kStep)) {
-        for (x = 0; x < w && *budget > 0; x = (short)(x + kStep)) {
+    slot = probe_slot_for(window);
+    slot->used = ++g_probe_clock;
+
+    if (probe_cache_still_true(slot, window, content)) {
+        for (i = 0; i < slot->count && *budget > 0; ++i) {
+            add_control_tree(s, index, slot->control[i], content,
+                             kSelfMaxDepth, budget, refs, window);
+        }
+        if (saved != NULL) {
+            SetPort(saved);
+        }
+        return;
+    }
+
+    slot->count = 0;
+    slot->content = *content;
+    slot->generation = now_control_generation();
+
+    for (y = 0; y < h && *budget > 0; y = (short)(y + kSelfProbeStep)) {
+        for (x = 0; x < w && *budget > 0; x = (short)(x + kSelfProbeStep)) {
             Point pt;
             ControlRef hit = NULL;
-            int i;
             int already = 0;
 
             pt.h = x;
@@ -244,8 +417,8 @@ static void find_controls_by_probe(NowScene *s, int index, WindowRef window,
             if (FindControl(pt, window, &hit) == 0 || hit == NULL) {
                 continue;
             }
-            for (i = 0; i < seen_count; ++i) {
-                if (seen[i] == hit) {
+            for (i = 0; i < slot->count; ++i) {
+                if (slot->control[i] == hit) {
                     already = 1;
                     break;
                 }
@@ -253,8 +426,10 @@ static void find_controls_by_probe(NowScene *s, int index, WindowRef window,
             if (already) {
                 continue;
             }
-            if (seen_count < kSeenMax) {
-                seen[seen_count++] = hit;
+            if (slot->count < kSelfProbeSeenMax) {
+                slot->control[slot->count] = hit;
+                slot->where[slot->count] = pt;
+                ++slot->count;
             }
             add_control_tree(s, index, hit, content, kSelfMaxDepth,
                              budget, refs, window);
@@ -428,6 +603,7 @@ static void collect_self_menubar(NowScene *s, int row)
            through Carbon's attached root submenu by menu ID; normal menus
            simply fall back to their installed handle. */
         MenuRef items = root_items_for(root, entry->menu);
+
         add_one_menu(s, entry->menu, items, entry->left);
     }
     if (root != NULL) {
@@ -458,10 +634,13 @@ void now_scene_collect_self(NowScene *s, int row,
         if (GetFrontProcess(&front) == noErr && psn != NULL
                 && SameProcess(&front, (ProcessSerialNumber *)psn, &same)
                        == noErr && same) {
+            now_scene_phase_enter(kNowScenePhaseMenubar);
             collect_self_menubar(s, row);
+            now_scene_phase_leave(kNowScenePhaseMenubar);
         }
     }
 
+    now_scene_phase_enter(kNowScenePhaseWindows);
     for (; window != NULL && hops < kSelfMaxWindows;
          window = GetNextWindow(window), ++hops) {
         Rect structure;
@@ -498,16 +677,19 @@ void now_scene_collect_self(NowScene *s, int row,
         if (refs != NULL) {
             char token[64];
 
+            now_scene_phase_enter(kNowScenePhaseRefs);
             if (now_obs_walk_self_window_ref(refs, (unsigned long)window,
                                              token, sizeof token)) {
                 now_scene_set_window_ref(s, index, token);
             }
+            now_scene_phase_leave(kNowScenePhaseRefs);
         }
 
         /* Declared even when the walk finds none: "this window has no
            controls" and "nobody looked" are different facts and the
            scene has room to say which. */
         (void)now_scene_open_controls(s, index);
+        now_scene_phase_enter(kNowScenePhaseControls);
         if (GetRootControl(window, &root) == noErr && root != NULL) {
             UInt16 count = 0;
             UInt16 i;
@@ -547,10 +729,30 @@ void now_scene_collect_self(NowScene *s, int row,
              * is under this point", and a grid over the content area asks
              * it often enough to meet every control wider than the step.
              * It is O(points x controls) of rect tests on one window and
-             * costs less than the transfer that carries the answer. */
-            find_controls_by_probe(s, index, window, &content, &budget,
-                                   refs);
+             * costs less than the transfer that carries the answer.
+             *
+             * That was the WHOLE answer until 2026-08-06, and it cost a
+             * second per scene with NOW in front. It is now the fallback:
+             * the first question is the list this application kept of the
+             * controls it made, which needs no probing at all. */
+            if (!find_controls_from_registry(s, index, window, &content,
+                                             &budget, refs)) {
+                /* Not ours to remember - a Dialog Manager window, or a
+                   registry that overflowed. FindControl is the only way
+                   left, and it REFUSES an inactive window: it walks every
+                   point and answers nothing. Sweeping anyway would report
+                   "this window has no controls", which is an absence
+                   nobody observed. Retract instead, so the key is absent
+                   and meta.errors carries the notice. */
+                if (IsWindowHilited(window)) {
+                    find_controls_by_probe(s, index, window, &content,
+                                           &budget, refs);
+                } else {
+                    now_scene_retract_controls(s, index);
+                }
+            }
         }
+        now_scene_phase_leave(kNowScenePhaseControls);
         if (workshop_is(window)) {
             WorkshopWriterContext context = { s, index, 1 };
             WorkshopSceneWriter writer = { &context,
@@ -559,4 +761,5 @@ void now_scene_collect_self(NowScene *s, int row,
             workshop_describe_scene(&writer);
         }
     }
+    now_scene_phase_leave(kNowScenePhaseWindows);
 }

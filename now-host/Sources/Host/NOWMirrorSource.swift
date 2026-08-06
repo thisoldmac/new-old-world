@@ -24,6 +24,30 @@ enum NOWMirrorSceneDecoder {
         IR.supportedMajors.sorted().map { "v\($0)" }
             .joined(separator: ", ")
     }
+
+    /// **Read straight off the document, beside MirrorKit's decode rather
+    /// than through it.**
+    ///
+    /// `meta.phases` is NOW's producer telling this host where its own
+    /// second went. MirrorKit's `Scene.Meta` is a sibling project's type
+    /// and does not carry it; teaching it to would be a change to the
+    /// sibling for the benefit of one consumer, and this repository's rule
+    /// for crossing that boundary is audited extraction, not convenience.
+    /// So the key is read here, from the same bytes, and never reaches the
+    /// rendered scene - it is a measurement about the walk, not a fact
+    /// about the machine, and it belongs in the measurement record.
+    ///
+    /// Failure is silence. A document that does not carry phases and a
+    /// document whose phases will not parse both mean "no breakdown for
+    /// this cycle", which is the same claim absence already makes.
+    static func phases(from document: Data) -> NOWSceneDocument.Phases? {
+        struct Envelope: Decodable {
+            struct Meta: Decodable { var phases: NOWSceneDocument.Phases? }
+            var meta: Meta?
+        }
+        return try? JSONDecoder().decode(Envelope.self,
+                                         from: document).meta?.phases
+    }
 }
 
 /// The smallest continuity rule needed before the full state engine exists.
@@ -328,6 +352,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private var cycleAsked: (at: Date, semantics: Bool, interaction: Bool)?
     private var cycleDelivered: Date?
     private var cycleOutcome = "no-reply"
+    /// This cycle's guest-side breakdown, if the producer reported one.
+    /// Cleared with the rest of the cycle so a slow scene's phases can
+    /// never be charged to the next cycle that failed to answer.
+    private var cyclePhases: NOWSceneDocument.Phases?
     private var lastCyclePublishedAt: Date?
     private var mutationWaiting = false
     private var sceneGuestKey: GuestKey?
@@ -526,12 +554,47 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         }
     }
 
+    /// **A window that is drawn is not necessarily a window that was
+    /// seen, and the status line has to say which.**
+    ///
+    /// The reducer already knows: a window whose owning process reported
+    /// `unavailable/not-observed` is RETAINED rather than deleted — an
+    /// unobserved process cannot testify that its window is gone — and it
+    /// is marked `.expectedStale` and un-actionable when it is. Nothing
+    /// carried that fact to the person. On 2026-08-06 the line read
+    /// `5 windows · walk 0ms · transfer 36ms · same` while three of those
+    /// five were retentions of a machine the guest could not observe at
+    /// all, and `same` was the guest correctly reporting that its blind
+    /// document had not changed. Every word was true and the sentence was
+    /// a lie by omission.
+    ///
+    /// Menu retention already had this vocabulary one line away
+    /// (`Apple menu expected-stale`); windows now share it.
+    private func observationPhrase(_ count: Int) -> String {
+        Self.observationPhrase(count, replica: shadowEngine?.replica)
+    }
+
+    /// Nonisolated because it reads only its arguments: the phrase is a
+    /// pure function of a replica, and a test that had to hop the main
+    /// actor to check a string would be testing the hop.
+    nonisolated static func observationPhrase(_ count: Int,
+                                              replica: MirrorReplica?)
+        -> String {
+        let stale = replica?.windows.values.filter {
+            $0.freshness == .expectedStale
+        }.count ?? 0
+        guard stale > 0 else { return "\(count) windows" }
+        return "\(count) windows, \(stale) expected-stale"
+    }
+
     private func accept(_ delivery: GuestListener.SceneDelivery,
                         generation: Int) {
         guard isCurrentCycle(generation) else { return }
         do {
             var decoded = try NOWMirrorSceneDecoder.decode(
                 irVersion: delivery.irVersion, document: delivery.document)
+            cyclePhases = NOWMirrorSceneDecoder.phases(
+                from: delivery.document)
             guard isCurrentCycle(generation), let key = pinnedGuestKey else {
                 return
             }
@@ -553,7 +616,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             guard pinnedGuestKey == cycleIO.activeKey() else {
                 shadowEngine?.compareVisible(decoded)
                 scene = projectedScene(fallback: decoded)
-                ambient = "(decoded.windows.count) windows · pinned Mac "
+                ambient = observationPhrase(decoded.windows.count)
+                    + " · pinned Mac "
                     + "is in the background; content and actions paused"
                     + menuStatus
                 finishCycle(generation)
@@ -569,7 +633,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                     self.refreshComplements(decoded,
                                             generation: generation) {
                         guard self.isCurrentCycle(generation) else { return }
-                        self.ambient = "\(decoded.windows.count) windows · "
+                        self.ambient =
+                            self.observationPhrase(decoded.windows.count)
+                            + " · "
                             + (failure.map {
                                 "content release refused: \($0)"
                             } ?? "content off") + menuStatus
@@ -594,9 +660,25 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 self.refreshComplements(update.scene,
                                         generation: generation) {
                     guard self.isCurrentCycle(generation) else { return }
-                    self.ambient = "\(update.scene.windows.count) windows · walk "
+                    /* THE WIRE COST, beside the walk and the transfer,
+                       because the whole argument for deltas is a byte
+                       count and a claim is not a measurement. "same"
+                       means no bulk lane was used at all. */
+                    let wire: String
+                    switch delivery.form {
+                    case .unchanged:
+                        wire = "same"
+                    case .delta:
+                        wire = "delta \(delivery.wireBytes)B"
+                            + (delivery.wholeBytes.map { "/\($0)B" } ?? "")
+                    case .whole:
+                        wire = "whole \(delivery.wireBytes)B"
+                    }
+                    self.ambient =
+                        self.observationPhrase(update.scene.windows.count)
+                        + " · walk "
                         + "\(delivery.walkMs.map { "\($0)ms" } ?? "?") · transfer "
-                        + "\(delivery.transferMs)ms · \(update.sentence)"
+                        + "\(delivery.transferMs)ms · \(wire) · \(update.sentence)"
                         + menuStatus
                     self.finishCycle(generation)
                     self.lifecycleDidChange()
@@ -690,9 +772,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             elements: scene?.windows.reduce(0) {
                 $0 + $1.controls.count + ($1.dialogItems?.count ?? 0)
                     + ($1.items?.count ?? 0)
-            }))
+            },
+            phases: cyclePhases))
         lastCyclePublishedAt = published
         cycleAsked = nil
+        cyclePhases = nil
     }
 
     private func rearm() {

@@ -86,6 +86,16 @@ typedef struct MirrorFacts {
        which is the accretive rule every other cell here follows. */
     unsigned long transport_probe;
     long transport_result;
+    /* The channel itself, which is what the probe above deliberately was
+       not. `channel_state` is a state and not a boolean because the ways
+       this can be not-up are four different things to tell a person:
+       nothing published, dialling, refused, or no transport at all.
+       `channel_sends` counts frames the RESIDENT put on the wire — the
+       evidence that it spoke, as `liveness_ticks` is the evidence that
+       it ran. */
+    unsigned long channel_state;
+    long channel_result;
+    unsigned long channel_sends;
     Boolean has_build_identity;
     unsigned long source_manifest[kMirrorIdentityWords];
     unsigned long build_fingerprint[kMirrorIdentityWords];

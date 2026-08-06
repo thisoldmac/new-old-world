@@ -218,7 +218,41 @@ time. `classic-mac-init-platform` is the skill; the charter is
 Its first job is only to exist and tick: prove the vehicle runs while
 every application is starved, before it is asked to carry a wire.
 
-### 4 · The liveness channel · **FIRST GATE CLEAR, transport not built**
+### 4 · The liveness channel · **DONE, and EMULATOR-VERIFIED end to end**
+
+**2026-08-06.** A real Macintosh opens the second connection, says
+`role: resident` on it, and keeps it alive while every application is
+starved. Against the REAL host, an application starved for 110 s kept
+its session — the same sockets, before and after.
+
+| claim | evidence |
+|---|---|
+| the resident dials and is admitted | two connections, one hour apart in port, `role: resident`, `name`/`os` identical to the session's |
+| the driver opened AND a stream exists | `capabilities: 127` — both P6 bits |
+| it speaks while applications cannot | 108.8 s application starvation, three resident pings inside it, all answered |
+| § 1's policy works with a real guest | 110 s starvation against `now-host`: session sockets unchanged |
+| it is the RESIDENT doing it | mutation: an app that never publishes the endpoint, same wedge — see below |
+
+Built on MacTCP's `.IPP` driver through the Device Manager, and with
+**no completion routines** — the one decision here worth arguing with,
+argued in `ext/src/now_liveness_net.c`'s header.
+
+**It found a second defect that no host-side test could have.** The
+guest's own `service_heartbeat` counted the starvation as silence and
+tore the link down from its end, 65 s in. The host had done everything
+right; the guest had the same wrong idea from the other side. Fixed by
+forgiving a pass gap over ten seconds, and deliberately without needing
+the extension at all.
+
+**And the instrument was feeding the clock it measured.**
+`tools/liveness-channel.py` polls `mirror` every five seconds, so the
+queued requests refreshed `last_rx_tick` the moment the guest came back
+and the defect above stayed invisible through two green runs. The real
+host — which pings nothing, by contract — was the only observer quiet
+enough to see it. `open-issues.md` carries this at length; it is the more
+transferable half of the day.
+
+### 4 (as it stood at the first gate) · **FIRST GATE CLEAR, transport not built**
 
 **2026-08-05, later.** The MacTCP route named below was asked the same
 cheap question that killed OT, and passed it: the resident opened `.IPP`
@@ -329,10 +363,128 @@ acceptance test.
 
 ## Picking this up cold
 
-**Everything below was written at the end of the session that built
-§ 0–§ 3 and § 5**, in the shape 011 uses for the same purpose. If this
-and [open-issues.md](../open-issues.md) disagree, the ledger is right; if
+**Rewritten 2026-08-06, at the end of the session that finished § 4.**
+The section below it is the previous session's version, kept because
+half of what it says is still how the rig works. If this and
+[open-issues.md](../open-issues.md) disagree, the ledger is right; if
 this and the code disagree, the code is right.
+
+### The one-paragraph version
+
+**This plan is done, at the emulator tier.** A Macintosh is
+cooperatively scheduled, so one blocked application starves all of them,
+and liveness was answered BY an application — so an ordinary dialog
+killed the wire against a healthy machine. Now the machine answers for
+itself: the optional resident component holds its OWN connection over
+MacTCP's `.IPP` driver, says `role: resident` on it, and pings through
+starvation. Watched end to end against the real host on 2026-08-06 — 110
+seconds starved, session kept, and the mutation without the resident
+watched to lose it.
+
+### What is DONE and how it was proven
+
+| § | what | evidence |
+|---|---|---|
+| 0 | `hello.role: [session, resident]` | contract, additive |
+| 1 | host tells starved from gone | 7 tests, 4 mutations — and now a real guest |
+| 2 | the Mirror shows the third state | 3 mutations |
+| 3 | the interrupt-time vehicle | ticks through starvation; `now_liveness_tm.S` is the ABI fix |
+| 4 | **the channel** | two connections, `capabilities: 127`, 110 s starved with the session kept, mutation watched to fail |
+| 5 | `tools/guest-wedge` | built and run |
+| — | the guest's own dead-link clock | `service_heartbeat` forgives a pass gap over 10 s |
+
+`scripts/test-all` green with both cross-compilers.
+
+### The three things most worth knowing before touching this
+
+1. **There are no completion routines, and that was a decision.**
+   `ext/src/now_liveness_net.c` issues every MacTCP call asynchronously
+   with a nil completion and reaps `ioResult` on the next 5-second tick.
+   Its header carries the argument; the short form is that `MacTCP.h`
+   declares a STACK-based completion while the Device Manager documents
+   A0/D0, and guessing wrong costs a five-second corruption of somebody
+   else's memory. If you add one, `now_liveness_tm.S` is the pattern —
+   but add it for a reason, not for symmetry.
+2. **An instrument that talks to the guest cannot measure the guest's
+   silence.** `tools/liveness-channel.py` polls `mirror` every five
+   seconds, and those queued requests refreshed the very clock under
+   test — hiding the guest-side defect through two green runs. The real
+   host pings nothing by contract and is the quiet observer. If you are
+   measuring silence, check what your instrument is sending.
+3. **The endpoint is published by the APPLICATION and nothing else can
+   publish it.** `now_peek_publish_endpoint` on `hello`,
+   `now_peek_withdraw_endpoint` on every path out, epoch 0 meaning stay
+   off the wire. A resident has no preferences and nobody to ask.
+
+### What is NOT done
+
+- **Metal.** Everything here is an emulated G4 under OS 9. MacTCP on a
+  real PowerBook is not Open Transport's compatibility driver on an
+  emulator. **Attended, and Michelle's call** — not a gate to schedule.
+- **68K / System 7.1.** The extension is the same INIT and the route is
+  the same Device Manager code, so § C's expected OT-versus-MacTCP
+  asymmetry did not happen — but "the same code" is not "the same
+  behaviour" and nothing has run it there.
+- **Without the extension, a starvation past the host's window still
+  ends the session.** Watched, by mutation. Closing that means the host
+  tolerating silence differently when it knows there is no resident,
+  and it is a later slice.
+- **Nothing dismisses the dialog.** The machine is legible and
+  survivable while wedged, not serviceable. That was always the
+  non-goal.
+- **The original 90 seconds is still unexplained.** No wedge mode
+  reproduces what the Finder's alert did; see below, and do not quietly
+  resolve it.
+
+### Driving the rig, as it actually went
+
+```bash
+export NOW68K_TOOLCHAIN=~/Lab/Tools/Retro68-build-68k/toolchain/m68k-apple-macos/cmake/retro68.toolchain.cmake
+export NOW_PPC_TOOLCHAIN=~/Lab/Tools/Retro68-build/toolchain/powerpc-apple-macos/cmake/retrocarbon.toolchain.cmake
+scripts/build-guests
+NOW_SPIN_RUN=/private/tmp/nowvm-$$ NOW_ANCHOR_PORT=1702 NOW_WIRE_PORT=5311 \
+    scripts/spin-up-ppc                       # ~7 min, cold boots so the INIT loads
+OUT="${TMPDIR:-/tmp}/now-guest-builds/$(printf '%s' "$PWD" | shasum | cut -c1-12)"
+NOW_ANCHOR_PORT=1702 NOW_BUILD_OUT="$OUT" tools/stage-wedge.py spin 110
+```
+
+Then either observer:
+
+```bash
+# the guest's own words, both connections, timestamped
+tools/liveness-channel.py --port 5311 --anchor 1702 \
+    --lab ~/Lab/Code/timbottu --wedge 110 --run 60
+
+# or the REAL host, which is the only end-to-end test
+defaults write dev.newoldworld.now.settings.res1 listenPort -int 5311
+(cd now-host && NOW_PREFS_SUFFIX=res1 swift run Host)
+lsof -nP -iTCP:5311 -sTCP:ESTABLISHED   # same sockets before and after = survived
+```
+
+`NOW_PREFS_SUFFIX` is what makes a second host copy free — its own
+settings and its own guest registry, so it cannot edit a working
+instance's book.
+
+Traps that cost time this session, all of them rig rather than product:
+
+- **`scripts/test-all` SKIPS the cross-builds silently** without both
+  toolchain variables exported in the same shell. It says so; it is easy
+  to read past, and you then gate on yesterday's bytes.
+- **The anchor's `quit` verb is out of scope**; Cmd-Q is
+  `{"code": 12, "char": 113, "mods": 256}` through `key`, and NOW must be
+  quit before its binary can be overwritten (`create err -48`).
+- **The resident OUTLIVES the application**, by design. Restarting NOW
+  does not clear the channel — a mutation that needs it gone needs a
+  cold boot.
+- **Stage applets to `Macintosh HD:TimBotTu:now-dev`**, never the
+  Desktop Folder: launching from there resets the worker connection.
+  `tools/stage-wedge.py` does it correctly; `tools/wedge-experiment.py`'s
+  own path constant is the old, wrong one.
+
+### The previous session's version of this section
+
+Kept for the rig detail it carries and because two of its warnings are
+still live. Where it says § 4 is not built, it is out of date.
 
 ### The one-paragraph version
 

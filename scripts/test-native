@@ -187,6 +187,18 @@ run_py now-guest-shared act_correlation_source_test.py
 run_py now-guest-shared act_install_reentrant_source_test.py
 run_py now-guest-shared arg_shadow_source_test.py
 run_py now-guest-shared control_kind_source_test.py
+# That gate says every control's making and unmaking goes through one
+# file; this one says the file does the right thing with them. It is here
+# rather than with the other PowerPC tests because the two are one
+# argument: since 2026-08-06 the scene READS this table instead of
+# sweeping a FindControl grid, and dereferences what it hands out, so a
+# disposal the table misses is a read of freed memory. It compiles
+# control_kind.c against a four-header Toolbox stand-in (tests/toolbox_shim)
+# - the only native test in this tree that does, and the shim is on the
+# include path of this line alone.
+run_c now-guest-ppc control_kind_registry_test.c \
+      "-I $repo_root/now-guest-ppc/tests/toolbox_shim" \
+      src/workshop/control_kind.c
 run_py now-guest-shared semantic_flat_init_source_test.py
 
 echo "== Mirror UX gate =="
@@ -320,7 +332,23 @@ run_py now-guest-ppc qdtrace_arm_order_source_test.py
 # reachable here for the same reason peek_oracle.c is.
 run_c now-guest-ppc scene_build_test.c       ""  src/scene/scene_build.c
 run_c now-guest-ppc scene_json_test.c        ""  src/scene/scene_build.c \
-      src/scene/scene_json.c src/core/json.c
+      src/scene/scene_json.c src/scene/scene_phase.c src/core/json.c \
+      src/scene/scene_digest.c
+# Where a scene's time went, and the three properties its honesty rests
+# on: nested phases must not double-count their parents, a producer with
+# no clock must report NOTHING rather than eight zeroes, and a span that
+# straddles the microsecond counter's 71-minute wrap must be short. The
+# breakdown exists because differencing two whole-scene numbers produced
+# a confident wrong answer; arithmetic that quietly double-counted would
+# do the same thing again with more authority.
+# The delta plane: the digest that decides "nothing changed", and the
+# byte-exact reconstruction that is the whole resync guarantee. It runs
+# the HOST'S half of the reassembly too, so the guest's half is tested
+# against something that is not itself.
+run_c now-guest-ppc scene_digest_test.c      ""  src/scene/scene_digest.c \
+      src/scene/scene_build.c src/scene/scene_json.c \
+      src/scene/scene_phase.c src/core/json.c
+run_c now-guest-ppc scene_phase_test.c       ""  src/scene/scene_phase.c
 run_py now-guest-ppc scene_self_menubar_source_test.py
 # The bridge between the ported walk and the scene's rules - the layer
 # the roadmap called "the ported walk has no caller". It is Toolbox-free
@@ -328,7 +356,8 @@ run_py now-guest-ppc scene_self_menubar_source_test.py
 # decisions that turn a parser result into a CLAIM are reachable here,
 # against the same synthetic arena the axwalk tests use.
 run_c now-guest-ppc scene_walk_test.c        ""  src/scene/scene_walk.c \
-      src/scene/scene_build.c src/axwalk/axwalk.c src/axwalk/axmenu.c \
+      src/scene/scene_build.c src/scene/scene_phase.c \
+      src/axwalk/axwalk.c src/axwalk/axmenu.c \
       src/axwalk/axtext.c src/peek/peek_validate.c src/axwalk/axresolve.c \
       src/observe/obsmint.c src/observe/obsref.c src/observe/obsresolve.c \
       tests/semantic_client_stub.c
@@ -488,6 +517,8 @@ run_c now-guest-ppc sw_vers_parse_test.c     ""  src/software/sw_vers_parse.c
 run_c now-guest-ppc workshop_layout_test.c   ""  src/workshop/workshop_layout.c
 run_c now-guest-ppc cmd_help_test.c         ""  src/commands/cmd_help.c
 run_c now-guest-ppc cmd_line_test.c         ""  src/commands/cmd_line.c src/core/json.c
+run_c now-guest-ppc console_reply_test.c  ""  src/console/console_reply.c \
+                                                 src/core/json.c
 # The gestalt reply's serializer, driven at caps the real machine never
 # reaches. See the test's header: the bug it pins could not have been found
 # on hardware, because no machine answers enough selectors to overflow.

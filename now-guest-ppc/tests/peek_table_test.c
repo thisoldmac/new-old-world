@@ -86,6 +86,16 @@ int main(void)
        the four checks above exist to remove. A plane added without a line
        here is a plane nobody can read a live `cap=` word against. */
     check(kNowPeekTableCapEvents == 16u, "P5 transitions is bit 4 (16)");
+    /* P6 is TWO bits, and that is the point of them: the vehicle shipped
+       and was proven on an emulator before anything could dial, so "a
+       resident that ticks" and "a resident that can speak" are
+       separately true and must stay separately answerable. A live
+       `capabilities: 63` means the vehicle only; 127 means the channel
+       too. */
+    check(kNowPeekTableCapLiveness == 32u, "P6 vehicle is bit 5 (32)");
+    check(kNowPeekTableCapLivenessNet == 64u, "P6 channel is bit 6 (64)");
+    check((kNowPeekTableCapLiveness & kNowPeekTableCapLivenessNet) == 0,
+          "the vehicle and the channel are distinct bits");
 
     memset(&t, 0, sizeof t);
     t.magic = (NowPeekU32)kNowPeekTableMagic;
@@ -215,9 +225,26 @@ int main(void)
     check(offsetof(NowPeekTable, transport_format)
               == offsetof(NowPeekTable, liveness_ticks) + sizeof(NowPeekU32),
           "the transport probe appends directly behind the tick counter");
-    check(offsetof(NowPeekTable, transport_result) + sizeof(NowPeekI32)
-              == sizeof(NowPeekTable),
-          "the transport result is the tail, so shorter means absent");
+    check(offsetof(NowPeekTable, channel_format)
+              == offsetof(NowPeekTable, transport_result)
+                  + sizeof(NowPeekI32),
+          "the liveness channel appends directly behind the probe");
+    /* U10's three channel words and the endpoint's OS string, in the
+       order the resident and the application respectively write them.
+       The OS string is the tail, so an extension too old to carry it is
+       shorter and the application must not write there — which is what
+       endpoint_region_ready() in peek.c gates on. */
+    check(offsetof(NowPeekTable, channel_result)
+              == offsetof(NowPeekTable, channel_format) + sizeof(NowPeekU32),
+          "channel result follows the state word");
+    check(offsetof(NowPeekTable, channel_sends)
+              == offsetof(NowPeekTable, channel_result) + sizeof(NowPeekI32),
+          "channel send count follows the result");
+    check(offsetof(NowPeekTable, endpoint_os)
+              == offsetof(NowPeekTable, channel_sends) + sizeof(NowPeekU32),
+          "the endpoint OS string follows the channel block");
+    check(offsetof(NowPeekTable, endpoint_os) + 32 == sizeof(NowPeekTable),
+          "the endpoint OS string is the tail, so shorter means absent");
 
     /* Reachability is not a dial, and the values are the contract rather
        than an ordering — a refusal carries the driver's own OSErr so that

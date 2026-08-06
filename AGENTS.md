@@ -233,6 +233,13 @@ clone changes the clone, never the image.
   the work it excuses. As with `TBT_ALLOW_MAIN=1`, the enforcement is the
   floor and not the rule.
 
+- **The image is shared and the last bake wins.** A receipt says this
+  source was baked, verified and installed; it cannot say the file still
+  holds it, because another branch may bake over it an hour later. Before
+  believing a sweep, check the image's sha256 against the receipt's
+  `imageSha256` — and if they differ, bake again. That is one `shasum`,
+  and it is the difference between a result and a guess.
+
 Why it is enforced rather than remembered: on 2026-08-06 the newest stage
 image was from 3 August while **six** extension commits had landed that
 day — the re-armed liveness Time Manager vehicle, its ABI shim, the MacTCP

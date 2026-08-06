@@ -573,10 +573,20 @@ final class GuestWireConformanceTests: XCTestCase {
         "software.listing": "testSoftwareListingAsTheGuestWritesIt",
         "command.result": nil,
         "scene.begin": "testSceneBeginSettlementsAsTheGuestWritesIt",
+        // The no-change answer, built across several snprintf calls because
+        // its phases block is a loop over the phase table. It is the
+        // CHEAPEST and most common answer in the scene family, which is
+        // exactly why it needs a fixture: nothing else exercises the path.
+        "scene.same": "testSceneSameAsTheGuestWritesIt",
         "hello": "test68KHelloAsTheGuestWritesIt",
         "ping": "test68KPingAsTheGuestWritesIt",
         "error": "test68KErrorReplyAsTheGuestWritesIt",
         "bye": "test68KByeAsTheGuestWritesIt",
+        // The guest's half of the revision gate (wire68.c,
+        // send_refuse_and_close). `refuse` used to be the host's message
+        // alone; the contract binds the check to whoever RECEIVES a hello,
+        // so both guests now send one.
+        "refuse": "test68KRefuseAsTheGuestWritesIt",
         "process.result": "test68KProcessResultAsTheGuestWritesIt",
         "file.accept": "test68KFileAcceptAsTheGuestWritesIt",
         "file.refuse": "test68KFileRefuseAsTheGuestWritesIt",

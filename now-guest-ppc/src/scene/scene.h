@@ -1,6 +1,11 @@
 #ifndef NOW_SCENE_H
 #define NOW_SCENE_H
 
+/* For NowSceneSpans, which now_scene_encode_spans fills. The delta plane
+   is a separate header on purpose - it is pure arithmetic over an
+   encoded document and knows nothing about a NowScene. */
+#include "scene_digest.h"
+
 /* The scene envelope: NOW's guest producing Mirror's frozen v1 scene IR
    over the part of the machine it can honestly walk today.
    (mirror/docs/IR-V1.md; docs/scene-producer.md for what is and is not
@@ -677,6 +682,18 @@ typedef enum {
    does not fit a 4096-byte control frame before it commits to one. */
 NowSceneEncodeStatus now_scene_encode(const NowScene *s, char *out, long cap,
                                       long *needed);
+
+/* The same encode, additionally recording WHERE EACH PIECE LANDED for a
+   caller that has to talk about one entity's bytes without knowing how
+   an entity is encoded - the delta plane (scene_digest.h). `spans` may
+   be NULL, which is exactly now_scene_encode.
+
+   Offsets are right in a sizing pass too; HASHES are not, because they
+   need the bytes. A caller that sizes first and encodes second must take
+   its spans from the second call. */
+NowSceneEncodeStatus now_scene_encode_spans(const NowScene *s, char *out,
+                                            long cap, long *needed,
+                                            NowSceneSpans *spans);
 
 /* The exact byte count now_scene_encode would need, terminator included. */
 long now_scene_encoded_size(const NowScene *s);

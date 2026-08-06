@@ -339,17 +339,81 @@ final class InteractionPolicyTests: XCTestCase {
         }
     }
 
+    /// The live Apple menu of an OS 9 machine: the About row, the
+    /// separator, then the Apple Menu Items folder.
+    private func appleMenu(id: Int = -16383) -> Scene.Menu {
+        func row(_ i: Int, _ title: String,
+                 separator: Bool = false) -> Scene.MenuItem {
+            .init(title: title, index: i, separator: separator,
+                  enabled: true, mark: false, cmd: "")
+        }
+        return .init(title: "", apple: true, left: 10, id: id, items: [
+            row(1, "About This Computer"),
+            row(2, "-", separator: true),
+            row(3, "Apple System Profiler"),
+            row(6, "Control Panels"),
+            row(9, "Key Caps"),
+            row(14, "Sherlock 2"),
+        ])
+    }
+
+    private func applePlan(_ title: String,
+                           in menu: Scene.Menu) -> InteractionPlan {
+        guard let item = menu.items.first(where: { $0.title == title }) else {
+            return .nothing(why: "no such row")
+        }
+        return InteractionPolicy.plan(
+            for: Interaction(object: ObjectResolver.menuItem(
+                item, in: menu, index: item.index), gesture: tap),
+            planes: .residentActPlane)
+    }
+
     func testKeyCapsUsesGuestFinderInsteadOfCarbonDeskAccessoryAPI() {
-        let apple = MirrorObject.Menu(id: 256, title: "", left: 0,
-                                      isApple: true)
-        let keyCaps = Interaction(
-            object: .menuItem(.init(
-                menu: apple, index: 9, title: "Key Caps", cmd: "",
-                isEnabled: true, isSeparator: false)),
-            gesture: tap)
-        XCTAssertEqual(InteractionPolicy.plan(
-            for: keyCaps, planes: .residentActPlane),
-            .openAppleMenuItem(name: "Key Caps"))
+        XCTAssertEqual(applePlan("Key Caps", in: appleMenu()),
+                       .openAppleMenuItem(name: "Key Caps"))
+    }
+
+    /// **The whole Apple Menu Items folder, not one row of it.**
+    ///
+    /// Only Key Caps took the Finder route until 2026-08-06; every other
+    /// row became a menu command that the front application answered by
+    /// doing nothing, because no application's menu dispatch opens a file
+    /// out of that folder. Measured in `acts.log`: those rows dispatched
+    /// into NOW's own main loop in 18-50 ms and fell off the end of
+    /// `handle_menu_choice`, which has no Apple-menu case at all.
+    ///
+    /// Mutation check: give `isAppleMenuItemsEntry` back its old
+    /// Key-Caps-only meaning and all three of these become
+    /// `.menuCommand(menuID: -16383, ...)` — the exact plan the log
+    /// recorded for the three rows Michelle reported.
+    func testEveryAppleMenuItemsRowGoesToTheFinder() {
+        let menu = appleMenu()
+        for title in ["Apple System Profiler", "Control Panels",
+                      "Sherlock 2"] {
+            XCTAssertEqual(applePlan(title, in: menu),
+                           .openAppleMenuItem(name: title),
+                           "\(title) must be opened as a file")
+        }
+    }
+
+    /// The About row is above the separator and IS the front
+    /// application's own command — it stays on the command route, and
+    /// asking the Finder to open a file by that name would name nothing.
+    func testAboutRowStaysAMenuCommand() {
+        XCTAssertEqual(applePlan("About This Computer", in: appleMenu()),
+                       .menuCommand(menuID: -16383, itemIndex: 1,
+                                    titleLeft: 10))
+    }
+
+    /// No separator, no claim. A menu that does not have the OS 9 shape
+    /// keeps the route it has always had rather than having a filename
+    /// guessed for it.
+    func testAppleMenuWithoutASeparatorKeepsTheCommandRoute() {
+        var menu = appleMenu()
+        menu.items = menu.items.filter { !$0.separator }
+        XCTAssertEqual(applePlan("Sherlock 2", in: menu),
+                       .menuCommand(menuID: -16383, itemIndex: 14,
+                                    titleLeft: 10))
     }
 
     // MARK: - Nothing is ever a silent drop

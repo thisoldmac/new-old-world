@@ -26,13 +26,32 @@
 #include "proc_actions.h"
 #include "product_identity.h"
 #include "scene_collect.h"
+#include "scene_phase.h"
 #include "software.h"
 
 enum {
+    /* Room for the one field whose VALUE is not known until the sizing
+       pass has already run: meta.phases.us.encode, and the two counters
+       the sizing pass's own clock reads move. Sixty-four bytes against a
+       document measured in kilobytes, spent so that "how long did the
+       encode take" can be a number in the document rather than a number
+       nobody carries. */
+    kSceneEncodePhaseSlack = 64,
     kConnectTimeoutTicks = 60 * 10,   /* 10s to establish the socket */
     kHelloTimeoutTicks = 60 * 8,      /* 8s for the host's hello */
     kPingIntervalTicks = 60 * 30,     /* ping after 30s of silence */
     kDeadTicks = 60 * 65,             /* no traffic for 65s => dead */
+    /* **A gap between two consecutive passes of our own event loop that
+       is too long to be scheduling.** Above this, the application was
+       not RUNNING for that interval - and time we were not running is
+       not time the host was silent.
+
+       Ten seconds. A healthy pass is milliseconds; the pump is called
+       from the main loop and from every nested Toolbox loop (pump.h), so
+       even a modal or a long file operation keeps it well under a
+       second. Nothing legitimate lands between one second and ten, which
+       is why the threshold can be this far from both. */
+    kStarvedPassTicks = 60 * 10,
     kBackoffMinTicks = 60 * 2,        /* 2s, doubling... */
     kBackoffMaxTicks = 60 * 30,       /* ...to 30s */
     kRetryFloorTicks = 60 * 1,        /* the contract's only cadence rule */
@@ -66,6 +85,10 @@ typedef struct {
 
     unsigned long phase_deadline;     /* connect/hello timeout */
     unsigned long last_rx_tick;       /* any inbound bytes */
+    /* When this loop last ran. A long gap here means the APPLICATION was
+       not scheduled, which is a different fact from the host being quiet
+       - see service_heartbeat(). Zero until the first pass. */
+    unsigned long last_pass_tick;
     unsigned long next_ping_tick;
     long pings_sent;                  /* since last pong */
     long ping_id;
@@ -88,6 +111,10 @@ static ConnState g;
 static OTNotifyUPP g_connect_notifier;
 
 static void send_hello(void);
+/* The delta plane's memory of what this guest last handed a consumer.
+   A baseline is a claim about ONE consumer's state, so a new connection
+   has none - see serve_scene. */
+static void scene_baseline_forget(void);
 static void xfer_cleanup(void);
 static void offer_cleanup(void);
 
@@ -261,6 +288,39 @@ static void close_endpoint(void)
     g.bulk_remaining = 0;
 }
 
+/* THE PLANES THIS HOST HAS ASKED TO HAVE ARMED, remembered across
+   requests.
+   --------------------------------------------------------------------
+   The owner lease is ten seconds and, until this existed, ONLY a
+   `scene.request` renewed it - so the lease measured scene-poll cadence
+   rather than whether anybody wanted the planes. A host that spent forty
+   seconds clicking things and never asked for a scene between them let
+   four leases expire, and then every act it sent refused with "the
+   anchor plane is absent or not armed" while its Mirror kept drawing the
+   windows it could no longer see (open-issues.md, 2026-08-06).
+
+   This is now_peek_idle's mistake one layer up, and it takes the same
+   shape of fix: renew from something that MEANS a consumer is there.
+   That is not the event loop here - the event loop runs whether or not
+   anyone is watching, and a plane armed on an unwatched machine is work
+   charged to every process on it for nobody. It is host traffic: a host
+   that is sending this guest requests is a host that is using it.
+
+   Two gates keep it honest. It renews only once a scene has actually
+   been asked for on THIS link, so a host that never mirrors never arms
+   anything; and it does not renew on `pong`, which is the reply to our
+   own heartbeat and would make "connected" mean "armed forever". Zeroed
+   when the link drops, where the claim is released anyway. */
+static unsigned long g_scene_plane_caps;
+
+static void renew_scene_planes(void)
+{
+    if (g_scene_plane_caps == 0) {
+        return;
+    }
+    now_peek_claim(kNowPeekOwnerScene, g_scene_plane_caps);
+}
+
 /* Everything in flight, dropped. ONE list, because there were two and
    they had already drifted: enter_backoff() dropped five things and
    conn_disconnect() dropped none, so disconnecting mid-pull left
@@ -279,7 +339,14 @@ static void link_drop_transfers(void)
     chat_drop();                      /* a streaming turn dies with the link */
     preview_fail("Connection lost");  /* local hook only; no wire touched */
     ctlq_clear();
+    g_scene_plane_caps = 0;            /* no consumer, nothing to renew */
     now_peek_disconnect();             /* release every wire-owned plane */
+    /* And tell the resident to stay off the wire. It holds its OWN
+       connection to the same host, so a link this application has given
+       up on is one nothing here can still vouch for; the endpoint is
+       withdrawn on every path out for the same reason every transfer is
+       ended here rather than at each call site. */
+    now_peek_withdraw_endpoint();
 }
 
 /* Move to backoff after a failure; status keeps the reason already set. */
@@ -393,6 +460,7 @@ static void finish_connect(void)
     }
     g.phase = kConnHandshaking;
     g.phase_deadline = TickCount() + kHelloTimeoutTicks;
+    scene_baseline_forget();
     send_hello();
 }
 
@@ -740,8 +808,63 @@ static int next_frame(char *payload_out, long cap)
     return 1;
 }
 
-static void on_hello(const char *reply)
+/* Returns 0 when the host's hello is refused and the caller must tear the
+   connection down.
+
+   THE REVISION GATE, on the receiving side. The contract's connection
+   rules bind whoever receives a hello, and this half used to read `name`
+   and `version` and nothing else — so this guest would serve a full
+   session to any peer at all, and find out about the skew later, in the
+   middle of a message it could not decode. It cost more than a session:
+   harnesses stuck on revision 1 could never hold a link to NOW-68K, which
+   gates, and held one here for a whole revision, so the missing check is
+   what made a year-stale harness look healthy.
+
+   Shaped after NOW-68K's handle_host_hello so the two guests answer the
+   same way for the same reason, with two additions the contract now
+   states: the reason names both numbers (a peer that is merely stale
+   learns which one to be), and it goes out as a `refuse` rather than a
+   silent hang-up, which from the far end is indistinguishable from a
+   dropped network. An ABSENT `contract` lands here too — the field is
+   required, and there is no revision to compare — but says so rather
+   than reporting a number nobody sent. */
+static int on_hello(const char *reply)
 {
+    long revision = 0;
+    int read = now_json_read_int(reply, "contract", &revision);
+
+    if (read != kNowJsonIntOk || revision != (long)kNowContractRevision) {
+        char reason[96];
+        char json[192];
+
+        if (read == kNowJsonIntAbsent) {
+            snprintf(reason, sizeof reason,
+                     "host hello states no contract revision; this guest "
+                     "speaks %d", (int)kNowContractRevision);
+        } else if (read != kNowJsonIntOk) {
+            snprintf(reason, sizeof reason,
+                     "host hello's contract revision is not a number; this "
+                     "guest speaks %d", (int)kNowContractRevision);
+        } else {
+            snprintf(reason, sizeof reason,
+                     "contract revision %ld != %d",
+                     revision, (int)kNowContractRevision);
+        }
+        snprintf(g.status, sizeof g.status, "Protocol error: %s", reason);
+        now_log(kLogWarn, "wire", "refused the host's hello: %s", reason);
+        /* Best effort, like every other frame this guest sends: the
+           reason is already on this machine's own status line, and a
+           refusal that could not be queued must not turn into a session
+           that gets served anyway. `contract` is OURS — that is what the
+           other side needs from this message. Nothing here is
+           peer-controlled text, so no escaping is involved. */
+        snprintf(json, sizeof json,
+                 "{\"type\":\"refuse\",\"contract\":%d,\"reason\":\"%s\"}",
+                 (int)kNowContractRevision, reason);
+        (void)send_control(json);
+        return 0;
+    }
+
     if (!now_json_find_string(reply, "name", g.peer_name, sizeof g.peer_name)) {
         g.peer_name[0] = '\0';
     }
@@ -751,10 +874,19 @@ static void on_hello(const char *reply)
     }
     g.phase = kConnConnected;
     g.connected_tick = TickCount();
+    /* **Published here and not one step earlier.** The resident cannot
+       report a failed dial to anybody - it has no UI, no log and no
+       application to tell - so it is handed an address only once THIS
+       side has watched the host answer. An address that has not answered
+       is not one to give something that cannot complain about it. */
+    now_peek_publish_endpoint((unsigned long)g.address, g.port);
     g.backoff_ticks = 0;              /* success resets backoff */
     g.last_fail[0] = '\0';
     g.pings_sent = 0;
     g.next_ping_tick = TickCount() + kPingIntervalTicks;
+    /* Per LINK, so a reconnection after a long backoff does not read as
+       a starvation the moment the heartbeat first runs. */
+    g.last_pass_tick = 0;
     if (g.last_rtt_ms >= 0) {
         snprintf(g.status, sizeof g.status, "Connected: %s (v%s) - %ld ms",
                  g.peer_name, g.peer_version, g.last_rtt_ms);
@@ -762,6 +894,7 @@ static void on_hello(const char *reply)
         snprintf(g.status, sizeof g.status, "Connected: %s (v%s)",
                  g.peer_name, g.peer_version);
     }
+    return 1;
 }
 
 /* --- bulk transfer -----------------------------------------------------
@@ -1491,6 +1624,18 @@ static void shot_drop(void)
 
 static long g_scene_seq;
 
+/* WHAT THIS GUEST LAST HANDED A CONSUMER, as one key and one hash per
+   entity - a few kilobytes, and nothing in it is proportional to the
+   size of the document. It is what lets a scene answer "the same" for
+   the cost of a control frame, and what a delta is computed against.
+   See scene_digest.h and docs/scene-deltas.md. */
+static NowSceneBaseline g_scene_baseline;
+
+static void scene_baseline_forget(void)
+{
+    now_scene_baseline_clear(&g_scene_baseline);
+}
+
 /* The one failure shape a scene owes the host, so it never waits on a
    transfer that will not come. `reason` is prose for a human; nothing
    branches on it. */
@@ -1504,9 +1649,104 @@ static void scene_fail(long id, unsigned short xfer, const char *reason)
     send_control(json);
 }
 
+/* What the WHOLE document would have measured, beside what the delta
+   actually costs. It is published so the saving is a measurement on the
+   wire rather than a claim in a plan: a host records both numbers, and a
+   delta that stops paying for itself becomes visible without anyone
+   instrumenting anything. */
+static long g_scene_whole_bytes;
+
+static const char *scene_delta_envelope(const char *baseline, long whole)
+{
+    static char buf[80];
+
+    snprintf(buf, sizeof buf,
+             "\"delta\":true,\"baseline\":\"%s\",\"wholeBytes\":%ld,",
+             baseline, whole);
+    return buf;
+}
+
+/* THE NO-CHANGE ANSWER. A control frame and nothing else: no transfer id
+   is spent, no bulk lane is held, and there is no scene.end - because
+   this is not a transfer. It is deliberately NOT a flag on scene.end,
+   which would have made the cheapest and most common outcome in the
+   whole protocol share a code path with failure.
+
+   It is still a FRESH OBSERVATION: capturedAt moves, walkMs and phases
+   describe this walk, and settlements reconcile against it exactly as
+   they do on scene.begin. A consumer republishes what it already holds
+   with the new moment; it does not treat the machine as unobserved. */
+static void send_scene_same(long id, const NowScene *scene, long walk_ms,
+                            const char *digest_hex)
+{
+    static char json[kNowMaxControl];
+    long used;
+    long settled;
+
+    used = snprintf(json, sizeof json,
+                    "{\"type\":\"scene.same\",\"id\":%ld,\"seq\":%ld,"
+                    "\"digest\":\"%s\",\"capturedAt\":%.1f,"
+                    "\"walkMs\":%ld,",
+                    id, scene->seq, digest_hex, scene->captured_at, walk_ms);
+    if (used < 0 || used >= (long)sizeof json) {
+        scene_fail(id, 0, "the scene.same envelope did not fit");
+        return;
+    }
+    if (now_scene_phase_reporting()) {
+        int p;
+        long n;
+
+        n = snprintf(json + used, (long)sizeof json - used, "\"phases\":{\"us\":{");
+        if (n < 0 || used + n >= (long)sizeof json) {
+            scene_fail(id, 0, "the scene.same envelope did not fit");
+            return;
+        }
+        used += n;
+        for (p = 0; p < kNowScenePhaseCount; ++p) {
+            n = snprintf(json + used, (long)sizeof json - used, "%s\"%s\":%lu",
+                         p ? "," : "", now_scene_phase_name(p),
+                         now_scene_phase_us(p));
+            if (n < 0 || used + n >= (long)sizeof json) {
+                scene_fail(id, 0, "the scene.same envelope did not fit");
+                return;
+            }
+            used += n;
+        }
+        n = snprintf(json + used, (long)sizeof json - used,
+                     "},\"clockReads\":%lu,\"clockUs\":%lu,\"faults\":%lu},",
+                     now_scene_phase_clock_reads(), now_scene_phase_clock_us(),
+                     now_scene_phase_faults());
+        if (n < 0 || used + n >= (long)sizeof json) {
+            scene_fail(id, 0, "the scene.same envelope did not fit");
+            return;
+        }
+        used += n;
+    }
+    settled = now_act_encode_settlements(json + used,
+                                         (long)sizeof json - used - 1);
+    if (settled < 0 || used + settled + 1 >= (long)sizeof json) {
+        scene_fail(id, 0, "the scene.same envelope did not fit");
+        return;
+    }
+    /* The trailing comma the settlement encoder expects is written above;
+       when it emits nothing, the comma would be trailing garbage - so it
+       is stepped back over rather than left in the document. */
+    if (settled == 0 && used > 0 && json[used - 1] == ',') {
+        used -= 1;
+    }
+    json[used + settled] = '}';
+    json[used + settled + 1] = '\0';
+    send_control(json);
+}
+
 /* Walks the machine, encodes the current IR, announces scene.begin and arms the
    incremental sender. Returns immediately - the bytes go out from
    service_transfer, exactly as a capture's do. */
+/* How long a scene may wait for the anchor plane's arm echo before it
+   walks anyway. Ticks, so half a second - a ceiling and not a cost: the
+   echo was measured at ~15 ms, and this returns the moment it lands. */
+enum { kNowSceneArmSettleTicks = 30 };
+
 static void serve_scene(const char *request)
 {
     NowPrefs prefs;
@@ -1515,6 +1755,22 @@ static void serve_scene(const char *request)
     long stale_ms = now_json_find_int(request, "staleAfterMs", 0);
     Boolean semantics = now_json_find_bool(request, "semantics", true);
     Boolean interaction = now_json_find_bool(request, "interaction", true);
+    /* THE ASKER'S BASELINE, quoted as a digest rather than a sequence.
+       A sequence says which document the producer THINKS the consumer
+       has; a digest says which one it ACTUALLY holds, and those differ
+       exactly when a consumer mis-applied a delta - the one failure a
+       delta stream has to survive. A `since` this guest does not
+       recognise is not an error and is not refused: it is answered with
+       a whole document, which is always correct and is therefore the
+       recovery path as well as the default. */
+    char since[16];
+    Boolean want_full = now_json_find_bool(request, "full", false);
+    Boolean serve_delta = false;
+    NowSceneSpans *spans = NULL;
+    unsigned long digest = 0;
+    char digest_hex[9];
+    Handle delta = NULL;
+    long delta_len = 0;
     unsigned long stale_ticks;
     unsigned short xfer;
     long chunk;
@@ -1596,7 +1852,28 @@ static void serve_scene(const char *request)
         if (interaction) requested |= (unsigned long)kNowPeekTableCapAct;
         now_peek_release(kNowPeekOwnerScene, optional & ~requested);
         now_peek_claim(kNowPeekOwnerScene, requested);
+        /* And remember it, so ANY later thing this host asks for renews
+           the claim rather than only the next scene. See
+           renew_scene_planes(). */
+        g_scene_plane_caps = requested;
     }
+
+    /* THEN WAIT FOR THE PLANE, briefly, rather than walking blind.
+     *
+     * The claim above is a request; the resident echoes it on its next
+     * pass, and a walk that starts before the echo reports no-plane for
+     * every foreign process - one useless scene per lapse, and it is the
+     * scene a person is looking at. Measured 2026-08-06: after a
+     * ten-second quiet gap the walk carried NOW's own window alone with a
+     * modal open on screen, and the next walk carried all three windows.
+     *
+     * Bounded, and it does not lie: now_peek_settle returns as soon as
+     * the resident echoes (~15 ms) and gives up after half a second, and
+     * the walk proceeds either way - a scene that says "not observed" is
+     * still the honest answer when the plane genuinely is not armed. The
+     * arm handshake is unchanged; this only stops asking before it. */
+    (void)now_peek_settle((unsigned long)kNowPeekCapAnchors,
+                          kNowSceneArmSettleTicks);
 
     now_scene_collect(scene, ++g_scene_seq, stale_ticks);
     /* Correlate subsequent acts with the normal-context observation a
@@ -1607,23 +1884,130 @@ static void serve_scene(const char *request)
 
     /* Size, then allocate, then encode. One walk, two answers: the
        encoder counts always and writes only while it fits, so asking for
-       the size costs a pass and never a second walk. */
+       the size costs a pass and never a second walk.
+     *
+     * THE SIZING PASS IS WHAT `phases.us.encode` REPORTS, and it has to
+     * be: a document cannot state how long it took to write itself. The
+     * counting pass does the same work as the writing pass minus the
+     * stores, it happens first, and it is therefore the honest thing to
+     * name. The consequence is the slack below - the number the write
+     * pass emits is longer than the digits the count pass sized for, by
+     * at most the width of one microsecond count - and now_scene_encode
+     * reports what it ACTUALLY used, so `bytes` stays exact. */
+    since[0] = '\0';
+    (void)now_json_find_string(request, "since", since, (long)sizeof since);
+    now_scene_phase_enter(kNowScenePhaseEncode);
     needed = now_scene_encoded_size(scene);
+    now_scene_phase_leave(kNowScenePhaseEncode);
+    needed += kSceneEncodePhaseSlack;
     doc = NewHandle((Size)needed);
     if (doc == NULL) {
         DisposePtr((Ptr)scene);
         scene_fail(id, xfer, "not enough memory to encode the scene");
         return;
     }
+    /* The span table is heap, not stack: it is ~10 KB and this runs on a
+       cooperatively scheduled machine whose stack is not that. A guest
+       that cannot afford it serves whole documents, which is what it did
+       before this existed - so the allocation failing costs performance
+       and never correctness. */
+    spans = (NowSceneSpans *)NewPtr((Size)sizeof(NowSceneSpans));
     HLock(doc);
-    if (now_scene_encode(scene, *doc, needed, &needed) != kNowSceneEncodeOk) {
+    if (now_scene_encode_spans(scene, *doc, needed, &needed, spans)
+        != kNowSceneEncodeOk) {
         HUnlock(doc);
         DisposeHandle(doc);
+        if (spans != NULL) DisposePtr((Ptr)spans);
         DisposePtr((Ptr)scene);
         scene_fail(id, xfer, "the scene did not fit its buffer");
         return;
     }
     HUnlock(doc);
+
+    /* WHAT THIS SCENE LOOKS LIKE, as one number over an exactly-specified
+       byte range (contract/asyncapi.yaml, SceneBegin.digest). It excludes
+       seq, capturedAt and phases on purpose: those move on every walk of
+       a machine that did not change, and saying "nothing changed" is the
+       whole point. */
+    HLock(doc);
+    if (spans != NULL) {
+        digest = now_scene_body_digest(*doc, spans);
+    }
+    now_scene_digest_hex(digest, digest_hex);
+
+    if (since[0] != '\0' && !want_full && now_scene_digest_is(digest, since)) {
+        /* THE NO-CHANGE ANSWER: a control frame, no transfer, no bulk
+           lane held. The test is the digest of the scene JUST WALKED
+           against what the host says it holds - not against this guest's
+           own baseline, so a guest that has forgotten its baseline can
+           still answer "the same" truthfully.
+           The run is NOT advanced. A scene.same re-proves the consumer's
+           whole body against a freshly walked machine, so it accumulates
+           no unverified state for a bound to protect. */
+        HUnlock(doc);
+        DisposeHandle(doc);
+        if (spans != NULL) DisposePtr((Ptr)spans);
+        walk_ms = (long)((TickCount() - t_start) * 1000UL / 60UL);
+        send_scene_same(id, scene, walk_ms, digest_hex);
+        DisposePtr((Ptr)scene);
+        return;
+    }
+    if (spans != NULL && since[0] != '\0' && !want_full
+        && g_scene_baseline.held
+        && now_scene_digest_is(g_scene_baseline.digest, since)) {
+        if (g_scene_baseline.run < kNowSceneDeltaMaxRun) {
+            delta_len = now_scene_delta_encode(&g_scene_baseline, *doc, spans,
+                                               scene->seq, scene->captured_at,
+                                               since, NULL, 0);
+            /* ONLY WHEN IT IS SMALLER. There is no case for a delta that
+               costs more than the document it replaces, and both numbers
+               are already in hand. */
+            if (delta_len > 0 && delta_len + 1 < needed) {
+                delta = NewHandle((Size)(delta_len + 1));
+                if (delta != NULL) {
+                    HLock(delta);
+                    if (now_scene_delta_encode(&g_scene_baseline, *doc, spans,
+                                               scene->seq, scene->captured_at,
+                                               since, *delta, delta_len + 1)
+                        == delta_len) {
+                        serve_delta = true;
+                    }
+                    HUnlock(delta);
+                    if (!serve_delta) {
+                        DisposeHandle(delta);
+                        delta = NULL;
+                    }
+                }
+            }
+        }
+    }
+    HUnlock(doc);
+
+    /* The baseline becomes THIS scene either way: after a delta the
+       consumer holds the new document, and after a whole one it holds it
+       too. What differs is the chain length, which only a delta
+       advances. */
+    if (spans != NULL) {
+        unsigned long run = serve_delta ? g_scene_baseline.run + 1 : 0;
+
+        HLock(doc);
+        if (now_scene_baseline_adopt(&g_scene_baseline, *doc, spans, digest)) {
+            g_scene_baseline.run = run;
+        }
+        HUnlock(doc);
+        DisposePtr((Ptr)spans);
+        spans = NULL;
+    }
+    if (serve_delta) {
+        long whole = needed - 1;
+
+        DisposeHandle(doc);
+        doc = delta;
+        needed = delta_len + 1;
+        g_scene_whole_bytes = whole;
+    } else {
+        g_scene_whole_bytes = 0;
+    }
     walk_ms = (long)((TickCount() - t_start) * 1000UL / 60UL);
 
     now_prefs_load(&prefs);
@@ -1637,9 +2021,12 @@ static void serve_scene(const char *request)
     json_used = snprintf(json, sizeof json,
              "{\"type\":\"scene.begin\",\"id\":%ld,\"transfer\":%u,"
              "\"bytes\":%ld,\"irVersion\":%d,\"seq\":%ld,"
-             "\"capturedAt\":%.1f,\"source\":\"%s\",\"walkMs\":%ld,",
+             "\"capturedAt\":%.1f,\"source\":\"%s\",\"walkMs\":%ld,"
+             "\"digest\":\"%s\",%s",
              id, xfer, needed - 1, NOW_SCENE_IR_VERSION, scene->seq,
-             scene->captured_at, scene->source, walk_ms);
+             scene->captured_at, scene->source, walk_ms, digest_hex,
+             serve_delta ? scene_delta_envelope(since, g_scene_whole_bytes)
+                         : "");
     if (json_used < 0 || json_used >= (long)sizeof json) {
         DisposePtr((Ptr)scene);
         DisposeHandle(doc);
@@ -5644,8 +6031,10 @@ static int handle_frame(const char *reply)
     }
     if (g.phase == kConnHandshaking) {
         if (now_json_type_is(reply, "hello")) {
-            on_hello(reply);
-            return 1;
+            /* Not unconditionally 1: on_hello gates the contract revision
+               and a refused hello tears the connection down here, the
+               same way a `refuse` from the host does below. */
+            return on_hello(reply);
         }
         if (now_json_type_is(reply, "refuse")) {
             char reason[96];
@@ -5672,6 +6061,10 @@ static int handle_frame(const char *reply)
                  g.peer_name, g.peer_version, g.last_rtt_ms);
         return 1;
     }
+    /* A HOST DOING ANYTHING AT ALL IS A HOST THAT STILL WANTS THE PLANES.
+       Below the `pong` return on purpose - our own heartbeat's echo is
+       not a consumer asking for something. See renew_scene_planes(). */
+    renew_scene_planes();
     if (now_json_type_is(reply, "capture.request")) {
         serve_capture(reply);
         return 1;
@@ -5864,7 +6257,7 @@ static int handle_frame(const char *reply)
     }
     if (now_json_type_is(reply, "command.request")) {
         char name[48];
-        char result[3072];
+        char result[kNowCommandResultCap];
         long id = now_json_find_int(reply, "id", 0);
 
         if (!now_json_find_string(reply, "name", name, sizeof name)) {
@@ -5986,6 +6379,58 @@ static void service_heartbeat(void)
 {
     unsigned long now = TickCount();
     char ping[48];
+
+    /* **Time we were not scheduled is not time the host was silent, and
+       this is the one place that used to assume it was.**
+       -----------------------------------------------------------------
+       Found 2026-08-06, driving plan 012's resident channel end to end
+       against the real host. The host had just been taught that a
+       starved Macintosh is not a gone one - and the session still died,
+       because the GUEST reached the same wrong conclusion from the other
+       end. A `guest-wedge spin 110` starved every application for 108 s;
+       when this loop next ran, `last_rx_tick` was 110 s old and it
+       declared the link dead. The resident's channel had answered for
+       the machine throughout, the host had held the session open, and
+       the application tore it down anyway.
+
+       The guest's version of the error is the plainer one. The host at
+       least observed real silence and had to be told the machine might
+       be alive behind it; here nothing was silent at all - we were not
+       running to listen, and then blamed the far side for it.
+
+       A pass gap this long is proof of the starvation rather than
+       evidence of it, so the interval is FORGIVEN: the dead-link clock
+       is advanced past it instead of counting it. What that preserves is
+       the thing the timeout is for - a link that is genuinely dead is
+       still noticed, one window later, because the clock resumes from
+       now rather than being reset to now.
+
+       This deliberately needs no extension. The resident's
+       `liveness_ticks` says the same thing more precisely and an
+       application that has one could read it, but a rule this important
+       must not be optional: the product degrades honestly without a
+       resident component (docs/resident-components.md), and "keeps its
+       session through a modal" should not be a thing only some machines
+       do. */
+    if (g.last_pass_tick != 0 && now - g.last_pass_tick > kStarvedPassTicks) {
+        unsigned long starved = now - g.last_pass_tick;
+
+        if (now - g.last_rx_tick > starved) {
+            g.last_rx_tick += starved;
+        } else {
+            g.last_rx_tick = now;
+        }
+        /* The ping is owed from now, not from before the starvation: a
+           ping the host would have seen 100 s ago is one we could not
+           have sent. */
+        if (g.next_ping_tick < now) {
+            g.next_ping_tick = now;
+        }
+        now_log(kLogWarn, "wire",
+                "not scheduled for %lus - forgiving the gap rather than "
+                "calling the link dead", starved / 60);
+    }
+    g.last_pass_tick = now;
 
     if (now - g.last_rx_tick > kDeadTicks) {
         fail("Reconnecting (no answer)");

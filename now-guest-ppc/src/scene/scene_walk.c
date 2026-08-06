@@ -7,6 +7,7 @@
 
 #include "axmenu.h"
 #include "axtext.h"
+#include "scene_phase.h"
 #include "semantic_client.h"
 
 /* The one file that sees both a scene's reference buffer and the
@@ -75,19 +76,21 @@ static void name_control(NowScene *s, int window, int index,
     }
 }
 
-static void walk_controls(NowScene *s, int window, const NowAxMemory *memory,
-                          const NowAxWindow *win, NowObsWalk *refs)
+/* THE CHAIN, and only the chain. What each control IS - its rect, its
+   value, its enabled and visible flags - and nothing about what the act
+   plane or a resident will later say about it. Split out from the two
+   passes below so that "reading controls", "naming them" and "joining
+   semantics onto them" are three separate spans of time rather than
+   three things interleaved 300 times, which is the difference between a
+   breakdown that costs six clock reads per window and one that costs
+   four per control. */
+static void read_controls(NowScene *s, int window, const NowAxMemory *memory,
+                          const NowAxWindow *win)
 {
     NowAxControl control;
     unsigned long handle;
     int hops;
 
-    /* Declared BEFORE the first read: from here on the window either
-       reports its controls or explicitly retracts them, and there is no
-       path that leaves a half-filled list standing. */
-    if (!now_scene_open_controls(s, window)) {
-        return;
-    }
     handle = win->control_list;
     for (hops = 0; handle != 0; ++hops) {
         if (hops >= kNowSceneWalkMaxControls) {
@@ -133,12 +136,10 @@ static void walk_controls(NowScene *s, int window, const NowAxMemory *memory,
             now_scene_retract_controls(s, window);
             return;
         }
-        /* Named AFTER it is admitted, and by its position in this
-           window's block - which is `hops`, because every hop that got
-           here appended exactly one control. A reference filed against
-           the wrong index would name a sibling, and both rows would look
-           complete. */
-        name_control(s, window, hops, refs, win->address, handle);
+        /* Filed by its position in this window's block - which is
+           `hops`, because every hop that got here appended exactly one
+           control. A handle filed against the wrong index would name a
+           sibling, and both rows would look complete. */
         now_scene_set_control_handle(s, window, hops, handle);
         /* Free with the read - contrlDefProc is inside the 296 bytes the
            control walk already validated. It answers a strictly weaker
@@ -146,13 +147,56 @@ static void walk_controls(NowScene *s, int window, const NowAxMemory *memory,
            resident that does answer overwrites nothing. */
         now_scene_set_control_definition(s, window, hops,
                                          control.def_proc_origin);
-        /* P2 is a target-context description of every live control, not a
-           Date & Time resource-control special case. This is what lets the
-           same extension inventory Sherlock's ordinary window controls. */
-        now_semantic_client_join_control(s, window, hops,
-                                         win->address, handle);
         handle = control.next_control;
     }
+}
+
+/* The three passes, in the order their claims depend on each other.
+ *
+ * READ, then NAME, then JOIN - and the split is not only about
+ * measurement. The chain used to be read and named and joined one
+ * control at a time, so a control that failed to read on hop 40 retracted
+ * a plane whose first 39 references had already been minted out of the
+ * registry's finite slots. Names are now minted only for controls that
+ * SURVIVED the read, which is the same rule the walk already applied to
+ * everything else it publishes. */
+static void walk_controls(NowScene *s, int window, const NowAxMemory *memory,
+                          const NowAxWindow *win, NowObsWalk *refs)
+{
+    const NowSceneWindow *w;
+    short i;
+
+    /* Declared BEFORE the first read: from here on the window either
+       reports its controls or explicitly retracts them, and there is no
+       path that leaves a half-filled list standing. */
+    if (!now_scene_open_controls(s, window)) {
+        return;
+    }
+    now_scene_phase_enter(kNowScenePhaseControls);
+    read_controls(s, window, memory, win);
+    now_scene_phase_leave(kNowScenePhaseControls);
+
+    w = &s->windows[window];
+    if (!w->controls_present) {
+        return;                       /* the plane was retracted */
+    }
+    now_scene_phase_enter(kNowScenePhaseRefs);
+    for (i = 0; i < w->control_count; ++i) {
+        name_control(s, window, i, refs, win->address,
+                     s->controls[w->first_control + i].handle);
+    }
+    now_scene_phase_leave(kNowScenePhaseRefs);
+
+    /* P2 is a target-context description of every live control, not a
+       Date & Time resource-control special case. This is what lets the
+       same extension inventory Sherlock's ordinary window controls. */
+    now_scene_phase_enter(kNowScenePhaseSemantics);
+    for (i = 0; i < w->control_count; ++i) {
+        now_semantic_client_join_control(s, window, i, win->address,
+                                         s->controls[w->first_control + i]
+                                             .handle);
+    }
+    now_scene_phase_leave(kNowScenePhaseSemantics);
 }
 
 static short scene_dialog_kind(short kind)
@@ -285,7 +329,9 @@ void now_scene_walk_window(NowScene *s, int window,
         return;                       /* every sub-plane stays absent */
     }
     now_scene_set_window_kind(s, window, win.kind);
+    now_scene_phase_enter(kNowScenePhaseRefs);
     name_window(s, window, refs, address);
+    now_scene_phase_leave(kNowScenePhaseRefs);
     walk_controls(s, window, memory, &win, refs);
 
     /* The text read is GATED ON THE KIND, and that gate is safety rather
@@ -493,7 +539,9 @@ void now_scene_walk_menubar(NowScene *s, int proc,
         }
         walk_items(s, row, memory, &menu);
         if (s->menus[row].item_count == 0) {
+            now_scene_phase_enter(kNowScenePhaseSemantics);
             now_semantic_client_join_menu(s, row, menu.handle, menu.id);
+            now_scene_phase_leave(kNowScenePhaseSemantics);
         }
     }
 }

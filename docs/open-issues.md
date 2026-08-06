@@ -296,6 +296,1071 @@ increments its entry counter and none of its exit counters never
 returned), and nothing on the wire reports a guest-side alert at all —
 every counter read green while a crash dialog sat on screen.
 
+## BROKEN: no verb reached through the PowerPC console's fallback can be given an ARGUMENT (2026-08-06)
+
+Found while fixing the renderer half of the same seam (see
+[command-parity.md](command-parity.md), "Present on both faces is not the
+same as working on both"). `console_model.c` handles 27 verbs with a
+`strcmp` of their own and falls through for the other eighteen —
+`activate`, `actselftest`, `aesend`, `axsnap`, `axtree`, `ctlact`,
+`ditemact`, `elements`, `handle`, `menuact`, `mouseloc`, `observe`,
+`putstat`, `qdtrace`, `script`, `textget`, `textset`, `winact`. The
+fall-through is:
+
+    now_command_run(name, NULL, 0, result, sizeof result);
+
+`NULL` is the whole request, so the verb sees no arguments at all. Twelve
+of the eighteen therefore answer a validation refusal and nothing else,
+no matter what a person types after the verb. Measured on the emulator,
+build `fea48baffe8f`, wire 5510, through the exec plane:
+
+    > winact          winact requires action: one of select, close, move, resize, zoom
+    > menuact         menuact requires menu (the menu's id) and item (its 1-based position…)
+    > script          script requires source: one AppleScript, as a string
+    > aesend          aesend requires event: one of quit, oapp, odoc, pdoc
+    > activate        activate needs a whole process serial number: serialHi and serialLo…
+
+Typing the arguments changes nothing, because the console never passes
+them. The refusals are correct and useful sentences — they are just the
+only sentences those verbs can produce at that keyboard.
+
+Six of the eighteen take no arguments and now work: `putstat` and
+`mouseloc` render real tables, and `axsnap`, `axtree`, `elements`,
+`observe` and `qdtrace` answer objects of references, which the console
+says it cannot show as a table rather than claiming a failure.
+
+**What it would take.** A grammar, not a renderer: something that turns
+the rest of a typed line into the `args` object the wire sends, with
+types (`now_json_find_int` vs `now_json_find_string` — a quoted 3 is not
+a 3). `now-guest-ppc/src/commands/cmd_line.c` already reads the OTHER
+direction and is the obvious place to put its inverse. `script` and
+`aesend` and the act verbs are the ones a person would most want, and
+`docs/command-parity.md`'s `consoleDebt` map is the list. The three verbs
+whose arguments are opaque `now-element-` references are a different
+problem and probably stay untypeable.
+
+**Why it is parked.** The reported defect was a renderer printing
+"command failed" for commands that had succeeded; that is fixed and
+verified at both faces. A console argument grammar is a design decision
+about what a person can type at a classic Mac, and folding it into the
+same change would have made both harder to review.
+
+## BROKEN, and it is the WORST shape: a ten-second gap in scene polling blinds the whole walk, and the Mirror keeps drawing what it can no longer see (2026-08-06)
+
+Michelle, side by side with the guest: Date & Time's **Set Time Zone**
+modal open on the machine, and in the Mirror "System Folder, Control
+Panels and Date & Time" and no modal at all — with the status line
+reading `5 windows · walk 0ms · transfer 36ms · **same** · content: 13
+new draw ops`. `same` is the guest saying *nothing changed* while a modal
+was visibly open, which is the stale-mirror-that-believes-it-is-current
+failure this project fears most.
+
+It is neither of the two things it looked like. Both were tested on a
+private clone (VM `/private/tmp/nowvm-modal`, wire 5490, guest build
+`c5c39f61dbbf`), asking for WHOLE documents so no answer could be a delta
+artefact.
+
+**The walk is not the defect.** With the modal up the guest publishes it,
+within ~600 ms of the quit and for as long as it is there:
+
+    seq=91  windows=[Date & Time; New Old World]                 digest 2c7784cf
+    seq=92  windows=[Set Time Zone; Date & Time; New Old World]  digest 95b9a08b
+
+`kind:2`, visible, front, 9 dialog items with a `ref` on each, 10
+controls, coverage `complete` for that owner, no error against it.
+
+**The delta plane is not the defect either.** The digest MOVES when the
+window appears, and `scene.same` is decided against the digest of the
+scene *just walked*, not a remembered one (`wire.c :: serve_scene`), so a
+guest cannot answer `same` while the modal is in its own document. The
+host's half keeps it too: `MirrorQuitModalTests` runs that captured
+document through this side's decoder, the replica reducer and the
+projection, and the window survives all three.
+
+**What IS the defect: the anchor plane is held by a ten-second lease that
+only a `scene.request` renews.** `peek.c :: kNowPeekOwnerLeaseTicks` is
+600 ticks. Stop asking for scenes for longer and the next walk is blind —
+measured on the wire, with the modal up the whole time:
+
+    gap  3s → Set Time Zone, Date & Time, New Old World   (95b9a08b)
+    gap  8s → Set Time Zone, Date & Time, New Old World   (95b9a08b)
+    gap 12s → New Old World only                          (ae3f00e1)
+    gap 20s → New Old World only                          (ae3f00e1)
+
+In a blind scene EVERY foreign process reports `now_no_plane` and
+`coverage: unavailable/not-observed`, and the document contains not one
+foreign window. The scene straight after each blind one is right again,
+because the blind walk is the one that RE-claimed: `serve_scene` claims
+the plane and walks immediately, while the extension only arms on its
+next `jGNE` pass. **Re-claiming therefore costs exactly one scene.**
+
+**Why that produced Michelle's frame.** A second agent measured her guest
+at that moment: `requested=8 active=8` — content armed, structure,
+semantics and interaction all inactive — and her Cancel click refused
+five times with `element-not-found: the anchor plane is absent or not
+armed`, at 6.7-8.8 s each. Thirty to forty seconds of acts with no scene
+between them is four leases' worth. Then it is self-sustaining:
+
+- the planes lapse, so the walk goes blind;
+- the blind document is honest but EMPTY of foreign windows, so the host
+  retains its last-known ones as `expectedStale` (`MirrorReplicaReducer`
+  deletes only under `complete` coverage) — which is the Finder folders
+  and the Date & Time panel Michelle could still see;
+- the blind document is STABLE, so every later poll answers `same`;
+- the modal, raised after the planes went down, is in no scene ever;
+- and every act refuses, because the plane it needs is the one that
+  lapsed, which spends more seconds not polling.
+
+The split Michelle reported falls straight out of it: a modal she opens
+by clicking arrives while the planes are up and renders; the one Date &
+Time raises during its own quit arrives after a stall.
+
+**This is not tonight's work.** The lease is from 2026-08-03/04
+(`4ebd575c`, `7e5b0c8f`). Tonight's deltas made it VISIBLE by putting the
+word `same` on screen, and are otherwise innocent — which is the one good
+thing here.
+
+**What is not yet decided, and needs a person.** Three candidate fixes,
+and they are not equivalent:
+
+1. **Do not serve a blind scene.** `serve_scene` already claims the plane
+   before walking; it could pump until `arm_active` includes anchors
+   before it walks, bounded. The other agent measured the arm handshake at
+   ~15 ms tonight, so the bound is cheap. This removes the one-scene lag.
+2. **Do not let the lease lapse under a live consumer.** A connected host
+   that is doing anything at all is not a host that has gone away, so the
+   renewal could ride the wire rather than the scene verb. Against: the
+   lease exists so a plane is not armed on a machine nobody is watching.
+3. **Say it.** The status line reads `5 windows · same` while several of
+   those windows are retentions of a machine the guest could not observe.
+   The reducer already knows — `freshness == .expectedStale`,
+   `actionable == false`, `baseComplete == false` — and
+   `NOWMirrorSource.swift` already has the vocabulary for exactly this
+   (`" · Apple menu expected-stale"`). Windows have no equivalent. **Do
+   this one regardless of which of the other two wins**, because a mirror
+   that cannot see the machine must say so rather than keep drawing.
+
+The fixtures for all of it are in the tree:
+`now-host/Tests/HostTests/Fixtures/scene-quit-modal.json` (the modal, as
+the guest sent it), and `scene-plane-held.json` /
+`scene-plane-lapsed.json` (the same machine, one poll apart, either side
+of the lapse). `MirrorQuitModalTests` pins what this side does with them;
+its staleness assertion has been watched to fail.
+
+**How to open a control panel over the wire, since it costs an hour to
+find.** `launch` refuses one — `not an application (type APPC)`. The
+route that works is the `script` verb:
+
+    tell application "Finder" to open file "Date & Time" of folder \
+      "Control Panels" of folder "System Folder" of startup disk
+
+(`{"source": "...", "timeoutMs": 25000}` — the argument is `source`, not
+`text`.) On a clone whose time zone has never been set, that alone raises
+the Set Time Zone modal, so the case needs no quit to reproduce.
+
+**FIXED and measured, 2026-08-06** (`4b972ade`). Candidates 1, 2 and 3
+all landed, because 1 and 2 cover different halves of Michelle's
+sequence and only together cover it. Same instrument either side —
+`tools/local-plane-lapse.py`, whole documents, a control panel open
+throughout, and it refuses a guest whose build is not the one asked for:
+
+| gap of total wire silence | before (`c5c39f61dbbf`) | after (`53cbc0fc5dcb`) |
+|---|---|---|
+| first scene of the connection | NOW's window only | the machine |
+| 3 s, 8 s | the machine | the machine |
+| 12 s, 20 s, 25 s | **NOW's window only** | the machine |
+
+And the reported frame end to end: twenty seconds of silence, then
+`tell application "Date & Time" to quit`, and the FIRST walk after it
+carries `Set Time Zone`. Before, that walk was the blind one.
+
+- **Renewal rides host traffic, not the event loop** (`wire.c ::
+  renew_scene_planes`). A host sending acts wants the planes; the event
+  loop runs whether or not anyone is watching, and an armed plane is
+  work charged to every process on the machine. Two gates keep it
+  honest: only after a scene has been asked for on THIS link, and never
+  on `pong`, which is the reply to our own heartbeat and would make
+  "connected" mean "armed forever".
+- **A scene waits for the arm echo** (`peek.c :: now_peek_settle`),
+  bounded at half a second and returning the moment it lands. It never
+  asserts an arm it did not observe — no resident, no writer, or a
+  passed deadline all fall through to a walk that reports not-observed.
+  This is also why the FIRST scene of a connection is no longer blind;
+  the warming ritual `tools/local-arm-latency.py` documents is now
+  unnecessary (its docstring is stale, and is left as the record of why
+  it existed).
+- **The status line distinguishes seen from retained**: `5 windows, 3
+  expected-stale · walk … · same`. `MirrorQuitModalTests` pins it
+  against the two lapse fixtures, watched to fail.
+
+What is NOT closed by this. A host that goes entirely silent for longer
+than the lease still lets the planes lapse — deliberately, that is the
+lease doing its job — and the recovery now costs latency (one settle)
+rather than a scene. And the arm handshake itself is unchanged: nothing
+here makes a plane arm faster, only stops asking before it has.
+## FIXED in the host, UNVERIFIED by any drive: Apple menu items did nothing, and the act was never the missing part (2026-08-06)
+
+Michelle, driving: "apple menu items dont work (apple menu -> control
+panels, sherlock, system profiler etc)". The menu drew correctly and
+selecting a row did nothing on the machine.
+
+The act was sent, reached the guest, and was dispatched. `acts.log`
+carries all three attempts, each planning
+`menuCommand(menuID: -16383, itemIndex: 3/6/14, titleLeft: 10)` and
+answering in **18–50 ms with settlement `unknown`** — the self branch of
+`menuact`, which queues the choice for NOW's own main loop and returns
+without settlement rows. Compare the Finder's File > Quit on the same
+drive: **~800 ms, `dispatched-but-unconfirmed`**, the foreign act plane.
+Two mechanisms, and the fast one ends at `main.c :: handle_menu_choice`,
+which serves menus 129, 140 and the rest of NOW's own bar and has **no
+Apple-menu case at all**. The choice fell off the end of the switch.
+
+Fixed by routing every row below the Apple menu's first separator to
+`openAppleMenuItem`, which asks the guest Finder to open the file by
+name — the mechanism that already existed and was wired to Key Caps
+alone. `ObjectResolver.isAppleMenuItemsEntry` makes the decision where
+the sibling rows are visible, and `MirrorDriveService` calls the same
+function so the agent face cannot drift.
+
+**No drive has watched an Apple menu row open.** Verified only by
+mutation: restoring the Key-Caps-only rule reproduces the three logged
+plans byte-for-byte.
+
+### Two things it does not fix
+
+- **A folder alias will time out having worked.** `openAppleMenuItem`
+  predicts `processNamedPresent(name)`, which is right for Sherlock 2
+  and Apple System Profiler and wrong for Control Panels — an alias to a
+  FOLDER, which opens a Finder *window*. That burns the full 15 s
+  settlement holding the one mutation lane, the same shape
+  `MirrorActionExecutor.finderOpen` documents and fixed for itself by
+  classifying the item. Here the item cannot be classified: every Apple
+  Menu Items entry is an alias, and an alias reports its own kind and
+  never its target's. It needs either a postcondition meaning "a process
+  OR a Finder window by this name", or a guest probe that resolves an
+  alias. Functionally the open works; only the reporting lies.
+- **At the machine, the same click still does nothing.** This is a
+  host-side route. A person sitting at the guest with NOW frontmost who
+  chooses Apple > Sherlock 2 gets the same silence, because
+  `handle_menu_choice` still has no Apple case and `OpenDeskAcc` is not
+  in CarbonLib. Whether the guest should serve its own Apple menu — and
+  through what, since the obvious call is absent — is open, and it is a
+  command-parity question, not a Mirror one.
+
+## BROKEN, and it is NOT the host's click translation: a modal's Cancel is refused because the planes went inactive (2026-08-06)
+
+Michelle, same drive: in Date & Time's Set Time Zone modal — which
+renders — "Cancel doesn't work", while an earlier session's `ditemact`
+sent straight over the wire had dismissed that same button.
+
+That pairing reads like a host translation defect and is not one. The
+host resolved the click correctly and sent the right act:
+`plan=dialogItem(ref: "now-element-5f5c3825-…", item: 2)`, the same verb
+and the same item number the wire test used. **The guest refused it**:
+
+    element-not-found: the anchor plane is absent or not armed
+
+after 6.7–8.8 s, five times over. The `actmeta` line at that moment says
+why: `requested=8 active=8`, with
+`structure=inactive semantics=inactive interaction=inactive` and only
+`content` active. The planes the act needs had gone down; `requested`
+had dropped from 15 to 8.
+
+So the open question is **what takes the structure/semantics/interaction
+planes inactive while the content plane stays up**, and whether a modal
+being frontmost is what does it — which would tie this to the existing
+"one modal wedges the whole Mirror" entry below. Until that is answered,
+do not attribute a dead-looking Mirror click to hit-testing without
+reading `actmeta` at the same timestamp first: the refusal was recorded
+plainly and was still nearly diagnosed as the wrong half.
+
+## MEASURED, and the answer is DON'T BUILD ON IT: how long the content plane takes to arm (2026-08-06)
+
+Plan 013 § A proposes turning the resident into a NOTIFIER — told at
+mutation time instead of asked on a timer. **The content plane's arm
+handshake is that idea already shipping**, so it is the one place the
+proposal can be costed instead of argued: the application writes a
+request, and it is honoured only when the TARGET process next runs the
+resident's jGNE pass and agrees it is the one named
+(`ext/src/now_content.c :: now_content_gne`). The host's status line says
+`content: requested X's trace; waiting for its event loop to arm`, and
+nobody knew whether that sentence covered 40 ms or 4 s.
+
+**The conditions.** One session-private clone off `os91-runner.qcow2`,
+build `9a1d885fcac0`, wire 5450, anchor 1702, `tools/local-arm-latency.py`.
+Time from the `qdtrace start` reply to the first `qdtrace status`
+reporting that generation **and** that A5 live.
+
+| condition | arm | wire floor, SAME condition | n |
+|---|---|---|---|
+| NOW's own window, NOW front | **22 ms** (20–31) | 102 ms | 10 |
+| Finder's window, Finder front | **116 ms** (102–117) | 101 ms | 10 |
+| Finder's window, NOW front | **never**, 25–45 s | 57 ms | 9 |
+| …then brought forward mid-wait | **40 ms** after the front change | 56 ms | 6 |
+| front application holding a modal | **30.1 s** | 30.0 s for ONE status call | 1 |
+| an A5 no process has (control) | never | — | 8 |
+
+**Read the floor column first, because it is the whole finding.** A bare
+`qdtrace status` round trip costs ~101 ms when NOW is in the background —
+that is NOW's own event-loop period, not the network. So the 116 ms
+against a 101 ms floor means **the frontmost Finder pumps within about
+15 ms of the request**, and the 22 ms self case is complete before the
+first status poll can be asked and is not measurable from here at all.
+The arm handshake is fast. The sentence a person reads is mostly the
+host's poll cadence.
+
+The first version of this measurement reported the 116 ms as the arm
+cost, against a floor taken once at startup in a different front
+condition. It is the same mistake plan 013 records against its own first
+finding — two variables moved and the differential was read as one — and
+it was caught only because the floor was re-measured per condition.
+
+**The two large numbers are not handshake problems**, which is why
+nothing here justifies a mechanism:
+
+- **A background application never arms at all.** Not slowly — not at
+  all, over 45 s. The unguarded refusal counter says why, and it is the
+  useful half: `wrongContext` climbed ~1,770 in 25 s, so processes WERE
+  pumping and reading the request the whole time and none of them was the
+  Finder (measurement rule 6 — "never entered" and "entered and declined"
+  are opposite repairs). The deferred run settles it with one variable
+  moved and the same arm: bring the Finder forward without re-requesting
+  and it arms in 40 ms, 6/6. A resident notifier cannot fix this. Nothing
+  can make a process pump that the Process Manager is not running.
+- **Under a modal the wait is the modal.** `tools/guest-wedge modal 30`
+  and the arm landed 30.133 s later — the wedge's own duration. The first
+  `qdtrace status` after the launch took 30.023 s, so the host could not
+  even ASK for 30 s. That is plan 012's liveness territory, already owned,
+  and it is not about arming.
+
+**DECISION: do not build the § A notifier on this evidence.** The host
+arms only the front window's process (`NOWMirrorContentPlane.join` takes
+`scene.windows.first(where: \.front)`) and re-arms on target change or
+after `renewAfter` = 9 minutes against a 10-minute TTL. So the measured
+cost is ~15 ms of real handshake, paid on a focus change and roughly
+never otherwise, on a machine whose whole scene walk is now 3–8 ms. There
+is no mechanism that pays for itself here. Per plan 013's own tiering
+this would have been tier 2, and the plan prefers re-arguing to
+executing — so it is re-argued and dropped.
+
+**What this does NOT settle.**
+
+- **Every number is from mac99.** The dominant term is a Process Manager
+  round, so it should scale with process-switch cost rather than with how
+  much interface exists — but that is reasoning, not a reading, and a
+  1400c has never been asked.
+- **"Just launched" was never measured.** `launch` refuses a control
+  panel (`launch-refused: not an application (type APPC)`), which is the
+  case the observation actually named, and an arm needs an exact window
+  address out of the scene — so a just-launched application cannot be
+  armed until it has already pumped enough to open a window. The product
+  can never request an arm earlier than that.
+- **The modal row is n=1**, and it is the wedge's GetNextEvent loop, not
+  a real application's modal.
+- **The plane measured is the one on `claude/mirror-thread-content`.** The
+  GWorld work on `claude/gworld-probe-grounding-3dcbd4` adds ~600 lines to
+  `ext/src/now_content.c`, four hunks of them inside `now_content_gne`
+  itself. `now_content_arm_verdict` is untouched, so the mechanism
+  survives, but the per-pass constant does not necessarily. Re-measure
+  after that lands.
+## SHIPPED on an emulator, UNVERIFIED on metal: a scene can now answer "the same", or send only what moved (2026-08-06)
+
+Plan 013 § 5. The wire had become the dominant cost — a 3–8.5 ms walk
+against a 111–710 ms transfer of a 26–28 KB document, several times a
+second, for a Macintosh that mostly had not changed. `scene.request` now
+takes a `since` (the body digest the host already holds) and gets one of
+three answers: `scene.same` (a control frame, no transfer at all), a
+delta carrying only the entities that moved, or a whole document.
+Design: [scene-deltas.md](scene-deltas.md). Numbers:
+[scene-delta-measurements.md](scene-delta-measurements.md).
+
+**What is proven.** Tested, on a session-private mac99 clone, guest
+`df570d8014de`: an idle machine's wire cost drops to **10.3–10.4% over
+ten polls**, and after the first scene each poll costs one control frame.
+Walk time did not move (0 ms idle, 16 ms driven, both conditions). The
+byte-exact reconstruction and the digest check are pinned natively on
+both sides, including a two-halves test whose fixtures the GUEST'S
+encoder emitted.
+
+**What is not.**
+
+- **No metal pass.** And the emulator understates this one rather than
+  overstating it, which is the reverse of plan 013's usual warning: its
+  network is host loopback, so the byte term this change removes is
+  nearly free here and expensive on a 1400c. The idle saving should be
+  worth *more* on the hardware, not less. That is a prediction.
+- **The driven case saves ~5%**, because changing the frontmost
+  application rewrites every app row, every window's front/z and the
+  whole menu bar. That is honest worst-case behaviour and the guest
+  correctly still picked the smaller of the two, but nobody has measured
+  the realistic middle — one window moving on an otherwise still
+  machine — on real hardware or with a real person driving.
+- **NOW-68K serves none of it**, because it serves no scene at all. The
+  asymmetry is declared in
+  [contract-coverage.md](contract-coverage.md); the delta design is
+  sized for that machine (a few kilobytes of state, a 32-bit hash), so
+  what it lacks is the walk, not the room.
+- **The host applies a delta and then throws the result at the unchanged
+  reducer.** That is deliberate — one deletion rule, in one place — but
+  it means a rebuild is a whole document's worth of decode every time.
+  Nothing measures whether that decode is now the expensive half.
+
+### An observation the measurement produced, and it is not about deltas
+
+Revealing two different Finder folders alternately, once per poll,
+produced **nine `scene.same` answers out of ten**: the walked scene was
+byte-identical each time. Either the Finder did not reorder its windows,
+or the walk does not see that it did. `scene.same` is a rather good
+change detector and it has just detected something. Worth a second look;
+not chased here.
+## FIXED on an emulator, NEVER ON METAL: both things the control sweep got wrong, from one change — the guest stopped hunting for controls it had made itself (2026-08-06)
+
+Plan 013 § 2. The entry below names two costs, a 1.9-second focus change
+and a background sweep that reported zero controls, and treats them as
+one performance item and one correctness item. **They are one defect**,
+and its root is a single sentence in Inside Macintosh: `FindControl`
+refuses an INACTIVE window. Refusing means answering nothing, so with
+anything else in front the sweep walked all 3,724 points, found nothing,
+cached nothing, and re-swept on the NEXT poll forever — and the cache was
+therefore EMPTY at the exact moment a person clicked into NOW, which is
+when a probe costs ~240 µs instead of ~2.7 µs.
+
+**The fix is that the application already knew the answer.** Every
+control here goes through `now_control_new` (`workshop/control_kind.c`),
+which existed so the scene could report a `role`. That table is now the
+scene's LIST of a window's controls, and the lifecycle is closed around
+it: `now_control_adopt` for the DataBrowsers (a constructor that takes no
+procID, so it cannot go through the wrapper), `now_control_dispose`,
+`now_control_dispose_window` and `now_control_dispose_dialog` — because
+`DisposeWindow` destroys a window's controls and tells nobody.
+`control_kind_source_test.py` gates all five calls, and both of its
+refusals were watched by mutation.
+
+Only EXISTENCE is remembered. Title, bounds, value, enabled and visible
+are read live every pass, and invisible controls are skipped exactly as
+the sweep skipped them — so a Workshop page switch needs no invalidation
+at all, which also settles the question the § 1 measurement left open
+about whether one bumped the generation. **Nothing is cached, so nothing
+can be stale**, which is the opposite of the risk plan 013 warns about
+and is worth saying plainly: the projection is rebuilt from the Toolbox
+on every scene.
+
+Same clone, same session, one variable — which binary is staged. Guest
+builds `2c5dc9cb7d54` (after) and the merge base (before), wire 5430,
+`tools/local-scene-bench.py` reading `meta.phases`, µs:
+
+| condition | before, `controls` | after, `controls` | controls reported |
+|---|---|---|---|
+| NOW front, steady state | 3,217 – 4,890 | **713 – 989** | 9 → 9 |
+| the scene NOW becomes front on | **886,398** | **713** | 9 → 9 |
+| NOW backgrounded | 7,206 – 7,588 | **477 – 1,324** | **0 → 9** |
+
+The focus-change scene measured 886 ms here against the 1,891,174 µs in
+the entry below; a parallel instrumented run the same night saw
+1.21–1.43 s. It is a wide range, and every value in it is the same
+defect. The focus cycle was repeated three times on the build under test
+and the `controls` phase stayed between 727 and 922 µs with no spike.
+
+**The correctness half, which was the worse one.** Backgrounded, the
+scene now carries NOW's nine real controls instead of an empty window —
+an absence nobody had observed, which the coverage rules forbid. Where
+the registry cannot answer (a Dialog Manager window this application did
+not build, seen while inactive) the control plane is RETRACTED rather
+than swept: the key is absent and `meta.errors` carries the notice,
+because "nobody could look" and "there is nothing there" are different
+facts. **That retraction path is built and NOT observed** — it needs an
+inactive DITL dialog and nothing in this session opened one.
+
+Page switching was checked as a positive control rather than assumed,
+over the wire with `menuact` on the View menu: Preferences 5 controls,
+Processes 6, Screenshots 9, each correct for its page, each fresh.
+Processes shows six because its DataBrowser is now adopted and therefore
+mirrored — it carries `role: dataBrowser`, where before it fell through
+to the emitter's range guess.
+
+**What is not done.** Nobody has watched any of this on the PowerBook
+1400c; every number is QEMU. The sweep still exists for windows this
+application did not build, and on that path everything the entry below
+says still holds.
+
+## OPEN, and now MEASURED rather than argued: where a scene's time goes, and the two things the control sweep still gets wrong (2026-08-06)
+
+Plan 013 § 1. Every scene now carries `meta.phases` — microseconds per
+phase, named for what the guest was doing — so the entry below, which was
+written from a THROWAWAY breakdown, no longer needs one. The breakdown
+is permanent, additive on the wire, and publishes its own cost. This
+entry is what the first measurement with it says.
+
+**The conditions**, one clone off `now-mirror-stage.qcow2.bak-20260806`,
+build `9ed6e7d18c19`, wire 5410, control-sweep fix merged. Median of the
+STEADY-STATE scenes in each condition, microseconds:
+
+| phase | Finder front | NOW front |
+|---|---|---|
+| enumerate | 952 | 1045 |
+| bind | 182 | 214 |
+| windows | 696 | 970 |
+| controls | **290** | **5090** |
+| menubar | 107 | 1359 |
+| semantics | 20 | 17 |
+| refs | 153 | 225 |
+| encode | 589 | 596 |
+| **whole walk** | **~3.0 ms** | **~8.5 ms** |
+
+Against the 116 ms / 1116 ms this plan opened with. The sweep fix holds,
+and it holds in both conditions.
+
+**Two costs the fix does not remove, both visible only now.**
+
+1. **A focus change costs one 1.9-second scene.** Measured: the scene in
+   which NOW became frontmost reported `controls = 1,891,174 µs`. The
+   cache is invalidated by the activation and the whole 3,724-point grid
+   is re-swept, in the foreground, at ~240 µs a point. Every subsequent
+   front scene is ~5 ms. So the cost did not go away — it moved from
+   every poll to every focus change, which is a very large improvement
+   and still the single most expensive thing on this machine.
+2. **The background sweep is pure waste, and it is also a HOLE IN THE
+   MIRROR.** `FindControl` answers an inactive window immediately — which
+   is why the sweep is cheap in the background — but "immediately" means
+   it answers NOTHING. Measured: with the Finder in front, NOW's own
+   window walk spends 5–10 ms sweeping 3,724 points and returns **zero
+   controls**. The scene therefore shows NOW's own window as empty
+   whenever NOW is not frontmost. That is not a performance issue with a
+   performance fix; the mirror is reporting an absence it did not
+   observe.
+
+**Both of those are FIXED (2026-08-06, emulator only) — and they were one
+defect, not two.** See the entry above. What is left standing here is the
+diagnosis, which is worth keeping for its shape: the two were filed as a
+performance item and a correctness item because that is how they present,
+and they share a root (`FindControl` refuses an inactive window) and a
+cure (do not discover what you already know you made).
+
+**The wide answer plan 013 asked for: yes, the shape is everywhere.**
+Every remaining phase is a full re-derivation, per poll, of something
+that rarely changes — the process list (`enumerate`, ~1 ms and identical
+in both conditions), the window chains (`windows`), NOW's own menu bar
+(`menubar`, 1.36 ms), and the document itself (`encode`). Nothing in the
+steady state is proportional to what CHANGED. The control sweep was not
+the only one; it was the loudest. **But the absolute numbers are now
+single-digit milliseconds on an emulated G4**, so the case for plan 013's
+slices 3–5 no longer rests on comfort here — it rests entirely on the
+vintage-hardware multiplier, and that argument should be made with a
+number from a 1400c rather than assumed.
+
+**What the breakdown costs, stated because it must be.** 130–330 µs per
+scene on this machine, from 26–66 `Microseconds` calls at a calibrated
+~4.9 µs each — the emulator's trap cost, and it will be lower on real
+PowerPC. That is 0.02% of the 1.9 s scene and up to 8% of a 3 ms one; it
+is bounded by PROCESSES and WINDOWS, never by controls or menu items, so
+it does not grow with the size of the interface. It is left on because a
+breakdown that is off by default is a breakdown nobody has when they
+need it, and every scene publishes `phases.clockUs` so a reader can
+subtract rather than wonder. **If a metal pass shows `Microseconds`
+costing what it costs here, the seam count is what to reduce** — the
+per-process bind/windows/menubar trio is 6 of every 8 clock reads.
+## FIXED: the PowerPC guest never reads the host's contract revision (2026-08-06)
+
+**Fixed and watched on an emulated Power Mac G4 the same night**, guest
+build `48a2af200ab7 2026-08-06T06:54:16Z`, on a session-private clone
+(wire 5421). A host answering `contract: 1` is refused with
+`{"type":"refuse","contract":2,"reason":"contract revision 1 != 2"}` and
+the guest closes; a host answering no `contract` at all is refused with
+"host hello states no contract revision; this guest speaks 2"; a host
+answering 2 is served, and between all three the guest redialled on its
+own backoff without being asked. The permanent check is
+`WireLimitsAgreementTests
+.testBothGuestsGateTheContractRevisionInTheirHelloHandler`, which reads
+both guests' hello handlers and was watched failing with the old
+`on_hello` pasted back in.
+
+**The open question this entry ended on — whether a guest should SEND a
+refuse — is now settled in the contract**, not in one guest's habits.
+`contract/asyncapi.yaml`'s connection rules say the gate binds whoever
+RECEIVES a hello (both halves of it), that an ABSENT `contract` is a
+mismatch rather than a tolerance, and that the refusal is sent and names
+both numbers: a silent hang-up is indistinguishable from a dropped
+network at the far end, which is the one thing gating at the door exists
+to tell apart. Two implementations moved to meet it — NOW-68K, which
+refused silently with a `bye` and a status reading "contract mismatch",
+now sends `refuse` naming both numbers; and the host, which dropped an
+inbound `refuse` into a `default:` arm, now logs it and finishes, since
+"never swallowed" is that schema's own word.
+
+The original entry, unedited:
+
+## FIXED on an emulator, NEVER ON METAL: NOW's own window cost ~1 s of every scene, and the suspect was the wrong one (2026-08-06)
+
+**The symptom.** With NOW frontmost — which is what a person does the
+moment they click its window — every scene poll took roughly a second.
+With anything else in front the same machine answered in 16 ms while
+reporting MORE (8 menus / 82 items against 7 / 48). The self path did
+less work for ten times the cost.
+
+**The suspect, and why it was wrong.** The only step that runs
+exclusively when NOW is frontmost is `collect_self_menubar`
+(`scene_self.c`) — the menu bar collected through the Toolbox, where a
+foreign machine's bar is read through the validated memory reader. It
+looked expensive too: `root_items_for()` rescans the root menu once PER
+MENU, so ~7 full rescans a scene, and the Apple menu's 16 items are
+backed by a folder on disk. That is an inference from two conditions and
+it survived only until somebody timed the function.
+
+Timed directly (a temporary `meta.dbgUs` breakdown, `Microseconds`, one
+fresh clone, six scenes each):
+
+| step | NOW frontmost | Finder frontmost |
+|---|---|---|
+| `collect_self_menubar`, whole | 1.0 – 2.5 **ms** | not run |
+| `root_items_for`, all 7 menus | 0.30 – 0.43 ms | — |
+| `add_one_menu`, all 48 items | 0.63 – 1.2 ms | — |
+| `find_controls_by_probe` | **875 – 925 ms** | 10 – 22 ms |
+| `latencyMs` | 866 – 1133 | 16 |
+
+The menu bar is 0.1% of it, on this machine, with no sign of the disk
+cost the Apple menu could have carried. **The cost is the FindControl
+sweep over NOW's own window**, and it hides from the obvious A/B for a
+documented reason: `FindControl` answers an INACTIVE window immediately.
+The identical 3,724-point sweep costs ~2.7 µs a point in the background
+and ~240 µs a point in the foreground.
+
+**The fix** (`scene_self.c`, `control_kind.c`): cache the sweep's
+DISCOVERY — which controls this window has and the point each was found
+at — and re-prove it every pass at one `FindControl` per control. The
+rows themselves are still rebuilt from the live Toolbox every scene, so
+nothing a person changes goes stale. A control that went away, moved or
+was hidden fails its point and the sweep runs again; a control that
+ARRIVED disturbs nothing cached, so `now_control_generation()` catches it
+instead — every control this application makes goes through
+`now_control_new`, and `control_kind_source_test.py` enforces that. A
+cached `ControlRef` is only ever compared, never dereferenced, until
+`FindControl` has answered with it.
+
+Same clone, same build discipline, guest's own `latencyMs`:
+
+| condition | before | after |
+|---|---|---|
+| NOW frontmost, steady state (10 scenes) | median 916 ms | **median 0 ms** (9 of 10 at 0) |
+| Finder frontmost (8 scenes) | median 16 ms | median 0 ms |
+| first scene after a Workshop page switch | ~900 ms | 250 – 1550 ms, then 0 |
+
+Scene contents are unchanged (7 menus / 48 items either way), and the
+cache was verified by driving `View` across three pages over the wire:
+identical within a page, different across one, correct on each.
+
+**What is NOT done, and what would change the answer.**
+
+- **Nobody has watched this on the PowerBook 1400c.** Every number here
+  is QEMU. The direction should hold — the fix removes ~3,700 Toolbox
+  calls per scene and adds ~7 — but the size will not.
+- **The first scene after any control change still pays the full
+  sweep**, 250 ms to 1.5 s depending on how many controls the page has.
+  That was paid on EVERY poll before; it is now paid once per UI change.
+  Reducing it means reducing the sweep itself, and the honest options are
+  a coarser grid (which would miss the 12pt disclosure triangle) or
+  giving these windows a root control (which reshapes the interface being
+  described — rejected once already, see `scene_self.c`).
+- **The menu-bar optimisations were deliberately NOT taken.** Resolving
+  the root menu once per scene and change-detecting the MenuList are both
+  correct and both worth ~1 ms here. They are not free: NOW's menu bar
+  rendered EMPTY after a Hide on 2026-08-05, so menu freshness is a live
+  defect surface, and spending it for 0.1% is a bad trade on the evidence
+  we have. If a metal run shows the Apple menu's folder-backed items cost
+  real time there, that is a different finding ("this cost is
+  disk-shaped") and points at not re-reading unchanged items at all.
+## BROKEN, contract violation: the PowerPC guest never reads the host's contract revision (2026-08-06)
+
+`contract/asyncapi.yaml`, connection rules: "`contract` is a single
+integer revision. **Unequal revisions => refuse.**" Three of the four
+implementations do that. One does not.
+
+| side | on an unequal revision in the peer's hello |
+| --- | --- |
+| host (`Session.swift:1511`) | refuses, reason names both numbers |
+| NOW-68K (`wire68.c :: handle_host_hello`) | logs it, `set_status_str("Protocol error: contract mismatch")`, `teardown_and_retry(NULL, "protocol-error")` |
+| `scripts/probes/nowwire.py :: _gate` | refuses |
+| **NOW-PPC (`wire.c :: on_hello`)** | **never looks at the field.** It reads `name` and `version`, sets `kConnConnected`, and serves the session |
+
+`on_hello` is twenty lines and `contract` is not among them; the
+handshake dispatch above it (`handle_frame`, `g.phase ==
+kConnHandshaking`) routes `hello` straight there without checking
+either. So the PowerPC guest will hold a full session with a host
+speaking any revision at all, including one that predates every message
+it is about to be sent.
+
+**How it surfaced.** Five Python harnesses declared the revision by hand
+and two of them still said 1 (fixed on `claude/wire-revision-drift`,
+`contract/wire_limits.py` plus three gates in
+`WireLimitsAgreementTests`). Those two had been talking to NOW-PPC
+guests perfectly happily — which is exactly the problem: the guest's
+missing check is what made a year-stale harness look fine. Against
+NOW-68K the same harnesses could never have held a link, and that
+difference is the whole diagnosis.
+
+**Why it is worth more than the tools fix.** The check exists to make a
+version skew fail loudly at the door instead of quietly in the middle of
+a message nobody can decode. A guest that skips it converts "refused,
+here is why" into a session that misbehaves later with no handshake to
+blame, and that is the `two-halves-never-met-in-a-test` shape.
+
+**The fix**, not taken here because this branch is the tools half and a
+guest behaviour change wants a metal pass: read `contract` in
+`on_hello`, and on a mismatch set a status naming both numbers and tear
+the connection down the way `handle_frame` already does for `refuse`
+(return 0). NOW-68K's `handle_host_hello` is the model — including its
+treatment of an ABSENT `contract` as a mismatch, since the field is
+required.
+
+**What is not known.** Whether the guest should also SEND a `refuse`
+before closing. The contract words the refusal as the host's move ("the
+host answers `hello` (accept) or `refuse` and closes") and never says
+what a guest does with a bad host hello, so NOW-68K's silent teardown
+and a hypothetical guest-sent `refuse` are both defensible readings.
+AGENTS.md says the file family is symmetric; if that governs here, the
+contract's prose should say so explicitly rather than leaving two
+implementations to guess. Settle the prose before writing the code.
+
+## UNSETTLED: the host app reported as always-on-top; no window level exists to cause it (2026-08-06)
+
+Michelle: the macOS app window floats above other applications. What was
+measured, without driving anything:
+
+- **No window level is set anywhere.** `NSWindow.level`, a floating
+  panel, `orderFrontRegardless`, `collectionBehavior`, `LSUIElement`: none
+  of them appear in `now-host/`, in the vendored `mirror/` package, in the
+  Xcode target's generated Info.plist, or anywhere in this repository's
+  history on any branch.
+- **The running windows are at level 0.** `CGWindowLayer` read from the
+  window server for every window of both copies running on the desk — the
+  human's (pid 27820) and a freshly built one — was `0`
+  (`NSNormalWindowLevel`). A level-0 window cannot stay above another
+  application's windows once that application activates, so "floats" is
+  not what the window server is being told to do.
+- **The one lever that does steal the front** is
+  `NSApp.activate(ignoringOtherApps: true)` at `App.swift:401`, which runs
+  on EVERY route into `openMainWindow()`: launch,
+  `applicationShouldHandleReopen` (a Dock click, or any `open` of the
+  bundle), the status item's "Open New Old World", ⌘, for Settings, and
+  every module item in the Windows menu. `ignoringOtherApps: true` puts
+  NOW in front of whatever application the person was typing in, rather
+  than waiting to be switched to.
+
+**Fixed by narrowing the routes, not by dropping the call.** Simply
+asking politely would not do: from a background app
+`activate(ignoringOtherApps: false)` does nothing at all, and a status
+item's menu does not activate its own application — so "Open New Old
+World" would open the window behind everything, which is the shape of the
+two regressions this file already carries comments about. So the forceful
+activation stays, and moves to `openMainWindowFromOutsideTheApp()`, called
+by exactly the two routes where a person asked for this window from
+outside the app: the status item, and `applicationShouldHandleReopen`.
+
+Launch and the in-app menu routes (⌘, for Settings, every module item)
+now open the window without activating — the menu routes are already
+active, so they lost nothing, and a launch the person performed is
+activated by macOS itself while one they did not perform stays put.
+
+**What should change:** the app no longer pulls itself in front when it is
+launched or relaunched in the background, and no longer re-takes the front
+from another application on its own. **What should NOT change:** clicking
+the Dock icon still raises the main window, "Open New Old World" in the
+status menu still brings the app forward from whatever you were in, and
+Open Mirror still leaves the mirror window in front (`NOWMirrorWindow.show`
+still does not activate, precisely because activating trips reopen, which
+raises the main window over it). Michelle is the verification step here —
+this was not driven, by her direction.
+
+## FIXED: hiding NOW leaves it frontmost, and Windows > Workshop then times out having worked (2026-08-06)
+
+Reported by Michelle from a Mirror drive; measured on a session-private
+emulator clone the same night, guest builds `bf4987c6eca1` (before) and
+`a14d111103f8` (after).
+
+**What hiding NOW actually does.** `hide "New Old World"` — and the
+Application menu's own Hide, which is the same Process Manager call —
+hides the window and **does not move the front process**. Measured, three
+scenes over six seconds and a QMP screendump of the same moment:
+
+- `apps[].front` stays `New Old World`;
+- `axsnap` agrees: `front: New Old World, front: true`;
+- the machine still draws NOW's menu bar (Apple, File, Edit, View,
+  Windows, Help, and the New Old World application menu), over a desktop
+  with no NOW window on it;
+- the scene's window row for it is `visible:false, front:false`, so the
+  scene has **no front window at all** and the content plane says
+  `content: no front window`.
+
+**Why Windows > Workshop then timed out.** The menu item is still
+reachable in that state, and `menuact 140/1` still dispatches through the
+application's own main-loop queue — but `workshop_open` only called
+`SelectWindow`, and selecting a hidden application's window shows
+nothing. Watched: four scenes over twelve seconds, the window
+`visible:false, front:false` throughout. The host had planned
+`windowFront(New Old World)` from `MirrorActionExecutor.presentOrCreated`,
+which that state can never satisfy, so the act burned its whole 15 s
+timeout **having been dispatched correctly** — and the mutation FIFO is
+one lane, so everything behind it waited too. Same shape as the
+Finder-open entry below, different cause.
+
+**The fix** is `now_proc_show_self()` in `workshop_open`: show this
+application before selecting the window. Every route that promises a
+Workshop page comes through there. Watched pass: hidden, then the same
+`menuact 140/1`, and the window was visible and front **5.6 s** later,
+with the Workshop drawn on the machine's own screen.
+
+**What was NOT settled: the menu bar reported empty after the first
+Hide.** In the same report Michelle saw NOW's menu bar render EMPTY in
+the Mirror after the first hide, restored by cycling to the Finder and
+back. That could not be reproduced from the wire. In every hidden-and-
+front state produced here the guest reported `menubar.app: New Old
+World` with all seven menus and `coverage menubar/…/complete`, the
+machine drew them, and feeding those exact IR documents through the
+host's own `MirrorScene.decode` + `MirrorReplicaReducer` kept the menu
+bar with `actionable: true`. So neither the guest's report nor the host's
+retention is dropping it in that state.
+
+**The plane-bind hypothesis is DISPROVEN** (2026-08-06, second pass). It
+was worth testing because `axsnap` does report `bind: no-plane,
+hasMenus: false` with NOW freshly front and `bind: ok, hasMenus: true`
+a few seconds later — so there IS an unarmed window, and "empty until you
+cycle away and back" is what one would look like. It reads `axsnap` and a
+scene at the SAME moment, 28 paired samples across the four phases the
+report names — fresh connection, the first hide, away to the Finder, back
+to NOW:
+
+| phase | axsnap bind | scene menubar |
+|---|---|---|
+| fresh, first pass | `no-plane`, `hasMenus: false` | **New Old World, 7 menus, coverage complete** |
+| fresh, passes 2-8 | `ok` | New Old World, 7 menus |
+| the first hide, 10 passes over 32 s | `ok` | New Old World, 7 menus |
+| the Finder, 4 passes | `ok` | Finder, 8 menus |
+| back to NOW, 6 passes | `ok` | New Old World, 7 menus |
+
+The unarmed pass is real and it lasts about three seconds — and **the
+scene taken in that exact moment still carries the whole menu bar**. That
+is the shape of the thing: `scene_self.c` reads the live `MenuList`
+through the Toolbox from inside our own process, and the anchor bind is
+the FOREIGN memory reader. They are not the same source and the self path
+does not wait for the plane.
+
+**And the RENDERER is cleared too, offscreen** (third pass). `RenderShot`
+rasterises the same `SceneRenderer` the Mirror's window uses, with no
+screen involved, so the last stretch could be tested after all. The two
+live documents are now fixtures —
+`now-host/Tests/HostTests/Fixtures/now-scene-self-hidden-but-front.json`
+and `…-front-visible.json`, captured three seconds either side of a hide
+on guest build `bf4987c6eca1` — and `MirrorMenubarRenderTests` renders
+them and counts the ink in the menu-title band:
+
+| document | ink in the title band |
+|---|---|
+| hidden-but-front (her exact state) | **705** |
+| front and visible | **705** |
+| the same document with `menubar` stripped, as the negative control | **77** |
+
+So the renderer draws all seven titles for the document she was looking
+at. The 77 is worth knowing on its own: it is the Apple glyph
+`shouldSynthesizeAppleMenu` falls back to when a scene carries no menus
+at all — **a Mirror bar showing an apple and nothing else is exactly what
+"the menu is empty" looks like**, which says the scene the window was
+drawing had no menubar even though the one that arrived did.
+
+**What is left, and what would tell them apart.** Every static stage is
+now cleared by a test, so the remaining candidates are all live state in
+the running app, and none of them is worth guessing between:
+
+- **The window was drawing an older projection than the document that had
+  just arrived.** `NOWMirrorSource.scene` is
+  `shadowEngine?.snapshot?.scene ?? decoded`, so a projection that had not
+  taken the new observation would be drawn instead of it.
+- **A plane toggle.** `planePolicyDidChange` republishes from the engine's
+  snapshot; a scene projected under a different plane policy is a
+  different scene.
+- **Nothing retained yet.** `reduceMenubar` retains a previous record when
+  no menubar claim is complete — retention can only KEEP a bar, never
+  empty one, unless the first scene of that Mirror session had none.
+
+The instrument that separates them already existed and **said nothing**:
+`MirrorEngineDiagnostics` compares the visible scene against the engine's
+projection on every cycle and names the disagreeing field — including
+`menubar` — into a 64-entry ring that was never logged, never shown in
+the Diagnostics pane and never exported, so its answer died with the
+process. It now writes each difference to `HostLog` (`mirror` area, warn
+level), which means the NEXT reproduction leaves a line in
+`~/Library/Logs/` saying whether the projection and the arriving document
+disagreed about the menu bar at that second — the first candidate
+confirmed or eliminated without anyone watching. If that line is absent
+while the bar is empty, the projection matched and the third candidate is
+the one to chase.
+
+Her two details both point the same way and are worth carrying: it is the
+FIRST hide after launch and it self-heals on an application cycle, so it
+is transitional rather than steady — and a cycle is exactly what forces a
+fresh projection.
+
+## Set Time Zone: the acts reach the modal and apply; the LIST is what is missing (2026-08-06)
+
+Michelle: "controls in some of these modals still dont work". Measured
+against Date & Time's Set Time Zone modal on the same clone, replies read
+rather than fired and forgotten:
+
+1. **The act reaches the guest and applies.** `ditemact` on the modal's
+   Cancel — `{element: now-element-…, item: 2}` — answered `Dispatch:
+   dispatched, Mechanism: the application's Dialog Manager path`, and the
+   next scene and screendump showed the modal *and* Date & Time gone. A
+   `ModalDialog` loop is therefore not the obstacle, and modal-vs-ordinary
+   is not the discriminator.
+   The refusal worth knowing: `ditemact` needs **both** `element` and
+   `item`. With `element` alone it answers `bad-request: ditemact requires
+   item: a 1-based DITL number from 1 through 96`, and a caller that does
+   not read the reply sees a control that "does nothing". The host sends
+   both (`NOWMirrorSource.swift`, `.dialogItem`).
+2. **The list is not addressable at all.** The scene carries the modal's
+   9 DITL items and 10 controls, including the list's scroll bar with
+   `max: 193` — 193 cities — and **no `listCells` and no
+   `listTotalCount` anywhere**. There is no row to name, so no click on
+   that hatched rectangle can hit one. This is row 1 of
+   docs/mirror-element-coverage.md, now confirmed live rather than
+   inferred.
+3. **The greyed Done is TRUTH; the default ring on it is not.** With the
+   modal front the guest reports item 1 `Done enabled:false` and item 2
+   `Cancel enabled:true`, and the machine's own screen agrees — Done is
+   greyed until a city is chosen, and the default ring is around
+   **Cancel**. So the grey is a correct report and the ring is a renderer
+   fidelity defect.
+   (With the modal's application in the BACKGROUND every item reports
+   `enabled:false`, which is also true of the machine.)
+4. **The truncated explanatory text is the renderer, not the content.**
+   The guest reports item 7's title complete: "The time zone must be set
+   to determine the correct time. Select the closest city in your current
+   time zone:" — 110 characters, in a rect three lines tall.
+   `SceneRenderer`'s `case "staticText"` draws it with one `appText` call
+   at one baseline and no wrapping, so it is clipped mid-sentence. A wrap
+   there is verifiable offscreen with the `RenderShot` harness the
+   MirrorKitUI tests already use; it has not been done.
+
+## CLOSED: the resident channel dials, speaks, and holds the session through a 108-second starvation (2026-08-06)
+
+Plan 012 § 4, and the whole plane it completes. A real Macintosh now
+opens a SECOND connection from its optional resident component and keeps
+it alive while every application on the machine is starved.
+
+**What was watched, on a fresh cold-booted OS 9 clone (mac99, guest
+build `4fe6d946e1a0`).** Two connections arrived from the same address a
+second apart:
+
+```
+[session]  {"type":"hello","contract":2,"side":"guest",...,
+            "name":"Power Mac G4","os":"9"}
+[resident] {"type":"hello","contract":2,"side":"guest",
+            "role":"resident","version":"0.1",
+            "name":"Power Mac G4","os":"9"}
+```
+
+The `name` and `os` are **identical**, and that is the load-bearing part
+rather than a nicety: the host associates a resident channel with its
+application by fingerprinting exactly those two fields plus the address,
+so a resident that invented its own name would be a channel vouching for
+nobody. `capabilities: 127` — both P6 bits, the vehicle and the channel.
+
+Then `tools/guest-wedge spin 110`, with `tools/liveness-channel.py`
+timestamping both connections:
+
+| what | measured |
+|---|---|
+| the application, starved | **108.8 s** with no answer, past the host's 75 s window and past the 90 s Finder incident that started this |
+| the resident, meanwhile | **three pings**, at 86.6 s / 121.6 s / 156.6 s, every one answered |
+| either connection dropped | **no** |
+
+So the premise the plane rests on is no longer an argument from the
+scheduling model at either end. Something answering below the
+application kept ANSWERING ON THE WIRE while applications could not.
+
+**Then the same thing against the REAL host**, which is what § 4 was for
+and the first time either half of § 1 had met a real guest. An
+application starved 110 s kept its session — the same two sockets before
+and after, `55223` and `55224`.
+
+**And the mutation was watched to fail.** A build whose application never
+publishes the endpoint, cold-booted the same way, opened ONE connection
+instead of two; the identical 110-second wedge replaced its session
+(`56005` → `56063`). So the survival above is the resident doing it, and
+not the host having quietly stopped timing anybody out. This also fixes
+the honest limit of the guest-side fix below: it stops the guest tearing
+its own link down, and it does not keep a session that nothing is
+answering for.
+
+**How it is built, and the one decision worth arguing with.** MacTCP's
+`.IPP` driver through the Device Manager — `PBOpen` and `PBControl` are
+traps, so a flat 68K code resource needs no library, which is what
+killed Open Transport at the linker. **No completion routines.** The
+plan expected register-based callbacks each needing `now_liveness_tm.S`'s
+shim treatment; they buy nothing here. This component already has a
+periodic interrupt-time context, the channel's entire job is one frame
+every thirty seconds, `ioResult` is the same fact the callback would
+carry read from memory instead — and the ABI is genuinely ambiguous for
+these callbacks in a way Timer.h's was not (`MacTCP.h` declares a
+STACK-based completion; the Device Manager documents A0/D0). Guessing
+wrong there costs a five-second corruption of somebody else's memory,
+which is exactly what disarmed the vehicle for a day. The full argument
+is in `ext/src/now_liveness_net.c`'s header.
+
+**What this does NOT close.** The channel has been watched on an emulated
+G4 only. MacTCP on a real PowerBook under OS 9 is not OT's MacTCP
+compatibility on an emulator, and nothing has run on 68K/System 7.1 at
+all, where the extension is the same INIT but the stack is real MacTCP.
+Metal is attended and Michelle's call.
+
+## FIXED, and found only by driving the real host: the GUEST killed the very session the resident was holding open (2026-08-06)
+
+The entry above nearly read the other way. The first end-to-end run
+against the real host — resident channel up, host correctly holding the
+session — **still lost the session**, and both connections were replaced
+within 150 s of the wedge.
+
+`now-guest-ppc/src/core/wire.c :: service_heartbeat` compared
+`last_rx_tick` against a 65-second dead-link window. When the event loop
+next ran after the 110-second starvation it saw a 110-second gap and
+declared the link dead: *"Reconnecting (no answer)"*. **Nothing had been
+silent.** The application was not running to listen, and then blamed the
+far side for it.
+
+It is the same defect as the host's, from the other end, and the guest's
+version is the plainer one: the host at least observed real silence and
+had to be told a machine might be alive behind it.
+
+The cure is the same shape. A gap between two consecutive passes of our
+own event loop longer than ten seconds is PROOF of starvation rather
+than evidence of it, so the interval is forgiven — the dead-link clock
+advances past it instead of counting it, which keeps a genuinely dead
+link noticed one window later rather than never. A healthy pass is
+milliseconds, and the pump runs from every nested Toolbox loop
+(`pump.h`), so nothing legitimate lands between one second and ten.
+
+**It deliberately needs no extension.** `liveness_ticks` says the same
+thing more precisely and an application that has one could read it, but
+"keeps its session through a modal" must not be a thing only some
+machines do — the product degrades honestly without a resident component
+(docs/resident-components.md).
+
+### The instrument was feeding the clock it was measuring
+
+Worth more than the fix. The **same** 108-second starvation measured
+through `tools/liveness-channel.py` did **not** drop the link, twice, and
+that is why this survived a whole afternoon of green runs.
+
+That instrument polls the session with `mirror` every five seconds. The
+requests piled up in the socket while the guest was starved; when it came
+back it read all twenty-two of them before `service_heartbeat` ran, and
+`last_rx_tick` was refreshed on the way past. **The probe supplied the
+traffic whose absence was the thing under test.**
+
+Same class as `probe-oracles-were-blind` and the `hello`-probe trap in
+`tools/wedge-experiment.py`, and the general form is worth stating: an
+instrument that talks to the subject on the channel it is measuring is
+not a passive observer of that channel. The real host, which pings
+nothing by contract, was the only observer quiet enough to see it.
+
 ## The folding sidebar, both halves (2026-08-05)
 
 The rail folds to icons on the guest and the sidebar does the same on the
@@ -2720,6 +3785,9 @@ The corrected local oracle is
 guest shutdown (the exact QEMU PID exited on its own), and passed `qemu-img
 check` before and after preservation. Its SHA-256 at creation was
 `c466baa9a5455c343908e12197d68e57ffc7f07c140276a90c97a5ae2a137d70`.
+(Re-verified 2026-08-06 with `tools/volclean.py`: its volume really is
+cleanly unmounted, which the three images baked that night were not — see
+the correction below. It is once again the installed oracle.)
 Future extension changes must update and cleanly shut down this stage image
 before a Mirror sweep; merely copying a new INIT into a running clone does not
 change the resident code under test.
@@ -2743,10 +3811,15 @@ The gate is now three pieces, and the sequence a resident change follows:
   `buildFingerprint` equal to the local build's, then a guest-clean
   shutdown (`tools/shutdown-guest.py`, never a QMP `quit`), `qemu-img
   check`, `.bak-YYYYMMDD` of the old image, install, receipt. Any failure
-  installs nothing and leaves the VM up.
+  installs nothing and leaves the VM up. **Plus `tools/volclean.py` since
+  the correction below — the container check was never evidence that the
+  volume inside was unmounted, and three images were installed dirty
+  before anything asked.**
 - `ext/stage-receipts.json` — the repo-tracked receipts. Each bake records
   the source digest, the guest-reported fingerprint, the image sha256, the
-  `qemu-img check` result and that the shutdown was guest-clean.
+  `qemu-img check` result, that the shutdown was guest-clean — and, since
+  the correction below, `volumeClean`, which is the only one of them that
+  answers whether the volume was actually unmounted.
 - `tools/ext-bake-gate`, from `.githooks/pre-commit` — refuses any commit
   staging `ext/` or `contract/peek_table.h` unless the newest receipt is a
   bake of exactly that source. `TBT_DEFER_EXT_BAKE=1` with
@@ -2754,9 +3827,145 @@ The gate is now three pieces, and the sequence a resident change follows:
   receipts file, so a deferral lands as a written decision in the same
   commit as the work.
 
-The image installed on 2026-08-06 is sha256
-`62be7be4d73a848f9d72818f42c879df7b4dfdfc83a18f6fdd2779529b297eae`, and
-the 3 August one is preserved beside it as `.bak-20260806`.
+Two images were installed on 2026-08-06. The hand-run bake that found the
+staleness produced sha256
+`62be7be4d73a848f9d72818f42c879df7b4dfdfc83a18f6fdd2779529b297eae` and
+preserved the 3 August one as `.bak-20260806`; the first run of
+`scripts/bake-ext-image` then produced sha256
+`46a51dcd0337baf3918a1fec6f2987bacbdf174d3dc28ffee61e04430bd5850c`,
+keeping the previous as `.bak-20260806-2`. That image is the one
+`ext/stage-receipts.json` certifies: the guest answered `mirror` with
+lifecycle `active`, capabilities 63 and buildFingerprint
+`bb95520ae51365c053f56d57d86bb10af09629c3`, shut itself down in three
+seconds, and `qemu-img check` found no errors.
+
+**Still stale for one branch, and this is the gate working rather than a
+defect.** `claude/012-resident-transport` gives the resident its own
+MacTCP connection and a sixth plane — capability word 127, not 63 — so the
+image above does not contain that resident. The first commit touching
+`ext/` on a branch carrying it will be refused until `scripts/bake-ext-image`
+runs there, which is exactly the warning nobody got on 3–6 August.
+
+### CORRECTION (2026-08-06): every image baked that night was DIRTY, and the receipts could not have known
+
+Read the three paragraphs above with this attached. **All three images
+baked on 6 August were installed with their HFS volume still marked
+mounted**, so every clone of them opened with "Your computer did not shut
+down properly" and a Disk First Aid pass. Measured with
+`tools/volclean.py`, by sha256, on the files still on disk:
+
+| image | sha256 | volume |
+| --- | --- | --- |
+| `.bak-20260806` — the 3 Aug one, human shutdown | `c466baa9…` | **CLEAN** |
+| hand-run bake | `62be7be4…` | DIRTY |
+| first `bake-ext-image` (caps 63) | `46a51dcd…` | DIRTY |
+| second `bake-ext-image` (caps 127) | `0785871a…` | DIRTY |
+
+The last two are the images the two receipts in `ext/stage-receipts.json`
+certify, matched by their own recorded `imageSha256`. Both receipts say
+`shutdown: guest-clean` and `qemuImgCheck: clean`.
+
+**Both statements are true. Neither is the question.** `qemu-img check`
+validates the qcow2 *container* and knows nothing about the Macintosh
+filesystem inside it, so a volume the Mac will greet with Disk First Aid
+passes it without a word. And the guest really did run its own shutdown
+sequence — the Shutdown Manager quits applications *first* and flushes and
+unmounts volumes *after*, so the anchor worker, an application, falls
+silent while the volume is still being written. The rig then took the
+process away five seconds later. Measured that night: **the disk image
+kept changing for 49 seconds after the worker went quiet.** The sentence
+above, "shut itself down in three seconds", was reporting how fast the rig
+stopped watching.
+
+The general lesson is the durable part, and it is bigger than this rig:
+**a check adjacent to the question reads exactly like an answer to it.**
+Two honest, passing checks sat where a third was needed, and nothing in
+the receipt distinguished them — which is why `volumeClean` is a separate
+field rather than a stricter reading of `qemuImgCheck`.
+
+What changed:
+
+- `tools/volclean.py` asks the volume itself: HFS's "volume unmounted"
+  attribute bit, the very flag the Mac's startup check reads. It follows
+  `drEmbedSigWord` into the embedded volume, because the HFS *wrapper*
+  every OS 8.1+ HFS+ disk carries has its own flag that reads dirty on a
+  perfectly clean machine — checking that one reported the human-verified
+  3 August oracle as dirty, which is how the positive control earned its
+  keep.
+- `scripts/bake-ext-image` runs it and installs **nothing** when the
+  volume is dirty. The container check stays, demoted to what it always
+  was.
+- The receipt gains `volumeClean` and `shutdownPath`;
+  `tools/ext-bake-gate` requires the first. The two existing receipts are
+  corrected in place with `volumeClean: dirty` and the reasoning, and the
+  gate refuses a receipt carrying a correction.
+- `tools/shutdown-guest.py` waits for the **disk** to stop changing rather
+  than for the worker to go quiet. Necessary, and not sufficient: a
+  shutdown waited out to full disk quiet still left the volume dirty.
+
+**The oracle is repaired by restoring, not by re-baking.** The dirty image
+was replaced with `.bak-20260806` (sha `c466baa9…`, verified CLEAN), kept
+as `.bak-20260806-4-dirty`. That is the cheap fix and it is the right one,
+because `scripts/spin-up-ppc` stages the current `ext/` and app into
+whatever clone it makes and cold-boots so the INIT loads — **the resident
+under test comes from the staging, not from the base image.** What a base
+image has to be is *clean* and *furnished* (Rumpus, the anchor worker, the
+folder layout), and that one is both.
+
+Which means the framing higher up this section — "the oracle went stale" —
+was itself imprecise, and the note belongs next to the gate: a bake
+receipt proves that a resident was built, loaded by a cold boot, and
+identified itself over the wire. That is a real and valuable proof, and it
+is the one thing no amount of staging gives you. It does **not** prove
+that a later sweep runs that resident, because staging replaces it anyway,
+and it does not prove the base is clean unless `volumeClean` says so. The
+gate is not weakened here — Michelle asked for it deliberately, and
+"someone cold-booted this resident and it answered" is exactly the check
+that was missing on 3–6 August. It is simply worth writing down that its
+value is the *boot-and-answer*, not the *image*.
+
+### The applet's shutdown does not finish; the Finder's does (2026-08-06)
+
+`tools/guest-shutdown`'s applet calls `ShutDwnPower` and nothing else. It
+reliably *starts* a shutdown. It does not finish one: on mac99 QEMU never
+exits, and every image preserved after it — including ones waited out to
+full disk quiet — has the volume still marked mounted.
+
+**The Finder's own Special > Shut Down does finish it.** Driven through
+the act plane's `menuact`, on a guest booted from the stage image: the
+machine powered off, **QEMU exited on its own within 10 s**, and
+`volclean.py` read the resulting image CLEAN. QEMU exiting by itself is
+the machine really cutting power, which is the thing the applet path never
+achieves — and it matches the one image anybody trusted, the 3 August one
+a human shut down from the Finder.
+
+This route had been recorded as impossible, and *why* is the more useful
+finding. `menuact` **requires `serialHi`/`serialLo`** from the scene's
+front process, because a menu bar belongs to one exact process and the
+guest refuses rather than guess at whichever application happens to be
+front. The probe that wrote the route off omitted them **and** sent the
+act fire-and-forget, so the guest's `bad-request` — a perfectly good
+refusal, naming its own cause — went into the void, and a null reading was
+reported as a property of the mechanism. That is drive-loop rule 2e: a
+null reading needs a positive control before the mechanism is blamed.
+Supplying the serial and reading the reply was the entire fix; the machine
+had been answering correctly all along.
+
+`docs/mirror-knowledge.md` records upstream Mirror finding that
+`ShutDwnStart`, `ShutDwnPower`, Finder Apple Events and embedded OSA all
+failed to power off a mac99 OS 9 guest, and that posted clicks cannot
+reproduce the Finder's held `MenuSelect` gesture — logged there as
+"deferred, not solved". **That is now solved, and by a route upstream did
+not have**: NOW's act plane does not post a click, it answers the
+application's own `MenuSelect`, so the held-gesture problem does not
+arise. `tools/shutdown-guest.py --wire <port>` takes the Finder route
+first and keeps the applet as the fallback for a guest with no act plane;
+`tools/guest-shutdown/probe_shutdown.py` is the bench that established it.
+
+Still unverified: this was watched once, on one guest, on QEMU. Nobody has
+run it on the PowerBook, and the applet fallback has no measurement
+showing it *ever* produces a clean volume — only that it starts a
+shutdown.
 
 ## CYCLE 24 RED BASELINE; FIX BUILT, NOT UX-VERIFIED (2026-08-03)
 

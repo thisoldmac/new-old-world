@@ -24,10 +24,12 @@ WHAT IT CHECKS. When a commit stages anything under ext/ or
 contract/peek_table.h, the newest receipt in ext/stage-receipts.json must
 be a bake whose recorded source digest EQUALS the digest of the staged
 tree — i.e. the image on disk contains exactly this resident — and must
-record the four facts that make a bake believable: the ext build
+record the five facts that make a bake believable: the ext build
 fingerprint the guest itself reported, the image sha256, a passing
-`qemu-img check`, and that the shutdown was guest-clean rather than a QMP
-power cut.
+`qemu-img check`, that the shutdown was guest-clean rather than a QMP
+power cut, and — the one that had to be learned the expensive way — that
+the VOLUME INSIDE the image was cleanly unmounted, which is a different
+question from all four of the others.
 
 The digest is content-exact and deliberately supersedes the "receipt
 newer than the newest source change" phrasing of the original rule: an
@@ -35,6 +37,14 @@ mtime says when a file was touched, a digest says what is in it, and a
 `git checkout` or a worktree clone rewrites the first while preserving
 the second. The timestamps are still recorded and reported, because a
 human reading a failure wants to know how stale.
+
+WHAT IT CANNOT CHECK, said plainly: the image on disk is shared and the
+last bake wins. A receipt certifies that THIS source was baked, verified
+by the guest and installed — not that the file still contains it, because
+another branch may bake over it minutes later (watched on 2026-08-06, two
+sessions baking within the hour). The `imageSha256` is what tells you
+afterwards which resident a sweep actually cloned: compare it against the
+file before believing a result, and re-bake if it differs.
 
 DEFERRING is allowed and is a WRITTEN DECISION, never a silent skip:
 
@@ -66,6 +76,20 @@ REQUIRED = (
     ("imageSha256", "the sha256 of the installed stage image"),
     ("qemuImgCheck", "a passing qemu-img check"),
     ("shutdown", "that the guest shut ITSELF down cleanly"),
+    # ADDED 2026-08-06, and the reason is worth more than the field. Three
+    # bakes that day installed an oracle whose HFS volume was still marked
+    # mounted, so every clone opened in Disk First Aid. Their receipts said
+    # `qemuImgCheck: clean` and `shutdown: guest-clean`, and both were
+    # TRUE — the container really was intact, and the guest really did run
+    # its own shutdown sequence. Neither is the question. `qemu-img check`
+    # validates the qcow2 wrapper and cannot see the filesystem inside it,
+    # and a shutdown that STARTS is not a shutdown that finished
+    # unmounting. A check adjacent to the question reads exactly like an
+    # answer to it, which is why this is a separate field rather than a
+    # stricter reading of an existing one: tools/volclean.py asks the
+    # volume itself, and a receipt without its verdict now certifies
+    # nothing.
+    ("volumeClean", "that the VOLUME was cleanly unmounted (tools/volclean.py)"),
 )
 
 
@@ -259,6 +283,15 @@ def check(root: str) -> int:
     if entry.get("qemuImgCheck") not in (None, "clean"):
         problems.append(f"qemu-img check was {entry['qemuImgCheck']!r}, "
                         "not 'clean'.")
+    if entry.get("volumeClean") not in (None, "clean"):
+        problems.append(f"the volume check was {entry['volumeClean']!r}, not "
+                        "'clean' — the image's HFS volume is still marked "
+                        "mounted and every clone of it opens in Disk First "
+                        "Aid.")
+    if entry.get("correctedOn"):
+        problems.append(f"the newest receipt has been CORRECTED "
+                        f"({entry['correctedOn']}) and no longer certifies "
+                        f"the image: {entry.get('correction')}")
     if problems:
         return fail([f"staged resident changes: {shown}"] + problems)
 

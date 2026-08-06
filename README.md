@@ -45,15 +45,24 @@ The cells that say "no" are not oversights.
 of who serves what, message by message, with *served* and *proven* kept
 as separate columns.
 
-**The headline gaps:** **one dialog on the Macintosh can end the
-session** — the machine is cooperatively scheduled, so an application
-that blocks starves every other one, and a Finder alert was measured on
-2026-08-05 starving the whole guest for over 90 seconds, past the silence
-window after which the host declares a guest gone. The host can now tell
-*starved* from *gone* and says which, but only when the optional NOW
-Extension is installed to answer for the machine; **without it a modal
-still ends the session**, and there is nothing on either side that can
-dismiss one. Beyond that: resume-by-offset hangs; one large transfer in
+**The headline gaps:** **a dialog on the Macintosh no longer ends the
+session, and that has now been watched rather than argued.** The machine
+is cooperatively scheduled, so an application that blocks starves every
+other one — a Finder alert was measured on 2026-08-05 starving the whole
+guest for over 90 seconds, past the silence window after which the host
+declares a guest gone. Both halves now know better: the guest stops
+counting time it was not scheduled against its own dead-link clock, and
+with the optional NOW Extension installed the machine holds a second
+connection that answers for itself while every application is starved.
+On 2026-08-06 an application starved for 108 seconds kept its session,
+with the resident pinging three times through the gap. **Still open:**
+**without the extension a starvation past the host's window still ends
+the session** — watched, by mutation, on the same 110-second wedge; the
+guest-side fix keeps the guest from tearing the link down but nothing
+answers for the machine while it is away. Nor can anything on either
+side dismiss the dialog: the machine is legible and survivable while
+wedged, not serviceable. And the resident channel has been watched on an
+emulator only — never on real hardware, and never on 68K/System 7.1. Beyond that: resume-by-offset hangs; one large transfer in
 about six degrades badly; an unreachable host presents as a hang rather
 than naming the address it cannot reach; NOW-68K's census can now report
 its own CPU, RAM and ROM but not one of its probes has run on a
@@ -64,6 +73,35 @@ by switching to 32-bit addressing around the read, and not yet re-run
 there. [docs/status.md](docs/status.md)
 carries the rest, and [docs/open-issues.md](docs/open-issues.md) is the
 ledger.
+
+**The Mirror got much cheaper on 2026-08-06, and the remaining cost is
+now waiting rather than working.** Measured on an emulated Power Mac
+with the guest's own microsecond clock, which the scene now carries
+permanently as `meta.phases` — before that it reported one
+tick-quantised number that could not see anything under 17 ms, and
+reasoning from it produced two confidently wrong answers in one day. A
+scene walk with NOW frontmost cost ~1.1 s and now costs 3–8 ms: almost
+all of it was a `FindControl` grid sweep of NOW's own window, and an
+application does not have to DISCOVER controls it made — the registry
+that already recorded each control's kind now says which exist. The
+same change fixed a lie: with another application in front, the sweep
+probed 3,724 points, found nothing (`FindControl` refuses an inactive
+window), and the mirror reported NOW's window as EMPTY — an absence it
+had never observed. Idle wire traffic fell about 90% with scene deltas,
+whose baseline is named by a digest of what the consumer actually holds
+rather than by a sequence number, so a drifted host repairs itself on
+the next round trip instead of quietly diverging.
+
+**What that leaves is latency.** A round trip still takes ~115 ms even
+when the answer is a zero-byte "nothing changed", because the guest's
+event loop sleeps up to 100 ms before it notices a request. That is
+under investigation and is the honest headline: the Mirror is no longer
+slow because it does too much, it is slow because it waits. Two other
+things measured the same day and not fixed: a background application
+cannot be armed for content capture AT ALL (nothing can make a process
+pump that is not being scheduled), and every number here is from an
+emulator — a PowerBook 1400c is far slower, and for the wire the
+emulator likely understates the win rather than flattering it.
 
 ## Try the modern half
 

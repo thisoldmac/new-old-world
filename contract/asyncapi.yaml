@@ -37,6 +37,33 @@
 #   The handshake is per-connection: a reconnect re-hellos.
 # - `contract` is a single integer revision. Unequal revisions => refuse.
 #   Breaking changes bump it; additive optional fields do not.
+#   THE RULE BINDS WHOEVER RECEIVES A HELLO, both halves of it. The guest
+#   dials, so the host gates first and the sentence above reads as the
+#   host's move — but the answer is a `hello` too, and a receiver that
+#   does not gate it will serve a whole session to a peer speaking a
+#   revision it has never heard of, then discover the skew in the middle
+#   of a message nobody can decode, with no handshake left to blame.
+#   Measured 2026-08-06: harnesses left on revision 1 could never hold a
+#   link to NOW-68K, which gates, and held one to NOW-PPC, which did not,
+#   for an entire revision. The half that skipped the check is the half
+#   that hid the drift.
+#   An ABSENT `contract` is a MISMATCH, not a tolerance. The field is
+#   required; a hello without one comes from something that predates this
+#   handshake or is not speaking this contract at all, and there is no
+#   number to compare. Refuse it, and say it was absent rather than
+#   reporting a revision nobody sent.
+#   THE REFUSAL IS SENT — `refuse`, carrying the refuser's OWN revision
+#   and a reason naming both numbers — by whichever side detects the
+#   skew, and then that side closes. Hanging up silently is a different
+#   answer: from the far end it is indistinguishable from a dropped
+#   network, and telling those two apart is the entire value of gating at
+#   the door. The peer may be merely stale, and the refusal is where it
+#   learns by how much.
+#   What follows the close differs only because the roles do. The host
+#   waits to be dialled again. The guest, which dials, retries on its
+#   normal backoff and keeps wanting a connection: a wrong revision is
+#   the peer's fact, not a withdrawal of the person's intent, and the
+#   right host may be one launch away.
 # - The host serves SEVERAL guests concurrently, told apart by the identity
 #   in their `hello` — `name`, compared trimmed and case-folded. A dial from
 #   a machine that is not already connected is accepted and served alongside
@@ -246,6 +273,7 @@ channels:
       sceneRequest: { $ref: "#/components/messages/sceneRequest" }
       sceneBegin: { $ref: "#/components/messages/sceneBegin" }
       sceneEnd: { $ref: "#/components/messages/sceneEnd" }
+      sceneSame: { $ref: "#/components/messages/sceneSame" }
       processList: { $ref: "#/components/messages/processList" }
       processListing: { $ref: "#/components/messages/processListing" }
       processFront: { $ref: "#/components/messages/processFront" }
@@ -282,7 +310,9 @@ channels:
       top-to-bottom, rowBytes apart; depth 8 uses the guest's palette;
       16 is RGB555 big-endian; 32 is xRGB8888 big-endian), file content
       (file.begin describes the container), a scene document
-      (scene.begin: UTF-8 JSON, the Mirror IR whose major is irVersion),
+      (scene.begin: UTF-8 JSON, the Mirror IR whose major is irVersion —
+      or, when scene.begin says delta:true, a delta against the baseline
+      the request named),
       and a cloud preview (preview.begin: raw indexed rows, top-to-bottom,
       rowBytes apart, already dithered by the HOST to the depth the guest
       asked — no palette block, because the target is the classic system
@@ -354,12 +384,21 @@ operations:
       with no second ownership rule invented for scenes.
       There is no scene bracket and no scene.cancel: a scene transfer is
       short enough that abandoning it costs more than finishing it.
+      THE ANSWER IS ONE OF THREE, and which one is the host's own doing.
+      A request with no `since` is answered with a whole document, as it
+      always has been. A request that quotes a `since` may be answered
+      with scene.same (a control frame, no transfer at all), with a delta
+      transfer, or with a whole document — the guest chooses, and every
+      one of the three is a complete and correct answer to the same
+      question. A host therefore never has to handle "my delta request
+      was declined"; there is no such outcome.
   guestServesScene:
     action: send
     channel: { $ref: "#/channels/control" }
     messages:
       - $ref: "#/channels/control/messages/sceneBegin"
       - $ref: "#/channels/control/messages/sceneEnd"
+      - $ref: "#/channels/control/messages/sceneSame"
     description: >
       Guest announces and completes a scene transfer, correlated to the
       request by id exactly as a capture is. scene.begin carries the IR
@@ -389,6 +428,31 @@ operations:
       Absent means NOT MINTED. The empty string is never sent and must
       not be treated as one: it is the consumer's own vocabulary for "the
       producer has no reference layer", which is a different claim.
+      WHERE THE SCENE'S TIME WENT, added 2026-08-06 as meta.phases and
+      additive under the accretive rule: an older host ignores the key
+      and nothing about the scene changes. meta.phases.us is an object of
+      MICROSECOND totals keyed by what the guest was DOING - enumerate,
+      bind, windows, controls, menubar, semantics, refs, encode - named
+      for the work and not for the function that implements it, so that
+      rewriting the implementation does not rename a year of
+      measurements. The phases do not overlap: entering one suspends the
+      one containing it, so their sum is never more than the walk, and
+      what the sum falls short by is real, unattributed collector
+      bookkeeping rather than a fabricated "other". `encode` is the
+      SIZING pass, which is the same work as the writing pass minus the
+      stores - a document cannot state how long it took to write itself,
+      and naming the pass it can measure is the honest form of that.
+      Beside them, phases.clockReads, phases.clockUs and phases.faults
+      publish the BREAKDOWN'S OWN WEIGHT: how many times the guest read
+      its microsecond counter, what that cost at a calibrated per-read
+      price (an estimate, and only ever that), and how many seam errors
+      would make one of the numbers wrong. A measurement that will not
+      state its own cost is asking to be trusted rather than read.
+      AN ABSENT meta.phases MEANS "THIS PRODUCER DOES NOT REPORT PHASES",
+      never "these phases took no time" - the same rule absence carries
+      everywhere else in this document, and the reason the guest emits
+      nothing rather than zeroes when it has no clock. Eight zeroes are a
+      measurement, and would be a false one.
       IR V2 COLLECTION AUTHORITY. meta.coverage[] carries a typed scope,
       optional process-incarnation owner, status, and optional reason.
       Status is complete, partial, retracted, failed, stale, or unavailable.
@@ -400,6 +464,69 @@ operations:
       windows[].incarnation combines it with the exact WindowRecord address
       when known. These durable reducer identities are distinct from opaque
       short-lived act refs.
+      SCENE DELTAS, added 2026-08-06, and additive: a guest sends one
+      only in answer to a request that quoted `since`, so nothing an
+      older host can see changes and x-contract-revision does not move.
+      WHY. The walk stopped being the cost. On 2026-08-06 a
+      microsecond-measured walk ran 3-8.5 ms while the host's own
+      transfer clock read 111-710 ms for the same scene, and the
+      documents measured 15 KB idle and 26-28 KB with windows and a menu
+      bar open. Several times a second the guest was serialising the
+      whole machine and shipping ~27 KB of a Macintosh that mostly did
+      not change. The sizing pass alone is 589 us, so the cost is BYTES,
+      not the serialiser. It is only affordable to diff now because
+      diffing requires walking, and walking cost ~950 ms until the
+      control cache landed the same night.
+      THE UNIT OF A DELTA IS A WHOLE ENTITY - one app row, one process
+      row, one window (with its controls, dialogItems and text), or the
+      whole menubar. Nothing smaller crosses the wire. That is the
+      property everything else rests on: A DELTA CAN LOSE AN ENTITY, BUT
+      IT CAN NEVER CORRUPT ONE. A window that changed arrives exactly as
+      it would in a whole document; a window that did not is named and
+      not sent. There is no field-level patching to get wrong, and no
+      question about what a half-applied entity means.
+      THE DOCUMENT SHAPE is SceneDelta in docs/scene-deltas.md. It
+      carries the scalar head fresh (version, seq, capturedAt, source,
+      screen), a fresh `meta` whole, and for each of `apps`, `processes`
+      and `windows` an ORDERED array of entries that are either a key
+      alone ("the entity you already hold under this key, unchanged, in
+      this position") or a key with its whole new value. `menubar` is
+      either restated whole, named unchanged, or explicitly absent.
+      Order is carried rather than inferred because the consumer must
+      rebuild the producer's exact bytes, and because scene order is
+      itself meaning - the front process is first.
+      A DELETION IS AN ABSENCE FROM THE ORDERED ARRAY, and it carries no
+      authority of its own. The consumer reconstructs the whole document
+      and hands it to the same reducer a whole scene goes to, which
+      applies the SAME meta.coverage rule stated above: a member missing
+      from the reconstruction is deleted only under a fresh complete
+      claim for its exact scope and owner, and is otherwise retained
+      expected-stale. This is deliberate and is the reason the delta form
+      needed NO new coverage vocabulary: coverage is restated in full on
+      every delta, the reconstruction is a whole document, and a delta
+      is therefore incapable of becoming a second, contradictory way to
+      remove state. A design that patched the consumer's model directly
+      would have needed one, and would have had two rules for deletion.
+      DRIFT IS DETECTABLE, WHICH IS THE LOAD-BEARING CLAIM. scene.begin
+      carries `digest`, an eight-hex-digit FNV-1a over the body's exact
+      emitted bytes (SceneBegin.digest says precisely which bytes). The
+      consumer recomputes it over its reconstruction. Equal means it
+      holds, byte for byte, the document the guest would have sent
+      whole - not "probably in sync", but the same bytes. Unequal means
+      the reconstruction is WRONG, and the consumer's duty is fixed:
+      discard it, publish nothing from it, and send the next
+      scene.request with no `since`. Nothing is repaired in place and no
+      partial application is ever published.
+      AND THE ASKER NAMES ITS BASELINE BY DIGEST, NOT BY SEQUENCE, so the
+      two sides cannot disagree about what the consumer holds. A guest
+      that does not have that baseline answers whole. The recovery path
+      is therefore the ordinary path, taken without a negotiation, and a
+      consumer that has drifted heals on its very next request.
+      THREE MORE BOUNDS, each written because "unlikely" is not a
+      guarantee: a guest sends at most 64 consecutive deltas before
+      answering whole whatever was asked; a guest sends a delta only when
+      it is smaller than the whole document; and a host may force a whole
+      document at any time with `full`.
   hostControlsStream:
     action: receive
     channel: { $ref: "#/channels/control" }
@@ -984,6 +1111,9 @@ components:
     sceneEnd:
       name: scene.end
       payload: { $ref: "#/components/schemas/SceneEnd" }
+    sceneSame:
+      name: scene.same
+      payload: { $ref: "#/components/schemas/SceneSame" }
     processList:
       name: process.list
       payload: { $ref: "#/components/schemas/ProcessList" }
@@ -1797,9 +1927,19 @@ components:
       type: object
       required: [type, contract, reason]
       additionalProperties: false
+      description: >
+        The answer to a `hello` that will not be served, sent by EITHER
+        side — usually the host, which gates first, but a guest refuses a
+        host hello it cannot speak to by the same rule (see the preamble's
+        connection rules). The sender closes after it.
       properties:
         type: { const: refuse }
-        contract: { type: integer }
+        contract:
+          type: integer
+          description: >
+            The REFUSER'S own revision, not the one it was sent. On a
+            revision mismatch that is the whole point of the message: it
+            is how the stale side learns which number to be.
         reason:
           type: string
           description: Human-readable; shown in the UI, never swallowed.
@@ -2936,6 +3076,40 @@ components:
             the recurring scene request makes the resident lease describe
             the live Mirror window rather than the last action it happened
             to send.
+        since:
+          type: string
+          maxLength: 8
+          description: >
+            THE ASKER'S BASELINE, and the whole of what makes a delta
+            answer legal. It is the `digest` the asker received on the
+            last scene it FULLY APPLIED — eight lowercase hex digits, the
+            body digest defined under SceneBegin.digest.
+            Sending it means: "I hold that body, byte for byte; if the
+            machine still looks like it, say so; if it does not, send me
+            only what moved." Absent means "send the whole document",
+            which is what every host did before 2026-08-06 and what any
+            host does on its first request.
+            THE ASKER STATES THE BASELINE, NOT THE SEQUENCE, on purpose.
+            A sequence number says which document the producer THINKS the
+            consumer has; a digest says which one it ACTUALLY holds. Those
+            differ exactly when a consumer mis-applied a delta, which is
+            the failure a delta stream must be able to survive, and a
+            scheme that cannot tell them apart cannot detect its own
+            drift. A guest that does not recognise `since` — because its
+            baseline is older, because it just connected, because it never
+            kept one — answers a FULL scene. That is always legal, always
+            correct, and it is the recovery path: an asker that cannot be
+            served a delta is served the truth instead, without a round
+            trip spent finding out.
+        full:
+          type: boolean
+          default: false
+          description: >
+            Ask for a whole document even though `since` matches. A host
+            uses it to re-prove the mirror on a schedule rather than
+            trusting an unbounded chain of deltas. The guest bounds that
+            chain too (SceneBegin.delta); this is the consumer's own
+            handle on the same worry.
     SceneBegin:
       type: object
       required: [type, id, transfer, bytes, irVersion]
@@ -2990,6 +3164,129 @@ components:
             normal-context scene before scene.begin is sent. Optional for
             compatibility with older guests. Resident stage is mechanism
             evidence only; status confirmed is the only success state.
+          items: { $ref: "#/components/schemas/ActSettlement" }
+        digest:
+          type: string
+          maxLength: 8
+          description: >
+            THE BODY DIGEST of the document this transfer carries, eight
+            lowercase hex digits. It is what a later scene.request quotes
+            as `since`, and it is what makes a delta stream's drift
+            DETECTABLE rather than merely unlikely.
+            WHAT IT COVERS, exactly, because a digest whose input is
+            vague is a checksum of nothing: FNV-1a/32 over the
+            concatenation, in this fixed order, of the document's own
+            emitted bytes for `screen`, `source`, `apps`, `processes`,
+            `menubar` (the token `-` when the key is absent), `windows`,
+            `meta.coverage` and `meta.errors` — each the exact byte range
+            of that value as it appears in the document, nothing
+            re-serialised and nothing canonicalised.
+            WHAT IT DELIBERATELY EXCLUDES: `seq`, `capturedAt`,
+            `latencyMs`, `walkMs`, `sendMs` and `meta.phases`. Those move
+            on every walk of a machine that did not change, so a digest
+            over them could never say "nothing changed" — and saying that
+            is the point. The exclusion is also the reason `capturedAt`
+            keeps meaning what SceneBegin already said it means: same
+            scene, newer moment.
+            A CONSUMER MUST RECOMPUTE IT. After applying a delta the
+            consumer holds a reconstructed body; hashing that body and
+            finding this number proves it holds exactly the bytes the
+            guest would have sent whole. A mismatch is not a warning: the
+            reconstruction is discarded, no state is published from it,
+            and the next request omits `since`. See docs/scene-deltas.md
+            for the failure table.
+        delta:
+          type: boolean
+          default: false
+          description: >
+            True when the bulk bytes are a DELTA DOCUMENT (SceneDelta in
+            docs/scene-deltas.md) rather than a whole IR document. Sent
+            only in answer to a request that carried `since`, so a host
+            that never asks for deltas never sees one, and no revision of
+            this contract is required to keep an older host working.
+            A delta is sent only when it is SMALLER than the whole
+            document would have been. There is no case for a delta that
+            costs more, and the guest already knows both sizes by the
+            time it must choose.
+            THE CHAIN IS BOUNDED BY THE PRODUCER. A guest sends at most
+            64 consecutive deltas against one baseline chain; the 65th
+            answer is a whole document whatever the host asked for. An
+            unbounded chain is a bet that no consumer will ever have a
+            bug, and this product's claim is a faithful mirror, so the
+            bet is not available.
+        baseline:
+          type: string
+          maxLength: 8
+          description: >
+            The `since` this delta was computed against, echoed so a
+            consumer can prove the answer is about the baseline it named
+            rather than some other one. Present only when `delta` is
+            true, and always equal to the request's `since`.
+        wholeBytes:
+          type: integer
+          minimum: 1
+          description: >
+            What the WHOLE document would have measured, beside `bytes`
+            for what the delta actually costs. Present only when `delta`
+            is true. It exists so the saving is a measurement on the wire
+            rather than a claim in a plan: a host records both numbers,
+            and a delta that stops paying for itself is visible without
+            instrumenting anything.
+    SceneSame:
+      type: object
+      required: [type, id, seq, digest, capturedAt]
+      additionalProperties: false
+      description: >
+        THE NO-CHANGE ANSWER, and the reason this family stopped costing
+        a document per poll. The guest walked the machine, encoded what
+        it found, and the body digest equals the `since` the host quoted:
+        the mirror the host is already showing is the mirror the machine
+        still has. That answer is a few dozen bytes and it takes NO
+        TRANSFER — no transfer id, no bulk lane held, no scene.end.
+        IT IS NOT A REFUSAL AND IT IS NOT A TRANSFER, which is why it is
+        its own message rather than a flag on either. A scene.end
+        ok:false says the guest could not answer; this says it answered
+        and the answer was "the same". Overloading scene.end would have
+        made the cheapest, most common outcome in the whole protocol
+        share a code path with failure.
+        IT IS STILL A FRESH OBSERVATION. `capturedAt` moves, `walkMs` and
+        `phases` describe THIS walk, and `settlements` reconcile against
+        it exactly as they do on scene.begin. A consumer republishes its
+        existing scene with the new moment; it does not treat the machine
+        as unobserved.
+        Sent only in answer to a request that carried `since`.
+      properties:
+        type: { const: scene.same }
+        id:
+          type: integer
+          description: The scene.request id this answers.
+        seq:
+          type: integer
+          description: The producer's monotonic scene counter, which moves.
+        digest:
+          type: string
+          maxLength: 8
+          description: >
+            Equal to the request's `since`, restated rather than implied.
+            A consumer that finds it different has met a guest that is
+            confused about what it just compared, and must ask again
+            without `since` rather than republish anything.
+        capturedAt:
+          type: number
+          description: Guest-clock Unix epoch seconds at this walk.
+        walkMs:
+          type: integer
+          description: Guest-side time spent walking and comparing.
+        phases:
+          type: object
+          description: >
+            The same meta.phases breakdown a document carries, in the
+            same shape, because the walk that produced this answer is the
+            cost this plan exists to measure and it would otherwise
+            become invisible exactly when it got cheap.
+        settlements:
+          type: array
+          maxItems: 16
           items: { $ref: "#/components/schemas/ActSettlement" }
     ActSettlement:
       type: object

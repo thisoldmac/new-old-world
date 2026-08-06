@@ -59,6 +59,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         state.stopMCPServer = { [weak self] in
             self?.stopAgentIntegrationServer()
         }
+        /* Not the activating variant. A launch the person performed is
+           activated by macOS itself, and a launch they did NOT perform — a
+           background `open`, a script restarting the app while they work
+           elsewhere — should stay where it was put. */
         openMainWindow()
         startAgentIntegrationServer()
     }
@@ -86,9 +90,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         return .terminateLater
     }
 
+    /// A reopen IS a person asking for the window from outside the app — a
+    /// Dock click, or opening the bundle again — so this one activates. The
+    /// mirror window depends on it doing exactly that: `NOWMirrorWindow.show`
+    /// deliberately does not activate, because activating trips this, and
+    /// this raises the MAIN window over the mirror.
     func applicationShouldHandleReopen(_ sender: NSApplication,
                                        hasVisibleWindows flag: Bool) -> Bool {
-        openMainWindow()
+        openMainWindowFromOutsideTheApp()
         return false
     }
 
@@ -253,8 +262,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         status.tag = Self.statusLineTag
         menu.addItem(status)
         menu.addItem(.separator())
+        /* The status item is reached from whatever application the person
+           was in, and a status menu does not activate its own app — so this
+           is one of the two routes that must bring NOW forward itself. */
         let open = NSMenuItem(title: "Open \(ProductIdentity.displayName)",
-                              action: #selector(openMainWindow),
+                              action: #selector(openMainWindowFromOutsideTheApp),
                               keyEquivalent: "o")
         open.target = self
         menu.addItem(open)
@@ -398,8 +410,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             newWindow.delegate = self
             window = newWindow
         }
-        NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// **The two routes where a person asked for this window from OUTSIDE
+    /// the app** — the status item's "Open New Old World", and a Dock click
+    /// or any other reopen — and therefore the only two allowed to take the
+    /// front from whatever application they were using.
+    ///
+    /// This used to be in `openMainWindow` itself, so EVERY route ran it:
+    /// launch, reopen, the status item, ⌘, for Settings, and every module
+    /// item in the Windows menu. The last three arrive from this app's own
+    /// menu bar, where it is already active and activating buys nothing —
+    /// but `ignoringOtherApps: true` does not ask, so a launch in the
+    /// background and a scripted `open` of the bundle both yanked the window
+    /// in front of whatever the person was typing in. Reported as the app
+    /// behaving as though it were always on top (2026-08-06); no window
+    /// LEVEL was ever set — every window of it measures
+    /// `CGWindowLayer 0` — and this was the only lever that could raise it.
+    ///
+    /// It stays `ignoringOtherApps: true` here on purpose. A status item's
+    /// menu does not activate its application, so the polite form would be
+    /// a no-op and "Open New Old World" would open the window behind
+    /// everything — which is the shape of the two regressions this file
+    /// already carries comments about.
+    @objc func openMainWindowFromOutsideTheApp() {
+        NSApp.activate(ignoringOtherApps: true)
+        openMainWindow()
     }
 
     @objc func quit() {

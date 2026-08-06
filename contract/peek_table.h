@@ -113,7 +113,15 @@ enum {
        for itself — measured 2026-08-05, a Finder modal starved every
        application on the guest for over 90 s, past the host's silence
        window, and the wire died against a healthy Macintosh. */
-    kNowPeekTableCapLiveness = 1u << 5
+    kNowPeekTableCapLiveness = 1u << 5,
+    /* P6, the second half: the resident has a TRANSPORT and a stream on
+       it. Separate from the bit above because the two are separately
+       true — the vehicle shipped and was proven on an emulator for a day
+       before anything could dial — and because capabilities are bits and
+       are never inferred from a version. A build that gains the channel
+       says so with its own bit rather than by the vehicle's changing
+       meaning underneath a reader. */
+    kNowPeekTableCapLivenessNet = 1u << 6
 };
 
 /* P3 asked for 1u << 2 and for its field at the head of the appended
@@ -596,7 +604,21 @@ typedef struct {
    stay off the wire, not as an old value worth retrying. */
 enum {
     kNowPeekLivenessFormatNone = 0,
-    kNowPeekLivenessFormatV1 = 1
+    kNowPeekLivenessFormatV1 = 1,
+    /* V2 says `endpoint_os` at the table's tail is written too, and is
+       therefore a claim about a DIFFERENT field than the cell this word
+       sits beside. That is deliberate and it is the accretive rule doing
+       its job: `NowPeekLivenessEndpoint` has a pinned 44-byte layout, so
+       the string had to append at the tail, and a reader needs one word
+       to tell "the application wrote an OS string" from "those bytes are
+       still the zeroes the table was cleared with".
+
+       It matters because of what the OS string is FOR: the host
+       associates a resident channel with its application by fingerprint,
+       and the fingerprint is name AND OS. A resident that dials without
+       one is a channel the host cannot attach to anything, which is
+       indistinguishable from no channel at all. */
+    kNowPeekLivenessFormatV2 = 2
 };
 
 typedef struct {
@@ -1005,7 +1027,58 @@ typedef struct {
     NowPeekU16 transport_format;
     NowPeekU16 transport_probe;
     NowPeekI32 transport_result;
+    /* U10 P6 append. **The liveness channel itself**, which is the half
+       U9's probe deliberately did not build: U9 opened a driver and
+       dialled nothing, so that a route killed by the machine would cost
+       one boot rather than a transport.
+       ------------------------------------------------------------------
+       `channel_state` is written by the RESIDENT and by nothing else, and
+       it is a state rather than a boolean because the four ways this can
+       be not-up are not one fact. A machine with no MacTCP, an
+       application that has published no endpoint, a dial that was refused
+       and a connection that dropped are four different things to tell a
+       person, and a single `false` would make them one.
+
+       `channel_result` carries the last OSErr the transport gave, so a
+       failure arrives with its reason. `channel_sends` counts frames the
+       resident put on the wire — the same kind of evidence
+       `liveness_ticks` is, one plane further along: the vehicle proved it
+       runs, and this proves it SPOKE.
+
+       `endpoint_os` belongs to the application's endpoint publish above
+       and is committed by the same `endpoint_epoch` write — it is here
+       rather than inside the cell because that cell's layout is pinned by
+       asserts a deployed resident depends on. `endpoint_format` == V2 is
+       what says it was written. */
+    NowPeekU16 channel_format;
+    NowPeekU16 channel_state;
+    NowPeekI32 channel_result;
+    NowPeekU32 channel_sends;
+    /* Pascal string, fixed width, never a pointer into the application's
+       heap — read from a foreign context after that heap may be gone, for
+       the same reason `guest_name` beside it is one. */
+    unsigned char endpoint_os[32];
 } NowPeekTable;
+
+/* What the resident's own liveness channel is doing. Values are the
+   contract and append rather than renumber. */
+enum {
+    kNowPeekChannelFormatV1 = 1
+};
+enum {
+    /* Nothing is wrong and nothing is dialling: no endpoint published, or
+       an epoch of 0, which is the application saying stay off the wire. */
+    kNowPeekChannelIdle      = 0,
+    kNowPeekChannelOpening   = 1,   /* TCPActiveOpen is in flight */
+    kNowPeekChannelUp        = 2,   /* connected, and hello is sent */
+    /* The dial or a send was refused; `channel_result` says by what. The
+       resident backs off and tries again rather than latching, because
+       the machine it dials may simply not be up yet. */
+    kNowPeekChannelFailed    = 3,
+    /* No transport at all — the driver never opened, or the stream could
+       not be created. This one IS terminal for the boot. */
+    kNowPeekChannelNoTransport = 4
+};
 
 /* What the resident found when it reached for a transport. The values
    are the contract and are never inferred from an ordering, so a later
@@ -1115,8 +1188,8 @@ _Static_assert(sizeof(NowPeekActV2Cell) == 32 * 4,
    this line, and that is the point: it is the one assert that notices a
    field added anywhere but the tail. */
 _Static_assert(sizeof(NowPeekTable)
-                   == offsetof(NowPeekTable, transport_result)
-                    + sizeof(NowPeekI32),
+                   == offsetof(NowPeekTable, endpoint_os)
+                    + sizeof(((NowPeekTable *)0)->endpoint_os),
                "table size");
 _Static_assert(sizeof(NowPeekSemanticRecord) == 48,
                "semantic record size");
@@ -1191,8 +1264,24 @@ _Static_assert(offsetof(NowPeekTable, transport_format)
 _Static_assert(offsetof(NowPeekTable, transport_result)
                    == offsetof(NowPeekTable, transport_format) + 4,
                "transport result offset");
-_Static_assert(sizeof(NowPeekTable)
+/* U10's append. Same shape and same reason as U9's: the channel block
+   must sit immediately behind the probe pair, or an application built
+   against U9 and an extension built against U10 disagree about where the
+   field they BOTH understand ends. */
+_Static_assert(offsetof(NowPeekTable, channel_format)
                    == offsetof(NowPeekTable, transport_result) + 4,
-               "the transport result is the new tail");
+               "the liveness channel appends behind the transport probe");
+_Static_assert(offsetof(NowPeekTable, channel_result)
+                   == offsetof(NowPeekTable, channel_format) + 4,
+               "channel result offset");
+_Static_assert(offsetof(NowPeekTable, channel_sends)
+                   == offsetof(NowPeekTable, channel_result) + 4,
+               "channel send counter offset");
+_Static_assert(offsetof(NowPeekTable, endpoint_os)
+                   == offsetof(NowPeekTable, channel_sends) + 4,
+               "the endpoint's OS string offset");
+_Static_assert(sizeof(NowPeekTable)
+                   == offsetof(NowPeekTable, endpoint_os) + 32,
+               "the endpoint OS string is the new tail");
 
 #endif /* NOW_PEEK_TABLE_H */

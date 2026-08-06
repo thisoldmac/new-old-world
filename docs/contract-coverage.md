@@ -33,6 +33,23 @@ same place, but nothing here fails a build. Treat this as correct on the
 date at the bottom and check it against the commands above before
 relying on it.
 
+> **The scene family is the biggest asymmetry here, and it is a
+> SUBSYSTEM, not a row (2026-08-06).** The PowerPC guest serves
+> `scene.request` and answers with `scene.begin`/bulk/`scene.end`, or —
+> since 2026-08-06 — with a delta or with `scene.same`. NOW-68K serves
+> none of it, and not because deltas are hard: it has no `scene/`,
+> `axwalk/`, `peek/` or `observe/` at all, so there is nothing for a
+> delta to be a delta of. Adding it is greenfield, and the portable part
+> is already portable — `scene_build.c`, `scene_json.c`, `scene_phase.c`
+> and `scene_digest.c` are Toolbox-free and compile on a host cc today.
+>
+> **The delta design was sized for that machine anyway**, which is worth
+> stating because a PowerBook 180c is the guest that would gain most: the
+> per-scene state is one key and one hash per entity (a few kilobytes,
+> nothing proportional to the document), the hash is 32-bit, and the
+> comparison is a `strcmp` and an integer compare per row. What NOW-68K
+> lacks is the walk, not the room.
+
 The other half of the join lives in [mcp-coverage.md](mcp-coverage.md):
 this file says what a **guest** serves, that one says what a **host
 face** can ask for, gap by gap. Neither restates the other's tables.
@@ -57,6 +74,18 @@ face** can ask for, gap by gap. Neither restates the other's tables.
 > the tests added with the fix read the field list off the type by
 > `Mirror` rather than naming fields, so the next field declared without a
 > place in a second list fails on its own.
+
+> **Inbound `hello` was ticked for both guests while only one gated it
+> (2026-08-06).** NOW-PPC's `on_hello` read `name` and `version` and
+> served the session; the contract revision it was sent was never
+> looked at, so the tick meant "reads the message", not "serves the
+> rule". Both guests now gate it and both SEND `refuse` naming their own
+> revision and the peer's — including for an ABSENT `contract`, which
+> the contract's connection rules now state is a mismatch rather than a
+> tolerance. Watched on an emulated Power Mac G4 (guest build
+> `48a2af200ab7`): revision 1 refused, no revision refused, revision 2
+> served. The permanent check is
+> `WireLimitsAgreementTests.testBothGuestsGateTheContractRevisionInTheirHelloHandler`.
 
 > **`hello` is no longer byte-identical between the guests (2026-07-30).**
 > Inbound handling still is — every row in the table below is unchanged —
@@ -97,13 +126,40 @@ misread its own progress before:
 A thing can be served and completely unproven. Most of the 68K file
 family is exactly that today.
 
+> **A machine can now open TWO connections, and only one of them is a
+> guest (2026-08-06).** `hello.role` is `session` or `resident`, absent
+> meaning `session` — which is every connection that existed before plan
+> 012. A `resident` channel comes from the optional NOW Extension, is a
+> claim about the MACHINE rather than about any application on it, and
+> may send only `hello`, `ping` and `bye`; the host refuses anything else
+> on it by name. It is also the one dial permitted to repeat a live
+> session's name, because sharing that name is exactly how the host
+> associates the two.
+>
+> **Which guest sends it: NEITHER, and that is not an asymmetry between
+> them.** The resident component is not a guest application. It is a 68K
+> INIT shared by both machines, it dials over MacTCP's `.IPP` driver
+> through the Device Manager, and the connection it holds is filed by the
+> host outside the guest registry entirely — never a guest, never
+> offered a command, never counted against `maxGuests`. So this row
+> belongs to the extension and the table below is unchanged by it.
+>
+> **What IS unverified, stated so it does not read as coverage.** The
+> channel has been watched on an emulated G4 under OS 9 only. The same
+> INIT on a 68K Macintosh under System 7.1 talks to real MacTCP rather
+> than to Open Transport's compatibility driver, and nothing has run it
+> there; the PowerBook 1400c under OS 9 is likewise untested. Plan 012
+> § C expected the asymmetry to be OT-versus-MacTCP and it is not — the
+> Device Manager route is the same code on both — but "the same code" is
+> not "the same behaviour", and only one of the two has been watched.
+
 ## Inbound message types
 
 What each guest does when the host sends it. ✅ served · ❌ not served.
 
 | Message | PPC | 68K | Note |
 |---|:--:|:--:|---|
-| `hello`, `bye`, `pong`, `refuse`, `error` | ✅ | ✅ | the handshake and keepalive floor. What each guest SENDS in `hello` now differs — see the note above |
+| `hello`, `bye`, `pong`, `refuse`, `error` | ✅ | ✅ | the handshake and keepalive floor. What each guest SENDS in `hello` now differs — see the notes above |
 | `command.request` | ✅ | ✅ | verb sets differ — see below |
 | `census.request` | ✅ | ✅ | both answer, probe by probe — the subsets differ, see below |
 | `process.list` | ✅ | ✅ | |
@@ -125,6 +181,9 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `capture.request` | ✅ | ✅ | 68K stages to disk, packs, then sends — `screenshot` verb too |
 | `capture.accept` / `capture.refuse` / `capture.cancel` | ✅ | ❌ | the guest-OFFERS-a-capture handshake; 68K only answers requests |
 | `stream.start` / `stream.stop` / `stream.refresh` | ✅ | ❌ | |
+| `scene.request` | ✅ | ❌ | the semantic walk — the Mirror's whole input. **NOW-68K serves no scene at all**: it has no `scene/`, no `axwalk/`, no `peek/` and no `observe/`, so a `scene.request` falls through to its unknown-message path. This is the single largest declared asymmetry in the contract and it is a subsystem, not a row |
+| `scene.begin` / `scene.end` | ✅ | ❌ | the answer's transfer pair. `scene.begin` gained `digest` / `delta` / `baseline` / `wholeBytes` on 2026-08-06 |
+| `scene.same` | ✅ | ❌ | the no-change answer, added 2026-08-06: a control frame with no transfer, sent only in answer to a request that quoted `since`. See [scene-deltas.md](scene-deltas.md) |
 | `agent.access` | ❌ | ❌ | neither guest HANDLES one — it is guest-to-host only, and a host never sends it. PPC SENDS it when its consent tier changes; 68K has no tier to change |
 | `cloud.report` / `cloud.listing` / `cloud.card` / `cloud.refuse` | ✅ | ❌ | the ASKER's half: the PPC guest consumes these as answers for its iCloud page and SENDS `cloud.services` / `cloud.list` / `cloud.detail` / `cloud.get` / `cloud.preview`. No guest serves the family — its subject is the host's own iCloud (contract `guestAsksCloud`), so these rows can never grow guest ticks |
 | `chat.catalog` / `chat.delta` / `chat.status` / `chat.result` | ✅ | ❌ | the ASKER's half of the chat family (contract `guestAsksChat`): the PPC guest SENDS `chat.models` / `chat.send` / `chat.cancel` / `chat.reset` — from its Chat page and its console-only `chat` verb — and consumes these as answers; the host serves the family from its harness (`ChatWireService`). `chat.models` is TWO asks in one message and `chat.catalog` two answer shapes: without a provider it lists providers; with one it pages that provider's models (cursor/more, asked lazily on selection), each row carrying a HOST-MINTED `ref` that `chat.send` returns — a provider's model name never crosses the wire. Like cloud, its subject is the host's own model harness, so this row can never grow guest-SERVING ticks. 68K never asks, deliberately: the page is PPC-only and the family is a luxury a 384 KB partition does not buy |

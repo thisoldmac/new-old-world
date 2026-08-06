@@ -17,8 +17,35 @@ final class MirrorEngineDiagnostics {
 
     private(set) var differences: [Difference] = []
     private let limit: Int
+    private let note: @MainActor (Difference) -> Void
 
-    init(limit: Int = 64) { self.limit = max(1, limit) }
+    /// **A difference nobody can read is not evidence.** This ring was
+    /// recorded and never surfaced — not logged, not shown in the
+    /// Diagnostics pane, not exported — so the one instrument that can say
+    /// "the projection and the document disagreed about the MENU BAR at
+    /// 02:41" kept the answer in memory until the app quit. That is exactly
+    /// what the empty-menu-bar report needed and could not get
+    /// (docs/open-issues.md, 2026-08-06): the guest, the wire, the decoder,
+    /// the reducer and the renderer were each cleared by a test, and what
+    /// remained was a question about live projection state that left no
+    /// trace. Now it leaves one.
+    ///
+    /// Injectable so a test can watch the line without a log file, and so
+    /// this stays a comparison rather than becoming a logger.
+    init(limit: Int = 64,
+         note: @escaping @MainActor (Difference) -> Void =
+         { difference in
+             HostLog.shared.write(
+                 .warn, "mirror",
+                 "shadow engine differs from the visible scene at seq "
+                 + "\(difference.sequence): \(difference.summary) "
+                 + "(apps \(difference.legacyApps)/\(difference.engineApps), "
+                 + "windows \(difference.legacyWindows)/"
+                 + "\(difference.engineWindows))")
+         }) {
+        self.limit = max(1, limit)
+        self.note = note
+    }
 
     func compare(legacy: Scene, engine: MirrorProjection, at date: Date) {
         let appDelta = legacy.apps.count != engine.scene.apps.count
@@ -30,12 +57,14 @@ final class MirrorEngineDiagnostics {
             windowDelta ? "windows" : nil,
             menubarDelta ? "menubar" : nil,
         ].compactMap { $0 }.joined(separator: ", ")
-        differences.append(.init(
+        let difference = Difference(
             sequence: engine.sequence,
             legacyApps: legacy.apps.count, engineApps: engine.scene.apps.count,
             legacyWindows: legacy.windows.count,
             engineWindows: engine.scene.windows.count,
-            summary: changed, observedAt: date))
+            summary: changed, observedAt: date)
+        differences.append(difference)
+        note(difference)
         if differences.count > limit {
             differences.removeFirst(differences.count - limit)
         }

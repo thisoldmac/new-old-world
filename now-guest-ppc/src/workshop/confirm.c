@@ -190,7 +190,7 @@ Boolean now_confirm(const char *heading, const char *detail,
         }
     }
 
-    DisposeWindow(g_window);
+    now_control_dispose_window(g_window);
     g_window = NULL;
     return answer;
 }

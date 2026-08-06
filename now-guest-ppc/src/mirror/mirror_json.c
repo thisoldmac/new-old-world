@@ -104,12 +104,19 @@ long now_mirror_json(const MirrorFacts *facts, long id, char *out, long cap)
                       "\"heartbeat\":%lu,\"livenessTicks\":%lu,"
                       /* Reachability only — nothing has been dialled.
                          The OSErr rides along so a refusal says why. */
-                      "\"transportProbe\":%lu,\"transportResult\":%ld",
+                      "\"transportProbe\":%lu,\"transportResult\":%ld,"
+                      /* And the channel: what the resident's OWN
+                         connection is doing, and how many frames it has
+                         put on the wire. */
+                      "\"channelState\":%lu,\"channelResult\":%ld,"
+                      "\"channelSends\":%lu",
                       facts->resident_major, facts->resident_minor,
                       facts->table_length, facts->capabilities,
                       facts->requested_bits, facts->active_bits,
                       facts->heartbeat, facts->liveness_ticks,
-                      facts->transport_probe, facts->transport_result);
+                      facts->transport_probe, facts->transport_result,
+                      facts->channel_state, facts->channel_result,
+                      facts->channel_sends);
     }
     if (facts->has_build_identity && n < cap) {
         char source[41];

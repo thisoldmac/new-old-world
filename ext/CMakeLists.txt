@@ -54,6 +54,12 @@ add_executable(NowExt
     src/now_event_logic.c
     src/now_content_logic.c
     src/now_liveness.c
+    # P6's channel - the resident's own connection to the host. A separate
+    # translation unit from the vehicle above on purpose: that file's
+    # recovery procedure is "disarm it here", and a transport mixed into
+    # it would make the one thing that must stay easy to switch off
+    # harder to find.
+    src/now_liveness_net.c
     # P6's entry shim. A Time Manager task is a REGISTER-based callback
     # (its record arrives in A1), so it needs assembly for exactly the
     # reason the jGNE filter above does - the file's header carries the
