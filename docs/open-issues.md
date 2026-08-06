@@ -14,6 +14,56 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## ANSWERED: the join works end to end on the control — and A2.1's pointer compare was wrong (2026-08-06, plan 013 slices A–C)
+
+The host can now place a hooked GWorld's ops inside the window its blit
+names, with no pixels on the wire. The chain, all emulator-verified on
+mac99/OS 9.1 in one afternoon: the resident emits a `blitsrc` record
+(probe mode only) immediately before each `bits` record whose source
+resolves to a hooked offscreen port; the drain carries it
+(`srcPort`/`srcPixmap`, 0x-hex); and `NOWMirrorContentPlane` holds
+offscreen-keyed ops bounded, then replaces the joined blit's bits op
+with the held ops re-homed — origin-shifted by `dst - src`, clipped to
+`dst`, window state restored after. Against the loop control: 1000
+`blitsrc` records, every one naming the port the applet reported for
+itself, and the captured drain is now a committed host fixture whose
+test places all six `'offscreen row'` texts
+(`testControlCaptureJoinsSixOffscreenRowsIntoTheWindow`).
+
+**The correction worth the entry**: plan 013 A2.1 prescribed comparing
+each row's same-instant handle deref against the `src_bits` pointer.
+Measured false — the bottleneck receives a **copy** of the source
+PixMap (odd address 0x1eb6aaae), so identity never fires. The working
+resolve falls back to shape via `now_content_probe_pixmap_match`, the
+same route the chase itself was forced onto. The plan carries the
+correction inline.
+
+Two rig facts from the same runs: the loop control blits faster than
+the 64 KiB ring holds, so a one-shot drain from the arm-time cursor
+resyncs and answers EMPTY against 915 recorded ops (`gwprobe
+--drain-seconds` is the cure; ring pressure itself is still deferred
+item 4 of plan 013); and a Retro68 applet without `canBackground` stops
+dead — and stops writing its report — the moment anything else comes
+front, which reads exactly like a crash.
+
+## NO VERDICT on D0: an applet cannot ask the trap-patch question (2026-08-06)
+
+Plan 013 slice D0 asks whether a `NewGWorld` trap patch fires for a CFM
+caller. `tools/guest-gworld/src/trapwatch.c` plants a counting
+tail-patch on the QDOffscreen dispatch (`$AB1D`), with a dedicated
+selector-0 (NewGWorld) counter after the raw count proved to be ~0.6/s
+of ambient selector-7 traffic. The **control failed**: a freshly
+launched 68K loop applet's startup `NewGWorld` — and its
+LockPixels-per-blit storm — never crossed the patch. An application's
+trap patch is process-local under the Process Manager; this is the act
+plane's own paid lesson (`act-plane-click-never-taken`: installed once,
+in NOW's context only) resurfacing in a rig applet. So the applet
+experiment is structurally unable to answer D0, and **neither**
+"mechanism exists" **nor** "fall back to the scan" is proven. The
+rerun must install from the resident at the armed pass, in the target's
+own context — exactly the act plane's `install_patch` pattern; the
+applet and its protocol are committed for that rerun to reuse.
+
 ## ANSWERED: a foreign process's offscreen GWorld is hookable, and its labels are readable (2026-08-06)
 
 `qdtrace start mode=probe` exists and is emulator-run: it sights a blit
