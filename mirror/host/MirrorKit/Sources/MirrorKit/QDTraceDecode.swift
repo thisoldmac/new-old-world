@@ -23,11 +23,15 @@ public enum QDTraceDecode {
             /// the join is the content plane's job, and a record the
             /// renderer never draws has no business in the render IR.
             public var srcPort: UInt32?
+            /// `worldborn`/`worlddied` only: the offscreen world the
+            /// guest's trap patch saw created or disposed. Like srcPort
+            /// this is content-plane bookkeeping, never render IR.
+            public var world: UInt32?
 
             public init(port: String, a5: String, psn: String,
                         displayEpoch: Int, generation: Int, op: DisplayOp,
                         penSize: [Int]? = nil, detailless: Bool = false,
-                        srcPort: UInt32? = nil) {
+                        srcPort: UInt32? = nil, world: UInt32? = nil) {
                 self.port = port
                 self.a5 = a5
                 self.psn = psn
@@ -37,6 +41,7 @@ public enum QDTraceDecode {
                 self.penSize = penSize
                 self.detailless = detailless
                 self.srcPort = srcPort
+                self.world = world
             }
 
             /// The WindowRecord/GrafPort pointer as a numeric join key.
@@ -126,15 +131,22 @@ public enum QDTraceDecode {
             penSize = op.pen
             op.pen = nil
         }
+        func hex(_ key: String) -> UInt32? {
+            guard let raw = dictionary[key] as? String,
+                  raw.hasPrefix("0x") else { return nil }
+            return UInt32(raw.dropFirst(2), radix: 16)
+        }
         var srcPort: UInt32?
-        if op.op == "blitsrc", let raw = dictionary["srcPort"] as? String,
-           raw.hasPrefix("0x") {
-            srcPort = UInt32(raw.dropFirst(2), radix: 16)
+        if op.op == "blitsrc" { srcPort = hex("srcPort") }
+        var world: UInt32?
+        if op.op == "worldborn" || op.op == "worlddied" {
+            world = hex("world")
         }
         return .init(port: port, a5: a5, psn: psn,
                      displayEpoch: displayEpoch, generation: generation,
                      op: op, penSize: penSize,
-                     detailless: detailless, srcPort: srcPort)
+                     detailless: detailless, srcPort: srcPort,
+                     world: world)
     }
 
     /// Mirrors DisplayReplay's supported vocabulary without making the core
@@ -144,9 +156,9 @@ public enum QDTraceDecode {
         switch record.op.op {
         case "text", "line", "bits":
             return nil
-        case "blitsrc":
-            // Not a drawing op: the content plane consumes it as the join
-            // key for the bits record that follows, and it never reaches
+        case "blitsrc", "worldborn", "worlddied":
+            // Not drawing ops: the content plane consumes these as the
+            // join key and the world lifecycle, and none of them reaches
             // the renderer at all.
             return nil
         case "rect", "rrect", "oval":

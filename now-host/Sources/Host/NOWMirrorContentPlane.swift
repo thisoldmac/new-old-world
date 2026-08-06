@@ -311,6 +311,8 @@ final class NOWMirrorContentPlane {
         var incomplete = 0
         var held = 0
         var joined = 0
+        var born = 0
+        var died = 0
         var evictedSources = 0
         for record in drain.records {
             guard let address = record.portAddress else {
@@ -331,6 +333,24 @@ final class NOWMirrorContentPlane {
                 guard record.psn == expectedPSN, visible[address] == nil,
                       record.op.op != "blitsrc" else {
                     unjoined += 1
+                    continue
+                }
+                /* worldborn/worlddied are the guest's own word about a
+                   world's lifetime (plan 014). A death releases the ops
+                   held for it immediately - the application says the
+                   composite is gone, which beats any retention guess -
+                   and neither record is drawing, so neither is held. */
+                if record.op.op == "worlddied" {
+                    let key = SourceKey(port: address,
+                                        generation: record.generation)
+                    if sourceOperations.removeValue(forKey: key) != nil {
+                        sourceOrder.removeAll { $0 == key }
+                        died += 1
+                    }
+                    continue
+                }
+                if record.op.op == "worldborn" {
+                    born += 1
                     continue
                 }
                 let key = SourceKey(port: address,
@@ -447,6 +467,14 @@ final class NOWMirrorContentPlane {
             facts.append("waiting for the guest to draw")
         } else {
             facts.append("retained \(operations.values.reduce(0) { $0 + $1.count }) draw ops")
+        }
+        if born > 0 {
+            facts.append("\(born) offscreen world\(born == 1 ? "" : "s") "
+                         + "hooked at creation")
+        }
+        if died > 0 {
+            facts.append("released \(died) world\(died == 1 ? "" : "s") "
+                         + "the guest disposed")
         }
         if held > 0 {
             facts.append("holding \(held) offscreen op\(held == 1 ? "" : "s") "
