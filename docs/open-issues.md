@@ -14,7 +14,72 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
-## BROKEN and DISARMED: the liveness vehicle hangs the guest at boot (2026-08-05)
+## CLOSED: the liveness vehicle runs, and it runs while applications do not (2026-08-05, later)
+
+The entry below is **fixed**, and it is left standing because the wrong
+diagnosis in it is the more useful half.
+
+**The cause was the callback ABI, not A5.** `TimerProcPtr` is declared
+`CALLBACK_API_REGISTER68K`, which on classic 68K collapses to a function
+of *no arguments* — the header says so in its own words — and Timer.h's
+procinfo (`0x0000B802`) spells out a register-based call taking four
+bytes in **A1**. `now_liveness.c` wrote the tick as
+`pascal void tick(TMTaskPtr)`, so the compiled function read a stack
+argument belonging to whatever it had interrupted. Nothing rescued it in
+between: on classic 68K `NewRoutineDescriptor` is a no-op macro returning
+its ProcPtr, so `NewTimerProc` handed the Time Manager that C entry point
+bare. The fix is `ext/src/now_liveness_tm.S` — the shim `now_ext_gne.S`
+already was, for the same reason and in the same shape.
+
+**One defect explained both symptoms, which is why it is the answer.** A
+task whose record pointer is garbage re-primes a garbage queue element,
+so it fires once and stops — the first build exactly. Move the counter
+into the record and that same garbage pointer becomes a five-second write
+into somebody else's memory during boot — the second build exactly. A
+two-defect story was not needed.
+
+**The A5 lesson recorded below is WRONG for this component**, and that is
+worth more than the fix. Retro68 does not address this extension's
+globals through A5: `_start` calls `RETRO68_RELOCATE` and never frees
+them, so the flat blob's statics sit at fixed system-heap addresses. The
+tree already proved it before anyone theorised otherwise — `now_ext_gne.S`
+reaches `gNowExtOldGNEFilter` with an **absolute** load from inside every
+application's context, and the anchor plane's `gLastA5` fast path works
+across processes. Both would be luck if the A5 story held. The wrong
+answer is left in the source comment because it was a plausible one and
+the next person will reach for it too.
+
+**Measured on a fresh cold-booted clone**, three results:
+
+- **The guest boots normally.** `capabilities: 63` — bit 5 (32) is the
+  vehicle — with Finder, anchor worker and NOW all up.
+- **The counter keeps the stated cadence.** Two reads 232.5 s apart by
+  the guest's own tick count: `livenessTicks` +46, and 46 × 5 s is 230 s.
+- **It keeps climbing through a starvation that stops applications.**
+  Under `tools/guest-wedge spin 25`, `tbt-worker` — a background-only
+  application on its own TCP port with no code in common with NOW — could
+  not be reached for 25 consecutive seconds, and `livenessTicks` gained 5
+  over 26 s, the undisturbed rate.
+
+So **012 § 3's deliverable is met**: the premise the whole liveness plane
+rests on is no longer an argument from the cooperative scheduling model.
+The instrument is `tools/liveness-experiment.py`, and its INCONCLUSIVE
+verdict — the failure that most looks like success — was watched to fire
+by forcing the probe to report the worker always alive.
+
+**Two of § 5's recorded measurements did NOT reproduce here, and are
+flagged rather than resolved.** § 5 records that a spin wedge left `hello`
+answering while `stat` died, and that `modal` starved nothing over 71 s.
+On this clone, under a spin wedge **`hello` went silent too**, and
+**`modal` starved the full 25 s**. The second has a reading available from
+the source — `ModalUntil` pumps with `GetNextEvent`, not `WaitNextEvent`,
+and background processes get time from the latter — but that is a
+hypothesis, not a finding, and the two runs differ in more than one way.
+Nothing here depends on either: this result is *stronger* if the worker
+was silent at every level, because the resident ticked through it anyway.
+Whoever needs § 5's table should re-measure it before quoting it.
+
+## BROKEN and DISARMED: the liveness vehicle hangs the guest at boot (2026-08-05) — FIXED, see above
 
 012 § 3's Time Manager task — the extension's first interrupt-time
 context — **is in the tree and does not install.** The `return` that

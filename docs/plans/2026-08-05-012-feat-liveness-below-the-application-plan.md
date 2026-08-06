@@ -173,7 +173,26 @@ is broken; a wedge that renders as a disconnection is a lie. The status
 line already carries the lane's depth and the cancel affordance from 011
 § A — this joins them.
 
-### 3 · The resident's interrupt-time context · **BUILT, DISARMED, UNPROVEN**
+### 3 · The resident's interrupt-time context · **DONE, and PROVEN on the emulator**
+
+**2026-08-05, later.** Armed, booting, ticking, and ticking through a
+starvation that stops applications. The hang was the callback ABI: a Time
+Manager task is a `CALLBACK_API_REGISTER68K` callback with its record in
+**A1**, and the C tick was reading a stack argument. `now_liveness_tm.S`
+is the shim; `open-issues.md` carries the full diagnosis, including that
+the A5 explanation this section recorded was wrong for this component.
+
+| claim | evidence |
+|---|---|
+| the vehicle installs, the guest boots | `capabilities: 63` on a fresh cold boot |
+| it ticks at 5 s | +46 ticks over 232.5 s of the guest's own clock |
+| it ticks while applications cannot | worker unreachable 25 s; +5 ticks over 26 s |
+
+Instrument: `tools/liveness-experiment.py`, INCONCLUSIVE branch watched
+to fire. Two of § 5's measurements did not reproduce on this clone and
+are flagged in the ledger rather than quietly resolved.
+
+### 3 (as it stood when disarmed) · **BUILT, DISARMED, UNPROVEN**
 
 The Time Manager task exists (`ext/src/now_liveness.c`) and **does not
 install**: armed, it hung a cold boot — empty menu bar, no Finder, no
