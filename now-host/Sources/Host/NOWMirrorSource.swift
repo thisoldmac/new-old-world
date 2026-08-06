@@ -1053,11 +1053,84 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         return roster.map { item in
             guard let pair = typesByName[item.name] else { return item }
             var out = item
-            out.type = pair.0.isEmpty ? nil : String(pair.0.prefix(4))
-            out.creator = pair.1.isEmpty ? nil : String(pair.1.prefix(4))
+            out.type = Self.osType(fromAppleScript: pair.0)
+            out.creator = Self.osType(fromAppleScript: pair.1)
             return out
         }
     }
+
+    /// One AppleScript-rendered *type class*, back to the four-character
+    /// OSType it names — `«class APPL»` → `APPL`, `string` → `TEXT`.
+    ///
+    /// The Finder's `file type` and `creator type` are `type class` values,
+    /// not text, and the script concatenates them into its output line with
+    /// `&`. AppleScript coerces them the only way it knows: to its own
+    /// SOURCE rendering. So the wire carried `«class APPL»`, the host took
+    /// the first four characters, and every icon on every desktop reported a
+    /// type of `«cla` — which names no file type at all. It cost icon ART
+    /// rather than contents, which is why nothing ever failed over it, and
+    /// why it survived long enough to be found twice.
+    ///
+    /// Note what this is NOT: the mangling is inside the string the guest
+    /// built, so it is not `OSADoScript`'s source-form result and asking the
+    /// guest for a different result form would change nothing. The two real
+    /// cures are this one and making the script hand back four characters
+    /// itself; this one is chosen first because it needs no guest rebuild
+    /// and can be proven against the roster fixture already committed, and
+    /// the other is in the ledger because it cannot be proven from here.
+    ///
+    /// Unrecognised renderings answer **nil**, never a guess. A wrong OSType
+    /// is a wrong icon confidently drawn; nil is the generic-by-kind art the
+    /// mirror already falls back to.
+    static func osType(fromAppleScript raw: String) -> String? {
+        let text = raw.trimmingCharacters(in: .whitespaces)
+        if text.isEmpty { return nil }
+        /* `«class APPL»`, and the `«constant ...»` an enumerated value
+           renders as. The code is always the last space-separated word. */
+        if text.hasPrefix("«"), text.hasSuffix("»") {
+            let inner = text.dropFirst().dropLast()
+            guard let code = inner.components(separatedBy: " ").last,
+                  code.count == 4 else { return nil }
+            return code
+        }
+        /* AppleScript renders a code it has a WORD for as that word, and its
+           vocabulary is every registered term, not just the type names — the
+           OS 9 desktop this was measured on answered `text returned` for
+           SimpleText's `ttxt`. So this table cannot be closed by
+           construction; it inverts the renderings that are reachable as a
+           file's type or creator, and anything else falls through to nil. */
+        if let code = appleScriptTypeWords[text] { return code }
+        /* Already four characters: a guest that learns to coerce properly
+           passes through unharmed. */
+        return text.count == 4 ? text : nil
+    }
+
+    /// AppleScript's own word for a four-character code, inverted. Every
+    /// entry is a rendering that can appear as a file's type or creator on a
+    /// Mac OS 8/9 desktop; `TEXT` and `ttxt` alone cover most documents.
+    nonisolated private static let appleScriptTypeWords: [String: String] = [
+        "string": "TEXT",
+        "text": "TEXT",
+        "styled text": "styl",
+        "Unicode text": "utxt",
+        "international text": "itxt",
+        "picture": "PICT",
+        "alias": "alis",
+        "text returned": "ttxt",
+        "version": "vers",
+        "script": "scpt",
+        "boolean": "bool",
+        "integer": "long",
+        "small integer": "shor",
+        "real": "doub",
+        "small real": "sing",
+        "date": "ldt ",
+        "data": "rdat",
+        "list": "list",
+        "record": "reco",
+        "constant": "enum",
+        "type class": "type",
+    ]
 
     /// Why a roster page was refused, in the guest's OWN words wherever it
     /// gave any.
@@ -1251,10 +1324,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                     x: x, y: y, placed: true,
                     alias: kind.contains("alias"), invisible: false))
             case "F":
-                /* An OSType is four characters. The Finder answers with
-                   the type as text, and a file whose type is unset comes
-                   back empty rather than absent - which is a real
-                   answer, and the atlas treats it as one. */
+                /* The Finder answers with the type as a `type class`, which
+                   reaches the wire as AppleScript's rendering of it rather
+                   than as four characters - `osType(fromAppleScript:)` is
+                   where that is undone. A file whose type is unset comes
+                   back empty rather than absent, which is a real answer,
+                   and the atlas treats it as one. */
                 types[f[1]] = (f[2], f[3])
             default:
                 continue
@@ -1263,8 +1338,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         return items.map { item in
             guard let pair = types[item.name] else { return item }
             var out = item
-            out.type = pair.0.isEmpty ? nil : String(pair.0.prefix(4))
-            out.creator = pair.1.isEmpty ? nil : String(pair.1.prefix(4))
+            out.type = osType(fromAppleScript: pair.0)
+            out.creator = osType(fromAppleScript: pair.1)
             return out
         }
     }
