@@ -165,8 +165,112 @@ What the file *does* contain that is worth having is **specification,
 not art**: the 21 accent ramps are the exact eight-step colour tables the
 Appearance Manager tints highlights and selections with, and lifting
 those numbers is the same move as porting the seven greys. That is a
-colour-table extraction, not a bitmap one, and it is not in this
-extractor yet.
+colour-table extraction, not a bitmap one. It is now in the extractor —
+see the next section.
+
+## The 21 accent ramps, as numbers
+
+`tools/extract-assets-offline --accent-ramps` prints them; a full run
+generates
+[`PlatinumAccentRamps.swift`](../mirror/host/MirrorKit/Sources/MirrorKitUI/PlatinumAccentRamps.swift)
+beside the renderer. **Source, not a pack file** — 21 names and 160 RGB
+triples the renderer wants at static-init, with no bundle lookup and no
+decode that could fail quietly into a fallback nobody would ever see on
+screen.
+
+**The `clut` layout was read, not guessed.** It is QuickDraw's
+`ColorTable` (Inside Macintosh: Imaging With QuickDraw, "Color Table";
+declared in Universal Interfaces `Quickdraw.h`):
+
+| field | bytes | note |
+|---|---|---|
+| `ctSeed` | 4 | |
+| `ctFlags` | 2 | 0x0000 pixmap, 0x8000 device |
+| `ctSize` | 2 | number of entries **minus one** |
+| `ctTable` | 8 × (ctSize+1) | `value`, then `red`/`green`/`blue` at 16 bits each |
+
+which is `8 + 8n` bytes — and that arithmetic is the **check**, not the
+comment: it predicts both the 72-byte ramps (n = 8) and the 8-byte
+`Black & White` (ctSize = −1, no entries) at once, which a misread
+layout could not do. Channels convert by taking the high byte, exactly
+and losslessly: every value in this file is a byte doubled (`0xCCCC`,
+`0xEEEE`, `0xFFFF`).
+
+Every ramp runs light to dark and ends in black. `Black & White` is a
+real ramp with no entries, and is carried as one rather than dropped.
+
+### Which ramp is ACTIVE — as far as an image can say
+
+The theme file names twenty-one ramps; it does not say which one a
+machine uses. Two independent slots in `scen` 2000 **"Mac OS Default"**
+— the shipped default scene — answer it, and they agree:
+
+- One item holds a Pascal string that is one of the 21 clut names in
+  **all fourteen scenes without exception**. For the default scene it is
+  **Lavender** (`clut` 208). (Its tag decodes as `vfnt`, which cannot be
+  what Apple meant it for; the slot is identified here by the invariant
+  it satisfies, not by a name we would be guessing at.)
+- `hcol` holds the Appearance control panel's **highlight colour name**
+  and `lgsf` its literal `RGBColor`. For the default scene those are
+  `"Purple"` and **0xCCCCFF** — which is Lavender's second step,
+  exactly.
+
+`scen` is a flattened **Collection**, not a struct: 16-byte header
+entries (id, attributes `0x40000000`, offset, `OSType` tag) then a data
+area where each item's `UInt32` size sits immediately before the bytes
+its offset points at. The walk stops on the first entry whose attributes
+are not `0x40000000` rather than trusting the leading word as a count —
+mis-taking that word (a version) for a count is exactly how this parse
+went wrong the first time.
+
+The highlight name is **not** a ramp name (`Purple`, `Yellow`, `Gray`
+are in that list and none is a ramp), so the two settings are
+independent and only coincide for some themes. Gray Space's highlight is
+0xCCCCCC; Bubbles' is 0x99FFFF, which is not a Bondi step at all.
+
+There is **no `Appearance Preferences` file** anywhere in the guest's
+Preferences folder, so nothing on this image has overridden the shipped
+default. That is evidence, not proof: only a running AppearanceLib can
+say what it resolves. `PlatinumAccent.active` is the named seam, and
+plan 016 P2's `GetThemeAccentColors` applet is what replaces it.
+
+### The difference list
+
+Every colour the renderer draws that these numbers touch, ported value
+beside measured value:
+
+| what | ported | measured | verdict |
+|---|---|---|---|
+| `Platinum.selection` — menu-title fill, derived-grid ring | `0x333399` | Lavender step 4 = `0x333399` | **identical.** The port was right; only its provenance changed |
+| selected list row (`SceneRenderer`, list cells) | `Platinum.g2` = `0xCCCCCC` | default scene's highlight = `0xCCCCFF` | **differs**, one blue channel. `0xCCCCCC` is a real Appearance highlight — the *Gray Space* theme's |
+
+The first row is the more valuable one, and plan 016's stop condition is
+why it is written down rather than acted on: a constant that survives
+measurement unchanged is a result, and changing code to celebrate it
+would be worse than leaving it alone.
+
+Two observations recorded and **deliberately not acted on**:
+
+- The seven greys are close to the **Silver** ramp (`g1`/`g2`/`g5`/`g6`
+  match `EEEEEE`/`CCCCCC`/`555555`/`000000`; `g3` is `A6A6A6` against
+  `AAAAAA`, `g4` `888888` against `777777`). Silver is an **accent**
+  ramp, not the chrome grey scale — the resemblance is a family
+  likeness, not a source. The chrome greys are `GetThemeBrushAsColor`'s
+  answer to give, which is P2's job.
+- `Black & White` being empty means a machine set to it has no accent
+  ramp to index; whatever the Appearance Manager does there is not in
+  this file.
+
+### What changed on screen
+
+**Nothing, in the nine existing captures.** Regenerating them
+(`NOW_RENDER_DIR`) produced nine byte-identical PNGs, and that is not
+because the change is subtle: forcing the highlight to magenta and
+regenerating *also* changed nothing, so **no capture in the corpus has a
+selected list row**. The new render test carries its own scene for that
+reason. No guest screendump has a selected row either, so this colour is
+**measured from the source, not metal-verified** — a machine has not yet
+been watched drawing it.
 
 ## The honest split for a host-side asset pack
 

@@ -44,6 +44,38 @@ no live run was taken rather than risk answering with a foreign guest.
 The next drive that reaches a Finder roster now gets the number for free;
 it belongs here when someone has it.
 
+## ANSWERED: the 21 accent ramps ARE extracted now, and one ported colour survived measurement unchanged (2026-08-06, later — plan 016 P1/P3 down payment)
+
+A dated line under the entry below, which said the ramps were "not
+extracted yet". They are: `tools/extract-assets-offline --accent-ramps`,
+generating `PlatinumAccentRamps.swift`. The `clut` layout, the `scen`
+collection walk, the active-ramp determination and **the difference
+list** are in
+[asset-extraction-offline.md](asset-extraction-offline.md).
+
+The headline is the colour that did **not** move. `Platinum.selection`
+was ported as `0x333399` out of a CSS file, and the theme file says
+Lavender's fifth step is `0x333399` — the same three bytes. Plan 016's
+stop condition covers exactly this: the constant stayed, only its
+provenance changed. The one real difference is a selected list row,
+which was filled with `g2` (`0xCCCCCC`, the *Gray Space* theme's
+highlight) and is now `0xCCCCFF`, the default scene's own.
+
+**Unverified, and bounded honestly.** Regenerating all nine captures
+changed nothing — and not because the change is subtle: forcing the
+highlight to magenta changed nothing either, so **no capture in the
+corpus has a selected list row**, and neither screendump on hand does.
+The colour is measured from the source and has never been watched on a
+machine.
+
+**Still open:** which ramp a RUNNING machine resolves. This image has no
+`Appearance Preferences` file at all, so nothing has overridden the
+shipped default — evidence, not proof. `PlatinumAccent.active` is the
+named seam and plan 016 P2's `GetThemeAccentColors` applet is what
+closes it. Everything else in 016 — the ~40 metrics, the theme brushes
+and text colours, `GetThemeFont` — is untouched, and those are where the
+renderer's constants can still be wrong without any test noticing.
+
 ## ANSWERED: the theme file has no chrome in it, and the pack now comes off the disk image (2026-08-06)
 
 Two questions closed, one deliberately left open.
