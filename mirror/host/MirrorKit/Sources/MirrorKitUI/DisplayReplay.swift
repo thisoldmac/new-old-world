@@ -42,7 +42,20 @@ public enum DisplayReplay {
         var bg = Color.white
         var originH = 0
         var originV = 0
-        var clip: CGRect?
+        /* THE CLIP IS PORT-LOCAL AND MOVES WITH THE ORIGIN, so it is held
+           as the guest's own four integers and resolved against whatever
+           origin is current when something draws — never frozen into a
+           mirror-space rectangle when the clip op arrives.
+           `SetOrigin` offsets a port's visRgn but NOT its clipRgn: the
+           clip keeps its local coordinates, so shifting the origin slides
+           it across the pixels. That is not a corner case, it is the
+           idiom for drawing a row of identical cells — set the clip once,
+           then move the origin per cell — and Sherlock 2's channel grid
+           is exactly it: one `SetClip (0,0,51,46)`, then sixteen origins.
+           Freezing the rectangle pinned the clip to the FIRST cell, so
+           fifteen wells and eight channel icons were clipped away and the
+           grid rendered as empty boxes. */
+        var clip: [Int]?
 
         func pt(_ h: Int, _ v: Int) -> CGPoint {
             CGPoint(x: content.minX + CGFloat(h - originH),
@@ -51,8 +64,8 @@ public enum DisplayReplay {
 
         func drawingContext() -> GraphicsContext {
             var draw = g
-            if let clip {
-                let bounded = clip.intersection(content)
+            if let clip, clip.count == 4 {
+                let bounded = rectFrom(clip, pt: pt).intersection(content)
                 if !bounded.isNull { draw.clip(to: Path(bounded)) }
             }
             return draw
@@ -92,7 +105,7 @@ public enum DisplayReplay {
         // among the structured ops in the second pass.
         var bitsOriginH = 0
         var bitsOriginV = 0
-        var bitsClip: CGRect?
+        var bitsClip: [Int]?
         func bitsPoint(_ h: Int, _ v: Int) -> CGPoint {
             CGPoint(x: content.minX + CGFloat(h - bitsOriginH),
                     y: content.minY + CGFloat(v - bitsOriginV))
@@ -105,9 +118,7 @@ public enum DisplayReplay {
                         bitsOriginH = o[0]; bitsOriginV = o[1]
                     }
                 case "clip":
-                    if let r = op.rect, r.count == 4 {
-                        bitsClip = rectFrom(r, pt: bitsPoint)
-                    }
+                    if let r = op.rect, r.count == 4 { bitsClip = r }
                 default:
                     break
                 }
@@ -117,8 +128,9 @@ public enum DisplayReplay {
                 continue
             }
             var draw = g
-            if let bitsClip {
-                let bounded = bitsClip.intersection(content)
+            if let bitsClip, bitsClip.count == 4 {
+                let bounded = rectFrom(bitsClip, pt: bitsPoint)
+                    .intersection(content)
                 if !bounded.isNull { draw.clip(to: Path(bounded)) }
             }
             let frame = rectFrom(d, pt: bitsPoint)
@@ -153,9 +165,7 @@ public enum DisplayReplay {
                 case "bg":
                     if let c = op.rgb, c.count == 3 { bg = rgb(c) }
                 case "clip":
-                    if let r = op.rect, r.count == 4 {
-                        clip = rectFrom(r, pt: pt)
-                    }
+                    if let r = op.rect, r.count == 4 { clip = r }
                 default:
                     break
                 }

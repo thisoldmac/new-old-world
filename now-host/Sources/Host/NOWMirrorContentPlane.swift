@@ -704,6 +704,16 @@ final class NOWMirrorContentPlane {
                 continue
             }
             attached.windows[index].display = ops
+            /* P2 FROM P3's OWN EVIDENCE, and it is attached HERE rather
+               than in the replay on purpose. A repeated-cell grid — hit
+               rects, cell identity, which one is selected — is semantic
+               knowledge, so it belongs where typed controls live, and
+               docs/render-composition.md exists because the replay had
+               already started acquiring rules of this shape by accident.
+               Doing it beside the display attach also keeps one
+               invariant free: the cells always describe exactly the ops
+               published with them. */
+            DrawnCellGrid.attach(to: &attached.windows[index])
         }
         return attached
     }

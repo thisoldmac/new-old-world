@@ -248,10 +248,32 @@ from resources by a path the bottlenecks do not show, which is the
 standing icon-identity item; Sherlock imports IconServicesLib (16
 symbols, from its PEF), so the route exists if it is ever worth taking.
 
-This is a semantic-layer opportunity rather than a replay one: the
-renderer draws those blits as hatches today, and drawing them as
-Platinum wells with the measured selection state would be honest,
-cheap, and is not yet done.
+**DONE (2026-08-06, later): the derivation exists and the grid renders.**
+`MirrorKit.DrawnCellGrid` reads the idiom back out of a composed display
+list and emits ordinary `Scene.Control`s, so the renderer draws wells
+with the measured selection and `HitTester` resolves a click to a named
+cell. It is in the renderer-free core rather than in `DisplayReplay` on
+purpose — see [render-composition.md](render-composition.md), "P2 derived
+from P3's own evidence". Every number above was re-derived from the two
+committed captures rather than restated, and both captures agree cell for
+cell.
+
+The render was compared against a guest screendump, and the comparison
+paid for itself: **fifteen of the sixteen wells and eight of the nine
+channel icons were in the composed stream, at the right coordinates, and
+drew nothing.** `SetOrigin` offsets a port's visRgn but NOT its clipRgn,
+so a clip set once and then walked by the origin — which is precisely
+this grid's idiom — slides across the pixels with it. The replay froze
+each clip into a mirror-space rectangle when the op arrived, pinning it
+to the first cell. Fixed; of the nine committed capture renders only the
+two Sherlock ones change.
+
+Still not derivable: the channel NAME, as above. The cells are titleless
+and their icons are generic stubs.
+
+**BROKEN, unexplained, and NOT this:** the Custom… popup and the
+magnifier button are absent from the render for a different reason
+nobody has looked at.
 
 ## The coverage spread, and the one application that beat the chase (2026-08-06, later)
 

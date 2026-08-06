@@ -93,9 +93,45 @@ stronger than the evidence:
   draw their values through CopyBits rather than DrawText, so a plate is
   the most this pipeline can honestly say about them today. Whether
   those values are reachable at all is unanswered.
-- Sherlock's channel grid is derivable (geometry, hit rects, selection
-  — see open-issues.md) but nothing consumes that derivation yet: those
-  cells still render as generic art rather than as the typed, targetable
-  grid the measurement says they are. That is a P2 opportunity, and
-  putting it in the replay would be exactly the drift this page exists
-  to stop.
+## P2 derived from P3's own evidence (2026-08-06, later)
+
+Sherlock's channel grid was the first case where one plane could answer
+another's silence with SEMANTICS rather than with a shaped placeholder,
+and the decision it forced is worth stating as a rule.
+
+The grid is derivable from the drawing alone — cells, hit rects, and
+which one is selected — and the replay is where it would have been
+easiest to put. That would have been the drift this page exists to stop:
+a grid with hit rects and a selected index says what the region IS, which
+is P2's sentence, not P3's. So `MirrorKit.DrawnCellGrid` derives it in
+the renderer-free core, `NOWMirrorContentPlane` attaches the cells beside
+the display they were derived from, and the renderer sees ordinary typed
+controls. `HitTester` picks them up for free, which is the point: what
+you can see you can name.
+
+Two rules came out of doing it, and both generalise:
+
+- **A derived control is marked as derived and claims no action.** Its
+  provenance is `drawing-derivation`, it carries no `action`, so
+  `authorizesAction` is false and no act plane can press it by
+  reference. The mirror can say where the cell is and that it is
+  selected; it cannot say what pressing it does, and the type system
+  says so rather than a comment.
+- **It draws OVER the display, never instead of it.** The evidence for a
+  derived control IS the drawing beneath it, so `semanticOwnsDisplay`
+  stays false and it joins the scrollbars in `isWindowFurniture`. It
+  paints frames and the selection — the two facts P3 could not state —
+  and leaves the cell's own art and its icon intact. A derived control
+  that clipped its own evidence would be erasing the reason to believe
+  it.
+
+The rule for anyone deriving the next one: **draw only the difference
+between what P3 said and what you know.**
+
+## What is still disjointed here
+
+- The channel ICONS are generic stubs. Each is its own offscreen world
+  with a stable per-session port identity, but the pixels come from
+  resources by a route the bottlenecks do not show, so the cells are
+  titleless and their icons are placeholders. That is the standing
+  icon-identity item, not a gap in the derivation.
