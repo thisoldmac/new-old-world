@@ -190,11 +190,19 @@ public enum DisplayReplay {
                    deferred - PlotIconSuite interception - but a
                    recognisable stub at the right position beats an empty
                    cell. Drawn here, in stream order, so the composite's
-                   own erases precede it instead of wiping it. */
+                   own erases precede it instead of wiping it.
+
+                   The SIZE is not a guess even though the identity is: a
+                   16x16 destination is a list row, and OS 9 draws those
+                   from the ics8 resource, which is its own hand-tuned
+                   drawing rather than the icl8 shrunk. Picking by
+                   destination stops the replay blurring a 32x32 into a
+                   cell the machine fills crisply. */
                 guard let d = op.dst, d.count == 4 else { break }
                 let frame = rectFrom(d, pt: pt)
                 if Self.iconSized(frame),
-                   let icon = IconAtlas.namedIcon("document") {
+                   let icon = IconAtlas.namedIcon(
+                       "document", size: IconAtlas.Size.fitting(frame)) {
                     let draw = drawingContext()
                     draw.draw(Image(decorative: icon, scale: 1), in: frame)
                     drew = true
