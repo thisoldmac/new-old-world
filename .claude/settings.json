@@ -1,5 +1,5 @@
 {
-  "$comment": "The Mirror drive loop, enforced rather than remembered. Both hooks are no-ops unless docs/local/mirror-sweep-state.json exists, so they cost a non-Mirror session nothing. See tools/mirror-gate and docs/mirror-drive-loop.md.",
+  "$comment": "Two enforced loops. The Mirror drive loop (tools/mirror-gate) and the Toolbox/GWorld research arc (tools/toolbox-re-gate); each is a no-op unless its own state file exists, so a session running neither pays nothing. See docs/mirror-drive-loop.md and docs/local/toolbox-re/PLAN.md.",
   "hooks": {
     "Stop": [
       {
@@ -9,6 +9,16 @@
             "command": "\"$CLAUDE_PROJECT_DIR/tools/mirror-gate\" check",
             "timeout": 15,
             "statusMessage": "mirror-gate: is the sweep finished?"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/tools/toolbox-re-gate\" check",
+            "timeout": 15,
+            "statusMessage": "toolbox-re-gate: is the research arc finished?"
           }
         ]
       }

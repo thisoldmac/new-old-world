@@ -1,0 +1,346 @@
+#!/usr/bin/env python3
+"""The stop gate and finding ledger for the Toolbox/GWorld research arc.
+
+    tools/toolbox-re-gate start [--deadline-hours N]
+    tools/toolbox-re-gate row P1 "what was established" \
+        --provenance live --evidence docs/local/toolbox-re/p1-ports.json
+    tools/toolbox-re-gate status
+    tools/toolbox-re-gate blocker P4 "why this cannot proceed"
+    tools/toolbox-re-gate handoff "what a successor needs to know"
+    tools/toolbox-re-gate done
+    tools/toolbox-re-gate check          # what the Stop hook runs
+
+WHY A GATE. This is an overnight arc with nobody awake to notice it
+stopping early, and the failure mode is not laziness - it is that a
+long research task has a hundred natural-looking places to stop, each of
+which feels like a milestone. docs/local/toolbox-re/PLAN.md names six
+phases; this refuses to let the turn end while any of them has recorded
+nothing, and carries the plan back into context when it blocks (the
+trick tools/mirror-gate established: a rejection that re-grounds rather
+than merely refusing).
+
+WHY IT IS ALSO A LEDGER, and not two files. A gate that measures
+progress by anything other than recorded findings measures narration.
+Every row here is a claim with its provenance, so "how far along is
+this" and "what do we actually know" are the same question - and the
+arc's output is this file's contents rather than a summary written from
+memory at the end.
+
+FOUR THINGS IT WILL NOT DO, each of them a way a gate goes wrong:
+
+  * It will not wedge. After MAX_FRUITLESS_BLOCKS refusals with no new
+    row in between it stands down loudly, because a gate that can never
+    be satisfied is worse than the drift it prevents (mirror-gate's
+    lesson, kept).
+  * It will not outlive its deadline. Past the deadline it asks only for
+    a handoff, because "keep going" stops being right once the person
+    who asked is awake and waiting.
+  * It will not accept a phase closed with no evidence. A row needs a
+    provenance, and `done` needs every phase to have at least one.
+  * It will not run for anyone else. No ledger, no opinion - a session
+    that never started this arc never sees it.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+LEDGER = os.path.join(ROOT, "docs", "local", "toolbox-re", "ledger.json")
+PLAN = "docs/local/toolbox-re/PLAN.md"
+
+MAX_FRUITLESS_BLOCKS = 6
+
+PHASES = [
+    ("P0", "Rig and corpus: a known-context memory read, and static "
+           "access to ROM and System"),
+    ("P1", "Structures verified byte by byte against live memory"),
+    ("P2", "GWorld internals and lifetime; the transient hypothesis "
+           "settled"),
+    ("P3", "Dispatch: trap table vs CFM, native vs 68K, and how "
+           "grafProcs is reached"),
+    ("P4", "What the Finder's composite actually is"),
+    ("P5", "Icon identity: the route from resource ID to pixels"),
+    ("P6", "Synthesis: the reimplementation-grade reference and the "
+           "corpus findings"),
+]
+
+PROVENANCE = ("static", "live", "doc", "measured")
+
+
+def load():
+    try:
+        with open(LEDGER) as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return None
+
+
+def save(state):
+    os.makedirs(os.path.dirname(LEDGER), exist_ok=True)
+    tmp = LEDGER + ".tmp"
+    with open(tmp, "w") as handle:
+        json.dump(state, handle, indent=2)
+        handle.write("\n")
+    os.replace(tmp, LEDGER)
+
+
+def phase_titles():
+    return dict(PHASES)
+
+
+def rows_by_phase(state):
+    out = {key: [] for key, _ in PHASES}
+    for row in state.get("rows", []):
+        out.setdefault(row["phase"], []).append(row)
+    return out
+
+
+def empty_phases(state):
+    counts = rows_by_phase(state)
+    return [key for key, _ in PHASES if not counts.get(key)]
+
+
+def plan_block(state):
+    """What a refusal carries back. The phases, what each still owes, and
+    the arc's own rules - so a blocked turn resumes grounded rather than
+    merely scolded."""
+    counts = rows_by_phase(state)
+    lines = ["THE ARC (%s):" % PLAN]
+    for key, title in PHASES:
+        n = len(counts.get(key, []))
+        mark = "%2d row(s)" % n if n else "   NOTHING"
+        lines.append("  [%s] %s  %s" % (key, mark, title))
+    lines.append("")
+    lines.append("Rules: every claim carries provenance (static/live/doc/"
+                 "measured); a negative needs a positive control; commit at "
+                 "every phase boundary; emulator only; delegate side "
+                 "questions as SUBAGENTS, never chips.")
+    lines.append("")
+    lines.append("Record with: tools/toolbox-re-gate row <phase> \"<claim>\" "
+                 "--provenance <how>")
+    lines.append("Genuinely blocked: tools/toolbox-re-gate blocker <phase> "
+                 "\"<why>\", then handoff.")
+    return "\n".join(lines)
+
+
+def block(reason, state):
+    sys.stderr.write(reason + "\n\n" + plan_block(state) + "\n")
+    sys.exit(2)
+
+
+# --------------------------------------------------------------------------
+# commands
+
+
+def cmd_start(args):
+    state = load()
+    if state and not args.force:
+        print("ledger already open (%d rows). --force to reset."
+              % len(state.get("rows", [])))
+        return 0
+    deadline = time.time() + args.deadline_hours * 3600
+    save({
+        "schema": "now-toolbox-re/v1",
+        "started": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "started_epoch": time.time(),
+        "deadline_epoch": deadline,
+        "deadline": time.strftime("%Y-%m-%dT%H:%M:%S%z",
+                                  time.localtime(deadline)),
+        "rows": [],
+        "blockers": [],
+        "handoff": None,
+        "done": False,
+        "fruitless_blocks": 0,
+    })
+    print("ledger opened; deadline %.1f h from now" % args.deadline_hours)
+    print(plan_block(load()))
+    return 0
+
+
+def cmd_row(args):
+    state = load()
+    if not state:
+        sys.stderr.write("no ledger: run `toolbox-re-gate start` first\n")
+        return 1
+    if args.phase not in phase_titles():
+        sys.stderr.write("unknown phase %r; known: %s\n"
+                         % (args.phase, ", ".join(k for k, _ in PHASES)))
+        return 1
+    if args.provenance not in PROVENANCE:
+        sys.stderr.write("provenance must be one of %s\n"
+                         % ", ".join(PROVENANCE))
+        return 1
+    state["rows"].append({
+        "phase": args.phase,
+        "claim": args.claim,
+        "provenance": args.provenance,
+        "evidence": args.evidence,
+        "at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+    })
+    # Progress clears the fruitless counter: the gate is measuring
+    # movement, not patience.
+    state["fruitless_blocks"] = 0
+    save(state)
+    print("[%s] recorded (%s). %d row(s) in this phase, %d empty phase(s) "
+          "left." % (args.phase, args.provenance,
+                     len(rows_by_phase(state)[args.phase]),
+                     len(empty_phases(state))))
+    return 0
+
+
+def cmd_blocker(args):
+    state = load()
+    if not state:
+        sys.stderr.write("no ledger\n")
+        return 1
+    state["blockers"].append({
+        "phase": args.phase, "why": args.why,
+        "at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+    })
+    state["fruitless_blocks"] = 0
+    save(state)
+    print("blocker recorded on %s" % args.phase)
+    return 0
+
+
+def cmd_handoff(args):
+    state = load()
+    if not state:
+        sys.stderr.write("no ledger\n")
+        return 1
+    state["handoff"] = {"text": args.text,
+                        "at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+    save(state)
+    print("handoff recorded; the gate will now let the turn end")
+    return 0
+
+
+def cmd_done(args):
+    state = load()
+    if not state:
+        sys.stderr.write("no ledger\n")
+        return 1
+    missing = empty_phases(state)
+    if missing and not args.force:
+        sys.stderr.write(
+            "not done: %s recorded nothing. Record a row, or a blocker "
+            "saying why the phase cannot proceed, or --force with a reason "
+            "in the handoff.\n" % ", ".join(missing))
+        return 1
+    state["done"] = True
+    save(state)
+    print("arc closed with %d rows across %d phases"
+          % (len(state["rows"]), len(PHASES) - len(missing)))
+    return 0
+
+
+def cmd_status(args):
+    state = load()
+    if not state:
+        print("no ledger open")
+        return 0
+    print(plan_block(state))
+    if state.get("blockers"):
+        print("\nBLOCKERS:")
+        for b in state["blockers"]:
+            print("  [%s] %s" % (b["phase"], b["why"]))
+    left = state["deadline_epoch"] - time.time()
+    print("\ndeadline in %.1f h; handoff %s; done %s"
+          % (left / 3600.0,
+             "written" if state.get("handoff") else "NOT written",
+             state.get("done")))
+    return 0
+
+
+def cmd_check(args):
+    """Stop hook. Exit 0 lets the turn end; exit 2 does not."""
+    state = load()
+    if not state:
+        sys.exit(0)                      # not this arc's session
+    if state.get("done"):
+        sys.exit(0)
+
+    # Past the deadline the only thing still owed is a handoff: "keep
+    # going" stops being right once the person who asked is awake.
+    if time.time() > state.get("deadline_epoch", 0):
+        if state.get("handoff"):
+            sys.exit(0)
+        state["fruitless_blocks"] = state.get("fruitless_blocks", 0) + 1
+        save(state)
+        block("toolbox-re-gate: past the deadline and no handoff written. "
+              "Write one - what was established, what is still open, and "
+              "what the next session should do first:\n"
+              "    tools/toolbox-re-gate handoff \"...\"", state)
+
+    state["fruitless_blocks"] = state.get("fruitless_blocks", 0) + 1
+    save(state)
+    if state["fruitless_blocks"] > MAX_FRUITLESS_BLOCKS:
+        sys.stderr.write(
+            "toolbox-re-gate: blocked %d times with no row and no blocker "
+            "recorded in between. Standing down rather than wedging the "
+            "session - but that means the arc is NOT progressing. Say "
+            "plainly what is wrong before ending.\n"
+            % (state["fruitless_blocks"] - 1))
+        sys.exit(0)
+
+    missing = empty_phases(state)
+    if missing:
+        block("toolbox-re-gate: %d phase(s) have recorded nothing yet: %s. "
+              "The arc is not finished, and stopping here would lose what is "
+              "already in flight." % (len(missing), ", ".join(missing)),
+              state)
+    if not state.get("handoff"):
+        block("toolbox-re-gate: every phase has findings, but no handoff is "
+              "written. Write it, then `done`:\n"
+              "    tools/toolbox-re-gate handoff \"...\"\n"
+              "    tools/toolbox-re-gate done", state)
+    sys.exit(0)
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(description=__doc__)
+    sub = p.add_subparsers(dest="command", required=True)
+
+    s = sub.add_parser("start")
+    s.add_argument("--deadline-hours", type=float, default=9.0)
+    s.add_argument("--force", action="store_true")
+    s.set_defaults(func=cmd_start)
+
+    s = sub.add_parser("row")
+    s.add_argument("phase")
+    s.add_argument("claim")
+    s.add_argument("--provenance", required=True, choices=PROVENANCE)
+    s.add_argument("--evidence", default=None)
+    s.set_defaults(func=cmd_row)
+
+    s = sub.add_parser("blocker")
+    s.add_argument("phase")
+    s.add_argument("why")
+    s.set_defaults(func=cmd_blocker)
+
+    s = sub.add_parser("handoff")
+    s.add_argument("text")
+    s.set_defaults(func=cmd_handoff)
+
+    s = sub.add_parser("done")
+    s.add_argument("--force", action="store_true")
+    s.set_defaults(func=cmd_done)
+
+    s = sub.add_parser("status")
+    s.set_defaults(func=cmd_status)
+
+    s = sub.add_parser("check")
+    s.set_defaults(func=cmd_check)
+
+    args = p.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
