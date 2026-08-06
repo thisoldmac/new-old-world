@@ -19,7 +19,12 @@ let package = Package(
                 resources: [.copy("Resources/fonts"),
                             .copy("Resources/patterns"),
                             .copy("Resources/icons"),
-                            .copy("Resources/appicons")]),
+                            .copy("Resources/appicons"),
+                            .copy("Resources/cursors"),
+                            // Unconverted QuickDraw pictures: carried, not
+                            // drawn (see tools/extract-assets-offline).
+                            .copy("Resources/pictures"),
+                            .copy("Resources/manifest.json")]),
         .target(name: "MirrorOracleKit",
                 dependencies: ["MirrorKit", "MirrorKitUI"]),
         .executableTarget(name: "MirrorApp",

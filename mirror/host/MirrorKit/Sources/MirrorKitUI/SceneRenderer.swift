@@ -234,7 +234,8 @@ public struct SceneRenderer {
     /// one, else a procedural Platinum glyph — plus the alias badge.
     private func drawGenericIcon(_ ctx: GraphicsContext, _ box: CGRect,
                                  item: MirrorKit.Scene.DesktopItem) {
-        if let bitmap = IconAtlas.icon(for: item) {
+        if let bitmap = IconAtlas.icon(for: item,
+                                       size: IconAtlas.Size.fitting(box)) {
             ctx.draw(Image(decorative: bitmap, scale: 1), in: box)
             drawAliasBadge(ctx, box, item: item)
             return
@@ -396,7 +397,18 @@ public struct SceneRenderer {
         }
         if let front {
             let iconBox = CGRect(x: appLeft + 6, y: 2, width: 16, height: 16)
-            if let img = IconAtlas.namedIcon("application") {
+            /* One of the few places identity is KNOWN rather than inferred:
+               the process census reports each app's creator signature, and
+               `apps` and `processes` share the PSN, so this is a join on a
+               reported key — Sherlock's own icon rather than a generic
+               application glyph. Generic when the census is absent or the
+               pack has no icon for that signature. 16x16 art, because that
+               is the size OS 9 draws into this slot. */
+            let small = IconAtlas.Size.small
+            let signature = scene.processes?
+                .first(where: { $0.psn == front.psn })?.signature
+            if let img = IconAtlas.processIcon(signature: signature, size: small)
+                ?? IconAtlas.namedIcon("application", size: small) {
                 ctx.draw(Image(decorative: img, scale: 1), in: iconBox)
             } else {
                 ctx.fill(Path(roundedRect: iconBox, cornerRadius: 2),
