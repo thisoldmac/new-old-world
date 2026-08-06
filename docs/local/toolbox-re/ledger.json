@@ -242,6 +242,13 @@
       "provenance": "measured",
       "evidence": "docs/local/toolbox-re/ledger.json",
       "at": "2026-08-06T04:18:24-0400"
+    },
+    {
+      "phase": "P0",
+      "claim": "tools/pef.py reads any classic PEF's sections, imported libraries IN LINK ORDER, per-library symbol ranges and exports. That is how the Finder's GWorld use and this link-order question were both settled without an emulator - a general-purpose static instrument for this platform, kept with the work.",
+      "provenance": "static",
+      "evidence": "tools/pef.py",
+      "at": "2026-08-06T04:23:45-0400"
     }
   ],
   "blockers": [
