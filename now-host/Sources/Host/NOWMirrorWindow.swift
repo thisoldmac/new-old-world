@@ -43,7 +43,25 @@ final class NOWMirrorWindow: NSObject, ObservableObject, NSWindowDelegate {
     /// because a guest that dials in, drops and redials must not stack
     /// windows — and because the request arrives before any guest does.
     func openIfLaunchAsked(title: String) {
-        guard openAtLaunch, !isOpen else { return }
+        guard openAtLaunch else { return }
+        guard !isOpen else {
+            /* **AN OPEN WINDOW IS NOT A RUNNING POLL.** `show` calls
+               `source.start()`, and start REFUSES when no Mac is active
+               yet — it has nothing to poll. At launch that is the
+               ordinary order of events: the window request arrives with
+               the first connection change, before the listener has an
+               active key. The guard used to end here, so the window
+               stood open over a source that never ran: scenes frozen at
+               whatever the connect walk produced, `mirror_drive`
+               refusing with "no pinned Mac", and nothing on the window
+               saying why. Watched 2026-08-06.
+
+               Every later connection change comes through this same
+               door, so asking again costs nothing and is the only place
+               that can. `start()` is idempotent while running. */
+            if !source.running { source.start() }
+            return
+        }
         show(title: title)
     }
 
@@ -80,6 +98,19 @@ final class NOWMirrorWindow: NSObject, ObservableObject, NSWindowDelegate {
            nothing". */
         if let w = window { Self.ensureOnScreen(w) }
         source.start()
+        /* **AND AGAIN UNTIL IT TAKES.** `start()` REFUSES when no Mac is
+           active yet — it has nothing to poll — and at launch that is the
+           ordinary order of events: `--open-mirror` fires on the first
+           connection change, before the listener has an active key. The
+           window then stood open over a source that never ran: scenes
+           frozen at whatever the connect walk produced, `mirror_drive`
+           refusing with "no pinned Mac", and nothing on the window saying
+           why. Watched 2026-08-06 while relaunching a live session.
+
+           Bounded and cheap, like `fitToGuestScreen` beside it: a poll
+           that has already started returns immediately, and a launch with
+           no Mac at all gives up after ten seconds exactly as before. */
+        if !source.running { retryStart() }
         isOpen = true
         /* NO NSApp.activate HERE, and that is the fix rather than an
            omission. Activating trips `applicationShouldHandleReopen`,
@@ -99,6 +130,17 @@ final class NOWMirrorWindow: NSObject, ObservableObject, NSWindowDelegate {
             self?.window?.makeKeyAndOrderFront(nil)
         }
         fitToGuestScreen()
+    }
+
+    private func retryStart() {
+        Task { @MainActor [weak self] in
+            for _ in 0..<40 {                          // ~10s
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                guard let self, self.isOpen else { return }
+                if self.source.running { return }
+                self.source.start()
+            }
+        }
     }
 
     /// **Size to the guest's own screen, once it says what that is.**

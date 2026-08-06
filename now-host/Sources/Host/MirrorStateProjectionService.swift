@@ -250,7 +250,20 @@ final class MirrorStateProjectionService {
                the "we cannot capture this class" wall this arc exists to
                remove. Found on 2026-08-05 by pairing a live snapshot
                against a screendump. */
-            let finderItems = (window.items ?? []).map { item in
+            /* **AND THE DESKTOP'S OWN ICONS, which are not `items`.**
+               The comment above says this omission "reported the desktop
+               as a window with zero elements while the machine was
+               showing seventeen icons" — and after that fix the desktop
+               STILL reported zero, because the backdrop is the one Finder
+               window whose icons never live in `window.items`. They are
+               `scene.desktopItems`, read from the Finder by a different
+               script and carried beside the windows rather than inside
+               one. Measured 2026-08-06 on a live session: Macintosh HD 10
+               rows, Control Panels 33, Desktop 0, with seven icons on the
+               screen. Same shape, one field over, third time. */
+            let desktopIcons = HitTester.isDesktopBackdrop(window)
+                ? (scene.desktopItems ?? []) : []
+            let finderItems = ((window.items ?? []) + desktopIcons).map { item in
                 AgentIntegrationMirrorSurfaceItem(
                     source: "finderItem",
                     /* Addressed BY NAME, which is how the Finder itself
