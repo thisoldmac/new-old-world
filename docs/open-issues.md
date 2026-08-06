@@ -115,6 +115,38 @@ process; the note function declines those, so the plane's behaviour is
 unchanged, but "an application's trap patch is process-local" was the
 applet's own failure and is not a general fact.
 
+## MEASURED: Sherlock's channel grid is fully derivable without pixels (2026-08-06)
+
+The two-row picker of channel buttons looks like the least tractable
+thing on that window - sixteen cells of pure BMP art. It is not. Read
+out of the drain:
+
+- Sherlock draws each cell by **moving the port origin** and blitting
+  to a constant `(0,0,51,46)`. So the grid is in the `state/origin`
+  ops: **8 columns x 2 rows**, cells 51x46, pitch 55 horizontal and 50
+  vertical, at x = 27 + 55k and y = 21, 71. Sixteen distinct
+  (origin, source) pairs, exactly the sixteen cells on screen.
+- **Selection is readable from geometry alone.** The selected cell's
+  well art comes from sprite source rect `(142,149,193,195)`; all
+  fifteen unselected cells come from `(209,231,260,277)`. Which channel
+  is active is therefore a fact the mirror can state, with no pixels
+  and no guessing.
+- Every cell's **hit rect** is the same arithmetic - origin plus 51x46 -
+  which is precisely what an act-plane click needs.
+- Each channel ICON is its own offscreen world (a 32x32 blit from
+  `(0,0,32,32)` of a per-icon world), so with worlds hooked at birth
+  each icon has a stable per-session port identity via `blitsrc`.
+
+What is still NOT derivable is the channel's NAME. The icon pixels come
+from resources by a path the bottlenecks do not show, which is the
+standing icon-identity item; Sherlock imports IconServicesLib (16
+symbols, from its PEF), so the route exists if it is ever worth taking.
+
+This is a semantic-layer opportunity rather than a replay one: the
+renderer draws those blits as hatches today, and drawing them as
+Platinum wells with the measured selection state would be honest,
+cheap, and is not yet done.
+
 ## The coverage spread, and the one application that beat the chase (2026-08-06, later)
 
 Deferred item 3's thin spread is thin no longer. Live captures, each a
