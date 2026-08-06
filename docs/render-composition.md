@@ -82,6 +82,51 @@ stronger than the evidence:
   it as an untyped plate says exactly that and no more.
 - Never type a placeholder more precisely than the stream allows —
   field-or-button is P2's to know, and where P2 knows it, P2 draws it.
+- **A placeholder never paints over content another plane already
+  drew.** "Visual unavailable" over pixels the replay has just put down
+  is not a weak claim, it is a false one: the visual was available and
+  is underneath.
+
+That fourth rule was added on 2026-08-06 after a screenshot of the live
+host, and the reason it took a screenshot to find is worth keeping. The
+replay reported ONE Bool for a whole window — "something was drawn" —
+so no caller could ask about a rectangle, and the DITL placeholder
+branch had no way to know it was covering anything. `DisplayReplay`
+now collects `Coverage`: the rectangles it actually inked.
+
+**An erase is not ink**, and that is the load-bearing half. A composite
+repaint opens with a full-window erase, so counting erases would mark
+every rectangle of every window as covered and silence every
+placeholder everywhere — the same defect inverted, and harder to see.
+Only operations that add something a person can look at are recorded.
+The replay's own unavailable-bitmap marker counts as covered: it has
+already said the honest thing about that rectangle and a second hatch
+states nothing new.
+
+### The two gates a rectangle passes, and why they are not one gate
+
+They are separate questions and conflating them cost this project both
+of its 2026-08-06 render defects:
+
+1. **May this row SILENCE P3 underneath it?** Controls have always
+   answered through `semanticOwnsDisplay`. Dialog items had no
+   equivalent at all, so every visible DITL row excluded the drawing
+   beneath it whether or not the host drew anything in its place — Date
+   & Time's twenty rows took its date, its time, both group boxes and
+   every field. `dialogItemOwnsDisplay` is the missing half. `panel`,
+   `placard` and `selectionBand` are deliberately excluded from it:
+   they are backgrounds, they routinely wrap most of a dialog, and a
+   background that swallowed every op inside it would be this defect
+   wearing a different hat.
+2. **May this row DRAW over P3 on top of it?** Answered by `Coverage`,
+   above.
+
+A row can legitimately answer yes to one and no to the other. A DITL
+row typed `icon` is the example: the guest has said an icon is there
+and named it, so the generic hatch is a false claim (rule 4) — but the
+stub the host draws for it is weaker than the guest's own art, so it
+yields wherever P3 carried that art. Fifteen of NOW's own Workshop
+sidebar rows rendered as fifteen hatches until this was separated.
 
 ## What is still disjointed, and named rather than hidden
 
@@ -93,6 +138,26 @@ stronger than the evidence:
   draw their values through CopyBits rather than DrawText, so a plate is
   the most this pipeline can honestly say about them today. Whether
   those values are reachable at all is unanswered.
+
+  **Answered 2026-08-06, and it was never the pipeline.** With the
+  NewGWorld trap patch those values DO cross — the drain carries the
+  date, the time and every field as ordinary text ops — and the renderer
+  was throwing them away at the last step, under the two gates above.
+  The paragraph stood for a day as a statement about the machine when it
+  was a statement about our own drawing order. When a plane looks silent,
+  check what the renderer did with it before concluding the data is not
+  there.
+
+- **The system font is a substitution, and the guest's own clip exposes
+  it.** Font id 0 means "the system font", which under the Appearance
+  Manager on Mac OS 8.5+ is **Charcoal**; the pack carries no Charcoal
+  strike, so `DisplayReplay.strike` answers Chicago, which is wider.
+  Where the application clips its own text — Date & Time sets
+  `clip [40,195,210,217]` around a group-box title and then draws
+  "Use a Network Time Server" — the extra width pushes the last glyph
+  past the guest's own clip and the mirror renders "…Time Serve". The
+  machine's pixels have the whole word. It is a pack gap, not a renderer
+  bug, and the fix is an extractor run for Charcoal.
 ## P2 derived from P3's own evidence (2026-08-06, later)
 
 Sherlock's channel grid was the first case where one plane could answer
