@@ -5,6 +5,7 @@
 
 #include "axwalk.h"    /* NowAxDefProcOrigin: scene.h stores one as a short */
 #include "json.h"
+#include "scene_phase.h"
 
 /* The IR v2 encoder.
 
@@ -912,6 +913,36 @@ static void put_meta(Sink *k, const NowScene *s)
     if (s->latency_ms >= 0) {
         put(k, ",\"latencyMs\":");
         put_num(k, s->latency_ms);
+    }
+    /* WHERE THE TIME WENT, and it is ABSENT rather than zeroed when this
+       producer did not measure. That distinction is the same one the IR
+       already makes everywhere else: an absent `phases` says "this
+       producer does not report phases", never "these phases took no
+       time". Eight zeroes would be a measurement, and a false one.
+       See scene_phase.h and contract/asyncapi.yaml. */
+    if (now_scene_phase_reporting()) {
+        int p;
+
+        put(k, ",\"phases\":{\"us\":{");
+        for (p = 0; p < kNowScenePhaseCount; ++p) {
+            if (p) {
+                put(k, ",");
+            }
+            put_str(k, now_scene_phase_name(p));
+            put(k, ":");
+            put_num(k, (long)now_scene_phase_us(p));
+        }
+        /* The breakdown's own weight, published beside the numbers it
+           produced so nobody has to take "cheap enough to leave on" on
+           trust. clockUs is the read count at the calibrated per-read
+           price - an estimate, and named one in the contract. */
+        put(k, "},\"clockReads\":");
+        put_num(k, (long)now_scene_phase_clock_reads());
+        put(k, ",\"clockUs\":");
+        put_num(k, (long)now_scene_phase_clock_us());
+        put(k, ",\"faults\":");
+        put_num(k, (long)now_scene_phase_faults());
+        put(k, "}");
     }
     /* `bytes` is absent, not zero: it is the encoded size, and the
        encode is what is happening right now. */

@@ -26,9 +26,17 @@
 #include "proc_actions.h"
 #include "product_identity.h"
 #include "scene_collect.h"
+#include "scene_phase.h"
 #include "software.h"
 
 enum {
+    /* Room for the one field whose VALUE is not known until the sizing
+       pass has already run: meta.phases.us.encode, and the two counters
+       the sizing pass's own clock reads move. Sixty-four bytes against a
+       document measured in kilobytes, spent so that "how long did the
+       encode take" can be a number in the document rather than a number
+       nobody carries. */
+    kSceneEncodePhaseSlack = 64,
     kConnectTimeoutTicks = 60 * 10,   /* 10s to establish the socket */
     kHelloTimeoutTicks = 60 * 8,      /* 8s for the host's hello */
     kPingIntervalTicks = 60 * 30,     /* ping after 30s of silence */
@@ -1637,8 +1645,20 @@ static void serve_scene(const char *request)
 
     /* Size, then allocate, then encode. One walk, two answers: the
        encoder counts always and writes only while it fits, so asking for
-       the size costs a pass and never a second walk. */
+       the size costs a pass and never a second walk.
+     *
+     * THE SIZING PASS IS WHAT `phases.us.encode` REPORTS, and it has to
+     * be: a document cannot state how long it took to write itself. The
+     * counting pass does the same work as the writing pass minus the
+     * stores, it happens first, and it is therefore the honest thing to
+     * name. The consequence is the slack below - the number the write
+     * pass emits is longer than the digits the count pass sized for, by
+     * at most the width of one microsecond count - and now_scene_encode
+     * reports what it ACTUALLY used, so `bytes` stays exact. */
+    now_scene_phase_enter(kNowScenePhaseEncode);
     needed = now_scene_encoded_size(scene);
+    now_scene_phase_leave(kNowScenePhaseEncode);
+    needed += kSceneEncodePhaseSlack;
     doc = NewHandle((Size)needed);
     if (doc == NULL) {
         DisposePtr((Ptr)scene);

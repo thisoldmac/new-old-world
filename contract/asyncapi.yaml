@@ -389,6 +389,31 @@ operations:
       Absent means NOT MINTED. The empty string is never sent and must
       not be treated as one: it is the consumer's own vocabulary for "the
       producer has no reference layer", which is a different claim.
+      WHERE THE SCENE'S TIME WENT, added 2026-08-06 as meta.phases and
+      additive under the accretive rule: an older host ignores the key
+      and nothing about the scene changes. meta.phases.us is an object of
+      MICROSECOND totals keyed by what the guest was DOING - enumerate,
+      bind, windows, controls, menubar, semantics, refs, encode - named
+      for the work and not for the function that implements it, so that
+      rewriting the implementation does not rename a year of
+      measurements. The phases do not overlap: entering one suspends the
+      one containing it, so their sum is never more than the walk, and
+      what the sum falls short by is real, unattributed collector
+      bookkeeping rather than a fabricated "other". `encode` is the
+      SIZING pass, which is the same work as the writing pass minus the
+      stores - a document cannot state how long it took to write itself,
+      and naming the pass it can measure is the honest form of that.
+      Beside them, phases.clockReads, phases.clockUs and phases.faults
+      publish the BREAKDOWN'S OWN WEIGHT: how many times the guest read
+      its microsecond counter, what that cost at a calibrated per-read
+      price (an estimate, and only ever that), and how many seam errors
+      would make one of the numbers wrong. A measurement that will not
+      state its own cost is asking to be trusted rather than read.
+      AN ABSENT meta.phases MEANS "THIS PRODUCER DOES NOT REPORT PHASES",
+      never "these phases took no time" - the same rule absence carries
+      everywhere else in this document, and the reason the guest emits
+      nothing rather than zeroes when it has no clock. Eight zeroes are a
+      measurement, and would be a false one.
       IR V2 COLLECTION AUTHORITY. meta.coverage[] carries a typed scope,
       optional process-incarnation owner, status, and optional reason.
       Status is complete, partial, retracted, failed, stale, or unavailable.
