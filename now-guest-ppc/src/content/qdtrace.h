@@ -258,6 +258,7 @@ typedef struct {
     NowContentU32 probe_sight_seen;
     NowContentU32 probe_last_sight;
     NowContentS16 probe_sight_l, probe_sight_t, probe_sight_r, probe_sight_b;
+    NowContentU32 probe_sight_small;
 } NowQDStatus;
 
 void now_qdtrace_status(const NowContentBlock *block,

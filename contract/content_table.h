@@ -289,6 +289,11 @@ typedef struct {
     NowContentU32 probe_last_sight;    /* the most recent offer's PixMap */
     NowContentS16 probe_sight_l, probe_sight_t;
     NowContentS16 probe_sight_r, probe_sight_b;
+    /* Blits too small to be a composite, refused before they can take
+       the chase slot. Measured 2026-08-06: 122 of 148 offers were
+       dropped as busy because a scroll arrow claimed the slot ahead of
+       the content-sized blit we are actually hunting. */
+    NowContentU32 probe_sight_small;
 } NowContentBlock;
 
 /* ---- ring records --------------------------------------------------
@@ -407,7 +412,7 @@ _Static_assert(offsetof(NowContentBlock, arm_window)
 _Static_assert(offsetof(NowContentBlock, probe_pending_pixmap)
                    == 192 + kNowContentRingCap,
                "probe append offset");
-_Static_assert(sizeof(NowContentBlock) == 284 + kNowContentRingCap,
+_Static_assert(sizeof(NowContentBlock) == 288 + kNowContentRingCap,
                "block size");
 
 /* ---- the arm verdict (now_content_logic.c) -------------------------

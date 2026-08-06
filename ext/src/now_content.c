@@ -430,7 +430,32 @@ static void content_record_bits(const BitMap *src_bits, const Rect *src_rect,
    allocated, and nothing happens at all outside probe mode. The 0x8000
    rowBytes bit is Color QuickDraw's own "this BitMap is a PixMap"
    discriminator; a plain BitMap has no owning port to find. */
-static void content_probe_sight(const BitMap *src_bits)
+/* A COMPOSITE IS CONTENT-SIZED, and that is the whole filter. An armed
+   window emits many blits per repaint - scroll arrows, grow boxes,
+   cached widgets - and the chase can only hold one pending sighting at
+   a time, so on 2026-08-06 the first small blit of every repaint took
+   the slot and 122 of 148 offers were dropped busy, the content-sized
+   one among them. Requiring a quarter of the window's area reserves the
+   slot for the thing we are hunting; anything refused here is counted,
+   never silently skipped. */
+static Boolean content_probe_big_enough(GrafPtr port, const Rect *dst)
+{
+    long dst_area;
+    long port_area;
+
+    if (port == NULL || dst == NULL) {
+        return false;
+    }
+    dst_area = (long)(dst->right - dst->left) * (dst->bottom - dst->top);
+    port_area = (long)(port->portRect.right - port->portRect.left)
+        * (port->portRect.bottom - port->portRect.top);
+    if (dst_area <= 0 || port_area <= 0) {
+        return false;
+    }
+    return dst_area >= port_area / 4;
+}
+
+static void content_probe_sight(const BitMap *src_bits, const Rect *dst_rect)
 {
     GrafPtr port = NULL;
     short i;
@@ -446,6 +471,10 @@ static void content_probe_sight(const BitMap *src_bits)
        its source too would walk an unbounded chain of stamps. */
     GetPort(&port);
     if (port == NULL || (NowPeekU32)port != gBlock->active_window) {
+        return;
+    }
+    if (!content_probe_big_enough(port, dst_rect)) {
+        gBlock->probe_sight_small++;
         return;
     }
     gBlock->probe_sight_offers++;
@@ -631,7 +660,7 @@ static pascal void content_bits(const BitMap *srcBits, const Rect *srcRect,
         if (content_mode_records()) {
             content_record_bits(srcBits, srcRect, dstRect, mode);
         }
-        content_probe_sight(srcBits);
+        content_probe_sight(srcBits, dstRect);
         InvokeQDBitsUPP(srcBits, srcRect, dstRect, mode, maskRgn,
                         gStd.bitsProc);
         gInCapture = 0;
