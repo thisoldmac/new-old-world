@@ -288,6 +288,205 @@ warning in its own header and this needs the same: the applet shows the
 resident survives *that* starvation. The Finder's own modal stays the
 acceptance test.
 
+## Picking this up cold
+
+**Everything below was written at the end of the session that built
+§ 0–§ 3 and § 5**, in the shape 011 uses for the same purpose. If this
+and [open-issues.md](../open-issues.md) disagree, the ledger is right; if
+this and the code disagree, the code is right.
+
+### The one-paragraph version
+
+A Macintosh is cooperatively scheduled, so one blocked application
+starves all of them. Liveness was answered BY an application, and a modal
+is exactly what takes the application away — so an ordinary dialog killed
+the wire session against a perfectly healthy machine. The host half is
+finished and gated: it can tell **starved** from **gone** and says which.
+The guest half is not: the resident needs a way to answer for the machine
+while every application is starved, and the two attempts at that are
+respectively **blocked at the linker** and **disarmed after hanging a
+boot**.
+
+### What is DONE and gated
+
+| § | what | evidence |
+|---|---|---|
+| 0 | `hello.role: [session, resident]` | contract, additive, no revision bump |
+| 1 | host tells starved from gone | 7 tests, 4 mutations |
+| 2 | Mirror shows the third state | 3 mutations |
+| — | `NowPeekLivenessEndpoint` slot | 116 native tests; layout mutation fails 10 asserts |
+| 5 | `tools/guest-wedge` | built AND run; results below |
+
+`scripts/test-all` green, both cross-compilers, every guest and
+instrument building. Ten commits on `claude/mirror-build-out-17bbed`.
+
+**Nothing speaks `role: resident` yet**, so the host half has never been
+exercised end to end by a real guest. That is § 4's job.
+
+### What is NOT done, and exactly where it stopped
+
+### § 4 — the transport. BLOCKED at the linker, not on a machine.
+
+The resident must dial the host itself. Over Open Transport **it cannot,
+from this component**: OT's 68K libraries are CFM/Shared Library Manager
+fragments and `ext/` is a flat 68K code resource (`-Wl,--mac-flat`). They
+do not link. Unresolved: `__SLM11FuncDispatch`, `__SLM11VTableDispatch`,
+`__SLM11ConstructorDispatch`, `__SLM11ExtblDispatch`, `__gOTClientRecord`.
+Four library combinations tried including the application flavour; best
+case 15 unresolved symbols.
+
+**This is plan 012 § C's metal question answered without a PowerBook.**
+
+**The next attempt is MacTCP's `.ipp` driver through the Device
+Manager.** It is the only route that keeps the resident an INIT: a flat
+68K INIT can drive it with `PBControl` and completion routines, which is
+how resident code did TCP before OT, and OS 9's OT still provides it for
+exactly these callers. Fallbacks if that fails: ship the resident as a
+CFM fragment, or as an OT module. Both change what the component IS and
+have their own install stories.
+
+**Do not start this until § 3 below is fixed** — a transport on a vehicle
+that hangs the machine is untestable.
+
+### § 3 — the vehicle. BUILT, DISARMED, and the cause is NOT known.
+
+`ext/src/now_liveness.c` installs a Time Manager task, the extension's
+first interrupt-time context. It currently returns before installing, and
+the `return` is deliberate.
+
+**Two defects, one behind the other. Only running it found either.**
+
+1. **The tick fired once.** `livenessTicks` read `1` on a guest up for
+   minutes. A Time Manager task enters with an ARBITRARY A5 and Retro68
+   addresses globals through A5, so this component's statics are somebody
+   else's memory at interrupt time. **Fixed** — everything the task needs
+   now travels inside the task record, which the Time Manager hands back.
+2. **With that fixed, a cold boot never completed.** Empty menu bar, no
+   Finder, no anchor worker, unreachable five minutes later
+   (screendumped). The first defect had MASKED the second: a task that
+   fires once does not hang a machine; one that fires every 5 s does.
+
+**Two candidates, both testable, neither tested:**
+
+- **The globals-world shim.** The jGNE filter has one in assembly
+  (`ext/src/now_ext_gne.S`) and this task has none. Even though the tick
+  no longer reads statics, the compiler may still emit A5-relative
+  access, and `NewTimerProc`'s UPP may need the same treatment. **Look at
+  the shim first** — it is the existing, working answer to this exact
+  problem in this exact component.
+- **`PrimeTime` re-arming from inside a standard Time Manager
+  completion.** Legal for the extended Time Manager (`InsXTime`); worth
+  confirming for `InsTime`. Cheap alternative: `InsXTime` instead.
+
+**How to test it:** delete the `return` in `now_liveness_install`,
+rebuild, spin up (below), and read `livenessTicks` from the `mirror`
+verb. It must climb by roughly one per 5 s. If the boot hangs again,
+disarm and try the other candidate — **do not leave an armed
+boot-hanging extension on any image anyone needs.**
+
+### The rig, and how to drive it
+
+```bash
+export NOW68K_TOOLCHAIN=~/Lab/Tools/Retro68-build-68k/toolchain/m68k-apple-macos/cmake/retro68.toolchain.cmake
+export NOW_PPC_TOOLCHAIN=~/Lab/Tools/Retro68-build/toolchain/powerpc-apple-macos/cmake/retrocarbon.toolchain.cmake
+scripts/build-guests
+NOW_SPIN_RUN=/private/tmp/nowvm-$$ NOW_WIRE_PORT=5277 scripts/spin-up-ppc
+```
+
+Both toolchain variables are needed or the cross-builds SKIP silently and
+you test yesterday's bytes. `NOW_SPIN_RUN` must be short — a worktree
+path exceeds the 104-byte UNIX socket cap and QEMU dies with nothing in
+the script's output. Pick a `NOW_WIRE_PORT` nothing else is using.
+
+A full spin-up is ~6 minutes and stages the current builds, cold-boots so
+the INIT loads, and prints the resident's own report. Look for
+`"capabilities": 63` — bit 5 (32) is the liveness capability, so 63 means
+the vehicle installed; 31 means it did not.
+
+Read the counter:
+
+```bash
+tools/askguest.py --port 5277 --wait 40 mirror
+```
+
+`livenessTicks` is in the extension block beside `heartbeat`.
+
+**Recovering a wedged guest:** `python3 tools/shutdown-guest.py <qmp.sock>
+--port 1700 --timeout 90`, then delete the run directory. QMP `quit` is a
+power cut — it dirties the volume and the next boot spends minutes in
+Disk First Aid. Never kill by port: `lsof -ti tcp:<wire>` matches QEMU
+itself under user-mode networking.
+
+### The wedge instrument, and what it measured
+
+`tools/guest-wedge` is a staged applet, a sibling of `tools/guest-shutdown`.
+It is launched BY NAME through the anchor and the name is the argument:
+`NOW Wedge spin 25`. Bounded and self-releasing — every mode stops at its
+deadline and quits, so the rig survives the experiment.
+
+Stage it by pushing the same binary under three names (the path name
+wins, so one binary serves every mode), then `launch` it through the
+anchor on port 1700. The push reports a "catalog dates" error after
+committing; the file lands, so `stat` and carry on.
+
+**Results, 2026-08-05, with the modal screendumped mid-run:**
+
+| mode | application-level work | reading |
+|---|---|---|
+| `spin` | **starved the full 20 s** | a non-pumping loop denies every other application time |
+| `modal` | **never starved**, 71 s watched | a modal SITTING there starves nothing; `ModalDialog` pumps |
+| `scan` | **never starved**, 71 s watched | sync File Manager work yields |
+
+**Two traps this instrument taught, both drive-loop rule 2e:**
+
+1. The first script **swallowed a failed launch**, so "nothing happened"
+   was reported as "this block does not starve other applications". The
+   launch is now a positive control that raises.
+2. The probe asked the worker `hello`, **which kept answering right
+   through a spin wedge**. A question answered below the application
+   cannot see application starvation. Use `stat` — it needs the worker's
+   own main loop. Same class as `probe-oracles-were-blind`.
+
+The experiment script is ``tools/wedge-experiment.py`, committed so it does not have to be
+rewritten.
+
+### What is still unexplained, and must not be quietly resolved
+
+**The original 90 seconds.** The real Finder alert silenced even `hello`;
+a spin wedge does not. So the Finder's alert starves something DEEPER
+than a busy application loop, and none of the three wedge modes reaches
+it. The mechanism is a suspicion, not a finding, and the `scan` mode as
+written is not it. If you need the answer, the next mode to try is one
+that reproduces the alert's own work — enumerating the volume's
+applications the way the "select an alternate program" list does.
+
+**Do not** write this up as "the modal starves the machine". That
+specific claim is dead: measured, 71 s, nothing starved.
+
+### The one measured thing the whole plane rests on
+
+Under `guest-wedge spin`, the anchor worker could not serve a `stat` and
+went on answering `hello`. **Something answering below the application
+keeps answering while applications are starved** — on this guest, by
+measurement, not by argument from the scheduling model.
+
+That is why § 3 and § 4 are worth finishing. It is also the thing to
+re-check first if the design ever stops making sense.
+
+### Advice on scope
+
+The host half is done and the product is better than it was: the lane
+survives being driven, and a starved Mac is told apart from a gone one.
+**Without the extension a modal still ends the session** — that is in
+README's headline gaps and on the ledger.
+
+If § 3's boot hang does not yield in two or three diagnostic boots,
+**leave it disarmed and go back to the core Mirror work** (plan 001,
+Cycle 18, 10/40 rows). This slice is a detour that has already returned
+most of its value; the remaining piece is the part that needs a
+Macintosh to behave, and it will still be here.
+
+
 ## What this plan does NOT close, and must say so
 
 **Without the extension, a modal still ends the session.** Every

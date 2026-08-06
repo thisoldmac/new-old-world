@@ -46,8 +46,8 @@ died against a healthy Macintosh. 012's host half is done — a starved Mac
 is now told apart from a gone one and the Mirror says which — and its
 guest half is parked: the resident cannot be an OT client from a flat
 INIT (a linker fact, not a metal one), and its interrupt-time vehicle
-hung a boot and ships disarmed. See
-[docs/local/012-liveness-handoff.md](../local/012-liveness-handoff.md).
+hung a boot and ships disarmed. Its "Picking this up cold" section
+carries the state, the two named suspects and the rig commands.
 
 **What that means for THIS plan: nothing is blocked.** A modal still ends
 a session when the extension cannot answer for the machine, and that is a
