@@ -14,6 +14,85 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED on an emulator, NEVER ON METAL: NOW's own window cost ~1 s of every scene, and the suspect was the wrong one (2026-08-06)
+
+**The symptom.** With NOW frontmost — which is what a person does the
+moment they click its window — every scene poll took roughly a second.
+With anything else in front the same machine answered in 16 ms while
+reporting MORE (8 menus / 82 items against 7 / 48). The self path did
+less work for ten times the cost.
+
+**The suspect, and why it was wrong.** The only step that runs
+exclusively when NOW is frontmost is `collect_self_menubar`
+(`scene_self.c`) — the menu bar collected through the Toolbox, where a
+foreign machine's bar is read through the validated memory reader. It
+looked expensive too: `root_items_for()` rescans the root menu once PER
+MENU, so ~7 full rescans a scene, and the Apple menu's 16 items are
+backed by a folder on disk. That is an inference from two conditions and
+it survived only until somebody timed the function.
+
+Timed directly (a temporary `meta.dbgUs` breakdown, `Microseconds`, one
+fresh clone, six scenes each):
+
+| step | NOW frontmost | Finder frontmost |
+|---|---|---|
+| `collect_self_menubar`, whole | 1.0 – 2.5 **ms** | not run |
+| `root_items_for`, all 7 menus | 0.30 – 0.43 ms | — |
+| `add_one_menu`, all 48 items | 0.63 – 1.2 ms | — |
+| `find_controls_by_probe` | **875 – 925 ms** | 10 – 22 ms |
+| `latencyMs` | 866 – 1133 | 16 |
+
+The menu bar is 0.1% of it, on this machine, with no sign of the disk
+cost the Apple menu could have carried. **The cost is the FindControl
+sweep over NOW's own window**, and it hides from the obvious A/B for a
+documented reason: `FindControl` answers an INACTIVE window immediately.
+The identical 3,724-point sweep costs ~2.7 µs a point in the background
+and ~240 µs a point in the foreground.
+
+**The fix** (`scene_self.c`, `control_kind.c`): cache the sweep's
+DISCOVERY — which controls this window has and the point each was found
+at — and re-prove it every pass at one `FindControl` per control. The
+rows themselves are still rebuilt from the live Toolbox every scene, so
+nothing a person changes goes stale. A control that went away, moved or
+was hidden fails its point and the sweep runs again; a control that
+ARRIVED disturbs nothing cached, so `now_control_generation()` catches it
+instead — every control this application makes goes through
+`now_control_new`, and `control_kind_source_test.py` enforces that. A
+cached `ControlRef` is only ever compared, never dereferenced, until
+`FindControl` has answered with it.
+
+Same clone, same build discipline, guest's own `latencyMs`:
+
+| condition | before | after |
+|---|---|---|
+| NOW frontmost, steady state (10 scenes) | median 916 ms | **median 0 ms** (9 of 10 at 0) |
+| Finder frontmost (8 scenes) | median 16 ms | median 0 ms |
+| first scene after a Workshop page switch | ~900 ms | 250 – 1550 ms, then 0 |
+
+Scene contents are unchanged (7 menus / 48 items either way), and the
+cache was verified by driving `View` across three pages over the wire:
+identical within a page, different across one, correct on each.
+
+**What is NOT done, and what would change the answer.**
+
+- **Nobody has watched this on the PowerBook 1400c.** Every number here
+  is QEMU. The direction should hold — the fix removes ~3,700 Toolbox
+  calls per scene and adds ~7 — but the size will not.
+- **The first scene after any control change still pays the full
+  sweep**, 250 ms to 1.5 s depending on how many controls the page has.
+  That was paid on EVERY poll before; it is now paid once per UI change.
+  Reducing it means reducing the sweep itself, and the honest options are
+  a coarser grid (which would miss the 12pt disclosure triangle) or
+  giving these windows a root control (which reshapes the interface being
+  described — rejected once already, see `scene_self.c`).
+- **The menu-bar optimisations were deliberately NOT taken.** Resolving
+  the root menu once per scene and change-detecting the MenuList are both
+  correct and both worth ~1 ms here. They are not free: NOW's menu bar
+  rendered EMPTY after a Hide on 2026-08-05, so menu freshness is a live
+  defect surface, and spending it for 0.1% is a bad trade on the evidence
+  we have. If a metal run shows the Apple menu's folder-backed items cost
+  real time there, that is a different finding ("this cost is
+  disk-shaped") and points at not re-reading unchanged items at all.
 ## BROKEN, contract violation: the PowerPC guest never reads the host's contract revision (2026-08-06)
 
 `contract/asyncapi.yaml`, connection rules: "`contract` is a single
