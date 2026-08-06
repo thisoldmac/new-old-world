@@ -46,6 +46,7 @@ import hashlib
 import json
 import os
 import socket
+import subprocess
 import sys
 import time
 
@@ -300,9 +301,16 @@ class Sweep:
                 "guest": "mac99/OS 9.1 emulated",
             },
         }
-        with open(os.path.join(self.args.outdir,
-                               "%s.json" % label), "w") as handle:
+        # `indent=1` here once cost 700,000 lines of git history: a
+        # 3,500-op capture spent ~17 lines saying what fits on one.
+        # tools/fixture-store owns the house format so there is one
+        # place that decides it; this writes and then normalises.
+        out = os.path.join(self.args.outdir, "%s.json" % label)
+        with open(out, "w") as handle:
             json.dump(fixture, handle, indent=1)
+        subprocess.call([os.path.join(os.path.dirname(
+            os.path.abspath(__file__)), "fixture-store"),
+            "compact", "--apply", self.args.outdir])
         return {"label": label, "app": app, "status": "ok",
                 "window": "0x%08x" % addr, "psn": psn,
                 "title": target.get("title"), "rect": target.get("rect"),
