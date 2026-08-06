@@ -23,11 +23,19 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
     }
 
     /// The canned scene, with windows[0] re-identified as the CAPTURED
-    /// window — address, psn AND title, because a render that draws one
-    /// application's content under another window's name reads exactly
-    /// like the wrong join this plane refuses to make.
-    private func scene(address: UInt32, psn: String, title: String) throws
-        -> MirrorKit.Scene {
+    /// window — address, psn, title, AND geometry.
+    ///
+    /// Identity alone was not enough, and the render said so: a capture
+    /// dropped into another application's window rect drew Sherlock's
+    /// 490×448 interior inside a 404×203 Finder window, complete with
+    /// the Finder's own scrollbars, which is a picture of a join that
+    /// never happened. The window's real content size is carried by the
+    /// capture itself — the full-window blit's `dst` IS the content
+    /// rect — so `contentSize` takes it from there, and every control
+    /// and item belonging to the canned window is cleared, because
+    /// those are another application's furniture.
+    private func scene(address: UInt32, psn: String, title: String,
+                       content: [Int]? = nil) throws -> MirrorKit.Scene {
         let url = try XCTUnwrap(Bundle.module.url(
             forResource: "now-scene-ir-v1", withExtension: "json",
             subdirectory: "Fixtures"))
@@ -42,7 +50,30 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
         value.windows[0].psn = psn
         value.windows[0].title = title
         value.windows[0].display = nil
+        value.windows[0].controls = []
+        value.windows[0].items = nil
+        if let content, content.count == 4 {
+            let origin = value.windows[0].rect
+            value.windows[0].rect = MirrorKit.Rect(
+                l: origin.l, t: origin.t,
+                r: origin.l + (content[2] - content[0]),
+                b: origin.t + (content[3] - content[1]))
+        }
         return value
+    }
+
+    /// The captured window's own content size: the destination of the
+    /// largest blit into the window port. Derived rather than asserted,
+    /// so a fixture and its render can never disagree about how big the
+    /// application's window was.
+    private func contentSize(_ drain: QDTraceDecode.Drain,
+                             window: UInt32) -> [Int]? {
+        drain.records
+            .filter { $0.portAddress == window && $0.op.op == "bits" }
+            .compactMap(\.op.dst)
+            .filter { $0.count == 4 }
+            .max { ($0[2] - $0[0]) * ($0[3] - $0[1])
+                     < ($1[2] - $1[0]) * ($1[3] - $1[1]) }
     }
 
     private func capture(_ name: String) throws -> QDTraceDecode.Drain {
@@ -58,12 +89,23 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
 
     private func compose(_ fixture: String, window: UInt32, psn: String,
                          title: String) throws -> [DisplayOp] {
+        try composed(fixture, window: window, psn: psn, title: title)
+            .windows[0].display ?? []
+    }
+
+    /// The whole composed scene, with the window sized from the capture.
+    @discardableResult
+    private func composed(_ fixture: String, window: UInt32, psn: String,
+                          title: String) throws -> MirrorKit.Scene {
+        let drain = try capture(fixture)
         let model = plane()
         let update = model.apply(
-            try capture(fixture),
-            to: try scene(address: window, psn: psn, title: title))
-        return try XCTUnwrap(update.scene.windows[0].display,
-                             "\(fixture) composed nothing")
+            drain,
+            to: try scene(address: window, psn: psn, title: title,
+                          content: contentSize(drain, window: window)))
+        XCTAssertNotNil(update.scene.windows[0].display,
+                        "\(fixture) composed nothing")
+        return update.scene
     }
 
     private func texts(_ display: [DisplayOp]) -> [String] {
@@ -149,12 +191,9 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
         XCTAssertTrue(update(display), "the composite replaced its hatch")
 
         if let out = ProcessInfo.processInfo.environment["NOW_RENDER_OUT"] {
-            let model = plane()
-            let joined = model.apply(
-                try capture("qdtrace-drain-sherlock-hooked"),
-                to: try scene(address: 0x1e99ffc0, psn: "0.35520514",
-                              title: "Sherlock 2"))
-            let png = try RenderShot.png(scene: joined.scene)
+            let png = try RenderShot.png(scene: try composed(
+                "qdtrace-drain-sherlock-hooked", window: 0x1e99ffc0,
+                psn: "0.35520514", title: "Sherlock 2"))
             try png.write(to: URL(fileURLWithPath: out))
         }
     }

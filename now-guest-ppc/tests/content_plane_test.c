@@ -869,11 +869,14 @@ static void test_state_null_live(void)
 static void test_layout(void)
 {
     check_eq((long)sizeof(NowContentRecHeader), 32, "v2 record header is 32");
-    check_eq((long)sizeof(NowContentBlock), 292 + kNowContentRingCap,
-             "block is v1 prefix + ring + v2 identity tail + probe tail");
+    check_eq((long)sizeof(NowContentBlock), 324 + kNowContentRingCap,
+             "block is v1 prefix + ring + v2 tail + probe tail + qdext tail");
     check_eq((long)offsetof(NowContentBlock, probe_pending_pixmap),
              192 + kNowContentRingCap,
              "the probe tail starts where the v2 tail ended");
+    check_eq((long)offsetof(NowContentBlock, qdext_calls),
+             292 + kNowContentRingCap,
+             "and the qdext tail starts where the probe tail ended");
     check_eq((long)kNowContentArmCommit, 0x4E576361L, "'NWca'");
     check_eq((long)kNowContentBlockMagic, 0x4E576362L, "'NWcb'");
     check(kNowContentArmCommit != 1 && kNowContentArmCommit != 0,
