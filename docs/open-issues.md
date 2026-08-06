@@ -1092,6 +1092,19 @@ documented reason: `FindControl` answers an INACTIVE window immediately.
 The identical 3,724-point sweep costs ~2.7 µs a point in the background
 and ~240 µs a point in the foreground.
 
+**And the foreground figure is not one number, which is its own
+finding.** ~240 µs a point is the SETTLED window. A separate run that
+counted the `FindControl` calls rather than dividing a total by an
+assumed point count measured the ACTIVATION scene — the one where a
+person has just clicked into NOW — at **335–397 µs a point**, roughly
+40% dearer, because the window is being activated and redrawn while it
+is probed. Both numbers are real and they are not interchangeable: the
+settled one describes a steady state nobody waits on, and the
+activation one describes the scene a person actually feels. A
+durability pass on 2026-08-06 flattened the two toward 240 and the
+distinction is restored here, because collapsing them deletes the
+reason the focus-change scene was the worst case.
+
 **The fix** (`scene_self.c`, `control_kind.c`): cache the sweep's
 DISCOVERY — which controls this window has and the point each was found
 at — and re-prove it every pass at one `FindControl` per control. The
