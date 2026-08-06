@@ -10382,3 +10382,57 @@ Finder capture above. Still missing: a selected LIST row in a capture.
 Sound is the nearest available case and is already committed — its guest
 screendump shows `SimpleBeep` highlighted while `sound-1pass.png` draws
 that row unhighlighted, in a capture whose other nine rows are correct.
+
+### Desktop icons all carry a mangled file type (2026-08-06, IN FLIGHT)
+
+Recorded here because it lives only in a commit message otherwise
+(`48d6501a`), and because it is the reason a large piece of work looks
+like it did nothing.
+
+The Finder's type pass answers in AppleScript source form — `«class
+APPL»`, not `APPL` — and the host takes the first four characters. Every
+desktop icon therefore carries a type of `"«cla"` (or `"stri"`), and
+since the per-application icon lookup is keyed on creator and type,
+**all 914 extracted application icons miss.** The pack landed and the
+desktop still drew generic glyphs, which reads as an asset-pipeline
+failure and is not one.
+
+A fix was in flight when this line was written and is not described here
+as done. If a later reader finds icons resolving, append the date rather
+than editing this entry.
+
+### Two things the content plane produces that nothing consumes (2026-08-06)
+
+Not broken — unwired, which is a different claim and should not be left
+implicit behind a coverage tick.
+
+- `srcPixmap` is emitted by the guest on every `blitsrc` record, decoded
+  by the host's `QDTraceDecode` **nowhere**, and exists only as
+  diagnosis in the JSON. The join uses `srcPort` alone.
+- The whole `qdext` status object — `installed`, `calls`, `newGWorld`,
+  `lastSelector`, `foreign`, `born`, `died`, `bornMissed` — has no Swift
+  reader at all. It is reachable from the console and over the wire, and
+  it is the only way to distinguish a trap patch that never installed
+  from one that installed and never fired, so a host that renders an
+  empty interior currently cannot say which of those happened.
+
+The second is the one worth closing: it is the diagnostic for the most
+invasive thing this project installs in a foreign process, and no host
+face asks for it.
+
+### Nothing in the content-plane arc has touched metal (2026-08-06)
+
+Stated as its own line so it cannot be lost among the capability
+entries above. The ring, the `blitsrc` join, the `$AB1D` trap patch, the
+`worldborn`/`worlddied` records, the host's re-homing and nested
+composition, the measured accent ramps and the 914-icon pack are all
+**emulator-verified on QEMU mac99 / Mac OS 9.1 and nothing more**. The
+resident that writes the ring has never run on a Macintosh, no `qdext`
+counter has been read on one, and **the live host application has never
+been watched composing an interior** — every composition result comes
+from replaying committed captures inside tests.
+
+A PowerBook 1400c is far slower than the emulator, and a trap patch on
+`_QDExtensions` in a foreign process is the highest-risk thing here.
+Treat every number in this arc as an emulator number until someone
+writes a line below this one saying otherwise.
