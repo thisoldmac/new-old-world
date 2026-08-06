@@ -14,6 +14,76 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED on an emulator, NEVER ON METAL: both things the control sweep got wrong, from one change — the guest stopped hunting for controls it had made itself (2026-08-06)
+
+Plan 013 § 2. The entry below names two costs, a 1.9-second focus change
+and a background sweep that reported zero controls, and treats them as
+one performance item and one correctness item. **They are one defect**,
+and its root is a single sentence in Inside Macintosh: `FindControl`
+refuses an INACTIVE window. Refusing means answering nothing, so with
+anything else in front the sweep walked all 3,724 points, found nothing,
+cached nothing, and re-swept on the NEXT poll forever — and the cache was
+therefore EMPTY at the exact moment a person clicked into NOW, which is
+when a probe costs ~240 µs instead of ~2.7 µs.
+
+**The fix is that the application already knew the answer.** Every
+control here goes through `now_control_new` (`workshop/control_kind.c`),
+which existed so the scene could report a `role`. That table is now the
+scene's LIST of a window's controls, and the lifecycle is closed around
+it: `now_control_adopt` for the DataBrowsers (a constructor that takes no
+procID, so it cannot go through the wrapper), `now_control_dispose`,
+`now_control_dispose_window` and `now_control_dispose_dialog` — because
+`DisposeWindow` destroys a window's controls and tells nobody.
+`control_kind_source_test.py` gates all five calls, and both of its
+refusals were watched by mutation.
+
+Only EXISTENCE is remembered. Title, bounds, value, enabled and visible
+are read live every pass, and invisible controls are skipped exactly as
+the sweep skipped them — so a Workshop page switch needs no invalidation
+at all, which also settles the question the § 1 measurement left open
+about whether one bumped the generation. **Nothing is cached, so nothing
+can be stale**, which is the opposite of the risk plan 013 warns about
+and is worth saying plainly: the projection is rebuilt from the Toolbox
+on every scene.
+
+Same clone, same session, one variable — which binary is staged. Guest
+builds `2c5dc9cb7d54` (after) and the merge base (before), wire 5430,
+`tools/local-scene-bench.py` reading `meta.phases`, µs:
+
+| condition | before, `controls` | after, `controls` | controls reported |
+|---|---|---|---|
+| NOW front, steady state | 3,217 – 4,890 | **713 – 989** | 9 → 9 |
+| the scene NOW becomes front on | **886,398** | **713** | 9 → 9 |
+| NOW backgrounded | 7,206 – 7,588 | **477 – 1,324** | **0 → 9** |
+
+The focus-change scene measured 886 ms here against the 1,891,174 µs in
+the entry below; a parallel instrumented run the same night saw
+1.21–1.43 s. It is a wide range, and every value in it is the same
+defect. The focus cycle was repeated three times on the build under test
+and the `controls` phase stayed between 727 and 922 µs with no spike.
+
+**The correctness half, which was the worse one.** Backgrounded, the
+scene now carries NOW's nine real controls instead of an empty window —
+an absence nobody had observed, which the coverage rules forbid. Where
+the registry cannot answer (a Dialog Manager window this application did
+not build, seen while inactive) the control plane is RETRACTED rather
+than swept: the key is absent and `meta.errors` carries the notice,
+because "nobody could look" and "there is nothing there" are different
+facts. **That retraction path is built and NOT observed** — it needs an
+inactive DITL dialog and nothing in this session opened one.
+
+Page switching was checked as a positive control rather than assumed,
+over the wire with `menuact` on the View menu: Preferences 5 controls,
+Processes 6, Screenshots 9, each correct for its page, each fresh.
+Processes shows six because its DataBrowser is now adopted and therefore
+mirrored — it carries `role: dataBrowser`, where before it fell through
+to the emitter's range guess.
+
+**What is not done.** Nobody has watched any of this on the PowerBook
+1400c; every number is QEMU. The sweep still exists for windows this
+application did not build, and on that path everything the entry below
+says still holds.
+
 ## OPEN, and now MEASURED rather than argued: where a scene's time goes, and the two things the control sweep still gets wrong (2026-08-06)
 
 Plan 013 § 1. Every scene now carries `meta.phases` — microseconds per
@@ -59,6 +129,13 @@ and it holds in both conditions.
    whenever NOW is not frontmost. That is not a performance issue with a
    performance fix; the mirror is reporting an absence it did not
    observe.
+
+**Both of those are FIXED (2026-08-06, emulator only) — and they were one
+defect, not two.** See the entry above. What is left standing here is the
+diagnosis, which is worth keeping for its shape: the two were filed as a
+performance item and a correctness item because that is how they present,
+and they share a root (`FindControl` refuses an inactive window) and a
+cure (do not discover what you already know you made).
 
 **The wide answer plan 013 asked for: yes, the shape is everywhere.**
 Every remaining phase is a full re-derivation, per poll, of something

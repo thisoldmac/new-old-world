@@ -213,6 +213,22 @@ Whatever § 1 names. The candidates already visible: the per-menu root
 rescan, the two-pass encode, and joins for unclaimed planes. Each is
 independently defensible and none needs a metal argument.
 
+**Taken, 2026-08-06: the control sweep, removed rather than tuned.** § 1
+named a focus change costing one 1.9-second scene and a background sweep
+returning zero controls, and they turned out to be ONE defect —
+`FindControl` refuses an inactive window, so backgrounded NOW cached
+nothing and paid the whole 3,724-point grid in the foreground the moment
+a person clicked in. The fix is tier 1 in the strictest sense: the same
+Toolbox calls, ~3,700 fewer of them, and no new assumption about how a
+Macintosh is laid out — because the application does not have to
+DISCOVER controls it made itself. `control_kind.c`'s table, which existed
+to report a `role`, became the scene's list of what exists, with the
+whole lifecycle (adopt / dispose / dispose-window / dispose-dialog)
+closed around it and source-gated. Measured 886,398 µs → 713 µs on the
+focus-change scene, and NOW's own window stopped mirroring as empty
+whenever something else was in front. Nothing is cached, so nothing can
+be stale; see docs/open-issues.md for the numbers and what is not done.
+
 ### 3 · The change generation — the smallest useful notifier
 
 One word in the shared table that the resident bumps when the
