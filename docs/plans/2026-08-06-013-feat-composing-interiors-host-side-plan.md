@@ -62,8 +62,10 @@ Read rather than assumed, because each changes the shape of the work:
   keyed by port; it simply cannot interpret a port it has never been
   told about.
 - **The resident already knows the source port**, because it hooked it:
-  `gPorts[slot].offscreen` and the row's `pixmap`. The value the payload
-  needs is in hand at the moment `content_record_bits` runs.
+  `gPorts[slot].offscreen` and the row's `pixmap`. But it is a HANDLE,
+  and what `content_record_bits` receives is a relocated DEREF — the two
+  do not compare directly, and assuming they do reproduces the defect
+  that cost this arc a night. **Read A2.1 before writing that line.**
 - **The block is accretive by design.** `content_table.h` has been
   appended to twice already under the prefs-record rule (v2 identity
   fields, then the probe fields), with static asserts pinning every
