@@ -175,6 +175,47 @@ route that works is the `script` verb:
 (`{"source": "...", "timeoutMs": 25000}` — the argument is `source`, not
 `text`.) On a clone whose time zone has never been set, that alone raises
 the Set Time Zone modal, so the case needs no quit to reproduce.
+
+**FIXED and measured, 2026-08-06** (`4b972ade`). Candidates 1, 2 and 3
+all landed, because 1 and 2 cover different halves of Michelle's
+sequence and only together cover it. Same instrument either side —
+`tools/local-plane-lapse.py`, whole documents, a control panel open
+throughout, and it refuses a guest whose build is not the one asked for:
+
+| gap of total wire silence | before (`c5c39f61dbbf`) | after (`53cbc0fc5dcb`) |
+|---|---|---|
+| first scene of the connection | NOW's window only | the machine |
+| 3 s, 8 s | the machine | the machine |
+| 12 s, 20 s, 25 s | **NOW's window only** | the machine |
+
+And the reported frame end to end: twenty seconds of silence, then
+`tell application "Date & Time" to quit`, and the FIRST walk after it
+carries `Set Time Zone`. Before, that walk was the blind one.
+
+- **Renewal rides host traffic, not the event loop** (`wire.c ::
+  renew_scene_planes`). A host sending acts wants the planes; the event
+  loop runs whether or not anyone is watching, and an armed plane is
+  work charged to every process on the machine. Two gates keep it
+  honest: only after a scene has been asked for on THIS link, and never
+  on `pong`, which is the reply to our own heartbeat and would make
+  "connected" mean "armed forever".
+- **A scene waits for the arm echo** (`peek.c :: now_peek_settle`),
+  bounded at half a second and returning the moment it lands. It never
+  asserts an arm it did not observe — no resident, no writer, or a
+  passed deadline all fall through to a walk that reports not-observed.
+  This is also why the FIRST scene of a connection is no longer blind;
+  the warming ritual `tools/local-arm-latency.py` documents is now
+  unnecessary (its docstring is stale, and is left as the record of why
+  it existed).
+- **The status line distinguishes seen from retained**: `5 windows, 3
+  expected-stale · walk … · same`. `MirrorQuitModalTests` pins it
+  against the two lapse fixtures, watched to fail.
+
+What is NOT closed by this. A host that goes entirely silent for longer
+than the lease still lets the planes lapse — deliberately, that is the
+lease doing its job — and the recovery now costs latency (one settle)
+rather than a scene. And the arm handshake itself is unchanged: nothing
+here makes a plane arm faster, only stops asking before it has.
 ## FIXED in the host, UNVERIFIED by any drive: Apple menu items did nothing, and the act was never the missing part (2026-08-06)
 
 Michelle, driving: "apple menu items dont work (apple menu -> control
