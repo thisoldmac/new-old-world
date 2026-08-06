@@ -37,6 +37,15 @@ final class Session {
     /// because the machine id it embeds depends on the hello.
     private let identify: (Hello, GuestAddress) -> GuestKey
     private let onActive: (Session) -> Void
+    /// Asked when a silence window expires: may this session be closed?
+    /// The listener answers no while some other channel proves the machine
+    /// is alive. Defaults to yes, which is the behaviour that predates the
+    /// resident channel and the behaviour with no resident present.
+    private let shouldCloseOnSilence: () -> Bool
+    /// Told when this session crosses between answering and starved, so
+    /// the face can show which — a starved guest displayed as connected is
+    /// how a person concludes the Mirror is broken.
+    private let onAnswering: (Session, Bool) -> Void
     private let onLog: (String, String, HostLog.LogLevel) -> Void
     private let onHealth: (GuestListener.SessionHealth?) -> Void
     private let onCommandResult: (CommandResult) -> Void
@@ -117,6 +126,14 @@ final class Session {
 
     private let decoder = FrameDecoder()
     private var helloed = false
+    /// What this connection is for, settled at the gate. `.session` until
+    /// a hello says otherwise, so nothing can acquire the resident
+    /// exemptions by arriving before its own handshake.
+    private(set) var role: ConnectionRole = .session
+    /// What this machine calls itself and where it dialled from, joined.
+    /// The only thing a guest session and its machine's resident channel
+    /// can both be recognised by — see `gate`.
+    private(set) var machineFingerprint: String?
     private var closed = false
     private(set) var guestName = "guest"
     /// What a guest that sent no name is called. One constant, because
@@ -137,6 +154,8 @@ final class Session {
          admit: @escaping (Hello) -> String?,
          identify: @escaping (Hello, GuestAddress) -> GuestKey,
          onActive: @escaping (Session) -> Void,
+         shouldCloseOnSilence: @escaping () -> Bool = { true },
+         onAnswering: @escaping (Session, Bool) -> Void = { _, _ in },
          onLog: @escaping (String, String, HostLog.LogLevel) -> Void,
          onHealth: @escaping (GuestListener.SessionHealth?) -> Void,
          onCommandResult: @escaping (CommandResult) -> Void,
@@ -183,6 +202,8 @@ final class Session {
         self.admit = admit
         self.identify = identify
         self.onActive = onActive
+        self.shouldCloseOnSilence = shouldCloseOnSilence
+        self.onAnswering = onAnswering
         self.onLog = onLog
         self.onHealth = onHealth
         self.onCommandResult = onCommandResult
@@ -252,6 +273,7 @@ final class Session {
                 guard let self, !self.closed else { return }
                 if let data, !data.isEmpty {
                     self.resetIdleClock()
+                    self.noteAnswering()
                     self.consume(data)
                 }
                 if done || error != nil {
@@ -406,6 +428,27 @@ final class Session {
                 return
             }
             gate(hello)
+            return
+        }
+        /* **A liveness channel carries liveness and nothing else.** The
+           contract allows it hello, ping and bye; anything more would be a
+           resident component claiming a lane it has no business in, and a
+           receiver that quietly served it would let a bug on the guest
+           turn the machine's heartbeat into a second, unaccountable
+           command path. Refused by name so the guest's own log says which
+           rule it broke. */
+        if role == .resident {
+            switch message {
+            case .ping(let id):
+                send(.pong(id: id))
+                touchHealth(pingsDelta: 1)
+            case .bye(let bye):
+                onLog(byeDescription(bye, guest: guestName), "wire", .info)
+                finish(reason: "Closed by guest")
+            default:
+                protocolError("a resident liveness channel may send only "
+                              + "hello, ping and bye")
+            }
             return
         }
         switch message {
@@ -1452,16 +1495,40 @@ final class Session {
             refuse("contract revision \(hello.contract) != \(Contract.revision)")
             return
         }
+        /* **An unknown role is a NEWER sender, and is refused rather than
+           served as a session.** Serving it would hand a liveness-only
+           channel a command lane it cannot answer — and the host would
+           then read its silence as a wedged Macintosh, which is the exact
+           confusion this whole slice exists to remove. */
+        guard let role = hello.role.map({ ConnectionRole(rawValue: $0) })
+            ?? .session else {
+            refuse("unknown connection role \"\(hello.role ?? "")\"")
+            return
+        }
+        self.role = role
         if let reason = admit(hello) {
             refuse(reason)
             return
         }
         helloed = true
+        /* **What a resident channel is associated BY.** Not the minted
+           GuestID: `mintSessionKey` deliberately hands a second dial from
+           a live name+address a DIFFERENT machine id (the emulator
+           loopback guard), so a resident could never share its own
+           application's id. The stable thing both dials agree on is what
+           the machine calls itself and where it dialled from. */
+        machineFingerprint = GuestRegistry.fingerprint(
+            name: hello.name, operatingSystem: hello.os)
+            + "|" + address.text
         guestName = hello.name ?? Self.unnamedGuest
         /* Settled before onActive, so the listener files this session
            under the same key the gate just minted. Per connection, so
-           two Macs calling themselves the same thing are two guests. */
-        let key = identify(hello, address)
+           two Macs calling themselves the same thing are two guests.
+           **A resident channel is deliberately given none of this**: it is
+           not a machine, and minting it an identity would put a second,
+           phantom Macintosh in the registry and the guest list for every
+           real one running the extension. */
+        let key = role == .resident ? nil : identify(hello, address)
         guestKey = key
         let chunk = min(hello.chunk ?? Contract.defaultChunk,
                         Contract.defaultChunk)
@@ -1479,8 +1546,8 @@ final class Session {
         /* The handle, what the machine calls itself, and where it dialled
            from — together, once, in the host's own log. A person reading
            it afterwards needs the pairing to know which Mac this was. */
-        var line = "Connected: \(key.machine.slug) — \(guestName)"
-            + " at \(address.text)"
+        var line = "Connected: \(key?.machine.slug ?? "resident") — "
+            + "\(guestName) at \(address.text)"
         if !hello.version.isEmpty {
             line += " (guest \(hello.version)"
             /* The build, not just the version: a version is hand-edited and
@@ -1625,9 +1692,44 @@ final class Session {
         let timeout = timing.idleTimeout
         idleTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(timeout * 1e9))
-            guard !Task.isCancelled else { return }
-            self?.finish(reason: "Connection lost (no traffic)")
+            guard !Task.isCancelled, let self else { return }
+            /* **Silence is not death, and this is the one place that used
+               to assume it was.** A cooperatively-scheduled Macintosh
+               starves every application while one blocks — measured
+               2026-08-05 at over 90 s, past this very timeout — so a
+               guest that has stopped sending may be a perfectly healthy
+               machine showing a dialog. The listener knows whether
+               anything else on that machine is still answering; it owns
+               the verdict, and this owns the clock. */
+            guard self.shouldCloseOnSilence() else {
+                if self.isAnswering {
+                    self.isAnswering = false
+                    self.onLog("no traffic for \(Int(timeout))s, but the "
+                               + "machine is still answering — starved, "
+                               + "not gone", "wire", .warn)
+                    self.onAnswering(self, false)
+                }
+                /* Re-armed rather than abandoned: the verdict is asked
+                   again every window, so a machine that later goes for
+                   real is still noticed — one timeout later, not never. */
+                self.resetIdleClock()
+                return
+            }
+            self.finish(reason: "Connection lost (no traffic)")
         }
+    }
+
+    /// Whether this session's guest has answered anything within a silence
+    /// window. False means STARVED — the machine is alive on some other
+    /// channel and this application is not being scheduled — which is a
+    /// different thing from disconnected and must not be shown as one.
+    private(set) var isAnswering = true
+
+    private func noteAnswering() {
+        guard !isAnswering else { return }
+        isAnswering = true
+        onLog("the guest is answering again", "wire", .info)
+        onAnswering(self, true)
     }
 
     /// Ends the session. When a farewell message is given it is flushed

@@ -235,9 +235,29 @@ struct PreviewEnd: Codable, Equatable, Sendable {
     var ok: Bool
 }
 
+/// **What a connection is FOR**, where `side` says which half opened it.
+///
+/// Deliberately a `String?` rather than an enum, because the contract says
+/// an unrecognised role must be REFUSED rather than served: decoding it as
+/// an enum would fail the whole `Hello` and produce "bad control message"
+/// — a protocol error, which reads as a broken guest instead of a newer
+/// one. Interpreted at the gate, where the refusal can say what it saw.
+enum ConnectionRole: String {
+    /// A normal guest session: every connection that existed before the
+    /// field, and the only kind a guest application opens.
+    case session
+    /// A liveness channel from an optional resident component. A claim
+    /// about the MACHINE, never about an application on it.
+    case resident
+}
+
 struct Hello: Codable, Equatable, Sendable {
     var contract: Int
     var side: String
+    /// Absent means `session` — see `ConnectionRole`. Never defaulted to
+    /// `resident` by any path: a connection gets the liveness exemptions
+    /// only by asking for them out loud.
+    var role: String? = nil
     var version: String
     /// Opaque build identity — a string that differs between two builds of
     /// the same `version`. Nil means the sender does not report one, which

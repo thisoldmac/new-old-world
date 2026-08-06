@@ -254,6 +254,47 @@ final class GuestListener: ObservableObject {
     /// answers false here for its old key — which is the question the
     /// Mirror's lane needs answered, not "is some Mac connected".
     func isConnected(_ key: GuestKey) -> Bool { sessions[key] != nil }
+
+    /// **Liveness channels, by machine FINGERPRINT — never by machine id.**
+    ///
+    /// A resident component outlives the application it reports for, which
+    /// is the whole point of it, so it must survive the guest session
+    /// redialling underneath it. It cannot be filed by `GuestID`:
+    /// `mintSessionKey` deliberately gives a second dial from a live
+    /// name+address a *different* id — the guard that stops two Macs
+    /// behind one emulator's loopback becoming one guest — so a resident
+    /// would never share its own application's id.
+    ///
+    /// These are NOT guests. They never enter `sessions`, never become
+    /// `activeKey`, are never offered a command, take no registry slot and
+    /// do not count against `maxGuests` — a Macintosh running the
+    /// extension must not appear twice in a host's guest list.
+    private var residents: [String: Session] = [:]
+
+    /// Whether something other than this session proves its machine is
+    /// alive — the one inference a resident channel licenses.
+    ///
+    /// **Ambiguous means NO.** Two machines that call themselves the same
+    /// thing from one address are indistinguishable here, and one of them
+    /// vouching for the other's wedged session would hold a dead guest
+    /// open forever — strictly worse than the timeout it replaced. So a
+    /// resident speaks only when exactly one live session matches it, and
+    /// otherwise the old behaviour stands.
+    func machineIsAnswering(sessionKey key: GuestKey) -> Bool {
+        guard let session = sessions[key],
+              let print = session.machineFingerprint,
+              residents[print] != nil else { return false }
+        let matching = sessions.values.filter {
+            $0.machineFingerprint == print
+        }
+        return matching.count == 1
+    }
+
+    /// Whether the guest for this key is answering, or is STARVED — alive
+    /// on another channel and not being scheduled. Nil when there is no
+    /// such session at all, which is the third answer and not a variant
+    /// of the second.
+    func isAnswering(_ key: GuestKey) -> Bool? { sessions[key]?.isAnswering }
     /// Which machine each live session is a session WITH. The registry is
     /// the book; this is the page open at each socket.
     private var machineBySession: [GuestKey: GuestRegistry.Record] = [:]
@@ -2287,8 +2328,15 @@ final class GuestListener: ObservableObject {
         let newSession = Session(
             connection: connection, identity: identity, timing: timing,
             pacing: pacing, address: address,
-            admit: { [weak self] _ in
+            admit: { [weak self] hello in
                 guard let self else { return "the host is shutting down" }
+                /* A liveness channel is not a guest and is not counted as
+                   one. Bounding it by `maxGuests` would mean a host at its
+                   limit refusing the very channel that tells it which of
+                   its guests are still there. */
+                if hello.role == ConnectionRole.resident.rawValue {
+                    return nil
+                }
                 /* No identity refusal remains. It used to refuse a hello
                    name already connected, which meant two Macs sharing a
                    name were one guest and the second was turned away —
@@ -2316,13 +2364,54 @@ final class GuestListener: ObservableObject {
                 return self.mintSessionKey(hello: hello, address: address)
             },
             onActive: { [weak self] activated in
-                guard let self, let key = activated.guestKey else { return }
+                guard let self else { return }
                 self.pending.removeAll { $0 === activated }
+                /* Filed by FINGERPRINT and returned early — before the
+                   `guestKey` a resident deliberately does not have. It
+                   must never reach the guest bookkeeping below, or the
+                   console, the modules and the agent projection would all
+                   be offered a connection that cannot answer a single
+                   command. */
+                if activated.role == .resident {
+                    guard let print = activated.machineFingerprint else {
+                        return
+                    }
+                    self.residents[print]?.close(
+                        sending: Bye(code: .normal,
+                                     reason: "replaced by a newer resident "
+                                         + "channel from this machine"))
+                    self.residents[print] = activated
+                    self.note("Resident liveness channel for "
+                              + activated.guestName,
+                              area: "wire", level: .info)
+                    return
+                }
+                guard let key = activated.guestKey else { return }
                 self.sessions[key] = activated
                 /* First in is the one being driven; a later arrival is
                    served but does not steal the console out from under
                    whoever is using it. */
                 if self.activeKey == nil { self.activeKey = key }
+                self.publishActive()
+            },
+            /* **The verdict on silence, asked of the machine rather than
+               assumed from the quiet.** Nothing changes without a resident
+               channel: no channel, no proof, close as before — which is
+               what keeps the resident component optional. */
+            shouldCloseOnSilence: { [weak self, origin] in
+                guard let self, let key = origin.session?.guestKey
+                else { return true }
+                return !self.machineIsAnswering(sessionKey: key)
+            },
+            onAnswering: { [weak self] session, answering in
+                guard let self, let key = session.guestKey,
+                      self.sessions[key] === session else { return }
+                self.note(answering
+                          ? "\(key.machine.slug) is answering again"
+                          : "\(key.machine.slug) is starved — the machine "
+                            + "is alive but this application is not being "
+                            + "scheduled",
+                          area: "wire", level: answering ? .info : .warn)
                 self.publishActive()
             },
             onLog: { [weak self] text, area, level in
@@ -2581,6 +2670,18 @@ final class GuestListener: ObservableObject {
             onClosed: { [weak self] closedSession, reason in
                 guard let self else { return }
                 self.pending.removeAll { $0 === closedSession }
+                if let print = closedSession.machineFingerprint,
+                   self.residents[print] === closedSession {
+                    /* The machine stopped proving it is alive. Any of its
+                       sessions still silent will now be closed at their
+                       next silence window rather than held — the verdict
+                       is asked again every window for exactly this. */
+                    self.residents[print] = nil
+                    self.note("Resident liveness channel closed for "
+                              + "\(closedSession.guestName) — \(reason)",
+                              area: "wire", level: .info)
+                    return
+                }
                 guard let key = closedSession.guestKey,
                       self.sessions[key] === closedSession else { return }
                 self.sessions[key] = nil
