@@ -290,6 +290,10 @@ static const char *const d_qdtrace[] = {
     "  start answers requested, never armed: nothing is hooked until",
     "  the extension agrees inside the target process, and status is",
     "  where that shows.",
+    "  In probe mode the plane also patches the QDExtensions trap in",
+    "  the target's own context, so a world created and disposed",
+    "  inside one event pass is hooked at BIRTH rather than chased",
+    "  and missed; status's qdext object counts what that patch saw.",
     NULL
 };
 

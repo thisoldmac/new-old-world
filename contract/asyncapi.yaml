@@ -4387,7 +4387,12 @@ components:
               the armed window back to the offscreen GWorld that sourced
               it, hooks that port too in the same armed context, and
               records what is drawn there under the GWorld's own port
-              key. In this mode, a `bits` record whose source resolves to
+              key. The plane ALSO patches the QDExtensions dispatch in
+              the target's own context, so a world created, drawn and
+              disposed inside a single event pass — which the chase
+              cannot reach, and which is how Sherlock 2 and Appearance
+              draw — is hooked at creation instead. In this mode, a
+              `bits` record whose source resolves to
               a port this plane hooked is PRECEDED by a `blitsrc` record
               naming that port (`srcPort`), which is the join the host
               needs to re-home the offscreen ops into the window at the
@@ -4446,7 +4451,18 @@ components:
               poly / rgn / bits / comment / state, plus `blitsrc`
               (probe mode only: carries `srcPort` and `srcPixmap`,
               0x-hex strings, and joins the ops recorded under that
-              offscreen port to the `bits` record that follows it);
+              offscreen port to the `bits` record that follows it) and
+              `worldborn` / `worlddied` (probe mode only: the resident's
+              QDExtensions trap patch reporting an offscreen world
+              hooked at CREATION and released at disposal — `world` is
+              the port, and `worldborn` adds `pixmap` and `rect`.
+              `worlddied` deliberately carries no shape: after disposal
+              there is nothing left to read). `status` additionally
+              carries a `qdext` object — `installed`, `calls`,
+              `newGWorld`, `lastSelector`, `foreign`, `born`, `died`,
+              `bornMissed` — which is that patch's own account of
+              itself, and the only way to tell a patch that never
+              installed from one that installed and never fired.
               `start` and `stop` carry what was requested. A subcommand that cannot
               answer at all — no extension, a block this build does not
               read — refuses with `ok: false` and a code, and never with

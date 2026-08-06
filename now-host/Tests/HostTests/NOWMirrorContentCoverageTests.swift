@@ -121,29 +121,51 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
         XCTAssertTrue(texts(display).contains("Startup Memory Tests"))
     }
 
-    /// Sherlock 2 is the boundary case, and this gate pins the boundary
-    /// rather than pretending it away. Its whole interior — channel
-    /// picker, list rows, radio labels — is built in a transient
-    /// offscreen world per repaint (measured: 7 full-window sights, 7
-    /// misses, 0 hooks), the same wall as Appearance, so none of it can
-    /// cross until slice D0's resident NewGWorld patch lands. What DOES
-    /// cross, and must keep crossing: the window stream's own drawing —
-    /// the Edit… button's well, the search field's caret — and the
-    /// full-window blit that renders as the honest unavailable hatch
-    /// (the BMP background is allowed to hatch; a blank window is not).
-    func testSherlockWindowStreamCrossesAndTheCompositeHatches() throws {
-        let display = try compose("qdtrace-drain-sherlock",
-                                  window: 0x1e9a0780, psn: "0.35520514",
+    /// Sherlock 2 WAS the boundary case, and this gate is the boundary
+    /// moving. Its whole interior is built in a transient offscreen
+    /// world per repaint, which the sight-then-chase route hooked 0 of
+    /// 8 times — so none of it could cross. With the resident's
+    /// QDExtensions patch hooking every world at CREATION (plan 014),
+    /// the same application recorded 77 worlds born, 77 died, 0 missed,
+    /// and its interior crosses: this capture is one such world's whole
+    /// life, from worldborn through its drawing to the blitsrc+bits
+    /// pair that reveals it.
+    func testSherlockInteriorComposesFromWorldsHookedAtBirth() throws {
+        let display = try compose("qdtrace-drain-sherlock-hooked",
+                                  window: 0x1e99ffc0, psn: "0.35520514",
                                   title: "Sherlock 2")
-        XCTAssertTrue(display.contains {
-            $0.op == "rrect" && $0.rect == [411, 3, 461, 23]
-        }, "the Edit… button's well crosses")
-        XCTAssertTrue(display.contains {
-            $0.op == "rect" && $0.rect == [33, 116, 34, 132]
-        }, "the search field's caret crosses")
-        XCTAssertTrue(display.contains {
-            $0.op == "bits" && $0.dst == [0, 0, 490, 448]
-        }, "the unhookable composite stays visible as geometry to hatch")
+        let labels = texts(display)
+        /* The radio labels and column headers the boundary test used to
+           assert were UNREACHABLE. */
+        for label in ["File Names", "Contents", "Name", "On",
+                      "Index Status"] {
+            XCTAssertTrue(labels.contains(label),
+                          "missing \(label) — the interior stopped crossing")
+        }
+        /* And the list row, which is content rather than chrome. */
+        XCTAssertTrue(labels.contains("Macintosh HD"))
+        XCTAssertTrue(labels.contains { $0.hasPrefix("Volume indexed") },
+                      "the volume's real index status crosses")
+        XCTAssertTrue(update(display), "the composite replaced its hatch")
+
+        if let out = ProcessInfo.processInfo.environment["NOW_RENDER_OUT"] {
+            let model = plane()
+            let joined = model.apply(
+                try capture("qdtrace-drain-sherlock-hooked"),
+                to: try scene(address: 0x1e99ffc0, psn: "0.35520514",
+                              title: "Sherlock 2"))
+            let png = try RenderShot.png(scene: joined.scene)
+            try png.write(to: URL(fileURLWithPath: out))
+        }
+    }
+
+    /// The joined blit must not survive as a hatch over the content it
+    /// was replaced by.
+    private func update(_ display: [DisplayOp]) -> Bool {
+        !display.contains {
+            $0.op == "bits" && ($0.dst?.count == 4)
+                && ($0.dst![2] - $0.dst![0]) >= 490
+        }
     }
 
     // MARK: - NOW's own window, and retention across a retarget

@@ -82,8 +82,14 @@ final class NOWMirrorContentPlane {
     private var sourceOrder: [SourceKey] = []
     /// A `blitsrc` record names the source of the `bits` record that
     /// IMMEDIATELY follows it; anything else in between voids the claim.
-    private var pendingBlitSource: UInt32?
+    /// Keyed by DESTINATION port, because composition nests: Sherlock 2
+    /// draws its list into one offscreen world, blits that into the
+    /// world holding the whole interior, and blits THAT into the window
+    /// (measured 2026-08-06). A destination is not always a window, and
+    /// a claim belongs to the port it was made on.
+    private var pendingBlitSource: [UInt32: UInt32] = [:]
     private var windowPortState = PortState()
+    private var evictedSourceCount = 0
 
     /// Keep enough ordered drawing to include a full repaint without allowing
     /// a busy application to grow the host indefinitely.
@@ -106,7 +112,7 @@ final class NOWMirrorContentPlane {
         replacementFloor.removeAll()
         sourceOperations.removeAll()
         sourceOrder.removeAll()
-        pendingBlitSource = nil
+        pendingBlitSource.removeAll()
         windowPortState = PortState()
         armedAt = nil
     }
@@ -171,7 +177,7 @@ final class NOWMirrorContentPlane {
             replacementFloor.removeAll()
             sourceOperations.removeAll()
             sourceOrder.removeAll()
-            pendingBlitSource = nil
+            pendingBlitSource.removeAll()
             windowPortState = PortState()
             armedAt = nil
         }
@@ -289,7 +295,7 @@ final class NOWMirrorContentPlane {
                a window is worse than a hatch. */
             sourceOperations.removeAll()
             sourceOrder.removeAll()
-            pendingBlitSource = nil
+            pendingBlitSource.removeAll()
             let front = scene.windows.first(where: \.front)
             if let slot = Self.slot(psn: targetPSN ?? front?.psn,
                                     window: targetWindow ?? front?.addr),
@@ -313,7 +319,7 @@ final class NOWMirrorContentPlane {
         var joined = 0
         var born = 0
         var died = 0
-        var evictedSources = 0
+        evictedSourceCount = 0
         for record in drain.records {
             guard let address = record.portAddress else {
                 unjoined += 1
@@ -330,8 +336,14 @@ final class NOWMirrorContentPlane {
                 /* Only a port that is NOT any window in this scene can be
                    an offscreen world; a record from another window of the
                    same process stays unjoined exactly as before. */
-                guard record.psn == expectedPSN, visible[address] == nil,
-                      record.op.op != "blitsrc" else {
+                /* `blitsrc` is NOT excluded here any more, and the
+                   change is the whole of nested composition: when only
+                   windows could be a blit's destination, a blitsrc on
+                   an offscreen port could only be noise. Sherlock 2
+                   blits world into world, so a claim made on an
+                   offscreen port is a real join. */
+                guard record.psn == expectedPSN, visible[address] == nil
+                else {
                     unjoined += 1
                     continue
                 }
@@ -353,24 +365,35 @@ final class NOWMirrorContentPlane {
                     born += 1
                     continue
                 }
-                let key = SourceKey(port: address,
-                                    generation: record.generation)
-                if sourceOperations[key] == nil {
-                    if sourceOrder.count >= Self.sourceCap,
-                       let oldest = sourceOrder.first {
-                        sourceOrder.removeFirst()
-                        sourceOperations[oldest] = nil
-                        evictedSources += 1
-                    }
-                    sourceOrder.append(key)
-                    sourceOperations[key] = []
+                let destKey = SourceKey(port: address,
+                                        generation: record.generation)
+                /* A NESTED join: this offscreen world is the destination
+                   of a blit from another one. Splice the inner world's
+                   ops into this one's, re-homed, exactly as the window
+                   branch does - composition nests, so the join must too.
+                   The restore state is a fresh one: an offscreen world's
+                   stream opens with its own erase, so there is no prior
+                   state of its own to put back. */
+                if record.op.op == "blitsrc" {
+                    pendingBlitSource[address] = record.srcPort
+                    continue
                 }
-                sourceOperations[key]!.append(record.op)
-                if sourceOperations[key]!.count > Self.operationCapPerWindow {
-                    sourceOperations[key]!.removeFirst(
-                        sourceOperations[key]!.count
-                            - Self.operationCapPerWindow)
+                if record.op.op == "bits",
+                   let inner = pendingBlitSource.removeValue(forKey: address),
+                   let heldOps = sourceOperations[
+                       SourceKey(port: inner, generation: record.generation)],
+                   !heldOps.isEmpty,
+                   let rehomed = Self.rehome(heldOps, bits: record.op,
+                                             restoring: PortState()) {
+                    appendSource(destKey, rehomed)
+                    joined += 1
+                    held += rehomed.count
+                    continue
                 }
+                if record.op.op != "bits" {
+                    pendingBlitSource[address] = nil
+                }
+                appendSource(destKey, [record.op])
                 held += 1
                 continue
             }
@@ -416,11 +439,11 @@ final class NOWMirrorContentPlane {
                before and the renderer hatches it. */
             var toAppend = [record.op]
             if record.op.op == "blitsrc" {
-                pendingBlitSource = record.srcPort
+                pendingBlitSource[address] = record.srcPort
                 continue
             }
-            if record.op.op == "bits", let source = pendingBlitSource {
-                pendingBlitSource = nil
+            if record.op.op == "bits",
+               let source = pendingBlitSource.removeValue(forKey: address) {
                 let key = SourceKey(port: source,
                                     generation: record.generation)
                 if let heldOps = sourceOperations[key], !heldOps.isEmpty,
@@ -430,7 +453,7 @@ final class NOWMirrorContentPlane {
                     joined += 1
                 }
             } else {
-                pendingBlitSource = nil
+                pendingBlitSource[address] = nil
             }
             for op in toAppend { windowPortState.absorb(op) }
             operations[identity, default: []].append(contentsOf: toAppend)
@@ -484,9 +507,9 @@ final class NOWMirrorContentPlane {
             facts.append("joined \(joined) composite"
                          + "\(joined == 1 ? "" : "s") from offscreen worlds")
         }
-        if evictedSources > 0 {
-            facts.append("evicted \(evictedSources) held source"
-                         + "\(evictedSources == 1 ? "" : "s") at the cap")
+        if evictedSourceCount > 0 {
+            facts.append("evicted \(evictedSourceCount) held source"
+                         + "\(evictedSourceCount == 1 ? "" : "s") at the cap")
         }
         if unjoined > 0 {
             facts.append("\(unjoined) op\(unjoined == 1 ? "" : "s") named "
@@ -521,6 +544,27 @@ final class NOWMirrorContentPlane {
         }
         return .init(scene: attached,
                      sentence: "content: " + facts.joined(separator: "; "))
+    }
+
+    /// Append to a held source's ops, opening its bucket if needed and
+    /// evicting the oldest source at the cap. Shared by the plain hold
+    /// and the nested join, so both obey the same bounds.
+    private func appendSource(_ key: SourceKey, _ ops: [DisplayOp]) {
+        if sourceOperations[key] == nil {
+            if sourceOrder.count >= Self.sourceCap,
+               let oldest = sourceOrder.first {
+                sourceOrder.removeFirst()
+                sourceOperations[oldest] = nil
+                evictedSourceCount += 1
+            }
+            sourceOrder.append(key)
+            sourceOperations[key] = []
+        }
+        sourceOperations[key]!.append(contentsOf: ops)
+        if sourceOperations[key]!.count > Self.operationCapPerWindow {
+            sourceOperations[key]!.removeFirst(
+                sourceOperations[key]!.count - Self.operationCapPerWindow)
+        }
     }
 
     /// Re-home one source's held ops into the window a blit revealed them
