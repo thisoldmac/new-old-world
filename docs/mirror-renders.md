@@ -3,6 +3,22 @@
 **Date:** 2026-07-31 · **Status:** recorded evidence, carried from the
 parked upstream project `timbottu/mirror`. NOW produced none of these.
 
+> **Superseded in two specific ways on 2026-08-06 — read this before
+> quoting the page.** Everything below is kept as it was written,
+> because it is a dated record of what nine particular images showed on
+> 2026-07-31 and that has not changed. What HAS changed is the two
+> limits it closes on. **Window interiors are no longer blank**: the
+> content plane replays what an application actually drew, offscreen
+> worlds joined back to the window they land in, so the "every window
+> interior is blank" pair below documents a solved problem rather than a
+> standing one. And **fidelity is no longer unjudged**: the sweep in
+> [fidelity-sweep-2026-08-06.md](fidelity-sweep-2026-08-06.md) put
+> eleven windows side by side with the machine's own pixels and scored
+> them, which is exactly the comparison the last bullet of this page
+> says no render shows. Both are emulator-only; neither has touched
+> metal. See [render-composition.md](render-composition.md) for how the
+> planes compose now.
+
 ## What these images are, and are not
 
 Every one of them is a **host-side render** — a macOS application
@@ -214,7 +230,18 @@ like.
   view, which is the only view the item model was measured against.
 - **A document body.** No render carries replayed text from an
   application's own content — the milestone that would have produced one
-  was not reached.
+  was not reached. *(Reached 2026-08-06: the content plane replays the
+  drawing itself. No image on THIS page shows one — the statement stands
+  about these nine renders and no longer about the project.)*
 - **A comparison against the guest's own framebuffer.** The pixel-island
   frames contain guest pixels, but no image here is a side-by-side
-  fidelity check.
+  fidelity check. *(Done 2026-08-06, elsewhere:
+  [fidelity-sweep-2026-08-06.md](fidelity-sweep-2026-08-06.md) is
+  nothing but side-by-side checks, eleven of them, with a red list.)*
+
+Two things these nine still show that nothing has superseded: they
+predate the measured Platinum asset pack and the accent ramps read from
+the theme file, so their chrome and their icon art are **not** what the
+renderer draws today. Do not use this page as a picture of current
+output — use it for what it was made for, which is the argument that
+state read and redrawn is different in kind from a screenshot.
