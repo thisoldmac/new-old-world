@@ -376,6 +376,27 @@ uncover repaint is total, and typing (`key`) gives only direct window
 drawing — selection redraw worlds are too transient for the chase
 (sighted, chased, gone: measured `misses`).
 
+## OPEN: a scrollbar is drawn in one place and clicked in another (2026-08-06)
+
+Found by the doc audit, incidentally, and it is the "what you can see
+you can name" invariant broken rather than a cosmetic slip.
+
+`MirrorKit.Scrollbar.arrow = 16` is the HIT-TEST constant — it decides
+which part of a bar a click lands in, and it feeds `track()` and
+`thumbRect()`. The renderer's arrow boxes are sized independently, from
+the bar's own narrow dimension (`SceneRenderer.drawScrollarrow`, added
+2026-08-06 when scrollbars gained their arrows). On any bar whose narrow
+dimension is not exactly 16, the arrow a person SEES and the region that
+answers a click are different rectangles, and nothing relates the two.
+
+Nobody has watched it mis-click: the two agree at 16 px, which is the
+common case, so this is a latent inconsistency rather than an observed
+defect. It is recorded because the failure it would produce — a click
+that lands one part off — is the kind that reads as a flaky mirror
+rather than as a geometry bug, and because plan 016's
+`GetThemeMetric(kThemeMetricScrollBarWidth)` would settle the true width
+from the machine and make one number serve both.
+
 ## ANSWERED: the Appearance path was load-bearing, and the panels' values cross (2026-08-06, plan 015 G3)
 
 Michelle's hypothesis, and it was right in the way that matters:
