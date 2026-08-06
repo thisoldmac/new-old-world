@@ -14,7 +14,15 @@ then drain everything and save raw replies plus a per-port summary.
 
 import argparse, json, os, socket, struct, sys, time
 
-CONTROL, END = 0, 1
+# The frame numbers and the contract revision come from contract/, never
+# from a literal here: a harness that declares its own revision is how
+# tools/askguest.py sat on revision 1 for a whole revision without
+# anyone noticing (WireLimitsAgreementTests gates it).
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                os.pardir, "contract"))
+from wire_limits import (CHANNEL_CONTROL as CONTROL,  # noqa: E402
+                         FLAG_END as END,
+                         WIRE_CONTRACT_REVISION)
 
 class Guest:
     def __init__(self, port, wait=90, timeout=45):
@@ -33,7 +41,8 @@ class Guest:
         hello = self.read_frame()[3]
         self.hello = json.loads(hello.decode("utf-8", "replace"))
         print("guest: %s" % self.hello.get("build"), flush=True)
-        self.send_json({"type": "hello", "contract": 1, "side": "host",
+        self.send_json({"type": "hello", "contract": WIRE_CONTRACT_REVISION,
+                        "side": "host",
                         "version": "0", "name": "gwprobe", "chunk": 4096})
 
     def read_frame(self):

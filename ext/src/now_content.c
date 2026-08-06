@@ -244,9 +244,11 @@ static Boolean content_capture_enabled(void)
            was left on - stays strict pass-through, exactly as before. */
         short slot;
 
-        if (gArmedMode != (NowPeekU32)kNowContentModeProbe) {
-            return false;
-        }
+        /* An offscreen port records iff WE hooked it for this armed
+           context - in record mode as well as probe, now that worlds
+           are hooked at creation by the trap patch rather than found by
+           the experimental scan. Any other port stays strict
+           pass-through, exactly as before. */
         slot = content_slot_for(port, gArmedA5);
         return slot >= 0 && gPorts[slot].offscreen;
     }
@@ -480,7 +482,7 @@ static void content_record_bits(const BitMap *src_bits, const Rect *src_rect,
        BitMap resolves to nothing. A source that resolves to no hooked
        row emits nothing: absence is the pre-join behaviour, not a
        zero. */
-    if (gArmedMode == (NowPeekU32)kNowContentModeProbe && src_bits != NULL
+    if (content_mode_records() && src_bits != NULL
         && ((unsigned short)src_bits->rowBytes & 0x8000U) != 0) {
         NowContentBlitSourceRow rows[kNowContentMaxPorts];
         NowContentU32 src_port;
@@ -922,7 +924,7 @@ void now_content_qdext_born(GrafPtr port)
     short slot;
 
     if (gBlock == NULL || port == NULL || gArmedA5 == 0
-        || gArmedMode != (NowPeekU32)kNowContentModeProbe
+        || !content_mode_records()
         || (NowPeekU32)LMGetCurrentA5() != gArmedA5) {
         return;
     }
@@ -1618,11 +1620,17 @@ void now_content_gne(NowPeekTable *table)
         gBlock->active_generation = generation;
         table->arm_active |= (NowPeekU32)kNowPeekTableCapContent;
 
-        /* Probe mode only, for now: the patch is an experiment and the
-           shipping content plane should not grow a trap patch whose
-           consumer does not exist yet (013 A2.2's rule, applied to a
-           riskier mechanism than the record it was written for). */
-        if (gArmedMode == (NowPeekU32)kNowContentModeProbe) {
+        /* THE TRAP PATCH SHIPS; THE HEAP SCAN DOES NOT, and the split
+           is by cost rather than by novelty. Hooking a world at
+           creation is O(1) per NewGWorld, needs no search, and is the
+           only route to an application whose worlds do not outlive the
+           pass that made them - it earned record mode by being both
+           proven (E1/E2/E3: 77 born, 77 died, 0 missed against
+           Sherlock 2) and cheap. The sight-then-chase scan below stays
+           probe-only: it walks two heaps at draw time, and an
+           unbounded search inside another process's draw path is not
+           something to arm by default. */
+        if (content_mode_records()) {
             content_qdext_install();
         }
 
