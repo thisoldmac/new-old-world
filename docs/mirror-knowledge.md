@@ -36,7 +36,7 @@ look is this page, and the second is the upstream repository.
 | [mirror-journaling.md](mirror-journaling.md) | the Event Manager journal: measured, and closed |
 | [mirror-assets.md](mirror-assets.md) | extracting the guest's own fonts, icons, cursors and patterns |
 | [mirror-renders.md](mirror-renders.md) | rendered scenes, and what each proves — including the one before/after pair beside the machine's own screen |
-| [mirror-measurement-method.md](mirror-measurement-method.md) | how to measure things here — **nineteen** rules, each bought with a retraction. Rules 1–12 are upstream's inheritance; **13–19 are NOW's own**, all paid for on 2026-08-05/06, and they are why that file is no longer titled for Mirror alone. 19 is the one that bit the session that had just written it: the end of a shared append-only log is not your run |
+| [mirror-measurement-method.md](mirror-measurement-method.md) | how to measure things here — **twenty-two** rules, each bought with a retraction. Rules 1–12 are upstream's inheritance; **13–22 are NOW's own**, all paid for on 2026-08-05/06, and they are why that file is no longer titled for Mirror alone. 19 is the one that bit the session that had just written it: the end of a shared append-only log is not your run. 20–22 are the ones about an instrument that *substitutes* rather than misses — one blocking call reported as two slownesses, a wedge mode named `modal` that never raised one, and heap arithmetic that failed in silence |
 | [mirror-foldin-inventory.md](mirror-foldin-inventory.md) | what has crossed from upstream and what has not |
 
 ## What provenance means on these pages

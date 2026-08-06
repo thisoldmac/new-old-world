@@ -68,6 +68,38 @@ everywhere.
 | `main.c` | `MenuSelect`, `DragWindow`, `TrackGoAway`, `GrowWindow`, `TrackBox` | No | Mouse-down / drag duration |
 | `proc_actions.c` — `quit`'s confirmation wait | own `WaitNextEvent(0, …)` yield loop | **Yes** — `now_wire_pump()` every pass | ≤ `--wait N` (6 s default, 20 s ceiling) |
 | `console_model.c` — the `chat` verb's streamed turn | own pump loop (`chat_verb_wait`) | **Yes** — `now_wire_pump()` every pass; `exec.cancel` ends it via `now_wire_exec_cancelled()` | until the terminal `chat.result`, the wire's 60 s quiet deadline, or a 5-minute hard cap. The longest pump loop in the guest, deliberately: the Chat page is the interactive face, and this verb's help says the console waits |
+| `act_client.c` — `act_yield`, under `now_act_submit` **and** `now_act_await_fired` | own `WaitNextEvent(0, …)` yield loop | **No** | ≤ `kNowActDeadlineTicks` (300 ticks ≈ 5 s) **per phase, and there are two** — so ~10 s of held `conn_service` for an act the target never takes. **Added 2026-08-06; see below** |
+
+**The `act_client.c` row is why this table is dated and why "every" in
+its heading is a claim, not a fact.** The audit above was re-run
+2026-07-21, and the act plane did not exist yet. Nothing re-ran it when
+that plane landed, so the guest's longest non-pumping wait spent weeks
+outside an audit whose title says it is exhaustive — and it was found
+not by re-auditing but by chasing a symptom from the other end. **When a
+new nested loop lands, it gets a row in the same commit.**
+
+The measured cost, 2026-08-06: an act refused `act-not-taken` after
+**6.6 s**, and a `scene.request` issued in the same instant answered in
+**6634 ms** — the same number twice, because it was the same wait seen
+from both ends. Two phases plus overhead puts the worst case at
+**11.7–12.5 s**, which is the range of the slow Mirror loops that were
+being attributed to a modal. Worse, it is self-sustaining: the anchor
+plane's ten-second OWNER lease is renewed by host traffic *through
+`conn_service`*, which is exactly what does not run during the wait — so
+a ~10 s act lapses the lease and the next act refuses `plane absent`.
+That is the "refused the first time, worked the second" report.
+
+**It is deliberately not fixed.** Pumping inside an armed window means
+serving requests while an act is armed, which is precisely the
+re-entrancy [no-hijack-criterion.md](no-hijack-criterion.md) exists to
+prevent, so the repair is `pump.h` plus a re-entrancy guard plus a
+decision about what may be served mid-arm — not a one-line edit. The
+source carries the same note at the call site. Also unresolved: **the
+act ceiling is stated nowhere once.** `kNowActDeadlineTicks` is 5 s per
+phase here; plan 014's host-side watchdog is 20 s and was chosen against
+the *script* ceiling, with nothing naming this one. Two halves, two
+numbers, neither aware of the other — the shape AGENTS.md warns about
+under "state a limit once".
 
 The `quit` row is the one deliberate stall we *added*, so it is worth
 stating why it cannot be avoided and what it does and does not cost. A
@@ -89,7 +121,13 @@ stay far from it.
 
 The remaining non-pumping sites are all **human-scale** — seconds — so
 they stall a stream and delay a heartbeat but do not reach the 65 s
-guest death timer. Three of them cannot be fixed rather than merely have
+guest death timer. **`act_yield` is the exception, and it is why that
+sentence needed qualifying:** it is bounded by a *deadline*, not by how
+long a hand stays on a mouse, so it runs its full ~10 s whenever a
+target declines, and it is reached by the host rather than by a person.
+A wait no human is holding open is not human-scale, and "does not reach
+the 65 s death timer" was the wrong bar anyway — the anchor lease is
+**10 s**, and this wait clears it. Three of them cannot be fixed rather than merely have
 not been: `MenuSelect`, `DragWindow` and `GrowWindow` take no callback
 at all (`pump.h` says so), a popup CDEF needs its own action, and the
 Control Manager does not call an action proc for a scroll bar's

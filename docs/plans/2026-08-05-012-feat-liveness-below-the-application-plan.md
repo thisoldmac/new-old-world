@@ -635,13 +635,22 @@ wins, so one binary serves every mode), then `launch` it through the
 anchor on port 1700. The push reports a "catalog dates" error after
 committing; the file lands, so `stat` and carry on.
 
-**Results, 2026-08-05, with the modal screendumped mid-run:**
+**Results, 2026-08-05, with the modal screendumped mid-run — TWO OF
+THESE THREE ROWS WERE REFUTED 2026-08-06. Read the correction under § 5
+above before quoting anything here.**
 
-| mode | application-level work | reading |
-|---|---|---|
-| `spin` | **starved the full 20 s** | a non-pumping loop denies every other application time |
-| `modal` | **never starved**, 71 s watched | a modal SITTING there starves nothing; `ModalDialog` pumps |
-| `scan` | **never starved**, 71 s watched | sync File Manager work yields |
+| mode | application-level work | reading | 2026-08-06 |
+|---|---|---|---|
+| `spin` | **starved the full 20 s** | a non-pumping loop denies every other application time | **stands** — 44,061 ms of 45 s |
+| `modal` | ~~never starved, 71 s watched~~ | ~~a modal SITTING there starves nothing; `ModalDialog` pumps~~ | **REFUTED** — starved 43,974 ms of 45 s. `ModalUntil` loops `GetNextEvent` with no sleep, so this mode is `spin` with a dialog drawn over it and has never measured a modal |
+| `scan` | ~~never starved, 71 s watched~~ | ~~sync File Manager work yields~~ | **REFUTED** — starved 43,975 ms of 45 s |
+
+The three modes are indistinguishable, and the guest's own `wirestat`
+histogram says its event loop did not run once (`pass max` 44.9 / 45.0 /
+45.0 s). What a REAL modal costs was measured separately, by raising one
+through `ctlact` so the application runs its own handler: a **20×
+slowdown** (scene median 21 ms idle → 413 ms, n=145) and **no starvation
+at all** — acts work through it.
 
 **Two traps this instrument taught, both drive-loop rule 2e:**
 

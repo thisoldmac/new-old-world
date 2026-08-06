@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-31, extended 2026-08-06 · **Status:** recorded
 knowledge. Rules 1–12 are **inherited** from the parked upstream project
-`timbottu/mirror`, mostly dug out of its 55 KB `STATUS.md`. Rules 13–19
+`timbottu/mirror`, mostly dug out of its 55 KB `STATUS.md`. Rules 13–22
 are **NOW's own**, paid for in a single night, and they are the reason
 this file no longer carries Mirror's name in its title.
 
@@ -181,13 +181,14 @@ operation `5`.
 
 ## The rules NOW paid for itself
 
-Rules 1–12 came in from outside. **13–19 were bought here**, all of them
+Rules 1–12 came in from outside. **13–22 were bought here**, all of them
 on 2026-08-05/06, and all of them the same shape: the
 instrument was wrong, and the wrong answer it gave was plausible enough
-to act on. Between them they cost this project four wrong conclusions,
-two of which were written down and had to be retracted.
+to act on. Between them they cost this project six wrong conclusions,
+three of which were written down and had to be retracted — the third
+being plan 012 § 5's modal row, retracted by rule 21.
 
-They are collected here rather than left in the five ledger entries they
+They are collected here rather than left in the ledger entries they
 came from, because the Macintosh detail in each one is the least
 transferable part. Every entry names its evidence in
 [open-issues.md](open-issues.md).
@@ -333,6 +334,106 @@ metal gates already refuse a guest that is not the build under test
 (`requireTheBuildUnderTest()`), and a log line that named its guest
 would have made this impossible rather than merely avoidable.
 
+### 20. A blocking call that does not pump makes ONE slowness look like TWO
+
+Michelle reported a Mirror loop taking 9–12 seconds, and her log showed
+two apparently independent slow things: a `request_ms=12041`, and an act
+her guest reported as `guest 12099ms`. Two numbers, two subsystems, two
+theories — and the leading one, that a modal was starving the machine,
+was wrong.
+
+**They were one event, counted twice.** `act_yield` in the guest's act
+client spins on `WaitNextEvent` without pumping the wire, under two
+consecutive phases of 5 s each, so a `scene.request` that arrives while
+an act is waiting is not slow — it is *queued behind the act*, and it
+reports the act's duration as its own. Measured directly: an act refused
+after **6.6 s**, and a `scene.request` issued in the same instant
+answered in **6634 ms**. The same number twice is the tell.
+
+Two consequences worth stating separately, because each has its own way
+of misleading:
+
+- **A shared blocking point manufactures correlations.** Every
+  measurement taken through it inherits its duration, so unrelated
+  subsystems appear to slow down together and invite a common-cause
+  theory about the *machine* — scheduling, a modal, the Finder — when
+  the common cause is a single call on this side's own stack.
+- **It can also feed itself.** The anchor plane's ten-second owner lease
+  is renewed by host traffic *through* `conn_service` — precisely what
+  the wait holds off. So a ~10 s act lapses the lease and the *next* act
+  refuses `plane absent`: "refused the first time, worked the second",
+  which reads as flakiness rather than as the previous measurement's
+  after-effect.
+
+So: when two numbers agree more closely than two independent causes
+should, look for a serialising point they share before believing they
+are two findings. And a latency attributed to the far machine has to
+clear this side's own stack first — the guest was not slow, it was not
+being asked.
+
+### 21. A mode named for a mechanism must be shown to exercise it
+
+`tools/guest-wedge`'s `modal` mode raised a dialog and reported that a
+modal starves nothing — **71 s watched, never starved**. That went into
+plan 012 § 5 as a measured result and killed the "modal sitting there"
+hypothesis on the strength of it.
+
+The mode never measured a modal. `ModalUntil` looped `GetNextEvent`
+back-to-back with **no sleep**, which yields nothing, so the mode was
+the `spin` mode with a dialog drawn over it. Re-run with better
+instruments, the three modes are indistinguishable: `spin` 44,061 ms,
+`modal` 43,974 ms, `scan` 43,975 ms of 45 s, and the guest's own
+`wirestat` histogram says its event loop did not run once. Two of § 5's
+three rows were retracted.
+
+What a real modal actually costs had to be measured a different way —
+by raising one in a **real application** through `ctlact`, so the
+application runs its own handler: a **20× slowdown** (scene median 21 ms
+idle → 413 ms, n=145) and no starvation at all. Acts work through it;
+`ctlact` on the modal's own Cancel answered in 0.7 s.
+
+The generalisation, and it is not the same as rule 8: a name is a
+statement of *intent*. Rule 8 says suspect the instrument when the
+answer is surprising — this says suspect it when the answer is
+*unsurprising*, because nothing here looked wrong. The check is a
+positive control on the mechanism itself: before quoting a mode, show it
+doing the thing it is named for, by some signal other than the number
+you want from it. A synthetic stand-in for a mechanism is a hypothesis
+about that mechanism, not an instance of it.
+
+### 22. Arithmetic over an assumed layout fails silently; only something outside it can say so
+
+An alert's message text was missing from the wire. The first instrument
+was header arithmetic: derive the item's length from the block header
+below its data, the documented classic layout. It produced **nothing**,
+with no error, no exception and no diagnostic — the failure mode of an
+assumption is an answer, not a complaint.
+
+The **QEMU memory oracle**, reading the guest's RAM from outside the
+guest on a stopped VM, said why: this heap's block header is not the
+24-bit-era layout at all. The longword below the data holds a
+**zone-relative offset**, not the master pointer — demonstrated by two
+different items differing from their handles by the *same* base — and
+the tag byte's size-correction nibble reads zero while the physical
+block overshoots the string by eight bytes. The arithmetic would have
+appended eight bytes of heap slop to every alert: a wrong answer that
+would have looked right in most captures. `GetHandleSize` knows;
+`GetDialogItemText` is now the seam, and `dialog_text.h` carries the
+reason.
+
+Two things to carry:
+
+- **A silent failure is the expensive kind**, because there is nothing
+  to debug — you have to become suspicious on your own. When a
+  derivation returns empty rather than raising, the assumption under it
+  is the first suspect, not the data.
+- **An oracle outside the layout is what settles a layout question.**
+  Rule 3 says do not verify a write with the code that performed it;
+  this is the same rule for *structure*. Nothing that parses a block
+  using the layout can tell you the layout is wrong — only a reader that
+  makes no assumption, in this case raw bytes lifted out of the machine,
+  can. It cost one run on a stopped VM.
+
 ## What this looks like in NOW
 
 NOW already holds the same convictions from its own scars — the contract
@@ -341,7 +442,16 @@ verification is a status and not an adjective. Rules 1–12 are the same
 lessons learned on a different machine, and the ones NOW did not already
 have written down are **1, 2, 4, 6 and 11.**
 
-Rules 13–19 it now has written down because it made them. The
-transferable core of all seven, and the sentence worth carrying out of
+Rules 13–22 it now has written down because it made them. The
+transferable core of all ten, and the sentence worth carrying out of
 this file: **before believing a number, say what the instrument could
 not have seen.**
+
+Rules 20–22 add a second sentence beside it, because three of the
+night's wrong answers were not about what an instrument missed but about
+what it *substituted*: **say what the instrument actually did, not what
+it is named for.** A mode called `modal` that never raised one, a
+`request_ms` that timed a queue rather than a machine, and arithmetic
+over a layout the heap does not use — each returned a clean number, and
+in every case the repair was an independent reading from outside the
+thing under test.
