@@ -79,6 +79,18 @@ Nothing here depends on either: this result is *stronger* if the worker
 was silent at every level, because the resident ticked through it anyway.
 Whoever needs § 5's table should re-measure it before quoting it.
 
+**2026-08-05, independently reproduced.** A second session reached the
+same ABI diagnosis from the procinfo word alone and measured the same
+result on its own clone: 17 ticks over an 83 s window containing a 25 s
+spin starvation — the undisturbed rate; a vehicle frozen through the
+wedge would have shown ~12. Two rig lessons from that run, neither
+recorded elsewhere: `launch` of a **Desktop Folder** path resets the
+worker's connection on this rig and the app never starts (stage into the
+`now-dev` folder instead); and a starved guest shows as a **long gap
+between successful probe replies, not as refusals** — QEMU's user-net
+proxy accepts and buffers, so an untimestamped probe timeline reads
+"alive" straight through a starvation.
+
 ## BROKEN and DISARMED: the liveness vehicle hangs the guest at boot (2026-08-05) — FIXED, see above
 
 012 § 3's Time Manager task — the extension's first interrupt-time
