@@ -505,6 +505,7 @@ class GuestLink:
 
     def scene(self, *, stale_after_ms: int | None = None,
               chunk_kb: int | None = None, pace_ms: int | None = None,
+              since: str | None = None, full: bool = False,
               timeout: float = SCENE_BUDGET) -> tuple:
         """Ask for one walk of the machine and read it whole.
 
@@ -532,6 +533,13 @@ class GuestLink:
             req["chunkKb"] = int(chunk_kb)
         if pace_ms is not None:
             req["paceMs"] = int(pace_ms)
+        # THE BASELINE THIS CALLER HOLDS, as a digest. A probe that does not
+        # pass one gets a whole document, which is what every probe here did
+        # before deltas existed and still does.
+        if since:
+            req["since"] = since
+        if full:
+            req["full"] = True
         self._send(req)
 
         reader = SceneReader(self._id)
@@ -563,7 +571,8 @@ class GuestLink:
                 if self._route(msg):
                     continue
                 reader.on_control(msg)
-                if msg.get("type") not in ("scene.begin", "scene.end"):
+                if msg.get("type") not in ("scene.begin", "scene.end",
+                                           "scene.same"):
                     self._unsolicited.append(msg)
         finally:
             self.sock.settimeout(None)

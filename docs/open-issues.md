@@ -14,6 +14,57 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## SHIPPED on an emulator, UNVERIFIED on metal: a scene can now answer "the same", or send only what moved (2026-08-06)
+
+Plan 013 § 5. The wire had become the dominant cost — a 3–8.5 ms walk
+against a 111–710 ms transfer of a 26–28 KB document, several times a
+second, for a Macintosh that mostly had not changed. `scene.request` now
+takes a `since` (the body digest the host already holds) and gets one of
+three answers: `scene.same` (a control frame, no transfer at all), a
+delta carrying only the entities that moved, or a whole document.
+Design: [scene-deltas.md](scene-deltas.md). Numbers:
+[scene-delta-measurements.md](scene-delta-measurements.md).
+
+**What is proven.** Tested, on a session-private mac99 clone, guest
+`df570d8014de`: an idle machine's wire cost drops to **10.3–10.4% over
+ten polls**, and after the first scene each poll costs one control frame.
+Walk time did not move (0 ms idle, 16 ms driven, both conditions). The
+byte-exact reconstruction and the digest check are pinned natively on
+both sides, including a two-halves test whose fixtures the GUEST'S
+encoder emitted.
+
+**What is not.**
+
+- **No metal pass.** And the emulator understates this one rather than
+  overstating it, which is the reverse of plan 013's usual warning: its
+  network is host loopback, so the byte term this change removes is
+  nearly free here and expensive on a 1400c. The idle saving should be
+  worth *more* on the hardware, not less. That is a prediction.
+- **The driven case saves ~5%**, because changing the frontmost
+  application rewrites every app row, every window's front/z and the
+  whole menu bar. That is honest worst-case behaviour and the guest
+  correctly still picked the smaller of the two, but nobody has measured
+  the realistic middle — one window moving on an otherwise still
+  machine — on real hardware or with a real person driving.
+- **NOW-68K serves none of it**, because it serves no scene at all. The
+  asymmetry is declared in
+  [contract-coverage.md](contract-coverage.md); the delta design is
+  sized for that machine (a few kilobytes of state, a 32-bit hash), so
+  what it lacks is the walk, not the room.
+- **The host applies a delta and then throws the result at the unchanged
+  reducer.** That is deliberate — one deletion rule, in one place — but
+  it means a rebuild is a whole document's worth of decode every time.
+  Nothing measures whether that decode is now the expensive half.
+
+### An observation the measurement produced, and it is not about deltas
+
+Revealing two different Finder folders alternately, once per poll,
+produced **nine `scene.same` answers out of ten**: the walked scene was
+byte-identical each time. Either the Finder did not reorder its windows,
+or the walk does not see that it did. `scene.same` is a rather good
+change detector and it has just detected something. Worth a second look;
+not chased here.
+
 ## OPEN, and now MEASURED rather than argued: where a scene's time goes, and the two things the control sweep still gets wrong (2026-08-06)
 
 Plan 013 § 1. Every scene now carries `meta.phases` — microseconds per

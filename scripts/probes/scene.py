@@ -166,6 +166,11 @@ class SceneReader:
         self.transfer: int | None = None
         self.body = bytearray()
         self.saw_end_flag = False
+        # THE NO-CHANGE ANSWER, which is not a transfer at all: one control
+        # frame and nothing on the bulk lane. It terminates the read the way
+        # scene.end does, and yields no document - the caller already holds
+        # the one this answer is about.
+        self.same: dict | None = None
         # Bulk that arrived while this reader was live but belonged to another
         # transfer, or to none yet. Counted rather than silently dropped: a
         # scene assembled while somebody else's bytes were interleaved is a
@@ -177,9 +182,12 @@ class SceneReader:
     def on_control(self, msg: dict) -> None:
         """One control message. Anything not this scene's is ignored."""
         kind = msg.get("type")
-        if kind not in ("scene.begin", "scene.end"):
+        if kind not in ("scene.begin", "scene.end", "scene.same"):
             return
         if msg.get("id") != self.request_id:
+            return
+        if kind == "scene.same":
+            self.same = msg
             return
         if kind == "scene.begin":
             if self.begin is not None:
@@ -207,7 +215,7 @@ class SceneReader:
         the flag would wait forever on exactly the answer it most needs to
         report.
         """
-        return self.end is not None
+        return self.end is not None or self.same is not None
 
     # -- the answer -----------------------------------------------------
 
@@ -220,6 +228,12 @@ class SceneReader:
         is precisely how a gate ends up behind the parse it was meant to
         guard.
         """
+        if self.same is not None:
+            # Not a failure and not a document: the machine still looks
+            # exactly like the baseline the request quoted. A caller that
+            # asked with `since` must read envelope()["type"] before
+            # reaching for a document.
+            return {}
         if self.end is None:
             raise SceneUnavailable("no scene.end arrived")
         if not self.end.get("ok"):
@@ -279,11 +293,28 @@ class SceneReader:
         return doc
 
     def envelope(self) -> dict:
-        """What `scene.begin` said about the walk, for a run's record."""
+        """What the guest said about the walk, for a run's record.
+
+        `form` is which of the three answers this was, because a run that
+        does not record it cannot say what its byte counts mean. A
+        `scene.same` carries no bytes at all - the zero is real, not a
+        missing measurement.
+        """
+        if self.same is not None:
+            return {"form": "same", "seq": self.same.get("seq"),
+                    "capturedAt": self.same.get("capturedAt"),
+                    "digest": self.same.get("digest"),
+                    "walkMs": self.same.get("walkMs"),
+                    "phases": self.same.get("phases"),
+                    "bytes": 0, "wholeBytes": None,
+                    "foreignBulk": self.foreign_bulk}
         b = self.begin or {}
-        return {"seq": b.get("seq"), "capturedAt": b.get("capturedAt"),
+        return {"form": "delta" if b.get("delta") else "whole",
+                "seq": b.get("seq"), "capturedAt": b.get("capturedAt"),
                 "source": b.get("source"), "walkMs": b.get("walkMs"),
                 "bytes": b.get("bytes"), "irVersion": b.get("irVersion"),
+                "digest": b.get("digest"), "baseline": b.get("baseline"),
+                "wholeBytes": b.get("wholeBytes"),
                 "foreignBulk": self.foreign_bulk}
 
 
