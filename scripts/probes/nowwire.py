@@ -62,7 +62,7 @@ from scene import SceneReader, SceneUnavailable
 # contract/wire_limits.h. Restated here rather than parsed because a probe is
 # not part of the build, and a probe that silently followed a changed constant
 # would report numbers from a wire it did not describe.
-WIRE_CONTRACT_REVISION = 1
+WIRE_CONTRACT_REVISION = 2
 FRAME_HEADER_BYTES = 8
 CHANNEL_CONTROL = 0
 CHANNEL_BULK = 1
