@@ -14,6 +14,46 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## BROKEN and DISARMED: the liveness vehicle hangs the guest at boot (2026-08-05)
+
+012 § 3's Time Manager task — the extension's first interrupt-time
+context — **is in the tree and does not install.** The `return` that
+disarms it is deliberate and is explained where it sits.
+
+**Two defects, one behind the other, and only running it found either.**
+
+1. **The first build's tick fired once and stopped.** `livenessTicks`
+   read `1` on a guest that had been up for minutes. A Time Manager task
+   is entered with an ARBITRARY A5 and Retro68 addresses globals through
+   A5, so from interrupt time this component's statics are somebody
+   else's memory — reading them is luck, writing them is corruption.
+   Fixed by carrying everything the task needs inside the task record,
+   which the Time Manager hands back, so no global is touched at all.
+2. **With that fixed, the guest never finished booting.** The Finder drew
+   an empty menu bar and stopped; the anchor worker never came up; the
+   machine was still unreachable five minutes later, and a screendump
+   shows a bare desktop. So the first defect had been *masking* the
+   second: a task that fires once does not hang a machine, and one that
+   fires every five seconds does.
+
+**The cause is not established**, and this entry should not be read as
+though it were. Two candidates, both testable and neither tested: the
+task may need the same globals-world shim the jGNE filter has in
+assembly (`now_ext_gne.S`), or re-arming with `PrimeTime` from inside a
+standard Time Manager completion may be wrong here.
+
+**Why it ships disarmed rather than reverted.** An extension that hangs a
+Macintosh at startup is the worst thing this component can be — it is
+recoverable only by pulling the file from a machine that will not boot.
+But the A5 lesson is worth more than the file, and whoever picks this up
+should start from a diagnosis rather than a blank page.
+
+**What this costs 012:** § 3's deliverable was *prove the vehicle runs
+while applications are starved*, and that is now unproven in the
+strongest sense — the vehicle cannot be left running at all. The
+`liveness_ticks` counter and its `livenessTicks` report are built and
+correct; nothing has yet made them climb.
+
 ## BLOCKED, and the answer came from the LINKER: the extension cannot be an Open Transport client (2026-08-05)
 
 Plan 012 § 4 has the resident dial the host itself, so a starved machine

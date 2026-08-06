@@ -74,51 +74,66 @@ enum {
     kLivenessTickMs = 5000
 };
 
-static TMTask gLivenessTask;
+/* **Everything the task needs travels IN the task record, and no global
+   is touched from interrupt time.**
+
+   Found by running it, 2026-08-05: the first build kept the table
+   pointer in a static and the counter stopped at 1 — the task fired once
+   and never usefully again. A Time Manager task is entered with an
+   ARBITRARY A5, and Retro68 addresses globals through A5, so from
+   interrupt time this component's statics are somebody else's memory.
+   Reading them is luck; writing them is corruption.
+
+   The Time Manager hands the task its own record back, so anything
+   reachable from that pointer is reachable without A5 at all. That is
+   the whole fix, and it is why this struct exists rather than three
+   more statics. */
+typedef struct {
+    TMTask task;                /* first: the Time Manager owns this */
+    NowPeekTable *table;
+    NowPeekU32 visible_epoch;   /* the epoch it would dial, if it could */
+} LivenessTask;
+
+static LivenessTask gLivenessTask;
 static Boolean gTaskInstalled = false;
-static NowPeekTable *gTable = NULL;
-/* The epoch this vehicle would dial if it could. Kept because a resident
-   that cannot SEE where to dial is a different failure from one that can
-   see and cannot reach, and the two must not become indistinguishable
-   when the transport arrives. */
-static NowPeekU32 gVisibleEpoch = 0;
 
 /* What the application published, or nothing. Gated on length and on the
    format word beside it - the accretive rule every other plane follows,
    where an older application is SHORTER and says so by being shorter. */
-static const NowPeekLivenessEndpoint *published_endpoint(void)
+static const NowPeekLivenessEndpoint *published_endpoint(NowPeekTable *table)
 {
-    if (gTable == NULL) return NULL;
-    if (gTable->length < (NowPeekU32)(offsetof(NowPeekTable, endpoint)
-                                      + sizeof(NowPeekLivenessEndpoint))) {
+    if (table == NULL) return NULL;
+    if (table->length < (NowPeekU32)(offsetof(NowPeekTable, endpoint)
+                                     + sizeof(NowPeekLivenessEndpoint))) {
         return NULL;
     }
-    if (gTable->endpoint_format != kNowPeekLivenessFormatV1) return NULL;
+    if (table->endpoint_format != kNowPeekLivenessFormatV1) return NULL;
     /* Zero is an instruction to stay off the wire, not an old value worth
        retrying: an application that has never connected and one that has
        withdrawn consent must look the same here. */
-    if (gTable->endpoint.endpoint_epoch == 0) return NULL;
-    return &gTable->endpoint;
-}
-
-static void liveness_service(void)
-{
-    const NowPeekLivenessEndpoint *want;
-
-    if (gTable == NULL) return;
-    gTable->liveness_ticks++;
-    want = published_endpoint();
-    gVisibleEpoch = (want != NULL) ? want->endpoint_epoch : 0;
+    if (table->endpoint.endpoint_epoch == 0) return NULL;
+    return &table->endpoint;
 }
 
 static pascal void liveness_tick(TMTaskPtr task)
 {
-    /* **Nothing here may allocate, block, or move memory.** This is
-       interrupt time: the Time Manager fires it whether or not any
-       application is being scheduled, which is the entire reason this
-       exists. Re-primed at the end rather than the start so a long tick
-       can never overlap itself. */
-    liveness_service();
+    /* **Nothing here may allocate, block, move memory, or touch a
+       global.** This is interrupt time with an arbitrary A5: the Time
+       Manager fires it whether or not any application is being
+       scheduled — which is the entire reason it exists — and everything
+       it needs comes through the record it is handed.
+
+       Re-primed at the end rather than the start, so a long tick can
+       never overlap itself. */
+    LivenessTask *self = (LivenessTask *)task;
+    NowPeekTable *table = (self != NULL) ? self->table : NULL;
+    const NowPeekLivenessEndpoint *want;
+
+    if (table != NULL) {
+        table->liveness_ticks++;
+        want = published_endpoint(table);
+        self->visible_epoch = (want != NULL) ? want->endpoint_epoch : 0;
+    }
     PrimeTime((QElemPtr)task, kLivenessTickMs);
 }
 
@@ -128,13 +143,36 @@ static pascal void liveness_tick(TMTaskPtr task)
 void now_liveness_install(NowPeekTable *table)
 {
     if (gTaskInstalled || table == NULL) return;
-    gTable = table;
+
+    /* **DISARMED, and this is a measured refusal rather than caution.**
+       2026-08-05: with the A5 defect above fixed — so the task fired
+       every 5 s instead of once — a cold boot never completed. The Finder
+       drew an empty menu bar and stopped, the anchor worker never came
+       up, and the machine was still unreachable five minutes later. An
+       extension that can hang a Macintosh at startup is the worst thing
+       this component can be, and it is recoverable only by pulling the
+       file, so it does not ship armed while the cause is unknown.
+
+       The cause is NOT established. The leading suspect is that this task
+       needs the same globals-world shim the jGNE filter has in assembly
+       (`now_ext_gne.S`) — a flat 68K INIT's callbacks run with an
+       arbitrary A5, and `PrimeTime` re-arming from inside a standard Time
+       Manager completion is the other candidate. Both are testable, and
+       neither has been tested.
+
+       The vehicle stays in the tree because the A5 lesson above is worth
+       more than the file, and because whoever picks this up should start
+       from a diagnosis rather than a blank page. Deleting the line below
+       arms it — do that on a clone, never on an image anyone needs. */
+    return;
     table->liveness_ticks = 0;
-    gLivenessTask.tmAddr = NewTimerProc(liveness_tick);
-    gLivenessTask.tmWakeUp = 0;
-    gLivenessTask.tmReserved = 0;
-    InsTime((QElemPtr)&gLivenessTask);
-    PrimeTime((QElemPtr)&gLivenessTask, kLivenessTickMs);
+    gLivenessTask.table = table;
+    gLivenessTask.visible_epoch = 0;
+    gLivenessTask.task.tmAddr = NewTimerProc(liveness_tick);
+    gLivenessTask.task.tmWakeUp = 0;
+    gLivenessTask.task.tmReserved = 0;
+    InsTime((QElemPtr)&gLivenessTask.task);
+    PrimeTime((QElemPtr)&gLivenessTask.task, kLivenessTickMs);
     gTaskInstalled = true;
     /* The capability bit says the VEHICLE is here, which is all it has
        ever claimed: capabilities are bits and never inferred from a
