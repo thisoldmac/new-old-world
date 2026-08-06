@@ -1058,8 +1058,10 @@ static void content_probe_service(NowPeekU32 a5, NowPeekU32 generation)
             if (!matched) {
                 continue;
             }
+            gBlock->probe_last_match = (NowPeekU32)cand;
             if (content_slot_for((GrafPtr)cand, a5) >= 0) {
-                return;              /* already ours; nothing to count */
+                gBlock->probe_already_ours++;
+                return;              /* already ours, and now it says so */
             }
             content_install_port((GrafPtr)cand, a5, generation);
             slot = content_slot_for((GrafPtr)cand, a5);

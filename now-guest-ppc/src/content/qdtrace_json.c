@@ -272,14 +272,17 @@ void now_qdtrace_status_json(const NowQDStatus *st, long id,
         ok = ok && emit(&e,
             ",\"probe\":{\"pixmapsSeen\":%lu,\"scans\":%lu,\"hits\":%lu,"
             "\"misses\":%lu,\"offscreenPorts\":%lu,\"staleRows\":%lu,"
-            "\"pendingPixmap\":\"0x%08lx\"}",
+            "\"pendingPixmap\":\"0x%08lx\","
+            "\"lastMatch\":\"0x%08lx\",\"alreadyOurs\":%lu}",
             (unsigned long)st->probe_pixmaps_seen,
             (unsigned long)st->probe_scans,
             (unsigned long)st->probe_hits,
             (unsigned long)st->probe_misses,
             (unsigned long)st->probe_offscreen_ports,
             (unsigned long)st->probe_stale_rows,
-            (unsigned long)st->probe_pending_pixmap);
+            (unsigned long)st->probe_pending_pixmap,
+            (unsigned long)st->probe_last_match,
+            (unsigned long)st->probe_already_ours);
     }
 
     e.reserve = 0;

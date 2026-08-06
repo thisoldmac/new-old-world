@@ -403,7 +403,7 @@ void now_qdtrace_status(const NowContentBlock *block,
     /* The probe fields are an accretive append; the length gate is the
        whole compatibility story, same as the v2 fields' own rule. */
     if (block->length >= (NowContentU32)(offsetof(NowContentBlock,
-                                                  probe_stale_rows)
+                                                  probe_already_ours)
                                          + sizeof(NowContentU32))) {
         out->has_probe = 1;
         out->probe_pending_pixmap = block->probe_pending_pixmap;
@@ -413,6 +413,8 @@ void now_qdtrace_status(const NowContentBlock *block,
         out->probe_misses = block->probe_misses;
         out->probe_offscreen_ports = block->probe_offscreen_ports;
         out->probe_stale_rows = block->probe_stale_rows;
+        out->probe_last_match = block->probe_last_match;
+        out->probe_already_ours = block->probe_already_ours;
     }
 }
 

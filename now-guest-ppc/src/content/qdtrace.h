@@ -248,6 +248,8 @@ typedef struct {
     NowContentU32 probe_misses;
     NowContentU32 probe_offscreen_ports;
     NowContentU32 probe_stale_rows;
+    NowContentU32 probe_last_match;
+    NowContentU32 probe_already_ours;
 } NowQDStatus;
 
 void now_qdtrace_status(const NowContentBlock *block,

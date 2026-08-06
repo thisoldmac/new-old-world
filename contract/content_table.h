@@ -258,6 +258,14 @@ typedef struct {
                                             their port stopped matching -
                                             a disposed GWorld, counted
                                             rather than dereferenced      */
+    /* Diagnosis fields, because the first Finder run produced a counter
+       pattern (scan ran, neither hit nor miss) whose one consistent
+       explanation was surprising enough to demand the address rather
+       than the inference. last_match is the candidate the scan matched,
+       whoever it was; already_ours counts matches that were in the
+       table before the scan looked. */
+    NowContentU32 probe_last_match;
+    NowContentU32 probe_already_ours;
 } NowContentBlock;
 
 /* ---- ring records --------------------------------------------------
@@ -376,7 +384,7 @@ _Static_assert(offsetof(NowContentBlock, arm_window)
 _Static_assert(offsetof(NowContentBlock, probe_pending_pixmap)
                    == 192 + kNowContentRingCap,
                "probe append offset");
-_Static_assert(sizeof(NowContentBlock) == 236 + kNowContentRingCap,
+_Static_assert(sizeof(NowContentBlock) == 244 + kNowContentRingCap,
                "block size");
 
 /* ---- the arm verdict (now_content_logic.c) -------------------------
