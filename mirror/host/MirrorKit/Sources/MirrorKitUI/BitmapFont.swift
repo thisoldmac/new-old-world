@@ -20,6 +20,12 @@ public final class BitmapFont {
     public let leading: Int
     /// Full line height (cell) — advance the pen by this between rows.
     public let cellHeight: Int
+    /// The face and point size this strike REALLY is, straight out of the
+    /// extracted metrics rather than out of the name the caller asked for.
+    /// A caller that asked for a size the pack does not carry gets the
+    /// nearest one, and this is how it finds out which it got.
+    public let face: String
+    public let pointSize: Int
 
     private let sheet: CGImage
     private let sheetW: CGFloat
@@ -47,6 +53,8 @@ public final class BitmapFont {
         leading = (meta["leading"] as? Int) ?? 0
         cellHeight = (meta["cellHeight"] as? Int)
             ?? (ascent + descent + leading)
+        self.face = (meta["face"] as? String) ?? face
+        pointSize = (meta["pointSize"] as? Int) ?? 0
 
         var table: [Character: Glyph] = [:]
         for (key, value) in (meta["glyphs"] as? [String: [String: Int]] ?? [:]) {
@@ -59,6 +67,18 @@ public final class BitmapFont {
         glyphs = table
         space = table[" "] ?? Glyph(x: 0, y: 0, w: 0, h: 0, advance: 4, left: 0)
     }
+
+    /// Whether this strike carries a glyph for `ch` at all. A strike that
+    /// does not draws `ch` as blank space, which is why anything choosing
+    /// its own characters (rather than the guest's) should ask first.
+    public func has(_ ch: Character) -> Bool { glyphs[ch] != nil }
+
+    /// The ellipsis this strike can ACTUALLY draw. `…` where the strike
+    /// carries it, three periods where it does not — never the single
+    /// character silently, because in an ASCII-only strike that renders
+    /// as a blank, and a truncation mark nobody can see is the defect it
+    /// exists to cure.
+    public var ellipsis: String { has("…") ? "…" : "..." }
 
     /// Pixel width of a string on one line.
     public func width(_ string: String) -> Int {
@@ -124,6 +144,43 @@ public enum FontBook {
         let loaded = BitmapFont(face: face)
         cache[face] = loaded
         return loaded
+    }
+
+    /// Which strike SIZES this bundle actually carries, per face. Stated
+    /// once, here, because `nearest` and the gate that checks it must not
+    /// disagree about what is on disk — the extracted pack ships more
+    /// sizes than the bundle does, and a table that drifts from the
+    /// Resources directory is a silent metric error, which is the exact
+    /// shape of the defect this rounding exists to cure.
+    public static let bundledSizes: [String: [Int]] = [
+        "chicago": [12],
+        "geneva": [9, 10, 12, 14, 18, 20, 24],
+    ]
+
+    /// The strike for `face` at `size` — or, when the pack has no strike
+    /// at that size, the NEAREST one it does have.
+    ///
+    /// WHAT IT DOES WHEN THE EXACT SIZE IS ABSENT, said plainly: it
+    /// rounds to the nearest bundled size, and **a tie goes to the
+    /// smaller strike**. The two errors are not symmetric. A run drawn
+    /// too wide overruns the control it labels and spills past the
+    /// window's edge onto the desktop — the artifact a viewer reads as a
+    /// broken mirror, and the whole of R1 in the 2026-08-06 fidelity
+    /// sweep. A run drawn too narrow merely sits loose inside its own
+    /// box. So where the pack cannot be exact, it errs small.
+    ///
+    /// Chicago is the case that bites: the pack carries ONE strike, at
+    /// 12, so any Chicago request answers at 12 and the caller is not
+    /// told. That is honest rounding, not a claim the size was honoured.
+    public static func nearest(face: String, size: Int) -> BitmapFont? {
+        if let exact = font("\(face)-\(size)") { return exact }
+        guard let sizes = bundledSizes[face], !sizes.isEmpty else {
+            return nil
+        }
+        let pick = sizes.min {
+            (abs($0 - size), $0) < (abs($1 - size), $1)
+        } ?? 12
+        return font("\(face)-\(pick)")
     }
 
     /// Chicago 12 — the system font (menus, window titles, buttons).
