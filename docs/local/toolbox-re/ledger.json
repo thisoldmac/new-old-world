@@ -298,6 +298,13 @@
       "provenance": "measured",
       "evidence": "spread-gcalc.json",
       "at": "2026-08-06T04:29:05-0400"
+    },
+    {
+      "phase": "P6",
+      "claim": "Reimplementation assessment, stated honestly in REFERENCE section 8: the PORT MODEL, the BOTTLENECK DISPATCH and GWORLD ALLOCATION/LIFETIME are all documented to reimplementation grade with measured offsets and behaviours. QuickDraw's actual drawing - rasterisation, region algebra, colour matching, text imaging - is NOT: the ROM body is compressed and its code exists only decompressed in RAM, so that frontier needs the live lane plus a disassembler rather than a file on disk.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/REFERENCE.md",
+      "at": "2026-08-06T04:29:25-0400"
     }
   ],
   "blockers": [

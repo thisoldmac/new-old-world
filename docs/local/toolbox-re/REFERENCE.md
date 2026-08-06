@@ -245,7 +245,38 @@ blit **869 times at exactly the right rect**, chased it, and found
 nothing — with the target guaranteed alive. That is what proved the
 instrument wrong rather than the application.
 
-## 8. What is still open
+## 8. If you had to build your own
+
+The arc's brief was "enough to build our own Toolbox if we have to".
+What this file gives you, and what it does not:
+
+**You could reimplement the port model.** `GrafPort`/`CGrafPort` are
+pinned byte for byte, the discriminator is identified, `PixMap`,
+`BitMap`, `GDevice`, `QDProcs`/`CQDProcs` and `Zone` are laid out, and
+the offsets were produced by `offsetof` in the real headers with BOTH
+Retro68 toolchains — PPC and 68K byte-for-byte identical, so no packing
+drift between guests.
+
+**You could reimplement the bottleneck dispatch.** Ten families, the
+`SetStdCProcs` table, and the measured facts that an offscreen port and
+a window port dispatch identically, that `StdText` does NOT nest through
+`StdBits`, and (from prior art) that `CopyBits` consults `bitsProc` only
+when the destination is the current port.
+
+**You could reimplement GWorld allocation and lifetime** — what
+`NewGWorld` builds, that the port IS the CGrafPtr and is a locked
+relocatable block, what each flag changes, that `LockPixels` relocates
+the record, that disposal frees an address the next allocation reuses,
+and that create-and-destroy is the era's norm because almost nothing
+imports `UpdateGWorld`.
+
+**You could not yet reimplement QuickDraw's drawing itself.** The
+rasterisation, region algebra, colour matching and text imaging are all
+untouched here: the ROM body is compressed and its code exists only
+decompressed in RAM. That is the next static frontier, and it needs the
+live lane plus a disassembler rather than a file on disk.
+
+## 9. What is still open
 
 - Whether the fix (recovering the handle at sight time) makes the
   control pass. **Until it does, no null from any application is
