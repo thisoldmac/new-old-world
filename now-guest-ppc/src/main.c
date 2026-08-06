@@ -531,9 +531,16 @@ int main(void)
            then could not see the window it had just opened, and the
            scene carried exactly one window - ours - for as long as
            anyone looked. One tick still yields; it does not cost the
-           wire anything a person can measure. */
+           wire anything a person can measure.
+         *
+           The number itself now lives in wire.c (conn_sleep_ticks), for
+           the reason this loop's whole cost turned out to be it: a
+           request arriving into an idle connection waits out the sleep
+           before conn_service ever looks at the socket, and a constant
+           spelled here could not be measured, reported or changed
+           without a rebuild. */
         if (!WaitNextEvent(everyEvent, &event,
-                           conn_wants_fast_pump() ? 1 : 6, NULL)) {
+                           (UInt32)conn_sleep_ticks(), NULL)) {
             continue;
         }
         switch (event.what) {

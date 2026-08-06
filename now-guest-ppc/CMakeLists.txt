@@ -74,6 +74,9 @@ add_application(now-guest-ppc
     src/workshop/confirm.c
     src/core/ot_carbon.c
     src/core/json.c
+    src/core/loopstat.c
+    src/core/wire_sleep.c
+    src/core/wirestat_cmd.c
     src/core/nowlog.c
     src/core/wire.c
     src/core/prefs.c
@@ -108,6 +111,7 @@ add_application(now-guest-ppc
     src/scene/scene_self.c
     src/workshop/control_kind.c
     src/scene/scene_walk.c
+    src/scene/dialog_text.c
     # The foreign-memory walk, ported from this project's own prototype
     # (timbottu/mirror). Pure parsers plus one Toolbox binding; see
     # src/axwalk/axwalk.h for why its constants are evidence.
@@ -143,6 +147,11 @@ add_application(now-guest-ppc
     src/act/act_client.c
     src/act/act_cmds.c
     ../now-guest-shared/src/now_act_guard.c
+    # The one-act-at-a-time latch. Shared and natively tested for the
+    # same reason the guard is: it is the thing standing in for a
+    # protection that was deliberately spent on 2026-08-06, so it must be
+    # checkable somewhere a cross-compiler is not needed.
+    ../now-guest-shared/src/now_act_inflight.c
 
     # Two verbs about the machine's own state, folded in from the parked
     # upstream project (docs/mirror-foldin-inventory.md, wave 3):

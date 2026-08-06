@@ -309,12 +309,52 @@ Neither half is sufficient: the Swift gate cannot execute a renderer, and
 the native test cannot see whether the guest still calls it.
 
 **What is still owed.** The fallback passes `request_json = NULL`, so no
-verb reached that way can be given an argument from the console. Twelve
-of the eighteen therefore render a correct, useful refusal — `winact
+verb reached that way can be given an argument from the console. **Sixteen
+of the eighteen** therefore render a correct, useful refusal — `winact
 requires action: one of select, close, move, resize, zoom` — and remain
-untypeable. That is `consoleDebt` in the parity test and an entry in
-[open-issues.md](open-issues.md); it is a grammar, not a renderer, and it
-was not fixed here.
+untypeable. It is a grammar, not a renderer, and it was not fixed here;
+[open-issues.md](open-issues.md) carries the entry.
+
+The eighteen partition three ways, and the partition is the parity
+test's own lists rather than a count in this sentence — read them there
+if these disagree (`now-host/Tests/HostTests/CommandParityTests.swift`):
+
+| set | how many | verbs | what it means |
+|---|---|---|---|
+| `reachedByFallback` | 2 | `putstat`, `mouseloc` | take no arguments, so the fallback is a complete face. **Working**, as of 2026-08-06. |
+| `notTypeable` | 10 | `winact`, `textget`, `textset`, `ctlact`, `ditemact`, `menuact`, `handle`, `observe`, `axtree`, `elements` | a person cannot usefully type one — each takes an opaque reference, a coordinate a scene supplies, or answers with references nobody can read back. Each entry is checked against the contract's own `x-line`, which must say NOT TYPEABLE, so the exemption cannot outlive its declaration. |
+| `consoleDebt` | 6 | `axsnap`, `activate`, `actselftest`, `script`, `aesend`, `qdtrace` | a person **could** usefully type these and cannot. A debt, not a resting place. |
+
+*(Corrected 2026-08-06: this paragraph said "twelve" and cited
+`consoleDebt`, which holds six. No list of twelve existed anywhere — the
+number could not be derived from any of the three sets, and it is the
+kind of figure this document exists to stop. `mouseloc` left
+`consoleDebt` for `reachedByFallback` the same day, which is why a
+neighbouring comment still said "all seven arrived on 2026-07-31".)*
+
+### The gate cannot see a switch with no case, either
+
+Added 2026-08-06, and it is the same lesson as the section above one
+layer down. **Apple menu items did nothing on the guest, and the act was
+never the missing part.** The act dispatched correctly, reached
+`handle_menu_choice` (`now-guest-ppc/src/main.c`), and fell off the end
+of a `switch` that has no Apple case. Nothing refused, nothing logged,
+nothing failed: a menu selection simply evaporated. On the host side
+only "Key Caps" had been routed down the working path, which is why the
+gap read as one broken item rather than a missing case.
+
+A dispatch table says whether a verb is PRESENT. A `switch` with no
+matching case says **nothing at all** — it is not even an absence a
+table could report, because the entry that would have been missing was
+never a table entry. That is why `CommandParityTests` could not have
+caught this any more than it caught the renderer: both are questions
+about what happens *after* dispatch agrees a name exists.
+
+The residue is a real design question and not a to-do. The guest cannot
+simply grow an Apple case, because the obvious call — `OpenDeskAcc` —
+**is not in CarbonLib at all**. What the guest should serve in its own
+Apple menu, and through what, is open, and it is a command-parity
+question rather than a Mirror one.
 
 ## The MCP is a client, not a face
 

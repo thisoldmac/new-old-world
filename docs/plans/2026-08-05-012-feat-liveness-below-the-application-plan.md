@@ -294,7 +294,11 @@ there.
 ### 5 · The wedge instrument — `tools/guest-wedge` · **BUILT AND RUN 2026-08-05**
 
 **Run on a fresh spin-up, with the modal screendumped mid-run.** Three
-results, and the third is why § 3 can proceed:
+results — and read the REFUTATION under the table before any of them.
+(This line used to read *"and the third is why § 3 can proceed"*. The
+third row is `scan`, which is refuted below. What actually lets § 3
+proceed is the `hello`-under-`spin` finding further down, and that one
+stands.)
 
 | mode | process-level work | reading |
 |---|---|---|
@@ -302,11 +306,40 @@ results, and the third is why § 3 can proceed:
 | `modal` | **never starved**, 71 s | a modal SITTING there starves nothing; `ModalDialog` pumps and that is enough |
 | `scan` | **never starved**, 71 s | sync File Manager work yields; not the mechanism |
 
-**The "modal sitting there" hypothesis is dead**, and so is "ordinary
-synchronous file work". The mechanism behind the original 90 s is still
+**REFUTED 2026-08-06, on a fresh clone with the same instrument plus two
+better ones.** Two of those three rows are wrong. `NOW Wedge modal 45`
+starved NOW for **43,974 ms** of its 45 seconds and `NOW Wedge scan 45`
+for **43,975 ms**, against `spin`'s 44,061 ms — the three modes are
+indistinguishable, and the guest's own `wirestat` histogram says its
+event loop did not run once (`pass max` 44.9 / 45.0 / 45.0 s). The
+reason is in the instrument: `ModalUntil` loops on `GetNextEvent` with
+no sleep, which yields nothing, so **the `modal` mode is `spin` with a
+dialog drawn over it** and has never measured what its name says. A
+REAL application's `ModalDialog`, raised through `ctlact` so the
+application runs its own handler, costs NOW a 20× slowdown (413 ms
+median scene, 145 probes) and no starvation at all. `docs/open-issues.md`
+carries the numbers and what they cost; the sentence below about the
+hypothesis being dead is the one that has to go.
+
+~~**The "modal sitting there" hypothesis is dead**, and so is "ordinary
+synchronous file work".~~ **STRUCK 2026-08-06** — this is the sentence
+the note above says has to go, and it was wrong in both directions. A
+modal *does* cost something (a **20× tax** in a foreign application; a
+**full starvation** when the Finder owns it), and the rows it rested on
+were the instrument, not a modal. The correct statement is in
+[open-issues.md](../open-issues.md) and
+[status.md](../status.md): a **foreign** application's modal is a tax
+NOW works straight through, and a **Finder-owned** modal starves the
+whole cooperative machine and is reproduced deliberately.
+
+The mechanism behind the original 90 s is still
 NOT established: the real Finder alert silenced even `hello`, and a spin
 wedge does not, so it reaches deeper than a busy application loop. That
-remains open and `scan` as written does not reach it.
+remains open and `scan` as written does not reach it. **What has changed
+since:** the Finder-owned case itself is now reproduced on demand
+(`outcome=starved`, `decode_ms=0`, the anchor worker refusing even
+`hello`) — see status.md's *"A modal owned by the FINDER ITSELF"* — so
+the 90 s is unexplained rather than unreachable.
 
 **But the premise § 3 and § 4 rest on is now MEASURED on this guest:**
 `hello` kept answering right through a spin wedge that `stat` could not
@@ -381,6 +414,13 @@ starvation. Watched end to end against the real host on 2026-08-06 — 110
 seconds starved, session kept, and the mutation without the resident
 watched to lose it.
 
+**"The real host" there means the Swift host application rather than a
+test harness. It does not mean real hardware. NOTHING in this plan is
+metal-verified** — every reading in it comes from an emulated G4 under
+OS 9.1, and MacTCP on a PowerBook is not Open Transport's compatibility
+driver on an emulator. Said here as well as under *What is NOT done*
+because it sits two lines below a phrase that is easy to misread.
+
 ### What is DONE and how it was proven
 
 | § | what | evidence |
@@ -434,7 +474,13 @@ watched to lose it.
   non-goal.
 - **The original 90 seconds is still unexplained.** No wedge mode
   reproduces what the Finder's alert did; see below, and do not quietly
-  resolve it.
+  resolve it. **Update 2026-08-06:** the Finder-owned case itself is now
+  reproducible on demand — `outcome=starved`, `decode_ms=0`, and the
+  anchor worker refusing even `hello` — so it is unexplained rather than
+  unreachable, and the specimen to work from exists.
+  [status.md](../status.md), *"A modal owned by the FINDER ITSELF"*. The
+  *foreign*-application modal is a separate and much smaller thing: a
+  20× tax that starves nothing, and acts work through it.
 
 ### Driving the rig, as it actually went
 
@@ -620,13 +666,22 @@ wins, so one binary serves every mode), then `launch` it through the
 anchor on port 1700. The push reports a "catalog dates" error after
 committing; the file lands, so `stat` and carry on.
 
-**Results, 2026-08-05, with the modal screendumped mid-run:**
+**Results, 2026-08-05, with the modal screendumped mid-run — TWO OF
+THESE THREE ROWS WERE REFUTED 2026-08-06. Read the correction under § 5
+above before quoting anything here.**
 
-| mode | application-level work | reading |
-|---|---|---|
-| `spin` | **starved the full 20 s** | a non-pumping loop denies every other application time |
-| `modal` | **never starved**, 71 s watched | a modal SITTING there starves nothing; `ModalDialog` pumps |
-| `scan` | **never starved**, 71 s watched | sync File Manager work yields |
+| mode | application-level work | reading | 2026-08-06 |
+|---|---|---|---|
+| `spin` | **starved the full 20 s** | a non-pumping loop denies every other application time | **stands** — 44,061 ms of 45 s |
+| `modal` | ~~never starved, 71 s watched~~ | ~~a modal SITTING there starves nothing; `ModalDialog` pumps~~ | **REFUTED** — starved 43,974 ms of 45 s. `ModalUntil` loops `GetNextEvent` with no sleep, so this mode is `spin` with a dialog drawn over it and has never measured a modal |
+| `scan` | ~~never starved, 71 s watched~~ | ~~sync File Manager work yields~~ | **REFUTED** — starved 43,975 ms of 45 s |
+
+The three modes are indistinguishable, and the guest's own `wirestat`
+histogram says its event loop did not run once (`pass max` 44.9 / 45.0 /
+45.0 s). What a REAL modal costs was measured separately, by raising one
+through `ctlact` so the application runs its own handler: a **20×
+slowdown** (scene median 21 ms idle → 413 ms, n=145) and **no starvation
+at all** — acts work through it.
 
 **Two traps this instrument taught, both drive-loop rule 2e:**
 
@@ -651,8 +706,20 @@ written is not it. If you need the answer, the next mode to try is one
 that reproduces the alert's own work — enumerating the volume's
 applications the way the "select an alternate program" list does.
 
-**Do not** write this up as "the modal starves the machine". That
-specific claim is dead: measured, 71 s, nothing starved.
+~~**Do not** write this up as "the modal starves the machine". That
+specific claim is dead: measured, 71 s, nothing starved.~~
+
+**RETRACTED 2026-08-06 — this paragraph rested on the 71 s the `modal`
+mode never earned.** The advice happens to survive, for a different
+reason and in a narrower form. A **Finder-owned** modal does starve the
+machine, reproduced deliberately, and that is in status.md under *What
+does not work*. A **foreign application's** modal does not: measured at
+a **20× tax** (scene median 21 ms idle → 413 ms, n=145) with acts
+working straight through it. So the sentence to write is neither of the
+originals — it is *"which application owns the modal decides whether it
+is a wedge or a tax"*, and the wedge instrument was never able to tell
+you that, because none of its modes ran an application's own
+`ModalDialog` at all.
 
 ### The one measured thing the whole plane rests on
 

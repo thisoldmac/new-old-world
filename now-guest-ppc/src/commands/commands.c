@@ -24,6 +24,7 @@
 #include "prefs.h"
 #include "fileshare.h"
 #include "wire.h"
+#include "wirestat_cmd.h"
 #include "mirror_json.h"
 #include "mirror_probe.h"
 #include "net_layout.h"
@@ -661,6 +662,117 @@ static void run_putstat(long id, char *out, long cap)
              st.resumed_from, st.us_reseed / 1000, st.crc,
              conn_rcv_window(),
              conn_rcv_peak(), conn_service_passes());
+}
+
+/* wirestat: how long this guest takes to NOTICE, as a distribution.
+
+   The three numbers a host can see - bytes, walk time, round trip -
+   cannot separate "the answer was expensive" from "nobody looked at the
+   socket for a tenth of a second", and on 2026-08-06 a round trip cost
+   115 ms whose answer was zero bytes. So the guest reports what only it
+   can: the interval between its own service passes, and the delay from
+   Open Transport announcing data to this loop reading it.
+
+   HISTOGRAMS, not medians. A cooperatively scheduled Macintosh produces
+   a tail that a single number hides, and the tail is what a person
+   feels. The bucket edges are published in the rows themselves so a
+   reader is never guessing what a column counts.
+
+   It also SETS the two things under test - the idle sleep and the wake -
+   because a comparison made across two boots is a comparison of two
+   machines. Both are runtime state and neither is saved: a diagnostic
+   that survives a relaunch is a configuration nobody chose. */
+static void wirestat_hist(const LoopStat *s, const char *what,
+                          char *out, long cap, long *pos)
+{
+    int i;
+    int med = loopstat_median_bucket(s);
+    long lo = 0;
+
+    *pos += snprintf(out + *pos, (size_t)(cap - *pos),
+                     ",[\"%s n\",\"%ld\"]"
+                     ",[\"%s mean\",\"%lu us\"]"
+                     ",[\"%s min\",\"%lu us\"]"
+                     ",[\"%s max\",\"%lu us\"]",
+                     what, s->n, what, loopstat_mean_us(s),
+                     what, s->n > 0 ? s->min_us : 0UL, what, s->max_us);
+    for (i = 0; i < kLoopStatBuckets; ++i) {
+        unsigned long hi = loopstat_edge_us(i);
+
+        if (s->buckets[i] == 0 && i != med) {
+            lo = (long)hi;
+            continue;                 /* empty bins are noise, not data */
+        }
+        if (hi != 0) {
+            *pos += snprintf(out + *pos, (size_t)(cap - *pos),
+                             ",[\"%s %ld-%lu us%s\",\"%ld\"]",
+                             what, lo, hi, i == med ? " (median)" : "",
+                             s->buckets[i]);
+        } else {
+            *pos += snprintf(out + *pos, (size_t)(cap - *pos),
+                             ",[\"%s %ld+ us%s\",\"%ld\"]",
+                             what, lo, i == med ? " (median)" : "",
+                             s->buckets[i]);
+        }
+        lo = (long)hi;
+    }
+}
+
+static void run_wirestat(const char *request_json, long id,
+                         char *out, long cap)
+{
+    ConnWakeStats st;
+    char line[64];
+    char action[24];
+    char value[24];
+    WireStatRequest req;
+    long pos;
+
+    /* TWO FACES, ONE GRAMMAR. A console sends the raw line and a typed
+       caller sends args; now_cmd_arg_word answers the named arg for the
+       second but the line's FIRST word for the first, so asking it twice
+       on a console line returns "sleep" for both `action` and `value`
+       and `wirestat sleep 3` becomes `sleep 0`. The split and the
+       meaning are in wirestat_cmd.c, with a native test. */
+    if (now_cmd_line(request_json, line, sizeof line)) {
+        now_wirestat_split(line, action, sizeof action, value, sizeof value);
+    } else {
+        action[0] = value[0] = '\0';
+        now_cmd_arg_word(request_json, "action", action, sizeof action);
+        now_cmd_arg_word(request_json, "value", value, sizeof value);
+    }
+    now_wirestat_parse(action, value, &req);
+    if (req.set_wake) {
+        conn_set_wake(req.wake_on);
+    }
+    if (req.set_sleep) {
+        conn_set_idle_sleep(req.sleep_ticks);
+    }
+    if (req.reset || req.set_wake || req.set_sleep) {
+        conn_reset_wake_stats();
+    }
+
+    conn_wake_stats(&st);
+    pos = snprintf(out, (size_t)cap,
+                   "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                   "\"output\":{\"wirestat\":["
+                   "[\"Sleep now\",\"%ld tick(s)\"],"
+                   "[\"Idle sleep\",\"%ld tick(s)\"],"
+                   "[\"Wake on data\",\"%s\"],"
+                   /* Whether the notifier is LIVE, separately from
+                      whether the wake is on. They are different failures:
+                      a notifier that never installed reports no arrivals
+                      at all, which reads exactly like a quiet wire. */
+                   "[\"Notifier\",\"%s\"],"
+                   "[\"Data notifications\",\"%ld\"],"
+                   "[\"WakeUpProcess calls\",\"%ld\"]",
+                   id, st.sleep_ticks, conn_idle_sleep(),
+                   st.wake_enabled ? "on" : "off",
+                   st.notifier_live ? "installed" : "absent",
+                   st.data_events, st.wake_calls);
+    wirestat_hist(&st.pass, "pass", out, cap, &pos);
+    wirestat_hist(&st.wake, "notice", out, cap, &pos);
+    snprintf(out + pos, (size_t)(cap - pos), "]}}");
 }
 
 /* net: what this Mac can say about its own networking, as rows.
@@ -1408,6 +1520,10 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "mirror") == 0) {
         run_mirror(id, out, cap);
+        return;
+    }
+    if (strcmp(name, "wirestat") == 0) {
+        run_wirestat(request_json, id, out, cap);
         return;
     }
     if (strcmp(name, "putstat") == 0) {

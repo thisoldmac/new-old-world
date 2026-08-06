@@ -68,6 +68,50 @@ everywhere.
 | `main.c` | `MenuSelect`, `DragWindow`, `TrackGoAway`, `GrowWindow`, `TrackBox` | No | Mouse-down / drag duration |
 | `proc_actions.c` — `quit`'s confirmation wait | own `WaitNextEvent(0, …)` yield loop | **Yes** — `now_wire_pump()` every pass | ≤ `--wait N` (6 s default, 20 s ceiling) |
 | `console_model.c` — the `chat` verb's streamed turn | own pump loop (`chat_verb_wait`) | **Yes** — `now_wire_pump()` every pass; `exec.cancel` ends it via `now_wire_exec_cancelled()` | until the terminal `chat.result`, the wire's 60 s quiet deadline, or a 5-minute hard cap. The longest pump loop in the guest, deliberately: the Chat page is the interactive face, and this verb's help says the console waits |
+| `act_client.c` — `act_yield`, under `now_act_submit` **and** `now_act_await_fired` | own `WaitNextEvent(0, …)` yield loop | **Yes, since 2026-08-06** — `now_wire_pump()` every pass | — (the act itself still runs to `kNowActDeadlineTicks` × 2 ≈ 10 s when a target declines; the WIRE no longer waits with it). **Row added and then changed on the same day; see below for what pumping cost** |
+
+**The `act_client.c` row is why this table is dated and why "every" in
+its heading is a claim, not a fact.** The audit above was re-run
+2026-07-21, and the act plane did not exist yet. Nothing re-ran it when
+that plane landed, so the guest's longest non-pumping wait spent weeks
+outside an audit whose title says it is exhaustive — and it was found
+not by re-auditing but by chasing a symptom from the other end. **When a
+new nested loop lands, it gets a row in the same commit.**
+
+The measured cost, 2026-08-06: an act refused `act-not-taken` after
+**6.6 s**, and a `scene.request` issued in the same instant answered in
+**6634 ms** — the same number twice, because it was the same wait seen
+from both ends. Two phases plus overhead puts the worst case at
+**11.7–12.5 s**, which is the range of the slow Mirror loops that were
+being attributed to a modal. Worse, it is self-sustaining: the anchor
+plane's ten-second OWNER lease is renewed by host traffic *through
+`conn_service`*, which is exactly what does not run during the wait — so
+a ~10 s act lapses the lease and the next act refuses `plane absent`.
+That is the "refused the first time, worked the second" report.
+
+**Fixed the same day, and the fix was not free.** `act_yield` now calls
+`now_wire_pump()`. Pumping inside an armed window means serving requests
+while an act is armed, which is precisely the re-entrancy
+[no-hijack-criterion.md](no-hijack-criterion.md) exists to prevent — so
+that document's safety argument has been **deliberately spent**, with
+Michelle's approval, and its opening box says so, names the trade, and
+lists what the replacement does not cover. The repair shipped as three
+things, not one: `pump.h` at the call site, a one-act-at-a-time latch
+(`now-guest-shared/src/now_act_inflight.h`) that refuses a nested act
+with `act-busy` before it can write a field, and the decision about what
+may be served mid-arm — which is *everything except another act*, stated
+here rather than left implicit. A scene walk, a census, a file transfer
+and a `ps` can all now run while a trap patch is live in every process
+on the machine. Nothing has measured whether that is safe; it is written
+down because it is new.
+
+The measurement that motivated it is above; the measurement that it
+worked is in [open-issues.md](open-issues.md). Also unresolved: **the
+act ceiling is stated nowhere once.** `kNowActDeadlineTicks` is 5 s per
+phase here; plan 014's host-side watchdog is 20 s and was chosen against
+the *script* ceiling, with nothing naming this one. Two halves, two
+numbers, neither aware of the other — the shape AGENTS.md warns about
+under "state a limit once".
 
 The `quit` row is the one deliberate stall we *added*, so it is worth
 stating why it cannot be avoided and what it does and does not cost. A
@@ -89,7 +133,16 @@ stay far from it.
 
 The remaining non-pumping sites are all **human-scale** — seconds — so
 they stall a stream and delay a heartbeat but do not reach the 65 s
-guest death timer. Three of them cannot be fixed rather than merely have
+guest death timer. **`act_yield` was the exception, and it is why that
+sentence needed qualifying:** it is bounded by a *deadline*, not by how
+long a hand stays on a mouse, so it ran its full ~10 s whenever a
+target declined, and it is reached by the host rather than by a person.
+A wait no human is holding open is not human-scale, and "does not reach
+the 65 s death timer" was the wrong bar anyway — the anchor lease is
+**10 s**, and this wait cleared it. That is the argument that got it
+pumped; the qualification stays here because the next long,
+host-initiated, deadline-bounded wait to be added will need the same one
+made about it. Three of them cannot be fixed rather than merely have
 not been: `MenuSelect`, `DragWindow` and `GrowWindow` take no callback
 at all (`pump.h` says so), a popup CDEF needs its own action, and the
 Control Manager does not call an action proc for a scroll bar's

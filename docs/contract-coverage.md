@@ -182,20 +182,30 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `capture.accept` / `capture.refuse` / `capture.cancel` | ✅ | ❌ | the guest-OFFERS-a-capture handshake; 68K only answers requests |
 | `stream.start` / `stream.stop` / `stream.refresh` | ✅ | ❌ | |
 | `scene.request` | ✅ | ❌ | the semantic walk — the Mirror's whole input. **NOW-68K serves no scene at all**: it has no `scene/`, no `axwalk/`, no `peek/` and no `observe/`, so a `scene.request` falls through to its unknown-message path. This is the single largest declared asymmetry in the contract and it is a subsystem, not a row |
-| `scene.begin` / `scene.end` | ✅ | ❌ | the answer's transfer pair. `scene.begin` gained `digest` / `delta` / `baseline` / `wholeBytes` on 2026-08-06 |
-| `scene.same` | ✅ | ❌ | the no-change answer, added 2026-08-06: a control frame with no transfer, sent only in answer to a request that quoted `since`. See [scene-deltas.md](scene-deltas.md) |
+| `scene.begin` / `scene.end` | — | — | **The ANSWERER's half, and neither guest handles one inbound.** The PPC guest SENDS them (`wire.c:1786` and the transfer it brackets); a host never sends them to a guest, so these can never grow guest-handling ticks. The answer's transfer pair. `scene.begin` gained `digest` / `delta` / `baseline` / `wholeBytes` on 2026-08-06 |
+| `scene.same` | — | — | Same: SENT by the PPC guest (`wire.c:1826`), handled by neither. The no-change answer, added 2026-08-06: a control frame with no transfer, sent only in answer to a request that quoted `since`. See [scene-deltas.md](scene-deltas.md) |
 | `agent.access` | ❌ | ❌ | neither guest HANDLES one — it is guest-to-host only, and a host never sends it. PPC SENDS it when its consent tier changes; 68K has no tier to change |
 | `cloud.report` / `cloud.listing` / `cloud.card` / `cloud.refuse` | ✅ | ❌ | the ASKER's half: the PPC guest consumes these as answers for its iCloud page and SENDS `cloud.services` / `cloud.list` / `cloud.detail` / `cloud.get` / `cloud.preview`. No guest serves the family — its subject is the host's own iCloud (contract `guestAsksCloud`), so these rows can never grow guest ticks |
 | `chat.catalog` / `chat.delta` / `chat.status` / `chat.result` | ✅ | ❌ | the ASKER's half of the chat family (contract `guestAsksChat`): the PPC guest SENDS `chat.models` / `chat.send` / `chat.cancel` / `chat.reset` — from its Chat page and its console-only `chat` verb — and consumes these as answers; the host serves the family from its harness (`ChatWireService`). `chat.models` is TWO asks in one message and `chat.catalog` two answer shapes: without a provider it lists providers; with one it pages that provider's models (cursor/more, asked lazily on selection), each row carrying a HOST-MINTED `ref` that `chat.send` returns — a provider's model name never crosses the wire. Like cloud, its subject is the host's own model harness, so this row can never grow guest-SERVING ticks. 68K never asks, deliberately: the page is PPC-only and the family is a luxury a 384 KB partition does not buy |
 | `preview.begin` / `preview.end` | ✅ | ❌ | the photo preview's transfer bracket, answering the PPC guest's own `cloud.preview`: raw indexed rows the HOST already dithered, landed in the iCloud page's pane by one CopyBits. Asker's half again — no guest will ever serve it |
 
-PPC handles 39 inbound types; NOW-68K handles 23. **That count
+PPC handles **48** inbound types; NOW-68K handles **23**. **That count
 understates the difference** — see the next two sections, where two of
-these rows open into 41 command verbs and 14 hardware probes.
+these rows open into 42 command verbs and 14 hardware probes.
 
 (An earlier version of this file said 33 for the PowerPC guest and was
 wrong: the number had been hand-counted. It is derived now, and that is
 the whole argument for the two `grep`s at the top.)
+
+(**And it went stale again — re-derived 2026-08-06, from 39 to 48.**
+That is the same failure a second time, in the file whose first rule is
+"derive it, do not remember it", which is worth more than the number: a
+derivation command sitting in a document is not a derivation. Re-run the
+`grep`s above before quoting either figure. The three `scene.begin` /
+`scene.end` / `scene.same` rows were ticked as served in the same pass
+and appear in neither guest's output — the PPC guest SENDS them — which
+is exactly the `file.list` / `file.listing` mistake this file already
+caught itself making once.)
 
 **A ✅ here means the message is answered, not that both guests answer it
 identically.** `software.list` is the row where that distinction is
@@ -211,7 +221,7 @@ hides most of what a machine can be asked — the hardware, network, RAM
 and ROM facts do not have message types of their own. They live behind
 `gestalt` and `census`, one row each above and a whole subsystem below.
 
-The registry is `x-commands` in the contract: **41 verbs.** Sixteen of
+The registry is `x-commands` in the contract: **42 verbs.** Sixteen of
 them landed on 2026-07-31 and are grouped at the foot of the table; the
 Dialog Manager act joined that group on 2026-08-03: the
 act plane, the reference layer that mints what it addresses, two verbs
@@ -255,6 +265,7 @@ number here has been found wrong by re-deriving it.
 | `put` | send a file from the guest | console only | ✅ |
 | `cancel` | stop the transfer in flight, either way | via UI / `file.cancel` | ✅ |
 | `putstat` | transfer diagnostics | ✅ | ❌ |
+| `wirestat` | how long this Mac takes to NOTICE a request — **and the only verb in the registry that CHANGES the machine's scheduling**; a subsystem, expanded below | ✅ | ❌ |
 | `observe` | walk the elements on screen, minting a reference for each | ✅ | ❌ |
 | `axtree` | the same walk, to look at rather than to act on | ✅ | ❌ |
 | `axsnap` | who is front, and how many references are live | ✅ | ❌ |
@@ -273,9 +284,14 @@ number here has been found wrong by re-deriving it.
 | `aesend` | send one of four core Apple Events | ✅ | ❌ |
 | `qdtrace` | what is drawing, from the content plane's ring | ✅ | ❌ |
 | `transitions` | what changed between two event passes, from the transition plane's ring | ✅ | ❌ |
-| `key` | post one keystroke | ✅ | ❌ |
-| `net` | this machine's networking, as it sees it | ✅ | ❌ |
 | `mirror` | one NOW Extension: lifecycle/build and P1-P4 support, format, request, active, freshness, generation, degradation and refusal | ✅ | ❌ |
+
+*(`key` and `net` were listed twice in this table until 2026-08-06 —
+once here and once in the body above — so it carried 44 rows for 42
+verbs. The row-for-row check against the registry passed anyway, because
+both duplicates were PPC-✅ and the totals happened to survive. A check
+that a duplicate cannot fail is not checking what it claims to; the
+verbs are derived below.)*
 
 Eleven of those seventeen — the act plane and the reference layer — are one
 mechanism and are served together or not at all. They are PowerPC-only
@@ -408,16 +424,16 @@ produced the first live sighting of the sampler's own stated limit — a
 backgrounded and its event passes never saw the change. See
 [open-issues.md](open-issues.md).
 
-**PPC serves 38 of 41.** `put` is console-only there and `cancel` is
+**PPC serves 39 of 42.** `put` is console-only there and `cancel` is
 not a verb at all, both deliberately: the host reaches those
 capabilities through the `file.*` families and that guest's own
 Workshop. `shotdiag` is the third, and the newest: it diagnoses a raw
 framebuffer walk the PowerPC guest does not have.
 
-**NOW-68K serves 13 of 41** — `help`, `ls`, `sw`, `census`, `put`,
+**NOW-68K serves 13 of 42** — `help`, `ls`, `sw`, `census`, `put`,
 `cancel`, `vprobe`, `screenshot`, `shotdiag`, `ps`, `launch`, `quit`,
-`front`. The twenty-eight it does not: `gestalt`, `catsearch`, `tail`,
-`reveal`, `vers`, `putstat`, `key`, `net`, `mirror`, `hide`, the eleven of the
+`front`. The twenty-nine it does not: `gestalt`, `catsearch`, `tail`,
+`reveal`, `vers`, `putstat`, `wirestat`, `key`, `net`, `mirror`, `hide`, the eleven of the
 act plane and the reference layer, the six registered on 2026-07-31 —
 `activate`, `actselftest`, `mouseloc`, `script`, `aesend`, `qdtrace` —
 and `transitions`.
@@ -502,6 +518,37 @@ Two more limits are NOW-68K's alone and are reported in the listing's
 - **`PBCatSearch` is not available on every System 7.1 volume**, and the
   fallback walks the startup volume's ROOT only. An `apps` answer from
   the fallback is NARROWER, not merely shorter, and says which.
+
+### `wirestat` — the diagnostic that also SETS what it measures
+
+Expanded 2026-08-06, and it is here rather than as a one-line row for a
+reason this file already argues about `census.request` and
+`command.request`: **a row that reads "reports how long this Mac takes
+to notice a request" describes half of it.** `wirestat` is the only verb
+in the registry that changes the guest's scheduling behaviour, and the
+contract says so plainly.
+
+| action | value | what it does |
+|---|---|---|
+| *(absent or unrecognised)* | — | reports without changing anything. Deliberate: a typo must leave the machine in the condition the last call put it in, or a sweep silently measures the wrong one |
+| `reset` | — | clears the histograms so a run starts from zero |
+| `wake` | `off`, or anything else for on | enables or disables the Open Transport notifier that calls `WakeUpProcess`. **`wake off` restores the behaviour that shipped before the wake existed** — the escape hatch if the notifier misbehaves on hardware nobody has tested it on |
+| `sleep` | ticks, clamped 1..60 | the idle `WaitNextEvent` sleep. Never zero, which would spin and starve every other application on a cooperatively scheduled Mac |
+
+Two properties worth carrying out of the declaration. **Neither setting
+is saved** — a diagnostic that survives a relaunch is a configuration
+nobody chose. And it is **PowerPC only, by mechanism rather than by
+priority**: the wake is an Open Transport notifier and NOW-68K speaks
+MacTCP, so the ❌ in the table is an answer and not a debt.
+
+Both faces share one grammar (`now-guest-ppc/src/core/wirestat_cmd.c`,
+natively tested), which is what lets `wake off` be typed at the machine
+by a person holding it as well as sent down the wire.
+
+The measurements it produced are in
+[open-issues.md](open-issues.md) — *"the 115 ms round trip was the
+guest's own sleep"*. **A metal pass is owed**; every number is from an
+emulated G4.
 
 ### `gestalt` — the machine's account of itself
 
@@ -763,7 +810,25 @@ catch, is [source-text-gates.md](source-text-gates.md). It is the reason
 this file's own future gate should be planned as a bounded check with its
 blind spots written down rather than as a guarantee.
 
-Last re-derived: **2026-08-05**, on `claude/transitions-arg-key`, by
+Re-derived again **2026-08-06**, on `claude/durability-pass-3`, and
+**nothing moved**: 42 / 39 / 13 from the commands at the foot, and 48 /
+23 message types from the commands at the top. Recorded because the pass
+had reason to expect drift and found none — the alert and act-wait arcs
+that landed between the two derivations touched `scene_walk.c`,
+`dialog_text.[ch]`, `act_client.c` and `scripts/test-native`, and no
+dispatch table, `x-commands` block or `wire.c` type list among them. **A
+derivation that confirms is worth its line**, because otherwise the next
+reader cannot tell a file that was checked from one that was skipped.
+
+Last re-derived before that: **2026-08-06**, on `claude/wire-latency`, by running the
+commands at the foot while adding `wirestat`. The counts are **42 / 39 /
+13**: `wirestat` is the new verb, PowerPC-only, and the three the
+PowerPC guest still does not serve are unchanged (`put`, `cancel`,
+`shotdiag`). Nothing else had drifted. The contract declaration was NOT
+written first for this one - `CommandParityTests` caught it, which is
+the gate working and is also worth recording as the mistake it was.
+
+The derivation before that: **2026-08-05**, on `claude/transitions-arg-key`, by
 running all three commands at the foot while fixing two `transitions`
 defects. **The counts were correct: 41 / 38 / 13**, and nothing on
 either side had drifted — the first derivation in four not to find an
@@ -853,6 +918,44 @@ The command registry came from `x-commands` in
 `now-guest-ppc/src/census/census_probes.c` with NOW-68K's beside it from
 `k_probes68` in `now-guest-68k/src/census/census68.c`.
 
+**Here they are as commands, added 2026-08-06.** Three places above say
+"the commands at the foot" and the foot named *sources* rather than
+anything runnable, so the verb counts were the one derivation in this
+file that could only be redone by hand — which is how 39 became 48
+without anyone noticing, and how `key` and `net` sat here twice. Run
+these from the repository root:
+
+```sh
+# the registry — 42
+awk '/^  x-commands:$/{f=1;next} f&&/^  [^ ]/{f=0} \
+     f&&/^    [a-z][a-z0-9]*:$/{gsub(/[ :]/,"");print}' \
+    contract/asyncapi.yaml | sort -u
+
+# what the PowerPC guest serves — 39
+grep -oE 'strcmp\(name, *"[a-z0-9]+"\)' \
+    now-guest-ppc/src/commands/commands.c \
+  | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
+
+# what NOW-68K serves — 13
+grep -oE '\{ *"[a-z0-9]+"' now-guest-68k/src/commands/commands68.c \
+  | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
+```
+
+The registry command tracks the block by indentation deliberately: a
+naive `sed` range over `x-commands` runs past the end of the block and
+picks up a nested `services:` key from a later section, giving 43. A
+derivation that is off by one in the direction of "one more verb than
+exists" is not obviously wrong on sight, which is the reason to have the
+command written down rather than retyped each time.
+
+> **Re-derived once more on the merge, 2026-08-06.** Two threads
+> counted these hours apart and disagreed by one in two rows — the
+> registry (41 vs 42) and the PowerPC verbs (38 vs 39) — because each
+> counted a tree that was missing the other's landed verbs. Both are
+> settled by RUNNING the commands below against the merged tree, which
+> is this file's own rule working exactly as written: a hand-carried
+> count drifts, a derivation does not.
+
 ## Re-derived 2026-08-06
 
 Every command above was run again against this tree. What the numbers
@@ -862,8 +965,8 @@ are today:
 |---|---|---|
 | PowerPC inbound message types | **48** | 42 |
 | NOW-68K inbound message types | **23** | 23 |
-| `x-commands` registry | **41** | 39 |
-| PowerPC verbs served | **38** | 36 |
+| `x-commands` registry | **42** | 39 |
+| PowerPC verbs served | **39** | 36 |
 | NOW-68K verbs served | **13** | 13 |
 
 **The tables were right and the counts at the foot were stale**, which is

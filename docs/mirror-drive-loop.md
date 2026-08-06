@@ -9,6 +9,18 @@ reporting a fix nobody had watched work.
 The goal is not a list of closed findings. It is **a faithful,
 functional, accurate mirror of the guest** — one a person can operate.
 
+**Before your FIRST cycle in a session**, read
+[mirror-state-of-play-2026-08-06.md](mirror-state-of-play-2026-08-06.md)
+once: what is already known to be wrong, so a cycle is not spent
+rediscovering it. Three things in particular will cost you a pass each
+if you meet them cold — blank window interiors (an offscreen GWorld,
+[gworld-probe-brief.md](gworld-probe-brief.md)), widgets drawn as the
+wrong widget (62% of elements have no determined kind,
+[mirror-element-coverage.md](mirror-element-coverage.md)), and a clone
+on which no foreign process binds (`actselftest` →
+`no-such-process`). None of them is a new finding, and none of the
+2026-08-05/06 work has run on metal.
+
 ---
 
 ## 1. The rules, recited every pass
@@ -149,6 +161,19 @@ functional, accurate mirror of the guest** — one a person can operate.
    attribute every line by its `guest_build=` field, which is the only
    thing that says whose guest it describes. The `cycle` lines carry no
    guest identity at all and cannot be attributed.
+
+   **2026-08-06: this rule was broken the day after it was written, by
+   the session that wrote it.** Four new stage fields were reported
+   "absent from every live cycle" — an instrument-is-broken finding,
+   written into plan 014 as its blocking §1 — because the tail of
+   `acts.log` had no such fields. It could not have: the last line in the
+   file was 13:58:19 and the app containing them started at 13:58:24 with
+   no cycle yet run. Every line examined predated the code being
+   examined. So for `cycle` lines specifically, where there is no
+   `guest_build=` to attribute by, **the app's process start time is the
+   mark** — anything older than it belongs to a different binary. Knowing
+   this rule is not the same as having the habit; it is now also
+   [measurement rule 19](mirror-measurement-method.md).
 2n. **`tools/now-agent` reaches ONE host per user.** Its endpoint is a
    fixed path (`$TMPDIR/dev.newoldworld.now-agent-<uid>/host.sock`), not
    per bundle, so whichever host started first owns it and a second

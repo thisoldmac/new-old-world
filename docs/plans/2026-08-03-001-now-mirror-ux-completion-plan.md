@@ -16,7 +16,87 @@ Complete the recovered NOW Mirror as a faithful and operable classic Mac surface
 
 The work starts from recovered commit `2047b6b`. Its committed Cycle 18 ledger is the characterization baseline: 10 of 40 rows pass, 16 fail, 2 are blocked, 2 are not applicable, and 10 remain unscored. Execution is blocked until [the unified NOW Extension prerequisite](2026-08-03-002-feat-unified-now-extension-plan.md) has delivered and proven P1-P4, retired MirrorApp/port 1420/TB* runtime dependencies, and promoted the clean extension-only development image. This plan then consumes those artifacts and completes the broader broker, renderer, UX, and MCP campaign; bounded pixel exceptions remain a later roadmap unit.
 
+## Picking this up cold — 2026-08-06
+
+**Written at the end of the 2026-08-05/06 session, which is being handed
+to a different thread.** This plan is the DESTINATION; 011, 012, 013 and
+014 are slices under it, and all four are finished or deliberately
+parked. The `## Status, 2026-08-05` section below is kept because the
+argument in its last two paragraphs is still the right one, but **six of
+its factual claims went stale within a day** and each is corrected here.
+If this and [open-issues.md](../open-issues.md) disagree, the ledger is
+right; if this and the code disagree, the code is right.
+
+**Tier: TESTED and EMULATOR-VERIFIED. NOTHING in this plan, or in any
+slice under it, is metal-verified.** The 2026-08-05 section never says
+so; it is said here instead of there so that a reader who starts at the
+top of this file cannot miss it.
+
+For what a person driving the Mirror will actually experience — the wins
+as well as the defects, in the order they meet them — read
+[mirror-state-of-play-2026-08-06.md](../mirror-state-of-play-2026-08-06.md).
+
+### What is not blocked, and what the next step actually is
+
+**Nothing in this plan is blocked.** U2 and U6 remain the live work, and
+**the Cycle 18 re-score is still the first thing U6 should do** — the
+baseline it inherits comes from a build that predates every 2026-08-05/06
+gain, so the ledger understates the guest by an unknown margin.
+
+But a re-score is only meaningful on a machine that can be driven, and
+two things stand between here and that:
+
+1. **The anchor-bind defect.** `actselftest` answers `no-such-process`
+   and foreign processes read `not-observed` on a fresh clone, which
+   stopped two agents on 2026-08-06 from reproducing reported cases. A
+   clone on which no foreign process binds cannot be driven into a
+   control panel or a foreign modal, so it cannot be scored either.
+   **Do this before the re-score.**
+2. **The element-classification gap** — 190 of 308 corpus items carry
+   `knowledge: unknown` ([mirror-element-coverage.md](../mirror-element-coverage.md)),
+   which is U6's central defect at its source. The cause is diagnosed
+   and it is a *transport* problem, not a missing capability: one
+   `NowPeekSemanticCell`, spent on the lowest-priority claimant, front
+   process only. This is U2 work and it is unstarted.
+
+Two drives are owed and neither has happened: **the repaired alert has
+not been watched in the Mirror window**, and **Michelle's dialog act has
+not been re-tested** since the act pump landed.
+
+### The six corrections to the section below
+
+| the 2026-08-05 section says | as of 2026-08-06 |
+|---|---|
+| "the resident now reports `cap 31`" | `capabilities: 127` — both P6 bits. |
+| "012's guest half is **parked** … the interrupt-time vehicle hung a boot and **ships disarmed**" | **False.** 012 §§ 3 and 4 are DONE: MacTCP `.IPP`, two connections, 110 s starved with the session kept, mutation watched to fail. The Time Manager task is armed. |
+| "Its 'Picking this up cold' section carries … the two named suspects" | 012's pickup was rewritten 2026-08-06 and has no suspects section. Its rig commands still hold. |
+| "the symptom … has its cause removed" (acts refusing off a lapsed lease) | *A* cause. A **second, independent** one — the guest's own act wait holding off `conn_service` and lapsing the lease it needs — was found and fixed later the same day, and the post-fix run did **not** reproduce the >10 s lapse it is meant to prevent. |
+| "the **one thing** still unproven is Michelle's own dialog act" | Not a count that holds. Also unproven: what the new busy-latch protects, the 014 watchdog firing, the repaired alert in the Mirror window, and a latent watchdog id collision. |
+| "A modal still ends a session when the extension cannot answer" | True only **without** the extension. With it, 110 s starved and the session kept. And a *foreign* application's modal is a 20× tax that ends nothing; only a **Finder-owned** one starves the machine. |
+
+One more, in its last paragraphs: **"the Mail alert's wrong buttons …
+should not be re-investigated from scratch"** now points at closed work.
+That defect was diagnosed and fixed in both halves on 2026-08-06 — a
+user-item placeholder drawn over the real button, a hit test that
+resolved to it, and a message the DITL never held. It is unverified by
+any drive, which is a different thing from open.
+
+### The new thing this plan's requirements have not absorbed
+
+U5's requirement *"keep exact-target, no-hijack, stale-ref, and
+app-never-entered-trap refusals"* assumes a protection that **no longer
+exists**. The act plane's single request cell was safe because two
+requests could not overlap; the act wait now services the wire, and that
+was traded away deliberately with Michelle's approval. What stands in
+its place is narrower — a one-act-at-a-time latch refusing with
+`act-busy`, watched firing on a machine — and it covers the act cell and
+nothing else. Read [no-hijack-criterion.md](../no-hijack-criterion.md)'s
+dated box before scoring any U5 refusal row.
+
 ## Status, 2026-08-05
+
+*(Superseded in its facts by the section above, kept for its argument.
+Read the correction table there before quoting anything here.)*
 
 **The prerequisite block is lifted and this plan is the live destination
 again.** Execution was blocked until the unified NOW Extension had
@@ -48,6 +128,18 @@ guest half is parked: the resident cannot be an OT client from a flat
 INIT (a linker fact, not a metal one), and its interrupt-time vehicle
 hung a boot and ships disarmed. Its "Picking this up cold" section
 carries the state, the two named suspects and the rig commands.
+
+**Update, 2026-08-06: two more subordinate slices, both landed.**
+[013, A guest that notices instead of polling](2026-08-06-013-feat-a-guest-that-notices-instead-of-polling-plan.md)
+took the guest's own cost apart, and
+[014, A frame that does not wait for the Finder](2026-08-06-014-feat-a-frame-that-does-not-wait-for-the-finder-plan.md)
+took the host's: the Mirror's cycle went from a 364 ms median to 25 ms,
+and the symptom it was chasing — acts refusing because a long cycle
+lapsed the act plane's ten-second lease — has its cause removed. Both
+are emulator-verified and neither has run on metal. Relevant here
+because a re-score is only meaningful on a machine whose acts bind; the
+one thing still unproven is Michelle's own dialog act, which a drive
+should re-test first.
 
 **What that means for THIS plan: nothing is blocked.** A modal still ends
 a session when the extension cannot answer for the machine, and that is a
@@ -82,7 +174,7 @@ The remaining failures share three causes:
 - A sent request is sometimes shown as a successful mutation even when the guest state did not change. Other real mutations remain `outcome-unknown` because the operation has no settlement model.
 - Human and MCP paths do not yet consume one canonical scene and one serialized action broker. Independent pollers or action controls can duplicate cooperative guest work and cross-fire against the guest's single act cell.
 
-Cycle 18 makes these defects visible. Date & Time fields render as scroll bars. A popup renders as a button and invokes the wrong Toolbox part. The Mail alert shows the wrong default button. Background-window activation and Hide Others report success without changing the guest. Text focus works, but the value and selection do not.
+Cycle 18 makes these defects visible. Date & Time fields render as scroll bars. A popup renders as a button and invokes the wrong Toolbox part. The Mail alert shows the wrong default button. *(2026-08-06: that last row understated it and is corrected — an alert rendered the wrong buttonS, which did nothing when clicked, and dropped its message text entirely. Re-observed on Internet Explorer rather than Mail, so it is the alert path. See the acceptance row in U6 and docs/open-issues.md.)* Background-window activation and Hide Others report success without changing the guest. Text focus works, but the value and selection do not.
 
 ## Product Contract
 
@@ -579,7 +671,22 @@ and focused settlement proof.
 **Test scenarios:**
 
 - Date & Time and Appearance fixtures render every label, value, kind, default ring, and focus state.
-- The Mail alert renders its full content and actual default button.
+- An alert renders its full content and actual default button. **Partly
+  done, 2026-08-06, and the recorded row understated it.** Michelle's
+  report was "the wrong buttonS, and they dont work", and Internet
+  Explorer's Error alert — a THIRD application, so this is the alert path
+  and not one app's quirk — showed why: the Dialog Manager's
+  default-outline USER ITEM wraps the button and is declared after it, so
+  the renderer's placeholder hatched over the only button in the alert
+  and the hit tester handed every click to an item with no action. The
+  message text was missing too, because a DITL carries the resource's
+  template while the application had written the line into the item's
+  handle. All three are fixed and captured as
+  `Fixtures/scene-ie-error-alert.json`. What is NOT done: the "actual
+  default button" when the reported default is disabled — `aDefItem` goes
+  stale, the ring is now withheld rather than misplaced, and the
+  authoritative fact is the control's `kControlPushButtonDefaultTag`,
+  which no plane carries yet. Details in docs/open-issues.md.
 - A present-but-unknown control does not become a button or scroll bar.
 - Finder selection changes only when a newer guest snapshot reports it; local pointer state cannot confirm selection.
 - Finder applications, documents, folders, and disks use correct art and remain selectable/openable.

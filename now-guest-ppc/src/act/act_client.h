@@ -47,7 +47,15 @@ typedef enum {
        The counters in the snapshot say which of the two failures it was. */
     kNowActNotTaken,
     /* The plane refused it and named why in the snapshot's `error`. */
-    kNowActRefused
+    kNowActRefused,
+    /* Another act already owns the single cell. Since 2026-08-06 the act
+       wait pumps the wire, so a second act command CAN be dispatched
+       into the middle of the first one - and this is the answer it gets.
+       Refused, never queued: the caller would have had to wait out the
+       first act's deadline anyway, and a caller told "busy" can decide
+       while a caller made to wait cannot. now_act_inflight.h carries the
+       whole argument, docs/no-hijack-criterion.md the trade. */
+    kNowActBusy
 } NowActStatus;
 
 /* One bound target: the memory seam the walk needs, and the A5 world the
@@ -76,8 +84,22 @@ void now_act_shutdown(void);
 /* Bind `psn` (NULL = the front process) to a target. */
 NowActStatus now_act_open(const ProcessSerialNumber *psn, NowActTarget *out);
 
-/* The request cell to fill in. NULL when the plane is not usable. */
+/* The request cell to fill in. NULL when the plane is not usable, AND
+   NULL while another act already owns it - call now_act_why_no_cell() to
+   tell those apart rather than assuming the first. Every act verb must
+   go through this before it writes a field; that is where the one-act-
+   at-a-time interlock lives (now_act_inflight.h). */
 NowPeekActCell *now_act_cell(void);
+
+/* Why now_act_cell() answered NULL: kNowActBusy when another act holds
+   the cell, kNowActNoExtension otherwise. */
+NowActStatus now_act_why_no_cell(void);
+
+/* How many act commands this launch has refused as busy. Zero is the
+   expected reading; a non-zero one means the wire really did dispatch an
+   act into an armed window, which is the event the interlock exists for
+   and the number worth reporting when it happens. */
+unsigned long now_act_inflight_refused(void);
 
 /* Post the filled-in cell and wait for the resident plane to serve it,
    then copy a seqlock-coherent snapshot out.
@@ -90,10 +112,15 @@ NowPeekActCell *now_act_cell(void);
    without dequeuing anything; stealing an event here would break the
    application we are driving.
 
-   It does stall the wire for up to the timeout, and that is stated
-   rather than hidden: it belongs with MenuSelect, DragWindow and
-   GrowWindow on pump.h's "what cannot be pumped" list, and the bound is
-   far inside the host's 75-second idle timeout. */
+   AND IT PUMPS THE WIRE while it waits (act_yield -> now_wire_pump),
+   since 2026-08-06. It used to be on pump.h's "what cannot be pumped"
+   list and that was wrong twice over: it CAN be pumped, and its stall
+   was not human-scale - it ran the full deadline whenever a target
+   declined, which lapsed the anchor plane's ten-second owner lease and
+   made the next act fail. The price of pumping is that a second act
+   command can now arrive mid-flight; it is refused kNowActBusy. Read
+   act_yield's comment and docs/no-hijack-criterion.md before changing
+   either half. */
 NowActStatus now_act_submit(const NowActTarget *target,
                             NowPeekActCell *snapshot);
 

@@ -94,6 +94,47 @@ long conn_rcv_window(void);
 long conn_rcv_peak(void);
 long conn_service_passes(void);
 
+/* --- the wake plane ------------------------------------------------------
+
+   How long an idle guest takes to NOTICE. Measured on 2026-08-06: a
+   round trip cost a 115 ms median even when the answer was a zero-byte
+   "nothing changed", so the remaining cost was neither work nor bytes
+   but the sleep before the socket was looked at. These are the two
+   quantities that separate the candidates, kept as distributions
+   because a mean would launder exactly the tail a person notices. */
+
+/* The sleep main.c asks WaitNextEvent for, in ticks. One place, because
+   the wire is what a longer sleep costs. Never returns 0 - see main.c. */
+long conn_sleep_ticks(void);
+
+/* The idle half of it, settable so a shorter sleep can be compared
+   against the standing one on a single boot. Clamped to 1..60. */
+void conn_set_idle_sleep(long ticks);
+long conn_idle_sleep(void);
+
+/* Wake-on-data: an Open Transport notifier that calls WakeUpProcess when
+   bytes land, so the sleep ends at the request rather than at its own
+   expiry. OFF by default. It is a mechanism change on a CarbonLib
+   floor, and one that has not had a metal pass may not be the thing a
+   PowerBook silently depends on. */
+void conn_set_wake(Boolean on);
+Boolean conn_wake_is_on(void);
+void conn_reset_wake_stats(void);
+
+#include "loopstat.h"
+
+typedef struct {
+    LoopStat pass;          /* interval between conn_service passes */
+    LoopStat wake;          /* T_DATA notification -> the read that took it */
+    long data_events;       /* T_DATA notifications since the link came up */
+    long wake_calls;        /* WakeUpProcess calls made */
+    Boolean wake_enabled;
+    Boolean notifier_live;  /* the notifier is installed and in data era */
+    long sleep_ticks;       /* what the loop would sleep right now */
+} ConnWakeStats;
+
+void conn_wake_stats(ConnWakeStats *out);
+
 /* Round-trip time of the last ping/pong in ms, or -1 if none yet. */
 long conn_last_rtt_ms(void);
 

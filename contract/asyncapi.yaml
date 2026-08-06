@@ -3520,6 +3520,59 @@ components:
         type: object
         properties:
           putstat: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    wirestat:
+      description: >
+        How long the guest takes to NOTICE a request, as two
+        distributions it alone can take: the interval between its own
+        wire service passes, and the delay from Open Transport
+        announcing that data arrived to its event loop reading it.
+
+        A caller can already see bytes, walk time and round trip, and
+        those three cannot separate "the answer was expensive" from
+        "nobody looked at the socket for a tenth of a second". On
+        2026-08-06 a scene round trip cost an 86 ms median whose walk
+        was 0 ms and whose answer was zero bytes, and all of it was the
+        second thing: the loop's idle WaitNextEvent sleep. This is the
+        instrument that settled it.
+
+        HISTOGRAMS, not medians. A cooperatively scheduled Macintosh
+        produces a tail a single number hides, and the tail is what a
+        person feels; the bucket edges are in the row labels so a reader
+        is never guessing what a column counts. The rows a guest sends
+        are ITS OWN diagnostic vocabulary — a caller may plot them or
+        show them, and must not require any particular label to exist.
+
+        It also SETS the two things it measures, so they can be compared
+        on one boot rather than one per rebuild. Neither is saved: a
+        diagnostic that survives a relaunch is a configuration nobody
+        chose. `wake off` restores the behaviour that shipped before the
+        wake existed, which is the escape hatch if the notifier ever
+        misbehaves on hardware nobody has tested it on.
+
+        PowerPC only: the wake is an Open Transport notifier, and the
+        68K guest speaks MacTCP.
+      args:
+        type: object
+        properties:
+          action:
+            type: string
+            description: >
+              One of reset, wake, sleep. Absent or unrecognised reports
+              without changing anything — a typo must leave the machine
+              in the condition the last call put it in, or a sweep
+              silently measures the wrong one.
+          value:
+            type: string
+            description: >
+              For wake, "off" or anything else (on). For sleep, the idle
+              WaitNextEvent sleep in ticks, clamped to 1..60 — never
+              zero, which would spin and starve every other application
+              on a cooperatively scheduled Mac.
+      x-line: The action and its value, e.g. "sleep 3" or "wake off".
+      output:
+        type: object
+        properties:
+          wirestat: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
     tail:
       description: >
         The last lines of the guest's log for this launch. The log is a

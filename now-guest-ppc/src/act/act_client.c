@@ -3,8 +3,10 @@
 #include <string.h>
 
 #include "now_act_guard.h"
+#include "now_act_inflight.h"
 #include "peek.h"
 #include "peek_oracle.h"
+#include "wire.h"                 /* now_wire_pump - see act_yield below */
 
 /* How long to wait for a target to pump. Ticks, so ~5 seconds - long
    enough for a busy application to reach its event loop, short enough
@@ -17,11 +19,20 @@ static NowActSettlementStore g_settlements;
 static NowPeekU32 g_last_correlation_hi;
 static NowPeekU32 g_last_correlation_lo;
 static int g_last_correlation_valid;
+static NowActInflight g_inflight;
 
 static NowPeekTable *act_table(void);
 
 void now_act_begin_command(void)
 {
+    /* A no-op for a nested act command. The one in flight owns these
+       globals - clearing `valid` underneath it would empty the settlement
+       rows of a reply that has not been sent yet. The nested command is
+       about to be refused by now_act_cell() anyway; this is only about
+       not damaging the first one on the way. */
+    if (now_act_inflight_busy(&g_inflight)) {
+        return;
+    }
     g_last_correlation_valid = 0;
 }
 
@@ -101,7 +112,10 @@ void now_act_shutdown(void)
                                      | kNowPeekTableCapAct));
 }
 
-NowPeekActCell *now_act_cell(void)
+/* The cell itself, with no interlock. For this file's own use only:
+   submit, await and withdraw are the act that already OWNS the cell, and
+   must not be refused by the latch they are holding. */
+static NowPeekActCell *act_cell_raw(void)
 {
     NowPeekTable *table = act_table();
 
@@ -109,6 +123,37 @@ NowPeekActCell *now_act_cell(void)
         return NULL;
     }
     return &table->act;
+}
+
+/* THE INTERLOCK'S FRONT DOOR. Every act verb calls this before it writes
+   a single field, so refusing here is what stops a nested act command
+   from overwriting an armed request's identity - see
+   now_act_inflight.h, and docs/no-hijack-criterion.md for what this
+   replaced and what it does not cover.
+
+   Placing the refusal HERE and not in now_act_submit is the whole point:
+   act_cmds.c fills the cell in (op, control_handle, arm_point_h/v,
+   click_h/v) BEFORE it submits, so a guard at submit would fire after
+   the damage. */
+NowPeekActCell *now_act_cell(void)
+{
+    if (now_act_inflight_busy(&g_inflight)) {
+        return NULL;
+    }
+    return act_cell_raw();
+}
+
+NowActStatus now_act_why_no_cell(void)
+{
+    if (now_act_inflight_busy(&g_inflight)) {
+        return kNowActBusy;
+    }
+    return kNowActNoExtension;
+}
+
+unsigned long now_act_inflight_refused(void)
+{
+    return now_act_inflight_refusals(&g_inflight);
 }
 
 NowActStatus now_act_open(const ProcessSerialNumber *psn, NowActTarget *out)
@@ -159,12 +204,45 @@ NowActStatus now_act_open(const ProcessSerialNumber *psn, NowActTarget *out)
     return kNowActOk;
 }
 
-/* Give up the processor without dequeuing anything. Mask zero: we want
-   the scheduler, not the events. */
+/* Give up the processor, and SERVICE THE WIRE while we do.
+   ------------------------------------------------------------------
+   Mask zero on the WaitNextEvent: we want the scheduler, not the events,
+   so nothing is dequeued and a human's clicks stay queued for the main
+   loop. The pump is the other half, and it is the half that was added
+   2026-08-06.
+
+   WHY IT WAS ADDED. now_act_submit and now_act_await_fired each spin
+   here for kNowActDeadlineTicks (5 s), so an act the target will not take
+   used to hold conn_service off for up to ten seconds. Measured before
+   the change: an act refused `act-not-taken` after 6.6 s and a
+   scene.request issued in the same instant answered in 6634 ms - the
+   same number twice, because it was the same wait seen from both ends.
+   Worse, it lapsed the anchor plane's own ten-second owner lease, which
+   is renewed by host traffic THROUGH conn_service - so a long act made
+   the NEXT act refuse `plane absent`. That is the "refused the first
+   time, worked the second" report, and the 9-12 second Mirror loops.
+
+   WHAT IT COSTS, AND IT IS NOT NOTHING.
+   docs/no-hijack-criterion.md §4 named this exact change as the one that
+   would remove a protection its safety argument rests on: the act plane
+   is a single cell, and until now the only thing keeping two requests
+   out of it was that this wait did NOT service the wire, so a second act
+   command sat in the socket until the first finished. That protection is
+   deliberately spent. Michelle approved the trade on 2026-08-06 for the
+   latency; read "2026-08-06: the trade, and who made it" in that
+   document before touching either half.
+
+   WHAT STANDS IN ITS PLACE: the one-act-at-a-time latch in
+   now_act_inflight.h, claimed by now_act_submit and surfaced by
+   now_act_cell(), which refuses a nested act with `act-busy` before it
+   can write a field. That latch covers the act cell and nothing else -
+   its header lists what it does not cover, and the list is short but
+   real. */
 static void act_yield(void)
 {
     EventRecord ev;
 
+    now_wire_pump();
     (void)WaitNextEvent(0, &ev, 2L, NULL);
 }
 
@@ -288,12 +366,21 @@ static void act_v2_describe(NowPeekTable *table, const NowActTarget *target,
 NowActStatus now_act_submit(const NowActTarget *target,
                             NowPeekActCell *snapshot)
 {
-    NowPeekActCell *cell = now_act_cell();
+    NowPeekActCell *cell = act_cell_raw();
     NowPeekTable   *table = act_table();
     unsigned long   deadline;
 
     if (cell == NULL || target == NULL || target->a5 == 0) {
         return kNowActNoExtension;
+    }
+    /* CLAIM BEFORE THE FIRST act_yield, not merely before the reply.
+       From the moment this function starts pumping (act_yield), the wire
+       can dispatch another act command into this same stack; the latch
+       is what that command meets. A caller that reached here without
+       going through now_act_cell() - mach_selftest does - is claiming
+       for the first time, which is exactly right. */
+    if (!now_act_inflight_claim(&g_inflight)) {
+        return kNowActBusy;
     }
     cell->target_a5 = (NowPeekU32)target->a5;
     cell->error = kNowPeekActErrNone;
@@ -344,10 +431,14 @@ NowActStatus now_act_submit(const NowActTarget *target,
 
 NowActStatus now_act_await_fired(NowPeekActCell *snapshot)
 {
-    NowPeekActCell *cell = now_act_cell();
+    NowPeekActCell *cell = act_cell_raw();
     unsigned long   deadline;
 
     if (cell == NULL) {
+        /* The plane went away between the two phases. Release, or the
+           latch outlives the act it was guarding and every later act
+           answers `act-busy` forever. */
+        now_act_inflight_release(&g_inflight);
         return kNowActNoExtension;
     }
     deadline = (unsigned long)TickCount() + kNowActDeadlineTicks;
@@ -370,10 +461,17 @@ NowActStatus now_act_await_fired(NowPeekActCell *snapshot)
     return kNowActOk;
 }
 
+/* THE RELEASE RIDES HERE, and that is why the release is idempotent.
+   Every act verb's terminal path calls this - some of them twice, some
+   of them without ever having claimed - so a latch that counted pairs
+   would fail open on exactly the paths that end badly. The cell is
+   released BEFORE the early return: a plane that vanished mid-act must
+   not leave the latch held, or every later act answers `act-busy`. */
 void now_act_withdraw(void)
 {
-    NowPeekActCell *cell = now_act_cell();
+    NowPeekActCell *cell = act_cell_raw();
 
+    now_act_inflight_release(&g_inflight);
     if (cell == NULL) {
         return;
     }
@@ -473,6 +571,7 @@ const char *now_act_status_code(NowActStatus status)
     case kNowActNotArmed:        return "act-not-armed";
     case kNowActNotTaken:        return "act-not-taken";
     case kNowActRefused:         return "act-refused";
+    case kNowActBusy:            return "act-busy";
     default:                     return "act-refused";
     }
 }
@@ -507,6 +606,11 @@ const char *now_act_status_message(NowActStatus status)
                "that goes with it";
     case kNowActRefused:
         return "the target refused the request";
+    case kNowActBusy:
+        return "another act is already in flight - this Mac's act plane "
+               "has one request cell and it is taken. Nothing was written "
+               "and nothing was aimed; ask again when the first one has "
+               "answered";
     default:
         return "the target refused the request";
     }

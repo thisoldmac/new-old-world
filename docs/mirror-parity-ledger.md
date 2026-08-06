@@ -70,6 +70,19 @@ a mac99 number, per this file's own provenance rule.
 | P4 anchor settle window | first `actselftest` after a launch answers `no-such-process`; the identical call ~6 s later answers `abi-agreed` | — |
 | P3 content plane | present and discoverable: format 1, length 65676, ring cap 65536, mode off | QDPeek v1 |
 
+> **Correction, 2026-08-06 — do not read the settle-window row as
+> covering today's `no-such-process`.** That row describes a transient
+> that clears in about six seconds. On a fresh clone since the unified
+> extension, `actselftest` answers `no-such-process` **for as long as
+> anyone has watched**, and foreign processes report `not-observed`;
+> that is a different, open defect. It blocked two agents on 2026-08-06
+> from reproducing reported cases. The entry is
+> [open-issues.md](open-issues.md) *"BROKEN: the anchor plane is active
+> and binds nothing (2026-08-05)"*, whose own 2026-08-06 append fixed
+> the heartbeat half and says in as many words that the
+> `no-such-process` half did not change. Reading this row first is how a
+> live defect looks like a known settle window.
+
 **What the menu number means, precisely.** An armed `menuact` request was live
 against a decoy while a REAL mouse press — QMP, the emulated machine's own
 hardware input — pulled the Apple menu and released on About This Computer.

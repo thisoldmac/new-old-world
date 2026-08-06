@@ -1,5 +1,74 @@
 # The no-hijack criterion, and the case upstream never needed
 
+> ## 2026-08-06: PART OF THIS DOCUMENT'S SAFETY ARGUMENT HAS BEEN SPENT
+>
+> §4 below argues that NOW's single act cell is safe because two act
+> requests cannot overlap, and states plainly that the protection is
+> **incidental** — the guest's threading model, not an interlock — and
+> that one of two ordinary changes would remove it: *"the guest app ever
+> servicing the wire from inside the act wait, which is a plausible thing
+> to want (a 5-second act currently freezes the app's UI)."*
+>
+> **That change has now been made, deliberately.** `act_yield()` in
+> `now-guest-ppc/src/act/act_client.c` calls `now_wire_pump()`. The
+> protection §4 describes no longer exists.
+>
+> **Who, and for what.** Michelle, on 2026-08-06, in as many words: *"im
+> ok with side stepping the no-hijack work for this. lets just be sure to
+> flag it explicitly."* The cost being bought off was measured, not
+> supposed: the non-pumping wait held `conn_service` off for up to two
+> 5-second deadlines per act, an act refused `act-not-taken` after 6.6 s
+> while a `scene.request` issued in the same instant answered in 6634 ms,
+> and — worse — a long act lapsed the anchor plane's own ten-second owner
+> lease, so the *next* act refused `plane absent`. That is the
+> "refused the first time, worked the second" report and the 9–12 second
+> Mirror loops. The full measurement is in
+> [nested-loops.md](nested-loops.md) and [open-issues.md](open-issues.md).
+>
+> **This document predicted it, and the prediction came true.** §4's last
+> paragraph says *"If either lands, `now_act_submit` needs a busy refusal
+> before it writes, and this paragraph is the reason why."* It landed.
+> The busy refusal was written in the same commit, which is the one thing
+> that went to plan.
+>
+> **What stands in its place, and it is less than what it replaced.**
+> `now-guest-shared/src/now_act_inflight.h` — a one-act-at-a-time latch.
+> `now_act_cell()` refuses a nested act with `act-busy` **before** it can
+> write a field, which is the position that matters: `act_cmds.c` fills
+> in `op`, `control_handle` and `arm_point_h/v` before it submits, so a
+> guard at submit would have fired after the damage. It is claimed by
+> `now_act_submit` and released by `now_act_withdraw`.
+>
+> It covers **the act cell and nothing else.** Specifically it does NOT
+> cover:
+>
+> * **Non-act commands served mid-arm.** `scene`, `ps`, census, a file
+>   transfer — all of those now run while an act is armed. None touches
+>   the act cell; all of them observe a machine mid-act, and some of them
+>   (a scene walk) read foreign memory while a trap patch is live in
+>   every process. Nothing here says that is safe; it says it is new.
+> * **A second application linking the act plane.** That is §4's *other*
+>   named removal and it is untouched: the table lives in the system heap
+>   and the resident half does not authenticate its writer, so this latch
+>   is per-process state.
+> * **The pending-press hijack** of §4's last section. That is a property
+>   of the guard's identity clause, unaffected either way.
+> * **Nested command-dispatch depth.** A command served from inside the
+>   act's pump is a new stack frame (`char result[3072]` in `wire.c`), and
+>   if that command waits and pumps in turn the nesting can grow. Bounded
+>   in practice, unbounded in principle, and not addressed here. It is in
+>   [open-issues.md](open-issues.md) as a named exposure.
+>
+> **What has been measured about the replacement: nothing on a Macintosh.**
+> The latch's interleaving is executed by
+> `now-guest-shared/tests/now_act_inflight_test.c` and its wiring pinned
+> by `act_inflight_wiring_source_test.py`, both mutation-verified. No
+> second act has ever been observed racing a first one on real hardware
+> or in an emulator, so the latch is **untried**, not proven. The
+> `nohijack-probe.py` cases below remain unrun, as they were.
+>
+> Read this box before changing either half of `act_yield`.
+
 Status: **the code-reading finding below is settled. Every NUMBER in this
 document is upstream's, measured on Mirror's guest, and NOT ours.** Nothing
 in NOW's act plane has been watched on a Macintosh by this thread. The probe
@@ -150,20 +219,31 @@ Two consequences, and they are *different* from each other:
    stimulus escaping into the interface. It is the failure mode a single-cell
    channel has *instead of* the two-cells one.
 
-**How reachable is (2)? Settled by reading, and the answer is: not from one
-guest application's wire.** `now_act_submit` blocks in `act_yield()`, which is
-`WaitNextEvent(0, &ev, 2L, NULL)` — **event mask zero**, so it dequeues
-nothing, and the wire is not serviced there either: `conn_service()` is called
-only from the top of the main loop in `now-guest-ppc/src/main.c:412`, which
-`now_act_submit` has not returned to. A second act command therefore waits in
-the socket until the first verb has completed and the cell is idle. The guest
-app is cooperatively single-threaded and every act command runs
-submit-and-wait inside one dispatch, so **two requests cannot overlap.**
+**How reachable was (2)? Settled by reading, and the answer WAS: not from
+one guest application's wire — until 2026-08-06, when it was made
+reachable on purpose.** The reading, preserved because it is what the
+protection consisted of: `now_act_submit` blocks in `act_yield()`, which
+was `WaitNextEvent(0, &ev, 2L, NULL)` — **event mask zero**, so it
+dequeued nothing, and the wire was not serviced there either, because
+`conn_service()` was called only from the top of the main loop in
+`now-guest-ppc/src/main.c:412`, which `now_act_submit` has not returned
+to. A second act command therefore waited in the socket until the first
+verb had completed and the cell was idle. The guest app is cooperatively
+single-threaded and every act command runs submit-and-wait inside one
+dispatch, so **two requests could not overlap.**
 
-That is worth stating precisely because of what it means: **the single cell is
+`act_yield()` now calls `now_wire_pump()`. Every clause of that paragraph
+except the last still holds; the last one no longer does. Two requests
+**can** now overlap in time, and what stops the second one reaching the
+cell is the latch described in the box at the top — an explicit refusal
+where there used to be an accident.
+
+That is worth stating precisely because of what it means: **the single cell was
 protected by the guest app's threading model, not by an interlock.** The
-protection is incidental. Nothing in `contract/peek_table.h`, `now_act_guard.c`
-or `act_client.c` enforces it, and two ordinary changes would remove it:
+protection was incidental. Nothing in `contract/peek_table.h`, `now_act_guard.c`
+or `act_client.c` enforced it, and two ordinary changes would remove it —
+**the second of which has since been made deliberately, see the box at
+the top**:
 
 * a **second application** on the same Mac linking `act_client` — the table
   lives in the system heap and the extension does not authenticate its writer,
@@ -174,6 +254,26 @@ or `act_client.c` enforces it, and two ordinary changes would remove it:
 
 If either lands, `now_act_submit` needs a busy refusal before it writes, and
 this paragraph is the reason why.
+
+**2026-08-06: the second one stopped being hypothetical, and then it
+happened.** That wait was measured, and it does not merely freeze the
+app's UI — it holds `conn_service` off for up to **ten seconds** (two 5 s
+phases), which is the named cause of the Mirror's 9–12 second loops and
+lapses the anchor plane's own ten-second lease. The repair was exactly
+the change this section says would remove the protection: make
+`act_yield` pump via `pump.h`. **It was made, and the busy refusal was
+made with it** — see the box at the top of this document for who
+authorised the trade and what the refusal does and does not cover.
+
+The paragraph above is left standing rather than rewritten, because it is
+the load-bearing part of the record: this document named the removal
+before it happened, named the interlock it would require, and said that
+the loss would be **silent** because nothing in the code asserted the
+property. That last part is now false in one narrow place —
+`now-guest-shared/tests/now_act_inflight_test.c` executes the latch and
+`act_inflight_wiring_source_test.py` pins the four places the application
+must route through it — and remains true everywhere else. The first
+removal, a second application linking `act_client`, is untouched.
 
 ### So the collision the code DOES admit is a press, not a cell
 

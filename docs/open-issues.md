@@ -869,6 +869,1057 @@ increments its entry counter and none of its exit counters never
 returned), and nothing on the wire reports a guest-side alert at all —
 every counter read green while a crash dialog sat on screen.
 
+## Start here: the biggest OPEN items, as of 2026-08-06
+
+The entries below run roughly newest-first and mix `FIXED`, `BROKEN`,
+`CLOSED`, `LIVE RISK` and `MEASURED` in one sequence, so nothing about
+their order tells you what is still live. This block does, and **only
+this block is maintained** — it is a pointer list with a date on it, not
+a summary that replaces reading the entries. Everything below it is
+append-only as the rule above says.
+
+For what a person driving the Mirror actually experiences right now,
+good and bad, read
+[mirror-state-of-play-2026-08-06.md](mirror-state-of-play-2026-08-06.md)
+first; it is the short version of this list with the wins beside it.
+
+1. **Nothing is metal-verified.** Not one change from 2026-08-05/06 has
+   run on a PowerBook. Two of them are worse than merely unverified
+   because they are the kind that behaves *differently* on hardware
+   rather than merely slower: the **Open Transport wake notifier**, which
+   runs at interrupt time where a mistake is a crash and not a slow
+   answer, and the **act pump**, which now serves wire requests inside a
+   window where a trap patch is live in every process on the machine.
+   Neither has a scheduled pass; a metal pass is attended and Michelle's
+   call. `wirestat wake off` disables the notifier from either face
+   without a rebuild.
+2. **The anchor-bind defect — `actselftest` answers `no-such-process`,
+   and foreign processes report `not-observed` on a fresh clone.** The
+   heartbeat half was found and fixed on 2026-08-06; the
+   `no-such-process` half **did not change**. This is the item that
+   blocks *measuring* the others: it stopped two agents on 2026-08-06
+   from reproducing reported cases, because a clone on which no foreign
+   process binds cannot be driven into a control panel or a foreign
+   modal. Entry: *"BROKEN: the anchor plane is active and binds
+   nothing (2026-08-05)"*, and read its 2026-08-06 append, not just its
+   title. Do **not** read
+   [mirror-parity-ledger.md](mirror-parity-ledger.md)'s "anchor settle
+   window" row as covering this; it carries a correction now saying why.
+3. **The no-hijack protection was traded away, on purpose, with
+   Michelle's approval.** Entry: *"LIVE RISK, deliberately taken"*,
+   immediately below. The signature if it bites is **an act that failed
+   and a scene that moved anyway**; go straight to that entry if you
+   ever see it, because the analysis is already written.
+4. **The element-classification gap — 190 of 308 corpus items carry
+   `knowledge: unknown`**, which is the root of most remaining render
+   defects (a control whose kind is unknown cannot be drawn as the right
+   widget). The cause is diagnosed and it is **not** a missing
+   capability: a complete classifier ships in
+   `ext/src/now_semantic.c :: classify()`, and it is starved by a
+   transport that carries one `NowPeekSemanticCell`, spends it on the
+   lowest-priority claimant, and only for the front process. The
+   inventory is [mirror-element-coverage.md](mirror-element-coverage.md);
+   the diagnosis is *"BROKEN: the control classifier gets one shot per
+   scene, and 121 controls never got one (2026-08-05)"* below, which is
+   marked fixed-pending-verification and is **not** the whole of row 2.
+
+**And one open experiment, which is not a defect.** Most blank and
+hatched window interiors trace to the OS 9 Finder compositing its icon
+views in an offscreen GWorld — 25 ops and zero text for a full repaint.
+Whether that is recoverable semantically is one unanswered question with
+a written brief: [gworld-probe-brief.md](gworld-probe-brief.md). It is
+an experiment to run before it is an architecture to design, and as of
+2026-08-06 a separate worktree owns it — check before starting.
+
+## FIXED in the host and the guest, UNVERIFIED by any drive: an alert rendered the wrong buttons, and they did nothing (2026-08-06)
+
+Michelle, driving: a guest alert "renders the wrong buttons, and they
+dont work". Both halves are one defect, and none of it was the act plane.
+
+**The specimen.** Internet Explorer's `Error` alert — it raises itself on
+launch on this image, which makes it the cheapest reproducible alert
+there is. Captured live off an emulated G4 with a QMP screendump of the
+same moment (`now-host/Tests/HostTests/Fixtures/scene-ie-error-alert.json`).
+The machine: a stop icon, one line — "Security failure.  The server reply
+is invalid." — and ONE **OK** button wearing the default ring. The
+Mirror: two hatched "Visual unavailable" boxes side by side, the ring
+around one of them, no button, and no text at all.
+
+**The guest was right about the buttons.** Its eight DITL items name item
+1 an enabled `pushButton` titled OK with `isDefault: true`, and items 7
+and 8 `userItem`s — item 7 being the Dialog Manager's default-outline
+slot, which WRAPS the button and is declared after it.
+
+Three consequences, all host-side, all fixed:
+
+- `SceneRenderer` drew a placeholder for every kind it cannot draw, so
+  the outline slot hatched over the OK button and item 8 invented a
+  second box beside it. A user item now draws nothing — its content is
+  the application's, which is P3's business rather than a semantic fact —
+  and no placeholder is drawn over an item it contains.
+- `HitTester` returns the topmost item, so a click landed on item 7,
+  which carries no action and no reference; `InteractionPolicy` refused
+  it by name and the mirror looked dead. A click now resolves to the
+  topmost ANSWERABLE item.
+- **The act plane was never involved.** `ditemact` addressed to item 1's
+  own reference answered `dispatched`, `dispatched-but-unconfirmed`, and
+  the next screendump showed the alert gone. A fire-and-forget act would
+  have left this looking like an act defect for a third time.
+
+**The missing text was a real content gap, and the guest fixed it.** A
+DITL carries the RESOURCE's template; an application that fills a message
+in at runtime calls `SetDialogItemText`, which writes into the item's own
+handle. Item 4 reported an empty `staticText` while its handle held the
+line verbatim. The walk now asks `GetDialogItemText` for it
+(`now-guest-ppc/src/scene/dialog_text.h`), after proving through the
+memory seam that the handle dereferences inside the target partition.
+
+The reason that is a Toolbox call and not one more bounded read is worth
+keeping: **the block header on this heap is not the 24-bit-era layout.**
+Measured with the QEMU oracle on a stopped VM, for the item above —
+master pointer `0x1e357590`, the eight bytes below it
+`00000040 00088278`. The second longword is a ZONE-RELATIVE offset, not
+the master pointer (two items in the same alert differ from their handles
+by the same base, `0x1DFB42A0`), so a back-pointer coherence check
+against the handle fails. And the physical size is 64 for a 48-byte
+string while the tag byte's size-correction nibble reads 0, so
+`physical - 8 - correction` yields 56 and would append eight bytes of
+heap slop to every alert message. `GetHandleSize` knows the logical size;
+nothing else on this side does. That header is now a discovery task
+somebody may want, and it is not needed for this.
+
+**The sibling, from the same evening — Set Time Zone's ring.** Item 1
+`Done` reports `isDefault: true` AND `enabled: false` while the machine
+greys Done and rings **Cancel** (recorded below). `isDefault` comes from
+the DialogRecord's `aDefItem`, which the Dialog Manager initialises to 1
+and only `SetDialogDefaultItem` moves, so it goes stale exactly when an
+application greys its first button. Verified against the IE alert that
+`aDefItem` is otherwise RIGHT: it said 1, the machine ringed item 1. So
+the renderer no longer draws a ring on a disabled item.
+
+**What that does NOT close.** Nothing here knows where the ring WENT. The
+authoritative fact is the control's own `kControlPushButtonDefaultTag`,
+which the resident's classifier could read the same way it reads
+`kControlKindTag` — it would need a flag in `NowPeekSemanticClassRecord`
+and a field on a control's semantics, and no drive has asked for it.
+Until then a disabled default renders no ring at all, which is honest and
+incomplete.
+
+**Also still out of scope, and noted rather than scored** (drive-loop
+rule 2f): the alert's stop icon is a hatched placeholder, and the IE
+window behind it reads "Guest content not reported".
+
+Emulator only, and **no drive has watched any of this in the Mirror
+window**. The evidence is a paired capture and five tests over the
+captured document, each watched to fail with its fix reverted; the guest
+half was watched to change the wire on a live machine (build
+`bcd1b1893664`, wire 5600).
+## LIVE RISK, deliberately taken: the act wait now services the wire, and the no-hijack argument's single-cell protection is gone (2026-08-06)
+
+**This is not a defect report. It is a protection that was spent on
+purpose, written down so that if it bites, nobody spends a day deriving
+what was already known.** The latency fix it bought is the entry below
+this one; read that first for what the ten seconds cost.
+
+### What changed
+
+`now-guest-ppc/src/act/act_client.c :: act_yield` now calls
+`now_wire_pump()`. The guest therefore serves host requests **while an
+act is armed** — while a trap patch is live in every process on the
+machine, waiting for a click.
+
+Until this change, [no-hijack-criterion.md](no-hijack-criterion.md) §4
+argued the act plane's **single** request cell was safe because two
+requests could not overlap: the act wait did not service the wire, so a
+second act command sat in the socket until the first finished. That
+document said in as many words that the protection was *incidental* —
+"the guest app's threading model, not an interlock" — and named this
+exact change as one of two that would remove it. It is now removed.
+
+**Authorised by Michelle, 2026-08-06:** *"im ok with side stepping the
+no-hijack work for this. lets just be sure to flag it explicitly."*
+
+### What stands in its place, and what it does not cover
+
+`now-guest-shared/src/now_act_inflight.{c,h}` — a one-act-at-a-time
+latch. `now_act_cell()` refuses a nested act with **`act-busy`** before
+it can write a field; `now_act_submit` claims, `now_act_withdraw`
+releases. The position matters: `act_cmds.c` fills in `op`,
+`control_handle` and `arm_point_h/v` *before* it submits, so a guard at
+submit would have fired after the damage.
+
+It covers the act cell and nothing else. Not covered, and each is a real
+gap rather than a formality:
+
+1. **Everything that is not an act, served mid-arm.** A scene walk, a
+   census, `ps`, a file transfer — all of these now run inside the armed
+   window. A scene walk in particular reads foreign process memory while
+   the patches are installed. Nothing has measured whether that is
+   harmful; it is new, and it is unmeasured.
+2. **Nested command-dispatch depth.** Each command served from inside the
+   pump is a fresh stack frame carrying `char result[kNowCommandResultCap]`
+   (3072 bytes, `wire.c` in the `command.request` arm). A command that
+   itself waits and pumps — `chat`, `quit --wait`, another act — nests
+   again. Bounded in practice; unbounded in principle; not addressed.
+   The same exposure predates this change on the `chat`/`exec.input`
+   path, which is why it was not treated as a blocker.
+3. **A second application linking the act plane.** The other removal
+   §4 names. Untouched.
+4. **The pending-press hijack.** A property of the guard's identity
+   clause, unaffected either way, and still unmeasured.
+
+### What would detect it if it bites, and what it looks like from the host
+
+- **The latch firing at all.** Any act reply with code **`act-busy`**
+  means the wire really did dispatch an act into an armed window. Zero is
+  the expected reading. A non-zero one is not a bug — it is the
+  interlock doing its job — but it is the first evidence that the
+  interleaving is reachable in the product, and it should be reported
+  rather than shrugged at. The guest also counts it:
+  `now_act_inflight_refused()`.
+- **The failure the latch is preventing, if the latch is ever bypassed.**
+  §4 describes it precisely: not a hijack *of* the user, but **the
+  caller's own synthesised click escaping into the interface.** From the
+  host it would look like an act that reported `act-not-taken` or
+  `act-timeout` while something *else* on the guest's screen changed —
+  a window activated, a checkbox toggled, a menu item taken — at
+  coordinates the first request named. **An act that failed and a scene
+  that moved anyway is the signature.** If that is ever seen, this entry
+  is where to start.
+- **What is NOT evidence of this.** A slow act, a refused act, or an act
+  that changes nothing. Those are the ordinary failures the plane has
+  always had.
+
+### Measured, 2026-08-06, and the interlock was watched firing
+
+Session-private clone, VM `/private/tmp/nowvm-actpump`, wire **5630**,
+anchor 1740, guest build **`04f5dba645ad 2026-08-06T21:23:11Z`** —
+asserted against the hello before any number below was believed.
+Instrument: `tools/local-act-pump.py`, which encodes the procedure and
+refuses a wrong build, an unarmed anchor plane and an act it could not
+aim. Emulated G4; **no metal**.
+
+The act made to run its full deadline is `ctlact` at a control in NOW's
+own window while another process is in front — a click in a background
+window activates it rather than reaching `TrackControl`, so the request
+expires. Its answer is `act-timeout` (one phase), not `act-not-taken`.
+
+**1. The queue is collapsed.**
+
+| | before (2026-08-06, guest `711abdbd25ec`) | after (guest `04f5dba645ad`) |
+|---|---|---|
+| the act | 6.6 s | **5.07 s** — still its whole deadline, as it must be |
+| scenes answered during it | **one, in 6634 ms** | **80, median 65 ms** (min 18, max 146) |
+
+The act's own cost did not move and was not supposed to: the machine
+still will not take it. What moved is that the wire is no longer inside
+that wait with it.
+
+**The polling is not what makes the act expire**, which had to be ruled
+out before the polled number meant anything: the same act run **silently**,
+with nothing asked of the guest while it waited, took 5.09 s and 5.00 s.
+
+**A taken act is still fast.** `menuact` File → New Folder against the
+front Finder: **0.15 s, 0.20 s, 0.08 s**, `ok` each time. Pumping did not
+tax the path that works.
+
+**2. The lease is held across a full-deadline act.** `requested=7,
+active=7` before and after, and the NEXT act answered `act-timeout` — its
+own deadline — rather than `act-plane-absent`. **Read this narrowly:**
+this act is ONE 5 s phase, and the lease is 10 s, so this run did not
+reproduce the >10 s lapse it is supposed to prevent. What it does show is
+the renewal path running — 80 host requests were answered *inside* the
+act window, and every one of them renews. A two-phase act could not be
+produced on this clone, because phase 1 never succeeded against the only
+target available.
+
+**3. The interlock fired, on a machine.** Two `ctlact`s sent back to back
+with no read between them:
+
+    5.02s  first  -> act-timeout
+    5.02s  second -> act-busy
+
+That single line is two findings at once. The second act **reached the
+guest's dispatcher while the first was armed** — impossible before the
+pump, and the exact hazard this trade bought — and it was **refused
+before it could write a field**. Both halves watched rather than argued.
+
+### What is proven, and it is less than it sounds
+
+- The latch's interleaving is **executed**:
+  `now-guest-shared/tests/now_act_inflight_test.c`, run by
+  `scripts/test-native`. Its load-bearing assertion is that the armed
+  request's identity fields are byte-identical after a second act has
+  been refused.
+- Its wiring is **pinned as source**:
+  `now-guest-shared/tests/act_inflight_wiring_source_test.py` — the pump
+  is present, `now_act_cell()` refuses on the latch, submit claims,
+  withdraw releases, and every verb reports `now_act_why_no_cell()`
+  rather than a hardcoded "no extension". Six mutations were watched
+  failing, two of which first PASSED and forced the check to be
+  strengthened (a paired idempotence check that a toggling release
+  survived; a fixed-width window that reached past `ditemact`'s
+  not-fired exit into the success path's withdraw).
+- **What a busy refusal PROTECTS is still unproven.** The run above shows
+  the latch refusing. It does not show what would have happened without
+  it, because that would mean removing the guard on a live machine and
+  watching an armed request's own synthesised click escape into the
+  interface. Nobody has done that, here or upstream.
+- **Michelle's own Set Time Zone case was not reproduced.** Foreign
+  processes report `not-observed` on this clone (the anchor-bind defect
+  already in this ledger), so no control panel could be driven. What the
+  reading above establishes is the mechanism, not her instance. Separately,
+  code reading says a Mirror button click becomes `ditemact`, which is
+  **single-phase** — the resident half sets `fired` at serve time
+  (`ext/src/now_ext_act.c`), so a dialog dismissal has no phase 2 to burn.
+  A slow dismissal therefore has to have been queued behind something
+  else's act wait, or refused off a lapsed lease — both of which are what
+  the pump addresses. That is inference from the source, not a
+  measurement of her machine.
+
+## INVESTIGATED, then FIXED the same day: the twelve seconds under a modal is NOT starvation — it is NOW's own act wait, which did not pump the wire (2026-08-06)
+
+> The investigation below stands as written and its numbers are the
+> BEFORE. §6's first recommendation was taken: `act_yield` now pumps.
+> The cost that made it a decision rather than a patch — the no-hijack
+> argument's single-cell protection — was paid, and the entry above
+> carries what replaced it, what it does not cover, and the after
+> numbers.
+
+Investigation only; nothing product-facing was changed. Michelle's live
+session (host `87960f70`, guest `711abdbd25ec`) with Date & Time's **Set
+Time Zone** modal open: `request_ms=12041 decode_ms=98`, again
+12292/97, 12179/153, 12501/294, while healthy cycles in the same log
+read `total_ms=15–33`. The guest's own walk phases in those slow lines
+total ~2 ms. Her Acts panel: `click "Cancel"` — queued behind 0, waited
+0 ms, **guest 12099 ms, never settled**, plus 9045, 11732, and two
+refusals at 2790 and 11732.
+
+Everything below was measured on 2026-08-06 on a session-private clone
+(VM `/private/tmp/nowvm-starve`, wire 5590, anchor 5591, guest
+`711abdbd25ec 2026-08-06T19:53:53Z` — the same guest source as
+Michelle's), with `tools/local-modal-starve.py` and
+`tools/local-modal-act.py`. Both refuse a guest whose hello build is not
+the one asked for.
+
+### 1. The twelve seconds and the act's twelve seconds are ONE event
+
+`now-guest-ppc/src/act/act_client.c` waits for the target process to
+take an armed act in two phases — `now_act_submit`, then
+`now_act_await_fired` — each bounded by `kNowActDeadlineTicks` = 300
+ticks = **5 seconds**, and each spinning on:
+
+    static void act_yield(void)
+    {
+        EventRecord ev;
+        (void)WaitNextEvent(0, &ev, 2L, NULL);
+    }
+
+**That is a nested Toolbox loop that does not pump the wire**, which
+AGENTS.md names as one of the two non-negotiables that bite hardest.
+While it runs, `conn_service` does not, so every scene request sits in
+the socket for the whole deadline.
+
+Measured, with the Set Time Zone modal up and an act aimed at a control
+*behind* it (which the modal's own `ModalDialog` will never route to):
+
+| | |
+|---|---|
+| the act | **6.6 s**, `act-not-taken: armed, and the application never called TrackControl` |
+| a `scene.request` sent in the same instant | **6634 ms** |
+
+The same number twice. The scene did not become slow; it queued. Two
+phases expiring instead of one, plus the resolver and the reply, is
+where 11.7–12.5 s comes from — so `request_ms=12041` and
+`guest 12099ms` in Michelle's log are **the same twelve seconds seen
+from both ends**, not two independent slownesses.
+
+It also explains the self-sustaining part. The anchor plane's owner
+lease is ten seconds and renewal now rides inbound host traffic
+(`4b972ade`) — but renewal happens in `conn_service`, which is exactly
+what does not run during the act wait. A ~10 s act therefore lapses the
+lease it was supposed to hold, and the next act refuses
+`the anchor plane is absent or not armed`.
+
+### 2. A REAL application's modal does not starve NOW at all
+
+The hypothesis under test was that a modal in a foreign application
+starves the cooperatively scheduled machine. **For a real modal it is
+false**, on this guest, by measurement. Date & Time's Set Time Zone
+raised through the product's own `ctlact` — the application runs its own
+click handler, so what follows is its `ModalDialog` and not an
+instrument's loop:
+
+| | scene round trip, median | max | guest's own `pass max` |
+|---|---|---|---|
+| idle | 21 ms | 67 ms | 906 ms |
+| **Set Time Zone modal up, 145 probes** | **413 ms** | 2280 ms | 1328 ms |
+
+Twenty times slower and never silent. The median `conn_service` pass
+moves one bucket, 66–133 ms to 133 ms+. A real modal is a **tax**, not a
+wedge, and 413 ms is nowhere near twelve seconds.
+
+**And acts work through it.** `ctlact` on the modal's own Cancel
+answered in **0.7 s** and the modal was gone from the next scene —
+twice, on two separate raisings. Michelle's "Cancel refused the first
+time, worked after 12 s the second" is this: an act the modal will take
+is fast, an act it will not take costs the full deadline, and the
+refusals in between are the lapsed lease above.
+
+### 3. So this contradicts the ledger's own entries, and here is which way
+
+Three readings existed and none of them agreed. All three are now
+placed:
+
+- **`guest-wedge modal` does not model a real modal, and plan 012 §5's
+  row is refuted.** That row says *"never starved, 71 s — a modal
+  SITTING there starves nothing; `ModalDialog` pumps and that is
+  enough."* Measured today, `NOW Wedge modal 45` starved NOW for
+  **43,974 ms** of its 45 seconds, and the guest's own histogram says
+  `pass max = 44,939,026 us` — the event loop did not run **once**.
+  `scan` is refuted the same way (43,975 ms; the row says "never
+  starved"). Only the `spin` row survives (44,061 ms, `pass max` 45.0 s).
+- **The arm-latency entry's *"under a modal the wait is the modal,
+  30.023 s"* is confirmed** — for the wedge, which is what it measured.
+- The reason both are true at once is the wedge's own loop.
+  `ModalUntil` calls `GetNextEvent` with no sleep, and a real
+  `ModalDialog` does not behave like that. **The wedge's `modal` mode is
+  `spin` with a dialog drawn over it**, and its three modes are
+  indistinguishable: 43.97 / 44.06 / 43.98 seconds. The header comment in
+  `tools/guest-wedge/src/now_wedge.c` predicting the opposite carries a
+  dated correction now.
+
+### 4. Whether the machine was alive: answered below the application
+
+The decisive instrument is plan 012's resident channel, and it worked
+every time. Under **all three** wedge modes the resident dialled, said
+`role: resident`, and went on pinging its own connection *inside* the
+starvation window (ping at 41.6 s of an 11.4–56.4 s wedge; 54.0 s of a
+19.7–64.7 s one; 42.8 s of an 8.4–53.4 s one) while the session could
+not answer a scene. **The machine was running and NOW was not being
+scheduled** — starvation, measured rather than argued, and the third
+independent confirmation that plan 012 §4 does what it claims.
+
+Under the real modal the resident pinged on its ordinary 30 s cadence
+and so did everything else; there was nothing to distinguish.
+
+### 5. What was NOT measured, and must not be assumed
+
+- **The Finder-owned alert.** One attempt today failed to raise it (the
+  Finder opened the file without complaining), so the run measured a
+  healthy machine and is discarded under measurement rule 1 rather than
+  reported. The existing reading stands unchanged and is consistent with
+  the wedge: `outcome=starved`, `request_ms` 20,008–21,318,
+  `decode_ms=0`, and the anchor worker refusing even `hello`.
+- **A large scene under a modal.** Every scene here is 2–3 windows.
+  Michelle's had more, and a bigger document is more bulk frames, which
+  is more event-loop passes at 413 ms each. That could add to the twelve
+  seconds; nothing here says it does. Attempts to grow the scene by
+  opening Finder windows failed for an unrelated reason — the Finder
+  reported `not-observed`, so its windows never entered the walk.
+- **Metal.** Emulated G4 throughout.
+
+### 6. What could be done, in order of what it buys
+
+None of this was implemented; it is Michelle's call, like the decode
+one.
+
+1. **Make `act_yield` pump the wire** (`pump.h`, the rule that already
+   exists). It does not make an act faster — the machine still will not
+   take it — but it stops one act making the whole Mirror read as a
+   twelve-second machine, and it stops the act wait lapsing the very
+   lease `4b972ade` fixed. This is the whole of the reported symptom and
+   it is the smallest change here. **Its risk is real and is why it is a
+   decision, not a patch:** pumping inside an armed window means serving
+   requests while an act is armed, which is exactly the re-entrancy the
+   no-hijack work is about, and it needs its own guard rather than an
+   assumption.
+
+   > **DONE, 2026-08-06, and the risk above is now LIVE rather than
+   > hypothetical.** Michelle took the decision and accepted the cost.
+   > The guard shipped with it. See the entry
+   > *"LIVE RISK, deliberately taken: the act wait now services the wire,
+   > and the no-hijack argument's single-cell protection is gone"* above.
+2. **State the act ceiling once, where both sides read it.** The guest
+   spends up to ~10 s + overhead; plan 014 gave the host a 20 s
+   watchdog chosen against the *script* ceiling (15 s,
+   `kNowScriptDefaultMs`) and nothing named the act one. Two limits, two
+   files, the shape this project has already paid for.
+3. **Nothing needs adding to the resident for this case.** It already
+   tells starved from gone, and this case is not starvation. Its value
+   here was as an instrument.
+4. **The honest half.** Against a wedge-class starvation — a
+   Finder-owned alert, or any application that stops calling
+   `WaitNextEvent` — NOW cannot be made responsive, because it is not
+   running. The product's correct behaviour is to say so quickly, which
+   plan 012 §2 built and the status line's `expected-stale` vocabulary
+   already speaks. Do not spend anything trying to make that case fast.
+
+The instruments are committed and labelled diagnostic:
+`tools/local-modal-starve.py` (latency distribution, the resident's own
+socket, and the guest's `wirestat` pass histogram, in one run) and
+`tools/local-modal-act.py` (one act, timed, with the scenes queued
+behind it printed against the same wall clock).
+
+## BROKEN, latent, found in passing: two request families draw ids from separate counters and share one watchdog map (2026-08-06)
+
+Found while reviewing plan 014's watchdog, not by a failure. **Nothing
+has been observed to go wrong**, and the entry exists because the shape
+is a collision waiting for load rather than a bug waiting to be seen.
+
+`GuestListener.armWatchdog(id:seconds:…)` stores into
+`watchdogs: [Int: Watchdog]`, keyed on the request id alone. But the
+listener runs **three independent id sequences**, each starting at 1 and
+incrementing on its own: `nextCommandId`, `nextExecId` and
+`nextCensusId`. Two of them arm watchdogs — `runCommand` (20 s, plan
+014 §2) and `runExec` (60 s) — so command #7 and exec #7 are the *same
+key*. The second to arm calls `clearWatchdog(7)` and takes the slot; the
+first is then never expired, and if the second finishes normally the
+first's entry is removed by `clearWatchdog` on a completion that was
+never its own.
+
+The failure it would produce is the one 014 exists to stop: a request
+that never comes back and never times out either, i.e. an unbounded wait
+the report says nothing about. It is invisible today only because exec
+is human-driven and rare, so the two counters seldom meet.
+
+The other half of the same observation: **`requestCensus` arms no
+watchdog at all**, exactly as `runCommand` did before 014. Its
+completion is stored in `pendingCensus` with nothing to expire it.
+
+The fix is a single monotonic counter for everything the listener sends,
+or a composite key naming the family. Either is small; neither has been
+written, and no test covers the collision. A guard for it would have to
+arm two families to the same number deliberately — which is also the
+mutation that proves it, and the reason to write the test first.
+
+## INVESTIGATED, NOT FIXED: `decode_ms` hits 12.5 s, none of it is decoding, and the shape of the bug is a priority inversion (2026-08-06) — FIXED by plan 014 the same day, emulator-verified; see the four dated sections at the end of this entry
+
+Investigation only — **no product behaviour was changed**. What landed is
+diagnostic instrumentation and a fixture harness, both labelled as such
+and droppable. The repair is a design decision and is Michelle's to make.
+
+### 1. What `decode_ms` actually brackets
+
+`MirrorCycleClocks.decode` is `publishedAt - deliveredAt`, and
+`publishedAt` is stamped by `recordCycleClocks()` from `finishCycle()`.
+In `NOWMirrorSource.accept()` the cycle is not finished until, in order:
+
+1. `NOWMirrorSceneDecoder.decode` + `phases` — JSON.
+2. `shadowEngine.accept`, continuity, `withIcons`, `enrichFinder`,
+   `projectedScene` — the reducer and projection.
+3. `cycleIO.joinContent` — **1–2 guest commands** (`qdtrace status`,
+   `qdtrace start`, or `qdtrace drain`).
+4. `refreshComplements` → `refreshIconsIfStale` — **AppleScript to the
+   Finder**, paged 8 items per container, plus a types pass per
+   container; skipped when the layout key is unchanged.
+5. `refreshComplements` → `refreshVisibility` — **AppleScript to the
+   Finder**, paged 8 processes. Issued on **every cycle**; it is the only
+   unconditional multi-round-trip in the lane.
+
+So the field named `decode` is a bracket containing an unbounded number
+of guest round-trips. That is the load-bearing fact, and it is why every
+reading of "12,457 ms" started at the JSON parser.
+
+### 2. It is not a computation, and it is not our decode
+
+The captured six-window document — `Fixtures/scene-quit-modal.json`, the
+guest's own bytes — decodes, reduces and projects in **4 ms**. The
+largest scene ever captured here (70 KB, `now-scene-self-hidden-but-front`)
+costs **15 ms**. Ten chained reductions cost 44 ms, so nothing compounds
+with replica size either. `MirrorDecodeCostTests` is that measurement,
+kept and bounded.
+
+### 3. There is no cliff at six windows. There is no cliff at all.
+
+43,448 `NOWBASE cycle` lines from `acts.log`, grouped by
+`windows`/`elements`, median `decode_ms`:
+
+    12 windows / 346 elements   n=1914   median   714 ms
+    11 windows / 298 elements   n=   5   median  1438 ms
+     8 windows / 220 elements   n=  10   median   694 ms
+     6 windows / 170 elements   n= 442   median  1731 ms
+     6 windows / 168 elements   n=  21   median 12824 ms
+     5 windows / 153 elements   n=  11   median   462 ms
+     3 windows /  60 elements   n=   3   median 12559 ms
+
+**Twelve windows costs 714 ms; three windows costs 12,559 ms.** The
+"11% more content, 38x the time" framing does not survive the wider data
+— `decode_ms` is not a function of scene size at any point in the range.
+The two adjacent six-window rows differing by 7x on two elements make
+the same point locally.
+
+The distribution is bimodal, which is the real signal:
+
+    < 100 ms   23.0%        4  - 8 s   0.6%
+    0.1 - 1 s  72.7%        8  - 11 s  0.03%   <- nearly empty
+    1  - 2 s    1.8%        11 - 14 s  0.2%
+    2  - 4 s    1.3%        14 - 20 s  0.4%
+
+95.7% of cycles are under a second. The slow tail has peaks at
+**5.5–6.0 s** (125 cycles) and **14.0–15.0 s** (88 cycles) with a gap
+either side. Sharp modes with empty space between them are waits, not
+work. The coordinator's read was right and the brief's was wrong.
+
+### 4. What is being waited on, and why there is no bound
+
+Every complement goes through `GuestListener.runCommand`, and
+**`runCommand` arms no watchdog at all** (`GuestListener.swift:608`).
+A pending `command.request` is resolved only by a guest reply, a
+guest-sent problem, or a disconnect. The comment 20 lines below it —
+"the 15s a command.request gets" — is **wrong**: that 15 s belongs to
+the typed file/process families, not to this. So the host has *no
+upper bound* on how long a cycle waits for a Finder script.
+
+The only bound is the guest's own, and the host never sets it: neither
+`readIcons` nor `refreshVisibility` passes `timeoutMs`, so each script
+gets `kNowScriptDefaultMs = 15000` (`input_args.h:187`) — which is where
+the 14–15 s peak sits. But **the scripts are usually slow, not timing
+out**: 241 cycles exceed 12 s and there are only **4** "stopped at its
+deadline" notes in the whole log. The deadline is a ceiling that is
+rarely reached; the ordinary slow case is a Finder that answers, late.
+
+`FinderItems` already records the price: a Finder Apple event costs
+~1–2 s of Finder time on a healthy guest (measured 2026-07-31). With a
+modal up the Finder is starved and that goes to seconds. The guest is
+serial, so each script also blocks its whole event loop — which is why
+acts logged `guest 11080ms` while queued behind a cycle.
+
+**What is NOT established:** which of the three — content join, icon
+roster, visibility census — dominates the 12.4 s. Nothing has ever timed
+them apart. That is exactly what the instrumentation below now answers,
+and it should be read off a live run before choosing between options 2
+and 3.
+
+### 5. Why this is the cause of the refused acts
+
+The anchor plane's owner lease is 600 ticks — ten seconds
+(`peek.c :: kNowPeekOwnerLeaseTicks`) — and only `scene.request` renews
+it. A 12.6-second cycle lets it expire every time. The same log reads
+`requested=15 active=8` with `structure/semantics/interaction` all back
+to `requested`, and Cancel on the Set Time Zone modal refused five times
+with `element-not-found: the anchor plane is absent or not armed`. This
+answers the open entry below ("what takes the planes inactive while
+content stays up"): **nothing took them down — we stopped asking.**
+
+Michelle's framing is the right one and it is worth writing down: this
+is a **priority inversion**. The structural scene is the product — it is
+what a person sees and what every act's element reference resolves
+against. Drawing detail and icon rosters are enrichment. An optional
+plane is currently able to take the core feature down, which is the same
+rule [docs/resident-components.md](resident-components.md) already
+states for the extension and which these planes do not honour.
+
+### 6. The options
+
+**Option 1 — bound the wait (small, low risk, does not remove the
+inversion).** Give `runCommand` a watchdog and pass an explicit
+`timeoutMs` on the complement scripts. ~20 lines. Turns an unbounded
+stall into a bounded one and fixes the wrong comment. It does **not**
+fix the cadence: a 3 s bound on three scripts is still a 9 s cycle, and
+the lease is 10 s. Worth doing whatever else is chosen; not sufficient
+alone.
+
+**Option 2 — take the Finder complements out of the cycle (medium,
+removes most of the inversion).** The cycle publishes and rearms; icons
+and visibility fold in when they arrive, guarded by the pinned run
+rather than the cycle. Also key the visibility census on the process
+roster with a floor interval — today it runs every poll for an answer
+that changes only when a process starts, quits, hides or shows.
+*Risk:* the cycle-hold was buying one real thing — a roster read for one
+layout never landing on a different one, because positions are
+window-content-local and scroll-compensated, so a stale one puts a click
+on the wrong file. Buy it directly by re-checking the layout key at
+apply time, which is stricter than the proxy it replaces. Prototyped and
+mutation-tested on this branch (see below); dropped when the scope
+changed.
+
+**Option 3 — make the content plane asynchronous too (larger, removes
+the inversion entirely).** The cycle publishes structure alone; the P3
+join fetches out of band and folds in. This is the one that needs
+Michelle's call, because it touches things beyond the source:
+- *State engine.* Content becomes a plane that is routinely a cycle or
+  two behind structure. The retention rules already distinguish "not
+  observed" from "deleted", so the vocabulary exists — but `enrichContent`
+  would be applying against a replica that has since advanced, and
+  whether that is safe has not been checked.
+- *Acts.* Any act confirming from drawing detail rather than from
+  structure would settle later. Acts resolving element references would
+  not, since those are structural.
+- *The status line.* It would have to say "content still arriving"
+  honestly rather than implying the frame is whole. The IR's coverage
+  vocabulary (`unavailable`, with a reason) already has the words, and
+  `expected-stale` already renders.
+- *Serialisation.* The cycle serialised these by waiting. Once it does
+  not, a join spanning several polls must not have a second issued over
+  it — two arms racing for one target on a cooperative wire.
+
+**Also worth doing under any option:** do not issue an arm that cannot
+complete. A sibling measurement the same night has a trace arm against a
+non-front target never completing (25–45 s, `wrongContext` climbing
+~1,770 in 25 s). `join` only ever arms the front window, but a **failed**
+arm leaves `armedAt` nil, which makes `needsRenewal` true forever, so
+`prepare` re-issues on every cycle — a retry storm against something
+that just refused. Unverified, but cheap to check.
+
+### 7. Delta baselines: the poller DOES quote `since`
+
+Plain yes. `Session.sendSceneRequest` sets
+`since = sceneBaseline?.digest` on every request unless a periodic
+resync forces `full`, and `NOWMirrorSource` never passes `full` —
+`NOWMirrorCycleIO.live` → `listener.requestScene` → `sendSceneRequest`
+with the default. Independently corroborated: the status line's `wire`
+token reads `same` in Michelle's session, and `same` is reachable only
+through `finishSceneSame`, which fires only when a `since` was sent and
+matched. `walk=full` is about PLANES and says nothing either way, as
+suspected. **No change needed.**
+
+### What landed on `claude/host-decode-perf`
+
+Diagnostic only, and safe to drop:
+
+- `MirrorCycleClocks` gains `dc_own_ms`, `dc_content_ms`, `dc_icons_ms`,
+  `dc_vis_ms` on the `NOWBASE cycle` line — the four stages the bracket
+  contains, in the order the cycle does them, absent rather than dashed
+  for a stage a cycle never reached. One live run now answers §4's open
+  question in a grep.
+- `MirrorDecodeCostTests` — the fixture harness, with bounds that fail
+  if decode/reduce/project ever does grow superlinearly.
+- Timing brackets in `NOWMirrorSource.accept` and `refreshComplements`.
+  No control flow changed.
+
+The Option-2 prototype is in this branch's reflog (commit
+`fix(host): the Finder complements no longer hold the scene cycle open`)
+with a mutation-tested cadence guard, if it is wanted.
+
+### ANSWERED, live (2026-08-06): the visibility census dominates
+
+Plan 014 §1's question — which round-trip owns the bracket — is closed,
+and the instrument that answers it was never broken.
+
+**The instrument was fine; the log was being read wrong.** The fields
+were reported "absent from every live cycle". They are not: they were
+absent from the lines in `acts.log`, because the last line any host wrote
+before the reading was `13:58:19` and the app built from `1bb7fdcf` —
+the commit that added them — did not start until `13:58:24`. That build
+had never run a Mirror cycle. (`nm` on the packaged executable shows
+`MirrorCycleClocks.bracketFields`; the stack's README names the commit.)
+Filed here because it is the *fourth* misread number in three days and
+the cheapest one to have avoided: **`acts.log` is shared by every host on
+the Mac and `cycle` lines carry no guest identity** (drive-loop §2m), so
+a reading has to be attributed by a mark and a process start, not by
+being at the end of the file.
+
+**Measured**, own VM on wire 5560, guest build
+`711abdbd25ec 2026-08-06T18:26:52Z`, resident `97fb3f54…`, host from this
+branch. Finder healthy, guest idle, n=85 cycles, one window / 68
+elements:
+
+| field | median | p90 | max |
+|---|---|---|---|
+| `decode_ms` | 353 | 423 | 1675 |
+| `dc_own_ms` | **9** | 9 | 10 |
+| `dc_content_ms` | 5 | 6 | 9 |
+| `dc_icons_ms` | 0 | 0 | 1349 |
+| `dc_vis_ms` | **338** | 401 | 746 |
+
+They sum to `decode_ms`. **The visibility census is ~96% of the bracket
+on every steady-state cycle**; this host's own CPU is 2.5% of it, which
+is the 4 ms `MirrorDecodeCostTests` already measured, seen live. The icon
+roster is 0 while the layout key holds — the guard doing its job, now
+visible rather than inferred — and **1349–1565 ms** on any cycle where a
+Finder window opened or closed, taking `decode_ms` to 1.7–1.9 s.
+
+So the census costs ~4× less than a roster read and is paid **every
+cycle, forever**, for state that changes only when an application starts,
+quits, hides or shows. That is §D's question answered in its favour, and
+it is why §4 was done together with §3 rather than after it.
+
+**Loaded, two ways.** The `NOW Wedge modal 45` instrument: `outcome=failed
+request_ms=20839`. A Finder-owned alert ("Could not find the application
+program that created…"): `outcome=starved`, `request_ms` 20,008–21,318,
+`decode_ms=0` for as long as it was up — and the anchor worker stopped
+answering even `hello`, so the machine could not be driven at all and the
+clone had to be discarded.
+
+That is a **different sub-case from the one that bit Michelle**, and the
+difference matters: her log has `request_ms=82` with `decode_ms=12457`,
+i.e. NOW answering promptly while the Finder was merely busy. Her modal
+belonged to a *foreign* application. A **Finder**-owned modal starves the
+whole cooperative machine including NOW, so the complements never run and
+this repair cannot help — nothing on the host can. Worth knowing before
+someone measures the wrong modal and concludes the fix did nothing.
+
+**2026-08-06, later: the second half of that reading is right and the
+first half is a different defect.** A Finder-owned modal does starve the
+whole machine and nothing on the host can help — unchanged. But the
+`NOW Wedge modal 45` row (`outcome=failed request_ms=20839`) is not a
+modal result at all: the wedge's modal mode is a non-pumping
+`GetNextEvent` loop and starves as completely as `spin`. And Michelle's
+own case, which this entry reads as "NOW answering promptly while the
+Finder was merely busy", has since reversed on her newer host —
+`request_ms=12041 decode_ms=98` — and that twelve seconds is NOW's own
+act wait failing to pump the wire, not the Finder. Entry at the top of
+this file.
+
+### What plan 014 changed (2026-08-06)
+
+- **§2.** `GuestListener.runCommand` arms a watchdog — it had none, on
+  the family the whole content join and both complements travel on.
+  **20 s**, chosen against the guest's own `kNowScriptDefaultMs` (15 s,
+  `input_args.h`) so the guest's typed refusal always beats the host's
+  bare timeout; `testTheCommandWatchdogOutlastsTheGuestsOwnScriptCeiling`
+  fails on the 3 s the ledger above proposed. The wrong "15s a
+  command.request gets" comment is corrected in the same commit, with
+  what it actually described. A timeout is **reported**: `timeouts=N` on
+  the cycle line, omitted at zero.
+- **§3.** The cycle publishes on decode and rearms; the complements run
+  beside it, guarded by the pinned RUN. The layout-key recheck at apply
+  time replaces the cycle-hold as the thing that stops a roster landing
+  on a layout the machine has left.
+- **§3, honesty.** A frame published before its roster now carries a
+  `finder-items` coverage claim — typed status and a reason, the same
+  vocabulary `process-visibility` uses — and the status line says
+  `awaiting icons`. Absence stays absence in the scene; what changed is
+  that it no longer goes unsaid. (`process-visibility` was already marked
+  `.stale` on every structural accept, so the census never presents as
+  current between reads.)
+- **§4.** The census is keyed on the process roster with a 3 s floor and
+  invalidated explicitly by the hide act.
+
+### Measured after, same rig, same guest (2026-08-06)
+
+Fresh clone, guest build `711abdbd25ec 2026-08-06T18:59:20Z`, wire 5560,
+host from this branch. **258 cycles, every one `outcome=ok`.**
+
+| | before | after |
+|---|---|---|
+| `decode_ms` median | 353 | **16** |
+| `total_ms` median | 364 | **25** |
+| `total_ms` p90 | 436 | **27** |
+| cycle on a layout change | 1936 | **26** |
+| planes | 15/15 | 15/15 (257/258 samples) |
+| cycles reporting `timeouts=` | — | 0 |
+
+The complements still cost what they always cost — the log carries
+`NOWBASE finder containers=2 complete=yes ms=1478` and
+`NOWBASE visibility processes=7 complete=yes ms=277` — but they are no
+longer inside the cycle, so a 1.5 s roster read now sits beside a 26 ms
+cycle instead of becoming one. **The census fired 17 times in 62 cycles**
+rather than 62, which is the 3 s floor working.
+
+The layout-change case is the clearest single line: opening a Finder
+window took `decode_ms` from 17 ms to 17 ms, where before the same
+transition on the same rig read `decode_ms=1920 dc_icons_ms=1565`.
+
+**NOT verified end to end: Michelle's own act.** "A dialog act that
+settles rather than refusing" could not be driven from here.
+`tools/now-agent` reaches ONE host per user at a fixed path and her
+packaged app holds it; taking it would have disturbed a live session, and
+computer use was out of scope for this arc. What IS verified is the whole
+causal chain beneath the symptom — the cycle is 25 ms against a 10 s
+lease, the planes read 15/15 throughout, and
+`testAStarvedFinderCannotHoldTheSceneCycleOpen` fails if a complement can
+extend the cycle again. The act itself is **unverified** and should be
+the first thing a drive re-tests.
+
+**Still not covered by a test: the watchdog FIRING.** The bound and its
+reporting are guarded; that the expiry actually settles a stored
+completion is not, because the suites here would have to wait 20 s for it
+and no other request family's watchdog is covered either. Watched only in
+the sense that the code path is the one `exec` has used since it was
+written.
+
+### DEFERRED with a reason, not open: the asynchronous content plane (plan 014 §5)
+
+Explicitly out of 014. What §1's numbers say about it: the content join
+is **5–12 ms**, three orders below the census, so making it asynchronous
+buys nothing measurable on a healthy guest. Its case is the starved one,
+where it shares the guest's serial event loop with everything else — and
+in the starved case measured here the guest did not answer `scene.request`
+either, so the cycle was already lost upstream of P3. **Ordinary evidence
+does not currently justify the plan**; the four bullets under Option 3
+above remain the scope if one is written.
+
+**Read this as a decision, not as a to-do.** It was scoped, argued
+against on §1's own numbers, and left unbuilt on purpose — the item that
+would be dropped by building it is the frame's simplicity, and the item
+that would be bought is 5–12 ms on a machine where the next cheapest
+thing costs 1,478 ms. What would REOPEN it is new evidence, and the
+evidence would have to be of one specific shape: a guest that answers
+`scene.request` promptly while the content join does not. Every starved
+case measured so far had the guest silent on both, which no amount of
+host-side asynchrony repairs. Measure that first; do not build from the
+argument alone.
+
+## FIXED, emulator only: the 115 ms round trip was the guest's own sleep (2026-08-06)
+
+The deltas arc took the scene walk from ~950 ms to 3–8 ms and cut idle
+wire bytes by ~90%, and left one number standing: **a round trip cost a
+115 ms median even when the answer was a zero-byte "nothing changed".**
+Neither the work nor the bytes. This is what it was.
+
+**The mechanism, measured rather than inferred.** `main.c` asked
+`WaitNextEvent` for a six-tick sleep — nominally ~100 ms — unless a
+transfer, stream, offer, put or non-empty control queue was ALREADY in
+flight. A request arriving into a QUIET connection therefore sat readable
+on the socket until that sleep expired, before `conn_service` looked at
+it. The guest now measures both halves of that itself
+(`wirestat`): the interval between its own service passes, and the delay
+from Open Transport announcing data to the loop reading it.
+
+| condition | round trip | notice mean | notice max | pass mean |
+|---|---|---|---|---|
+| 6-tick sleep, no wake (as shipped) | **86 ms** | 48.5 ms | 103 ms | 111 ms |
+| 6-tick sleep + wake | **10 ms** | 7.5 ms | 105 ms | 104 ms |
+| 1-tick sleep, no wake | 15 ms | 10.8 ms | 28 ms | 27 ms |
+| 1-tick sleep + wake | 10 ms | 2.2 ms | 22 ms | 27 ms |
+
+Mid-drive (fronting Finder and NOW alternately, 25 KB deltas rather than
+zero-byte answers): 58 ms → 15 ms, notice 48.5 ms → 4.5 ms.
+
+`notice` is the finding. At a 48.5 ms mean into a ~111 ms loop it is
+uniform arrival into the sleep, which is exactly the shape a poll
+produces, and it is 100% of the unexplained time.
+
+**Why the wake and not simply a shorter sleep.** Both fix the latency.
+Only the wake fixes it without paying for it: with a 6-tick sleep AND the
+wake, the loop still sleeps ~104 ms when nothing is happening, so the
+rest of the Macintosh keeps the time the anchor plane needs — a
+process's A5 is captured when that process pumps. The 1-tick condition
+runs the loop 37 times a second on a machine that is usually idle, which
+is affordable on an emulated G4 and is precisely the kind of cost plan
+013 exists to stop paying on a 1400c.
+
+**The instrument's own trap, worth keeping.** A bench that sends
+requests back-to-back measures nothing here: answering one leaves a
+queued control frame, `conn_wants_fast_pump()` goes true, and the next
+request lands in an already-fast loop. The first run of
+`tools/local-wire-latency.py` reported a 10 ms median for the SHIPPED
+build for this reason. Every number above is from gap-separated requests
+into a quiet connection, which is the cadence the product actually has.
+
+**What is NOT proven, and it is the whole risk.** Every number is from an
+emulated G4 (`os91-runner.qcow2`, mac99, wire 5470, anchor 1706, builds
+`e207f041daa0` → `dc2900a44991`). Nobody has watched this on a PowerBook
+1400c. The wake is an Open Transport notifier — interrupt-time
+discipline, where a mistake is a crash rather than a slow answer — that
+does two things and only two: stamp the microsecond clock, and call
+`WakeUpProcess` on a PSN captured at startup on the main thread. It
+acknowledges nothing, so disconnects stay pending for the main loop's
+`OTLook` path where they have always been handled. **It also keeps the
+notifier installed after the dial**, which it did not before; that is the
+larger behavioural change of the two. Failure modes are graceful by
+construction — a notifier that never fires, or a `WakeUpProcess` that
+does nothing, leaves exactly the behaviour that shipped before — and
+`wirestat wake off` restores it from either face without a rebuild. **A
+metal pass is owed**, and until it happens the emulator's own advantage
+cuts the other way for once: on loopback the byte term is nearly free
+and the latency term is not, so this win probably UNDERSTATES what a
+slower machine gets.
+
+Two residuals, both small and both honest:
+
+- One notification in eleven or so still costs ~100 ms with the wake on.
+  A notification that lands while the process is already awake finds
+  `WakeUpProcess` with nothing to wake. `now_wire_sleep_ticks` closes
+  most of it by sleeping one tick whenever bytes are announced and
+  unread, and it did not close all of it.
+- The anchor-plane CANARY (how many applications the scene could bind,
+  how many windows it saw) **did not move in any condition** — but it
+  was pinned at its floor (1 app idle, 2 mid-drive) in the SHIPPED
+  condition too, so the run says nothing about starvation either way.
+  Anyone repeating this should drive a machine with several applications
+  and real windows before quoting the canary.
+
+Where: `now-guest-ppc/src/core/wire.c` (the notifier's data era,
+`g_wake_enabled`), `src/core/wire_sleep.c` (the sleep rule, natively
+tested), `src/core/loopstat.c` (the histogram, natively tested),
+`src/core/wirestat_cmd.c` (the grammar both faces share),
+`tools/local-wire-latency.py` (the bench).
+
+## BROKEN: `putstat` has no console face, and probably not only `putstat` (2026-08-06)
+
+Found while giving `wirestat` its second face. Typed at the guest's own
+console — or through the exec plane, which runs the same dispatch —
+`putstat` answers **"command failed"**. Over the wire the same verb
+returns its full row table. Reproduced 2026-08-06 on an emulated G4,
+build `dc2900a44991`.
+
+The cause is a buffer, not a missing case.
+`console_model.c :: console_model_dispatch` falls through to
+`now_command_run(name, NULL, 0, result, sizeof result)` with
+`char result[512]`. A verb whose `command.result` JSON exceeds 512 bytes
+is truncated, the reply then has no `message` key, and the console
+prints the generic failure. `putstat`'s table is over that; `gestalt`,
+`net` and `ps` are unaffected because each has an explicit console case
+that reads the producer directly.
+
+This violates [command-parity.md](command-parity.md) — a capability on
+one face is half a feature — and `CommandParityTests` does not catch it,
+because that gate checks specific message families textually rather than
+every verb's console rendering. It is also invisible from the Workshop:
+the Diagnostics page reads the same counters through
+`diag_putstat_rows`, so the numbers ARE on that machine's screen; it is
+only the typed verb that fails.
+
+What a fix has to decide, in the order it should be decided:
+
+1. **Which verbs are affected.** Anything routed through the generic
+   tail whose result can exceed 512 bytes. That set has never been
+   enumerated, and "probably not only `putstat`" is the honest state of
+   this entry.
+2. **The renderer.** Either a rowArray renderer on the generic tail
+   (`json.h` has `now_json_array` / `now_json_next_array` for
+   `[label, value]` rows) with a larger reply buffer — note the buffer
+   is on the stack of a classic Mac application, so growing it is not
+   free — or an explicit console case per affected verb reading the same
+   producer the wire verb reads. The second is the `net` precedent
+   ("three faces, one producer") and is what `wirestat` does, at
+   `console_model.c :: console_show_loopstat`.
+3. **A gate that would have caught it.** The shape is probably a source
+   test over `kNowCommandDocs` (`cmd_help.c`) asserting every verb
+   either has an explicit console case or provably fits the generic
+   path. Without one this returns the next time a verb grows a row.
+
+**FIXED 2026-08-06, emulator only (a153d718) — and the diagnosis above
+was half wrong, which is why it stays.** The 512-byte buffer is real and
+was fixed, but it was the *second* limit, not the cause. The cause is
+that `console_model.c`'s fallback read a top-level `message` out of the
+reply and treated its absence as a failure — and **no PowerPC verb has
+ever carried a `message` on success.** So the branch that ran for every
+command that WORKED was the failure branch, and a verb's own words
+reached the screen only when it had refused. This entry reasoned from
+`putstat`'s size because `putstat` was the verb in hand; the shape of
+the bug was not "one verb is too big" but "the renderer understands only
+a reply shape no verb emits on success".
+
+Six verbs were measured printing "command failed" while working:
+`putstat`, `axsnap`, `axtree`, `elements`, `mouseloc`, `observe`.
+Underneath it, `wire.c` sized a `command.result` at 3072 bytes and
+`console_model.c` at 512, and neither number said so — `kNowCommandResultCap`
+is the one number now, which is the "state a limit once, where both
+sides read it" rule from AGENTS.md arriving a third time.
+
+Question 1 above — *which verbs are affected* — is answered by not
+needing to be: `console_reply.c` is one Toolbox-free renderer rather
+than eighteen console cases, and `console_reply_test.c` runs it over
+every reply shape the guest emits.
+
+Question 3 — *a gate that would have caught it* — is the durable part.
+**`CommandParityTests` could not have caught any of this, and no version
+of it structured that way could.** It compares dispatch tables, and a
+table says whether a verb is PRESENT, never whether its answer renders.
+Three checks now close that gap, all mutation-verified: the console must
+delegate to the renderer and must not decide for itself that a command
+failed; both faces must size a reply from the same constant; and every
+`ok:true` reply must open an `output` object. The rule generalises past
+this project — see [command-parity.md](command-parity.md), "Present on
+both faces is not the same as working on both".
+
+Verified at both faces on an emulated G4, build `fea48baffe8f`, wire
+5510, watched fail first on `c5c39f61dbbf`. **Not metal-verified.**
+
 ## BROKEN: no verb reached through the PowerPC console's fallback can be given an ARGUMENT (2026-08-06)
 
 Found while fixing the renderer half of the same seam (see
@@ -1147,6 +2198,30 @@ do not attribute a dead-looking Mirror click to hit-testing without
 reading `actmeta` at the same timestamp first: the refusal was recorded
 plainly and was still nearly diagnosed as the wrong half.
 
+**2026-08-06, later: the open question is answered, and it was not the
+modal.** Nothing took those planes down — the host went quiet for longer
+than the ten-second lease, because optional planes were holding the
+scene cycle open for 12.5 s at a time. The modal only made the Finder
+slow enough for it to show. See the `decode_ms` entry at the top of this
+file; it is unfixed, and deliberately so pending a design decision.
+
+**2026-08-06, later still — the guest half of it IS fixed, and this
+entry and the scene-gap entry above were describing one defect from two
+ends.** They gave different proximate causes for the same lapse — that
+one says "thirty to forty seconds of acts with no scene", this one says
+"12.5 s cycles" — and both are true of the same mechanism: **only
+`scene.request` renewed the ten-second OWNER lease**, so any reason the
+host stopped asking within ten seconds disarmed the planes, whether the
+reason was act cadence or a stalled cycle. `4b972ade` makes renewal ride
+any inbound host frame, so a live host no longer lapses the lease at
+all, and a scene waits briefly for the arm echo rather than walking
+blind. That covers the Cancel refusal.
+
+What it does **not** close is the `decode_ms` inversion itself: the host
+can still spend 12.5 s in a cycle, and a lease that no longer lapses is
+a guest making the best of a host that stalls. Both halves are owed.
+Emulator only; never on metal.
+
 ## MEASURED, and the answer is DON'T BUILD ON IT: how long the content plane takes to arm (2026-08-06)
 
 Plan 013 § A proposes turning the resident into a NOTIFIER — told at
@@ -1230,6 +2305,13 @@ executing — so it is re-argued and dropped.
   can never request an arm earlier than that.
 - **The modal row is n=1**, and it is the wedge's GetNextEvent loop, not
   a real application's modal.
+
+  **2026-08-06, later: that caveat was exactly right and is now
+  measured.** The wedge's `GetNextEvent` loop starves NOW completely
+  (43,974 ms of a 45 s run, `pass max` 44.9 s) and a real application's
+  `ModalDialog` does not starve it at all (413 ms median, 145 probes).
+  So this row's 30.1 s is a true reading of the wedge and says nothing
+  about a modal. See the entry at the top of this file.
 - **The plane measured is the one on `claude/mirror-thread-content`.** The
   GWorld work on `claude/gworld-probe-grounding-3dcbd4` adds ~600 lines to
   `ext/src/now_content.c`, four hunks of them inside `now_content_gne`
@@ -1462,6 +2544,65 @@ inbound `refuse` into a `default:` arm, now logs it and finishes, since
 
 The original entry, unedited:
 
+## FIXED: `latencyMs` was never a measurement — it could not see anything shorter than a tick (2026-08-06)
+
+Recorded 2026-08-06 during the durability pass, because it is the
+instrument behind two of the wrong answers already in this file and it
+had no entry of its own. The defects it caused are written up; the
+defect *in the instrument* was not.
+
+**The mechanism.** `scene_collect.c` computed the scene's only timing
+number as
+
+    out->latency_ms = (long)((TickCount() - t_start) * 1000UL / 60UL);
+
+`TickCount()` advances at 60 Hz. The whole field is therefore quantised
+to **~16.6 ms**, and anything faster than a tick reads as 0 or as 17 —
+not approximately, but *identically*, for every phase of a walk that we
+now know runs in hundreds of microseconds. A scene that spends 290 µs in
+`controls` and one that spends 5,090 µs in `controls` were the same
+number.
+
+**What it cost.** Every question about guest cost was answered by
+differencing two runs of this one field, and the differences were inside
+the quantisation more often than not:
+
+- **The menu-bar misattribution.** A ~1 s self-front scene was confidently
+  blamed on `collect_self_menubar`. The microsecond breakdown then put
+  the menu bar at **0.1%** of the walk and a `FindControl` grid sweep at
+  ~95%. Written up above, at *"NOW's own window cost ~1 s of every
+  scene, and the suspect was the wrong one"*.
+- **The 115 ms round trip could not be decomposed at all.** With a
+  tick-resolution clock the sleep, the notice delay and the work were
+  one undifferentiated number, and the entry above (*"the 115 ms round
+  trip was the guest's own sleep"*) only became answerable once
+  `wirestat` grew histograms of the guest's own service interval and of
+  Open Transport's announce-to-read delay. `notice` at a 48.5 ms mean is
+  three ticks; it is not a thing this field could ever have reported.
+
+**The repair is a better instrument, not a better estimate.**
+`meta.phases` — microseconds, eight non-overlapping phases, **permanent
+and additive on the wire** rather than bolted on for one investigation.
+It calibrates the clock's own cost at startup and publishes it
+(`clockUs`), so it says what it costs rather than asking to be believed,
+and its seams are placed where their count is bounded by processes and
+windows, never by controls or menu items. `scene_phase.h` carries the
+reasoning; `scene_phase_test.c` drives the arithmetic on a host compiler
+with an injected clock.
+
+`latencyMs` still ships, because a consumer may hold an old reader, and
+it is excluded from the scene digest along with `seq`, `capturedAt` and
+`walkMs` (`scene_digest.h`) — a clock reading is not part of what the
+scene *is*. **Do not reason from it.** If a number matters, read
+`meta.phases`.
+
+**The transferable rule** is rule 14 in
+[mirror-measurement-method.md](mirror-measurement-method.md): a clock
+cannot measure anything shorter than its own tick, and a clock's
+resolution belongs beside its first number. TESTED; the phase clock has
+**never run on metal**, where `Microseconds` is a real trap on a real
+68K/PPC bus rather than an emulated one.
+
 ## FIXED on an emulator, NEVER ON METAL: NOW's own window cost ~1 s of every scene, and the suspect was the wrong one (2026-08-06)
 
 **The symptom.** With NOW frontmost — which is what a person does the
@@ -1496,6 +2637,19 @@ sweep over NOW's own window**, and it hides from the obvious A/B for a
 documented reason: `FindControl` answers an INACTIVE window immediately.
 The identical 3,724-point sweep costs ~2.7 µs a point in the background
 and ~240 µs a point in the foreground.
+
+**And the foreground figure is not one number, which is its own
+finding.** ~240 µs a point is the SETTLED window. A separate run that
+counted the `FindControl` calls rather than dividing a total by an
+assumed point count measured the ACTIVATION scene — the one where a
+person has just clicked into NOW — at **335–397 µs a point**, roughly
+40% dearer, because the window is being activated and redrawn while it
+is probed. Both numbers are real and they are not interchangeable: the
+settled one describes a steady state nobody waits on, and the
+activation one describes the scene a person actually feels. A
+durability pass on 2026-08-06 flattened the two toward 240 and the
+distinction is restored here, because collapsing them deletes the
+reason the focus-change scene was the worst case.
 
 **The fix** (`scene_self.c`, `control_kind.c`): cache the sweep's
 DISCOVERY — which controls this window has and the point each was found
@@ -1593,7 +2747,14 @@ AGENTS.md says the file family is symmetric; if that governs here, the
 contract's prose should say so explicitly rather than leaving two
 implementations to guess. Settle the prose before writing the code.
 
-## UNSETTLED: the host app reported as always-on-top; no window level exists to cause it (2026-08-06)
+## FIXED in the host, UNVERIFIED by any drive: the host app reported as always-on-top; no window level exists to cause it (2026-08-06)
+
+*(Re-headed 2026-08-06 during the durability pass. It stood as
+"UNSETTLED" while its own body recorded a landed fix — the ledger's two
+words are BROKEN and UNVERIFIED, and a third one invented for a single
+entry is how a fixed thing goes on reading as an open question. The fix
+is real and the verification is genuinely owed, which is exactly what
+"FIXED in the host, UNVERIFIED by any drive" says.)*
 
 Michelle: the macOS app window floats above other applications. What was
 measured, without driving anything:
@@ -1801,6 +2962,13 @@ rather than fired and forgotten:
    greyed until a city is chosen, and the default ring is around
    **Cancel**. So the grey is a correct report and the ring is a renderer
    fidelity defect.
+   *(2026-08-06, later: half-closed, and the cause is named. `isDefault`
+   is the DialogRecord's `aDefItem`, which is initialised to 1 and only
+   `SetDialogDefaultItem` moves — so it is stale here and correct
+   elsewhere, proven against Internet Explorer's alert the same evening.
+   The renderer no longer rings a DISABLED item; where the ring actually
+   WENT still needs the control's own `kControlPushButtonDefaultTag`. See
+   the alert entry at the top of this file.)*
    (With the modal's application in the BACKGROUND every item reports
    `enabled:false`, which is also true of the machine.)
 4. **The truncated explanatory text is the renderer, not the content.**
@@ -1814,9 +2982,20 @@ rather than fired and forgotten:
 
 ## CLOSED: the resident channel dials, speaks, and holds the session through a 108-second starvation (2026-08-06)
 
-Plan 012 § 4, and the whole plane it completes. A real Macintosh now
-opens a SECOND connection from its optional resident component and keeps
-it alive while every application on the machine is starved.
+Plan 012 § 4, and the whole plane it completes. A Macintosh — **an
+emulated G4 under OS 9, never yet a real one** — opens a SECOND
+connection from its optional resident component and keeps it alive while
+every application on the machine is starved. *(Opening reworded
+2026-08-06: it read "a real Macintosh now opens", which this entry's own
+closing paragraph contradicts. The Macintosh is real in the sense that
+matters to the code and emulated in the sense that matters to a claim,
+and only the second sense belongs in a first sentence.)*
+
+**Two starvation numbers appear in the record and both are right.** This
+entry's **108.8 s** is the instrumented run measured here; plan 012's
+**110 s** is the end-to-end run driven against the host application. They
+are different runs of the same behaviour, not a disagreement, and
+neither has been repeated on metal.
 
 **What was watched, on a fresh cold-booted OS 9 clone (mac99, guest
 build `4fe6d946e1a0`).** Two connections arrived from the same address a
@@ -2556,6 +3735,25 @@ modal on 2026-08-05 was refused four times on the second drive, because
 the anchor worker is itself starved by the alert (top entry). Item 3 is
 untouched.
 
+**2026-08-06: the same modal, reproduced deliberately, and it is a
+STRICTLY worse case than the one plan 014 repairs.** Raising this exact
+alert on a private clone gave `outcome=starved`, `request_ms`
+20,008–21,318 and `decode_ms=0` for as long as it was up — and the anchor
+worker stopped answering even `hello`, so the machine could not be driven
+at all and the clone was discarded. Compare Michelle's own 2026-08-06
+log: `request_ms=82` with `decode_ms=12457`, i.e. NOW answering promptly
+while the Finder was merely busy. Her modal belonged to a **foreign**
+application; this one belongs to the **Finder**.
+
+The distinction is load-bearing for anyone reproducing either. A
+foreign-owned modal starves the Finder, which is what 014 took out of the
+cycle — measured 353 ms → 16 ms. A **Finder**-owned modal starves the
+whole cooperative machine *including NOW*, so no complement runs, no
+scene is answered, and **no host-side repair helps** — item 2 above is
+still the only door, and it is still shut. Someone measuring 014 against
+a Finder-owned modal will correctly observe that it changed nothing, and
+draw the wrong conclusion from it.
+
 ## BROKEN: the host face can HIDE and cannot SHOW (2026-08-05)
 
 Found on the breadth-first drive, minutes after Hide started working from
@@ -3219,6 +4417,42 @@ up for the fix — the cold boot cannot run unattended today. The reply an
 agent now gets for a held act (`id: "held"`, `outcome: queued`,
 `awaitsObservation: true`) has never been seen by a real MCP client.
 
+## FIXED: `now/` had no commit hook at all, while AGENTS.md said one was enforcing the rules (2026-08-06)
+
+Found while building the extension bake gate, and worth its own heading
+because the bake gate is not the interesting half.
+
+`AGENTS.md` § Git says a commit on `main` is refused, and names the
+mechanism: *"This is enforced (`.githooks/pre-commit`, plus a PreToolUse
+hook on `Write`/`Edit`/`Bash`)"*. `CLAUDE.md` repeats it. **The file did
+not exist.** `.githooks/pre-commit` was added to this repository on
+2026-08-06 by `543b06af`; `git log --diff-filter=A` on the path returns
+that one commit and nothing before it. For however long that sentence
+had been in AGENTS.md, half of a two-part enforcement was prose. The
+PreToolUse hook is real, which is why nobody noticed — agents were
+stopped, so the floor appeared to hold, and a human committing on `main`
+from a terminal would have met nothing.
+
+The durable shape: **a rule that names its own enforcement is read as
+enforced, and nothing re-checks the naming.** Every other stale-oracle
+finding in this file is about data going stale; this one is about a
+*claim of mechanism* going stale, which is worse, because the whole
+point of writing the mechanism down was so a reader would not have to
+check.
+
+`git config core.hooksPath .githooks` is not automatic in a fresh clone
+or a fresh worktree, so the file existing is still not the same as the
+hook running — `tools/setup-hooks` in the parent tree is the one-time
+step. Anyone auditing this should run the check rather than read this
+paragraph, which is the entire lesson repeating itself.
+
+The gate that occasioned the discovery — a resident commit refusing to
+land without a verified, cleanly shut down image, with an explicit
+recorded deferral — is written up under *"That rule went unfollowed for
+three days, and is now enforced (2026-08-06)"*, inside the CYCLE 25
+section below. It is filed by cycle rather than by date, which is why it
+is hard to find; this heading is the pointer.
+
 ## Three rig facts that each read as something else (2026-08-05)
 
 None of these is a defect in NOW; all three cost time because they
@@ -3316,6 +4550,31 @@ down here.
   and it would unblock keyboard driving generally. Even if it worked it
   would not give a shutdown: a USB keyboard has no power key here either,
   and Shut Down has no Command-key equivalent in the Finder.
+
+**A fourth, added 2026-08-06: sessions collide on wire ports, and the
+collision is silent in both directions.** Several agent sessions were
+working this tree at once, each spinning up its own guest, and the port
+each dialled was chosen by habit rather than by allocation. Two
+consequences were observed and neither announced itself:
+
+- **A `quit` landed on another session's guest.** The wire carries no
+  identity a sender checks before acting, so a control verb sent to
+  "the guest on port N" reaches whichever guest is on port N. From the
+  sender's side it succeeded. From the other session's side a machine
+  died mid-task for no reason it could see.
+- **A guest answered that was not the build under test.** This is the
+  same failure AGENTS.md already names for the metal gates — *"any
+  session's VM, running any branch's build, can answer your listener"* —
+  arriving on the emulator, where it is more likely rather than less,
+  because emulated guests are cheap and everyone starts one.
+
+The metal rule is the cure and it generalises: **pick a port nothing
+else is dialling, and assert a capability only the build under test has
+before believing anything it says** (`requireTheBuildUnderTest()` is the
+pattern). A session should also say which port it took. Michelle's own
+stack sits on wire 5540 and is not to be touched;
+`docs/68k-metal-runbook.md` is the procedure for telling contention from
+a defect, and it applies here even though no metal is involved.
 
 ## BROKEN: the anchor plane is active and binds nothing (2026-08-05)
 

@@ -7,6 +7,7 @@
 
 #include "axmenu.h"
 #include "axtext.h"
+#include "dialog_text.h"
 #include "scene_phase.h"
 #include "semantic_client.h"
 
@@ -265,6 +266,28 @@ static void walk_dialog_items(NowScene *s, int window,
             return;
         }
         item = &s->dialog_items[s->dialog_item_count - 1];
+        /* The DITL gave us the RESOURCE's text. An application that filled
+           the item in at runtime wrote somewhere else entirely — see
+           dialog_text.h, and Internet Explorer's Error alert, whose whole
+           message was missing from the mirror because of this. The handle is
+           proved through the memory seam FIRST; only then does the Memory
+           Manager get asked how long it is. */
+        if (item->kind == kNowSceneSemanticStaticText
+            || item->kind == kNowSceneSemanticEditText) {
+            unsigned long data;
+
+            if (source.handle != 0
+                && now_ax_read_handle(memory, source.handle, &data)
+                       == kNowAxOk) {
+                char live[kNowSceneDialogTitleMax];
+
+                if (now_scene_dialog_item_text(
+                        source.handle, live,
+                        (short)sizeof live) > 0) {
+                    strcpy(item->title, live);
+                }
+            }
+        }
         control = control_for_handle(s, window, source.handle);
         if (control != NULL) {
             /* DITL's disable bit is the resource default. The live

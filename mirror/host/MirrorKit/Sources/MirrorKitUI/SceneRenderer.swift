@@ -717,10 +717,23 @@ public struct SceneRenderer {
             drawControl(contentCtx, control, contentOrigin: content.origin,
                         isDefault: control.semantic?.isDefault == true)
         }
+        /* An alert's default-outline slot is a DITL user item laid OVER the
+           button it outlines, and it is drawn after it. Painting a
+           placeholder there erased Internet Explorer's OK button and left
+           two hatched boxes where the machine showed one button (captured
+           2026-08-06, `scene-ie-error-alert.json`). So a placeholder yields
+           to anything concrete that is already under it. */
+        let drawnItems = win.dialogItems?.filter {
+            $0.visible && Self.drawsConcretely($0.semantic.kind)
+                && ($0.ref.map { !semanticControlRefs.contains($0) } ?? true)
+        }.map {
+            rect($0.rect).offsetBy(dx: content.minX, dy: content.minY)
+        } ?? []
         for item in win.dialogItems ?? [] where item.visible
                 && (item.ref.map { !semanticControlRefs.contains($0) }
                     ?? true) {
-            drawDialogItem(contentCtx, item, contentOrigin: content.origin)
+            drawDialogItem(contentCtx, item, contentOrigin: content.origin,
+                           covering: drawnItems)
         }
         // Finder icon-view items, in window-local content coords — the
         // Finder's own live positions, so what is drawn is where the guest
@@ -1147,9 +1160,23 @@ public struct SceneRenderer {
                 color: ctl.enabled ? Platinum.g6 : Platinum.g3)
     }
 
+    /// Whether `drawDialogItem` renders this kind as itself rather than as a
+    /// placeholder. The placeholder branch consults it so it can decline to
+    /// paint over a real one.
+    static func drawsConcretely(_ kind: String?) -> Bool {
+        switch kind {
+        case "panel", "placard", "selectionBand", "separator", "staticText",
+             "editText", "checkBox", "radioButton", "popupMenu", "pushButton":
+            return true
+        default:
+            return false
+        }
+    }
+
     private func drawDialogItem(_ ctx: GraphicsContext,
                                 _ item: MirrorKit.Scene.DialogItem,
-                                contentOrigin: CGPoint) {
+                                contentOrigin: CGPoint,
+                                covering drawn: [CGRect] = []) {
         let frame = rect(item.rect).offsetBy(dx: contentOrigin.x,
                                              dy: contentOrigin.y)
         guard frame.width > 0, frame.height > 0 else { return }
@@ -1211,11 +1238,28 @@ public struct SceneRenderer {
                 semantic: item.semantic)
             drawButton(ctx, ctl, frame,
                        isDefault: item.semantic.isDefault == true)
+        case "userItem":
+            /* A user item has no content of its OWN — whatever appears there
+               is drawn by the application, which is P3's business and not a
+               semantic fact. So "Visual unavailable" over one asserts content
+               that may not exist, and in an alert it usually does not: the
+               Dialog Manager's default-outline slot is a user item, and the
+               machine draws nothing but a ring inside it. */
+            break
         default:
-            /* `resCtrl`, user items, pictures and other custom drawing are
-               bounded facts even when their pixels are not. A dashed empty
-               box still reads as missing UI; an explicit placeholder keeps
-               the omission honest without covering later semantic items. */
+            /* `resCtrl`, pictures and other custom drawing are bounded facts
+               even when their pixels are not. A dashed empty box still reads
+               as missing UI; an explicit placeholder keeps the omission
+               honest without covering later semantic items — or, per
+               `covering`, earlier ones. */
+            /* CONTAINS, not intersects: a placeholder that WRAPS a real item
+               is the outline slot, and hatching it hides the item. A
+               placeholder that merely sits inside a larger drawn item is
+               ordinary furniture — the Workshop's icons all live inside its
+               panel, and an `intersects` test erased every one of them. */
+            guard !drawn.contains(where: { frame.contains($0) }) else {
+                break
+            }
             drawUnavailableVisual(ctx, frame,
                                   item.title.isEmpty
                                     ? "Visual unavailable" : item.title)
@@ -1287,7 +1331,17 @@ public struct SceneRenderer {
 
     private func drawButton(_ ctx: GraphicsContext, _ ctl: MirrorKit.Scene.Control,
                             _ frame: CGRect, isDefault: Bool) {
-        if isDefault {
+        /* A DISABLED item never wears the ring. `isDefault` comes from the
+           DialogRecord's `aDefItem`, which the Dialog Manager initialises to
+           1 and only `SetDialogDefaultItem` moves — so an application that
+           greys its first button and rings another leaves `aDefItem` behind.
+           Date & Time's Set Time Zone does exactly that: item 1 `Done` is
+           disabled, the machine rings `Cancel`, and the mirror drew the ring
+           on the greyed Done (docs/open-issues.md, 2026-08-06). Declining to
+           ring a disabled button is not the whole answer — nothing here knows
+           where the ring WENT — but it stops the mirror asserting something
+           the machine contradicts. */
+        if isDefault && ctl.enabled {
             // The default ring: 3px frame at 2px offset.
             let ring = frame.insetBy(dx: -5, dy: -5)
             ctx.stroke(Path(roundedRect: ring, cornerRadius: 10),

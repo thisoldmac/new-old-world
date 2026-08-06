@@ -34,6 +34,21 @@ final class MirrorStateEngine: ObservableObject {
     /// settle a mutation.
     private var visibility: [MirrorProcessIdentity: Bool] = [:]
     private var visibilityCoverage: Scene.CoverageClaim?
+
+    /// **What the Finder roster has and has not covered.**
+    ///
+    /// The icon roster used to be waited for inside the scene cycle, so a
+    /// frame either had it or the frame had not been published; there was
+    /// nothing to say. Since plan 014 §3 the cycle publishes first and the
+    /// roster folds in when it arrives, and the interval between the two
+    /// is a real state a person and an agent can both act wrongly on —
+    /// windows drawn with no icons in them look like empty folders.
+    ///
+    /// Absence stays absence in the SCENE (a container never read carries
+    /// no `items` key rather than an empty one), and this is the sentence
+    /// that goes with it: typed status and a reason, in the vocabulary
+    /// `process-visibility` already uses, so one rule reads both.
+    private var finderItemsCoverage: Scene.CoverageClaim?
     private var publicationID = 0
     private var digestScene: Scene?
     private var digestPlanes: Set<MirrorPlaneID> = []
@@ -96,6 +111,27 @@ final class MirrorStateEngine: ObservableObject {
 
     func enrichFinder(_ scene: Scene, receivedAt: Date = Date()) -> Bool {
         enrich(scene, plane: nil, receivedAt: receivedAt)
+    }
+
+    /// Records whether the roster now folded in was read for the layout
+    /// that is on screen. See `finderItemsCoverage`.
+    ///
+    /// Republishes when the claim CHANGES, and only then: the roster is
+    /// re-asserted on every cycle that redraws from retained icons, and a
+    /// publish per cycle for an unchanged sentence would be the same
+    /// spending this plan is removing, one layer over.
+    func noteFinderItems(complete: Bool, reason: String? = nil,
+                         receivedAt: Date = Date()) {
+        let claim = Scene.CoverageClaim(
+            scope: "finder-items",
+            status: complete ? .complete : .partial,
+            reason: complete ? nil
+                : (reason ?? "the Finder roster for this layout has not "
+                   + "arrived; folder windows may be drawn without items"))
+        guard claim != finderItemsCoverage else { return }
+        finderItemsCoverage = claim
+        guard let replica else { return }
+        publish(from: replica.snapshot, at: receivedAt)
     }
 
     /// Join a complete guest-side Finder visibility census to the exact
@@ -230,10 +266,12 @@ final class MirrorStateEngine: ObservableObject {
 
     private func compose(_ base: Scene) -> Scene {
         var scene = base
-        if let visibilityCoverage {
+        for claim in [visibilityCoverage, finderItemsCoverage].compactMap({
+            $0
+        }) {
             var coverage = scene.meta.coverage ?? []
-            coverage.removeAll { $0.scope == visibilityCoverage.scope }
-            coverage.append(visibilityCoverage)
+            coverage.removeAll { $0.scope == claim.scope }
+            coverage.append(claim)
             scene.meta.coverage = coverage
         }
         let identities = windowIdentities(in: scene)
