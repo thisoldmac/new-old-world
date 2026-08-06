@@ -502,7 +502,11 @@ void now_act_run_winact(const char *request_json, long id, char *out, long cap)
     win = handle.detail.window;
     cell = now_act_cell();
     if (cell == NULL) {
-        reply_status(out, cap, id, kNowActNoExtension);
+        /* NULL is two answers: no usable plane, or another act already
+           holds its single cell. now_act_why_no_cell() tells them apart -
+           reporting "no extension" for a busy plane would send someone
+           to reinstall software that is working. */
+        reply_status(out, cap, id, now_act_why_no_cell());
         return;
     }
 
@@ -694,7 +698,11 @@ static void text_exchange(const char *request_json, long id, char *out,
     }
     cell = now_act_cell();
     if (cell == NULL) {
-        reply_status(out, cap, id, kNowActNoExtension);
+        /* NULL is two answers: no usable plane, or another act already
+           holds its single cell. now_act_why_no_cell() tells them apart -
+           reporting "no extension" for a busy plane would send someone
+           to reinstall software that is working. */
+        reply_status(out, cap, id, now_act_why_no_cell());
         return;
     }
 
@@ -812,7 +820,11 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
        control's action belongs to the application. */
     cell = now_act_cell();
     if (cell == NULL) {
-        reply_status(out, cap, id, kNowActNoExtension);
+        /* NULL is two answers: no usable plane, or another act already
+           holds its single cell. now_act_why_no_cell() tells them apart -
+           reporting "no extension" for a busy plane would send someone
+           to reinstall software that is working. */
+        reply_status(out, cap, id, now_act_why_no_cell());
         return;
     }
 
@@ -926,7 +938,11 @@ void now_act_run_ditemact(const char *request_json, long id,
     }
     cell = now_act_cell();
     if (cell == NULL) {
-        reply_status(out, cap, id, kNowActNoExtension);
+        /* NULL is two answers: no usable plane, or another act already
+           holds its single cell. now_act_why_no_cell() tells them apart -
+           reporting "no extension" for a busy plane would send someone
+           to reinstall software that is working. */
+        reply_status(out, cap, id, now_act_why_no_cell());
         return;
     }
 
@@ -946,6 +962,11 @@ void now_act_run_ditemact(const char *request_json, long id,
         return;
     }
     if (!g_snap.fired) {
+        /* Withdraw before returning. This was the one act path that left
+           without it: harmless while the cell's only protection was that
+           nothing else could reach it, and a latch leak now that the
+           wait pumps - every later act would answer `act-busy`. */
+        now_act_withdraw();
         reply_registered_error(
             out, cap, id, "act-not-taken",
             "the resident plane did not queue the dialog press");
@@ -1047,7 +1068,11 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
     }
     cell = now_act_cell();
     if (cell == NULL) {
-        reply_status(out, cap, id, kNowActNoExtension);
+        /* NULL is two answers: no usable plane, or another act already
+           holds its single cell. now_act_why_no_cell() tells them apart -
+           reporting "no extension" for a busy plane would send someone
+           to reinstall software that is working. */
+        reply_status(out, cap, id, now_act_why_no_cell());
         return;
     }
 

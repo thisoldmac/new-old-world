@@ -76,9 +76,13 @@ void now_mach_run_actselftest(const char *request_json, long id,
 
     cell = now_act_cell();
     if (cell == NULL) {
-        now_mach_reply_error(out, cap, id,
-                             now_act_status_code(kNowActNoExtension),
-                             now_act_status_message(kNowActNoExtension));
+        /* Busy is a real answer here too: actselftest goes through the
+           same single cell as every other act, so it is refusable by the
+           same interlock rather than exempt from it. */
+        NowActStatus why = now_act_why_no_cell();
+
+        now_mach_reply_error(out, cap, id, now_act_status_code(why),
+                             now_act_status_message(why));
         return;
     }
 

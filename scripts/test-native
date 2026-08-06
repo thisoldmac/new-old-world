@@ -156,6 +156,18 @@ run_c now-guest-shared console_history_test.c \
 # discover a comparison was backwards.
 run_c now-guest-shared now_act_guard_test.c \
       "-DNOW_PEEK_TABLE_HOST"  src/now_act_guard.c
+# The one-act-at-a-time latch, and the pair of tests around it. On
+# 2026-08-06 the act wait was made to pump the wire (act_client.c ::
+# act_yield), which fixed a ten-second dead wire per act and SPENT a
+# protection docs/no-hijack-criterion.md's safety argument rested on:
+# that a second act command could not be dispatched while one was armed,
+# because the wait did not service the wire. This latch is what stands in
+# its place, so it is the piece of that argument a host cc can still
+# check. The compiled test plays the interleaving; the source test says
+# the application actually routes through it, because a latch nothing
+# calls passes its own test while the plane is unguarded.
+run_c now-guest-shared now_act_inflight_test.c  ""  src/now_act_inflight.c
+run_py now-guest-shared act_inflight_wiring_source_test.py
 # The six trap trampolines' result-slot ABI, read out of the assembly.
 # A source test, and normally the weakest kind - but a Pascal Boolean
 # answered as 0x0001 writes FALSE while the patch reports firing, and

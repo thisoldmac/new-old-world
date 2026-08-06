@@ -147,6 +147,11 @@ add_application(now-guest-ppc
     src/act/act_client.c
     src/act/act_cmds.c
     ../now-guest-shared/src/now_act_guard.c
+    # The one-act-at-a-time latch. Shared and natively tested for the
+    # same reason the guard is: it is the thing standing in for a
+    # protection that was deliberately spent on 2026-08-06, so it must be
+    # checkable somewhere a cross-compiler is not needed.
+    ../now-guest-shared/src/now_act_inflight.c
 
     # Two verbs about the machine's own state, folded in from the parked
     # upstream project (docs/mirror-foldin-inventory.md, wave 3):
