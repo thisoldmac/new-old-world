@@ -1,5 +1,14 @@
 # Fidelity sweep, 2026-08-06 — the host render against the guest's own pixels
 
+> **THE A/B WAS TAKEN. See
+> [fidelity-sweep-2026-08-06-b.md](fidelity-sweep-2026-08-06-b.md)
+> (2026-08-06 evening).** This page is the **A** side and stays exactly
+> as it was: a pre-asset-pack baseline, correct for the tree it names
+> and for no other. Do not quote a score from here as current. B also
+> changed one thing about the method — it renders each capture onto the
+> scene it was captured against rather than onto a canned one — and says
+> per row where that makes the two not strictly comparable.
+
 ## WHICH BUILD THIS TABLE DESCRIBES — read this before quoting a score
 
 Scores age badly and silently. This table is a **deliberate baseline**,
