@@ -116,6 +116,48 @@
       "provenance": "measured",
       "evidence": "docs/local/toolbox-re/anatomy-report.txt",
       "at": "2026-08-06T03:50:39-0400"
+    },
+    {
+      "phase": "P2",
+      "claim": "LockPixels RELOCATES THE PIXMAP RECORD ITSELF, not just its pixels, and moves it OUT of the application zone. Ground truth from the control reporting on itself: before locking, its pixmap deref is 0x1e957660, inside its app zone 0x1e93dd14-0x1e97b6d0. The blit the probe sights during LockPixels reports 0x1ea53eee - a different address, above bkLim, outside the zone. That is why RecoverHandle (which searches the CURRENT zone) fails on it, and why pointer identity between sight time and scan time can never hold.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/loop-identity.txt",
+      "at": "2026-08-06T03:58:14-0400"
+    },
+    {
+      "phase": "P2",
+      "claim": "What IS stable across the lock: the pixmap's bounds and rowBytes, and the owning port's portRect. The chase must match on SHAPE, not on any pointer or baseAddr - all three of the keys tried so far (handle identity, deref identity, baseAddr) are invalidated by relocation under LockPixels.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/loop-identity.txt",
+      "at": "2026-08-06T03:58:14-0400"
+    },
+    {
+      "phase": "P3",
+      "claim": "From prior art (Apple's released 1984 QuickDraw source, corroborated by Executor): CopyBits calls bitsProc ONLY when the destination is the current port; otherwise it bypasses grafProcs entirely. Our blits satisfy that - the window is the current port - which is why sighting works even while the chase does not.",
+      "provenance": "doc",
+      "evidence": "docs/local/toolbox-re/prior-art.md",
+      "at": "2026-08-06T03:58:14-0400"
+    },
+    {
+      "phase": "P3",
+      "claim": "PlotIconSuite CHANGES PATH depending on whether it is being watched: Icon Utilities uses CopyMask - invisible to grafProcs - UNLESS the port has grafProcs or picSave set, in which case it renders as two CopyBits. The spike's 'PlotIconSuite emitted a blit' was therefore self-fulfilling, and an UNHOOKED application's icon drawing is invisible to a passive observer. This is an observer-changes-the-system result of the same family as instrument-feeds-the-clock.",
+      "provenance": "doc",
+      "evidence": "docs/local/toolbox-re/prior-art.md",
+      "at": "2026-08-06T03:58:14-0400"
+    },
+    {
+      "phase": "P3",
+      "claim": "StdText does NOT blit glyphs through bitsProc - text runs through a separate character generator that never reads grafProcs, converging with CopyBits only at the private _StretchBits. Prior art and this rig's own measurement agree, so ext/src/now_content.c's stated justification for its re-entrancy guard is wrong and the guard should be re-argued or removed.",
+      "provenance": "doc",
+      "evidence": "docs/local/toolbox-re/prior-art.md",
+      "at": "2026-08-06T03:58:15-0400"
+    },
+    {
+      "phase": "P3",
+      "claim": "QuickDraw has been native PowerPC since 1994 - the opposite of the arc's working premise - but native routines still sit behind routine descriptors, so trap-table interception is not thereby excluded. Measured locally: the PPC guest emits no A-traps (pure CFM imports) while the 68K guest emits raw traps, so interception depends on what the import library does. OPEN RISK: our guest links CarbonLib, and both libInterfaceLib.a and libCarbonLib.a export CopyBits, so link order decides - answerable statically from a built PEF.",
+      "provenance": "doc",
+      "evidence": "docs/local/toolbox-re/prior-art.md",
+      "at": "2026-08-06T03:58:15-0400"
     }
   ],
   "blockers": [],

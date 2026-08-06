@@ -324,9 +324,19 @@ int now_content_probe_pixmap_match(NowContentU16 cand_port_version,
                                    NowContentS16 want_l, NowContentS16 want_t,
                                    NowContentS16 want_r, NowContentS16 want_b)
 {
-    if (want_base == 0 || cand_base != want_base) {
-        return 0;
-    }
+    /* baseAddr is NOT part of the test any more, and dropping it is the
+       whole point. LockPixels relocates the pixmap RECORD - measured
+       2026-08-06: the control's own deref sits at 0x1e957660 inside its
+       app zone, while the blit it makes under LockPixels reports
+       0x1ea53eee, above bkLim and outside that zone entirely. So the
+       source pointer, the handle recovered from it, and its baseAddr are
+       all snapshots of a moved block. What survives relocation is SHAPE:
+       the pixmap's bounds and rowBytes, and the owning port's rect
+       agreeing with them. `cand_base` is kept in the signature because
+       the caller still reports it, and a caller passing a base is not
+       wrong - it is simply no longer decisive. */
+    (void)cand_base;
+    (void)want_base;
     if ((cand_port_version & 0xC000U) != 0xC000U) {
         return 0;
     }

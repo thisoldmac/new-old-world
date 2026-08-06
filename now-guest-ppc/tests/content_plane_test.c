@@ -320,21 +320,25 @@ static void test_probe_pixmap_match(void)
     check(now_content_probe_pixmap_match(0xC000u, 0, 0, 404, 218,
                                          0x00801000u, 0x0660u,
                                          0, 0, 404, 218,
-                                         0x00801000u, 0x8660u,
+                                         0x00999999u, 0x8660u,
                                          0, 0, 404, 218),
-          "rowBytes flag bits differ between idioms and are masked");
+          "rowBytes flags are masked, and a MOVED baseAddr still matches");
     check(!now_content_probe_pixmap_match(0xC000u, 0, 0, 404, 218,
                                           0x00801000u, 0x8661u,
                                           0, 0, 404, 218,
                                           0x00801000u, 0x8660u,
                                           0, 0, 404, 218),
           "different real rowBytes is a different pixmap");
-    check(!now_content_probe_pixmap_match(0xC000u, 0, 0, 404, 218,
-                                          0u, 0x8660u,
-                                          0, 0, 404, 218,
-                                          0u, 0x8660u,
-                                          0, 0, 404, 218),
-          "a zero baseAddr never matches - half the heap is zeroes");
+    /* baseAddr stopped being decisive when LockPixels was measured
+       relocating the record: a zero base no longer refuses on its own,
+       because shape is what survives the move. The rect and rowBytes
+       tests below carry the whole burden now. */
+    check(now_content_probe_pixmap_match(0xC000u, 0, 0, 404, 218,
+                                         0u, 0x8660u,
+                                         0, 0, 404, 218,
+                                         0u, 0x8660u,
+                                         0, 0, 404, 218),
+          "shape alone matches: baseAddr is a snapshot, not an identity");
     check(!now_content_probe_pixmap_match(0x0000u, 0, 0, 404, 218,
                                           0x00801000u, 0x8660u,
                                           0, 0, 404, 218,

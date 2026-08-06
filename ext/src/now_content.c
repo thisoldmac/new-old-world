@@ -1177,8 +1177,16 @@ static Boolean content_probe_scan(unsigned char *p, unsigned char *limit,
                     if ((NowPeekU32)pm2 == wpm) {
                         matched = 1;
                     }
+                    /* The candidate counter now asks the question that
+                       survives relocation: does ANY colour port own a
+                       pixmap of the sighted SHAPE? A baseAddr equality
+                       here would count nothing, for the reason
+                       now_content_probe_pixmap_match no longer tests it. */
                     if (!matched
-                        && (NowPeekU32)pm2->baseAddr == wbase
+                        && pm2->bounds.right - pm2->bounds.left
+                               == wr - wl
+                        && pm2->bounds.bottom - pm2->bounds.top
+                               == wb - wt
                         && ((unsigned short)cand->portVersion & 0xC000U)
                                == 0xC000U) {
                         if (gBlock->probe_base_candidates == 0) {

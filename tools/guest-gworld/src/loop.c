@@ -48,6 +48,8 @@
 #include <TextEdit.h>
 #include <Types.h>
 
+#include <Folders.h>
+#include <Resources.h>
 #include <string.h>
 
 enum { kDefaultSeconds = 120, kMaxSeconds = 600 };
@@ -112,6 +114,64 @@ static void BuildWorld(void)
     SetGWorld(saved, savedDev);
 }
 
+/* The control's own account of what the chase is hunting. Written once
+   at startup: if the probe reports different numbers, the difference IS
+   the defect, and without this the two can only be guessed at. */
+static void ReportIdentity(void)
+{
+    Str255 fname = "\pNOW Loop Identity.txt";
+    short vRef = 0; long dirID = 0; short ref = 0;
+    FSSpec spec;
+    char buf[512];
+    long len;
+    PixMapHandle pix;
+    Handle rec;
+    CGrafPtr port = (CGrafPtr)gWorld;
+    THz appz = ApplicationZone();
+    const char *dig = "0123456789abcdef";
+    short j = 0, k;
+    unsigned long vals[8];
+    const char *labels[8];
+    short n = 0, v;
+
+    if (gWorld == NULL) return;
+    pix = GetGWorldPixMap(gWorld);
+    rec = (pix != NULL) ? RecoverHandle((Ptr)*pix) : NULL;
+
+    labels[n] = "port        "; vals[n++] = (unsigned long)port;
+    labels[n] = "portPixMap  "; vals[n++] = (unsigned long)port->portPixMap;
+    labels[n] = "pixDeref    "; vals[n++] = (unsigned long)(pix ? *pix : 0);
+    labels[n] = "RecoverHndl "; vals[n++] = (unsigned long)rec;
+    labels[n] = "baseAddr    "; vals[n++] =
+        (unsigned long)((pix && *pix) ? (**pix).baseAddr : 0);
+    labels[n] = "appzone lo  "; vals[n++] =
+        (unsigned long)(appz ? (Ptr)&appz->heapData : 0);
+    labels[n] = "appzone hi  "; vals[n++] =
+        (unsigned long)(appz ? appz->bkLim : 0);
+    labels[n] = "portVersion "; vals[n++] =
+        (unsigned long)(unsigned short)port->portVersion;
+
+    for (v = 0; v < n; ++v) {
+        for (k = 0; labels[v][k]; ++k) buf[j++] = labels[v][k];
+        buf[j++] = '='; buf[j++] = '0'; buf[j++] = 'x';
+        for (k = 28; k >= 0; k -= 4) buf[j++] = dig[(vals[v] >> k) & 0xF];
+        buf[j++] = '\r';
+    }
+    buf[j] = '\0';
+    len = j;
+
+    if (FindFolder(kOnSystemDisk, kDesktopFolderType, kDontCreateFolder,
+                   &vRef, &dirID) != noErr) { vRef = 0; dirID = 0; }
+    if (FSMakeFSSpec(vRef, dirID, fname, &spec) != noErr
+        && FSMakeFSSpec(vRef, dirID, fname, &spec) != fnfErr) return;
+    (void)FSpDelete(&spec);
+    if (FSpCreate(&spec, 'ttxt', 'TEXT', smSystemScript) != noErr) return;
+    if (FSpOpenDF(&spec, fsWrPerm, &ref) != noErr) return;
+    (void)FSWrite(ref, &len, buf);
+    (void)FSClose(ref);
+    (void)FlushVol(NULL, spec.vRefNum);
+}
+
 /* The composite, into the window. The shape the probe sights on. */
 static void BlitWorld(void)
 {
@@ -155,6 +215,7 @@ int main(void)
         return 0;
     }
     BuildWorld();
+    ReportIdentity();
     BlitWorld();
 
     /* Cooperative from here: WaitNextEvent is what lets the extension's
