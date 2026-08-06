@@ -2151,7 +2151,18 @@ CDEF at all. The corpus recapture is what turns this into a histogram.
 
 **`desktopItems` still does not read, and it is not the stale image.** It
 was nil for the whole 2026-08-05 morning drive, and it is nil here on a
-clean cold boot with the resident live and a foreign app frontmost. The
+clean cold boot with the resident live and a foreign app frontmost.
+
+> **STILL nil on 2026-08-06**, reconfirmed incidentally rather than
+> hunted: two live scene captures taken for the content-plane work
+> (guest build `1bff0bd2ca39`, with Date & Time and then Sherlock 2
+> frontmost) carry no `desktop` key at all, while the guest's own
+> screendump from the same run shows desktop icons and a full Control
+> Strip. So this survives the anchor-plane lease fixes and everything
+> the content plane gained today — it is a Finder-item read failure in
+> P2, not a scene-transport or a composition problem, and the host
+> render is correctly drawing what it was told (nothing) rather than
+> inventing icons. The
 matching symptom from the other side: the Finder's own **Desktop window
 is published with `itemTotal: 0`** while seventeen icons are on the
 screen. So the Finder-item read fails whole rather than partially, and
