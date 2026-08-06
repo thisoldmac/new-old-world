@@ -71,6 +71,34 @@ uncover repaint is total, and typing (`key`) gives only direct window
 drawing — selection redraw worlds are too transient for the chase
 (sighted, chased, gone: measured `misses`).
 
+## The coverage spread, and the one application that beat the chase (2026-08-06, later)
+
+Deferred item 3's thin spread is thin no longer. Live captures, each a
+committed fixture behind `NOWMirrorContentCoverageTests`: Finder
+**icon, list and button views** all composite and all join (list view
+crosses with its column headers and every row's real modification
+date); **Date & Time** and **Memory** are non-compositing exactly as
+the static table said, so the plain window hook reads their interiors
+whole; and **NOW's own window** composes its Workshop, with a retarget
+test pinning that a captured window stays composed as expected-stale
+when the plane moves on — the hatch behind the Finder is gone.
+
+**BROKEN in exactly the predicted way: Appearance.** It builds a
+transient offscreen world per widget blit, and the sight→chase→hook
+cycle loses every one (measured: 10 misses, 34 busy drops, 136
+small-blit refusals, no text crossing). Its window-port geometry
+records fine; its themed text never appears. This is not a new defect —
+it is the world-replacement fact at its sharpest, and the D0 resident
+`NewGWorld` patch (port handed over at creation) is the mechanism that
+would close it. Until D0 is re-run from the resident, Appearance-style
+per-widget compositors are out of reach and should be stated so.
+
+Two rig facts from the same sweep: `menuact` works on a FRESH boot (the
+View-menu marks move; the earlier no-op was the stale kd01 boot — the
+scene-walk staleness trap again, now with an act-plane face), and the
+render fix for scrollbars was chrome, not capture: a ranged scrollbar
+is window furniture and draws over display-owned content.
+
 ## NO VERDICT on D0: an applet cannot ask the trap-patch question (2026-08-06)
 
 Plan 013 slice D0 asks whether a `NewGWorld` trap patch fires for a CFM
