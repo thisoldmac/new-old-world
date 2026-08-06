@@ -22,6 +22,39 @@ final class NOWMirrorContentPlane {
         var sentence: String
     }
 
+    /// One offscreen world the guest's probe hooked, as this host keys it.
+    /// The port address alone is NOT durable — a disposed world's address
+    /// is reused by the next NewGWorld of the same size (measured
+    /// 2026-08-06: 0x1ea59e00 twice running) — so it is paired with the
+    /// record header's generation, which moves on every re-arm.
+    struct SourceKey: Hashable {
+        var port: UInt32
+        var generation: Int
+    }
+
+    /// The window stream's last-known drawing state, tracked so a spliced
+    /// run of offscreen ops can restore what it changed. State flows
+    /// across ops in the replay, so a splice that set its own origin,
+    /// clip or colours and restored nothing would bend every window op
+    /// that follows it.
+    struct PortState {
+        var origin: [Int] = [0, 0]
+        var clip: [Int]?
+        var fg: [Int]?
+        var bg: [Int]?
+
+        mutating func absorb(_ op: DisplayOp) {
+            guard op.op == "state" else { return }
+            switch op.kind {
+            case "origin": if let o = op.origin, o.count == 2 { origin = o }
+            case "clip": if let r = op.rect, r.count == 4 { clip = r }
+            case "fg": if let c = op.rgb, c.count == 3 { fg = c }
+            case "bg": if let c = op.rgb, c.count == 3 { bg = c }
+            default: break
+            }
+        }
+    }
+
     private let listener: GuestListener
     private(set) var targetPSN: String?
     private(set) var targetWindow: UInt32?
@@ -40,9 +73,22 @@ final class NOWMirrorContentPlane {
     private var replacementFloor: [String: ContentIdentity] = [:]
     private var armedAt: Date?
 
+    /// Ops recorded under an offscreen port's key — the drawing that BUILT
+    /// a composite, held until the blit that reveals it arrives (013 slice
+    /// C: ops precede their blit, so the host accumulates into a buffer it
+    /// cannot place yet). Bounded both ways: per-source at the window cap,
+    /// and at `sourceCap` sources with the oldest evicted loudly.
+    private(set) var sourceOperations: [SourceKey: [DisplayOp]] = [:]
+    private var sourceOrder: [SourceKey] = []
+    /// A `blitsrc` record names the source of the `bits` record that
+    /// IMMEDIATELY follows it; anything else in between voids the claim.
+    private var pendingBlitSource: UInt32?
+    private var windowPortState = PortState()
+
     /// Keep enough ordered drawing to include a full repaint without allowing
     /// a busy application to grow the host indefinitely.
     static let operationCapPerWindow = 1_200
+    static let sourceCap = 16
     private static let renewAfter: TimeInterval = 9 * 60
 
     init(listener: GuestListener) {
@@ -58,6 +104,10 @@ final class NOWMirrorContentPlane {
         settledDisplay.removeAll()
         currentDisplay.removeAll()
         replacementFloor.removeAll()
+        sourceOperations.removeAll()
+        sourceOrder.removeAll()
+        pendingBlitSource = nil
+        windowPortState = PortState()
         armedAt = nil
     }
 
@@ -119,6 +169,10 @@ final class NOWMirrorContentPlane {
             targetWindow = front.addr
             cursor = 0
             replacementFloor.removeAll()
+            sourceOperations.removeAll()
+            sourceOrder.removeAll()
+            pendingBlitSource = nil
+            windowPortState = PortState()
             armedAt = nil
         }
         if needsTarget || needsRenewal {
@@ -230,6 +284,12 @@ final class NOWMirrorContentPlane {
         if drain.resync || drain.lostBytes > 0 {
             operations.removeAll()
             replacementFloor.removeAll()
+            /* A hole in the ring makes every held accumulation suspect: a
+               composite missing its erase, or its first half, joined into
+               a window is worse than a hatch. */
+            sourceOperations.removeAll()
+            sourceOrder.removeAll()
+            pendingBlitSource = nil
             let front = scene.windows.first(where: \.front)
             if let slot = Self.slot(psn: targetPSN ?? front?.psn,
                                     window: targetWindow ?? front?.addr),
@@ -249,10 +309,52 @@ final class NOWMirrorContentPlane {
         var unjoined = 0
         var stale = 0
         var incomplete = 0
+        var held = 0
+        var joined = 0
+        var evictedSources = 0
         for record in drain.records {
-            guard let address = record.portAddress,
-                  address == expectedWindow,
-                  let scenePSN = visible[address], scenePSN == record.psn,
+            guard let address = record.portAddress else {
+                unjoined += 1
+                continue
+            }
+            if address != expectedWindow {
+                /* Not the armed window — but in probe mode the armed
+                   process's ring also carries ops recorded under a hooked
+                   offscreen GWorld's own port key: the drawing that BUILT
+                   a composite, arriving before the blit that reveals it.
+                   Hold those, bounded, keyed by port + generation, until
+                   a blitsrc/bits pair on the window claims them. Anything
+                   from another process stays unjoined, as before. */
+                /* Only a port that is NOT any window in this scene can be
+                   an offscreen world; a record from another window of the
+                   same process stays unjoined exactly as before. */
+                guard record.psn == expectedPSN, visible[address] == nil,
+                      record.op.op != "blitsrc" else {
+                    unjoined += 1
+                    continue
+                }
+                let key = SourceKey(port: address,
+                                    generation: record.generation)
+                if sourceOperations[key] == nil {
+                    if sourceOrder.count >= Self.sourceCap,
+                       let oldest = sourceOrder.first {
+                        sourceOrder.removeFirst()
+                        sourceOperations[oldest] = nil
+                        evictedSources += 1
+                    }
+                    sourceOrder.append(key)
+                    sourceOperations[key] = []
+                }
+                sourceOperations[key]!.append(record.op)
+                if sourceOperations[key]!.count > Self.operationCapPerWindow {
+                    sourceOperations[key]!.removeFirst(
+                        sourceOperations[key]!.count
+                            - Self.operationCapPerWindow)
+                }
+                held += 1
+                continue
+            }
+            guard let scenePSN = visible[address], scenePSN == record.psn,
                   record.psn == expectedPSN else {
                 unjoined += 1
                 continue
@@ -285,7 +387,33 @@ final class NOWMirrorContentPlane {
             } else {
                 currentDisplay[slot] = identity
             }
-            operations[identity, default: []].append(record.op)
+            /* The join (013 slice C). A blitsrc record names the source of
+               the bits record immediately after it; any other op between
+               them voids the claim rather than letting it drift onto a
+               later blit. When the claim holds and this host has that
+               source's ops, the bits op is REPLACED by the held ops
+               re-homed into the window — otherwise the bits op lands as
+               before and the renderer hatches it. */
+            var toAppend = [record.op]
+            if record.op.op == "blitsrc" {
+                pendingBlitSource = record.srcPort
+                continue
+            }
+            if record.op.op == "bits", let source = pendingBlitSource {
+                pendingBlitSource = nil
+                let key = SourceKey(port: source,
+                                    generation: record.generation)
+                if let heldOps = sourceOperations[key], !heldOps.isEmpty,
+                   let rehomed = Self.rehome(heldOps, bits: record.op,
+                                             restoring: windowPortState) {
+                    toAppend = rehomed
+                    joined += 1
+                }
+            } else {
+                pendingBlitSource = nil
+            }
+            for op in toAppend { windowPortState.absorb(op) }
+            operations[identity, default: []].append(contentsOf: toAppend)
             if operations[identity, default: []].count
                     > Self.operationCapPerWindow {
                 operations[identity]!.removeFirst(
@@ -320,6 +448,18 @@ final class NOWMirrorContentPlane {
         } else {
             facts.append("retained \(operations.values.reduce(0) { $0 + $1.count }) draw ops")
         }
+        if held > 0 {
+            facts.append("holding \(held) offscreen op\(held == 1 ? "" : "s") "
+                         + "for a blit to place")
+        }
+        if joined > 0 {
+            facts.append("joined \(joined) composite"
+                         + "\(joined == 1 ? "" : "s") from offscreen worlds")
+        }
+        if evictedSources > 0 {
+            facts.append("evicted \(evictedSources) held source"
+                         + "\(evictedSources == 1 ? "" : "s") at the cap")
+        }
         if unjoined > 0 {
             facts.append("\(unjoined) op\(unjoined == 1 ? "" : "s") named "
                          + "no window in this scene")
@@ -353,6 +493,75 @@ final class NOWMirrorContentPlane {
         }
         return .init(scene: attached,
                      sentence: "content: " + facts.joined(separator: "; "))
+    }
+
+    /// Re-home one source's held ops into the window a blit revealed them
+    /// in. All of it is coordinate bookkeeping over the replay's own state
+    /// vocabulary, so the renderer needs no new case:
+    ///
+    /// - The replay maps a coordinate h to `h - origin`, so a prologue
+    ///   origin of `-(dst - src)` shifts every held op by exactly the
+    ///   blit's translation without touching the ops themselves; origin
+    ///   ops INSIDE the held run are translated the same way so they
+    ///   compose instead of resetting the shift.
+    /// - The clip is the blit's `src` rect: under that origin it maps to
+    ///   exactly `dst`, which is the "clipped to dst" the plan requires.
+    /// - The epilogue restores the window stream's own origin, clip and —
+    ///   only if the held run touched them — colours, because state flows
+    ///   across ops and a splice that bent the ops after it would corrupt
+    ///   the window everywhere but inside the joined rectangle.
+    ///
+    /// Nil when the bits op carries no usable geometry — the caller keeps
+    /// the bits op and the renderer hatches it, which is the honest
+    /// degradation.
+    static func rehome(_ heldOps: [DisplayOp], bits: DisplayOp,
+                       restoring state: PortState) -> [DisplayOp]? {
+        guard let src = bits.src, src.count == 4,
+              let dst = bits.dst, dst.count == 4 else { return nil }
+        let dx = dst[0] - src[0]
+        let dy = dst[1] - src[1]
+
+        func stateOp(_ kind: String, _ build: (inout DisplayOp) -> Void)
+            -> DisplayOp {
+            var op = DisplayOp(op: "state", ticks: bits.ticks)
+            op.kind = kind
+            build(&op)
+            return op
+        }
+
+        var out: [DisplayOp] = [
+            stateOp("origin") { $0.origin = [-dx, -dy] },
+            stateOp("clip") { $0.rect = src },
+        ]
+        var touchedFg = false
+        var touchedBg = false
+        for var op in heldOps {
+            if op.op == "state" {
+                switch op.kind {
+                case "origin":
+                    if let o = op.origin, o.count == 2 {
+                        op.origin = [o[0] - dx, o[1] - dy]
+                    }
+                case "fg": touchedFg = true
+                case "bg": touchedBg = true
+                default: break
+                }
+            }
+            out.append(op)
+        }
+        out.append(stateOp("origin") { $0.origin = state.origin })
+        out.append(stateOp("clip") {
+            $0.rect = state.clip ?? [-32_768, -32_768, 32_767, 32_767]
+        })
+        if touchedFg {
+            out.append(stateOp("fg") { $0.rgb = state.fg ?? [0, 0, 0] })
+        }
+        if touchedBg {
+            out.append(stateOp("bg") {
+                $0.rgb = state.bg ?? [65_535, 65_535, 65_535]
+            })
+        }
+        return out
     }
 
     private func attachCached(to scene: MirrorKit.Scene) -> MirrorKit.Scene {

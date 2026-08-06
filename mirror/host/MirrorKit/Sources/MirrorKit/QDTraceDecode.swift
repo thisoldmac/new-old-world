@@ -18,10 +18,16 @@ public enum QDTraceDecode {
             /// of DisplayOp.pen so a future renderer cannot confuse them.
             public var penSize: [Int]?
             public var detailless: Bool
+            /// `blitsrc` records only: the offscreen port whose accumulated
+            /// ops the following `bits` record reveals. Kept off DisplayOp —
+            /// the join is the content plane's job, and a record the
+            /// renderer never draws has no business in the render IR.
+            public var srcPort: UInt32?
 
             public init(port: String, a5: String, psn: String,
                         displayEpoch: Int, generation: Int, op: DisplayOp,
-                        penSize: [Int]? = nil, detailless: Bool = false) {
+                        penSize: [Int]? = nil, detailless: Bool = false,
+                        srcPort: UInt32? = nil) {
                 self.port = port
                 self.a5 = a5
                 self.psn = psn
@@ -30,6 +36,7 @@ public enum QDTraceDecode {
                 self.op = op
                 self.penSize = penSize
                 self.detailless = detailless
+                self.srcPort = srcPort
             }
 
             /// The WindowRecord/GrafPort pointer as a numeric join key.
@@ -119,10 +126,15 @@ public enum QDTraceDecode {
             penSize = op.pen
             op.pen = nil
         }
+        var srcPort: UInt32?
+        if op.op == "blitsrc", let raw = dictionary["srcPort"] as? String,
+           raw.hasPrefix("0x") {
+            srcPort = UInt32(raw.dropFirst(2), radix: 16)
+        }
         return .init(port: port, a5: a5, psn: psn,
                      displayEpoch: displayEpoch, generation: generation,
                      op: op, penSize: penSize,
-                     detailless: detailless)
+                     detailless: detailless, srcPort: srcPort)
     }
 
     /// Mirrors DisplayReplay's supported vocabulary without making the core
@@ -131,6 +143,11 @@ public enum QDTraceDecode {
         if record.detailless { return "\(record.op.op) (no detail)" }
         switch record.op.op {
         case "text", "line", "bits":
+            return nil
+        case "blitsrc":
+            // Not a drawing op: the content plane consumes it as the join
+            // key for the bits record that follows, and it never reaches
+            // the renderer at all.
             return nil
         case "rect", "rrect", "oval":
             switch record.op.verb ?? 0 {

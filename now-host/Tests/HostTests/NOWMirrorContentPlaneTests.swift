@@ -38,7 +38,7 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
            "pen":[20,30],"font":3,"size":9,"face":0,
            "len":8,"fullLen":8,"trunc":false,"text":"Workshop"},
           {"op":"text","port":"0x22222222","ticks":2,
-           "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
+           "a5":"0x00999999","psn":"0.11111111","displayEpoch":3,"generation":7,
            "pen":[2,3],"font":3,"size":9,"face":0,
            "len":5,"fullLen":5,"trunc":false,"text":"Wrong"}],
          "cursor":0,"nextCursor":128,"writeCursor":128,"pending":0,
@@ -252,6 +252,159 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
         XCTAssertEqual(bitmap.scene.windows[0].display?.map(\.op), ["bits"],
                        "cross-generation retention belongs to the state engine")
         XCTAssertFalse(bitmap.sentence.contains("expected-stale"))
+    }
+
+    // MARK: - The blit-source join (plan 013, slice C)
+
+    /// The whole slice in one drain: ops arrive under an offscreen port's
+    /// key, a blitsrc record names that port, and the bits record that
+    /// follows is REPLACED by the held ops re-homed into the window —
+    /// shifted by the blit's translation and clipped to its destination.
+    func testBlitSourceJoinRehomesOffscreenOpsIntoTheWindow() throws {
+        let model = plane()
+        let update = model.apply(try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"text","port":"0x1f472e60","ticks":1,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
+           "pen":[10,50],"font":3,"size":9,"face":0,
+           "len":13,"fullLen":13,"trunc":false,"text":"offscreen row"},
+          {"op":"blitsrc","port":"0x1eba6800","ticks":2,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
+           "srcPort":"0x1f472e60","srcPixmap":"0x00445566"},
+          {"op":"bits","port":"0x1eba6800","ticks":2,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
+           "src":[0,0,404,203],"dst":[4,24,408,227],"mode":0,
+           "srcRowBytes":1632}],
+         "nextCursor":128,"records":3}
+        """), to: try scene())
+
+        let display = try XCTUnwrap(update.scene.windows[0].display)
+        XCTAssertFalse(display.map(\.op).contains("bits"),
+                       "a joined blit is content, never a hatch")
+        XCTAssertEqual(display.map(\.op),
+                       ["state", "state", "text", "state", "state"])
+        XCTAssertEqual(display[0].kind, "origin")
+        XCTAssertEqual(display[0].origin, [-4, -24],
+                       "the prologue origin shifts held ops by dst - src")
+        XCTAssertEqual(display[1].kind, "clip")
+        XCTAssertEqual(display[1].rect, [0, 0, 404, 203],
+                       "clipping to src maps to exactly dst under that origin")
+        XCTAssertEqual(display[2].text, "offscreen row")
+        XCTAssertEqual(display[2].pen, [10, 50],
+                       "the held op itself is untouched; the origin moves it")
+        XCTAssertEqual(display[3].kind, "origin")
+        XCTAssertEqual(display[3].origin, [0, 0])
+        XCTAssertEqual(display[4].kind, "clip")
+        XCTAssertTrue(update.sentence.contains("joined 1 composite"))
+        XCTAssertTrue(update.sentence.contains("holding 1 offscreen op"))
+    }
+
+    /// A blitsrc claim binds only the record immediately after it. An
+    /// intervening op voids it: letting the claim drift onto a later blit
+    /// is how one window's content ends up inside another.
+    func testBlitSourceClaimVoidedByAnInterveningOp() throws {
+        let model = plane()
+        let update = model.apply(try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"rect","port":"0x1f472e60","ticks":1,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
+           "verb":1,"rect":[0,0,50,50],"ext":[0,0]},
+          {"op":"blitsrc","port":"0x1eba6800","ticks":2,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
+           "srcPort":"0x1f472e60","srcPixmap":"0x00445566"},
+          {"op":"text","port":"0x1eba6800","ticks":2,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
+           "pen":[2,3],"font":3,"size":9,"face":0,
+           "len":7,"fullLen":7,"trunc":false,"text":"Between"},
+          {"op":"bits","port":"0x1eba6800","ticks":3,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
+           "src":[0,0,50,50],"dst":[4,24,54,74],"mode":0,"srcRowBytes":100}],
+         "nextCursor":160,"records":4}
+        """), to: try scene())
+
+        XCTAssertEqual(update.scene.windows[0].display?.map(\.op),
+                       ["text", "bits"],
+                       "a voided claim leaves the bits op to hatch honestly")
+        XCTAssertFalse(update.sentence.contains("joined"))
+    }
+
+    /// A blitsrc naming a source this host never held degrades to the
+    /// existing behaviour: the bits op lands and hatches.
+    func testBlitSourceForAnUnheldSourceKeepsTheBitsOp() throws {
+        let model = plane()
+        let update = model.apply(try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"blitsrc","port":"0x1eba6800","ticks":1,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
+           "srcPort":"0x1f472e60","srcPixmap":"0x00445566"},
+          {"op":"bits","port":"0x1eba6800","ticks":1,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
+           "src":[0,0,50,50],"dst":[4,24,54,74],"mode":0,"srcRowBytes":100}],
+         "nextCursor":96,"records":2}
+        """), to: try scene())
+
+        XCTAssertEqual(update.scene.windows[0].display?.map(\.op), ["bits"])
+        XCTAssertFalse(update.sentence.contains("joined"))
+    }
+
+    /// A held source is keyed by port AND generation: the same address in
+    /// a later arm generation is a DIFFERENT world (a disposed world's
+    /// address is reused by the next NewGWorld of the same size).
+    func testSourceAddressReuseAcrossGenerationsDoesNotJoin() throws {
+        let model = plane()
+        _ = model.apply(try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"text","port":"0x1f472e60","ticks":1,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
+           "pen":[10,50],"font":3,"size":9,"face":0,
+           "len":5,"fullLen":5,"trunc":false,"text":"Stale"}],
+         "nextCursor":64,"records":1}
+        """), to: try scene())
+
+        let update = model.apply(try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"blitsrc","port":"0x1eba6800","ticks":2,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":4,"generation":8,
+           "srcPort":"0x1f472e60","srcPixmap":"0x00445566"},
+          {"op":"bits","port":"0x1eba6800","ticks":2,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":4,"generation":8,
+           "src":[0,0,50,50],"dst":[4,24,54,74],"mode":0,"srcRowBytes":100}],
+         "nextCursor":160,"records":2}
+        """), to: try scene())
+
+        XCTAssertEqual(update.scene.windows[0].display?.map(\.op), ["bits"],
+                       "generation 7's ops must not join a generation 8 blit")
+    }
+
+    /// The re-home transform composes in-stream origin changes with the
+    /// blit's translation, and restores only the state the held run
+    /// actually touched.
+    func testRehomeTranslatesInStreamOriginsAndRestoresTouchedState() throws {
+        var origin = DisplayOp(op: "state", ticks: 1)
+        origin.kind = "origin"
+        origin.origin = [100, 200]
+        var fg = DisplayOp(op: "state", ticks: 1)
+        fg.kind = "fg"
+        fg.rgb = [65_535, 0, 0]
+        var text = DisplayOp(op: "text", ticks: 1)
+        text.text = "x"
+        text.pen = [110, 210]
+        var bits = DisplayOp(op: "bits", ticks: 2)
+        bits.src = [0, 0, 50, 50]
+        bits.dst = [10, 20, 60, 70]
+
+        var window = NOWMirrorContentPlane.PortState()
+        window.fg = [0, 0, 65_535]
+        let out = try XCTUnwrap(NOWMirrorContentPlane.rehome(
+            [origin, fg, text], bits: bits, restoring: window))
+
+        XCTAssertEqual(out[2].origin, [90, 180],
+                       "an in-stream origin composes with the translation")
+        XCTAssertEqual(out.last?.kind, "fg")
+        XCTAssertEqual(out.last?.rgb, [0, 0, 65_535],
+                       "a touched colour restores to the window's own")
+        XCTAssertFalse(out.contains { $0.kind == "bg" },
+                       "an untouched colour is not restored")
     }
 
     func testProcessSerialParsesOnlyTheTwoPartWireShape() {
