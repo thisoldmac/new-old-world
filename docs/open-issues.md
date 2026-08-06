@@ -10073,3 +10073,39 @@ single most informative window the sweep wanted — a text editor with a
 document open — and it is a RIG gap, not a mirror result. Sherlock 2,
 Note Pad, Stickies, Scrapbook and every control panel launched from the
 same anchor in the same runs, so it is specific rather than general.
+
+### A selected label renders as a solid black bar (2026-08-06)
+
+Captured deliberately, because nothing in the corpus had a selection in
+it: `tools/fidelity-sweep.py --reveal` selects an item and `--after`
+issues a reflowing resize, without which the Finder never rebuilds its
+icon-view composite (front/back alone yields 0 text ops).
+
+The Finder draws a selected icon's label by painting its background and
+writing the text over it in the inverse colour. **The paint crosses; the
+inverse does not.** The render draws "System Folder" as a black
+rectangle with nothing legible in it, beside nine correctly-drawn
+labels — worse than no highlight at all, because a black bar reads as
+damage rather than as selection. The replay tracks one `fg` and one `bg`
+per port and draws text in `fg`; nothing carries the text transfer mode.
+
+Adjacent to but DISTINCT from the skipped-invert work: fixing invert
+will not fix this label, because this label was never inverted — it was
+painted. Fixture `qdtrace-drain-sweep-finder-selected.json` (11 paint
+ops, 0 invert ops, all ten labels present). Gated by
+`testTheFindersSelectionNeverReachesTheCapture`. Renderer-side.
+
+### The selection/invert baseline, for the work landing now
+
+The replay skips invert outright ("invert needs destination pixels we do
+not carry"). The accent-ramp thread showed the corpus could not measure
+that: a forced-magenta selection colour regenerated all nine committed
+renders byte-identically, because no capture contained a selection.
+
+This sweep leaves a better before-picture: **157 invert ops (`verb: 3`)
+across five captures** — Stickies 52, Note Pad 52, Sherlock 2 31, Key
+Caps 18, Sound 4 — against 34 previously, plus the deliberately-selected
+Finder capture above. Still missing: a selected LIST row in a capture.
+Sound is the nearest available case and is already committed — its guest
+screendump shows `SimpleBeep` highlighted while `sound-1pass.png` draws
+that row unhighlighted, in a capture whose other nine rows are correct.

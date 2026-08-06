@@ -336,7 +336,64 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
          0x1e9f7550, "0.34406401", "Sherlock", 490, 468),
         ("key-caps", "qdtrace-drain-sweep-key-caps",
          0x1e945a40, "0.36044802", "Key Caps", 480, 220),
+        /* THE SELECTION BASELINE. The guest screendump for this run
+           shows "System Folder" selected — inverted label, darkened
+           icon. Whether the capture carries that is the whole question
+           the invert work needs answered before and after. */
+        ("finder-selected", "qdtrace-drain-sweep-finder-selected",
+         0x009e4a20, "0.29949953", "Macintosh HD", 404, 238),
     ]
+
+    /// The Finder's selection highlight does not reach the capture.
+    ///
+    /// Selection is drawn by INVERT on this machine, the replay skips
+    /// invert outright, and the accent-ramp thread showed the corpus
+    /// could not tell: a forced-magenta highlight regenerated every
+    /// committed render byte-identically, because no capture had a
+    /// selection in it.
+    ///
+    /// This capture was taken with one deliberately selected — reveal
+    /// selects `System Folder`, and a reflowing resize forces the
+    /// icon-view composite to rebuild (a front/back cycle does not, and
+    /// yields zero text ops). All ten item labels cross. **No invert
+    /// op does**, and no drawing mode other than `srcCopy` appears.
+    ///
+    /// So the gap is upstream of the renderer: fixing invert in the
+    /// replay cannot restore a Finder selection that was never
+    /// recorded. When the capture starts carrying it, this fails and
+    /// says the baseline moved.
+    func testTheFindersSelectionNeverReachesTheCapture() throws {
+        let url = try XCTUnwrap(Bundle.module.url(
+            forResource: "qdtrace-drain-sweep-finder-selected",
+            withExtension: "json", subdirectory: "Fixtures"))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: url)) as? [String: Any])
+        let ops = try XCTUnwrap(object["ops"] as? [[String: Any]])
+
+        XCTAssertTrue(ops.contains {
+            ($0["text"] as? String) == "System Folder"
+        }, "the selected item's own label stopped crossing")
+        XCTAssertTrue(ops.contains {
+            ($0["text"] as? String) == "10 items, 3.21 GB available"
+        }, "the composite stopped being rebuilt — is the resize still "
+           + "reaching the Finder?")
+
+        let inverts = ops.filter { ($0["verb"] as? Int) == 3 }
+        XCTAssertTrue(inverts.isEmpty,
+                      "the Finder's selection now REACHES the capture "
+                      + "(\(inverts.count) invert ops) — the baseline has "
+                      + "moved and the invert work can be measured here")
+
+        /* But the highlight is not wholly absent, and the render says
+           so: the Finder PAINTS the selected label's background, so a
+           filled rect does cross — and `finder-selected.png` draws it
+           as a solid black bar with the label swallowed inside it,
+           because the text that follows is drawn in the same colour.
+           White-on-dark is the missing half, not the fill. */
+        XCTAssertFalse(ops.filter { ($0["verb"] as? Int) == 1 }.isEmpty,
+                       "the painted highlight stopped crossing too — the "
+                       + "selection is now entirely absent, not half-drawn")
+    }
 
     /// THE FLATTENED-EPOCH FINDING, and it is a DRAW-ORDER defect, not
     /// a composition one. The distinction cost one wrong hypothesis:

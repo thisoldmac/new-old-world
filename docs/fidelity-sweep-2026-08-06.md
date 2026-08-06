@@ -147,6 +147,7 @@ paired as `<label>-pair.png` by `tools/fidelity-pair.py`.
 | **Sherlock 2** | 2 | 3 | 2 | 2 | 3 | The list is excellent — header, row, and the volume's real index date. The 16-icon channel grid arrives as one generic document icon (another thread owns that); the Custom popup's label is absent. |
 | **Monitors** | 0 | – | – | 0 | – | Nothing to render. Fully drawn on the machine, fully occluded by NOW, and **0 captured ops** on its window port — even after escalating to hide/reveal. |
 | **Key Caps** | 0 | 0 | 1 | 0 | 3 | The worst render in the sweep. All ~80 key frames arrive as `[0, 0, w, 21]` — every key collapsed onto the window origin — so the keyboard draws as a handful of stacked boxes in the corner. Only the chrome is right. |
+| **Finder icon view** (selected) | 2 | 3 | 2 | 2 | 3 | All ten labels, the header, correct positions, right chrome. Every icon is the generic document (old asset pack — this is the A/B baseline). The selected label draws as a **solid black bar** (R8). |
 | Finder desktop | – | – | – | – | – | N/A — harness cannot place a desktop capture (see above). 20 desktop item labels were captured. |
 | SimpleText, Calculator | – | – | – | – | – | Not judged: `launch err -192` through the anchor. Not a mirror result. |
 
@@ -311,6 +312,77 @@ changes (`SetPortBits`-style), where the recorded coordinates are true
 of the scratch and meaningless against the window. Confirm that before
 building on it. Evidence: `qdtrace-drain-sweep-key-caps.json`,
 `key-caps-pair.png`.
+
+## Selection, focus, and invert — the baseline for a fix landing now
+
+Selection on this machine is drawn by **invert**, and the replay skips
+invert outright:
+
+```swift
+default:   // invert needs destination pixels we do not carry
+    break
+```
+
+The accent-ramp thread found what that costs as a measurement problem:
+it changed the selected-row colour, regenerated all nine committed
+renders, got byte-identical PNGs, forced the highlight to magenta as a
+control, and got byte-identical PNGs again. **No capture in the old
+corpus contains a selection**, so nothing anyone owns can show a
+selection fix working — in either direction.
+
+What this sweep adds, and what it does not:
+
+- **157 invert ops (`verb: 3`) across five captures** — Stickies 52,
+  Note Pad 52, Sherlock 2 31, Key Caps 18, Sound 4 — against 34 in the
+  old corpus. Every one of them is skipped by the replay today. That is
+  a usable before-picture for the invert fix.
+- **A selected Finder icon view exists in the screendumps**, captured
+  deliberately: `tools/fidelity-sweep.py --reveal` opens the enclosing
+  window and selects the item, and
+  `/private/tmp/fsweep-b4/finder-guest.ppm` shows "System Folder" with
+  an inverted label and a darkened icon.
+- **Getting it into a capture took a second attempt, and the reason is
+  worth writing down.** Reveal-then-front/back does **not** make the
+  Finder rebuild its offscreen icon-view composite: those captures carry
+  73 and 209 records and *zero* text ops. The composite has to be
+  invalidated, not merely re-exposed — so `--after` now issues a
+  reflowing `winact resize`, which is what the committed Finder fixtures
+  were always taken with. With it, all ten item labels and the header
+  cross (`qdtrace-drain-sweep-finder-selected.json`).
+- **And the answer is: half of it crosses, and the half that does is
+  drawn wrong.** No invert op appears and no transfer mode other than
+  `srcCopy` — but the Finder *paints* the selected label's background,
+  so a filled rect does cross. The render (`finder-selected.png`) draws
+  that fill as a **solid black bar with the label swallowed inside it**,
+  because the text that follows is painted in the same colour. See R8.
+- **Sound's selected row is the cleanest available case** and it is
+  already committed: the guest screendump shows `SimpleBeep` highlighted
+  and `sound-1pass.png` draws that row unhighlighted, in a capture whose
+  other nine rows render correctly. One fixture, both states, same
+  moment.
+
+So: the invert baseline is real and improved; a *selected list row in a
+capture* is still missing, and the route to it is named rather than
+guessed.
+
+### R8 — A selected label renders as a solid black bar (RENDERER)
+
+The Finder draws a selected icon's label by painting its background and
+writing the text over it in the inverse colour. The paint crosses; the
+inverse does not. `finder-selected.png` draws "System Folder" as a black
+rectangle with nothing legible in it, beside nine correctly-drawn
+labels — which is worse than not drawing the highlight at all, because a
+viewer reads a black bar as damage rather than as selection.
+
+The replay tracks one foreground colour and one background colour per
+port and draws text in `fg`; nothing carries the text transfer mode, so
+white-on-dark cannot be expressed. This is adjacent to but *distinct
+from* the skipped-invert work: fixing invert will not fix this label,
+because this label was never inverted — it was painted.
+
+Evidence: `qdtrace-drain-sweep-finder-selected.json` (11 paint ops, 0
+invert ops, all ten labels present), `finder-selected-pair.png`. Gated
+by `testTheFindersSelectionNeverReachesTheCapture`.
 
 ## What is NOT broken, and should be said
 
