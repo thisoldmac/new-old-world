@@ -1,0 +1,598 @@
+#!/usr/bin/env python3
+"""Build the host-side Platinum asset pack straight off a guest disk image.
+
+No VM, no wire, no guest. The route — and the two steps in it that read
+as dead ends — is written up in docs/asset-extraction-offline.md:
+
+  1. qemu-img converts the qcow2 to raw. That is a FILE CONVERTER, not the
+     emulator; nothing boots and the source image is only ever read.
+  2. Block 0 is an Apple Partition Map; take the Apple_HFS entry.
+  3. That partition is an HFS *wrapper* (signature BD). Modern macOS
+     dropped HFS Standard, so `hdiutil` refuses it and the route looks
+     impossible. The real HFS+ volume is EMBEDDED inside; the MDB says
+     where. Carve it to its own file and macOS mounts it normally.
+  4. Resource forks are then ordinary files at <path>/..namedfork/rsrc.
+
+The parsers are the ones the live-pull extractor already uses
+(mirror/tools/extract-assets); this script only replaces the transport,
+so the two routes cannot disagree about what an icl8 means.
+
+    tools/extract-assets-offline                       # default image + pack
+    tools/extract-assets-offline --image X.qcow2       # another image
+    tools/extract-assets-offline --reuse-work          # skip convert+carve
+    tools/extract-assets-offline --theme-report        # census the theme file
+
+RULES, not preferences. These are Apple's bitmaps. The pack stays in this
+private repo, never publishes, never ships as an artifact. The source
+image is opened READ-ONLY and every step operates on the converted COPY;
+nothing is ever written into a guest System Folder.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime
+import json
+import os
+import shutil
+import struct
+import subprocess
+import sys
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.abspath(os.path.join(HERE, ".."))
+PARSERS = os.path.join(REPO, "mirror", "tools", "extract-assets")
+sys.path.insert(0, PARSERS)
+
+import cursors            # noqa: E402
+import icons              # noqa: E402
+import patterns           # noqa: E402
+import resfork            # noqa: E402
+
+DEFAULT_IMAGE = os.path.expanduser(
+    "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2")
+DEFAULT_OUT = os.path.join(
+    REPO, "mirror/host/MirrorKit/Sources/MirrorKitUI/Resources")
+DEFAULT_WORK = "/private/tmp/now-assets-work"
+
+SYSTEM_FILE = "System Folder/System"
+THEME_FILE = "System Folder/Appearance/Theme Files/Apple platinum"
+
+# The generic Finder icons the renderer asks for by name. Resource ids are
+# the System file's own; see IconAtlas.swift, which names the same five.
+NAMED_ICONS = {
+    "folder": -3999,
+    "application": -3968,
+    "document": -4000,
+    "system-folder": -3982,
+    "disk": -3998,
+}
+
+# Roots swept for application/control-panel bundles. Mounting the whole
+# volume makes every app reachable at once — the live route had to pull
+# each one over the wire.
+APP_SWEEP_ROOTS = [
+    "Applications (Mac OS 9)",
+    "System Folder/Control Panels",
+    "System Folder/Extensions",
+    "System Folder/Apple Menu Items",
+    "System Folder/Contextual Menu Items",
+    "System Folder/Control Strip Modules",
+    "System Folder/Finder",
+    "System Folder/Panels",
+]
+# Noise: our own builds, the trash, and the two multi-hundred-MB files
+# that are not resource forks at all.
+SWEEP_SKIP_NAMES = {"Trash", "VM Storage", "Desktop DB", "Desktop DF",
+                    "Cleanup At Startup", "TheFindByContentFolder"}
+MAX_FORK_BYTES = 12 << 20
+
+
+# --- image plumbing ------------------------------------------------------
+
+def run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, check=True, capture_output=True, text=True, **kw)
+
+
+def convert_to_raw(image: str, work: str, reuse: bool) -> str:
+    raw = os.path.join(work, "probe.raw")
+    if reuse and os.path.exists(raw):
+        print(f"  reusing {raw}")
+        return raw
+    if image.endswith(".raw") or image.endswith(".img"):
+        return image                       # already raw; read it in place
+    t = time.time()
+    print(f"  qemu-img convert {os.path.basename(image)} -> probe.raw")
+    run(["qemu-img", "convert", "-f", "qcow2", "-O", "raw", image, raw])
+    print(f"    {os.path.getsize(raw)} B in {time.time() - t:.0f}s")
+    return raw
+
+
+def find_hfs_partition(raw: str) -> int:
+    """Byte offset of the Apple_HFS partition, from the Apple Partition Map."""
+    with open(raw, "rb") as fh:
+        if fh.read(2) != b"ER":
+            raise SystemExit(f"{raw}: no Apple Partition Map (block 0 is not 'ER')")
+        for i in range(1, 64):
+            fh.seek(i * 512)
+            entry = fh.read(512)
+            if entry[:2] != b"PM":
+                break
+            ptype = entry[48:80].split(b"\0")[0].decode("mac_roman")
+            if ptype == "Apple_HFS":
+                start = struct.unpack_from(">I", entry, 8)[0]
+                return start * 512
+    raise SystemExit(f"{raw}: no Apple_HFS partition in the map")
+
+
+def embedded_hfsplus(raw: str, part: int) -> tuple[int, int]:
+    """(offset, length) of the HFS+ volume embedded in the HFS wrapper.
+
+    The wrapper's whole purpose is to be bootable by a system that only
+    knows HFS Standard; its three visible files include Apple's own joke,
+    `Where_have_all_my_files_gone?`. Everything real is in the embedded
+    volume, located by the wrapper's Master Directory Block.
+    """
+    with open(raw, "rb") as fh:
+        fh.seek(part + 1024)
+        mdb = fh.read(162)
+        if mdb[:2] == b"H+":
+            return part, os.path.getsize(raw) - part     # not wrapped at all
+        if mdb[:2] != b"BD":
+            raise SystemExit(f"partition signature {mdb[:2]!r} is neither BD nor H+")
+        if mdb[124:126] != b"H+":
+            raise SystemExit("HFS wrapper with no embedded HFS+ volume")
+        al_blk_siz = struct.unpack_from(">I", mdb, 20)[0]     # drAlBlkSiz
+        al_bl_st = struct.unpack_from(">H", mdb, 28)[0]       # drAlBlSt
+        start_blk, blk_count = struct.unpack_from(">HH", mdb, 126)
+        off = part + al_bl_st * 512 + start_blk * al_blk_siz
+        fh.seek(off + 1024)
+        if fh.read(2) != b"H+":
+            raise SystemExit(f"computed embedded offset {off:#x} has no H+ signature")
+        length = min(blk_count * al_blk_siz, os.path.getsize(raw) - off)
+        return off, length
+
+
+def carve(raw: str, off: int, length: int, work: str, reuse: bool) -> str:
+    out = os.path.join(work, "hfsplus.img")
+    if reuse and os.path.exists(out):
+        print(f"  reusing {out}")
+        return out
+    t = time.time()
+    print(f"  carving embedded HFS+ at {off:#x} ({length} B)")
+    with open(raw, "rb") as src, open(out, "wb") as dst:
+        src.seek(off)
+        remaining = length
+        while remaining > 0:
+            chunk = src.read(min(1 << 22, remaining))
+            if not chunk:
+                break
+            dst.write(chunk)
+            remaining -= len(chunk)
+    print(f"    {os.path.getsize(out)} B in {time.time() - t:.0f}s")
+    return out
+
+
+def mount(img: str, mnt: str) -> None:
+    os.makedirs(mnt, exist_ok=True)
+    if os.path.ismount(mnt):
+        return
+    run(["hdiutil", "attach", "-readonly", "-nobrowse", "-mountpoint", mnt, img])
+
+
+def unmount(mnt: str) -> None:
+    if os.path.ismount(mnt):
+        subprocess.run(["hdiutil", "detach", mnt], capture_output=True, text=True)
+
+
+def rsrc(path: str) -> bytes:
+    """A file's resource fork, or b'' — macOS exposes it as a named fork."""
+    fork = os.path.join(path, "..namedfork", "rsrc")
+    try:
+        if os.path.getsize(fork) == 0:
+            return b""
+        with open(fork, "rb") as fh:
+            return fh.read()
+    except OSError:
+        return b""
+
+
+# --- extraction ----------------------------------------------------------
+
+def safe(text: str) -> str:
+    return "".join(c if c.isalnum() or c in "-_." else "_" for c in text)
+
+
+def ostype_key(raw: bytes) -> str:
+    """A filesystem-safe key for an OSType (matches iconpack.ostype_key)."""
+    if all(32 < b < 127 and chr(b) not in "/\\:" for b in raw):
+        return raw.decode("ascii")
+    return "x" + raw.hex()
+
+
+def wipe_generated(d: str, keep: set[str]) -> None:
+    """Idempotence: a rerun must not leave last run's files behind."""
+    if not os.path.isdir(d):
+        return
+    for name in os.listdir(d):
+        if name in keep or name.startswith("."):
+            continue
+        p = os.path.join(d, name)
+        if os.path.isfile(p):
+            os.remove(p)
+
+
+def extract_system_icons(fork: resfork.ResourceFork, out: str,
+                         prov: list) -> dict:
+    """Every icl8/ics8 in the System file, composited with its mask.
+
+    Both sizes are emitted for the named generics, because a list-view row
+    is 16x16 and scaling a 32x32 icl8 into it is visibly not what the
+    machine draws.
+    """
+    d = os.path.join(out, "icons")
+    os.makedirs(d, exist_ok=True)
+    wipe_generated(d, keep=set())
+    by_id_dim: dict[tuple[int, int], object] = {}
+    count = 0
+    for desc in icons.extract_icons(fork):
+        base = safe(desc["name"]) + "_" if desc["name"] else ""
+        name = f"{base}{desc['color_type']}_{desc['id']}_{desc['dim']}"
+        desc["image"].save(os.path.join(d, f"{name}.png"))
+        by_id_dim[(desc["id"], desc["dim"])] = desc["image"]
+        prov.append({"asset": f"icons/{name}.png", "source": SYSTEM_FILE,
+                     "type": desc["color_type"], "id": desc["id"],
+                     "mask": desc["mask_type"]})
+        count += 1
+
+    named = {}
+    for label, rid in NAMED_ICONS.items():
+        for dim, suffix in ((32, ""), (16, "-16")):
+            img = by_id_dim.get((rid, dim))
+            if img is None:
+                continue
+            img.save(os.path.join(d, f"{label}{suffix}.png"))
+            named[f"{label}{suffix}"] = rid
+            prov.append({"asset": f"icons/{label}{suffix}.png",
+                         "source": SYSTEM_FILE,
+                         "type": "icl8" if dim == 32 else "ics8", "id": rid})
+    missing = [k for k in NAMED_ICONS if k not in named]
+    if missing:
+        raise SystemExit(f"generic icons missing from the System file: {missing} "
+                         "— the renderer names these; refusing a half pack")
+    return {"count": count, "named": named}
+
+
+def extract_cursors(fork: resfork.ResourceFork, out: str, prov: list) -> dict:
+    d = os.path.join(out, "cursors")
+    os.makedirs(d, exist_ok=True)
+    wipe_generated(d, keep=set())
+    hotspots = {}
+    for desc in cursors.extract_cursors(fork):
+        base = safe(desc["name"]) + "_" if desc["name"] else ""
+        name = f"{base}CURS_{desc['id']}"
+        desc["image"].save(os.path.join(d, f"{name}.png"))
+        hotspots[name] = {"x": desc["hotspot"][0], "y": desc["hotspot"][1]}
+        prov.append({"asset": f"cursors/{name}.png", "source": SYSTEM_FILE,
+                     "type": "CURS", "id": desc["id"]})
+    with open(os.path.join(d, "hotspots.json"), "w") as fh:
+        json.dump(hotspots, fh, indent=1, sort_keys=True)
+    return {"count": len(hotspots)}
+
+
+def extract_patterns(fork: resfork.ResourceFork, out: str, prov: list) -> dict:
+    d = os.path.join(out, "patterns")
+    os.makedirs(d, exist_ok=True)
+    wipe_generated(d, keep=set())
+    result = patterns.extract_patterns(fork)
+    summary = {"ppat": [], "PAT": [], "desktop_ppat_id": None}
+    for p in result["ppat"]:
+        if "image" not in p:
+            summary["ppat"].append({"id": p["id"], "error": p.get("error")})
+            continue
+        is_desktop = (p.get("name") or "").strip().lower() == "mac os default"
+        fname = "desktop.png" if is_desktop else f"ppat_{p['id']}.png"
+        p["image"].save(os.path.join(d, fname))
+        if is_desktop:
+            summary["desktop_ppat_id"] = p["id"]
+        summary["ppat"].append({"id": p["id"], "name": p["name"],
+                                "w": p["w"], "h": p["h"], "file": fname})
+        prov.append({"asset": f"patterns/{fname}", "source": SYSTEM_FILE,
+                     "type": "ppat", "id": p["id"]})
+    for p in result["PAT"]:
+        fname = f"pat_{p['id']}.png"
+        p["image"].save(os.path.join(d, fname))
+        summary["PAT"].append({"id": p["id"], "file": fname})
+        prov.append({"asset": f"patterns/{fname}", "source": SYSTEM_FILE,
+                     "type": "PAT ", "id": p["id"]})
+    if summary["desktop_ppat_id"] is None:
+        raise SystemExit("no 'Mac OS Default' ppat — the desktop pattern the "
+                         "renderer fills with would be lost")
+    return summary
+
+
+def extract_pictures(fork: resfork.ResourceFork, out: str, prov: list) -> dict:
+    """PICTs, written as PICT FILES (512-byte null header + the resource).
+
+    Deliberately NOT converted to PNG. QuickDraw picture decoding was
+    removed from macOS, and writing a PICT interpreter to get at 42
+    startup-screen-shaped images is a large job for art the renderer does
+    not draw. They are carried in their own format, with their frame size
+    recorded, so a later consumer can decide; claiming a PNG we cannot
+    produce would be worse than saying so here.
+    """
+    d = os.path.join(out, "pictures")
+    os.makedirs(d, exist_ok=True)
+    wipe_generated(d, keep=set())
+    listed = []
+    for res in fork.of_type("PICT"):
+        if len(res.data) < 10:
+            continue
+        top, left, bottom, right = struct.unpack_from(">hhhh", res.data, 2)
+        base = safe(res.name) + "_" if res.name else ""
+        fname = f"{base}PICT_{res.id}.pict"
+        with open(os.path.join(d, fname), "wb") as fh:
+            fh.write(b"\0" * 512)
+            fh.write(res.data)
+        listed.append({"id": res.id, "name": res.name, "file": fname,
+                       "w": right - left, "h": bottom - top,
+                       "bytes": len(res.data)})
+        prov.append({"asset": f"pictures/{fname}", "source": SYSTEM_FILE,
+                     "type": "PICT", "id": res.id})
+    return {"count": len(listed), "format": "PICT (not PNG: no decoder)",
+            "pictures": listed}
+
+
+def parse_bundle(fork: resfork.ResourceFork):
+    """(creator, {fileType: iconResID}) from BNDL/FREF, or None.
+
+    Same walk as mirror/tools/extract-assets/iconpack.py — kept here rather
+    than imported because that module runs its harness at import time.
+    """
+    bndls = fork.of_type("BNDL")
+    if not bndls:
+        return None
+    d = bndls[0].data
+    if len(d) < 8:
+        return None
+    creator = d[0:4]
+    count_m1 = struct.unpack_from(">h", d, 6)[0]
+    off = 8
+    icn_local_to_res: dict[int, int] = {}
+    fref_local_to_res: dict[int, int] = {}
+    for _ in range(count_m1 + 1):
+        typ = d[off:off + 4]
+        cnt_m1 = struct.unpack_from(">h", d, off + 4)[0]
+        off += 6
+        table = {}
+        for _ in range(cnt_m1 + 1):
+            lid, rid = struct.unpack_from(">hh", d, off)
+            off += 4
+            table[lid] = rid
+        if typ in (b"ICN#", b"icl8"):
+            icn_local_to_res.update(table)
+        elif typ == b"FREF":
+            fref_local_to_res.update(table)
+    type_to_res: dict[bytes, int] = {}
+    for _local, fref_res in fref_local_to_res.items():
+        fref = fork.get("FREF", fref_res)
+        if not fref or len(fref.data) < 6:
+            continue
+        ftype = fref.data[0:4]
+        icon_local = struct.unpack_from(">h", fref.data, 4)[0]
+        res = icn_local_to_res.get(icon_local)
+        if res is not None:
+            type_to_res[ftype] = res
+    return creator, type_to_res
+
+
+def sweep_bundles(mnt: str) -> list[str]:
+    """Every file under the app roots that could carry a BNDL."""
+    found = []
+    for root in APP_SWEEP_ROOTS:
+        start = os.path.join(mnt, root)
+        if os.path.isfile(start):
+            found.append(start)
+            continue
+        for dirpath, dirnames, filenames in os.walk(start):
+            dirnames[:] = [d for d in dirnames if d not in SWEEP_SKIP_NAMES]
+            for name in filenames:
+                if name in SWEEP_SKIP_NAMES or name.startswith("."):
+                    continue
+                found.append(os.path.join(dirpath, name))
+    return found
+
+
+def extract_appicons(mnt: str, out: str, prov: list, verbose: bool) -> dict:
+    """Per-application icons keyed by (creator, fileType), from each app's
+    own resource fork. The creator comes from the app's own BNDL, so no
+    Finder metadata is needed and nothing depends on a running guest."""
+    d = os.path.join(out, "appicons")
+    os.makedirs(d, exist_ok=True)
+    wipe_generated(d, keep=set())
+    manifest: dict[str, dict] = {}
+    scanned = skipped = 0
+    for path in sweep_bundles(mnt):
+        try:
+            if os.path.getsize(os.path.join(path, "..namedfork", "rsrc")) > MAX_FORK_BYTES:
+                continue
+        except OSError:
+            continue
+        raw = rsrc(path)
+        if not raw:
+            continue
+        scanned += 1
+        try:
+            fork = resfork.ResourceFork(raw)
+            parsed = parse_bundle(fork)
+        except Exception:
+            skipped += 1
+            continue
+        if not parsed:
+            continue
+        creator, type_to_res = parsed
+        ckey = ostype_key(creator)
+        rel = os.path.relpath(path, mnt)
+        wrote = 0
+        for ftype, res_id in sorted(type_to_res.items()):
+            icl8 = fork.get("icl8", res_id)
+            ics8 = fork.get("ics8", res_id)
+            tkey = ostype_key(ftype)
+            for res, mask_type, dim, suffix in (
+                    (icl8, "ICN#", 32, ""), (ics8, "ics#", 16, "-16")):
+                if not res or len(res.data) < dim * dim:
+                    continue
+                mask = fork.get(mask_type, res_id)
+                img = icons.render_icon(res.data,
+                                        mask.data if mask else None, dim)
+                fname = f"{ckey}__{tkey}{suffix}.png"
+                # First writer wins: an app's own bundle beats a later file
+                # that happens to redeclare the same creator/type pair.
+                if os.path.exists(os.path.join(d, fname)):
+                    continue
+                img.save(os.path.join(d, fname))
+                manifest[f"{ckey}/{tkey}{suffix}"] = {
+                    "asset": f"appicons/{fname}", "creator": ckey,
+                    "type": tkey, "dim": dim, "source": rel, "resId": res_id,
+                }
+                prov.append({"asset": f"appicons/{fname}", "source": rel,
+                             "type": "icl8" if dim == 32 else "ics8",
+                             "id": res_id})
+                wrote += 1
+        if verbose and wrote:
+            print(f"    {rel}: creator {ckey}, {wrote} icons")
+    with open(os.path.join(d, "manifest.json"), "w") as fh:
+        json.dump({"pack": "appicons",
+                   "note": "Apple app icons by (creator,type); private repo only",
+                   "icons": manifest}, fh, indent=1, sort_keys=True)
+    creators = {v["creator"] for v in manifest.values()}
+    return {"count": len(manifest), "creators": len(creators),
+            "forks_scanned": scanned, "forks_unparsable": skipped}
+
+
+def theme_report(mnt: str) -> dict:
+    """What is actually inside the Platinum theme file.
+
+    mirror-assets.md says Platinum chrome is drawn procedurally and there
+    is no art to lift. This opens the file rather than assuming either
+    way; the census is recorded so the claim is evidenced, not repeated.
+    """
+    path = os.path.join(mnt, THEME_FILE)
+    raw = rsrc(path)
+    if not raw:
+        return {"error": f"no resource fork at {THEME_FILE}"}
+    fork = resfork.ResourceFork(raw)
+    census = fork.census()
+    pictures = []
+    for res in fork.of_type("PICT"):
+        top, left, bottom, right = struct.unpack_from(">hhhh", res.data, 2)
+        pictures.append({"id": res.id, "w": right - left, "h": bottom - top,
+                         "bytes": len(res.data)})
+    scenes = [{"id": r.id, "name": r.name, "bytes": len(r.data)}
+              for r in fork.of_type("scen")]
+    cluts = [{"id": r.id, "name": r.name, "bytes": len(r.data)}
+             for r in fork.of_type("clut")]
+    return {"fork_bytes": len(raw), "census": census,
+            "pictures": pictures, "scenes": scenes, "cluts": cluts}
+
+
+# --- main ----------------------------------------------------------------
+
+def main() -> None:
+    ap = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--image", default=DEFAULT_IMAGE,
+                    help="guest disk image, qcow2 or raw (READ-ONLY)")
+    ap.add_argument("--out", default=DEFAULT_OUT, help="pack directory")
+    ap.add_argument("--work", default=DEFAULT_WORK,
+                    help="scratch for the converted copy and the mount")
+    ap.add_argument("--reuse-work", action="store_true",
+                    help="reuse an existing probe.raw / hfsplus.img")
+    ap.add_argument("--keep-work", action="store_true",
+                    help="leave the converted copy mounted and on disk")
+    ap.add_argument("--theme-report", action="store_true",
+                    help="census the Platinum theme file and stop")
+    ap.add_argument("-v", "--verbose", action="store_true")
+    args = ap.parse_args()
+
+    if not os.path.exists(args.image):
+        raise SystemExit(f"no such image: {args.image}")
+    os.makedirs(args.work, exist_ok=True)
+    mnt = os.path.join(args.work, "mnt")
+
+    print(f"image {args.image} (read-only)")
+    raw = convert_to_raw(args.image, args.work, args.reuse_work)
+    part = find_hfs_partition(raw)
+    print(f"  Apple_HFS partition at {part:#x}")
+    off, length = embedded_hfsplus(raw, part)
+    if off != part:
+        print(f"  HFS wrapper -> embedded HFS+ at {off:#x}")
+    img = carve(raw, off, length, args.work, args.reuse_work)
+    mount(img, mnt)
+    print(f"  mounted read-only at {mnt}")
+
+    try:
+        theme = theme_report(mnt)
+        if args.theme_report:
+            print(json.dumps(theme, indent=1, sort_keys=True))
+            return
+
+        sysfork = resfork.load(os.path.join(mnt, SYSTEM_FILE,
+                                            "..namedfork", "rsrc"))
+        os.makedirs(args.out, exist_ok=True)
+        prov: list = []
+        print("extracting")
+        icons_sum = extract_system_icons(sysfork, args.out, prov)
+        cursors_sum = extract_cursors(sysfork, args.out, prov)
+        patterns_sum = extract_patterns(sysfork, args.out, prov)
+        pictures_sum = extract_pictures(sysfork, args.out, prov)
+        apps_sum = extract_appicons(mnt, args.out, prov, args.verbose)
+
+        manifest = {
+            "pack": "platinum-pack",
+            "version": "0.2.0",
+            "route": "offline (disk image, no VM) — tools/extract-assets-offline",
+            "source_image": os.path.basename(args.image),
+            "extracted": datetime.date.today().isoformat(),
+            "clut": "generated system 8-bit CLUT (mirror/tools/extract-assets/clut.py)",
+            "icons": icons_sum,
+            "cursors": cursors_sum,
+            "patterns": patterns_sum,
+            "pictures": pictures_sum,
+            "appicons": apps_sum,
+            "theme_file": {
+                "path": THEME_FILE,
+                "chrome_bitmaps": False,
+                "finding": ("no window frames, title bars, scroll bars or "
+                            "buttons — the PICTs are Appearance control-panel "
+                            "previews, the cluts are the named accent ramps"),
+                "census": theme.get("census"),
+            },
+            "provenance": sorted(prov, key=lambda p: p["asset"]),
+            "copyright": ("Apple bitmap data — private repo only. Never "
+                          "publish, never ship as an artifact."),
+        }
+        with open(os.path.join(args.out, "manifest.json"), "w") as fh:
+            json.dump(manifest, fh, indent=1, sort_keys=True)
+
+        print(f"pack -> {args.out}")
+        print(f"  icons:    {icons_sum['count']} ({len(icons_sum['named'])} named generics)")
+        print(f"  cursors:  {cursors_sum['count']}")
+        print(f"  patterns: {len(patterns_sum['ppat'])} ppat + "
+              f"{len(patterns_sum['PAT'])} PAT (desktop id "
+              f"{patterns_sum['desktop_ppat_id']})")
+        print(f"  pictures: {pictures_sum['count']} PICT (unconverted)")
+        print(f"  appicons: {apps_sum['count']} for {apps_sum['creators']} creators "
+              f"({apps_sum['forks_scanned']} forks scanned)")
+        print(f"  provenance rows: {len(prov)}")
+    finally:
+        if not args.keep_work:
+            unmount(mnt)
+            if not args.reuse_work:
+                shutil.rmtree(args.work, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    main()

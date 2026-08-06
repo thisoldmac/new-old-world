@@ -1,0 +1,7318 @@
+{
+ "icons": {
+  "1wcs/sdev": {
+   "asset": "appicons/1wcs__sdev.png",
+   "creator": "1wcs",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/AirPort Control Strip",
+   "type": "sdev"
+  },
+  "1wcs/sdev-16": {
+   "asset": "appicons/1wcs__sdev-16.png",
+   "creator": "1wcs",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/AirPort Control Strip",
+   "type": "sdev"
+  },
+  "1wcu/APPL": {
+   "asset": "appicons/1wcu__APPL.png",
+   "creator": "1wcu",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Apple Extras/AirPort/AirPort Admin Utility",
+   "type": "APPL"
+  },
+  "1wcu/APPL-16": {
+   "asset": "appicons/1wcu__APPL-16.png",
+   "creator": "1wcu",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Apple Extras/AirPort/AirPort Admin Utility",
+   "type": "APPL"
+  },
+  "1wcu/bin1": {
+   "asset": "appicons/1wcu__bin1.png",
+   "creator": "1wcu",
+   "dim": 32,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/Apple Extras/AirPort/AirPort Admin Utility",
+   "type": "bin1"
+  },
+  "1wcu/bin1-16": {
+   "asset": "appicons/1wcu__bin1-16.png",
+   "creator": "1wcu",
+   "dim": 16,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/Apple Extras/AirPort/AirPort Admin Utility",
+   "type": "bin1"
+  },
+  "1wcu/cnfg": {
+   "asset": "appicons/1wcu__cnfg.png",
+   "creator": "1wcu",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Apple Extras/AirPort/AirPort Admin Utility",
+   "type": "cnfg"
+  },
+  "1wcu/cnfg-16": {
+   "asset": "appicons/1wcu__cnfg-16.png",
+   "creator": "1wcu",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Apple Extras/AirPort/AirPort Admin Utility",
+   "type": "cnfg"
+  },
+  "1wcu/shlb": {
+   "asset": "appicons/1wcu__shlb.png",
+   "creator": "1wcu",
+   "dim": 32,
+   "resId": 150,
+   "source": "Applications (Mac OS 9)/Apple Extras/AirPort/AirPort Admin Utility",
+   "type": "shlb"
+  },
+  "1wcu/shlb-16": {
+   "asset": "appicons/1wcu__shlb-16.png",
+   "creator": "1wcu",
+   "dim": 16,
+   "resId": 150,
+   "source": "Applications (Mac OS 9)/Apple Extras/AirPort/AirPort Admin Utility",
+   "type": "shlb"
+  },
+  "1wdr/ndrv": {
+   "asset": "appicons/1wdr__ndrv.png",
+   "creator": "1wdr",
+   "dim": 32,
+   "resId": 150,
+   "source": "System Folder/Extensions/AirPort Driver",
+   "type": "ndrv"
+  },
+  "1wdr/ndrv-16": {
+   "asset": "appicons/1wdr__ndrv-16.png",
+   "creator": "1wdr",
+   "dim": 16,
+   "resId": 150,
+   "source": "System Folder/Extensions/AirPort Driver",
+   "type": "ndrv"
+  },
+  "1wdr/shlb": {
+   "asset": "appicons/1wdr__shlb.png",
+   "creator": "1wdr",
+   "dim": 32,
+   "resId": 150,
+   "source": "System Folder/Extensions/AirPort Driver",
+   "type": "shlb"
+  },
+  "1wdr/shlb-16": {
+   "asset": "appicons/1wdr__shlb-16.png",
+   "creator": "1wdr",
+   "dim": 16,
+   "resId": 150,
+   "source": "System Folder/Extensions/AirPort Driver",
+   "type": "shlb"
+  },
+  "1wna/APPL": {
+   "asset": "appicons/1wna__APPL.png",
+   "creator": "1wna",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Apple Extras/AirPort/AirPort",
+   "type": "APPL"
+  },
+  "1wna/APPL-16": {
+   "asset": "appicons/1wna__APPL-16.png",
+   "creator": "1wna",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Apple Extras/AirPort/AirPort",
+   "type": "APPL"
+  },
+  "1wsa/APPL": {
+   "asset": "appicons/1wsa__APPL.png",
+   "creator": "1wsa",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Apple Extras/AirPort/AirPort Setup Assistant",
+   "type": "APPL"
+  },
+  "1wsa/APPL-16": {
+   "asset": "appicons/1wsa__APPL-16.png",
+   "creator": "1wsa",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Apple Extras/AirPort/AirPort Setup Assistant",
+   "type": "APPL"
+  },
+  "8INI/APPC": {
+   "asset": "appicons/8INI__APPC.png",
+   "creator": "8INI",
+   "dim": 32,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/Extensions Manager",
+   "type": "APPC"
+  },
+  "8INI/APPC-16": {
+   "asset": "appicons/8INI__APPC-16.png",
+   "creator": "8INI",
+   "dim": 16,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/Extensions Manager",
+   "type": "APPC"
+  },
+  "8INI/APPL": {
+   "asset": "appicons/8INI__APPL.png",
+   "creator": "8INI",
+   "dim": 32,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/Extensions Manager",
+   "type": "APPL"
+  },
+  "8INI/APPL-16": {
+   "asset": "appicons/8INI__APPL-16.png",
+   "creator": "8INI",
+   "dim": 16,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/Extensions Manager",
+   "type": "APPL"
+  },
+  "BitD/sdev": {
+   "asset": "appicons/BitD__sdev.png",
+   "creator": "BitD",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/Monitor BitDepth",
+   "type": "sdev"
+  },
+  "BitD/sdev-16": {
+   "asset": "appicons/BitD__sdev-16.png",
+   "creator": "BitD",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/Monitor BitDepth",
+   "type": "sdev"
+  },
+  "BtNk/NSPL": {
+   "asset": "appicons/BtNk__NSPL.png",
+   "creator": "BtNk",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Plug-ins/Beatnik Stub Plug-in",
+   "type": "NSPL"
+  },
+  "BtNk/NSPL-16": {
+   "asset": "appicons/BtNk__NSPL-16.png",
+   "creator": "BtNk",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Plug-ins/Beatnik Stub Plug-in",
+   "type": "NSPL"
+  },
+  "CDJR/APPC": {
+   "asset": "appicons/CDJR__APPC.png",
+   "creator": "CDJR",
+   "dim": 32,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/Apple Menu Options",
+   "type": "APPC"
+  },
+  "CDJR/APPC-16": {
+   "asset": "appicons/CDJR__APPC-16.png",
+   "creator": "CDJR",
+   "dim": 16,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/Apple Menu Options",
+   "type": "APPC"
+  },
+  "CSca/csPr": {
+   "asset": "appicons/CSca__csPr.png",
+   "creator": "CSca",
+   "dim": 32,
+   "resId": 129,
+   "source": "System Folder/Extensions/Default Calibrator",
+   "type": "csPr"
+  },
+  "CSca/csPr-16": {
+   "asset": "appicons/CSca__csPr-16.png",
+   "creator": "CSca",
+   "dim": 16,
+   "resId": 129,
+   "source": "System Folder/Extensions/Default Calibrator",
+   "type": "csPr"
+  },
+  "CSca/shlb": {
+   "asset": "appicons/CSca__shlb.png",
+   "creator": "CSca",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/Default Calibrator",
+   "type": "shlb"
+  },
+  "CSca/shlb-16": {
+   "asset": "appicons/CSca__shlb-16.png",
+   "creator": "CSca",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/Default Calibrator",
+   "type": "shlb"
+  },
+  "DStf/APPL": {
+   "asset": "appicons/DStf__APPL.png",
+   "creator": "DStf",
+   "dim": 32,
+   "resId": -16455,
+   "source": "Applications (Mac OS 9)/Internet Utilities/Aladdin Folder/Aladdin DropStuff\u2122 5.5/DropStuff\u2122",
+   "type": "APPL"
+  },
+  "DStf/APPL-16": {
+   "asset": "appicons/DStf__APPL-16.png",
+   "creator": "DStf",
+   "dim": 16,
+   "resId": -16455,
+   "source": "Applications (Mac OS 9)/Internet Utilities/Aladdin Folder/Aladdin DropStuff\u2122 5.5/DropStuff\u2122",
+   "type": "APPL"
+  },
+  "FEmb/shlb": {
+   "asset": "appicons/FEmb__shlb.png",
+   "creator": "FEmb",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/MS Font Embed Library (PPC)",
+   "type": "shlb"
+  },
+  "FEmb/shlb-16": {
+   "asset": "appicons/FEmb__shlb-16.png",
+   "creator": "FEmb",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/MS Font Embed Library (PPC)",
+   "type": "shlb"
+  },
+  "IAST/APPL": {
+   "asset": "appicons/IAST__APPL.png",
+   "creator": "IAST",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Utilities/Assistants/Internet Setup/Internet Setup Assistant",
+   "type": "APPL"
+  },
+  "IAST/APPL-16": {
+   "asset": "appicons/IAST__APPL-16.png",
+   "creator": "IAST",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Utilities/Assistants/Internet Setup/Internet Setup Assistant",
+   "type": "APPL"
+  },
+  "IPnl/APPL": {
+   "asset": "appicons/IPnl__APPL.png",
+   "creator": "IPnl",
+   "dim": 32,
+   "resId": 140,
+   "source": "System Folder/Extensions/AirPort AP",
+   "type": "APPL"
+  },
+  "IPnl/APPL-16": {
+   "asset": "appicons/IPnl__APPL-16.png",
+   "creator": "IPnl",
+   "dim": 16,
+   "resId": 140,
+   "source": "System Folder/Extensions/AirPort AP",
+   "type": "APPL"
+  },
+  "IPnl/TEXT": {
+   "asset": "appicons/IPnl__TEXT.png",
+   "creator": "IPnl",
+   "dim": 32,
+   "resId": 141,
+   "source": "System Folder/Extensions/AirPort AP",
+   "type": "TEXT"
+  },
+  "IPnl/TEXT-16": {
+   "asset": "appicons/IPnl__TEXT-16.png",
+   "creator": "IPnl",
+   "dim": 16,
+   "resId": 141,
+   "source": "System Folder/Extensions/AirPort AP",
+   "type": "TEXT"
+  },
+  "IPnl/appe": {
+   "asset": "appicons/IPnl__appe.png",
+   "creator": "IPnl",
+   "dim": 32,
+   "resId": 150,
+   "source": "System Folder/Extensions/AirPort AP",
+   "type": "appe"
+  },
+  "IPnl/appe-16": {
+   "asset": "appicons/IPnl__appe-16.png",
+   "creator": "IPnl",
+   "dim": 16,
+   "resId": 150,
+   "source": "System Folder/Extensions/AirPort AP",
+   "type": "appe"
+  },
+  "ISET/APPL": {
+   "asset": "appicons/ISET__APPL.png",
+   "creator": "ISET",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Utilities/Assistants/Internet Setup/Internet Editor Assistant",
+   "type": "APPL"
+  },
+  "ISET/APPL-16": {
+   "asset": "appicons/ISET__APPL-16.png",
+   "creator": "ISET",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Utilities/Assistants/Internet Setup/Internet Editor Assistant",
+   "type": "APPL"
+  },
+  "ISET/dslc": {
+   "asset": "appicons/ISET__dslc.png",
+   "creator": "ISET",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Utilities/Assistants/Internet Setup/Internet Editor Assistant",
+   "type": "dslc"
+  },
+  "ISET/dslc-16": {
+   "asset": "appicons/ISET__dslc-16.png",
+   "creator": "ISET",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Utilities/Assistants/Internet Setup/Internet Editor Assistant",
+   "type": "dslc"
+  },
+  "IoDO/APPL": {
+   "asset": "appicons/IoDO__APPL.png",
+   "creator": "IoDO",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Apple Extras/Iomega/Iomega Drive Options",
+   "type": "APPL"
+  },
+  "IoDO/APPL-16": {
+   "asset": "appicons/IoDO__APPL-16.png",
+   "creator": "IoDO",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Apple Extras/Iomega/Iomega Drive Options",
+   "type": "APPL"
+  },
+  "IoTo/APPL": {
+   "asset": "appicons/IoTo__APPL.png",
+   "creator": "IoTo",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Apple Extras/Iomega/Tools",
+   "type": "APPL"
+  },
+  "IoTo/APPL-16": {
+   "asset": "appicons/IoTo__APPL-16.png",
+   "creator": "IoTo",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Apple Extras/Iomega/Tools",
+   "type": "APPL"
+  },
+  "MOSS/APPL": {
+   "asset": "appicons/MOSS__APPL.png",
+   "creator": "MOSS",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "APPL"
+  },
+  "MOSS/APPL-16": {
+   "asset": "appicons/MOSS__APPL-16.png",
+   "creator": "MOSS",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "APPL"
+  },
+  "MOSS/BiNA": {
+   "asset": "appicons/MOSS__BiNA.png",
+   "creator": "MOSS",
+   "dim": 32,
+   "resId": 139,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "BiNA"
+  },
+  "MOSS/BiNA-16": {
+   "asset": "appicons/MOSS__BiNA-16.png",
+   "creator": "MOSS",
+   "dim": 16,
+   "resId": 139,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "BiNA"
+  },
+  "MOSS/CERI": {
+   "asset": "appicons/MOSS__CERI.png",
+   "creator": "MOSS",
+   "dim": 32,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "CERI"
+  },
+  "MOSS/CERI-16": {
+   "asset": "appicons/MOSS__CERI-16.png",
+   "creator": "MOSS",
+   "dim": 16,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "CERI"
+  },
+  "MOSS/CERT": {
+   "asset": "appicons/MOSS__CERT.png",
+   "creator": "MOSS",
+   "dim": 32,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "CERT"
+  },
+  "MOSS/CERT-16": {
+   "asset": "appicons/MOSS__CERT-16.png",
+   "creator": "MOSS",
+   "dim": 16,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "CERT"
+  },
+  "MOSS/COOK": {
+   "asset": "appicons/MOSS__COOK.png",
+   "creator": "MOSS",
+   "dim": 32,
+   "resId": 137,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "COOK"
+  },
+  "MOSS/COOK-16": {
+   "asset": "appicons/MOSS__COOK-16.png",
+   "creator": "MOSS",
+   "dim": 16,
+   "resId": 137,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "COOK"
+  },
+  "MOSS/DBMC": {
+   "asset": "appicons/MOSS__DBMC.png",
+   "creator": "MOSS",
+   "dim": 32,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "DBMC"
+  },
+  "MOSS/DBMC-16": {
+   "asset": "appicons/MOSS__DBMC-16.png",
+   "creator": "MOSS",
+   "dim": 16,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "DBMC"
+  },
+  "MOSS/DBMG": {
+   "asset": "appicons/MOSS__DBMG.png",
+   "creator": "MOSS",
+   "dim": 32,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "DBMG"
+  },
+  "MOSS/DBMG-16": {
+   "asset": "appicons/MOSS__DBMG-16.png",
+   "creator": "MOSS",
+   "dim": 16,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "DBMG"
+  },
+  "MOSS/DBNW": {
+   "asset": "appicons/MOSS__DBNW.png",
+   "creator": "MOSS",
+   "dim": 32,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "DBNW"
+  },
+  "MOSS/DBNW-16": {
+   "asset": "appicons/MOSS__DBNW-16.png",
+   "creator": "MOSS",
+   "dim": 16,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "DBNW"
+  },
+  "MOSS/DBNX": {
+   "asset": "appicons/MOSS__DBNX.png",
+   "creator": "MOSS",
+   "dim": 32,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "DBNX"
+  },
+  "MOSS/DBNX-16": {
+   "asset": "appicons/MOSS__DBNX-16.png",
+   "creator": "MOSS",
+   "dim": 16,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "DBNX"
+  },
+  "MOSS/HELP": {
+   "asset": "appicons/MOSS__HELP.png",
+   "creator": "MOSS",
+   "dim": 32,
+   "resId": 141,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "HELP"
+  },
+  "MOSS/HELP-16": {
+   "asset": "appicons/MOSS__HELP-16.png",
+   "creator": "MOSS",
+   "dim": 16,
+   "resId": 141,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "HELP"
+  },
+  "MOSS/JARR": {
+   "asset": "appicons/MOSS__JARR.png",
+   "creator": "MOSS",
+   "dim": 32,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "JARR"
+  },
+  "MOSS/JARR-16": {
+   "asset": "appicons/MOSS__JARR-16.png",
+   "creator": "MOSS",
+   "dim": 16,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "JARR"
+  },
+  "MOSS/KCHN": {
+   "asset": "appicons/MOSS__KCHN.png",
+   "creator": "MOSS",
+   "dim": 32,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "KCHN"
+  },
+  "MOSS/KCHN-16": {
+   "asset": "appicons/MOSS__KCHN-16.png",
+   "creator": "MOSS",
+   "dim": 16,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "KCHN"
+  },
+  "MOSS/MSUM": {
+   "asset": "appicons/MOSS__MSUM.png",
+   "creator": "MOSS",
+   "dim": 32,
+   "resId": 140,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "MSUM"
+  },
+  "MOSS/MSUM-16": {
+   "asset": "appicons/MOSS__MSUM-16.png",
+   "creator": "MOSS",
+   "dim": 16,
+   "resId": 140,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "MSUM"
+  },
+  "MOSS/NEWS": {
+   "asset": "appicons/MOSS__NEWS.png",
+   "creator": "MOSS",
+   "dim": 32,
+   "resId": 134,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "NEWS"
+  },
+  "MOSS/NEWS-16": {
+   "asset": "appicons/MOSS__NEWS-16.png",
+   "creator": "MOSS",
+   "dim": 16,
+   "resId": 134,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "NEWS"
+  },
+  "MOSS/NSPL": {
+   "asset": "appicons/MOSS__NSPL.png",
+   "creator": "MOSS",
+   "dim": 32,
+   "resId": 131,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "NSPL"
+  },
+  "MOSS/NSPL-16": {
+   "asset": "appicons/MOSS__NSPL-16.png",
+   "creator": "MOSS",
+   "dim": 16,
+   "resId": 131,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "NSPL"
+  },
+  "MOSS/PRFL": {
+   "asset": "appicons/MOSS__PRFL.png",
+   "creator": "MOSS",
+   "dim": 32,
+   "resId": 136,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "PRFL"
+  },
+  "MOSS/PRFL-16": {
+   "asset": "appicons/MOSS__PRFL-16.png",
+   "creator": "MOSS",
+   "dim": 16,
+   "resId": 136,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "PRFL"
+  },
+  "MOSS/REGS": {
+   "asset": "appicons/MOSS__REGS.png",
+   "creator": "MOSS",
+   "dim": 32,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "REGS"
+  },
+  "MOSS/REGS-16": {
+   "asset": "appicons/MOSS__REGS-16.png",
+   "creator": "MOSS",
+   "dim": 16,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "REGS"
+  },
+  "MOSS/TEXT": {
+   "asset": "appicons/MOSS__TEXT.png",
+   "creator": "MOSS",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "TEXT"
+  },
+  "MOSS/TEXT-16": {
+   "asset": "appicons/MOSS__TEXT-16.png",
+   "creator": "MOSS",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "TEXT"
+  },
+  "MOSS/pref": {
+   "asset": "appicons/MOSS__pref.png",
+   "creator": "MOSS",
+   "dim": 32,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "pref"
+  },
+  "MOSS/pref-16": {
+   "asset": "appicons/MOSS__pref-16.png",
+   "creator": "MOSS",
+   "dim": 16,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "pref"
+  },
+  "MOSS/shlb": {
+   "asset": "appicons/MOSS__shlb.png",
+   "creator": "MOSS",
+   "dim": 32,
+   "resId": 138,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "shlb"
+  },
+  "MOSS/shlb-16": {
+   "asset": "appicons/MOSS__shlb-16.png",
+   "creator": "MOSS",
+   "dim": 16,
+   "resId": 138,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "shlb"
+  },
+  "MOSS/x55524c20": {
+   "asset": "appicons/MOSS__x55524c20.png",
+   "creator": "MOSS",
+   "dim": 32,
+   "resId": 132,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "x55524c20"
+  },
+  "MOSS/x55524c20-16": {
+   "asset": "appicons/MOSS__x55524c20-16.png",
+   "creator": "MOSS",
+   "dim": 16,
+   "resId": 132,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Netscape Communicator\u2122",
+   "type": "x55524c20"
+  },
+  "MSIE/APPL": {
+   "asset": "appicons/MSIE__APPL.png",
+   "creator": "MSIE",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "APPL"
+  },
+  "MSIE/APPL-16": {
+   "asset": "appicons/MSIE__APPL-16.png",
+   "creator": "MSIE",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "APPL"
+  },
+  "MSIE/GIFf": {
+   "asset": "appicons/MSIE__GIFf.png",
+   "creator": "MSIE",
+   "dim": 32,
+   "resId": 156,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "GIFf"
+  },
+  "MSIE/GIFf-16": {
+   "asset": "appicons/MSIE__GIFf-16.png",
+   "creator": "MSIE",
+   "dim": 16,
+   "resId": 156,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "GIFf"
+  },
+  "MSIE/JPEG": {
+   "asset": "appicons/MSIE__JPEG.png",
+   "creator": "MSIE",
+   "dim": 32,
+   "resId": 157,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "JPEG"
+  },
+  "MSIE/JPEG-16": {
+   "asset": "appicons/MSIE__JPEG-16.png",
+   "creator": "MSIE",
+   "dim": 16,
+   "resId": 157,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "JPEG"
+  },
+  "MSIE/LINK": {
+   "asset": "appicons/MSIE__LINK.png",
+   "creator": "MSIE",
+   "dim": 32,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "LINK"
+  },
+  "MSIE/LINK-16": {
+   "asset": "appicons/MSIE__LINK-16.png",
+   "creator": "MSIE",
+   "dim": 16,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "LINK"
+  },
+  "MSIE/MIEE": {
+   "asset": "appicons/MSIE__MIEE.png",
+   "creator": "MSIE",
+   "dim": 32,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "MIEE"
+  },
+  "MSIE/MIEE-16": {
+   "asset": "appicons/MSIE__MIEE-16.png",
+   "creator": "MSIE",
+   "dim": 16,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "MIEE"
+  },
+  "MSIE/PNGf": {
+   "asset": "appicons/MSIE__PNGf.png",
+   "creator": "MSIE",
+   "dim": 32,
+   "resId": 158,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "PNGf"
+  },
+  "MSIE/PNGf-16": {
+   "asset": "appicons/MSIE__PNGf-16.png",
+   "creator": "MSIE",
+   "dim": 16,
+   "resId": 158,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "PNGf"
+  },
+  "MSIE/TEXT": {
+   "asset": "appicons/MSIE__TEXT.png",
+   "creator": "MSIE",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "TEXT"
+  },
+  "MSIE/TEXT-16": {
+   "asset": "appicons/MSIE__TEXT-16.png",
+   "creator": "MSIE",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "TEXT"
+  },
+  "MSIE/WAFF": {
+   "asset": "appicons/MSIE__WAFF.png",
+   "creator": "MSIE",
+   "dim": 32,
+   "resId": 132,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "WAFF"
+  },
+  "MSIE/WAFF-16": {
+   "asset": "appicons/MSIE__WAFF-16.png",
+   "creator": "MSIE",
+   "dim": 16,
+   "resId": 132,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "WAFF"
+  },
+  "MSIE/bzy0": {
+   "asset": "appicons/MSIE__bzy0.png",
+   "creator": "MSIE",
+   "dim": 32,
+   "resId": 141,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "bzy0"
+  },
+  "MSIE/bzy0-16": {
+   "asset": "appicons/MSIE__bzy0-16.png",
+   "creator": "MSIE",
+   "dim": 16,
+   "resId": 141,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "bzy0"
+  },
+  "MSIE/bzy1": {
+   "asset": "appicons/MSIE__bzy1.png",
+   "creator": "MSIE",
+   "dim": 32,
+   "resId": 142,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "bzy1"
+  },
+  "MSIE/bzy1-16": {
+   "asset": "appicons/MSIE__bzy1-16.png",
+   "creator": "MSIE",
+   "dim": 16,
+   "resId": 142,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "bzy1"
+  },
+  "MSIE/bzy2": {
+   "asset": "appicons/MSIE__bzy2.png",
+   "creator": "MSIE",
+   "dim": 32,
+   "resId": 143,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "bzy2"
+  },
+  "MSIE/bzy2-16": {
+   "asset": "appicons/MSIE__bzy2-16.png",
+   "creator": "MSIE",
+   "dim": 16,
+   "resId": 143,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "bzy2"
+  },
+  "MSIE/bzy3": {
+   "asset": "appicons/MSIE__bzy3.png",
+   "creator": "MSIE",
+   "dim": 32,
+   "resId": 144,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "bzy3"
+  },
+  "MSIE/bzy3-16": {
+   "asset": "appicons/MSIE__bzy3-16.png",
+   "creator": "MSIE",
+   "dim": 16,
+   "resId": 144,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "bzy3"
+  },
+  "MSIE/bzy4": {
+   "asset": "appicons/MSIE__bzy4.png",
+   "creator": "MSIE",
+   "dim": 32,
+   "resId": 145,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "bzy4"
+  },
+  "MSIE/bzy4-16": {
+   "asset": "appicons/MSIE__bzy4-16.png",
+   "creator": "MSIE",
+   "dim": 16,
+   "resId": 145,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "bzy4"
+  },
+  "MSIE/bzy5": {
+   "asset": "appicons/MSIE__bzy5.png",
+   "creator": "MSIE",
+   "dim": 32,
+   "resId": 146,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "bzy5"
+  },
+  "MSIE/bzy5-16": {
+   "asset": "appicons/MSIE__bzy5-16.png",
+   "creator": "MSIE",
+   "dim": 16,
+   "resId": 146,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "bzy5"
+  },
+  "MSIE/bzy6": {
+   "asset": "appicons/MSIE__bzy6.png",
+   "creator": "MSIE",
+   "dim": 32,
+   "resId": 147,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "bzy6"
+  },
+  "MSIE/bzy6-16": {
+   "asset": "appicons/MSIE__bzy6-16.png",
+   "creator": "MSIE",
+   "dim": 16,
+   "resId": 147,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "bzy6"
+  },
+  "MSIE/bzy7": {
+   "asset": "appicons/MSIE__bzy7.png",
+   "creator": "MSIE",
+   "dim": 32,
+   "resId": 148,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "bzy7"
+  },
+  "MSIE/bzy7-16": {
+   "asset": "appicons/MSIE__bzy7-16.png",
+   "creator": "MSIE",
+   "dim": 16,
+   "resId": 148,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "bzy7"
+  },
+  "MSIE/bzy8": {
+   "asset": "appicons/MSIE__bzy8.png",
+   "creator": "MSIE",
+   "dim": 32,
+   "resId": 149,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "bzy8"
+  },
+  "MSIE/bzy8-16": {
+   "asset": "appicons/MSIE__bzy8-16.png",
+   "creator": "MSIE",
+   "dim": 16,
+   "resId": 149,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "bzy8"
+  },
+  "MSIE/bzy9": {
+   "asset": "appicons/MSIE__bzy9.png",
+   "creator": "MSIE",
+   "dim": 32,
+   "resId": 150,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "bzy9"
+  },
+  "MSIE/bzy9-16": {
+   "asset": "appicons/MSIE__bzy9-16.png",
+   "creator": "MSIE",
+   "dim": 16,
+   "resId": 150,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "bzy9"
+  },
+  "MSIE/x41564920": {
+   "asset": "appicons/MSIE__x41564920.png",
+   "creator": "MSIE",
+   "dim": 32,
+   "resId": 159,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "x41564920"
+  },
+  "MSIE/x41564920-16": {
+   "asset": "appicons/MSIE__x41564920-16.png",
+   "creator": "MSIE",
+   "dim": 16,
+   "resId": 159,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Internet Explorer",
+   "type": "x41564920"
+  },
+  "MSNM/APPL": {
+   "asset": "appicons/MSNM__APPL.png",
+   "creator": "MSNM",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "APPL"
+  },
+  "MSNM/APPL-16": {
+   "asset": "appicons/MSNM__APPL-16.png",
+   "creator": "MSNM",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "APPL"
+  },
+  "MSNM/Adbk": {
+   "asset": "appicons/MSNM__Adbk.png",
+   "creator": "MSNM",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "Adbk"
+  },
+  "MSNM/Adbk-16": {
+   "asset": "appicons/MSNM__Adbk-16.png",
+   "creator": "MSNM",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "Adbk"
+  },
+  "MSNM/CMap": {
+   "asset": "appicons/MSNM__CMap.png",
+   "creator": "MSNM",
+   "dim": 32,
+   "resId": 156,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "CMap"
+  },
+  "MSNM/CMap-16": {
+   "asset": "appicons/MSNM__CMap-16.png",
+   "creator": "MSNM",
+   "dim": 16,
+   "resId": 156,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "CMap"
+  },
+  "MSNM/CNTK": {
+   "asset": "appicons/MSNM__CNTK.png",
+   "creator": "MSNM",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "CNTK"
+  },
+  "MSNM/CNTK-16": {
+   "asset": "appicons/MSNM__CNTK-16.png",
+   "creator": "MSNM",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "CNTK"
+  },
+  "MSNM/Indx": {
+   "asset": "appicons/MSNM__Indx.png",
+   "creator": "MSNM",
+   "dim": 32,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "Indx"
+  },
+  "MSNM/Indx-16": {
+   "asset": "appicons/MSNM__Indx-16.png",
+   "creator": "MSNM",
+   "dim": 16,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "Indx"
+  },
+  "MSNM/LDAP": {
+   "asset": "appicons/MSNM__LDAP.png",
+   "creator": "MSNM",
+   "dim": 32,
+   "resId": 132,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "LDAP"
+  },
+  "MSNM/LDAP-16": {
+   "asset": "appicons/MSNM__LDAP-16.png",
+   "creator": "MSNM",
+   "dim": 16,
+   "resId": 132,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "LDAP"
+  },
+  "MSNM/List": {
+   "asset": "appicons/MSNM__List.png",
+   "creator": "MSNM",
+   "dim": 32,
+   "resId": 153,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "List"
+  },
+  "MSNM/List-16": {
+   "asset": "appicons/MSNM__List-16.png",
+   "creator": "MSNM",
+   "dim": 16,
+   "resId": 153,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "List"
+  },
+  "MSNM/M822": {
+   "asset": "appicons/MSNM__M822.png",
+   "creator": "MSNM",
+   "dim": 32,
+   "resId": 137,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "M822"
+  },
+  "MSNM/M822-16": {
+   "asset": "appicons/MSNM__M822-16.png",
+   "creator": "MSNM",
+   "dim": 16,
+   "resId": 137,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "M822"
+  },
+  "MSNM/Mail": {
+   "asset": "appicons/MSNM__Mail.png",
+   "creator": "MSNM",
+   "dim": 32,
+   "resId": 131,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "Mail"
+  },
+  "MSNM/Mail-16": {
+   "asset": "appicons/MSNM__Mail-16.png",
+   "creator": "MSNM",
+   "dim": 16,
+   "resId": 131,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "Mail"
+  },
+  "MSNM/Ncch": {
+   "asset": "appicons/MSNM__Ncch.png",
+   "creator": "MSNM",
+   "dim": 32,
+   "resId": 132,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "Ncch"
+  },
+  "MSNM/Ncch-16": {
+   "asset": "appicons/MSNM__Ncch-16.png",
+   "creator": "MSNM",
+   "dim": 16,
+   "resId": 132,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "Ncch"
+  },
+  "MSNM/Nwrc": {
+   "asset": "appicons/MSNM__Nwrc.png",
+   "creator": "MSNM",
+   "dim": 32,
+   "resId": 132,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "Nwrc"
+  },
+  "MSNM/Nwrc-16": {
+   "asset": "appicons/MSNM__Nwrc-16.png",
+   "creator": "MSNM",
+   "dim": 16,
+   "resId": 132,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "Nwrc"
+  },
+  "MSNM/OECl": {
+   "asset": "appicons/MSNM__OECl.png",
+   "creator": "MSNM",
+   "dim": 32,
+   "resId": 154,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "OECl"
+  },
+  "MSNM/OECl-16": {
+   "asset": "appicons/MSNM__OECl-16.png",
+   "creator": "MSNM",
+   "dim": 16,
+   "resId": 154,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "OECl"
+  },
+  "MSNM/OEDB": {
+   "asset": "appicons/MSNM__OEDB.png",
+   "creator": "MSNM",
+   "dim": 32,
+   "resId": 154,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "OEDB"
+  },
+  "MSNM/OEDB-16": {
+   "asset": "appicons/MSNM__OEDB-16.png",
+   "creator": "MSNM",
+   "dim": 16,
+   "resId": 154,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "OEDB"
+  },
+  "MSNM/RULE": {
+   "asset": "appicons/MSNM__RULE.png",
+   "creator": "MSNM",
+   "dim": 32,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "RULE"
+  },
+  "MSNM/RULE-16": {
+   "asset": "appicons/MSNM__RULE-16.png",
+   "creator": "MSNM",
+   "dim": 16,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "RULE"
+  },
+  "MSNM/STGS": {
+   "asset": "appicons/MSNM__STGS.png",
+   "creator": "MSNM",
+   "dim": 32,
+   "resId": 151,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "STGS"
+  },
+  "MSNM/STGS-16": {
+   "asset": "appicons/MSNM__STGS-16.png",
+   "creator": "MSNM",
+   "dim": 16,
+   "resId": 151,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "STGS"
+  },
+  "MSNM/Schd": {
+   "asset": "appicons/MSNM__Schd.png",
+   "creator": "MSNM",
+   "dim": 32,
+   "resId": 152,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "Schd"
+  },
+  "MSNM/Schd-16": {
+   "asset": "appicons/MSNM__Schd-16.png",
+   "creator": "MSNM",
+   "dim": 16,
+   "resId": 152,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "Schd"
+  },
+  "MSNM/Sigs": {
+   "asset": "appicons/MSNM__Sigs.png",
+   "creator": "MSNM",
+   "dim": 32,
+   "resId": 150,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "Sigs"
+  },
+  "MSNM/Sigs-16": {
+   "asset": "appicons/MSNM__Sigs-16.png",
+   "creator": "MSNM",
+   "dim": 16,
+   "resId": 150,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "Sigs"
+  },
+  "MSNM/SndS": {
+   "asset": "appicons/MSNM__SndS.png",
+   "creator": "MSNM",
+   "dim": 32,
+   "resId": 155,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "SndS"
+  },
+  "MSNM/SndS-16": {
+   "asset": "appicons/MSNM__SndS-16.png",
+   "creator": "MSNM",
+   "dim": 16,
+   "resId": 155,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "SndS"
+  },
+  "MSNM/TABL": {
+   "asset": "appicons/MSNM__TABL.png",
+   "creator": "MSNM",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "TABL"
+  },
+  "MSNM/TABL-16": {
+   "asset": "appicons/MSNM__TABL-16.png",
+   "creator": "MSNM",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "TABL"
+  },
+  "MSNM/pref": {
+   "asset": "appicons/MSNM__pref.png",
+   "creator": "MSNM",
+   "dim": 32,
+   "resId": 134,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "pref"
+  },
+  "MSNM/pref-16": {
+   "asset": "appicons/MSNM__pref-16.png",
+   "creator": "MSNM",
+   "dim": 16,
+   "resId": 134,
+   "source": "Applications (Mac OS 9)/Outlook Express 5.02 Folder/Outlook Express",
+   "type": "pref"
+  },
+  "NSi2/APPL": {
+   "asset": "appicons/NSi2__APPL.png",
+   "creator": "NSi2",
+   "dim": 32,
+   "resId": 300,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Import/Netscape Import",
+   "type": "APPL"
+  },
+  "NSi2/APPL-16": {
+   "asset": "appicons/NSi2__APPL-16.png",
+   "creator": "NSi2",
+   "dim": 16,
+   "resId": 300,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Import/Netscape Import",
+   "type": "APPL"
+  },
+  "NSi3/APPL": {
+   "asset": "appicons/NSi3__APPL.png",
+   "creator": "NSi3",
+   "dim": 32,
+   "resId": 300,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Address Book Export",
+   "type": "APPL"
+  },
+  "NSi3/APPL-16": {
+   "asset": "appicons/NSi3__APPL-16.png",
+   "creator": "NSi3",
+   "dim": 16,
+   "resId": 300,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/Address Book Export",
+   "type": "APPL"
+  },
+  "OMGR/INIT": {
+   "asset": "appicons/OMGR__INIT.png",
+   "creator": "OMGR",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/Shared Library Manager",
+   "type": "INIT"
+  },
+  "OMGR/INIT-16": {
+   "asset": "appicons/OMGR__INIT-16.png",
+   "creator": "OMGR",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/Shared Library Manager",
+   "type": "INIT"
+  },
+  "OMGR/libr": {
+   "asset": "appicons/OMGR__libr.png",
+   "creator": "OMGR",
+   "dim": 32,
+   "resId": 129,
+   "source": "System Folder/Extensions/Shared Library Manager",
+   "type": "libr"
+  },
+  "OMGR/libr-16": {
+   "asset": "appicons/OMGR__libr-16.png",
+   "creator": "OMGR",
+   "dim": 16,
+   "resId": 129,
+   "source": "System Folder/Extensions/Shared Library Manager",
+   "type": "libr"
+  },
+  "PjaD/sdev": {
+   "asset": "appicons/PjaD__sdev.png",
+   "creator": "PjaD",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/CDStrip",
+   "type": "sdev"
+  },
+  "PjaD/sdev-16": {
+   "asset": "appicons/PjaD__sdev-16.png",
+   "creator": "PjaD",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/CDStrip",
+   "type": "sdev"
+  },
+  "Q3XT/shlb": {
+   "asset": "appicons/Q3XT__shlb.png",
+   "creator": "Q3XT",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/QuickDraw\u2122 3D IR",
+   "type": "shlb"
+  },
+  "Q3XT/shlb-16": {
+   "asset": "appicons/Q3XT__shlb-16.png",
+   "creator": "Q3XT",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/QuickDraw\u2122 3D IR",
+   "type": "shlb"
+  },
+  "QD3D/3DMF": {
+   "asset": "appicons/QD3D__3DMF.png",
+   "creator": "QD3D",
+   "dim": 32,
+   "resId": 130,
+   "source": "System Folder/Extensions/QuickDraw\u2122 3D",
+   "type": "3DMF"
+  },
+  "QD3D/3DMF-16": {
+   "asset": "appicons/QD3D__3DMF-16.png",
+   "creator": "QD3D",
+   "dim": 16,
+   "resId": 130,
+   "source": "System Folder/Extensions/QuickDraw\u2122 3D",
+   "type": "3DMF"
+  },
+  "QD3D/INIT": {
+   "asset": "appicons/QD3D__INIT.png",
+   "creator": "QD3D",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/QuickDraw\u2122 3D",
+   "type": "INIT"
+  },
+  "QD3D/INIT-16": {
+   "asset": "appicons/QD3D__INIT-16.png",
+   "creator": "QD3D",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/QuickDraw\u2122 3D",
+   "type": "INIT"
+  },
+  "QD3D/ndrv": {
+   "asset": "appicons/QD3D__ndrv.png",
+   "creator": "QD3D",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/QuickDraw\u2122 3D",
+   "type": "ndrv"
+  },
+  "QD3D/ndrv-16": {
+   "asset": "appicons/QD3D__ndrv-16.png",
+   "creator": "QD3D",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/QuickDraw\u2122 3D",
+   "type": "ndrv"
+  },
+  "QD3D/shlb": {
+   "asset": "appicons/QD3D__shlb.png",
+   "creator": "QD3D",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/QuickDraw\u2122 3D",
+   "type": "shlb"
+  },
+  "QD3D/shlb-16": {
+   "asset": "appicons/QD3D__shlb-16.png",
+   "creator": "QD3D",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/QuickDraw\u2122 3D",
+   "type": "shlb"
+  },
+  "Resl/sdev": {
+   "asset": "appicons/Resl__sdev.png",
+   "creator": "Resl",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/Monitor Resolution",
+   "type": "sdev"
+  },
+  "Resl/sdev-16": {
+   "asset": "appicons/Resl__sdev-16.png",
+   "creator": "Resl",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/Monitor Resolution",
+   "type": "sdev"
+  },
+  "RonA/APPL": {
+   "asset": "appicons/RonA__APPL.png",
+   "creator": "RonA",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Graphing Calculator",
+   "type": "APPL"
+  },
+  "RonA/APPL-16": {
+   "asset": "appicons/RonA__APPL-16.png",
+   "creator": "RonA",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Graphing Calculator",
+   "type": "APPL"
+  },
+  "RonA/GC03": {
+   "asset": "appicons/RonA__GC03.png",
+   "creator": "RonA",
+   "dim": 32,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/Graphing Calculator",
+   "type": "GC03"
+  },
+  "RonA/GC03-16": {
+   "asset": "appicons/RonA__GC03-16.png",
+   "creator": "RonA",
+   "dim": 16,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/Graphing Calculator",
+   "type": "GC03"
+  },
+  "RonA/Pref": {
+   "asset": "appicons/RonA__Pref.png",
+   "creator": "RonA",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Graphing Calculator",
+   "type": "Pref"
+  },
+  "RonA/Pref-16": {
+   "asset": "appicons/RonA__Pref-16.png",
+   "creator": "RonA",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Graphing Calculator",
+   "type": "Pref"
+  },
+  "RonA/sC03": {
+   "asset": "appicons/RonA__sC03.png",
+   "creator": "RonA",
+   "dim": 32,
+   "resId": 131,
+   "source": "Applications (Mac OS 9)/Graphing Calculator",
+   "type": "sC03"
+  },
+  "RonA/sC03-16": {
+   "asset": "appicons/RonA__sC03-16.png",
+   "creator": "RonA",
+   "dim": 16,
+   "resId": 131,
+   "source": "Applications (Mac OS 9)/Graphing Calculator",
+   "type": "sC03"
+  },
+  "SITe/SITL": {
+   "asset": "appicons/SITe__SITL.png",
+   "creator": "SITe",
+   "dim": 32,
+   "resId": -16455,
+   "source": "System Folder/Extensions/StuffIt Engine\u2122",
+   "type": "SITL"
+  },
+  "SITe/SITL-16": {
+   "asset": "appicons/SITe__SITL-16.png",
+   "creator": "SITe",
+   "dim": 16,
+   "resId": -16455,
+   "source": "System Folder/Extensions/StuffIt Engine\u2122",
+   "type": "SITL"
+  },
+  "SITe/shlb": {
+   "asset": "appicons/SITe__shlb.png",
+   "creator": "SITe",
+   "dim": 32,
+   "resId": 130,
+   "source": "System Folder/Extensions/StuffIt Engine\u2122",
+   "type": "shlb"
+  },
+  "SITe/shlb-16": {
+   "asset": "appicons/SITe__shlb-16.png",
+   "creator": "SITe",
+   "dim": 16,
+   "resId": 130,
+   "source": "System Folder/Extensions/StuffIt Engine\u2122",
+   "type": "shlb"
+  },
+  "SITx/APPL": {
+   "asset": "appicons/SITx__APPL.png",
+   "creator": "SITx",
+   "dim": 32,
+   "resId": -16455,
+   "source": "Applications (Mac OS 9)/Internet Utilities/Aladdin Folder/StuffIt Expander\u2122 5.5/StuffIt Expander\u2122",
+   "type": "APPL"
+  },
+  "SITx/APPL-16": {
+   "asset": "appicons/SITx__APPL-16.png",
+   "creator": "SITx",
+   "dim": 16,
+   "resId": -16455,
+   "source": "Applications (Mac OS 9)/Internet Utilities/Aladdin Folder/StuffIt Expander\u2122 5.5/StuffIt Expander\u2122",
+   "type": "APPL"
+  },
+  "SITx/BINA": {
+   "asset": "appicons/SITx__BINA.png",
+   "creator": "SITx",
+   "dim": 32,
+   "resId": 143,
+   "source": "Applications (Mac OS 9)/Internet Utilities/Aladdin Folder/StuffIt Expander\u2122 5.5/StuffIt Expander\u2122",
+   "type": "BINA"
+  },
+  "SITx/BINA-16": {
+   "asset": "appicons/SITx__BINA-16.png",
+   "creator": "SITx",
+   "dim": 16,
+   "resId": 143,
+   "source": "Applications (Mac OS 9)/Internet Utilities/Aladdin Folder/StuffIt Expander\u2122 5.5/StuffIt Expander\u2122",
+   "type": "BINA"
+  },
+  "SITx/Bzp2": {
+   "asset": "appicons/SITx__Bzp2.png",
+   "creator": "SITx",
+   "dim": 32,
+   "resId": 152,
+   "source": "Applications (Mac OS 9)/Internet Utilities/Aladdin Folder/StuffIt Expander\u2122 5.5/StuffIt Expander\u2122",
+   "type": "Bzp2"
+  },
+  "SITx/Bzp2-16": {
+   "asset": "appicons/SITx__Bzp2-16.png",
+   "creator": "SITx",
+   "dim": 16,
+   "resId": 152,
+   "source": "Applications (Mac OS 9)/Internet Utilities/Aladdin Folder/StuffIt Expander\u2122 5.5/StuffIt Expander\u2122",
+   "type": "Bzp2"
+  },
+  "SITx/TARF": {
+   "asset": "appicons/SITx__TARF.png",
+   "creator": "SITx",
+   "dim": 32,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Internet Utilities/Aladdin Folder/StuffIt Expander\u2122 5.5/StuffIt Expander\u2122",
+   "type": "TARF"
+  },
+  "SITx/TARF-16": {
+   "asset": "appicons/SITx__TARF-16.png",
+   "creator": "SITx",
+   "dim": 16,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Internet Utilities/Aladdin Folder/StuffIt Expander\u2122 5.5/StuffIt Expander\u2122",
+   "type": "TARF"
+  },
+  "SITx/TEXT": {
+   "asset": "appicons/SITx__TEXT.png",
+   "creator": "SITx",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Internet Utilities/Aladdin Folder/StuffIt Expander\u2122 5.5/StuffIt Expander\u2122",
+   "type": "TEXT"
+  },
+  "SITx/TEXT-16": {
+   "asset": "appicons/SITx__TEXT-16.png",
+   "creator": "SITx",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Internet Utilities/Aladdin Folder/StuffIt Expander\u2122 5.5/StuffIt Expander\u2122",
+   "type": "TEXT"
+  },
+  "SITx/x5a495020": {
+   "asset": "appicons/SITx__x5a495020.png",
+   "creator": "SITx",
+   "dim": 32,
+   "resId": 144,
+   "source": "Applications (Mac OS 9)/Internet Utilities/Aladdin Folder/StuffIt Expander\u2122 5.5/StuffIt Expander\u2122",
+   "type": "x5a495020"
+  },
+  "SITx/x5a495020-16": {
+   "asset": "appicons/SITx__x5a495020-16.png",
+   "creator": "SITx",
+   "dim": 16,
+   "resId": 144,
+   "source": "Applications (Mac OS 9)/Internet Utilities/Aladdin Folder/StuffIt Expander\u2122 5.5/StuffIt Expander\u2122",
+   "type": "x5a495020"
+  },
+  "SwUi/APPL": {
+   "asset": "appicons/SwUi__APPL.png",
+   "creator": "SwUi",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/Macromedia/Shockwave 8/ShockwaveDownload",
+   "type": "APPL"
+  },
+  "SwUi/APPL-16": {
+   "asset": "appicons/SwUi__APPL-16.png",
+   "creator": "SwUi",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/Macromedia/Shockwave 8/ShockwaveDownload",
+   "type": "APPL"
+  },
+  "TVOD/.SMI": {
+   "asset": "appicons/TVOD__.SMI.png",
+   "creator": "TVOD",
+   "dim": 32,
+   "resId": 154,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": ".SMI"
+  },
+  "TVOD/.SMI-16": {
+   "asset": "appicons/TVOD__.SMI-16.png",
+   "creator": "TVOD",
+   "dim": 16,
+   "resId": 154,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": ".SMI"
+  },
+  "TVOD/.WAV": {
+   "asset": "appicons/TVOD__.WAV.png",
+   "creator": "TVOD",
+   "dim": 32,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": ".WAV"
+  },
+  "TVOD/.WAV-16": {
+   "asset": "appicons/TVOD__.WAV-16.png",
+   "creator": "TVOD",
+   "dim": 16,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": ".WAV"
+  },
+  "TVOD/AIFC": {
+   "asset": "appicons/TVOD__AIFC.png",
+   "creator": "TVOD",
+   "dim": 32,
+   "resId": 132,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "AIFC"
+  },
+  "TVOD/AIFC-16": {
+   "asset": "appicons/TVOD__AIFC-16.png",
+   "creator": "TVOD",
+   "dim": 16,
+   "resId": 132,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "AIFC"
+  },
+  "TVOD/AIFF": {
+   "asset": "appicons/TVOD__AIFF.png",
+   "creator": "TVOD",
+   "dim": 32,
+   "resId": 132,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "AIFF"
+  },
+  "TVOD/AIFF-16": {
+   "asset": "appicons/TVOD__AIFF-16.png",
+   "creator": "TVOD",
+   "dim": 16,
+   "resId": 132,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "AIFF"
+  },
+  "TVOD/APPL": {
+   "asset": "appicons/TVOD__APPL.png",
+   "creator": "TVOD",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "APPL"
+  },
+  "TVOD/APPL-16": {
+   "asset": "appicons/TVOD__APPL-16.png",
+   "creator": "TVOD",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "APPL"
+  },
+  "TVOD/Cach": {
+   "asset": "appicons/TVOD__Cach.png",
+   "creator": "TVOD",
+   "dim": 32,
+   "resId": 146,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "Cach"
+  },
+  "TVOD/Cach-16": {
+   "asset": "appicons/TVOD__Cach-16.png",
+   "creator": "TVOD",
+   "dim": 16,
+   "resId": 146,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "Cach"
+  },
+  "TVOD/GIFf": {
+   "asset": "appicons/TVOD__GIFf.png",
+   "creator": "TVOD",
+   "dim": 32,
+   "resId": 141,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "GIFf"
+  },
+  "TVOD/GIFf-16": {
+   "asset": "appicons/TVOD__GIFf-16.png",
+   "creator": "TVOD",
+   "dim": 16,
+   "resId": 141,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "GIFf"
+  },
+  "TVOD/MPEG": {
+   "asset": "appicons/TVOD__MPEG.png",
+   "creator": "TVOD",
+   "dim": 32,
+   "resId": 134,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "MPEG"
+  },
+  "TVOD/MPEG-16": {
+   "asset": "appicons/TVOD__MPEG-16.png",
+   "creator": "TVOD",
+   "dim": 16,
+   "resId": 134,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "MPEG"
+  },
+  "TVOD/MPG3": {
+   "asset": "appicons/TVOD__MPG3.png",
+   "creator": "TVOD",
+   "dim": 32,
+   "resId": 150,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "MPG3"
+  },
+  "TVOD/MPG3-16": {
+   "asset": "appicons/TVOD__MPG3-16.png",
+   "creator": "TVOD",
+   "dim": 16,
+   "resId": 150,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "MPG3"
+  },
+  "TVOD/MooV": {
+   "asset": "appicons/TVOD__MooV.png",
+   "creator": "TVOD",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "MooV"
+  },
+  "TVOD/MooV-16": {
+   "asset": "appicons/TVOD__MooV-16.png",
+   "creator": "TVOD",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "MooV"
+  },
+  "TVOD/PLAY": {
+   "asset": "appicons/TVOD__PLAY.png",
+   "creator": "TVOD",
+   "dim": 32,
+   "resId": 150,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "PLAY"
+  },
+  "TVOD/PLAY-16": {
+   "asset": "appicons/TVOD__PLAY-16.png",
+   "creator": "TVOD",
+   "dim": 16,
+   "resId": 150,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "PLAY"
+  },
+  "TVOD/RTSP": {
+   "asset": "appicons/TVOD__RTSP.png",
+   "creator": "TVOD",
+   "dim": 32,
+   "resId": 148,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "RTSP"
+  },
+  "TVOD/RTSP-16": {
+   "asset": "appicons/TVOD__RTSP-16.png",
+   "creator": "TVOD",
+   "dim": 16,
+   "resId": 148,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "RTSP"
+  },
+  "TVOD/SWFL": {
+   "asset": "appicons/TVOD__SWFL.png",
+   "creator": "TVOD",
+   "dim": 32,
+   "resId": 147,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "SWFL"
+  },
+  "TVOD/SWFL-16": {
+   "asset": "appicons/TVOD__SWFL-16.png",
+   "creator": "TVOD",
+   "dim": 16,
+   "resId": 147,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "SWFL"
+  },
+  "TVOD/Sd2f": {
+   "asset": "appicons/TVOD__Sd2f.png",
+   "creator": "TVOD",
+   "dim": 32,
+   "resId": 142,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "Sd2f"
+  },
+  "TVOD/Sd2f-16": {
+   "asset": "appicons/TVOD__Sd2f-16.png",
+   "creator": "TVOD",
+   "dim": 16,
+   "resId": 142,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "Sd2f"
+  },
+  "TVOD/SwaT": {
+   "asset": "appicons/TVOD__SwaT.png",
+   "creator": "TVOD",
+   "dim": 32,
+   "resId": 150,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "SwaT"
+  },
+  "TVOD/SwaT-16": {
+   "asset": "appicons/TVOD__SwaT-16.png",
+   "creator": "TVOD",
+   "dim": 16,
+   "resId": 150,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "SwaT"
+  },
+  "TVOD/TVex": {
+   "asset": "appicons/TVOD__TVex.png",
+   "creator": "TVOD",
+   "dim": 32,
+   "resId": 131,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "TVex"
+  },
+  "TVOD/TVex-16": {
+   "asset": "appicons/TVOD__TVex-16.png",
+   "creator": "TVOD",
+   "dim": 16,
+   "resId": 131,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "TVex"
+  },
+  "TVOD/ULAW": {
+   "asset": "appicons/TVOD__ULAW.png",
+   "creator": "TVOD",
+   "dim": 32,
+   "resId": 137,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "ULAW"
+  },
+  "TVOD/ULAW-16": {
+   "asset": "appicons/TVOD__ULAW-16.png",
+   "creator": "TVOD",
+   "dim": 16,
+   "resId": 137,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "ULAW"
+  },
+  "TVOD/WAVE": {
+   "asset": "appicons/TVOD__WAVE.png",
+   "creator": "TVOD",
+   "dim": 32,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "WAVE"
+  },
+  "TVOD/WAVE-16": {
+   "asset": "appicons/TVOD__WAVE-16.png",
+   "creator": "TVOD",
+   "dim": 16,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "WAVE"
+  },
+  "TVOD/dvc!": {
+   "asset": "appicons/TVOD__dvc!.png",
+   "creator": "TVOD",
+   "dim": 32,
+   "resId": 139,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "dvc!"
+  },
+  "TVOD/dvc!-16": {
+   "asset": "appicons/TVOD__dvc!-16.png",
+   "creator": "TVOD",
+   "dim": 16,
+   "resId": 139,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "dvc!"
+  },
+  "TVOD/sooV": {
+   "asset": "appicons/TVOD__sooV.png",
+   "creator": "TVOD",
+   "dim": 32,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "sooV"
+  },
+  "TVOD/sooV-16": {
+   "asset": "appicons/TVOD__sooV-16.png",
+   "creator": "TVOD",
+   "dim": 16,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "sooV"
+  },
+  "TVOD/x464c4920": {
+   "asset": "appicons/TVOD__x464c4920.png",
+   "creator": "TVOD",
+   "dim": 32,
+   "resId": 140,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "x464c4920"
+  },
+  "TVOD/x464c4920-16": {
+   "asset": "appicons/TVOD__x464c4920-16.png",
+   "creator": "TVOD",
+   "dim": 16,
+   "resId": 140,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "x464c4920"
+  },
+  "TVOD/x4d504720": {
+   "asset": "appicons/TVOD__x4d504720.png",
+   "creator": "TVOD",
+   "dim": 32,
+   "resId": 134,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "x4d504720"
+  },
+  "TVOD/x4d504720-16": {
+   "asset": "appicons/TVOD__x4d504720-16.png",
+   "creator": "TVOD",
+   "dim": 16,
+   "resId": 134,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "x4d504720"
+  },
+  "TVOD/x4d703320": {
+   "asset": "appicons/TVOD__x4d703320.png",
+   "creator": "TVOD",
+   "dim": 32,
+   "resId": 150,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "x4d703320"
+  },
+  "TVOD/x4d703320-16": {
+   "asset": "appicons/TVOD__x4d703320-16.png",
+   "creator": "TVOD",
+   "dim": 16,
+   "resId": 150,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "x4d703320"
+  },
+  "TVOD/x53445020": {
+   "asset": "appicons/TVOD__x53445020.png",
+   "creator": "TVOD",
+   "dim": 32,
+   "resId": 149,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "x53445020"
+  },
+  "TVOD/x53445020-16": {
+   "asset": "appicons/TVOD__x53445020-16.png",
+   "creator": "TVOD",
+   "dim": 16,
+   "resId": 149,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "x53445020"
+  },
+  "TVOD/x56665720": {
+   "asset": "appicons/TVOD__x56665720.png",
+   "creator": "TVOD",
+   "dim": 32,
+   "resId": 138,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "x56665720"
+  },
+  "TVOD/x56665720-16": {
+   "asset": "appicons/TVOD__x56665720-16.png",
+   "creator": "TVOD",
+   "dim": 16,
+   "resId": 138,
+   "source": "Applications (Mac OS 9)/QuickTime/QuickTime Player",
+   "type": "x56665720"
+  },
+  "ToyS/APPL": {
+   "asset": "appicons/ToyS__APPL.png",
+   "creator": "ToyS",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Apple Extras/AppleScript/Script Editor",
+   "type": "APPL"
+  },
+  "ToyS/APPL-16": {
+   "asset": "appicons/ToyS__APPL-16.png",
+   "creator": "ToyS",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Apple Extras/AppleScript/Script Editor",
+   "type": "APPL"
+  },
+  "ToyS/TEXT": {
+   "asset": "appicons/ToyS__TEXT.png",
+   "creator": "ToyS",
+   "dim": 32,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/Apple Extras/AppleScript/Script Editor",
+   "type": "TEXT"
+  },
+  "ToyS/TEXT-16": {
+   "asset": "appicons/ToyS__TEXT-16.png",
+   "creator": "ToyS",
+   "dim": 16,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/Apple Extras/AppleScript/Script Editor",
+   "type": "TEXT"
+  },
+  "ToyS/osas": {
+   "asset": "appicons/ToyS__osas.png",
+   "creator": "ToyS",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Apple Extras/AppleScript/Script Editor",
+   "type": "osas"
+  },
+  "ToyS/osas-16": {
+   "asset": "appicons/ToyS__osas-16.png",
+   "creator": "ToyS",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Apple Extras/AppleScript/Script Editor",
+   "type": "osas"
+  },
+  "ToyS/sEXT": {
+   "asset": "appicons/ToyS__sEXT.png",
+   "creator": "ToyS",
+   "dim": 32,
+   "resId": 131,
+   "source": "Applications (Mac OS 9)/Apple Extras/AppleScript/Script Editor",
+   "type": "sEXT"
+  },
+  "ToyS/sEXT-16": {
+   "asset": "appicons/ToyS__sEXT-16.png",
+   "creator": "ToyS",
+   "dim": 16,
+   "resId": 131,
+   "source": "Applications (Mac OS 9)/Apple Extras/AppleScript/Script Editor",
+   "type": "sEXT"
+  },
+  "ToyS/ssas": {
+   "asset": "appicons/ToyS__ssas.png",
+   "creator": "ToyS",
+   "dim": 32,
+   "resId": 131,
+   "source": "Applications (Mac OS 9)/Apple Extras/AppleScript/Script Editor",
+   "type": "ssas"
+  },
+  "ToyS/ssas-16": {
+   "asset": "appicons/ToyS__ssas-16.png",
+   "creator": "ToyS",
+   "dim": 16,
+   "resId": 131,
+   "source": "Applications (Mac OS 9)/Apple Extras/AppleScript/Script Editor",
+   "type": "ssas"
+  },
+  "VIS3/APPL": {
+   "asset": "appicons/VIS3__APPL.png",
+   "creator": "VIS3",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Microsoft Internet Self-Repair/Microsoft Internet First Run",
+   "type": "APPL"
+  },
+  "VIS3/APPL-16": {
+   "asset": "appicons/VIS3__APPL-16.png",
+   "creator": "VIS3",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Microsoft Internet Self-Repair/Microsoft Internet First Run",
+   "type": "APPL"
+  },
+  "VIS3/VIS4": {
+   "asset": "appicons/VIS3__VIS4.png",
+   "creator": "VIS3",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Microsoft Internet Self-Repair/Microsoft Internet First Run",
+   "type": "VIS4"
+  },
+  "VIS3/VIS4-16": {
+   "asset": "appicons/VIS3__VIS4-16.png",
+   "creator": "VIS3",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Microsoft Internet Self-Repair/Microsoft Internet First Run",
+   "type": "VIS4"
+  },
+  "WARZ/APPL": {
+   "asset": "appicons/WARZ__APPL.png",
+   "creator": "WARZ",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Apple Extras/Mac OS Runtime For Java/Apple Applet Runner/Apple Applet Runner",
+   "type": "APPL"
+  },
+  "WARZ/APPL-16": {
+   "asset": "appicons/WARZ__APPL-16.png",
+   "creator": "WARZ",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Apple Extras/Mac OS Runtime For Java/Apple Applet Runner/Apple Applet Runner",
+   "type": "APPL"
+  },
+  "WARZ/TEXT": {
+   "asset": "appicons/WARZ__TEXT.png",
+   "creator": "WARZ",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Apple Extras/Mac OS Runtime For Java/Apple Applet Runner/Apple Applet Runner",
+   "type": "TEXT"
+  },
+  "WARZ/TEXT-16": {
+   "asset": "appicons/WARZ__TEXT-16.png",
+   "creator": "WARZ",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Apple Extras/Mac OS Runtime For Java/Apple Applet Runner/Apple Applet Runner",
+   "type": "TEXT"
+  },
+  "WARZ/x55524c20": {
+   "asset": "appicons/WARZ__x55524c20.png",
+   "creator": "WARZ",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Apple Extras/Mac OS Runtime For Java/Apple Applet Runner/Apple Applet Runner",
+   "type": "x55524c20"
+  },
+  "WARZ/x55524c20-16": {
+   "asset": "appicons/WARZ__x55524c20-16.png",
+   "creator": "WARZ",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Apple Extras/Mac OS Runtime For Java/Apple Applet Runner/Apple Applet Runner",
+   "type": "x55524c20"
+  },
+  "aIPG/APPL": {
+   "asset": "appicons/aIPG__APPL.png",
+   "creator": "aIPG",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/ShareWay IP Personal Bgnd",
+   "type": "APPL"
+  },
+  "aIPG/APPL-16": {
+   "asset": "appicons/aIPG__APPL-16.png",
+   "creator": "aIPG",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/ShareWay IP Personal Bgnd",
+   "type": "APPL"
+  },
+  "aaud/INIT": {
+   "asset": "appicons/aaud__INIT.png",
+   "creator": "aaud",
+   "dim": 32,
+   "resId": -4048,
+   "source": "System Folder/Extensions/Apple Audio Extension",
+   "type": "INIT"
+  },
+  "aaud/INIT-16": {
+   "asset": "appicons/aaud__INIT-16.png",
+   "creator": "aaud",
+   "dim": 16,
+   "resId": -4048,
+   "source": "System Folder/Extensions/Apple Audio Extension",
+   "type": "INIT"
+  },
+  "advp/APPL": {
+   "asset": "appicons/advp__APPL.png",
+   "creator": "advp",
+   "dim": 32,
+   "resId": 99,
+   "source": "Applications (Mac OS 9)/Apple DVD Player/Apple DVD Player",
+   "type": "APPL"
+  },
+  "advp/APPL-16": {
+   "asset": "appicons/advp__APPL-16.png",
+   "creator": "advp",
+   "dim": 16,
+   "resId": 99,
+   "source": "Applications (Mac OS 9)/Apple DVD Player/Apple DVD Player",
+   "type": "APPL"
+  },
+  "afpt/RDEV": {
+   "asset": "appicons/afpt__RDEV.png",
+   "creator": "afpt",
+   "dim": 32,
+   "resId": -4080,
+   "source": "System Folder/Extensions/AppleShare",
+   "type": "RDEV"
+  },
+  "afpt/RDEV-16": {
+   "asset": "appicons/afpt__RDEV-16.png",
+   "creator": "afpt",
+   "dim": 16,
+   "resId": -4080,
+   "source": "System Folder/Extensions/AppleShare",
+   "type": "RDEV"
+  },
+  "afpt/afpp": {
+   "asset": "appicons/afpt__afpp.png",
+   "creator": "afpt",
+   "dim": 32,
+   "resId": -4079,
+   "source": "System Folder/Extensions/AppleShare",
+   "type": "afpp"
+  },
+  "afpt/afpp-16": {
+   "asset": "appicons/afpt__afpp-16.png",
+   "creator": "afpt",
+   "dim": 16,
+   "resId": -4079,
+   "source": "System Folder/Extensions/AppleShare",
+   "type": "afpp"
+  },
+  "alav/APPC": {
+   "asset": "appicons/alav__APPC.png",
+   "creator": "alav",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Panels/Monitors",
+   "type": "APPC"
+  },
+  "alav/APPC-16": {
+   "asset": "appicons/alav__APPC-16.png",
+   "creator": "alav",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Panels/Monitors",
+   "type": "APPC"
+  },
+  "amdt/cbnd": {
+   "asset": "appicons/amdt__cbnd.png",
+   "creator": "amdt",
+   "dim": 32,
+   "resId": 256,
+   "source": "System Folder/Extensions/Apple Modem Tool",
+   "type": "cbnd"
+  },
+  "amdt/cbnd-16": {
+   "asset": "appicons/amdt__cbnd-16.png",
+   "creator": "amdt",
+   "dim": 16,
+   "resId": 256,
+   "source": "System Folder/Extensions/Apple Modem Tool",
+   "type": "cbnd"
+  },
+  "amdt/modm": {
+   "asset": "appicons/amdt__modm.png",
+   "creator": "amdt",
+   "dim": 32,
+   "resId": 257,
+   "source": "System Folder/Extensions/Apple Modem Tool",
+   "type": "modm"
+  },
+  "amdt/modm-16": {
+   "asset": "appicons/amdt__modm-16.png",
+   "creator": "amdt",
+   "dim": 16,
+   "resId": 257,
+   "source": "System Folder/Extensions/Apple Modem Tool",
+   "type": "modm"
+  },
+  "apcp/APPC": {
+   "asset": "appicons/apcp__APPC.png",
+   "creator": "apcp",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Panels/Appearance",
+   "type": "APPC"
+  },
+  "apcp/APPC-16": {
+   "asset": "appicons/apcp__APPC-16.png",
+   "creator": "apcp",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Panels/Appearance",
+   "type": "APPC"
+  },
+  "apcp/GIFf": {
+   "asset": "appicons/apcp__GIFf.png",
+   "creator": "apcp",
+   "dim": 32,
+   "resId": 130,
+   "source": "System Folder/Control Panels/Appearance",
+   "type": "GIFf"
+  },
+  "apcp/GIFf-16": {
+   "asset": "appicons/apcp__GIFf-16.png",
+   "creator": "apcp",
+   "dim": 16,
+   "resId": 130,
+   "source": "System Folder/Control Panels/Appearance",
+   "type": "GIFf"
+  },
+  "apcp/JPEG": {
+   "asset": "appicons/apcp__JPEG.png",
+   "creator": "apcp",
+   "dim": 32,
+   "resId": 130,
+   "source": "System Folder/Control Panels/Appearance",
+   "type": "JPEG"
+  },
+  "apcp/JPEG-16": {
+   "asset": "appicons/apcp__JPEG-16.png",
+   "creator": "apcp",
+   "dim": 16,
+   "resId": 130,
+   "source": "System Folder/Control Panels/Appearance",
+   "type": "JPEG"
+  },
+  "apcp/PICT": {
+   "asset": "appicons/apcp__PICT.png",
+   "creator": "apcp",
+   "dim": 32,
+   "resId": 130,
+   "source": "System Folder/Control Panels/Appearance",
+   "type": "PICT"
+  },
+  "apcp/PICT-16": {
+   "asset": "appicons/apcp__PICT-16.png",
+   "creator": "apcp",
+   "dim": 16,
+   "resId": 130,
+   "source": "System Folder/Control Panels/Appearance",
+   "type": "PICT"
+  },
+  "apcp/PREF": {
+   "asset": "appicons/apcp__PREF.png",
+   "creator": "apcp",
+   "dim": 32,
+   "resId": 129,
+   "source": "System Folder/Control Panels/Appearance",
+   "type": "PREF"
+  },
+  "apcp/PREF-16": {
+   "asset": "appicons/apcp__PREF-16.png",
+   "creator": "apcp",
+   "dim": 16,
+   "resId": 129,
+   "source": "System Folder/Control Panels/Appearance",
+   "type": "PREF"
+  },
+  "apcp/TIFF": {
+   "asset": "appicons/apcp__TIFF.png",
+   "creator": "apcp",
+   "dim": 32,
+   "resId": 130,
+   "source": "System Folder/Control Panels/Appearance",
+   "type": "TIFF"
+  },
+  "apcp/TIFF-16": {
+   "asset": "appicons/apcp__TIFF-16.png",
+   "creator": "apcp",
+   "dim": 16,
+   "resId": 130,
+   "source": "System Folder/Control Panels/Appearance",
+   "type": "TIFF"
+  },
+  "aplt/APPL": {
+   "asset": "appicons/aplt__APPL.png",
+   "creator": "aplt",
+   "dim": 32,
+   "resId": 150,
+   "source": "Applications (Mac OS 9)/Apple Extras/Register With Apple",
+   "type": "APPL"
+  },
+  "aplt/APPL-16": {
+   "asset": "appicons/aplt__APPL-16.png",
+   "creator": "aplt",
+   "dim": 16,
+   "resId": 150,
+   "source": "Applications (Mac OS 9)/Apple Extras/Register With Apple",
+   "type": "APPL"
+  },
+  "apsw/appe": {
+   "asset": "appicons/apsw__appe.png",
+   "creator": "apsw",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/Application Switcher",
+   "type": "appe"
+  },
+  "apsw/appe-16": {
+   "asset": "appicons/apsw__appe-16.png",
+   "creator": "apsw",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/Application Switcher",
+   "type": "appe"
+  },
+  "ascr/dlct": {
+   "asset": "appicons/ascr__dlct.png",
+   "creator": "ascr",
+   "dim": 32,
+   "resId": 136,
+   "source": "System Folder/Extensions/AppleScript",
+   "type": "dlct"
+  },
+  "ascr/dlct-16": {
+   "asset": "appicons/ascr__dlct-16.png",
+   "creator": "ascr",
+   "dim": 16,
+   "resId": 136,
+   "source": "System Folder/Extensions/AppleScript",
+   "type": "dlct"
+  },
+  "ascr/osax": {
+   "asset": "appicons/ascr__osax.png",
+   "creator": "ascr",
+   "dim": 32,
+   "resId": 135,
+   "source": "System Folder/Extensions/AppleScript",
+   "type": "osax"
+  },
+  "ascr/osax-16": {
+   "asset": "appicons/ascr__osax-16.png",
+   "creator": "ascr",
+   "dim": 16,
+   "resId": 135,
+   "source": "System Folder/Extensions/AppleScript",
+   "type": "osax"
+  },
+  "ascr/pref": {
+   "asset": "appicons/ascr__pref.png",
+   "creator": "ascr",
+   "dim": 32,
+   "resId": 134,
+   "source": "System Folder/Extensions/AppleScript",
+   "type": "pref"
+  },
+  "ascr/pref-16": {
+   "asset": "appicons/ascr__pref-16.png",
+   "creator": "ascr",
+   "dim": 16,
+   "resId": 134,
+   "source": "System Folder/Extensions/AppleScript",
+   "type": "pref"
+  },
+  "ascr/thng": {
+   "asset": "appicons/ascr__thng.png",
+   "creator": "ascr",
+   "dim": 32,
+   "resId": 130,
+   "source": "System Folder/Extensions/AppleScript",
+   "type": "thng"
+  },
+  "ascr/thng-16": {
+   "asset": "appicons/ascr__thng-16.png",
+   "creator": "ascr",
+   "dim": 16,
+   "resId": 130,
+   "source": "System Folder/Extensions/AppleScript",
+   "type": "thng"
+  },
+  "ascr/xNIT": {
+   "asset": "appicons/ascr__xNIT.png",
+   "creator": "ascr",
+   "dim": 32,
+   "resId": 85,
+   "source": "System Folder/Extensions/AppleScript",
+   "type": "xNIT"
+  },
+  "ascr/xNIT-16": {
+   "asset": "appicons/ascr__xNIT-16.png",
+   "creator": "ascr",
+   "dim": 16,
+   "resId": 85,
+   "source": "System Folder/Extensions/AppleScript",
+   "type": "xNIT"
+  },
+  "asve/APPL": {
+   "asset": "appicons/asve__APPL.png",
+   "creator": "asve",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Security/Apple Verifier",
+   "type": "APPL"
+  },
+  "asve/APPL-16": {
+   "asset": "appicons/asve__APPL-16.png",
+   "creator": "asve",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Security/Apple Verifier",
+   "type": "APPL"
+  },
+  "asve/assf": {
+   "asset": "appicons/asve__assf.png",
+   "creator": "asve",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Security/Apple Verifier",
+   "type": "assf"
+  },
+  "asve/assf-16": {
+   "asset": "appicons/asve__assf-16.png",
+   "creator": "asve",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Security/Apple Verifier",
+   "type": "assf"
+  },
+  "atdv/cdev": {
+   "asset": "appicons/atdv__cdev.png",
+   "creator": "atdv",
+   "dim": 32,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/AppleTalk",
+   "type": "cdev"
+  },
+  "atdv/cdev-16": {
+   "asset": "appicons/atdv__cdev-16.png",
+   "creator": "atdv",
+   "dim": 16,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/AppleTalk",
+   "type": "cdev"
+  },
+  "atdv/otac": {
+   "asset": "appicons/atdv__otac.png",
+   "creator": "atdv",
+   "dim": 32,
+   "resId": -4063,
+   "source": "System Folder/Control Panels/AppleTalk",
+   "type": "otac"
+  },
+  "atdv/otac-16": {
+   "asset": "appicons/atdv__otac-16.png",
+   "creator": "atdv",
+   "dim": 16,
+   "resId": -4063,
+   "source": "System Folder/Control Panels/AppleTalk",
+   "type": "otac"
+  },
+  "aucd/APPL": {
+   "asset": "appicons/aucd__APPL.png",
+   "creator": "aucd",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/AppleCD Audio Player \u0192/AppleCD Audio Player",
+   "type": "APPL"
+  },
+  "aucd/APPL-16": {
+   "asset": "appicons/aucd__APPL-16.png",
+   "creator": "aucd",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/AppleCD Audio Player \u0192/AppleCD Audio Player",
+   "type": "APPL"
+  },
+  "aucd/aupf": {
+   "asset": "appicons/aucd__aupf.png",
+   "creator": "aucd",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/AppleCD Audio Player \u0192/AppleCD Audio Player",
+   "type": "aupf"
+  },
+  "aucd/aupf-16": {
+   "asset": "appicons/aucd__aupf-16.png",
+   "creator": "aucd",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/AppleCD Audio Player \u0192/AppleCD Audio Player",
+   "type": "aupf"
+  },
+  "avav/INIT": {
+   "asset": "appicons/avav__INIT.png",
+   "creator": "avav",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/Apple Monitor Plugins",
+   "type": "INIT"
+  },
+  "avav/INIT-16": {
+   "asset": "appicons/avav__INIT-16.png",
+   "creator": "avav",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/Apple Monitor Plugins",
+   "type": "INIT"
+  },
+  "batt/sdev": {
+   "asset": "appicons/batt__sdev.png",
+   "creator": "batt",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/Battery Monitor",
+   "type": "sdev"
+  },
+  "batt/sdev-16": {
+   "asset": "appicons/batt__sdev-16.png",
+   "creator": "batt",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/Battery Monitor",
+   "type": "sdev"
+  },
+  "calc/dfil": {
+   "asset": "appicons/calc__dfil.png",
+   "creator": "calc",
+   "dim": 32,
+   "resId": -16000,
+   "source": "System Folder/Apple Menu Items/Calculator",
+   "type": "dfil"
+  },
+  "calc/dfil-16": {
+   "asset": "appicons/calc__dfil-16.png",
+   "creator": "calc",
+   "dim": 16,
+   "resId": -16000,
+   "source": "System Folder/Apple Menu Items/Calculator",
+   "type": "dfil"
+  },
+  "chzr/dfil": {
+   "asset": "appicons/chzr__dfil.png",
+   "creator": "chzr",
+   "dim": 32,
+   "resId": -15904,
+   "source": "System Folder/Apple Menu Items/Chooser",
+   "type": "dfil"
+  },
+  "chzr/dfil-16": {
+   "asset": "appicons/chzr__dfil-16.png",
+   "creator": "chzr",
+   "dim": 16,
+   "resId": -15904,
+   "source": "System Folder/Apple Menu Items/Chooser",
+   "type": "dfil"
+  },
+  "cmnu/INIT": {
+   "asset": "appicons/cmnu__INIT.png",
+   "creator": "cmnu",
+   "dim": 32,
+   "resId": 129,
+   "source": "System Folder/Extensions/Contextual Menu Extension",
+   "type": "INIT"
+  },
+  "cmnu/INIT-16": {
+   "asset": "appicons/cmnu__INIT-16.png",
+   "creator": "cmnu",
+   "dim": 16,
+   "resId": 129,
+   "source": "System Folder/Extensions/Contextual Menu Extension",
+   "type": "INIT"
+  },
+  "cmnu/cmpi": {
+   "asset": "appicons/cmnu__cmpi.png",
+   "creator": "cmnu",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/Contextual Menu Extension",
+   "type": "cmpi"
+  },
+  "cmnu/cmpi-16": {
+   "asset": "appicons/cmnu__cmpi-16.png",
+   "creator": "cmnu",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/Contextual Menu Extension",
+   "type": "cmpi"
+  },
+  "cmtr/APPL": {
+   "asset": "appicons/cmtr__APPL.png",
+   "creator": "cmtr",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Apple Extras/Monitors Extras Folder/DigitalColor Meter",
+   "type": "APPL"
+  },
+  "cmtr/APPL-16": {
+   "asset": "appicons/cmtr__APPL-16.png",
+   "creator": "cmtr",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Apple Extras/Monitors Extras Folder/DigitalColor Meter",
+   "type": "APPL"
+  },
+  "cmtr/cmtr": {
+   "asset": "appicons/cmtr__cmtr.png",
+   "creator": "cmtr",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Apple Extras/Monitors Extras Folder/DigitalColor Meter",
+   "type": "cmtr"
+  },
+  "cmtr/cmtr-16": {
+   "asset": "appicons/cmtr__cmtr-16.png",
+   "creator": "cmtr",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Apple Extras/Monitors Extras Folder/DigitalColor Meter",
+   "type": "cmtr"
+  },
+  "cpmg/INIT": {
+   "asset": "appicons/cpmg__INIT.png",
+   "creator": "cpmg",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/Color Picker",
+   "type": "INIT"
+  },
+  "cpmg/INIT-16": {
+   "asset": "appicons/cpmg__INIT-16.png",
+   "creator": "cpmg",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/Color Picker",
+   "type": "INIT"
+  },
+  "crp2/APPL": {
+   "asset": "appicons/crp2__APPL.png",
+   "creator": "crp2",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Security/Apple File Security",
+   "type": "APPL"
+  },
+  "crp2/APPL-16": {
+   "asset": "appicons/crp2__APPL-16.png",
+   "creator": "crp2",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Security/Apple File Security",
+   "type": "APPL"
+  },
+  "crp2/enc2": {
+   "asset": "appicons/crp2__enc2.png",
+   "creator": "crp2",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Security/Apple File Security",
+   "type": "enc2"
+  },
+  "crp2/enc2-16": {
+   "asset": "appicons/crp2__enc2-16.png",
+   "creator": "crp2",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Security/Apple File Security",
+   "type": "enc2"
+  },
+  "crp2/encb": {
+   "asset": "appicons/crp2__encb.png",
+   "creator": "crp2",
+   "dim": 32,
+   "resId": 131,
+   "source": "Applications (Mac OS 9)/Security/Apple File Security",
+   "type": "encb"
+  },
+  "crp2/encb-16": {
+   "asset": "appicons/crp2__encb-16.png",
+   "creator": "crp2",
+   "dim": 16,
+   "resId": 131,
+   "source": "Applications (Mac OS 9)/Security/Apple File Security",
+   "type": "encb"
+  },
+  "ctbc/cbnd": {
+   "asset": "appicons/ctbc__cbnd.png",
+   "creator": "ctbc",
+   "dim": 32,
+   "resId": 256,
+   "source": "System Folder/Extensions/Serial Tool",
+   "type": "cbnd"
+  },
+  "ctbc/cbnd-16": {
+   "asset": "appicons/ctbc__cbnd-16.png",
+   "creator": "ctbc",
+   "dim": 16,
+   "resId": 256,
+   "source": "System Folder/Extensions/Serial Tool",
+   "type": "cbnd"
+  },
+  "ctbf/fbnd": {
+   "asset": "appicons/ctbf__fbnd.png",
+   "creator": "ctbf",
+   "dim": 32,
+   "resId": 256,
+   "source": "System Folder/Extensions/Text Tool",
+   "type": "fbnd"
+  },
+  "ctbf/fbnd-16": {
+   "asset": "appicons/ctbf__fbnd-16.png",
+   "creator": "ctbf",
+   "dim": 16,
+   "resId": 256,
+   "source": "System Folder/Extensions/Text Tool",
+   "type": "fbnd"
+  },
+  "ctbt/tbnd": {
+   "asset": "appicons/ctbt__tbnd.png",
+   "creator": "ctbt",
+   "dim": 32,
+   "resId": 256,
+   "source": "System Folder/Extensions/TTY Tool",
+   "type": "tbnd"
+  },
+  "ctbt/tbnd-16": {
+   "asset": "appicons/ctbt__tbnd-16.png",
+   "creator": "ctbt",
+   "dim": 16,
+   "resId": 256,
+   "source": "System Folder/Extensions/TTY Tool",
+   "type": "tbnd"
+  },
+  "dav5/sdev": {
+   "asset": "appicons/dav5__sdev.png",
+   "creator": "dav5",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/AppleTalk Switch",
+   "type": "sdev"
+  },
+  "dav5/sdev-16": {
+   "asset": "appicons/dav5__sdev-16.png",
+   "creator": "dav5",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/AppleTalk Switch",
+   "type": "sdev"
+  },
+  "ddsk/****": {
+   "asset": "appicons/ddsk__****.png",
+   "creator": "ddsk",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "****"
+  },
+  "ddsk/****-16": {
+   "asset": "appicons/ddsk__****-16.png",
+   "creator": "ddsk",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "****"
+  },
+  "ddsk/APPL": {
+   "asset": "appicons/ddsk__APPL.png",
+   "creator": "ddsk",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "APPL"
+  },
+  "ddsk/APPL-16": {
+   "asset": "appicons/ddsk__APPL-16.png",
+   "creator": "ddsk",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "APPL"
+  },
+  "ddsk/DDim": {
+   "asset": "appicons/ddsk__DDim.png",
+   "creator": "ddsk",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "DDim"
+  },
+  "ddsk/DDim-16": {
+   "asset": "appicons/ddsk__DDim-16.png",
+   "creator": "ddsk",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "DDim"
+  },
+  "ddsk/DMd1": {
+   "asset": "appicons/ddsk__DMd1.png",
+   "creator": "ddsk",
+   "dim": 32,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "DMd1"
+  },
+  "ddsk/DMd1-16": {
+   "asset": "appicons/ddsk__DMd1-16.png",
+   "creator": "ddsk",
+   "dim": 16,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "DMd1"
+  },
+  "ddsk/DMd2": {
+   "asset": "appicons/ddsk__DMd2.png",
+   "creator": "ddsk",
+   "dim": 32,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "DMd2"
+  },
+  "ddsk/DMd2-16": {
+   "asset": "appicons/ddsk__DMd2-16.png",
+   "creator": "ddsk",
+   "dim": 16,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "DMd2"
+  },
+  "ddsk/DMd3": {
+   "asset": "appicons/ddsk__DMd3.png",
+   "creator": "ddsk",
+   "dim": 32,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "DMd3"
+  },
+  "ddsk/DMd3-16": {
+   "asset": "appicons/ddsk__DMd3-16.png",
+   "creator": "ddsk",
+   "dim": 16,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "DMd3"
+  },
+  "ddsk/DMd4": {
+   "asset": "appicons/ddsk__DMd4.png",
+   "creator": "ddsk",
+   "dim": 32,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "DMd4"
+  },
+  "ddsk/DMd4-16": {
+   "asset": "appicons/ddsk__DMd4-16.png",
+   "creator": "ddsk",
+   "dim": 16,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "DMd4"
+  },
+  "ddsk/DMd5": {
+   "asset": "appicons/ddsk__DMd5.png",
+   "creator": "ddsk",
+   "dim": 32,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "DMd5"
+  },
+  "ddsk/DMd5-16": {
+   "asset": "appicons/ddsk__DMd5-16.png",
+   "creator": "ddsk",
+   "dim": 16,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "DMd5"
+  },
+  "ddsk/DMd6": {
+   "asset": "appicons/ddsk__DMd6.png",
+   "creator": "ddsk",
+   "dim": 32,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "DMd6"
+  },
+  "ddsk/DMd6-16": {
+   "asset": "appicons/ddsk__DMd6-16.png",
+   "creator": "ddsk",
+   "dim": 16,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "DMd6"
+  },
+  "ddsk/DMd7": {
+   "asset": "appicons/ddsk__DMd7.png",
+   "creator": "ddsk",
+   "dim": 32,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "DMd7"
+  },
+  "ddsk/DMd7-16": {
+   "asset": "appicons/ddsk__DMd7-16.png",
+   "creator": "ddsk",
+   "dim": 16,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "DMd7"
+  },
+  "ddsk/DMdf": {
+   "asset": "appicons/ddsk__DMdf.png",
+   "creator": "ddsk",
+   "dim": 32,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "DMdf"
+  },
+  "ddsk/DMdf-16": {
+   "asset": "appicons/ddsk__DMdf-16.png",
+   "creator": "ddsk",
+   "dim": 16,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "DMdf"
+  },
+  "ddsk/PCHD": {
+   "asset": "appicons/ddsk__PCHD.png",
+   "creator": "ddsk",
+   "dim": 32,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "PCHD"
+  },
+  "ddsk/PCHD-16": {
+   "asset": "appicons/ddsk__PCHD-16.png",
+   "creator": "ddsk",
+   "dim": 16,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "PCHD"
+  },
+  "ddsk/dImg": {
+   "asset": "appicons/ddsk__dImg.png",
+   "creator": "ddsk",
+   "dim": 32,
+   "resId": 134,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "dImg"
+  },
+  "ddsk/dImg-16": {
+   "asset": "appicons/ddsk__dImg-16.png",
+   "creator": "ddsk",
+   "dim": 16,
+   "resId": 134,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "dImg"
+  },
+  "ddsk/dseg": {
+   "asset": "appicons/ddsk__dseg.png",
+   "creator": "ddsk",
+   "dim": 32,
+   "resId": 136,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "dseg"
+  },
+  "ddsk/dseg-16": {
+   "asset": "appicons/ddsk__dseg-16.png",
+   "creator": "ddsk",
+   "dim": 16,
+   "resId": 136,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "dseg"
+  },
+  "ddsk/hdcm": {
+   "asset": "appicons/ddsk__hdcm.png",
+   "creator": "ddsk",
+   "dim": 32,
+   "resId": 132,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "hdcm"
+  },
+  "ddsk/hdcm-16": {
+   "asset": "appicons/ddsk__hdcm-16.png",
+   "creator": "ddsk",
+   "dim": 16,
+   "resId": 132,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "hdcm"
+  },
+  "ddsk/hdro": {
+   "asset": "appicons/ddsk__hdro.png",
+   "creator": "ddsk",
+   "dim": 32,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "hdro"
+  },
+  "ddsk/hdro-16": {
+   "asset": "appicons/ddsk__hdro-16.png",
+   "creator": "ddsk",
+   "dim": 16,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "hdro"
+  },
+  "ddsk/hdrv": {
+   "asset": "appicons/ddsk__hdrv.png",
+   "creator": "ddsk",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "hdrv"
+  },
+  "ddsk/hdrv-16": {
+   "asset": "appicons/ddsk__hdrv-16.png",
+   "creator": "ddsk",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "hdrv"
+  },
+  "ddsk/hscr": {
+   "asset": "appicons/ddsk__hscr.png",
+   "creator": "ddsk",
+   "dim": 32,
+   "resId": 131,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "hscr"
+  },
+  "ddsk/hscr-16": {
+   "asset": "appicons/ddsk__hscr-16.png",
+   "creator": "ddsk",
+   "dim": 16,
+   "resId": 131,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "hscr"
+  },
+  "ddsk/rohd": {
+   "asset": "appicons/ddsk__rohd.png",
+   "creator": "ddsk",
+   "dim": 32,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "rohd"
+  },
+  "ddsk/rohd-16": {
+   "asset": "appicons/ddsk__rohd-16.png",
+   "creator": "ddsk",
+   "dim": 16,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "rohd"
+  },
+  "ddsk/x68646320": {
+   "asset": "appicons/ddsk__x68646320.png",
+   "creator": "ddsk",
+   "dim": 32,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "x68646320"
+  },
+  "ddsk/x68646320-16": {
+   "asset": "appicons/ddsk__x68646320-16.png",
+   "creator": "ddsk",
+   "dim": 16,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/Utilities/Disk Copy",
+   "type": "x68646320"
+  },
+  "dlsu/cdev": {
+   "asset": "appicons/dlsu__cdev.png",
+   "creator": "dlsu",
+   "dim": 32,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/DialAssist",
+   "type": "cdev"
+  },
+  "dlsu/cdev-16": {
+   "asset": "appicons/dlsu__cdev-16.png",
+   "creator": "dlsu",
+   "dim": 16,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/DialAssist",
+   "type": "cdev"
+  },
+  "dlsu/dspf": {
+   "asset": "appicons/dlsu__dspf.png",
+   "creator": "dlsu",
+   "dim": 32,
+   "resId": -4063,
+   "source": "System Folder/Control Panels/DialAssist",
+   "type": "dspf"
+  },
+  "dlsu/dspf-16": {
+   "asset": "appicons/dlsu__dspf-16.png",
+   "creator": "dlsu",
+   "dim": 16,
+   "resId": -4063,
+   "source": "System Folder/Control Panels/DialAssist",
+   "type": "dspf"
+  },
+  "dpcs/sdev": {
+   "asset": "appicons/dpcs__sdev.png",
+   "creator": "dpcs",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/Printer Selector",
+   "type": "sdev"
+  },
+  "dpcs/sdev-16": {
+   "asset": "appicons/dpcs__sdev-16.png",
+   "creator": "dpcs",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/Printer Selector",
+   "type": "sdev"
+  },
+  "drst/APPL": {
+   "asset": "appicons/drst__APPL.png",
+   "creator": "drst",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Utilities/Drive Setup \u0192/Drive Setup",
+   "type": "APPL"
+  },
+  "drst/APPL-16": {
+   "asset": "appicons/drst__APPL-16.png",
+   "creator": "drst",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Utilities/Drive Setup \u0192/Drive Setup",
+   "type": "APPL"
+  },
+  "dtpk/dpcn": {
+   "asset": "appicons/dtpk__dpcn.png",
+   "creator": "dtpk",
+   "dim": 32,
+   "resId": -7188,
+   "source": "System Folder/Extensions/Printer Descriptions/LaserWriter 12:640 PS",
+   "type": "dpcn"
+  },
+  "dtpk/dpcn-16": {
+   "asset": "appicons/dtpk__dpcn-16.png",
+   "creator": "dtpk",
+   "dim": 16,
+   "resId": -7188,
+   "source": "System Folder/Extensions/Printer Descriptions/LaserWriter 12:640 PS",
+   "type": "dpcn"
+  },
+  "dtpk/dpna": {
+   "asset": "appicons/dtpk__dpna.png",
+   "creator": "dtpk",
+   "dim": 32,
+   "resId": -7187,
+   "source": "System Folder/Extensions/Printer Descriptions/LaserWriter 12:640 PS",
+   "type": "dpna"
+  },
+  "dtpk/dpna-16": {
+   "asset": "appicons/dtpk__dpna-16.png",
+   "creator": "dtpk",
+   "dim": 16,
+   "resId": -7187,
+   "source": "System Folder/Extensions/Printer Descriptions/LaserWriter 12:640 PS",
+   "type": "dpna"
+  },
+  "dtpk/dpnn": {
+   "asset": "appicons/dtpk__dpnn.png",
+   "creator": "dtpk",
+   "dim": 32,
+   "resId": -7189,
+   "source": "System Folder/Extensions/Printer Descriptions/LaserWriter 12:640 PS",
+   "type": "dpnn"
+  },
+  "dtpk/dpnn-16": {
+   "asset": "appicons/dtpk__dpnn-16.png",
+   "creator": "dtpk",
+   "dim": 16,
+   "resId": -7189,
+   "source": "System Folder/Extensions/Printer Descriptions/LaserWriter 12:640 PS",
+   "type": "dpnn"
+  },
+  "dtps/appe": {
+   "asset": "appicons/dtps__appe.png",
+   "creator": "dtps",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/Desktop Printer Spooler",
+   "type": "appe"
+  },
+  "dtps/appe-16": {
+   "asset": "appicons/dtps__appe-16.png",
+   "creator": "dtps",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/Desktop Printer Spooler",
+   "type": "appe"
+  },
+  "dtpu/APPL": {
+   "asset": "appicons/dtpu__APPL.png",
+   "creator": "dtpu",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Utilities/Desktop Printer Utility",
+   "type": "APPL"
+  },
+  "dtpu/APPL-16": {
+   "asset": "appicons/dtpu__APPL-16.png",
+   "creator": "dtpu",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Utilities/Desktop Printer Utility",
+   "type": "APPL"
+  },
+  "dval/appe": {
+   "asset": "appicons/dval__appe.png",
+   "creator": "dval",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/DVD AutoLauncher",
+   "type": "appe"
+  },
+  "dval/appe-16": {
+   "asset": "appicons/dval__appe-16.png",
+   "creator": "dval",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/DVD AutoLauncher",
+   "type": "appe"
+  },
+  "dvfw/INIT": {
+   "asset": "appicons/dvfw__INIT.png",
+   "creator": "dvfw",
+   "dim": 32,
+   "resId": -20757,
+   "source": "System Folder/Extensions/QuickTime FireWire DV Support",
+   "type": "INIT"
+  },
+  "dvfw/INIT-16": {
+   "asset": "appicons/dvfw__INIT-16.png",
+   "creator": "dvfw",
+   "dim": 16,
+   "resId": -20757,
+   "source": "System Folder/Extensions/QuickTime FireWire DV Support",
+   "type": "INIT"
+  },
+  "dvfw/ndrv": {
+   "asset": "appicons/dvfw__ndrv.png",
+   "creator": "dvfw",
+   "dim": 32,
+   "resId": -20757,
+   "source": "System Folder/Extensions/QuickTime FireWire DV Support",
+   "type": "ndrv"
+  },
+  "dvfw/ndrv-16": {
+   "asset": "appicons/dvfw__ndrv-16.png",
+   "creator": "dvfw",
+   "dim": 16,
+   "resId": -20757,
+   "source": "System Folder/Extensions/QuickTime FireWire DV Support",
+   "type": "ndrv"
+  },
+  "earc/cdev": {
+   "asset": "appicons/earc__cdev.png",
+   "creator": "earc",
+   "dim": 32,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/Speech",
+   "type": "cdev"
+  },
+  "earc/cdev-16": {
+   "asset": "appicons/earc__cdev-16.png",
+   "creator": "earc",
+   "dim": 16,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/Speech",
+   "type": "cdev"
+  },
+  "emly/APPC": {
+   "asset": "appicons/emly__APPC.png",
+   "creator": "emly",
+   "dim": 32,
+   "resId": 129,
+   "source": "System Folder/Control Panels/USB Printer Sharing",
+   "type": "APPC"
+  },
+  "emly/APPC-16": {
+   "asset": "appicons/emly__APPC-16.png",
+   "creator": "emly",
+   "dim": 16,
+   "resId": 129,
+   "source": "System Folder/Control Panels/USB Printer Sharing",
+   "type": "APPC"
+  },
+  "encv/ecpg": {
+   "asset": "appicons/encv__ecpg.png",
+   "creator": "encv",
+   "dim": 32,
+   "resId": 129,
+   "source": "System Folder/Extensions/Text Encoding Converter",
+   "type": "ecpg"
+  },
+  "encv/ecpg-16": {
+   "asset": "appicons/encv__ecpg-16.png",
+   "creator": "encv",
+   "dim": 16,
+   "resId": 129,
+   "source": "System Folder/Extensions/Text Encoding Converter",
+   "type": "ecpg"
+  },
+  "encv/shlb": {
+   "asset": "appicons/encv__shlb.png",
+   "creator": "encv",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/Text Encoding Converter",
+   "type": "shlb"
+  },
+  "encv/shlb-16": {
+   "asset": "appicons/encv__shlb-16.png",
+   "creator": "encv",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/Text Encoding Converter",
+   "type": "shlb"
+  },
+  "encv/utbl": {
+   "asset": "appicons/encv__utbl.png",
+   "creator": "encv",
+   "dim": 32,
+   "resId": 130,
+   "source": "System Folder/Extensions/Text Encoding Converter",
+   "type": "utbl"
+  },
+  "encv/utbl-16": {
+   "asset": "appicons/encv__utbl-16.png",
+   "creator": "encv",
+   "dim": 16,
+   "resId": 130,
+   "source": "System Folder/Extensions/Text Encoding Converter",
+   "type": "utbl"
+  },
+  "eset/sdev": {
+   "asset": "appicons/eset__sdev.png",
+   "creator": "eset",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/Energy Settings",
+   "type": "sdev"
+  },
+  "eset/sdev-16": {
+   "asset": "appicons/eset__sdev-16.png",
+   "creator": "eset",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/Energy Settings",
+   "type": "sdev"
+  },
+  "extE/INIT": {
+   "asset": "appicons/extE__INIT.png",
+   "creator": "extE",
+   "dim": 32,
+   "resId": -4065,
+   "source": "System Folder/Extensions/ EM Extension",
+   "type": "INIT"
+  },
+  "extE/INIT-16": {
+   "asset": "appicons/extE__INIT-16.png",
+   "creator": "extE",
+   "dim": 16,
+   "resId": -4065,
+   "source": "System Folder/Extensions/ EM Extension",
+   "type": "INIT"
+  },
+  "fbca/APPL": {
+   "asset": "appicons/fbca__APPL.png",
+   "creator": "fbca",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/Find/Find by Content Indexing",
+   "type": "APPL"
+  },
+  "fbca/APPL-16": {
+   "asset": "appicons/fbca__APPL-16.png",
+   "creator": "fbca",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/Find/Find by Content Indexing",
+   "type": "APPL"
+  },
+  "fbcb/appe": {
+   "asset": "appicons/fbcb__appe.png",
+   "creator": "fbcb",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/FBC Indexing Scheduler",
+   "type": "appe"
+  },
+  "fbcb/appe-16": {
+   "asset": "appicons/fbcb__appe-16.png",
+   "creator": "fbcb",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/FBC Indexing Scheduler",
+   "type": "appe"
+  },
+  "fbcl/shlb": {
+   "asset": "appicons/fbcl__shlb.png",
+   "creator": "fbcl",
+   "dim": 32,
+   "resId": 134,
+   "source": "System Folder/Extensions/Find By Content",
+   "type": "shlb"
+  },
+  "fbcl/shlb-16": {
+   "asset": "appicons/fbcl__shlb-16.png",
+   "creator": "fbcl",
+   "dim": 16,
+   "resId": 134,
+   "source": "System Folder/Extensions/Find By Content",
+   "type": "shlb"
+  },
+  "flex/APPC": {
+   "asset": "appicons/flex__APPC.png",
+   "creator": "flex",
+   "dim": 32,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/File Exchange",
+   "type": "APPC"
+  },
+  "flex/APPC-16": {
+   "asset": "appicons/flex__APPC-16.png",
+   "creator": "flex",
+   "dim": 16,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/File Exchange",
+   "type": "APPC"
+  },
+  "fndf/APPL": {
+   "asset": "appicons/fndf__APPL.png",
+   "creator": "fndf",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Sherlock 2",
+   "type": "APPL"
+  },
+  "fndf/APPL-16": {
+   "asset": "appicons/fndf__APPL-16.png",
+   "creator": "fndf",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Sherlock 2",
+   "type": "APPL"
+  },
+  "fndf/cidm": {
+   "asset": "appicons/fndf__cidm.png",
+   "creator": "fndf",
+   "dim": 32,
+   "resId": 134,
+   "source": "Applications (Mac OS 9)/Sherlock 2",
+   "type": "cidm"
+  },
+  "fndf/cidm-16": {
+   "asset": "appicons/fndf__cidm-16.png",
+   "creator": "fndf",
+   "dim": 16,
+   "resId": 134,
+   "source": "Applications (Mac OS 9)/Sherlock 2",
+   "type": "cidm"
+  },
+  "fndf/fbce": {
+   "asset": "appicons/fndf__fbce.png",
+   "creator": "fndf",
+   "dim": 32,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Sherlock 2",
+   "type": "fbce"
+  },
+  "fndf/fbce-16": {
+   "asset": "appicons/fndf__fbce-16.png",
+   "creator": "fndf",
+   "dim": 16,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/Sherlock 2",
+   "type": "fbce"
+  },
+  "fndf/find": {
+   "asset": "appicons/fndf__find.png",
+   "creator": "fndf",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Sherlock 2",
+   "type": "find"
+  },
+  "fndf/find-16": {
+   "asset": "appicons/fndf__find-16.png",
+   "creator": "fndf",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Sherlock 2",
+   "type": "find"
+  },
+  "fndf/inet": {
+   "asset": "appicons/fndf__inet.png",
+   "creator": "fndf",
+   "dim": 32,
+   "resId": 131,
+   "source": "Applications (Mac OS 9)/Sherlock 2",
+   "type": "inet"
+  },
+  "fndf/inet-16": {
+   "asset": "appicons/fndf__inet-16.png",
+   "creator": "fndf",
+   "dim": 16,
+   "resId": 131,
+   "source": "Applications (Mac OS 9)/Sherlock 2",
+   "type": "inet"
+  },
+  "fndf/issd": {
+   "asset": "appicons/fndf__issd.png",
+   "creator": "fndf",
+   "dim": 32,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/Sherlock 2",
+   "type": "issd"
+  },
+  "fndf/issd-16": {
+   "asset": "appicons/fndf__issd-16.png",
+   "creator": "fndf",
+   "dim": 16,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/Sherlock 2",
+   "type": "issd"
+  },
+  "fndf/issp": {
+   "asset": "appicons/fndf__issp.png",
+   "creator": "fndf",
+   "dim": 32,
+   "resId": 132,
+   "source": "Applications (Mac OS 9)/Sherlock 2",
+   "type": "issp"
+  },
+  "fndf/issp-16": {
+   "asset": "appicons/fndf__issp-16.png",
+   "creator": "fndf",
+   "dim": 16,
+   "resId": 132,
+   "source": "Applications (Mac OS 9)/Sherlock 2",
+   "type": "issp"
+  },
+  "fndf/x66626320": {
+   "asset": "appicons/fndf__x66626320.png",
+   "creator": "fndf",
+   "dim": 32,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/Sherlock 2",
+   "type": "x66626320"
+  },
+  "fndf/x66626320-16": {
+   "asset": "appicons/fndf__x66626320-16.png",
+   "creator": "fndf",
+   "dim": 16,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/Sherlock 2",
+   "type": "x66626320"
+  },
+  "fnsc/APPC": {
+   "asset": "appicons/fnsc__APPC.png",
+   "creator": "fnsc",
+   "dim": 32,
+   "resId": -4064,
+   "source": "Applications (Mac OS 9)/Apple Extras/Font Extras/FontSync",
+   "type": "APPC"
+  },
+  "fnsc/APPC-16": {
+   "asset": "appicons/fnsc__APPC-16.png",
+   "creator": "fnsc",
+   "dim": 16,
+   "resId": -4064,
+   "source": "Applications (Mac OS 9)/Apple Extras/Font Extras/FontSync",
+   "type": "APPC"
+  },
+  "fshr/sdev": {
+   "asset": "appicons/fshr__sdev.png",
+   "creator": "fshr",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/File Sharing Strip",
+   "type": "sdev"
+  },
+  "fshr/sdev-16": {
+   "asset": "appicons/fshr__sdev-16.png",
+   "creator": "fshr",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/File Sharing Strip",
+   "type": "sdev"
+  },
+  "gZip/INIT": {
+   "asset": "appicons/gZip__INIT.png",
+   "creator": "gZip",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/Iomega Driver",
+   "type": "INIT"
+  },
+  "gZip/INIT-16": {
+   "asset": "appicons/gZip__INIT-16.png",
+   "creator": "gZip",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/Iomega Driver",
+   "type": "INIT"
+  },
+  "gala/thng": {
+   "asset": "appicons/gala__thng.png",
+   "creator": "gala",
+   "dim": 32,
+   "resId": 800,
+   "source": "System Folder/Extensions/MacinTalk Pro",
+   "type": "thng"
+  },
+  "gala/thng-16": {
+   "asset": "appicons/gala__thng-16.png",
+   "creator": "gala",
+   "dim": 16,
+   "resId": 800,
+   "source": "System Folder/Extensions/MacinTalk Pro",
+   "type": "thng"
+  },
+  "gala/ttvf": {
+   "asset": "appicons/gala__ttvf.png",
+   "creator": "gala",
+   "dim": 32,
+   "resId": 801,
+   "source": "System Folder/Extensions/MacinTalk Pro",
+   "type": "ttvf"
+  },
+  "gala/ttvf-16": {
+   "asset": "appicons/gala__ttvf-16.png",
+   "creator": "gala",
+   "dim": 16,
+   "resId": 801,
+   "source": "System Folder/Extensions/MacinTalk Pro",
+   "type": "ttvf"
+  },
+  "gcss/sdev": {
+   "asset": "appicons/gcss__sdev.png",
+   "creator": "gcss",
+   "dim": 32,
+   "resId": -16455,
+   "source": "System Folder/Control Strip Modules/SoundSource Strip",
+   "type": "sdev"
+  },
+  "gcss/sdev-16": {
+   "asset": "appicons/gcss__sdev-16.png",
+   "creator": "gcss",
+   "dim": 16,
+   "resId": -16455,
+   "source": "System Folder/Control Strip Modules/SoundSource Strip",
+   "type": "sdev"
+  },
+  "hhgg/INIT": {
+   "asset": "appicons/hhgg__INIT.png",
+   "creator": "hhgg",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/File Sharing Extension",
+   "type": "INIT"
+  },
+  "hhgg/INIT-16": {
+   "asset": "appicons/hhgg__INIT-16.png",
+   "creator": "hhgg",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/File Sharing Extension",
+   "type": "INIT"
+  },
+  "jav2/NSPL": {
+   "asset": "appicons/jav2__NSPL.png",
+   "creator": "jav2",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Plug-ins/iTools Plug-in",
+   "type": "NSPL"
+  },
+  "jav2/NSPL-16": {
+   "asset": "appicons/jav2__NSPL-16.png",
+   "creator": "jav2",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Plug-ins/iTools Plug-in",
+   "type": "NSPL"
+  },
+  "java/clss": {
+   "asset": "appicons/java__clss.png",
+   "creator": "java",
+   "dim": 32,
+   "resId": 130,
+   "source": "System Folder/Extensions/MRJ Libraries/MRJLib",
+   "type": "clss"
+  },
+  "java/clss-16": {
+   "asset": "appicons/java__clss-16.png",
+   "creator": "java",
+   "dim": 16,
+   "resId": 130,
+   "source": "System Folder/Extensions/MRJ Libraries/MRJLib",
+   "type": "clss"
+  },
+  "java/shlb": {
+   "asset": "appicons/java__shlb.png",
+   "creator": "java",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/MRJ Libraries/MRJLib",
+   "type": "shlb"
+  },
+  "java/shlb-16": {
+   "asset": "appicons/java__shlb-16.png",
+   "creator": "java",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/MRJ Libraries/MRJLib",
+   "type": "shlb"
+  },
+  "java/x5a495020": {
+   "asset": "appicons/java__x5a495020.png",
+   "creator": "java",
+   "dim": 32,
+   "resId": 129,
+   "source": "System Folder/Extensions/MRJ Libraries/MRJLib",
+   "type": "x5a495020"
+  },
+  "java/x5a495020-16": {
+   "asset": "appicons/java__x5a495020-16.png",
+   "creator": "java",
+   "dim": 16,
+   "resId": 129,
+   "source": "System Folder/Extensions/MRJ Libraries/MRJLib",
+   "type": "x5a495020"
+  },
+  "joke/APPL": {
+   "asset": "appicons/joke__APPL.png",
+   "creator": "joke",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Apple Menu Items/Speakable Items/Tell me a joke",
+   "type": "APPL"
+  },
+  "joke/APPL-16": {
+   "asset": "appicons/joke__APPL-16.png",
+   "creator": "joke",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Apple Menu Items/Speakable Items/Tell me a joke",
+   "type": "APPL"
+  },
+  "kchn/assb": {
+   "asset": "appicons/kchn__assb.png",
+   "creator": "kchn",
+   "dim": 32,
+   "resId": -20891,
+   "source": "System Folder/Extensions/Security Library",
+   "type": "assb"
+  },
+  "kchn/assb-16": {
+   "asset": "appicons/kchn__assb-16.png",
+   "creator": "kchn",
+   "dim": 16,
+   "resId": -20891,
+   "source": "System Folder/Extensions/Security Library",
+   "type": "assb"
+  },
+  "kcmr/APPL": {
+   "asset": "appicons/kcmr__APPL.png",
+   "creator": "kcmr",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Panels/Keychain Access",
+   "type": "APPL"
+  },
+  "kcmr/APPL-16": {
+   "asset": "appicons/kcmr__APPL-16.png",
+   "creator": "kcmr",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Panels/Keychain Access",
+   "type": "APPL"
+  },
+  "kcmr/cert": {
+   "asset": "appicons/kcmr__cert.png",
+   "creator": "kcmr",
+   "dim": 32,
+   "resId": 132,
+   "source": "System Folder/Control Panels/Keychain Access",
+   "type": "cert"
+  },
+  "kcmr/cert-16": {
+   "asset": "appicons/kcmr__cert-16.png",
+   "creator": "kcmr",
+   "dim": 16,
+   "resId": 132,
+   "source": "System Folder/Control Panels/Keychain Access",
+   "type": "cert"
+  },
+  "kcmr/kycd": {
+   "asset": "appicons/kcmr__kycd.png",
+   "creator": "kcmr",
+   "dim": 32,
+   "resId": 129,
+   "source": "System Folder/Control Panels/Keychain Access",
+   "type": "kycd"
+  },
+  "kcmr/kycd-16": {
+   "asset": "appicons/kcmr__kycd-16.png",
+   "creator": "kcmr",
+   "dim": 16,
+   "resId": 129,
+   "source": "System Folder/Control Panels/Keychain Access",
+   "type": "kycd"
+  },
+  "kcmr/pk07": {
+   "asset": "appicons/kcmr__pk07.png",
+   "creator": "kcmr",
+   "dim": 32,
+   "resId": 131,
+   "source": "System Folder/Control Panels/Keychain Access",
+   "type": "pk07"
+  },
+  "kcmr/pk07-16": {
+   "asset": "appicons/kcmr__pk07-16.png",
+   "creator": "kcmr",
+   "dim": 16,
+   "resId": 131,
+   "source": "System Folder/Control Panels/Keychain Access",
+   "type": "pk07"
+  },
+  "kcmr/pk12": {
+   "asset": "appicons/kcmr__pk12.png",
+   "creator": "kcmr",
+   "dim": 32,
+   "resId": 130,
+   "source": "System Folder/Control Panels/Keychain Access",
+   "type": "pk12"
+  },
+  "kcmr/pk12-16": {
+   "asset": "appicons/kcmr__pk12-16.png",
+   "creator": "kcmr",
+   "dim": 16,
+   "resId": 130,
+   "source": "System Folder/Control Panels/Keychain Access",
+   "type": "pk12"
+  },
+  "kcsm/sdev": {
+   "asset": "appicons/kcsm__sdev.png",
+   "creator": "kcsm",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/Keychain Strip",
+   "type": "sdev"
+  },
+  "kcsm/sdev-16": {
+   "asset": "appicons/kcsm__sdev-16.png",
+   "creator": "kcsm",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/Keychain Strip",
+   "type": "sdev"
+  },
+  "keyc/APPD": {
+   "asset": "appicons/keyc__APPD.png",
+   "creator": "keyc",
+   "dim": 32,
+   "resId": -15936,
+   "source": "System Folder/Apple Menu Items/Key Caps",
+   "type": "APPD"
+  },
+  "keyc/APPD-16": {
+   "asset": "appicons/keyc__APPD-16.png",
+   "creator": "keyc",
+   "dim": 16,
+   "resId": -15936,
+   "source": "System Folder/Apple Menu Items/Key Caps",
+   "type": "APPD"
+  },
+  "kpcd/APPL": {
+   "asset": "appicons/kpcd__APPL.png",
+   "creator": "kpcd",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/Apple Photo Access",
+   "type": "APPL"
+  },
+  "kpcd/APPL-16": {
+   "asset": "appicons/kpcd__APPL-16.png",
+   "creator": "kpcd",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/Apple Photo Access",
+   "type": "APPL"
+  },
+  "kpcd/MooV": {
+   "asset": "appicons/kpcd__MooV.png",
+   "creator": "kpcd",
+   "dim": 32,
+   "resId": 129,
+   "source": "System Folder/Extensions/Apple Photo Access",
+   "type": "MooV"
+  },
+  "kpcd/MooV-16": {
+   "asset": "appicons/kpcd__MooV-16.png",
+   "creator": "kpcd",
+   "dim": 16,
+   "resId": 129,
+   "source": "System Folder/Extensions/Apple Photo Access",
+   "type": "MooV"
+  },
+  "kycp/APPC": {
+   "asset": "appicons/kycp__APPC.png",
+   "creator": "kycp",
+   "dim": 32,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/Keyboard",
+   "type": "APPC"
+  },
+  "kycp/APPC-16": {
+   "asset": "appicons/kycp__APPC-16.png",
+   "creator": "kycp",
+   "dim": 16,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/Keyboard",
+   "type": "APPC"
+  },
+  "leap/INIT": {
+   "asset": "appicons/leap__INIT.png",
+   "creator": "leap",
+   "dim": 32,
+   "resId": 129,
+   "source": "System Folder/Extensions/Internal V.90 Modem",
+   "type": "INIT"
+  },
+  "leap/INIT-16": {
+   "asset": "appicons/leap__INIT-16.png",
+   "creator": "leap",
+   "dim": 16,
+   "resId": 129,
+   "source": "System Folder/Extensions/Internal V.90 Modem",
+   "type": "INIT"
+  },
+  "mash/cdev": {
+   "asset": "appicons/mash__cdev.png",
+   "creator": "mash",
+   "dim": 32,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/Launcher",
+   "type": "cdev"
+  },
+  "mash/cdev-16": {
+   "asset": "appicons/mash__cdev-16.png",
+   "creator": "mash",
+   "dim": 16,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/Launcher",
+   "type": "cdev"
+  },
+  "mbay/sdev": {
+   "asset": "appicons/mbay__sdev.png",
+   "creator": "mbay",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/Media Bay",
+   "type": "sdev"
+  },
+  "mbay/sdev-16": {
+   "asset": "appicons/mbay__sdev-16.png",
+   "creator": "mbay",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/Media Bay",
+   "type": "sdev"
+  },
+  "mfdr/????": {
+   "asset": "appicons/mfdr__????.png",
+   "creator": "mfdr",
+   "dim": 32,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "????"
+  },
+  "mfdr/????-16": {
+   "asset": "appicons/mfdr__????-16.png",
+   "creator": "mfdr",
+   "dim": 16,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "????"
+  },
+  "mfdr/FNDR": {
+   "asset": "appicons/mfdr__FNDR.png",
+   "creator": "mfdr",
+   "dim": 32,
+   "resId": 228,
+   "source": "System Folder/Panels",
+   "type": "FNDR"
+  },
+  "mfdr/FNDR-16": {
+   "asset": "appicons/mfdr__FNDR-16.png",
+   "creator": "mfdr",
+   "dim": 16,
+   "resId": 228,
+   "source": "System Folder/Panels",
+   "type": "FNDR"
+  },
+  "mfdr/aear": {
+   "asset": "appicons/mfdr__aear.png",
+   "creator": "mfdr",
+   "dim": 32,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "aear"
+  },
+  "mfdr/aear-16": {
+   "asset": "appicons/mfdr__aear-16.png",
+   "creator": "mfdr",
+   "dim": 16,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "aear"
+  },
+  "mfdr/aedb": {
+   "asset": "appicons/mfdr__aedb.png",
+   "creator": "mfdr",
+   "dim": 32,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "aedb"
+  },
+  "mfdr/aedb-16": {
+   "asset": "appicons/mfdr__aedb-16.png",
+   "creator": "mfdr",
+   "dim": 16,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "aedb"
+  },
+  "mfdr/fdcp": {
+   "asset": "appicons/mfdr__fdcp.png",
+   "creator": "mfdr",
+   "dim": 32,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "fdcp"
+  },
+  "mfdr/fdcp-16": {
+   "asset": "appicons/mfdr__fdcp-16.png",
+   "creator": "mfdr",
+   "dim": 16,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "fdcp"
+  },
+  "mfdr/mfpf": {
+   "asset": "appicons/mfdr__mfpf.png",
+   "creator": "mfdr",
+   "dim": 32,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "mfpf"
+  },
+  "mfdr/mfpf-16": {
+   "asset": "appicons/mfdr__mfpf-16.png",
+   "creator": "mfdr",
+   "dim": 16,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "mfpf"
+  },
+  "mfdr/mmup": {
+   "asset": "appicons/mfdr__mmup.png",
+   "creator": "mfdr",
+   "dim": 32,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "mmup"
+  },
+  "mfdr/mmup-16": {
+   "asset": "appicons/mfdr__mmup-16.png",
+   "creator": "mfdr",
+   "dim": 16,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "mmup"
+  },
+  "mfdr/temp": {
+   "asset": "appicons/mfdr__temp.png",
+   "creator": "mfdr",
+   "dim": 32,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "temp"
+  },
+  "mfdr/temp-16": {
+   "asset": "appicons/mfdr__temp-16.png",
+   "creator": "mfdr",
+   "dim": 16,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "temp"
+  },
+  "mfdr/ttad": {
+   "asset": "appicons/mfdr__ttad.png",
+   "creator": "mfdr",
+   "dim": 32,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttad"
+  },
+  "mfdr/ttad-16": {
+   "asset": "appicons/mfdr__ttad-16.png",
+   "creator": "mfdr",
+   "dim": 16,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttad"
+  },
+  "mfdr/ttcf": {
+   "asset": "appicons/mfdr__ttcf.png",
+   "creator": "mfdr",
+   "dim": 32,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttcf"
+  },
+  "mfdr/ttcf-16": {
+   "asset": "appicons/mfdr__ttcf-16.png",
+   "creator": "mfdr",
+   "dim": 16,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttcf"
+  },
+  "mfdr/ttcp": {
+   "asset": "appicons/mfdr__ttcp.png",
+   "creator": "mfdr",
+   "dim": 32,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttcp"
+  },
+  "mfdr/ttcp-16": {
+   "asset": "appicons/mfdr__ttcp-16.png",
+   "creator": "mfdr",
+   "dim": 16,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttcp"
+  },
+  "mfdr/ttfs": {
+   "asset": "appicons/mfdr__ttfs.png",
+   "creator": "mfdr",
+   "dim": 32,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttfs"
+  },
+  "mfdr/ttfs-16": {
+   "asset": "appicons/mfdr__ttfs-16.png",
+   "creator": "mfdr",
+   "dim": 16,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttfs"
+  },
+  "mfdr/ttgf": {
+   "asset": "appicons/mfdr__ttgf.png",
+   "creator": "mfdr",
+   "dim": 32,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttgf"
+  },
+  "mfdr/ttgf-16": {
+   "asset": "appicons/mfdr__ttgf-16.png",
+   "creator": "mfdr",
+   "dim": 16,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttgf"
+  },
+  "mfdr/ttlf": {
+   "asset": "appicons/mfdr__ttlf.png",
+   "creator": "mfdr",
+   "dim": 32,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttlf"
+  },
+  "mfdr/ttlf-16": {
+   "asset": "appicons/mfdr__ttlf-16.png",
+   "creator": "mfdr",
+   "dim": 16,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttlf"
+  },
+  "mfdr/ttpp": {
+   "asset": "appicons/mfdr__ttpp.png",
+   "creator": "mfdr",
+   "dim": 32,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttpp"
+  },
+  "mfdr/ttpp-16": {
+   "asset": "appicons/mfdr__ttpp-16.png",
+   "creator": "mfdr",
+   "dim": 16,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttpp"
+  },
+  "mfdr/ttsf": {
+   "asset": "appicons/mfdr__ttsf.png",
+   "creator": "mfdr",
+   "dim": 32,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttsf"
+  },
+  "mfdr/ttsf-16": {
+   "asset": "appicons/mfdr__ttsf-16.png",
+   "creator": "mfdr",
+   "dim": 16,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttsf"
+  },
+  "mfdr/ttsp": {
+   "asset": "appicons/mfdr__ttsp.png",
+   "creator": "mfdr",
+   "dim": 32,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttsp"
+  },
+  "mfdr/ttsp-16": {
+   "asset": "appicons/mfdr__ttsp-16.png",
+   "creator": "mfdr",
+   "dim": 16,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttsp"
+  },
+  "mfdr/ttst": {
+   "asset": "appicons/mfdr__ttst.png",
+   "creator": "mfdr",
+   "dim": 32,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttst"
+  },
+  "mfdr/ttst-16": {
+   "asset": "appicons/mfdr__ttst-16.png",
+   "creator": "mfdr",
+   "dim": 16,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttst"
+  },
+  "mfdr/ttuc": {
+   "asset": "appicons/mfdr__ttuc.png",
+   "creator": "mfdr",
+   "dim": 32,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttuc"
+  },
+  "mfdr/ttuc-16": {
+   "asset": "appicons/mfdr__ttuc-16.png",
+   "creator": "mfdr",
+   "dim": 16,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttuc"
+  },
+  "mfdr/ttuf": {
+   "asset": "appicons/mfdr__ttuf.png",
+   "creator": "mfdr",
+   "dim": 32,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttuf"
+  },
+  "mfdr/ttuf-16": {
+   "asset": "appicons/mfdr__ttuf-16.png",
+   "creator": "mfdr",
+   "dim": 16,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttuf"
+  },
+  "mfdr/ttup": {
+   "asset": "appicons/mfdr__ttup.png",
+   "creator": "mfdr",
+   "dim": 32,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttup"
+  },
+  "mfdr/ttup-16": {
+   "asset": "appicons/mfdr__ttup-16.png",
+   "creator": "mfdr",
+   "dim": 16,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "ttup"
+  },
+  "mfdr/wgit": {
+   "asset": "appicons/mfdr__wgit.png",
+   "creator": "mfdr",
+   "dim": 32,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "wgit"
+  },
+  "mfdr/wgit-16": {
+   "asset": "appicons/mfdr__wgit-16.png",
+   "creator": "mfdr",
+   "dim": 16,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "wgit"
+  },
+  "mfdr/x6d726b20": {
+   "asset": "appicons/mfdr__x6d726b20.png",
+   "creator": "mfdr",
+   "dim": 32,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "x6d726b20"
+  },
+  "mfdr/x6d726b20-16": {
+   "asset": "appicons/mfdr__x6d726b20-16.png",
+   "creator": "mfdr",
+   "dim": 16,
+   "resId": 1400,
+   "source": "System Folder/Panels",
+   "type": "x6d726b20"
+  },
+  "mirr/sdev": {
+   "asset": "appicons/mirr__sdev.png",
+   "creator": "mirr",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/Video Mirroring",
+   "type": "sdev"
+  },
+  "mirr/sdev-16": {
+   "asset": "appicons/mirr__sdev-16.png",
+   "creator": "mirr",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/Video Mirroring",
+   "type": "sdev"
+  },
+  "misc/APPC": {
+   "asset": "appicons/misc__APPC.png",
+   "creator": "misc",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Panels/General Controls",
+   "type": "APPC"
+  },
+  "misc/APPC-16": {
+   "asset": "appicons/misc__APPC-16.png",
+   "creator": "misc",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Panels/General Controls",
+   "type": "APPC"
+  },
+  "mjh*/INIT": {
+   "asset": "appicons/mjh*__INIT.png",
+   "creator": "mjh*",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/QuickTime\u2122 MPEG Extension",
+   "type": "INIT"
+  },
+  "mjh*/INIT-16": {
+   "asset": "appicons/mjh*__INIT-16.png",
+   "creator": "mjh*",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/QuickTime\u2122 MPEG Extension",
+   "type": "INIT"
+  },
+  "mmry/APPC": {
+   "asset": "appicons/mmry__APPC.png",
+   "creator": "mmry",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Panels/Memory",
+   "type": "APPC"
+  },
+  "mmry/APPC-16": {
+   "asset": "appicons/mmry__APPC-16.png",
+   "creator": "mmry",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Panels/Memory",
+   "type": "APPC"
+  },
+  "modm/APPC": {
+   "asset": "appicons/modm__APPC.png",
+   "creator": "modm",
+   "dim": 32,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/Modem",
+   "type": "APPC"
+  },
+  "modm/APPC-16": {
+   "asset": "appicons/modm__APPC-16.png",
+   "creator": "modm",
+   "dim": 16,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/Modem",
+   "type": "APPC"
+  },
+  "modm/mdex": {
+   "asset": "appicons/modm__mdex.png",
+   "creator": "modm",
+   "dim": 32,
+   "resId": -4062,
+   "source": "System Folder/Control Panels/Modem",
+   "type": "mdex"
+  },
+  "modm/mdex-16": {
+   "asset": "appicons/modm__mdex-16.png",
+   "creator": "modm",
+   "dim": 16,
+   "resId": -4062,
+   "source": "System Folder/Control Panels/Modem",
+   "type": "mdex"
+  },
+  "modm/mdpf": {
+   "asset": "appicons/modm__mdpf.png",
+   "creator": "modm",
+   "dim": 32,
+   "resId": -4063,
+   "source": "System Folder/Control Panels/Modem",
+   "type": "mdpf"
+  },
+  "modm/mdpf-16": {
+   "asset": "appicons/modm__mdpf-16.png",
+   "creator": "modm",
+   "dim": 16,
+   "resId": -4063,
+   "source": "System Folder/Control Panels/Modem",
+   "type": "mdpf"
+  },
+  "mosa/APPL": {
+   "asset": "appicons/mosa__APPL.png",
+   "creator": "mosa",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Utilities/Assistants/Mac OS Setup Assistant",
+   "type": "APPL"
+  },
+  "mosa/APPL-16": {
+   "asset": "appicons/mosa__APPL-16.png",
+   "creator": "mosa",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Utilities/Assistants/Mac OS Setup Assistant",
+   "type": "APPL"
+  },
+  "mous/APPC": {
+   "asset": "appicons/mous__APPC.png",
+   "creator": "mous",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Panels/Mouse",
+   "type": "APPC"
+  },
+  "mous/APPC-16": {
+   "asset": "appicons/mous__APPC-16.png",
+   "creator": "mous",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Panels/Mouse",
+   "type": "APPC"
+  },
+  "mtcp/cdev": {
+   "asset": "appicons/mtcp__cdev.png",
+   "creator": "mtcp",
+   "dim": 32,
+   "resId": -4066,
+   "source": "System Folder/Control Panels/TCP:IP",
+   "type": "cdev"
+  },
+  "mtcp/cdev-16": {
+   "asset": "appicons/mtcp__cdev-16.png",
+   "creator": "mtcp",
+   "dim": 16,
+   "resId": -4066,
+   "source": "System Folder/Control Panels/TCP:IP",
+   "type": "cdev"
+  },
+  "mtk3/thng": {
+   "asset": "appicons/mtk3__thng.png",
+   "creator": "mtk3",
+   "dim": 32,
+   "resId": -4064,
+   "source": "System Folder/Extensions/MacinTalk 3",
+   "type": "thng"
+  },
+  "mtk3/thng-16": {
+   "asset": "appicons/mtk3__thng-16.png",
+   "creator": "mtk3",
+   "dim": 16,
+   "resId": -4064,
+   "source": "System Folder/Extensions/MacinTalk 3",
+   "type": "thng"
+  },
+  "mtk3/ttvb": {
+   "asset": "appicons/mtk3__ttvb.png",
+   "creator": "mtk3",
+   "dim": 32,
+   "resId": -4063,
+   "source": "System Folder/Extensions/MacinTalk 3",
+   "type": "ttvb"
+  },
+  "mtk3/ttvb-16": {
+   "asset": "appicons/mtk3__ttvb-16.png",
+   "creator": "mtk3",
+   "dim": 16,
+   "resId": -4063,
+   "source": "System Folder/Extensions/MacinTalk 3",
+   "type": "ttvb"
+  },
+  "mtk3/ttvf": {
+   "asset": "appicons/mtk3__ttvf.png",
+   "creator": "mtk3",
+   "dim": 32,
+   "resId": -4063,
+   "source": "System Folder/Extensions/MacinTalk 3",
+   "type": "ttvf"
+  },
+  "mtk3/ttvf-16": {
+   "asset": "appicons/mtk3__ttvf-16.png",
+   "creator": "mtk3",
+   "dim": 16,
+   "resId": -4063,
+   "source": "System Folder/Extensions/MacinTalk 3",
+   "type": "ttvf"
+  },
+  "nbrs/cdev": {
+   "asset": "appicons/nbrs__cdev.png",
+   "creator": "nbrs",
+   "dim": 32,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/Numbers",
+   "type": "cdev"
+  },
+  "nbrs/cdev-16": {
+   "asset": "appicons/nbrs__cdev-16.png",
+   "creator": "nbrs",
+   "dim": 16,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/Numbers",
+   "type": "cdev"
+  },
+  "nbrw/APPL": {
+   "asset": "appicons/nbrw__APPL.png",
+   "creator": "nbrw",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Network Browser",
+   "type": "APPL"
+  },
+  "nbrw/APPL-16": {
+   "asset": "appicons/nbrw__APPL-16.png",
+   "creator": "nbrw",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Network Browser",
+   "type": "APPL"
+  },
+  "nbrw/pref": {
+   "asset": "appicons/nbrw__pref.png",
+   "creator": "nbrw",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Network Browser",
+   "type": "pref"
+  },
+  "nbrw/pref-16": {
+   "asset": "appicons/nbrw__pref-16.png",
+   "creator": "nbrw",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Network Browser",
+   "type": "pref"
+  },
+  "notz/APPL": {
+   "asset": "appicons/notz__APPL.png",
+   "creator": "notz",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Apple Menu Items/Stickies",
+   "type": "APPL"
+  },
+  "notz/APPL-16": {
+   "asset": "appicons/notz__APPL-16.png",
+   "creator": "notz",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Apple Menu Items/Stickies",
+   "type": "APPL"
+  },
+  "notz/TEXT": {
+   "asset": "appicons/notz__TEXT.png",
+   "creator": "notz",
+   "dim": 32,
+   "resId": 130,
+   "source": "System Folder/Apple Menu Items/Stickies",
+   "type": "TEXT"
+  },
+  "notz/TEXT-16": {
+   "asset": "appicons/notz__TEXT-16.png",
+   "creator": "notz",
+   "dim": 16,
+   "resId": 130,
+   "source": "System Folder/Apple Menu Items/Stickies",
+   "type": "TEXT"
+  },
+  "notz/notz": {
+   "asset": "appicons/notz__notz.png",
+   "creator": "notz",
+   "dim": 32,
+   "resId": 129,
+   "source": "System Folder/Apple Menu Items/Stickies",
+   "type": "notz"
+  },
+  "notz/sEXT": {
+   "asset": "appicons/notz__sEXT.png",
+   "creator": "notz",
+   "dim": 32,
+   "resId": 130,
+   "source": "System Folder/Apple Menu Items/Stickies",
+   "type": "sEXT"
+  },
+  "notz/sEXT-16": {
+   "asset": "appicons/notz__sEXT-16.png",
+   "creator": "notz",
+   "dim": 16,
+   "resId": 130,
+   "source": "System Folder/Apple Menu Items/Stickies",
+   "type": "sEXT"
+  },
+  "npdt/APPL": {
+   "asset": "appicons/npdt__APPL.png",
+   "creator": "npdt",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Apple Extras/Note Pad",
+   "type": "APPL"
+  },
+  "npdt/APPL-16": {
+   "asset": "appicons/npdt__APPL-16.png",
+   "creator": "npdt",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Apple Extras/Note Pad",
+   "type": "APPL"
+  },
+  "npdt/npad": {
+   "asset": "appicons/npdt__npad.png",
+   "creator": "npdt",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Apple Extras/Note Pad",
+   "type": "npad"
+  },
+  "npdt/npad-16": {
+   "asset": "appicons/npdt__npad-16.png",
+   "creator": "npdt",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Apple Extras/Note Pad",
+   "type": "npad"
+  },
+  "npdt/npdt": {
+   "asset": "appicons/npdt__npdt.png",
+   "creator": "npdt",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Apple Extras/Note Pad",
+   "type": "npdt"
+  },
+  "npdt/npdt-16": {
+   "asset": "appicons/npdt__npdt-16.png",
+   "creator": "npdt",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Apple Extras/Note Pad",
+   "type": "npdt"
+  },
+  "ntk2/adev": {
+   "asset": "appicons/ntk2__adev.png",
+   "creator": "ntk2",
+   "dim": 32,
+   "resId": -4032,
+   "source": "System Folder/Extensions/Remote Only",
+   "type": "adev"
+  },
+  "ntk2/adev-16": {
+   "asset": "appicons/ntk2__adev-16.png",
+   "creator": "ntk2",
+   "dim": 16,
+   "resId": -4032,
+   "source": "System Folder/Extensions/Remote Only",
+   "type": "adev"
+  },
+  "ogle/.SGI": {
+   "asset": "appicons/ogle__.SGI.png",
+   "creator": "ogle",
+   "dim": 32,
+   "resId": 138,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": ".SGI"
+  },
+  "ogle/.SGI-16": {
+   "asset": "appicons/ogle__.SGI-16.png",
+   "creator": "ogle",
+   "dim": 16,
+   "resId": 138,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": ".SGI"
+  },
+  "ogle/8BPS": {
+   "asset": "appicons/ogle__8BPS.png",
+   "creator": "ogle",
+   "dim": 32,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "8BPS"
+  },
+  "ogle/8BPS-16": {
+   "asset": "appicons/ogle__8BPS-16.png",
+   "creator": "ogle",
+   "dim": 16,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "8BPS"
+  },
+  "ogle/APPL": {
+   "asset": "appicons/ogle__APPL.png",
+   "creator": "ogle",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "APPL"
+  },
+  "ogle/APPL-16": {
+   "asset": "appicons/ogle__APPL-16.png",
+   "creator": "ogle",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "APPL"
+  },
+  "ogle/BMPf": {
+   "asset": "appicons/ogle__BMPf.png",
+   "creator": "ogle",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "BMPf"
+  },
+  "ogle/BMPf-16": {
+   "asset": "appicons/ogle__BMPf-16.png",
+   "creator": "ogle",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "BMPf"
+  },
+  "ogle/BMPp": {
+   "asset": "appicons/ogle__BMPp.png",
+   "creator": "ogle",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "BMPp"
+  },
+  "ogle/BMPp-16": {
+   "asset": "appicons/ogle__BMPp-16.png",
+   "creator": "ogle",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "BMPp"
+  },
+  "ogle/FPix": {
+   "asset": "appicons/ogle__FPix.png",
+   "creator": "ogle",
+   "dim": 32,
+   "resId": 145,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "FPix"
+  },
+  "ogle/FPix-16": {
+   "asset": "appicons/ogle__FPix-16.png",
+   "creator": "ogle",
+   "dim": 16,
+   "resId": 145,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "FPix"
+  },
+  "ogle/GIFf": {
+   "asset": "appicons/ogle__GIFf.png",
+   "creator": "ogle",
+   "dim": 32,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "GIFf"
+  },
+  "ogle/GIFf-16": {
+   "asset": "appicons/ogle__GIFf-16.png",
+   "creator": "ogle",
+   "dim": 16,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "GIFf"
+  },
+  "ogle/JPEG": {
+   "asset": "appicons/ogle__JPEG.png",
+   "creator": "ogle",
+   "dim": 32,
+   "resId": 131,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "JPEG"
+  },
+  "ogle/JPEG-16": {
+   "asset": "appicons/ogle__JPEG-16.png",
+   "creator": "ogle",
+   "dim": 16,
+   "resId": 131,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "JPEG"
+  },
+  "ogle/PICT": {
+   "asset": "appicons/ogle__PICT.png",
+   "creator": "ogle",
+   "dim": 32,
+   "resId": 134,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "PICT"
+  },
+  "ogle/PICT-16": {
+   "asset": "appicons/ogle__PICT-16.png",
+   "creator": "ogle",
+   "dim": 16,
+   "resId": 134,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "PICT"
+  },
+  "ogle/PNGf": {
+   "asset": "appicons/ogle__PNGf.png",
+   "creator": "ogle",
+   "dim": 32,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "PNGf"
+  },
+  "ogle/PNGf-16": {
+   "asset": "appicons/ogle__PNGf-16.png",
+   "creator": "ogle",
+   "dim": 16,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "PNGf"
+  },
+  "ogle/TIFF": {
+   "asset": "appicons/ogle__TIFF.png",
+   "creator": "ogle",
+   "dim": 32,
+   "resId": 140,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "TIFF"
+  },
+  "ogle/TIFF-16": {
+   "asset": "appicons/ogle__TIFF-16.png",
+   "creator": "ogle",
+   "dim": 16,
+   "resId": 140,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "TIFF"
+  },
+  "ogle/TPIC": {
+   "asset": "appicons/ogle__TPIC.png",
+   "creator": "ogle",
+   "dim": 32,
+   "resId": 139,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "TPIC"
+  },
+  "ogle/TPIC-16": {
+   "asset": "appicons/ogle__TPIC-16.png",
+   "creator": "ogle",
+   "dim": 16,
+   "resId": 139,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "TPIC"
+  },
+  "ogle/qdgx": {
+   "asset": "appicons/ogle__qdgx.png",
+   "creator": "ogle",
+   "dim": 32,
+   "resId": 136,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "qdgx"
+  },
+  "ogle/qdgx-16": {
+   "asset": "appicons/ogle__qdgx-16.png",
+   "creator": "ogle",
+   "dim": 16,
+   "resId": 136,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "qdgx"
+  },
+  "ogle/qtif": {
+   "asset": "appicons/ogle__qtif.png",
+   "creator": "ogle",
+   "dim": 32,
+   "resId": 137,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "qtif"
+  },
+  "ogle/qtif-16": {
+   "asset": "appicons/ogle__qtif-16.png",
+   "creator": "ogle",
+   "dim": 16,
+   "resId": 137,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "qtif"
+  },
+  "ogle/x424d5020": {
+   "asset": "appicons/ogle__x424d5020.png",
+   "creator": "ogle",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "x424d5020"
+  },
+  "ogle/x424d5020-16": {
+   "asset": "appicons/ogle__x424d5020-16.png",
+   "creator": "ogle",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "x424d5020"
+  },
+  "ogle/x46505820": {
+   "asset": "appicons/ogle__x46505820.png",
+   "creator": "ogle",
+   "dim": 32,
+   "resId": 145,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "x46505820"
+  },
+  "ogle/x46505820-16": {
+   "asset": "appicons/ogle__x46505820-16.png",
+   "creator": "ogle",
+   "dim": 16,
+   "resId": 145,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "x46505820"
+  },
+  "ogle/x47494620": {
+   "asset": "appicons/ogle__x47494620.png",
+   "creator": "ogle",
+   "dim": 32,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "x47494620"
+  },
+  "ogle/x47494620-16": {
+   "asset": "appicons/ogle__x47494620-16.png",
+   "creator": "ogle",
+   "dim": 16,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "x47494620"
+  },
+  "ogle/x504e4720": {
+   "asset": "appicons/ogle__x504e4720.png",
+   "creator": "ogle",
+   "dim": 32,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "x504e4720"
+  },
+  "ogle/x504e4720-16": {
+   "asset": "appicons/ogle__x504e4720-16.png",
+   "creator": "ogle",
+   "dim": 16,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/QuickTime/PictureViewer",
+   "type": "x504e4720"
+  },
+  "otan/otsl": {
+   "asset": "appicons/otan__otsl.png",
+   "creator": "otan",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/Open Transport",
+   "type": "otsl"
+  },
+  "otan/otsl-16": {
+   "asset": "appicons/otan__otsl-16.png",
+   "creator": "otan",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/Open Transport",
+   "type": "otsl"
+  },
+  "parv/APPC": {
+   "asset": "appicons/parv__APPC.png",
+   "creator": "parv",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Panels/Internet",
+   "type": "APPC"
+  },
+  "parv/APPC-16": {
+   "asset": "appicons/parv__APPC-16.png",
+   "creator": "parv",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Panels/Internet",
+   "type": "APPC"
+  },
+  "parv/ICAp": {
+   "asset": "appicons/parv__ICAp.png",
+   "creator": "parv",
+   "dim": 32,
+   "resId": 129,
+   "source": "System Folder/Control Panels/Internet",
+   "type": "ICAp"
+  },
+  "parv/ICAp-16": {
+   "asset": "appicons/parv__ICAp-16.png",
+   "creator": "parv",
+   "dim": 16,
+   "resId": 129,
+   "source": "System Folder/Control Panels/Internet",
+   "type": "ICAp"
+  },
+  "parv/thng": {
+   "asset": "appicons/parv__thng.png",
+   "creator": "parv",
+   "dim": 32,
+   "resId": 130,
+   "source": "System Folder/Control Panels/Internet",
+   "type": "thng"
+  },
+  "parv/thng-16": {
+   "asset": "appicons/parv__thng-16.png",
+   "creator": "parv",
+   "dim": 16,
+   "resId": 130,
+   "source": "System Folder/Control Panels/Internet",
+   "type": "thng"
+  },
+  "pmoz/APPL": {
+   "asset": "appicons/pmoz__APPL.png",
+   "creator": "pmoz",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Netscape Communicator\u2122 Folder/User Profile Manager",
+   "type": "APPL"
+  },
+  "prfc/APPD": {
+   "asset": "appicons/prfc__APPD.png",
+   "creator": "prfc",
+   "dim": 32,
+   "resId": 7000,
+   "source": "System Folder/Apple Menu Items/Apple System Profiler",
+   "type": "APPD"
+  },
+  "prfc/APPD-16": {
+   "asset": "appicons/prfc__APPD-16.png",
+   "creator": "prfc",
+   "dim": 16,
+   "resId": 7000,
+   "source": "System Folder/Apple Menu Items/Apple System Profiler",
+   "type": "APPD"
+  },
+  "prfc/TEXT": {
+   "asset": "appicons/prfc__TEXT.png",
+   "creator": "prfc",
+   "dim": 32,
+   "resId": 7010,
+   "source": "System Folder/Apple Menu Items/Apple System Profiler",
+   "type": "TEXT"
+  },
+  "prfc/TEXT-16": {
+   "asset": "appicons/prfc__TEXT-16.png",
+   "creator": "prfc",
+   "dim": 16,
+   "resId": 7010,
+   "source": "System Folder/Apple Menu Items/Apple System Profiler",
+   "type": "TEXT"
+  },
+  "prmt/APPL": {
+   "asset": "appicons/prmt__APPL.png",
+   "creator": "prmt",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/Desktop PrintMonitor",
+   "type": "APPL"
+  },
+  "prmt/APPL-16": {
+   "asset": "appicons/prmt__APPL-16.png",
+   "creator": "prmt",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/Desktop PrintMonitor",
+   "type": "APPL"
+  },
+  "prmt/djob": {
+   "asset": "appicons/prmt__djob.png",
+   "creator": "prmt",
+   "dim": 32,
+   "resId": 133,
+   "source": "System Folder/Extensions/Desktop PrintMonitor",
+   "type": "djob"
+  },
+  "prmt/djob-16": {
+   "asset": "appicons/prmt__djob-16.png",
+   "creator": "prmt",
+   "dim": 16,
+   "resId": 133,
+   "source": "System Folder/Extensions/Desktop PrintMonitor",
+   "type": "djob"
+  },
+  "prmt/ejob": {
+   "asset": "appicons/prmt__ejob.png",
+   "creator": "prmt",
+   "dim": 32,
+   "resId": 131,
+   "source": "System Folder/Extensions/Desktop PrintMonitor",
+   "type": "ejob"
+  },
+  "prmt/ejob-16": {
+   "asset": "appicons/prmt__ejob-16.png",
+   "creator": "prmt",
+   "dim": 16,
+   "resId": 131,
+   "source": "System Folder/Extensions/Desktop PrintMonitor",
+   "type": "ejob"
+  },
+  "prmt/pjob": {
+   "asset": "appicons/prmt__pjob.png",
+   "creator": "prmt",
+   "dim": 32,
+   "resId": 129,
+   "source": "System Folder/Extensions/Desktop PrintMonitor",
+   "type": "pjob"
+  },
+  "prmt/pjob-16": {
+   "asset": "appicons/prmt__pjob-16.png",
+   "creator": "prmt",
+   "dim": 16,
+   "resId": 129,
+   "source": "System Folder/Extensions/Desktop PrintMonitor",
+   "type": "pjob"
+  },
+  "prmt/xjob": {
+   "asset": "appicons/prmt__xjob.png",
+   "creator": "prmt",
+   "dim": 32,
+   "resId": 130,
+   "source": "System Folder/Extensions/Desktop PrintMonitor",
+   "type": "xjob"
+  },
+  "prmt/xjob-16": {
+   "asset": "appicons/prmt__xjob-16.png",
+   "creator": "prmt",
+   "dim": 16,
+   "resId": 130,
+   "source": "System Folder/Extensions/Desktop PrintMonitor",
+   "type": "xjob"
+  },
+  "prmt/zjob": {
+   "asset": "appicons/prmt__zjob.png",
+   "creator": "prmt",
+   "dim": 32,
+   "resId": 132,
+   "source": "System Folder/Extensions/Desktop PrintMonitor",
+   "type": "zjob"
+  },
+  "prmt/zjob-16": {
+   "asset": "appicons/prmt__zjob-16.png",
+   "creator": "prmt",
+   "dim": 16,
+   "resId": 132,
+   "source": "System Folder/Extensions/Desktop PrintMonitor",
+   "type": "zjob"
+  },
+  "psap/INIT": {
+   "asset": "appicons/psap__INIT.png",
+   "creator": "psap",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/Apple CD:DVD Driver",
+   "type": "INIT"
+  },
+  "psap/INIT-16": {
+   "asset": "appicons/psap__INIT-16.png",
+   "creator": "psap",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/Apple CD:DVD Driver",
+   "type": "INIT"
+  },
+  "qtcs/sdev": {
+   "asset": "appicons/qtcs__sdev.png",
+   "creator": "qtcs",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/QuickTime Strip",
+   "type": "sdev"
+  },
+  "qtcs/sdev-16": {
+   "asset": "appicons/qtcs__sdev-16.png",
+   "creator": "qtcs",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/QuickTime Strip",
+   "type": "sdev"
+  },
+  "qtvr/INIT": {
+   "asset": "appicons/qtvr__INIT.png",
+   "creator": "qtvr",
+   "dim": 32,
+   "resId": 2030,
+   "source": "System Folder/Extensions/QuickTime\u2122 VR",
+   "type": "INIT"
+  },
+  "qtvr/INIT-16": {
+   "asset": "appicons/qtvr__INIT-16.png",
+   "creator": "qtvr",
+   "dim": 16,
+   "resId": 2030,
+   "source": "System Folder/Extensions/QuickTime\u2122 VR",
+   "type": "INIT"
+  },
+  "rasm/APPL": {
+   "asset": "appicons/rasm__APPL.png",
+   "creator": "rasm",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Apple Menu Items/Remote Access Status",
+   "type": "APPL"
+  },
+  "rasm/APPL-16": {
+   "asset": "appicons/rasm__APPL-16.png",
+   "creator": "rasm",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Apple Menu Items/Remote Access Status",
+   "type": "APPL"
+  },
+  "reno/AGpf": {
+   "asset": "appicons/reno__AGpf.png",
+   "creator": "reno",
+   "dim": 32,
+   "resId": 133,
+   "source": "System Folder/Extensions/Apple Guide",
+   "type": "AGpf"
+  },
+  "reno/AGpf-16": {
+   "asset": "appicons/reno__AGpf-16.png",
+   "creator": "reno",
+   "dim": 16,
+   "resId": 133,
+   "source": "System Folder/Extensions/Apple Guide",
+   "type": "AGpf"
+  },
+  "reno/INIT": {
+   "asset": "appicons/reno__INIT.png",
+   "creator": "reno",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/Apple Guide",
+   "type": "INIT"
+  },
+  "reno/INIT-16": {
+   "asset": "appicons/reno__INIT-16.png",
+   "creator": "reno",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/Apple Guide",
+   "type": "INIT"
+  },
+  "reno/extm": {
+   "asset": "appicons/reno__extm.png",
+   "creator": "reno",
+   "dim": 32,
+   "resId": 132,
+   "source": "System Folder/Extensions/Apple Guide",
+   "type": "extm"
+  },
+  "reno/extm-16": {
+   "asset": "appicons/reno__extm-16.png",
+   "creator": "reno",
+   "dim": 16,
+   "resId": 132,
+   "source": "System Folder/Extensions/Apple Guide",
+   "type": "extm"
+  },
+  "reno/help": {
+   "asset": "appicons/reno__help.png",
+   "creator": "reno",
+   "dim": 32,
+   "resId": 130,
+   "source": "System Folder/Extensions/Apple Guide",
+   "type": "help"
+  },
+  "reno/help-16": {
+   "asset": "appicons/reno__help-16.png",
+   "creator": "reno",
+   "dim": 16,
+   "resId": 130,
+   "source": "System Folder/Extensions/Apple Guide",
+   "type": "help"
+  },
+  "reno/mixn": {
+   "asset": "appicons/reno__mixn.png",
+   "creator": "reno",
+   "dim": 32,
+   "resId": 131,
+   "source": "System Folder/Extensions/Apple Guide",
+   "type": "mixn"
+  },
+  "reno/mixn-16": {
+   "asset": "appicons/reno__mixn-16.png",
+   "creator": "reno",
+   "dim": 16,
+   "resId": 131,
+   "source": "System Folder/Extensions/Apple Guide",
+   "type": "mixn"
+  },
+  "reno/poco": {
+   "asset": "appicons/reno__poco.png",
+   "creator": "reno",
+   "dim": 32,
+   "resId": 130,
+   "source": "System Folder/Extensions/Apple Guide",
+   "type": "poco"
+  },
+  "reno/poco-16": {
+   "asset": "appicons/reno__poco-16.png",
+   "creator": "reno",
+   "dim": 16,
+   "resId": 130,
+   "source": "System Folder/Extensions/Apple Guide",
+   "type": "poco"
+  },
+  "reno/xNIT": {
+   "asset": "appicons/reno__xNIT.png",
+   "creator": "reno",
+   "dim": 32,
+   "resId": 129,
+   "source": "System Folder/Extensions/Apple Guide",
+   "type": "xNIT"
+  },
+  "reno/xNIT-16": {
+   "asset": "appicons/reno__xNIT-16.png",
+   "creator": "reno",
+   "dim": 16,
+   "resId": 129,
+   "source": "System Folder/Extensions/Apple Guide",
+   "type": "xNIT"
+  },
+  "rgi3/APPL": {
+   "asset": "appicons/rgi3__APPL.png",
+   "creator": "rgi3",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Utilities/Assistants/Internet Setup/ISP Referral Assistant",
+   "type": "APPL"
+  },
+  "rgi3/APPL-16": {
+   "asset": "appicons/rgi3__APPL-16.png",
+   "creator": "rgi3",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Utilities/Assistants/Internet Setup/ISP Referral Assistant",
+   "type": "APPL"
+  },
+  "rgi3/IPRT": {
+   "asset": "appicons/rgi3__IPRT.png",
+   "creator": "rgi3",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Utilities/Assistants/Internet Setup/ISP Referral Assistant",
+   "type": "IPRT"
+  },
+  "rgi3/IPRT-16": {
+   "asset": "appicons/rgi3__IPRT-16.png",
+   "creator": "rgi3",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Utilities/Assistants/Internet Setup/ISP Referral Assistant",
+   "type": "IPRT"
+  },
+  "rgmr/INIT": {
+   "asset": "appicons/rgmr__INIT.png",
+   "creator": "rgmr",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/DVD Region Manager",
+   "type": "INIT"
+  },
+  "rgmr/INIT-16": {
+   "asset": "appicons/rgmr__INIT-16.png",
+   "creator": "rgmr",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/DVD Region Manager",
+   "type": "INIT"
+  },
+  "rmcc/APPC": {
+   "asset": "appicons/rmcc__APPC.png",
+   "creator": "rmcc",
+   "dim": 32,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/Remote Access",
+   "type": "APPC"
+  },
+  "rmcc/APPC-16": {
+   "asset": "appicons/rmcc__APPC-16.png",
+   "creator": "rmcc",
+   "dim": 16,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/Remote Access",
+   "type": "APPC"
+  },
+  "rmcc/TEXT": {
+   "asset": "appicons/rmcc__TEXT.png",
+   "creator": "rmcc",
+   "dim": 32,
+   "resId": -4060,
+   "source": "System Folder/Control Panels/Remote Access",
+   "type": "TEXT"
+  },
+  "rmcc/TEXT-16": {
+   "asset": "appicons/rmcc__TEXT-16.png",
+   "creator": "rmcc",
+   "dim": 16,
+   "resId": -4060,
+   "source": "System Folder/Control Panels/Remote Access",
+   "type": "TEXT"
+  },
+  "rmcc/ccex": {
+   "asset": "appicons/rmcc__ccex.png",
+   "creator": "rmcc",
+   "dim": 32,
+   "resId": -4062,
+   "source": "System Folder/Control Panels/Remote Access",
+   "type": "ccex"
+  },
+  "rmcc/ccex-16": {
+   "asset": "appicons/rmcc__ccex-16.png",
+   "creator": "rmcc",
+   "dim": 16,
+   "resId": -4062,
+   "source": "System Folder/Control Panels/Remote Access",
+   "type": "ccex"
+  },
+  "rmcc/lzcn": {
+   "asset": "appicons/rmcc__lzcn.png",
+   "creator": "rmcc",
+   "dim": 32,
+   "resId": -4061,
+   "source": "System Folder/Control Panels/Remote Access",
+   "type": "lzcn"
+  },
+  "rmcc/lzcn-16": {
+   "asset": "appicons/rmcc__lzcn-16.png",
+   "creator": "rmcc",
+   "dim": 16,
+   "resId": -4061,
+   "source": "System Folder/Control Panels/Remote Access",
+   "type": "lzcn"
+  },
+  "rmcc/lzlg": {
+   "asset": "appicons/rmcc__lzlg.png",
+   "creator": "rmcc",
+   "dim": 32,
+   "resId": -4063,
+   "source": "System Folder/Control Panels/Remote Access",
+   "type": "lzlg"
+  },
+  "rmcc/lzlg-16": {
+   "asset": "appicons/rmcc__lzlg-16.png",
+   "creator": "rmcc",
+   "dim": 16,
+   "resId": -4063,
+   "source": "System Folder/Control Panels/Remote Access",
+   "type": "lzlg"
+  },
+  "sSnd/AIFC": {
+   "asset": "appicons/sSnd__AIFC.png",
+   "creator": "sSnd",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Apple Extras/SimpleSound",
+   "type": "AIFC"
+  },
+  "sSnd/AIFC-16": {
+   "asset": "appicons/sSnd__AIFC-16.png",
+   "creator": "sSnd",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Apple Extras/SimpleSound",
+   "type": "AIFC"
+  },
+  "sSnd/AIFF": {
+   "asset": "appicons/sSnd__AIFF.png",
+   "creator": "sSnd",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Apple Extras/SimpleSound",
+   "type": "AIFF"
+  },
+  "sSnd/AIFF-16": {
+   "asset": "appicons/sSnd__AIFF-16.png",
+   "creator": "sSnd",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Apple Extras/SimpleSound",
+   "type": "AIFF"
+  },
+  "sSnd/APPL": {
+   "asset": "appicons/sSnd__APPL.png",
+   "creator": "sSnd",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Apple Extras/SimpleSound",
+   "type": "APPL"
+  },
+  "sSnd/APPL-16": {
+   "asset": "appicons/sSnd__APPL-16.png",
+   "creator": "sSnd",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Apple Extras/SimpleSound",
+   "type": "APPL"
+  },
+  "sSnd/MooV": {
+   "asset": "appicons/sSnd__MooV.png",
+   "creator": "sSnd",
+   "dim": 32,
+   "resId": 132,
+   "source": "Applications (Mac OS 9)/Apple Extras/SimpleSound",
+   "type": "MooV"
+  },
+  "sSnd/sfil": {
+   "asset": "appicons/sSnd__sfil.png",
+   "creator": "sSnd",
+   "dim": 32,
+   "resId": 131,
+   "source": "Applications (Mac OS 9)/Apple Extras/SimpleSound",
+   "type": "sfil"
+  },
+  "sbkt/APPL": {
+   "asset": "appicons/sbkt__APPL.png",
+   "creator": "sbkt",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Apple Menu Items/Scrapbook",
+   "type": "APPL"
+  },
+  "sbkt/APPL-16": {
+   "asset": "appicons/sbkt__APPL-16.png",
+   "creator": "sbkt",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Apple Menu Items/Scrapbook",
+   "type": "APPL"
+  },
+  "sbkt/sbkt": {
+   "asset": "appicons/sbkt__sbkt.png",
+   "creator": "sbkt",
+   "dim": 32,
+   "resId": 129,
+   "source": "System Folder/Apple Menu Items/Scrapbook",
+   "type": "sbkt"
+  },
+  "sbkt/sbkt-16": {
+   "asset": "appicons/sbkt__sbkt-16.png",
+   "creator": "sbkt",
+   "dim": 16,
+   "resId": 129,
+   "source": "System Folder/Apple Menu Items/Scrapbook",
+   "type": "sbkt"
+  },
+  "sbkt/scbk": {
+   "asset": "appicons/sbkt__scbk.png",
+   "creator": "sbkt",
+   "dim": 32,
+   "resId": 129,
+   "source": "System Folder/Apple Menu Items/Scrapbook",
+   "type": "scbk"
+  },
+  "sbkt/scbk-16": {
+   "asset": "appicons/sbkt__scbk-16.png",
+   "creator": "sbkt",
+   "dim": 16,
+   "resId": 129,
+   "source": "System Folder/Apple Menu Items/Scrapbook",
+   "type": "scbk"
+  },
+  "scav/APPL": {
+   "asset": "appicons/scav__APPL.png",
+   "creator": "scav",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Utilities/Disk First Aid",
+   "type": "APPL"
+  },
+  "scav/APPL-16": {
+   "asset": "appicons/scav__APPL-16.png",
+   "creator": "scav",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/Utilities/Disk First Aid",
+   "type": "APPL"
+  },
+  "sd2k/APPC": {
+   "asset": "appicons/sd2k__APPC.png",
+   "creator": "sd2k",
+   "dim": 32,
+   "resId": 132,
+   "source": "System Folder/Control Panels/Startup Disk",
+   "type": "APPC"
+  },
+  "sd2k/APPC-16": {
+   "asset": "appicons/sd2k__APPC-16.png",
+   "creator": "sd2k",
+   "dim": 16,
+   "resId": 132,
+   "source": "System Folder/Control Panels/Startup Disk",
+   "type": "APPC"
+  },
+  "sdev/APPC": {
+   "asset": "appicons/sdev__APPC.png",
+   "creator": "sdev",
+   "dim": 32,
+   "resId": 129,
+   "source": "System Folder/Control Panels/Control Strip",
+   "type": "APPC"
+  },
+  "sdev/APPC-16": {
+   "asset": "appicons/sdev__APPC-16.png",
+   "creator": "sdev",
+   "dim": 16,
+   "resId": 129,
+   "source": "System Folder/Control Panels/Control Strip",
+   "type": "APPC"
+  },
+  "sdev/appe": {
+   "asset": "appicons/sdev__appe.png",
+   "creator": "sdev",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Panels/Control Strip",
+   "type": "appe"
+  },
+  "sdev/appe-16": {
+   "asset": "appicons/sdev__appe-16.png",
+   "creator": "sdev",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Panels/Control Strip",
+   "type": "appe"
+  },
+  "shcp/APPC": {
+   "asset": "appicons/shcp__APPC.png",
+   "creator": "shcp",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Panels/File Sharing",
+   "type": "APPC"
+  },
+  "shcp/APPC-16": {
+   "asset": "appicons/shcp__APPC-16.png",
+   "creator": "shcp",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Panels/File Sharing",
+   "type": "APPC"
+  },
+  "siap/INIT": {
+   "asset": "appicons/siap__INIT.png",
+   "creator": "siap",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/SpeakableItems",
+   "type": "INIT"
+  },
+  "siap/INIT-16": {
+   "asset": "appicons/siap__INIT-16.png",
+   "creator": "siap",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/SpeakableItems",
+   "type": "INIT"
+  },
+  "sics/sdev": {
+   "asset": "appicons/sics__sdev.png",
+   "creator": "sics",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/SpeakableItems Strip",
+   "type": "sdev"
+  },
+  "sics/sdev-16": {
+   "asset": "appicons/sics__sdev-16.png",
+   "creator": "sics",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/SpeakableItems Strip",
+   "type": "sdev"
+  },
+  "snd3/thng": {
+   "asset": "appicons/snd3__thng.png",
+   "creator": "snd3",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/SoundSprocket Filter",
+   "type": "thng"
+  },
+  "snd3/thng-16": {
+   "asset": "appicons/snd3__thng-16.png",
+   "creator": "snd3",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/SoundSprocket Filter",
+   "type": "thng"
+  },
+  "sndv/sdev": {
+   "asset": "appicons/sndv__sdev.png",
+   "creator": "sndv",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/Sound Volume",
+   "type": "sdev"
+  },
+  "sndv/sdev-16": {
+   "asset": "appicons/sndv__sdev-16.png",
+   "creator": "sndv",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/Sound Volume",
+   "type": "sdev"
+  },
+  "soun/APPC": {
+   "asset": "appicons/soun__APPC.png",
+   "creator": "soun",
+   "dim": 32,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/Sound",
+   "type": "APPC"
+  },
+  "soun/APPC-16": {
+   "asset": "appicons/soun__APPC-16.png",
+   "creator": "soun",
+   "dim": 16,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/Sound",
+   "type": "APPC"
+  },
+  "soup/APPL": {
+   "asset": "appicons/soup__APPL.png",
+   "creator": "soup",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/Software Update Engine",
+   "type": "APPL"
+  },
+  "soup/APPL-16": {
+   "asset": "appicons/soup__APPL-16.png",
+   "creator": "soup",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/Software Update Engine",
+   "type": "APPL"
+  },
+  "sppp/sdev": {
+   "asset": "appicons/sppp__sdev.png",
+   "creator": "sppp",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/Remote Access Control Strip",
+   "type": "sdev"
+  },
+  "sppp/sdev-16": {
+   "asset": "appicons/sppp__sdev-16.png",
+   "creator": "sppp",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/Remote Access Control Strip",
+   "type": "sdev"
+  },
+  "spt2/APPL": {
+   "asset": "appicons/spt2__APPL.png",
+   "creator": "spt2",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Apple Menu Items/Speakable Items/Cancel the last command",
+   "type": "APPL"
+  },
+  "spt2/APPL-16": {
+   "asset": "appicons/spt2__APPL-16.png",
+   "creator": "spt2",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Apple Menu Items/Speakable Items/Cancel the last command",
+   "type": "APPL"
+  },
+  "srie/APPL": {
+   "asset": "appicons/srie__APPL.png",
+   "creator": "srie",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Apple Menu Items/Speakable Items/Application Speakable Items/Internet Explorer/Go Back",
+   "type": "APPL"
+  },
+  "srie/APPL-16": {
+   "asset": "appicons/srie__APPL-16.png",
+   "creator": "srie",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Apple Menu Items/Speakable Items/Application Speakable Items/Internet Explorer/Go Back",
+   "type": "APPL"
+  },
+  "srnn/APPL": {
+   "asset": "appicons/srnn__APPL.png",
+   "creator": "srnn",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Apple Menu Items/Speakable Items/Application Speakable Items/Netscape Communicator/Get my mail",
+   "type": "APPL"
+  },
+  "srnn/APPL-16": {
+   "asset": "appicons/srnn__APPL-16.png",
+   "creator": "srnn",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Apple Menu Items/Speakable Items/Application Speakable Items/Netscape Communicator/Get my mail",
+   "type": "APPL"
+  },
+  "sroe/APPL": {
+   "asset": "appicons/sroe__APPL.png",
+   "creator": "sroe",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Apple Menu Items/Speakable Items/Application Speakable Items/Outlook Express/Delete this message",
+   "type": "APPL"
+  },
+  "sroe/APPL-16": {
+   "asset": "appicons/sroe__APPL-16.png",
+   "creator": "sroe",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Apple Menu Items/Speakable Items/Application Speakable Items/Outlook Express/Delete this message",
+   "type": "APPL"
+  },
+  "srtb/INIT": {
+   "asset": "appicons/srtb__INIT.png",
+   "creator": "srtb",
+   "dim": 32,
+   "resId": 0,
+   "source": "System Folder/Extensions/Speech Recognition",
+   "type": "INIT"
+  },
+  "srtb/INIT-16": {
+   "asset": "appicons/srtb__INIT-16.png",
+   "creator": "srtb",
+   "dim": 16,
+   "resId": 0,
+   "source": "System Folder/Extensions/Speech Recognition",
+   "type": "INIT"
+  },
+  "ssrv/appe": {
+   "asset": "appicons/ssrv__appe.png",
+   "creator": "ssrv",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/Folder Actions",
+   "type": "appe"
+  },
+  "ssrv/appe-16": {
+   "asset": "appicons/ssrv__appe-16.png",
+   "creator": "ssrv",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/Folder Actions",
+   "type": "appe"
+  },
+  "swup/APPC": {
+   "asset": "appicons/swup__APPC.png",
+   "creator": "swup",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Panels/Software Update",
+   "type": "APPC"
+  },
+  "swup/APPC-16": {
+   "asset": "appicons/swup__APPC-16.png",
+   "creator": "swup",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Panels/Software Update",
+   "type": "APPC"
+  },
+  "swup/appe": {
+   "asset": "appicons/swup__appe.png",
+   "creator": "swup",
+   "dim": 32,
+   "resId": 129,
+   "source": "System Folder/Control Panels/Software Update",
+   "type": "appe"
+  },
+  "swup/appe-16": {
+   "asset": "appicons/swup__appe-16.png",
+   "creator": "swup",
+   "dim": 16,
+   "resId": 129,
+   "source": "System Folder/Control Panels/Software Update",
+   "type": "appe"
+  },
+  "swup/pref": {
+   "asset": "appicons/swup__pref.png",
+   "creator": "swup",
+   "dim": 32,
+   "resId": 130,
+   "source": "System Folder/Control Panels/Software Update",
+   "type": "pref"
+  },
+  "swup/pref-16": {
+   "asset": "appicons/swup__pref-16.png",
+   "creator": "swup",
+   "dim": 16,
+   "resId": 130,
+   "source": "System Folder/Control Panels/Software Update",
+   "type": "pref"
+  },
+  "swup/swpl": {
+   "asset": "appicons/swup__swpl.png",
+   "creator": "swup",
+   "dim": 32,
+   "resId": 131,
+   "source": "System Folder/Control Panels/Software Update",
+   "type": "swpl"
+  },
+  "swup/swpl-16": {
+   "asset": "appicons/swup__swpl-16.png",
+   "creator": "swup",
+   "dim": 16,
+   "resId": 131,
+   "source": "System Folder/Control Panels/Software Update",
+   "type": "swpl"
+  },
+  "syav/thng": {
+   "asset": "appicons/syav__thng.png",
+   "creator": "syav",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/System Monitor Plugins",
+   "type": "thng"
+  },
+  "syav/thng-16": {
+   "asset": "appicons/syav__thng-16.png",
+   "creator": "syav",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/System Monitor Plugins",
+   "type": "thng"
+  },
+  "synC/APPC": {
+   "asset": "appicons/synC__APPC.png",
+   "creator": "synC",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Panels/ColorSync",
+   "type": "APPC"
+  },
+  "synC/APPC-16": {
+   "asset": "appicons/synC__APPC-16.png",
+   "creator": "synC",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Panels/ColorSync",
+   "type": "APPC"
+  },
+  "sync/INIT": {
+   "asset": "appicons/sync__INIT.png",
+   "creator": "sync",
+   "dim": 32,
+   "resId": -16000,
+   "source": "System Folder/Extensions/ColorSync Extension",
+   "type": "INIT"
+  },
+  "sync/INIT-16": {
+   "asset": "appicons/sync__INIT-16.png",
+   "creator": "sync",
+   "dim": 16,
+   "resId": -16000,
+   "source": "System Folder/Extensions/ColorSync Extension",
+   "type": "INIT"
+  },
+  "sync/cdCh": {
+   "asset": "appicons/sync__cdCh.png",
+   "creator": "sync",
+   "dim": 32,
+   "resId": -16003,
+   "source": "System Folder/Extensions/ColorSync Extension",
+   "type": "cdCh"
+  },
+  "sync/cdCh-16": {
+   "asset": "appicons/sync__cdCh-16.png",
+   "creator": "sync",
+   "dim": 16,
+   "resId": -16003,
+   "source": "System Folder/Extensions/ColorSync Extension",
+   "type": "cdCh"
+  },
+  "sync/cdPr": {
+   "asset": "appicons/sync__cdPr.png",
+   "creator": "sync",
+   "dim": 32,
+   "resId": -16002,
+   "source": "System Folder/Extensions/ColorSync Extension",
+   "type": "cdPr"
+  },
+  "sync/cdPr-16": {
+   "asset": "appicons/sync__cdPr-16.png",
+   "creator": "sync",
+   "dim": 16,
+   "resId": -16002,
+   "source": "System Folder/Extensions/ColorSync Extension",
+   "type": "cdPr"
+  },
+  "sync/cswi": {
+   "asset": "appicons/sync__cswi.png",
+   "creator": "sync",
+   "dim": 32,
+   "resId": -16006,
+   "source": "System Folder/Extensions/ColorSync Extension",
+   "type": "cswi"
+  },
+  "sync/cswi-16": {
+   "asset": "appicons/sync__cswi-16.png",
+   "creator": "sync",
+   "dim": 16,
+   "resId": -16006,
+   "source": "System Folder/Extensions/ColorSync Extension",
+   "type": "cswi"
+  },
+  "sync/prof": {
+   "asset": "appicons/sync__prof.png",
+   "creator": "sync",
+   "dim": 32,
+   "resId": -16001,
+   "source": "System Folder/Extensions/ColorSync Extension",
+   "type": "prof"
+  },
+  "sync/prof-16": {
+   "asset": "appicons/sync__prof-16.png",
+   "creator": "sync",
+   "dim": 16,
+   "resId": -16001,
+   "source": "System Folder/Extensions/ColorSync Extension",
+   "type": "prof"
+  },
+  "sync/x63737720": {
+   "asset": "appicons/sync__x63737720.png",
+   "creator": "sync",
+   "dim": 32,
+   "resId": -16006,
+   "source": "System Folder/Extensions/ColorSync Extension",
+   "type": "x63737720"
+  },
+  "sync/x63737720-16": {
+   "asset": "appicons/sync__x63737720-16.png",
+   "creator": "sync",
+   "dim": 16,
+   "resId": -16006,
+   "source": "System Folder/Extensions/ColorSync Extension",
+   "type": "x63737720"
+  },
+  "tecd/cdev": {
+   "asset": "appicons/tecd__cdev.png",
+   "creator": "tecd",
+   "dim": 32,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/Text",
+   "type": "cdev"
+  },
+  "tecd/cdev-16": {
+   "asset": "appicons/tecd__cdev-16.png",
+   "creator": "tecd",
+   "dim": 16,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/Text",
+   "type": "cdev"
+  },
+  "tim2/APPC": {
+   "asset": "appicons/tim2__APPC.png",
+   "creator": "tim2",
+   "dim": 32,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/Date & Time",
+   "type": "APPC"
+  },
+  "tim2/APPC-16": {
+   "asset": "appicons/tim2__APPC-16.png",
+   "creator": "tim2",
+   "dim": 16,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/Date & Time",
+   "type": "APPC"
+  },
+  "tims/appe": {
+   "asset": "appicons/tims__appe.png",
+   "creator": "tims",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/Time Synchronizer",
+   "type": "appe"
+  },
+  "tims/appe-16": {
+   "asset": "appicons/tims__appe-16.png",
+   "creator": "tims",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/Time Synchronizer",
+   "type": "appe"
+  },
+  "ttba/APPC": {
+   "asset": "appicons/ttba__APPC.png",
+   "creator": "ttba",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Panels/Multiple Users",
+   "type": "APPC"
+  },
+  "ttba/APPC-16": {
+   "asset": "appicons/ttba__APPC-16.png",
+   "creator": "ttba",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Panels/Multiple Users",
+   "type": "APPC"
+  },
+  "ttsc/INIT": {
+   "asset": "appicons/ttsc__INIT.png",
+   "creator": "ttsc",
+   "dim": 32,
+   "resId": -4064,
+   "source": "System Folder/Extensions/Speech Manager",
+   "type": "INIT"
+  },
+  "ttsc/INIT-16": {
+   "asset": "appicons/ttsc__INIT-16.png",
+   "creator": "ttsc",
+   "dim": 16,
+   "resId": -4064,
+   "source": "System Folder/Extensions/Speech Manager",
+   "type": "INIT"
+  },
+  "ttsu/scri": {
+   "asset": "appicons/ttsu__scri.png",
+   "creator": "ttsu",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/Multi-User Startup",
+   "type": "scri"
+  },
+  "ttsu/scri-16": {
+   "asset": "appicons/ttsu__scri-16.png",
+   "creator": "ttsu",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/Multi-User Startup",
+   "type": "scri"
+  },
+  "ttxt/3DMF": {
+   "asset": "appicons/ttxt__3DMF.png",
+   "creator": "ttxt",
+   "dim": 32,
+   "resId": 138,
+   "source": "Applications (Mac OS 9)/SimpleText",
+   "type": "3DMF"
+  },
+  "ttxt/3DMF-16": {
+   "asset": "appicons/ttxt__3DMF-16.png",
+   "creator": "ttxt",
+   "dim": 16,
+   "resId": 138,
+   "source": "Applications (Mac OS 9)/SimpleText",
+   "type": "3DMF"
+  },
+  "ttxt/APPL": {
+   "asset": "appicons/ttxt__APPL.png",
+   "creator": "ttxt",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/SimpleText",
+   "type": "APPL"
+  },
+  "ttxt/APPL-16": {
+   "asset": "appicons/ttxt__APPL-16.png",
+   "creator": "ttxt",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/SimpleText",
+   "type": "APPL"
+  },
+  "ttxt/MooV": {
+   "asset": "appicons/ttxt__MooV.png",
+   "creator": "ttxt",
+   "dim": 32,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/SimpleText",
+   "type": "MooV"
+  },
+  "ttxt/MooV-16": {
+   "asset": "appicons/ttxt__MooV-16.png",
+   "creator": "ttxt",
+   "dim": 16,
+   "resId": 133,
+   "source": "Applications (Mac OS 9)/SimpleText",
+   "type": "MooV"
+  },
+  "ttxt/PICT": {
+   "asset": "appicons/ttxt__PICT.png",
+   "creator": "ttxt",
+   "dim": 32,
+   "resId": 131,
+   "source": "Applications (Mac OS 9)/SimpleText",
+   "type": "PICT"
+  },
+  "ttxt/PICT-16": {
+   "asset": "appicons/ttxt__PICT-16.png",
+   "creator": "ttxt",
+   "dim": 16,
+   "resId": 131,
+   "source": "Applications (Mac OS 9)/SimpleText",
+   "type": "PICT"
+  },
+  "ttxt/TEXT": {
+   "asset": "appicons/ttxt__TEXT.png",
+   "creator": "ttxt",
+   "dim": 32,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/SimpleText",
+   "type": "TEXT"
+  },
+  "ttxt/TEXT-16": {
+   "asset": "appicons/ttxt__TEXT-16.png",
+   "creator": "ttxt",
+   "dim": 16,
+   "resId": 129,
+   "source": "Applications (Mac OS 9)/SimpleText",
+   "type": "TEXT"
+  },
+  "ttxt/qjob": {
+   "asset": "appicons/ttxt__qjob.png",
+   "creator": "ttxt",
+   "dim": 32,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/SimpleText",
+   "type": "qjob"
+  },
+  "ttxt/qjob-16": {
+   "asset": "appicons/ttxt__qjob-16.png",
+   "creator": "ttxt",
+   "dim": 16,
+   "resId": 135,
+   "source": "Applications (Mac OS 9)/SimpleText",
+   "type": "qjob"
+  },
+  "ttxt/rjob": {
+   "asset": "appicons/ttxt__rjob.png",
+   "creator": "ttxt",
+   "dim": 32,
+   "resId": 134,
+   "source": "Applications (Mac OS 9)/SimpleText",
+   "type": "rjob"
+  },
+  "ttxt/rjob-16": {
+   "asset": "appicons/ttxt__rjob-16.png",
+   "creator": "ttxt",
+   "dim": 16,
+   "resId": 134,
+   "source": "Applications (Mac OS 9)/SimpleText",
+   "type": "rjob"
+  },
+  "ttxt/sEXT": {
+   "asset": "appicons/ttxt__sEXT.png",
+   "creator": "ttxt",
+   "dim": 32,
+   "resId": 132,
+   "source": "Applications (Mac OS 9)/SimpleText",
+   "type": "sEXT"
+  },
+  "ttxt/sEXT-16": {
+   "asset": "appicons/ttxt__sEXT-16.png",
+   "creator": "ttxt",
+   "dim": 16,
+   "resId": 132,
+   "source": "Applications (Mac OS 9)/SimpleText",
+   "type": "sEXT"
+  },
+  "ttxt/sjob": {
+   "asset": "appicons/ttxt__sjob.png",
+   "creator": "ttxt",
+   "dim": 32,
+   "resId": 136,
+   "source": "Applications (Mac OS 9)/SimpleText",
+   "type": "sjob"
+  },
+  "ttxt/sjob-16": {
+   "asset": "appicons/ttxt__sjob-16.png",
+   "creator": "ttxt",
+   "dim": 16,
+   "resId": 136,
+   "source": "Applications (Mac OS 9)/SimpleText",
+   "type": "sjob"
+  },
+  "ttxt/tjob": {
+   "asset": "appicons/ttxt__tjob.png",
+   "creator": "ttxt",
+   "dim": 32,
+   "resId": 134,
+   "source": "Applications (Mac OS 9)/SimpleText",
+   "type": "tjob"
+  },
+  "ttxt/tjob-16": {
+   "asset": "appicons/ttxt__tjob-16.png",
+   "creator": "ttxt",
+   "dim": 16,
+   "resId": 134,
+   "source": "Applications (Mac OS 9)/SimpleText",
+   "type": "tjob"
+  },
+  "ttxt/ttro": {
+   "asset": "appicons/ttxt__ttro.png",
+   "creator": "ttxt",
+   "dim": 32,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/SimpleText",
+   "type": "ttro"
+  },
+  "ttxt/ttro-16": {
+   "asset": "appicons/ttxt__ttro-16.png",
+   "creator": "ttxt",
+   "dim": 16,
+   "resId": 130,
+   "source": "Applications (Mac OS 9)/SimpleText",
+   "type": "ttro"
+  },
+  "tvmr/sdev": {
+   "asset": "appicons/tvmr__sdev.png",
+   "creator": "tvmr",
+   "dim": 32,
+   "resId": 256,
+   "source": "System Folder/Control Strip Modules/TV Mirroring",
+   "type": "sdev"
+  },
+  "tvmr/sdev-16": {
+   "asset": "appicons/tvmr__sdev-16.png",
+   "creator": "tvmr",
+   "dim": 16,
+   "resId": 256,
+   "source": "System Folder/Control Strip Modules/TV Mirroring",
+   "type": "sdev"
+  },
+  "ufox/INIT": {
+   "asset": "appicons/ufox__INIT.png",
+   "creator": "ufox",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/Foreign File Access",
+   "type": "INIT"
+  },
+  "ufox/INIT-16": {
+   "asset": "appicons/ufox__INIT-16.png",
+   "creator": "ufox",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/Foreign File Access",
+   "type": "INIT"
+  },
+  "ufox/thng": {
+   "asset": "appicons/ufox__thng.png",
+   "creator": "ufox",
+   "dim": 32,
+   "resId": 129,
+   "source": "System Folder/Extensions/Foreign File Access",
+   "type": "thng"
+  },
+  "ufox/thng-16": {
+   "asset": "appicons/ufox__thng-16.png",
+   "creator": "ufox",
+   "dim": 16,
+   "resId": 129,
+   "source": "System Folder/Extensions/Foreign File Access",
+   "type": "thng"
+  },
+  "usbd/ndrv": {
+   "asset": "appicons/usbd__ndrv.png",
+   "creator": "usbd",
+   "dim": 32,
+   "resId": -8191,
+   "source": "System Folder/Extensions/USBAppleMonitorModule",
+   "type": "ndrv"
+  },
+  "usbd/ndrv-16": {
+   "asset": "appicons/usbd__ndrv-16.png",
+   "creator": "usbd",
+   "dim": 16,
+   "resId": -8191,
+   "source": "System Folder/Extensions/USBAppleMonitorModule",
+   "type": "ndrv"
+  },
+  "vgrd/EPSF": {
+   "asset": "appicons/vgrd__EPSF.png",
+   "creator": "vgrd",
+   "dim": 32,
+   "resId": -4095,
+   "source": "System Folder/Extensions/LaserWriter 8",
+   "type": "EPSF"
+  },
+  "vgrd/EPSF-16": {
+   "asset": "appicons/vgrd__EPSF-16.png",
+   "creator": "vgrd",
+   "dim": 16,
+   "resId": -4095,
+   "source": "System Folder/Extensions/LaserWriter 8",
+   "type": "EPSF"
+  },
+  "vgrd/PRER": {
+   "asset": "appicons/vgrd__PRER.png",
+   "creator": "vgrd",
+   "dim": 32,
+   "resId": -4096,
+   "source": "System Folder/Extensions/LaserWriter 8",
+   "type": "PRER"
+  },
+  "vgrd/PRER-16": {
+   "asset": "appicons/vgrd__PRER-16.png",
+   "creator": "vgrd",
+   "dim": 16,
+   "resId": -4096,
+   "source": "System Folder/Extensions/LaserWriter 8",
+   "type": "PRER"
+  },
+  "vgrd/Pref": {
+   "asset": "appicons/vgrd__Pref.png",
+   "creator": "vgrd",
+   "dim": 32,
+   "resId": -4093,
+   "source": "System Folder/Extensions/LaserWriter 8",
+   "type": "Pref"
+  },
+  "vgrd/Pref-16": {
+   "asset": "appicons/vgrd__Pref-16.png",
+   "creator": "vgrd",
+   "dim": 16,
+   "resId": -4093,
+   "source": "System Folder/Extensions/LaserWriter 8",
+   "type": "Pref"
+  },
+  "vgrd/TEXT": {
+   "asset": "appicons/vgrd__TEXT.png",
+   "creator": "vgrd",
+   "dim": 32,
+   "resId": -4094,
+   "source": "System Folder/Extensions/LaserWriter 8",
+   "type": "TEXT"
+  },
+  "vgrd/TEXT-16": {
+   "asset": "appicons/vgrd__TEXT-16.png",
+   "creator": "vgrd",
+   "dim": 16,
+   "resId": -4094,
+   "source": "System Folder/Extensions/LaserWriter 8",
+   "type": "TEXT"
+  },
+  "vgrd/shlb": {
+   "asset": "appicons/vgrd__shlb.png",
+   "creator": "vgrd",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/PrintingLib",
+   "type": "shlb"
+  },
+  "vgrd/shlb-16": {
+   "asset": "appicons/vgrd__shlb-16.png",
+   "creator": "vgrd",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/PrintingLib",
+   "type": "shlb"
+  },
+  "voiv/x61616d20": {
+   "asset": "appicons/voiv__x61616d20.png",
+   "creator": "voiv",
+   "dim": 32,
+   "resId": 200,
+   "source": "System Folder/Extensions/Voice Verification",
+   "type": "x61616d20"
+  },
+  "voiv/x61616d20-16": {
+   "asset": "appicons/voiv__x61616d20-16.png",
+   "creator": "voiv",
+   "dim": 16,
+   "resId": 200,
+   "source": "System Folder/Extensions/Voice Verification",
+   "type": "x61616d20"
+  },
+  "walk/APPC": {
+   "asset": "appicons/walk__APPC.png",
+   "creator": "walk",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Panels/Location Manager",
+   "type": "APPC"
+  },
+  "walk/APPC-16": {
+   "asset": "appicons/walk__APPC-16.png",
+   "creator": "walk",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Panels/Location Manager",
+   "type": "APPC"
+  },
+  "walk/loc2": {
+   "asset": "appicons/walk__loc2.png",
+   "creator": "walk",
+   "dim": 32,
+   "resId": 130,
+   "source": "System Folder/Control Panels/Location Manager",
+   "type": "loc2"
+  },
+  "walk/loc2-16": {
+   "asset": "appicons/walk__loc2-16.png",
+   "creator": "walk",
+   "dim": 16,
+   "resId": 130,
+   "source": "System Folder/Control Panels/Location Manager",
+   "type": "loc2"
+  },
+  "walk/locR": {
+   "asset": "appicons/walk__locR.png",
+   "creator": "walk",
+   "dim": 32,
+   "resId": 129,
+   "source": "System Folder/Control Panels/Location Manager",
+   "type": "locR"
+  },
+  "walk/locR-16": {
+   "asset": "appicons/walk__locR-16.png",
+   "creator": "walk",
+   "dim": 16,
+   "resId": 129,
+   "source": "System Folder/Control Panels/Location Manager",
+   "type": "locR"
+  },
+  "walk/thng": {
+   "asset": "appicons/walk__thng.png",
+   "creator": "walk",
+   "dim": 32,
+   "resId": 132,
+   "source": "System Folder/Control Panels/Location Manager",
+   "type": "thng"
+  },
+  "walk/thng-16": {
+   "asset": "appicons/walk__thng-16.png",
+   "creator": "walk",
+   "dim": 16,
+   "resId": 132,
+   "source": "System Folder/Control Panels/Location Manager",
+   "type": "thng"
+  },
+  "wbsh/appe": {
+   "asset": "appicons/wbsh__appe.png",
+   "creator": "wbsh",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/Web Sharing Extension",
+   "type": "appe"
+  },
+  "wbsh/appe-16": {
+   "asset": "appicons/wbsh__appe-16.png",
+   "creator": "wbsh",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/Web Sharing Extension",
+   "type": "appe"
+  },
+  "wbsu/APPC": {
+   "asset": "appicons/wbsu__APPC.png",
+   "creator": "wbsu",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Panels/Web Sharing",
+   "type": "APPC"
+  },
+  "wbsu/APPC-16": {
+   "asset": "appicons/wbsu__APPC-16.png",
+   "creator": "wbsu",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Panels/Web Sharing",
+   "type": "APPC"
+  },
+  "wbsu/APPL": {
+   "asset": "appicons/wbsu__APPL.png",
+   "creator": "wbsu",
+   "dim": 32,
+   "resId": 129,
+   "source": "System Folder/Control Panels/Web Sharing",
+   "type": "APPL"
+  },
+  "wbsu/APPL-16": {
+   "asset": "appicons/wbsu__APPL-16.png",
+   "creator": "wbsu",
+   "dim": 16,
+   "resId": 129,
+   "source": "System Folder/Control Panels/Web Sharing",
+   "type": "APPL"
+  },
+  "wmap/cdev": {
+   "asset": "appicons/wmap__cdev.png",
+   "creator": "wmap",
+   "dim": 32,
+   "resId": -4064,
+   "source": "Applications (Mac OS 9)/Apple Extras/Map Control Panel/Map",
+   "type": "cdev"
+  },
+  "wmap/cdev-16": {
+   "asset": "appicons/wmap__cdev-16.png",
+   "creator": "wmap",
+   "dim": 16,
+   "resId": -4064,
+   "source": "Applications (Mac OS 9)/Apple Extras/Map Control Panel/Map",
+   "type": "cdev"
+  },
+  "wnkl/APPC": {
+   "asset": "appicons/wnkl__APPC.png",
+   "creator": "wnkl",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Panels/Energy Saver",
+   "type": "APPC"
+  },
+  "wnkl/APPC-16": {
+   "asset": "appicons/wnkl__APPC-16.png",
+   "creator": "wnkl",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Panels/Energy Saver",
+   "type": "APPC"
+  },
+  "wscs/sdev": {
+   "asset": "appicons/wscs__sdev.png",
+   "creator": "wscs",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/Web Sharing CS",
+   "type": "sdev"
+  },
+  "wscs/sdev-16": {
+   "asset": "appicons/wscs__sdev-16.png",
+   "creator": "wscs",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Control Strip Modules/Web Sharing CS",
+   "type": "sdev"
+  },
+  "x64766220/INIT": {
+   "asset": "appicons/x64766220__INIT.png",
+   "creator": "x64766220",
+   "dim": 32,
+   "resId": -19071,
+   "source": "System Folder/Extensions/QuickTime\u2122 Musical Instruments",
+   "type": "INIT"
+  },
+  "x64766220/INIT-16": {
+   "asset": "appicons/x64766220__INIT-16.png",
+   "creator": "x64766220",
+   "dim": 16,
+   "resId": -19071,
+   "source": "System Folder/Extensions/QuickTime\u2122 Musical Instruments",
+   "type": "INIT"
+  },
+  "x666e7320/appe": {
+   "asset": "appicons/x666e7320__appe.png",
+   "creator": "x666e7320",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/FontSync Extension",
+   "type": "appe"
+  },
+  "x666e7320/appe-16": {
+   "asset": "appicons/x666e7320__appe-16.png",
+   "creator": "x666e7320",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/FontSync Extension",
+   "type": "appe"
+  },
+  "x666e7320/fnsp": {
+   "asset": "appicons/x666e7320__fnsp.png",
+   "creator": "x666e7320",
+   "dim": 32,
+   "resId": 129,
+   "source": "System Folder/Extensions/FontSync Extension",
+   "type": "fnsp"
+  },
+  "x666e7320/fnsp-16": {
+   "asset": "appicons/x666e7320__fnsp-16.png",
+   "creator": "x666e7320",
+   "dim": 16,
+   "resId": 129,
+   "source": "System Folder/Extensions/FontSync Extension",
+   "type": "fnsp"
+  },
+  "x66772020/expt": {
+   "asset": "appicons/x66772020__expt.png",
+   "creator": "x66772020",
+   "dim": 32,
+   "resId": -16455,
+   "source": "System Folder/Extensions/FireWire Support",
+   "type": "expt"
+  },
+  "x66772020/expt-16": {
+   "asset": "appicons/x66772020__expt-16.png",
+   "creator": "x66772020",
+   "dim": 16,
+   "resId": -16455,
+   "source": "System Folder/Extensions/FireWire Support",
+   "type": "expt"
+  },
+  "x66772020/ndrv": {
+   "asset": "appicons/x66772020__ndrv.png",
+   "creator": "x66772020",
+   "dim": 32,
+   "resId": -16455,
+   "source": "System Folder/Extensions/FireWire Support",
+   "type": "ndrv"
+  },
+  "x66772020/ndrv-16": {
+   "asset": "appicons/x66772020__ndrv-16.png",
+   "creator": "x66772020",
+   "dim": 16,
+   "resId": -16455,
+   "source": "System Folder/Extensions/FireWire Support",
+   "type": "ndrv"
+  },
+  "x73616420/INIT": {
+   "asset": "appicons/x73616420__INIT.png",
+   "creator": "x73616420",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/Sound Manager",
+   "type": "INIT"
+  },
+  "x73616420/INIT-16": {
+   "asset": "appicons/x73616420__INIT-16.png",
+   "creator": "x73616420",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/Sound Manager",
+   "type": "INIT"
+  },
+  "x73616420/thng": {
+   "asset": "appicons/x73616420__thng.png",
+   "creator": "x73616420",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/Sound Manager",
+   "type": "thng"
+  },
+  "x73616420/thng-16": {
+   "asset": "appicons/x73616420__thng-16.png",
+   "creator": "x73616420",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/Sound Manager",
+   "type": "thng"
+  },
+  "x7a616b20/APPL": {
+   "asset": "appicons/x7a616b20__APPL.png",
+   "creator": "x7a616b20",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/USB Printer Sharing Extension",
+   "type": "APPL"
+  },
+  "x7a616b20/APPL-16": {
+   "asset": "appicons/x7a616b20__APPL-16.png",
+   "creator": "x7a616b20",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/USB Printer Sharing Extension",
+   "type": "APPL"
+  },
+  "x7a616b20/appe": {
+   "asset": "appicons/x7a616b20__appe.png",
+   "creator": "x7a616b20",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/USB Printer Sharing Extension",
+   "type": "appe"
+  },
+  "x7a616b20/appe-16": {
+   "asset": "appicons/x7a616b20__appe-16.png",
+   "creator": "x7a616b20",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/USB Printer Sharing Extension",
+   "type": "appe"
+  },
+  "x8c6e6436/INIT": {
+   "asset": "appicons/x8c6e6436__INIT.png",
+   "creator": "x8c6e6436",
+   "dim": 32,
+   "resId": -19071,
+   "source": "System Folder/Extensions/QuickTime\u2122",
+   "type": "INIT"
+  },
+  "x8c6e6436/INIT-16": {
+   "asset": "appicons/x8c6e6436__INIT-16.png",
+   "creator": "x8c6e6436",
+   "dim": 16,
+   "resId": -19071,
+   "source": "System Folder/Extensions/QuickTime\u2122",
+   "type": "INIT"
+  },
+  "x8c6e6437/cdev": {
+   "asset": "appicons/x8c6e6437__cdev.png",
+   "creator": "x8c6e6437",
+   "dim": 32,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/QuickTime\u2122 Settings",
+   "type": "cdev"
+  },
+  "x8c6e6437/cdev-16": {
+   "asset": "appicons/x8c6e6437__cdev-16.png",
+   "creator": "x8c6e6437",
+   "dim": 16,
+   "resId": -4064,
+   "source": "System Folder/Control Panels/QuickTime\u2122 Settings",
+   "type": "cdev"
+  },
+  "x8c6e6438/INIT": {
+   "asset": "appicons/x8c6e6438__INIT.png",
+   "creator": "x8c6e6438",
+   "dim": 32,
+   "resId": -19071,
+   "source": "System Folder/Extensions/QuickTime\u2122 PowerPlug",
+   "type": "INIT"
+  },
+  "x8c6e6438/INIT-16": {
+   "asset": "appicons/x8c6e6438__INIT-16.png",
+   "creator": "x8c6e6438",
+   "dim": 16,
+   "resId": -19071,
+   "source": "System Folder/Extensions/QuickTime\u2122 PowerPlug",
+   "type": "INIT"
+  },
+  "x8c6e6439/NSPL": {
+   "asset": "appicons/x8c6e6439__NSPL.png",
+   "creator": "x8c6e6439",
+   "dim": 32,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Plug-ins/QuickTime Plugin",
+   "type": "NSPL"
+  },
+  "x8c6e6439/NSPL-16": {
+   "asset": "appicons/x8c6e6439__NSPL-16.png",
+   "creator": "x8c6e6439",
+   "dim": 16,
+   "resId": 128,
+   "source": "Applications (Mac OS 9)/Internet Explorer 5/Plug-ins/QuickTime Plugin",
+   "type": "NSPL"
+  },
+  "x8c6e6461/INIT": {
+   "asset": "appicons/x8c6e6461__INIT.png",
+   "creator": "x8c6e6461",
+   "dim": 32,
+   "resId": -19071,
+   "source": "System Folder/Extensions/QuickTime Extensions/QuickTime Authoring",
+   "type": "INIT"
+  },
+  "x8c6e6461/INIT-16": {
+   "asset": "appicons/x8c6e6461__INIT-16.png",
+   "creator": "x8c6e6461",
+   "dim": 16,
+   "resId": -19071,
+   "source": "System Folder/Extensions/QuickTime Extensions/QuickTime Authoring",
+   "type": "INIT"
+  },
+  "x8c6e6462/INIT": {
+   "asset": "appicons/x8c6e6462__INIT.png",
+   "creator": "x8c6e6462",
+   "dim": 32,
+   "resId": -19071,
+   "source": "System Folder/Extensions/QuickTime Extensions/QuickTime Capture",
+   "type": "INIT"
+  },
+  "x8c6e6462/INIT-16": {
+   "asset": "appicons/x8c6e6462__INIT-16.png",
+   "creator": "x8c6e6462",
+   "dim": 16,
+   "resId": -19071,
+   "source": "System Folder/Extensions/QuickTime Extensions/QuickTime Capture",
+   "type": "INIT"
+  },
+  "x8c6e6463/INIT": {
+   "asset": "appicons/x8c6e6463__INIT.png",
+   "creator": "x8c6e6463",
+   "dim": 32,
+   "resId": -19071,
+   "source": "System Folder/Extensions/QuickTime Extensions/QuickTime Effects",
+   "type": "INIT"
+  },
+  "x8c6e6463/INIT-16": {
+   "asset": "appicons/x8c6e6463__INIT-16.png",
+   "creator": "x8c6e6463",
+   "dim": 16,
+   "resId": -19071,
+   "source": "System Folder/Extensions/QuickTime Extensions/QuickTime Effects",
+   "type": "INIT"
+  },
+  "x8c6e6464/INIT": {
+   "asset": "appicons/x8c6e6464__INIT.png",
+   "creator": "x8c6e6464",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/QuickTime Extensions/QuickTime Streaming",
+   "type": "INIT"
+  },
+  "x8c6e6464/INIT-16": {
+   "asset": "appicons/x8c6e6464__INIT-16.png",
+   "creator": "x8c6e6464",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/QuickTime Extensions/QuickTime Streaming",
+   "type": "INIT"
+  },
+  "x8c6e6465/INIT": {
+   "asset": "appicons/x8c6e6465__INIT.png",
+   "creator": "x8c6e6465",
+   "dim": 32,
+   "resId": -19071,
+   "source": "System Folder/Extensions/QuickTime Extensions/QuickTime Image",
+   "type": "INIT"
+  },
+  "x8c6e6465/INIT-16": {
+   "asset": "appicons/x8c6e6465__INIT-16.png",
+   "creator": "x8c6e6465",
+   "dim": 16,
+   "resId": -19071,
+   "source": "System Folder/Extensions/QuickTime Extensions/QuickTime Image",
+   "type": "INIT"
+  },
+  "x8c6e6466/INIT": {
+   "asset": "appicons/x8c6e6466__INIT.png",
+   "creator": "x8c6e6466",
+   "dim": 32,
+   "resId": -19071,
+   "source": "System Folder/Extensions/QuickTime Extensions/QuickTime Internet Extras",
+   "type": "INIT"
+  },
+  "x8c6e6466/INIT-16": {
+   "asset": "appicons/x8c6e6466__INIT-16.png",
+   "creator": "x8c6e6466",
+   "dim": 16,
+   "resId": -19071,
+   "source": "System Folder/Extensions/QuickTime Extensions/QuickTime Internet Extras",
+   "type": "INIT"
+  },
+  "x8c6e6467/INIT": {
+   "asset": "appicons/x8c6e6467__INIT.png",
+   "creator": "x8c6e6467",
+   "dim": 32,
+   "resId": -19071,
+   "source": "System Folder/Extensions/QuickTime Extensions/QuickTime Music",
+   "type": "INIT"
+  },
+  "x8c6e6467/INIT-16": {
+   "asset": "appicons/x8c6e6467__INIT-16.png",
+   "creator": "x8c6e6467",
+   "dim": 16,
+   "resId": -19071,
+   "source": "System Folder/Extensions/QuickTime Extensions/QuickTime Music",
+   "type": "INIT"
+  },
+  "x8c6e6468/INIT": {
+   "asset": "appicons/x8c6e6468__INIT.png",
+   "creator": "x8c6e6468",
+   "dim": 32,
+   "resId": -19071,
+   "source": "System Folder/Extensions/QuickTime Extensions/QuickTime QD3D",
+   "type": "INIT"
+  },
+  "x8c6e6468/INIT-16": {
+   "asset": "appicons/x8c6e6468__INIT-16.png",
+   "creator": "x8c6e6468",
+   "dim": 16,
+   "resId": -19071,
+   "source": "System Folder/Extensions/QuickTime Extensions/QuickTime QD3D",
+   "type": "INIT"
+  },
+  "x8c6e6469/pshr": {
+   "asset": "appicons/x8c6e6469__pshr.png",
+   "creator": "x8c6e6469",
+   "dim": 32,
+   "resId": 128,
+   "source": "System Folder/Extensions/QuickTime Extensions/QuickTime Web Helper",
+   "type": "pshr"
+  },
+  "x8c6e6469/pshr-16": {
+   "asset": "appicons/x8c6e6469__pshr-16.png",
+   "creator": "x8c6e6469",
+   "dim": 16,
+   "resId": 128,
+   "source": "System Folder/Extensions/QuickTime Extensions/QuickTime Web Helper",
+   "type": "pshr"
+  }
+ },
+ "note": "Apple app icons by (creator,type); private repo only",
+ "pack": "appicons"
+}
