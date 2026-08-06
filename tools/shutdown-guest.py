@@ -126,6 +126,36 @@ def worker_answers(port):
         return False
 
 
+def wait_for_disk_quiet(sock_path, disk, settle=8.0, cap=120.0):
+    """Block until the VM's disk image stops changing.
+
+    The completion signal the worker cannot give (see the caller). Size
+    and mtime together catch both a growing qcow2 and a rewrite in
+    place. `settle` is how long unchanged counts as finished; `cap`
+    stops a machine that never settles from blocking forever, and says
+    so rather than pretending it settled.
+    """
+    if disk is None:
+        disk = os.path.join(os.path.dirname(os.path.abspath(sock_path)),
+                            "session.qcow2")
+    if not os.path.exists(disk):
+        return f"no disk at {disk} to watch, waited {settle:.0f}s blind"
+    t0 = time.time()
+    last = None
+    steady_since = None
+    while time.time() - t0 < cap:
+        st = os.stat(disk)
+        now = (st.st_size, st.st_mtime)
+        if now != last:
+            last, steady_since = now, time.time()
+        elif time.time() - steady_since >= settle:
+            return (f"disk quiet for {settle:.0f}s after "
+                    f"{time.time() - t0:.0f}s")
+        time.sleep(1.0)
+    return (f"disk STILL being written {cap:.0f}s after the worker went "
+            f"quiet - quitting anyway, and this image should be checked")
+
+
 def quit_a_shut_down_machine(sock_path):
     """QMP `quit` on a guest that has ALREADY unmounted its volume.
 
@@ -196,6 +226,10 @@ def main():
                     help="seconds to wait for QEMU to exit (default 120)")
     ap.add_argument("--applet", default=f"{DEV}:{APPLET}",
                     help="HFS path of the staged shutdown applet")
+    ap.add_argument("--disk", default=None,
+                    help="the VM's disk image, watched for the writes that "
+                         "outlast the worker; defaults to session.qcow2 "
+                         "beside the qmp socket")
     a = ap.parse_args()
 
     if not qmp_alive(a.sock):
@@ -257,11 +291,25 @@ def main():
             if worker_answers(a.port):
                 continue
             elapsed = int(time.time() - t0)
-            # Let the last writes drain before taking the process away.
-            time.sleep(5)
-            print(f"guest shut itself down ({elapsed}s); QEMU is still "
-                  f"resident because mac99 does not power off, so quitting "
-                  f"the already-unmounted machine")
+            # WAIT FOR THE DISK, NOT FOR THE WORKER. **The worker going
+            # quiet means shutdown STARTED, not that it finished.** The
+            # Shutdown Manager quits applications first and flushes and
+            # unmounts volumes after, so the worker - an application - is
+            # gone while the volume is still being written. A fixed five
+            # second sleep here was not enough on 2026-08-06: two images
+            # were preserved as the Mirror oracle with the volume still
+            # marked mounted, and every clone of them opened with Disk
+            # First Aid. `qemu-img check` passed both, because it
+            # validates the container and cannot see the filesystem.
+            #
+            # So watch the disk instead: quit only once the image has
+            # stopped changing. That is the machine telling us it has
+            # finished, rather than us assuming from an application's
+            # silence.
+            quiesced = wait_for_disk_quiet(a.sock, a.disk)
+            print(f"guest shut itself down ({elapsed}s); {quiesced}; QEMU "
+                  f"is still resident because mac99 does not power off, so "
+                  f"quitting the already-unmounted machine")
             quit_a_shut_down_machine(a.sock)
             deadline = time.time() + 30
             while time.time() < deadline and qmp_alive(a.sock):
