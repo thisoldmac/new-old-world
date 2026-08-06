@@ -40,10 +40,25 @@ ASSETS="${NOW_STAGE_ASSETS:-$HOME/Lab/Assets/os91-qemu}"
 STAGE="${NOW_STAGE_IMAGE:-$ASSETS/now-mirror-stage.qcow2}"
 RUN="${NOW_SPIN_RUN:-/private/tmp/nowvm-bake-$$}"
 WIRE="${NOW_WIRE_PORT:-5311}"
-# The capability word the resident must publish. Named here so a bake that
-# comes back with a SMALLER one — a plane that failed to arm — is a failure
-# rather than a green run with a quiet regression in it.
-WANT_CAPS="${NOW_EXT_CAPABILITIES:-63}"
+# The capability word the resident must publish, DERIVED from the contract
+# rather than typed here: every kNowPeekTableCap* bit in
+# contract/peek_table.h, OR'd. A bake that comes back with a smaller word —
+# a plane that failed to arm — is then a failure rather than a green run
+# with a quiet regression in it, and a branch that adds a plane (63 -> 127,
+# the resident transport) does not have to remember to edit this script.
+WANT_CAPS="${NOW_EXT_CAPABILITIES:-}"
+if [ -z "$WANT_CAPS" ]; then
+    WANT_CAPS="$(python3 - "$NOW/contract/peek_table.h" <<'PY'
+import re, sys
+bits = 0
+for shift in re.findall(r"kNowPeekTableCap\w+\s*=\s*1u?\s*<<\s*(\d+)",
+                        open(sys.argv[1]).read()):
+    bits |= 1 << int(shift)
+print(bits)
+PY
+)"
+fi
+echo "   expected capability word: $WANT_CAPS (from contract/peek_table.h)"
 
 [ -f "$STAGE" ] || { echo "no stage image at $STAGE (set NOW_STAGE_IMAGE)" >&2; exit 1; }
 
@@ -97,7 +112,15 @@ import json, sys
 raw, out, want_build, want_source, want_caps = sys.argv[1:6]
 found = None
 for line in open(raw):
+    # askguest prints the wire verbatim with a direction marker: "-> " for
+    # what it asked, "<- " for what the guest said. Reading only lines that
+    # START with "{" found nothing in a reply that was plainly there, and
+    # the script then said "the resident is NOT this build" about a guest
+    # that had just identified itself correctly. Watched 2026-08-06: a
+    # parser bug wearing the failure message of a real defect.
     line = line.strip()
+    if line[:3] in ("-> ", "<- "):
+        line = line[3:]
     if not line.startswith("{"):
         continue
     try:
