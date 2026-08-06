@@ -1,0 +1,13 @@
+Which OS 9.1 applications composite offscreen - from PEF import tables.
+Static: no application was launched. mac99 now-mirror-stage image, 2026-08-06.
+
+application            NewGWorld      DisposeGWorld  UpdateGWorld   SetGWorld      LockPixels     CopyBits       PlotIconSuite  PlotIconRef    SetStdCProcs  
+Finder                 YES            YES            -              YES            YES            YES            YES            YES            -             
+Sherlock 2             YES            YES            -              YES            YES            YES            -              YES            YES           
+Graphing Calculator    YES            YES            YES            YES            YES            YES            -              -              YES           
+Network Browser        -              -              -              -              -              -              -              -              -             
+Dock                   -              -              -              -              -              -              -              YES            -             
+Appearance cdev        YES            YES            -              YES            YES            YES            -              YES            -             
+Date & Time cdev       -              -              -              -              -              -              YES            -              -             
+Energy Saver cdev      -              -              -              -              -              -              -              -              -             
+AppleTalk cdev         -              -              -              -              -              -              -              -              -             

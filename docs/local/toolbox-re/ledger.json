@@ -256,6 +256,27 @@
       "provenance": "static",
       "evidence": "tools/pef.py",
       "at": "2026-08-06T04:23:56-0400"
+    },
+    {
+      "phase": "P4",
+      "claim": "THE SPREAD, ANSWERED STATICALLY from PEF import tables - which applications composite offscreen, without launching any of them. USE GWORLDS: Finder, Sherlock 2, Graphing Calculator, Appearance control panel. DO NOT: Network Browser, Dock, Date & Time cdev, Energy Saver cdev, AppleTalk cdev (no NewGWorld, no CopyBits at all - they draw straight to their windows, so their content is already visible to a plain window-port hook). SimpleText has no PEF (68K), consistent with its text being directly visible in the arc's own control run.",
+      "provenance": "static",
+      "evidence": "docs/local/toolbox-re/app-offscreen-table.txt",
+      "at": "2026-08-06T04:24:54-0400"
+    },
+    {
+      "phase": "P4",
+      "claim": "ONLY Graphing Calculator imports UpdateGWorld. The Finder, Sherlock 2 and Appearance all import NewGWorld+DisposeGWorld WITHOUT it, so they cannot resize an offscreen world in place and must destroy and recreate - which is why a hook on such a world has to be re-established and why the Finder's hooked row went stale across resizes. Create-and-destroy is the era's NORM, not a Finder quirk.",
+      "provenance": "static",
+      "evidence": "docs/local/toolbox-re/app-offscreen-table.txt",
+      "at": "2026-08-06T04:24:54-0400"
+    },
+    {
+      "phase": "P5",
+      "claim": "Sherlock 2 and Appearance import SetStdCProcs - they install their own QuickDraw bottlenecks. The content plane REFUSES a port whose grafProcs is already non-NULL (now_content.c, skipped_ports), so those two applications are unhookable by this plane BY DESIGN, and that refusal is now a measured limitation rather than a theoretical one.",
+      "provenance": "static",
+      "evidence": "docs/local/toolbox-re/app-offscreen-table.txt",
+      "at": "2026-08-06T04:24:54-0400"
     }
   ],
   "blockers": [
