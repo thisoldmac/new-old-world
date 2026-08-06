@@ -130,4 +130,14 @@ if [ "$which" = both ] || [ "$which" = 68k ]; then
         tools/guest-wedge "${NOW68K_TOOLCHAIN:-}" wedge
 fi
 
+# The GWorld spike, third rig applet and the same kind of thing: it owns
+# both ends of the question the foreign probe cannot separate - does
+# offscreen drawing consult grafProcs at all, and where does a GWorld's
+# port actually live. docs/gworld-probe-brief.md, and the spike's own
+# header for why it is 68K.
+if [ "$which" = both ] || [ "$which" = 68k ]; then
+    build_guest "guest-gworld (NOW GWorld, rig instrument)" \
+        tools/guest-gworld "${NOW68K_TOOLCHAIN:-}" gworld
+fi
+
 exit $rc
