@@ -100,6 +100,7 @@ add_application(now-guest-ppc
     src/workshop/workshop_sidebar.c
     src/workshop/workshop_window.c
     src/scene/scene_build.c
+    src/scene/scene_digest.c
     src/scene/scene_json.c
     src/scene/scene_phase.c
     src/scene/scene_collect.c

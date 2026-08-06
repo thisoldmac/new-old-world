@@ -111,6 +111,28 @@ final class Session {
     /// a pushed scene — the guest only walks when asked — so a scene
     /// arriving without this is a stray, not a gift.
     private var sceneSolicitedId: Int?
+    /// THE DELTA BASELINE, and its lifetime is exactly right by
+    /// construction: a `Session` is one connection, so a reconnect cannot
+    /// inherit a baseline and a guest that restarted cannot be quoted one.
+    ///
+    /// It is held HERE rather than by the Mirror source because nothing
+    /// above this layer should have to learn what a digest is. The caller
+    /// asks for a scene; this decides whether to name a baseline, and
+    /// hands up a whole document either way.
+    private var sceneBaseline: MirrorSceneDelta.Baseline?
+    /// The `since` the outstanding request quoted, so an answer can be
+    /// proved to be about the baseline we named rather than another one.
+    private var sceneAskedBaseline: String?
+    /// How many deltas this side has applied against the current chain.
+    ///
+    /// The guest bounds the chain too, at 64. This is a SECOND, INDEPENDENT
+    /// bound, and it is deliberately not the same number: a bound that only
+    /// the producer enforces is a bound that stops existing the moment the
+    /// producer is the thing that is wrong. Re-proving the whole mirror
+    /// every fifty scenes costs one document a minute at the cadence the
+    /// Mirror actually polls at.
+    private var sceneDeltaRun = 0
+    static let sceneResyncEvery = 50
     private var acceptedOfferId: Int?
     /// In-flight file pull: the begin that announced it and the bounded
     /// disk sink receiving its bulk frames.
@@ -602,6 +624,8 @@ final class Session {
             sceneBuffer.reserveCapacity(begin.bytes)
         case .sceneEnd(let end):
             finishScene(end)
+        case .sceneSame(let same):
+            finishSceneSame(same)
         case .bye(let bye):
             let name = guestName
             finish(reason: byeDescription(bye, guest: name))
@@ -1490,8 +1514,51 @@ final class Session {
                 refusedByGuest: false)))
             return
         }
+        let asked = sceneAskedBaseline
+        sceneAskedBaseline = nil
+        var document = Data(blob)
+        var form = GuestListener.SceneForm.whole
+        if begin.delta == true {
+            /* THE ONE PLACE A DELTA IS APPLIED, and it produces a whole
+               document. Everything below this line - the decoder, the
+               reducer, the engine's retention and removal rules - is the
+               path a whole scene has always taken, unchanged. */
+            do {
+                let applied = try MirrorSceneDelta.apply(
+                    delta: document, to: sceneBaseline,
+                    askedBaseline: asked ?? "",
+                    expected: begin.digest)
+                document = applied.document
+                sceneBaseline = applied.baseline
+                sceneBaseline?.irVersion = begin.irVersion
+                sceneDeltaRun += 1
+                form = .delta
+            } catch {
+                /* Discard the rebuild and publish NOTHING from it. The
+                   state already on screen stands, because it is the last
+                   one that was proven; dropping the baseline makes the
+                   next request ask for the truth. This is the whole of
+                   the recovery story and it needs no negotiation. */
+                sceneBaseline = nil
+                sceneDeltaRun = 0
+                onScene(.failure(.init(
+                    message: "could not apply the scene delta: \(error) — "
+                        + "asking for a whole scene next",
+                    refusedByGuest: false)))
+                return
+            }
+        } else {
+            /* A whole document becomes the next baseline, when it can. A
+               scene we cannot slice - a row with no incarnation, say - is
+               simply not one we can be a delta consumer for, and the
+               honest consequence is that the next request omits `since`
+               rather than that anything fails. */
+            sceneBaseline = try? MirrorSceneDelta.slice(whole: document)
+            sceneBaseline?.irVersion = begin.irVersion
+            sceneDeltaRun = 0
+        }
         onScene(.success(.init(
-            document: Data(blob),
+            document: document,
             /* The ENVELOPE's major, carried through untouched. The gate
                that reads it runs at the decoder, on this number, before
                the document below is parsed — so nothing on the way here
@@ -1503,6 +1570,7 @@ final class Session {
             walkMs: begin.walkMs,
             settlements: begin.settlements,
             transferMs: Int(Date().timeIntervalSince(sceneStart) * 1000),
+            wireBytes: blob.count, wholeBytes: begin.wholeBytes, form: form,
             guestName: guestName, guestKey: guestKey)))
     }
 
@@ -1510,15 +1578,70 @@ final class Session {
     /// `sendCaptureRequest` does, because the answer arrives the same way.
     func sendSceneRequest(id: Int, staleAfterMs: Int?, semantics: Bool,
                           interaction: Bool,
-                          tuning: GuestListener.CaptureTuning) {
+                          tuning: GuestListener.CaptureTuning,
+                          full: Bool = false) {
         sceneBegin = nil
         sceneBuffer = []
         sceneSolicitedId = id
         sceneStart = Date()
+        /* We quote the digest of the last scene we FULLY APPLIED, never a
+           sequence number. A sequence says which document the guest thinks
+           we have; a digest says which one we actually hold, and those
+           differ exactly when this side mis-applied a delta - the failure
+           the whole scheme has to survive. A guest that does not recognise
+           it answers whole, so the recovery path is the ordinary path. */
+        var full = full
+        if sceneDeltaRun >= Session.sceneResyncEvery {
+            full = true
+            sceneDeltaRun = 0
+        }
+        let since = full ? nil : sceneBaseline?.digest
+        sceneAskedBaseline = since
         send(.sceneRequest(SceneRequest(
             id: id, chunkKb: tuning.chunkKb, paceMs: tuning.paceMs,
             staleAfterMs: staleAfterMs, semantics: semantics,
-            interaction: interaction)))
+            interaction: interaction, since: since,
+            full: full ? true : nil)))
+    }
+
+    /// The no-change answer. Nothing arrived on the bulk lane and nothing
+    /// needed to: we republish the baseline at the new moment, which is
+    /// what `capturedAt` has meant since it was added — same scene, newer
+    /// moment.
+    private func finishSceneSame(_ same: SceneSame) {
+        guard sceneSolicitedId == same.id else {
+            onLog("ignored a scene.same nobody asked for", "wire", .info)
+            return
+        }
+        sceneSolicitedId = nil
+        sceneBegin = nil
+        sceneBuffer = []
+        let asked = sceneAskedBaseline
+        sceneAskedBaseline = nil
+        guard let baseline = sceneBaseline, let asked, same.digest == asked else {
+            /* A guest that answers "the same" about a baseline we did not
+               name is confused about what it just compared. We drop our
+               baseline so the next request asks for the truth, rather than
+               publishing a scene on the strength of an agreement neither
+               side can point at. */
+            sceneBaseline = nil
+            onScene(.failure(.init(
+                message: "the guest said nothing changed since "
+                    + "\(same.digest), which is not the \(asked ?? "nothing") "
+                    + "we asked about",
+                refusedByGuest: false)))
+            return
+        }
+        onScene(.success(.init(
+            document: MirrorSceneDelta.republish(baseline, seq: same.seq,
+                                                 capturedAt: same.capturedAt),
+            irVersion: baseline.irVersion,
+            seq: same.seq, capturedAt: same.capturedAt,
+            source: baseline.sourceText,
+            walkMs: same.walkMs, settlements: same.settlements,
+            transferMs: Int(Date().timeIntervalSince(sceneStart) * 1000),
+            wireBytes: 0, wholeBytes: nil, form: .unchanged,
+            guestName: guestName, guestKey: guestKey)))
     }
 
     private func gate(_ hello: Hello) {

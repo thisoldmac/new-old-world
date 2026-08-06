@@ -624,9 +624,23 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 self.refreshComplements(update.scene,
                                         generation: generation) {
                     guard self.isCurrentCycle(generation) else { return }
+                    /* THE WIRE COST, beside the walk and the transfer,
+                       because the whole argument for deltas is a byte
+                       count and a claim is not a measurement. "same"
+                       means no bulk lane was used at all. */
+                    let wire: String
+                    switch delivery.form {
+                    case .unchanged:
+                        wire = "same"
+                    case .delta:
+                        wire = "delta \(delivery.wireBytes)B"
+                            + (delivery.wholeBytes.map { "/\($0)B" } ?? "")
+                    case .whole:
+                        wire = "whole \(delivery.wireBytes)B"
+                    }
                     self.ambient = "\(update.scene.windows.count) windows · walk "
                         + "\(delivery.walkMs.map { "\($0)ms" } ?? "?") · transfer "
-                        + "\(delivery.transferMs)ms · \(update.sentence)"
+                        + "\(delivery.transferMs)ms · \(wire) · \(update.sentence)"
                         + menuStatus
                     self.finishCycle(generation)
                     self.lifecycleDidChange()

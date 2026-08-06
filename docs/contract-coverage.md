@@ -33,6 +33,23 @@ same place, but nothing here fails a build. Treat this as correct on the
 date at the bottom and check it against the commands above before
 relying on it.
 
+> **The scene family is the biggest asymmetry here, and it is a
+> SUBSYSTEM, not a row (2026-08-06).** The PowerPC guest serves
+> `scene.request` and answers with `scene.begin`/bulk/`scene.end`, or —
+> since 2026-08-06 — with a delta or with `scene.same`. NOW-68K serves
+> none of it, and not because deltas are hard: it has no `scene/`,
+> `axwalk/`, `peek/` or `observe/` at all, so there is nothing for a
+> delta to be a delta of. Adding it is greenfield, and the portable part
+> is already portable — `scene_build.c`, `scene_json.c`, `scene_phase.c`
+> and `scene_digest.c` are Toolbox-free and compile on a host cc today.
+>
+> **The delta design was sized for that machine anyway**, which is worth
+> stating because a PowerBook 180c is the guest that would gain most: the
+> per-scene state is one key and one hash per entity (a few kilobytes,
+> nothing proportional to the document), the hash is 32-bit, and the
+> comparison is a `strcmp` and an integer compare per row. What NOW-68K
+> lacks is the walk, not the room.
+
 The other half of the join lives in [mcp-coverage.md](mcp-coverage.md):
 this file says what a **guest** serves, that one says what a **host
 face** can ask for, gap by gap. Neither restates the other's tables.
@@ -164,6 +181,9 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `capture.request` | ✅ | ✅ | 68K stages to disk, packs, then sends — `screenshot` verb too |
 | `capture.accept` / `capture.refuse` / `capture.cancel` | ✅ | ❌ | the guest-OFFERS-a-capture handshake; 68K only answers requests |
 | `stream.start` / `stream.stop` / `stream.refresh` | ✅ | ❌ | |
+| `scene.request` | ✅ | ❌ | the semantic walk — the Mirror's whole input. **NOW-68K serves no scene at all**: it has no `scene/`, no `axwalk/`, no `peek/` and no `observe/`, so a `scene.request` falls through to its unknown-message path. This is the single largest declared asymmetry in the contract and it is a subsystem, not a row |
+| `scene.begin` / `scene.end` | ✅ | ❌ | the answer's transfer pair. `scene.begin` gained `digest` / `delta` / `baseline` / `wholeBytes` on 2026-08-06 |
+| `scene.same` | ✅ | ❌ | the no-change answer, added 2026-08-06: a control frame with no transfer, sent only in answer to a request that quoted `since`. See [scene-deltas.md](scene-deltas.md) |
 | `agent.access` | ❌ | ❌ | neither guest HANDLES one — it is guest-to-host only, and a host never sends it. PPC SENDS it when its consent tier changes; 68K has no tier to change |
 | `cloud.report` / `cloud.listing` / `cloud.card` / `cloud.refuse` | ✅ | ❌ | the ASKER's half: the PPC guest consumes these as answers for its iCloud page and SENDS `cloud.services` / `cloud.list` / `cloud.detail` / `cloud.get` / `cloud.preview`. No guest serves the family — its subject is the host's own iCloud (contract `guestAsksCloud`), so these rows can never grow guest ticks |
 | `chat.catalog` / `chat.delta` / `chat.status` / `chat.result` | ✅ | ❌ | the ASKER's half of the chat family (contract `guestAsksChat`): the PPC guest SENDS `chat.models` / `chat.send` / `chat.cancel` / `chat.reset` — from its Chat page and its console-only `chat` verb — and consumes these as answers; the host serves the family from its harness (`ChatWireService`). `chat.models` is TWO asks in one message and `chat.catalog` two answer shapes: without a provider it lists providers; with one it pages that provider's models (cursor/more, asked lazily on selection), each row carrying a HOST-MINTED `ref` that `chat.send` returns — a provider's model name never crosses the wire. Like cloud, its subject is the host's own model harness, so this row can never grow guest-SERVING ticks. 68K never asks, deliberately: the page is PPC-only and the family is a luxury a 384 KB partition does not buy |
