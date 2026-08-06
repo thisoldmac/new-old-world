@@ -189,10 +189,11 @@ public enum DrawnCellGrid {
         guard cellsUnordered.count == columnsAt.count * rowsAt.count else {
             return nil
         }
+        /* Every cell of one candidate is the same size by construction —
+           they share the literal destination rect, and the origin only
+           translates it. So there is no size check here: a guard nothing
+           can trip reads as a rule and proves nothing. */
         let size = cellsUnordered[0].rect
-        guard cellsUnordered.allSatisfy({
-            $0.rect.width == size.width && $0.rect.height == size.height
-        }) else { return nil }
 
         /* The odd source out is the selected cell. Anything but a clean
            majority/minority split of exactly two sources says nothing. */

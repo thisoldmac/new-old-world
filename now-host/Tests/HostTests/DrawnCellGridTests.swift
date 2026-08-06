@@ -157,6 +157,44 @@ final class DrawnCellGridTests: XCTestCase {
         XCTAssertTrue(control.checked, "that is the selected cell")
     }
 
+    // MARK: - What actually reaches the picture
+
+    /// THE CLIP IS PORT-LOCAL, and this is the pixel gate that says so.
+    ///
+    /// Sherlock sets one `SetClip (0,0,51,46)` and then moves the origin
+    /// sixteen times — `SetOrigin` offsets a port's visRgn but not its
+    /// clipRgn, so the clip slides across the pixels with it. The replay
+    /// used to freeze that clip into a mirror-space rectangle when the op
+    /// arrived, which pinned it to the FIRST cell: fifteen wells and eight
+    /// channel icons were clipped away and the derived grid rendered as
+    /// empty boxes over nothing. Geometry alone could not catch that — the
+    /// cells were in the scene and correct — so this asserts on ink.
+    func testEveryCellHasInkInIt() throws {
+        let scene = try composed("qdtrace-drain-sherlock-live",
+                                 address: 0x1e9a0780, psn: "0.35979266")
+        let png = try RenderShot.png(scene: scene)
+        let image = try XCTUnwrap(NSBitmapImageRep(data: png))
+        let win = scene.windows[0]
+
+        for control in cells(win) {
+            let rect = try XCTUnwrap(control.rect)
+            /* The well's own art, inside the frame this side draws. */
+            var ink = 0
+            for y in (rect.t + 3)..<(rect.b - 3) {
+                for x in (rect.l + 3)..<(rect.r - 3) {
+                    let colour = image.colorAt(
+                        x: win.rect.l + x,
+                        y: win.rect.t + HitTester.titlebar + y)
+                    guard let colour else { continue }
+                    if colour.brightnessComponent < 0.99 { ink += 1 }
+                }
+            }
+            XCTAssertGreaterThan(ink, 100,
+                                 "cell \(control.ref) rendered as bare "
+                                 + "background — its drawing was clipped away")
+        }
+    }
+
     // MARK: - The negatives
 
     /// Five other live captures, none of which has a grid. This is the
@@ -217,6 +255,23 @@ final class DrawnCellGridTests: XCTestCase {
             ops += blit(at: [-(27 + 55 * k), -71], src: [209, 231, 260, 277])
         }
         XCTAssertTrue(MirrorKit.DrawnCellGrid.derive(from: ops).isEmpty)
+    }
+
+    /// The stronger negative, and the reason it is synthetic: the five
+    /// live captures above have nothing grid-shaped in them at all, so
+    /// they cannot tell a careful derivation from a careless one. This
+    /// stream CAN. It is the shape a panel produces when it redraws one
+    /// themed field at several places — same destination, four distinct
+    /// positions, irregular spacing — and a derivation loose enough to
+    /// call that a picker would type four unrelated redraws as a control
+    /// grid with hit rects.
+    func testAnIrregularRepeatIsNotAGrid() {
+        var ops: [DisplayOp] = []
+        for x in [27, 90, 100, 240] {
+            ops += blit(at: [-x, -21], src: [209, 231, 260, 277])
+        }
+        XCTAssertTrue(MirrorKit.DrawnCellGrid.derive(from: ops).isEmpty,
+                      "irregular spacing is not a lattice")
     }
 
     /// Selection is claimed only on a clean two-source split with exactly
