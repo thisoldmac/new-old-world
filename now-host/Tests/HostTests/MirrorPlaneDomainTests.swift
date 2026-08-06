@@ -222,6 +222,7 @@ final class MirrorPlaneDomainTests: XCTestCase {
                                 GuestListener.SceneFailure>) -> Void)?
         let io = NOWMirrorCycleIO(
             activeKey: { keyA }, isGuestConnected: { _ in true },
+            isGuestAnswering: { _ in true },
             isScenePending: { heldScene != nil },
             requestScene: { _, _, _, completion in heldScene = completion },
             guestChanged: {},

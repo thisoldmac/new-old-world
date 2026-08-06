@@ -180,6 +180,63 @@ final class MirrorServeSeamTests: XCTestCase {
             error: .init(code: "disconnected", message: "gone")))
     }
 
+    /// **The third state reaches the person driving.** A starved Macintosh
+    /// is neither connected nor gone, and showing it as either is a lie
+    /// somebody acts on: as connected they conclude the Mirror is broken,
+    /// as gone they go and check a machine that is fine.
+    func testAStarvedMacIsSaidToBeStarvedRatherThanGoneOrHealthy()
+        async throws {
+        let sent = SentCommands()
+        let (source, harness, listener, guest) = try await sourceWithSeam(sent)
+        defer { guest.connection.cancel(); listener.stop() }
+
+        // Alive on another channel, not scheduling this application.
+        harness.guestConnected = true
+        harness.guestAnswering = false
+        source.planePolicyDidChange()
+        try await waitUntil("the follow-up cycle is requested") {
+            harness.sceneCompletions.count == 2
+        }
+        harness.completeScene(1, with: .failure(
+            .init(message: "the guest did not answer in time")))
+
+        XCTAssertTrue(source.isStarved)
+        XCTAssertTrue(source.status.contains("not answering"), source.status)
+        XCTAssertFalse(source.status.contains("did not answer in time"),
+                       "the transport's own words describe a poll; the "
+                           + "person needs the machine's state: \(source.status)")
+
+        /* **And it survives an act's answer replacing the ambient line.**
+           An act's sentence holds the status for four seconds — exactly
+           the window in which a person clicks again — so a Mirror that
+           only said this in its idle text would go quiet about it at the
+           moment it matters most. Asserted with the ambient line proven
+           displaced, or this passes on the ambient text and tests
+           nothing. */
+        source.perform(doubleClick("Projects"))
+        XCTAssertFalse(source.lastAct.isEmpty,
+                       "the act line must have displaced the ambient one, "
+                           + "or the assertion below is about the wrong half")
+        XCTAssertTrue(source.status.hasPrefix(source.lastAct), source.status)
+        XCTAssertTrue(source.status.contains("not answering"),
+                      "the starved state must ride the act line too: "
+                          + source.status)
+
+        /* **And the act was ACCEPTED, not refused.** This is the whole
+           practical difference between starved and gone: the machine will
+           serve it when it comes back, so the lane takes it and says so
+           rather than turning a person away from a Macintosh that is
+           still there. */
+        XCTAssertEqual(source.waitingActs, 1,
+                       "a starved guest still takes acts; a gone one "
+                           + "would have had this refused")
+        XCTAssertNotEqual(
+            source.shadowEngine?.operations.records.last?.outcome,
+            .sessionChanged,
+            "§ A3's dead-guest notice must NOT fire for a starved guest — "
+                + "that pairing is the regression this state introduces")
+    }
+
     /// The act-control half of the seam: the composed act command is
     /// readable and answerable without a wire, which is what the lane
     /// tests need to wedge a guest deliberately.

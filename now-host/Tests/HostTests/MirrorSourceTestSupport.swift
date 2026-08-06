@@ -20,6 +20,9 @@ final class MirrorCycleHarness {
     /// Whether the pinned session still holds a connection, as the lane's
     /// dead-guest check sees it. Tests flip it to kill the guest.
     var guestConnected = true
+    /// Whether the pinned guest is ANSWERING or starved. Nil means no such
+    /// session at all, which is the third answer.
+    var guestAnswering: Bool? = true
     var globalScenePending = false
     var sceneRequests: [(GuestKey, Bool, Bool)] = []
     var sceneCompletions: [
@@ -35,6 +38,7 @@ final class MirrorCycleHarness {
         .init(
             activeKey: { self.activeKey },
             isGuestConnected: { _ in self.guestConnected },
+            isGuestAnswering: { _ in self.guestAnswering },
             isScenePending: { self.globalScenePending },
             requestScene: { key, semantics, interaction, completion in
                 self.globalScenePending = true

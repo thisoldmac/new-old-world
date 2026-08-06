@@ -67,6 +67,10 @@ struct NOWMirrorCycleIO {
     /// reads it when a cycle fails, so a guest that died is noticed by
     /// the next poll rather than learned from a queue that never drains.
     var isGuestConnected: (GuestKey) -> Bool
+    /// Whether that session is ANSWERING, as opposed to starved — alive on
+    /// another channel and not being scheduled. Nil when there is no such
+    /// session, which is a third answer rather than a shade of the second.
+    var isGuestAnswering: (GuestKey) -> Bool?
     var isScenePending: () -> Bool
     var requestScene: (
         GuestKey, Bool, Bool,
@@ -85,6 +89,7 @@ struct NOWMirrorCycleIO {
         .init(
             activeKey: { listener.activeKey },
             isGuestConnected: { listener.isConnected($0) },
+            isGuestAnswering: { listener.isAnswering($0) },
             isScenePending: { listener.isScenePending },
             requestScene: { key, semantics, interaction, completion in
                 listener.requestScene(
@@ -210,14 +215,36 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// person is trying to read the Macintosh through.
     var status: String {
         let base = lastAct.isEmpty ? ambient : lastAct
-        guard actTimeline.depth > 1 else { return base }
-        let waiting = actTimeline.depth - 1
-        return base + "   ·   \(waiting) waiting"
+        var line = base
+        if actTimeline.depth > 1 {
+            line += "   ·   \(actTimeline.depth - 1) waiting"
+        }
+        /* **Carried on the act line too, not just the ambient one.** An
+           act's answer replaces the ambient text for four seconds, which
+           is exactly the window in which a person clicks again — so a
+           Mirror that only said "not answering" in its idle line would go
+           quiet about it at the moment it is most needed. */
+        if isStarved, !line.contains("not answering") {
+            line += "   ·   the Mac is not answering"
+        }
+        return line
     }
 
     /// Acts in the mutation lane right now — the one holding it plus the
     /// ones waiting. What the cancel affordance shows against.
     var waitingActs: Int { mutationBroker?.depth ?? 0 }
+
+    /// **The third state.** The pinned Macintosh is connected and is not
+    /// being scheduled — starved by something holding its processor, which
+    /// on a cooperative machine is one blocked callee away at any time.
+    ///
+    /// Distinct from disconnected on purpose: everything the Mirror is
+    /// showing remains TRUE, just frozen, and an act sent now will be
+    /// served when the machine comes back rather than refused.
+    var isStarved: Bool {
+        guard let pinnedGuestKey else { return false }
+        return cycleIO.isGuestAnswering(pinnedGuestKey) == false
+    }
 
     /// A person or an agent abandoning the wait. Ends the in-flight act
     /// and everything queued behind it; the journal records each with a
@@ -474,11 +501,25 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                    knowledge, not evidence the windows went away, and
                    blanking the mirror on one is how a momentary busy lane
                    looks like a crash. */
-                self.ambient = failure.refusedByGuest
-                    ? "the Mac declined: \(failure.message)"
-                    : failure.message
-                self.cycleOutcome = failure.refusedByGuest
-                    ? "declined" : "failed"
+                /* **Three states, not two.** A Macintosh that is alive and
+                   not being scheduled is neither connected nor gone, and
+                   showing it as either is a lie a person acts on: as
+                   connected, they conclude the Mirror is broken; as gone,
+                   they go and check a machine that is fine. It is the
+                   commonest failure this surface has — one modal produces
+                   it — so it gets its own sentence and says what to do. */
+                if self.isStarved {
+                    self.ambient = "the Mac is not answering — it is still "
+                        + "there, but something on it is not letting go "
+                        + "(a dialog, or a long operation). Acts will wait."
+                    self.cycleOutcome = "starved"
+                } else {
+                    self.ambient = failure.refusedByGuest
+                        ? "the Mac declined: \(failure.message)"
+                        : failure.message
+                    self.cycleOutcome = failure.refusedByGuest
+                        ? "declined" : "failed"
+                }
                 self.noticeDeadGuest()
             }
             self.finishCycle(generation)
