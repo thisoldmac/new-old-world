@@ -29,13 +29,17 @@ integer are sent as numbers, because the guest's argument readers are typed
 
 import argparse
 import json
+import os
 import socket
 import struct
 import sys
 import time
 
-CONTROL, END = 0, 1
-CONTRACT = 1
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "contract"))
+from wire_limits import (CHANNEL_CONTROL as CONTROL,  # noqa: E402
+                         FLAG_END as END,
+                         WIRE_CONTRACT_REVISION as CONTRACT)
 
 
 def frame(payload: bytes) -> bytes:

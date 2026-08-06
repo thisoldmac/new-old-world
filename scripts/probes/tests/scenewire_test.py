@@ -87,7 +87,8 @@ def bulk(transfer, payload, end) -> bytes:
 def linked():
     """A GuestLink over one end of a socketpair, and the peer's end."""
     host, guest = socket.socketpair()
-    link = nowwire.GuestLink(host, {"name": "test", "contract": 1})
+    link = nowwire.GuestLink(host, {"name": "test",
+                                    "contract": nowwire.WIRE_CONTRACT_REVISION})
     return link, guest
 
 

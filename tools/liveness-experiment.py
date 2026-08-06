@@ -45,7 +45,12 @@ import time
 sys.path.insert(0, "/Users/michelle/Lab/Code/timbottu/mcp-classic")
 from timbottu_mcp_classic.harness import Harness  # noqa: E402
 
-CONTROL, END, CONTRACT = 0, 1, 1
+import os  # noqa: E402
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "contract"))
+from wire_limits import (CHANNEL_CONTROL as CONTROL,  # noqa: E402
+                         FLAG_END as END,
+                         WIRE_CONTRACT_REVISION as CONTRACT)
 
 
 class Wire:

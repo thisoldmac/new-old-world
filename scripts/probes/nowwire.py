@@ -59,20 +59,31 @@ import time
 
 from scene import SceneReader, SceneUnavailable
 
-# contract/wire_limits.h. Restated here rather than parsed because a probe is
-# not part of the build, and a probe that silently followed a changed constant
-# would report numbers from a wire it did not describe.
-WIRE_CONTRACT_REVISION = 2
-FRAME_HEADER_BYTES = 8
-CHANNEL_CONTROL = 0
-CHANNEL_BULK = 1
-FLAG_END = 0x01
-MAX_PAYLOAD = 32768
-
-# Both guests size their CONTROL receive buffer at 4096 (now-guest-ppc
-# src/core/contract.h kNowMaxControl, now-guest-68k src/core/frame.h
-# NOW68K_CONTROL_BUFFER_CAP). wire_limits.h deliberately does not hoist this.
-MAX_CONTROL_PAYLOAD = 4096
+# contract/wire_limits.py — the Python sibling of wire_limits.h, and still a
+# DECLARATION, not a parse. This file used to restate the numbers itself, and
+# argued for doing so: a probe is not part of the build, and a probe that
+# silently followed a changed constant would report numbers from a wire it did
+# not describe. That argument survives the move. Nothing here reads the header
+# or the contract at run time; a human still bumps the number deliberately.
+#
+# What the move buys is that the declaration happens once instead of in five
+# harnesses. It was five, they disagreed, and the disagreement was invisible:
+# this file said 1 against guests that had spoken 2 since wire_limits.h bumped,
+# so every probe was refused at the hello gate. WireLimitsAgreementTests now
+# fails when the Python copy, the header and asyncapi.yaml diverge, and when a
+# harness reintroduces a literal of its own.
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "contract"))
+from wire_limits import (  # noqa: E402
+    WIRE_CONTRACT_REVISION,
+    FRAME_HEADER_BYTES,
+    CHANNEL_CONTROL,
+    CHANNEL_BULK,
+    FLAG_END,
+    MAX_PAYLOAD,
+    MAX_CONTROL_PAYLOAD,
+)
 
 # now-host/Sources/Host/ContractMessages.swift
 DEFAULT_CHUNK = 8192
