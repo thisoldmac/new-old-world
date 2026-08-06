@@ -356,6 +356,14 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// Cleared with the rest of the cycle so a slow scene's phases can
     /// never be charged to the next cycle that failed to answer.
     private var cyclePhases: NOWSceneDocument.Phases?
+    /* DIAGNOSTIC (2026-08-06), see MirrorCycleClocks.ownWork: the four
+       stages the `decode_ms` bracket actually contains. Cleared with the
+       rest of the cycle, so a stage a cycle never reached reports absent
+       rather than the previous cycle's number. */
+    private var cycleOwnWork: TimeInterval?
+    private var cycleContentJoin: TimeInterval?
+    private var cycleIconRoster: TimeInterval?
+    private var cycleVisibility: TimeInterval?
     private var lastCyclePublishedAt: Date?
     private var mutationWaiting = false
     private var sceneGuestKey: GuestKey?
@@ -590,6 +598,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private func accept(_ delivery: GuestListener.SceneDelivery,
                         generation: Int) {
         guard isCurrentCycle(generation) else { return }
+        let ownWorkStarted = Date()          /* DIAGNOSTIC */
         do {
             var decoded = try NOWMirrorSceneDecoder.decode(
                 irVersion: delivery.irVersion, document: delivery.document)
@@ -611,6 +620,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             decoded = withIcons(decoded)
             _ = shadowEngine?.enrichFinder(decoded)
             scene = projectedScene(fallback: decoded)
+            /* DIAGNOSTIC: everything above is this host's own CPU on the
+               delivery; everything below it is a guest round-trip. That is
+               the line `dc_own_ms` draws. */
+            cycleOwnWork = Date().timeIntervalSince(ownWorkStarted)
             let menuStatus = continuity.retainedAppleItems
                 ? " · Apple menu expected-stale" : ""
             guard pinnedGuestKey == cycleIO.activeKey() else {
@@ -624,9 +637,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 lifecycleDidChange()
                 return
             }
+            let contentStarted = Date()      /* DIAGNOSTIC */
             if !planes.contains(.content) {
                 cycleIO.disableContent { [weak self] failure in
                     guard let self else { return }
+                    self.cycleContentJoin = Date()
+                        .timeIntervalSince(contentStarted)
                     guard self.isCurrentCycle(generation) else { return }
                     self.shadowEngine?.compareVisible(decoded)
                     self.scene = self.projectedScene(fallback: decoded)
@@ -647,6 +663,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             }
             cycleIO.joinContent(decoded) { [weak self] update in
                 guard let self else { return }
+                self.cycleContentJoin = Date()
+                    .timeIntervalSince(contentStarted)
                 guard self.isCurrentCycle(generation) else { return }
                 _ = self.shadowEngine?.enrichContent(update.scene)
                 self.observeOperations()
@@ -773,10 +791,18 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 $0 + $1.controls.count + ($1.dialogItems?.count ?? 0)
                     + ($1.items?.count ?? 0)
             },
-            phases: cyclePhases))
+            phases: cyclePhases,
+            ownWork: cycleOwnWork,
+            contentJoin: cycleContentJoin,
+            iconRoster: cycleIconRoster,
+            visibilityCensus: cycleVisibility))
         lastCyclePublishedAt = published
         cycleAsked = nil
         cyclePhases = nil
+        cycleOwnWork = nil
+        cycleContentJoin = nil
+        cycleIconRoster = nil
+        cycleVisibility = nil
     }
 
     private func rearm() {
@@ -828,10 +854,22 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private func refreshComplements(_ scene: MirrorKit.Scene,
                                     generation: Int,
                                     completion: @escaping () -> Void) {
+        /* DIAGNOSTIC (2026-08-06): both of these are AppleScript to the
+           Finder, both are inside the `decode_ms` bracket, and neither has
+           ever been timed separately. `dc_icons_ms` is 0 on a cycle whose
+           layout key was unchanged — that is the guard doing its job, and
+           it is worth being able to SEE it rather than infer it. */
+        let iconsStarted = Date()
         refreshIconsIfStale(scene, generation: generation) { [weak self] in
             guard let self else { return }
-            self.refreshVisibility(scene, generation: generation,
-                                   completion: completion)
+            self.cycleIconRoster = Date().timeIntervalSince(iconsStarted)
+            let visibilityStarted = Date()
+            self.refreshVisibility(scene, generation: generation) {
+                [weak self] in
+                self?.cycleVisibility = Date()
+                    .timeIntervalSince(visibilityStarted)
+                completion()
+            }
         }
     }
 

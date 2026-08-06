@@ -54,6 +54,38 @@ final class MirrorCycleClocksTests: XCTestCase {
                        + "total_ms=6500 windows=3 elements=40")
     }
 
+    /// **DIAGNOSTIC (2026-08-06).** `decode_ms` is a bracket, not a
+    /// decode, and on 2026-08-06 that cost an evening: it read 12,457 ms,
+    /// every reading of it began by looking for a quadratic in the JSON,
+    /// and the document in question decodes, reduces and projects in 4 ms
+    /// (`MirrorDecodeCostTests`). The bracket now says which of the four
+    /// things it contains it spent — and only for stages a cycle actually
+    /// reached, because a `-` in a measurement grammar gets read as a zero.
+    func testTheBracketSaysWhichOfItsFourStagesItSpent() {
+        var clocks = MirrorCycleClocks(
+            requestedAt: Date(timeIntervalSince1970: 0),
+            deliveredAt: Date(timeIntervalSince1970: 1),
+            publishedAt: Date(timeIntervalSince1970: 13.5),
+            idleBefore: 0.8, semantics: true, interaction: true,
+            outcome: "ok", windows: 6, elements: 170)
+        XCTAssertFalse(clocks.baselineLine.contains("dc_"),
+                       "a cycle with no split reports none: "
+                       + clocks.baselineLine)
+
+        clocks.ownWork = 0.004
+        clocks.contentJoin = 0.120
+        clocks.iconRoster = 0
+        XCTAssertTrue(clocks.baselineLine.contains(
+            "decode_ms=12500 dc_own_ms=4 dc_content_ms=120 dc_icons_ms=0 "
+            + "total_ms=13500"),
+            "the stages ride in the order the cycle does them, and a stage "
+            + "never reached is absent rather than zero: "
+            + clocks.baselineLine)
+        XCTAssertFalse(clocks.baselineLine.contains("dc_vis_ms"),
+                       "the census never ran in this cycle, and 0 would be "
+                       + "a claim that it ran and cost nothing")
+    }
+
     /// A cycle from a guest that reports phases carries them into the
     /// measurement line, sorted, with the breakdown's own cost beside
     /// them. Sorted because two runs of a measurement grammar whose field

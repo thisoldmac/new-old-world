@@ -44,6 +44,37 @@ struct MirrorCycleClocks: Equatable {
     /// measurement.
     var phases: NOWSceneDocument.Phases?
 
+    /// **DIAGNOSTIC (2026-08-06). Added to answer one question and
+    /// removable once it is answered: where the `decode_ms` bracket goes.**
+    ///
+    /// `decode_ms` is a bracket, not a decode. It runs from "the delivery
+    /// arrived" to "the Mirror published it", and everything this side
+    /// does in between is charged to it — including several guest
+    /// round-trips. On 2026-08-06 it read 12,457 ms on a six-window
+    /// machine and 324 ms on the same machine one window earlier, and
+    /// every reading of that number began by looking for a quadratic in
+    /// the JSON, because the field's name was the only thing anyone had.
+    /// The JSON is not it: the captured six-window document decodes,
+    /// reduces and projects in 4 ms (`MirrorDecodeCostTests`).
+    ///
+    /// So the bracket is split into the four things it actually contains,
+    /// in the order the cycle does them. Nil for a cycle that did not
+    /// reach that stage — never zero, which would be a measurement.
+    ///
+    /// - `own` — decode, reduce, project. This host's own CPU.
+    /// - `content` — the P3 join. One or two guest commands.
+    /// - `icons` — the Finder icon roster. AppleScript, paged 8 items per
+    ///   container, skipped entirely when the layout key is unchanged.
+    /// - `visibility` — the process visibility census. AppleScript, paged
+    ///   8 processes, and issued on EVERY cycle.
+    ///
+    /// They should very nearly sum to `decode_ms`; `dc_own_ms` plus a
+    /// large remainder is itself the finding.
+    var ownWork: TimeInterval?
+    var contentJoin: TimeInterval?
+    var iconRoster: TimeInterval?
+    var visibilityCensus: TimeInterval?
+
     var request: TimeInterval? {
         deliveredAt.map { $0.timeIntervalSince(requestedAt) }
     }
@@ -72,6 +103,7 @@ struct MirrorCycleClocks: Equatable {
             ("idle_ms", Self.ms(idleBefore)),
             ("request_ms", Self.ms(request)),
             ("decode_ms", Self.ms(decode)),
+        ] + Self.bracketFields(self) + [
             ("total_ms", Self.ms(total)),
             ("windows", windows.map(String.init) ?? "-"),
             ("elements", elements.map(String.init) ?? "-"),
@@ -94,6 +126,22 @@ struct MirrorCycleClocks: Equatable {
     /// be diffed, and diffing two runs is the whole point.
     /// `phcost_us` rides beside them because a breakdown that will not
     /// state its own weight is asking to be trusted rather than read.
+    /// DIAGNOSTIC — see `ownWork`. Absent rather than dashed for a stage
+    /// a cycle never reached, so nobody reads a `-` as a zero, and absent
+    /// entirely for a cycle that failed before decoding: the split has to
+    /// be as honest about not knowing as the fields it sits beside.
+    private static func bracketFields(_ clocks: MirrorCycleClocks)
+            -> [(String, String)] {
+        var fields: [(String, String)] = []
+        for (key, value) in [("dc_own_ms", clocks.ownWork),
+                             ("dc_content_ms", clocks.contentJoin),
+                             ("dc_icons_ms", clocks.iconRoster),
+                             ("dc_vis_ms", clocks.visibilityCensus)] {
+            if let value { fields.append((key, ms(value))) }
+        }
+        return fields
+    }
+
     private static func phaseFields(_ phases: NOWSceneDocument.Phases?)
             -> [(String, String)] {
         guard let phases else { return [] }

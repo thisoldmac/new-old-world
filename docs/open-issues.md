@@ -14,6 +14,205 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## INVESTIGATED, NOT FIXED: `decode_ms` hits 12.5 s, none of it is decoding, and the shape of the bug is a priority inversion (2026-08-06)
+
+Investigation only — **no product behaviour was changed**. What landed is
+diagnostic instrumentation and a fixture harness, both labelled as such
+and droppable. The repair is a design decision and is Michelle's to make.
+
+### 1. What `decode_ms` actually brackets
+
+`MirrorCycleClocks.decode` is `publishedAt - deliveredAt`, and
+`publishedAt` is stamped by `recordCycleClocks()` from `finishCycle()`.
+In `NOWMirrorSource.accept()` the cycle is not finished until, in order:
+
+1. `NOWMirrorSceneDecoder.decode` + `phases` — JSON.
+2. `shadowEngine.accept`, continuity, `withIcons`, `enrichFinder`,
+   `projectedScene` — the reducer and projection.
+3. `cycleIO.joinContent` — **1–2 guest commands** (`qdtrace status`,
+   `qdtrace start`, or `qdtrace drain`).
+4. `refreshComplements` → `refreshIconsIfStale` — **AppleScript to the
+   Finder**, paged 8 items per container, plus a types pass per
+   container; skipped when the layout key is unchanged.
+5. `refreshComplements` → `refreshVisibility` — **AppleScript to the
+   Finder**, paged 8 processes. Issued on **every cycle**; it is the only
+   unconditional multi-round-trip in the lane.
+
+So the field named `decode` is a bracket containing an unbounded number
+of guest round-trips. That is the load-bearing fact, and it is why every
+reading of "12,457 ms" started at the JSON parser.
+
+### 2. It is not a computation, and it is not our decode
+
+The captured six-window document — `Fixtures/scene-quit-modal.json`, the
+guest's own bytes — decodes, reduces and projects in **4 ms**. The
+largest scene ever captured here (70 KB, `now-scene-self-hidden-but-front`)
+costs **15 ms**. Ten chained reductions cost 44 ms, so nothing compounds
+with replica size either. `MirrorDecodeCostTests` is that measurement,
+kept and bounded.
+
+### 3. There is no cliff at six windows. There is no cliff at all.
+
+43,448 `NOWBASE cycle` lines from `acts.log`, grouped by
+`windows`/`elements`, median `decode_ms`:
+
+    12 windows / 346 elements   n=1914   median   714 ms
+    11 windows / 298 elements   n=   5   median  1438 ms
+     8 windows / 220 elements   n=  10   median   694 ms
+     6 windows / 170 elements   n= 442   median  1731 ms
+     6 windows / 168 elements   n=  21   median 12824 ms
+     5 windows / 153 elements   n=  11   median   462 ms
+     3 windows /  60 elements   n=   3   median 12559 ms
+
+**Twelve windows costs 714 ms; three windows costs 12,559 ms.** The
+"11% more content, 38x the time" framing does not survive the wider data
+— `decode_ms` is not a function of scene size at any point in the range.
+The two adjacent six-window rows differing by 7x on two elements make
+the same point locally.
+
+The distribution is bimodal, which is the real signal:
+
+    < 100 ms   23.0%        4  - 8 s   0.6%
+    0.1 - 1 s  72.7%        8  - 11 s  0.03%   <- nearly empty
+    1  - 2 s    1.8%        11 - 14 s  0.2%
+    2  - 4 s    1.3%        14 - 20 s  0.4%
+
+95.7% of cycles are under a second. The slow tail has peaks at
+**5.5–6.0 s** (125 cycles) and **14.0–15.0 s** (88 cycles) with a gap
+either side. Sharp modes with empty space between them are waits, not
+work. The coordinator's read was right and the brief's was wrong.
+
+### 4. What is being waited on, and why there is no bound
+
+Every complement goes through `GuestListener.runCommand`, and
+**`runCommand` arms no watchdog at all** (`GuestListener.swift:608`).
+A pending `command.request` is resolved only by a guest reply, a
+guest-sent problem, or a disconnect. The comment 20 lines below it —
+"the 15s a command.request gets" — is **wrong**: that 15 s belongs to
+the typed file/process families, not to this. So the host has *no
+upper bound* on how long a cycle waits for a Finder script.
+
+The only bound is the guest's own, and the host never sets it: neither
+`readIcons` nor `refreshVisibility` passes `timeoutMs`, so each script
+gets `kNowScriptDefaultMs = 15000` (`input_args.h:187`) — which is where
+the 14–15 s peak sits. But **the scripts are usually slow, not timing
+out**: 241 cycles exceed 12 s and there are only **4** "stopped at its
+deadline" notes in the whole log. The deadline is a ceiling that is
+rarely reached; the ordinary slow case is a Finder that answers, late.
+
+`FinderItems` already records the price: a Finder Apple event costs
+~1–2 s of Finder time on a healthy guest (measured 2026-07-31). With a
+modal up the Finder is starved and that goes to seconds. The guest is
+serial, so each script also blocks its whole event loop — which is why
+acts logged `guest 11080ms` while queued behind a cycle.
+
+**What is NOT established:** which of the three — content join, icon
+roster, visibility census — dominates the 12.4 s. Nothing has ever timed
+them apart. That is exactly what the instrumentation below now answers,
+and it should be read off a live run before choosing between options 2
+and 3.
+
+### 5. Why this is the cause of the refused acts
+
+The anchor plane's owner lease is 600 ticks — ten seconds
+(`peek.c :: kNowPeekOwnerLeaseTicks`) — and only `scene.request` renews
+it. A 12.6-second cycle lets it expire every time. The same log reads
+`requested=15 active=8` with `structure/semantics/interaction` all back
+to `requested`, and Cancel on the Set Time Zone modal refused five times
+with `element-not-found: the anchor plane is absent or not armed`. This
+answers the open entry below ("what takes the planes inactive while
+content stays up"): **nothing took them down — we stopped asking.**
+
+Michelle's framing is the right one and it is worth writing down: this
+is a **priority inversion**. The structural scene is the product — it is
+what a person sees and what every act's element reference resolves
+against. Drawing detail and icon rosters are enrichment. An optional
+plane is currently able to take the core feature down, which is the same
+rule [docs/resident-components.md](resident-components.md) already
+states for the extension and which these planes do not honour.
+
+### 6. The options
+
+**Option 1 — bound the wait (small, low risk, does not remove the
+inversion).** Give `runCommand` a watchdog and pass an explicit
+`timeoutMs` on the complement scripts. ~20 lines. Turns an unbounded
+stall into a bounded one and fixes the wrong comment. It does **not**
+fix the cadence: a 3 s bound on three scripts is still a 9 s cycle, and
+the lease is 10 s. Worth doing whatever else is chosen; not sufficient
+alone.
+
+**Option 2 — take the Finder complements out of the cycle (medium,
+removes most of the inversion).** The cycle publishes and rearms; icons
+and visibility fold in when they arrive, guarded by the pinned run
+rather than the cycle. Also key the visibility census on the process
+roster with a floor interval — today it runs every poll for an answer
+that changes only when a process starts, quits, hides or shows.
+*Risk:* the cycle-hold was buying one real thing — a roster read for one
+layout never landing on a different one, because positions are
+window-content-local and scroll-compensated, so a stale one puts a click
+on the wrong file. Buy it directly by re-checking the layout key at
+apply time, which is stricter than the proxy it replaces. Prototyped and
+mutation-tested on this branch (see below); dropped when the scope
+changed.
+
+**Option 3 — make the content plane asynchronous too (larger, removes
+the inversion entirely).** The cycle publishes structure alone; the P3
+join fetches out of band and folds in. This is the one that needs
+Michelle's call, because it touches things beyond the source:
+- *State engine.* Content becomes a plane that is routinely a cycle or
+  two behind structure. The retention rules already distinguish "not
+  observed" from "deleted", so the vocabulary exists — but `enrichContent`
+  would be applying against a replica that has since advanced, and
+  whether that is safe has not been checked.
+- *Acts.* Any act confirming from drawing detail rather than from
+  structure would settle later. Acts resolving element references would
+  not, since those are structural.
+- *The status line.* It would have to say "content still arriving"
+  honestly rather than implying the frame is whole. The IR's coverage
+  vocabulary (`unavailable`, with a reason) already has the words, and
+  `expected-stale` already renders.
+- *Serialisation.* The cycle serialised these by waiting. Once it does
+  not, a join spanning several polls must not have a second issued over
+  it — two arms racing for one target on a cooperative wire.
+
+**Also worth doing under any option:** do not issue an arm that cannot
+complete. A sibling measurement the same night has a trace arm against a
+non-front target never completing (25–45 s, `wrongContext` climbing
+~1,770 in 25 s). `join` only ever arms the front window, but a **failed**
+arm leaves `armedAt` nil, which makes `needsRenewal` true forever, so
+`prepare` re-issues on every cycle — a retry storm against something
+that just refused. Unverified, but cheap to check.
+
+### 7. Delta baselines: the poller DOES quote `since`
+
+Plain yes. `Session.sendSceneRequest` sets
+`since = sceneBaseline?.digest` on every request unless a periodic
+resync forces `full`, and `NOWMirrorSource` never passes `full` —
+`NOWMirrorCycleIO.live` → `listener.requestScene` → `sendSceneRequest`
+with the default. Independently corroborated: the status line's `wire`
+token reads `same` in Michelle's session, and `same` is reachable only
+through `finishSceneSame`, which fires only when a `since` was sent and
+matched. `walk=full` is about PLANES and says nothing either way, as
+suspected. **No change needed.**
+
+### What landed on `claude/host-decode-perf`
+
+Diagnostic only, and safe to drop:
+
+- `MirrorCycleClocks` gains `dc_own_ms`, `dc_content_ms`, `dc_icons_ms`,
+  `dc_vis_ms` on the `NOWBASE cycle` line — the four stages the bracket
+  contains, in the order the cycle does them, absent rather than dashed
+  for a stage a cycle never reached. One live run now answers §4's open
+  question in a grep.
+- `MirrorDecodeCostTests` — the fixture harness, with bounds that fail
+  if decode/reduce/project ever does grow superlinearly.
+- Timing brackets in `NOWMirrorSource.accept` and `refreshComplements`.
+  No control flow changed.
+
+The Option-2 prototype is in this branch's reflog (commit
+`fix(host): the Finder complements no longer hold the scene cycle open`)
+with a mutation-tested cadence guard, if it is wanted.
+
 ## FIXED, emulator only: the 115 ms round trip was the guest's own sleep (2026-08-06)
 
 The deltas arc took the scene walk from ~950 ms to 3–8 ms and cut idle
@@ -420,6 +619,13 @@ being frontmost is what does it — which would tie this to the existing
 do not attribute a dead-looking Mirror click to hit-testing without
 reading `actmeta` at the same timestamp first: the refusal was recorded
 plainly and was still nearly diagnosed as the wrong half.
+
+**2026-08-06, later: the open question is answered, and it was not the
+modal.** Nothing took those planes down — the host went quiet for longer
+than the ten-second lease, because optional planes were holding the
+scene cycle open for 12.5 s at a time. The modal only made the Finder
+slow enough for it to show. See the `decode_ms` entry at the top of this
+file; it is unfixed, and deliberately so pending a design decision.
 
 ## MEASURED, and the answer is DON'T BUILD ON IT: how long the content plane takes to arm (2026-08-06)
 
