@@ -56,10 +56,13 @@ with the optional NOW Extension installed the machine holds a second
 connection that answers for itself while every application is starved.
 On 2026-08-06 an application starved for 108 seconds kept its session,
 with the resident pinging three times through the gap. **Still open:**
-nothing on either side can dismiss the dialog — the machine is legible
-and survivable while wedged, not serviceable — and the resident channel
-has been watched on an emulator only, never on real hardware and never
-on 68K/System 7.1. Beyond that: resume-by-offset hangs; one large transfer in
+**without the extension a starvation past the host's window still ends
+the session** — watched, by mutation, on the same 110-second wedge; the
+guest-side fix keeps the guest from tearing the link down but nothing
+answers for the machine while it is away. Nor can anything on either
+side dismiss the dialog: the machine is legible and survivable while
+wedged, not serviceable. And the resident channel has been watched on an
+emulator only — never on real hardware, and never on 68K/System 7.1. Beyond that: resume-by-offset hangs; one large transfer in
 about six degrades badly; an unreachable host presents as a hang rather
 than naming the address it cannot reach; NOW-68K's census can now report
 its own CPU, RAM and ROM but not one of its probes has run on a

@@ -218,7 +218,41 @@ time. `classic-mac-init-platform` is the skill; the charter is
 Its first job is only to exist and tick: prove the vehicle runs while
 every application is starved, before it is asked to carry a wire.
 
-### 4 · The liveness channel · **FIRST GATE CLEAR, transport not built**
+### 4 · The liveness channel · **DONE, and EMULATOR-VERIFIED end to end**
+
+**2026-08-06.** A real Macintosh opens the second connection, says
+`role: resident` on it, and keeps it alive while every application is
+starved. Against the REAL host, an application starved for 110 s kept
+its session — the same sockets, before and after.
+
+| claim | evidence |
+|---|---|
+| the resident dials and is admitted | two connections, one hour apart in port, `role: resident`, `name`/`os` identical to the session's |
+| the driver opened AND a stream exists | `capabilities: 127` — both P6 bits |
+| it speaks while applications cannot | 108.8 s application starvation, three resident pings inside it, all answered |
+| § 1's policy works with a real guest | 110 s starvation against `now-host`: session sockets unchanged |
+| it is the RESIDENT doing it | mutation: an app that never publishes the endpoint, same wedge — see below |
+
+Built on MacTCP's `.IPP` driver through the Device Manager, and with
+**no completion routines** — the one decision here worth arguing with,
+argued in `ext/src/now_liveness_net.c`'s header.
+
+**It found a second defect that no host-side test could have.** The
+guest's own `service_heartbeat` counted the starvation as silence and
+tore the link down from its end, 65 s in. The host had done everything
+right; the guest had the same wrong idea from the other side. Fixed by
+forgiving a pass gap over ten seconds, and deliberately without needing
+the extension at all.
+
+**And the instrument was feeding the clock it measured.**
+`tools/liveness-channel.py` polls `mirror` every five seconds, so the
+queued requests refreshed `last_rx_tick` the moment the guest came back
+and the defect above stayed invisible through two green runs. The real
+host — which pings nothing, by contract — was the only observer quiet
+enough to see it. `open-issues.md` carries this at length; it is the more
+transferable half of the day.
+
+### 4 (as it stood at the first gate) · **FIRST GATE CLEAR, transport not built**
 
 **2026-08-05, later.** The MacTCP route named below was asked the same
 cheap question that killed OT, and passed it: the resident opened `.IPP`

@@ -51,6 +51,20 @@ So the premise the plane rests on is no longer an argument from the
 scheduling model at either end. Something answering below the
 application kept ANSWERING ON THE WIRE while applications could not.
 
+**Then the same thing against the REAL host**, which is what § 4 was for
+and the first time either half of § 1 had met a real guest. An
+application starved 110 s kept its session — the same two sockets before
+and after, `55223` and `55224`.
+
+**And the mutation was watched to fail.** A build whose application never
+publishes the endpoint, cold-booted the same way, opened ONE connection
+instead of two; the identical 110-second wedge replaced its session
+(`56005` → `56063`). So the survival above is the resident doing it, and
+not the host having quietly stopped timing anybody out. This also fixes
+the honest limit of the guest-side fix below: it stops the guest tearing
+its own link down, and it does not keep a session that nothing is
+answering for.
+
 **How it is built, and the one decision worth arguing with.** MacTCP's
 `.IPP` driver through the Device Manager — `PBOpen` and `PBControl` are
 traps, so a flat 68K code resource needs no library, which is what
