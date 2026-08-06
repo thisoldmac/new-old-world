@@ -38,7 +38,7 @@ window was front. Nothing here touched metal — the guest is a QEMU
 
 The sweep exists because the mirror's gates prove that *strings cross*.
 They do not prove the window **looks** like the window. `docs/mirror-renders.md`
-said so plainly a week ago — "fidelity is unjudged" — and every capability
+said so plainly on 2026-07-31 — "fidelity is unjudged" — and every capability
 added since has been gated on presence, not appearance. This is the first
 pass that puts a number on appearance, and its deliverable is the RED LIST
 at the bottom.
@@ -92,7 +92,19 @@ and the distinction decides who fixes it:
   `ops` and the render disagrees with it.
 - **Capture-side** — the guest never sent it. The evidence is the same
   fixture: nothing in `ops` covers that region. This is a plane or
-  resident problem, not a renderer one. `desktopItems` is the shape.
+  resident problem, not a renderer one. **Monitors is the shape**: zero
+  ops on its own window port, twice, while fully drawn on screen.
+
+> **`desktopItems` was the example here and it was the wrong one
+> (corrected 2026-08-06).** It looks like the canonical capture-side
+> failure and is not one: the guest had been answering correctly all
+> along — `osaErr` 0, `N 20`, three pages with the Finder's own
+> positions — and the HOST discarded the roster one poll later, because
+> the plane had no home on `MirrorReplica`. A third category, and the
+> most dangerous one, because it presents exactly like the guest going
+> quiet: **read correctly and dropped afterwards.** Anyone using this
+> rubric should test for it explicitly rather than assuming silence at
+> the glass means silence on the wire.
 
 A row cannot be judged without opening the fixture. "It looks empty" is
 not a finding; "the fixture has no ops on that rect" is.
