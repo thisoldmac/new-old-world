@@ -824,7 +824,7 @@
  },
  "seq": 1,
  "source": "axtree",
- "version": 1,
+ "version": 2,
  "windows": [
   {
    "app": "SimpleText",

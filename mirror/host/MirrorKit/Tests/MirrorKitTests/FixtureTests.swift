@@ -12,6 +12,21 @@ import XCTest
 /// Comparison is deep-equal after stripping JSON nulls: Python emits
 /// explicit nulls for absent optionals, Swift's encoder omits them — the
 /// same absence, two spellings.
+///
+/// ## The version stamp is checked apart from the scene
+///
+/// `Scene.version` is stamped by `SceneBuilder` from `IR.version`, a
+/// compile-time constant — so pinning it inside each `.expected.json` pins
+/// one fact once per fixture. When the IR major moved 1 → 2 on 2026-08-03
+/// the corpus was not re-stamped, and the suite reported **seven scene
+/// mismatches** for a single stale integer. Every other byte of every scene
+/// matched; nothing in MirrorKit had regressed. Reading that as seven
+/// broken scenes is exactly the wrong first move.
+///
+/// So the stamp is compared first, and on its own, with a message that says
+/// what actually happened and what to do. The scene body is then compared
+/// with the stamp removed from both sides, so a *real* regression is named
+/// per-fixture and is never buried under a version diff.
 final class FixtureTests: XCTestCase {
 
     func testAllFixtures() throws {
@@ -47,8 +62,27 @@ final class FixtureTests: XCTestCase {
             dir.appendingPathComponent("\(name).expected.json"))
         let scene = try FixtureEnvelope.scene(from: rawData)
 
-        let produced = try canonicalize(JSONEncoder().encode(scene))
-        let expected = try canonicalize(expectedData)
+        var produced = try canonicalize(JSONEncoder().encode(scene))
+        var expected = try canonicalize(expectedData)
+
+        // The stamp first, and alone. A corpus that predates an IR major is a
+        // stale corpus, not seven broken scenes.
+        let producedVersion = (produced as? [String: Any])?["version"] as? Int
+        let expectedVersion = (expected as? [String: Any])?["version"] as? Int
+        XCTAssertEqual(producedVersion, IR.version,
+                       "\(name): SceneBuilder did not stamp IR.version")
+        if expectedVersion != producedVersion {
+            XCTFail("""
+            \(name): the corpus predates IR v\(IR.version) \
+            (this fixture is stamped v\(expectedVersion.map(String.init) ?? "?")).
+            This is a STALE FIXTURE, not a scene regression — check the scene \
+            body below before touching MirrorKit. Re-stamp the fixture if the \
+            body still matches; re-capture off a live guest if it does not.
+            """)
+        }
+        produced = withoutVersion(produced)
+        expected = withoutVersion(expected)
+
         if !deepEqual(produced, expected) {
             XCTFail("""
             \(name): scene mismatch
@@ -56,6 +90,12 @@ final class FixtureTests: XCTestCase {
             expected: \(prettyJSON(expected))
             """)
         }
+    }
+
+    private func withoutVersion(_ value: Any) -> Any {
+        guard var dict = value as? [String: Any] else { return value }
+        dict.removeValue(forKey: "version")
+        return dict
     }
 
     /// Parse JSON and strip nulls recursively so Python's explicit nulls and
