@@ -245,9 +245,12 @@ slice A): probe mode only, emitted immediately before a `bits` record
 whose source resolves to a hooked offscreen port, carrying `srcPort` —
 the join the host needs to re-home offscreen ops into a window. It is a
 separate record rather than a wider bits payload so an older reader
-steps over it whole and loses only the join it never had. Declared and
-served by the PPC guest's drain path; **no `blitsrc` record has been
-observed crossing the wire yet**, and nothing here has touched metal.
+steps over it whole and loses only the join it never had. **Proven on
+the emulator the same day**: 1000 `blitsrc` records crossed the wire
+against the loop control (every one naming the port the applet reported
+for itself, every one immediately preceding its `bits` record), and one
+against the live CFM Finder, whose capture is now the committed fixture
+behind the host's slice-D test. Nothing here has touched metal.
 
 `transitions` (2026-08-05) began in exactly that position and **no
 longer is**, which is worth stating precisely because the distinction

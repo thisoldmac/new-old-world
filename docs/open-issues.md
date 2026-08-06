@@ -46,6 +46,31 @@ item 4 of plan 013); and a Retro68 applet without `canBackground` stops
 dead — and stops writing its report — the moment anything else comes
 front, which reads exactly like a crash.
 
+## ANSWERED: a real Finder interior composes host-side, without one pixel on the wire (2026-08-06, plan 013 slice D)
+
+The arc's payoff, emulator-verified the same day the join landed: a
+drain captured live off the CFM Finder carries 186 ops recorded under
+its hooked offscreen world plus the `blitsrc`+`bits` pair that reveals
+them, and the host join places **all ten real labels at their true
+pens** — `'10 items, 3.21 GB available'` [135,14], `'Documents'`
+[280,67], `'TimBotTu'` [282,131], `'TBT'` [40,195] — the same values
+plan 013 quotes from the original measurement, re-captured through the
+entire new pipeline. `NOW_RENDER_OUT` on the payoff test rasterizes the
+composed scene offscreen (Mirror's render-screenshot rule);
+`testFinderCaptureComposesTheRealInteriorHostSide` is the committed
+fixture gate. Icons are placed bits geometry, per deferred item 1.
+
+**The stimulus that worked, because two acts did not.** `winact` resize
+refuses on a fresh boot (`the anchor plane is absent or not armed` —
+the standing anchor-bind entry below), and `menuact` View-toggles
+answered `dispatched` while the view never changed and the ring wrote
+nothing — a second dispatched-but-nothing case worth its own look.
+What forces a full composite rebuild with no act plane at all: front
+NOW's own window over the armed one, then re-front the Finder. The
+uncover repaint is total, and typing (`key`) gives only direct window
+drawing — selection redraw worlds are too transient for the chase
+(sighted, chased, gone: measured `misses`).
+
 ## NO VERDICT on D0: an applet cannot ask the trap-patch question (2026-08-06)
 
 Plan 013 slice D0 asks whether a `NewGWorld` trap patch fires for a CFM
