@@ -73,6 +73,7 @@ add_application(now-guest-ppc
     src/workshop/confirm.c
     src/core/ot_carbon.c
     src/core/json.c
+    src/core/loopstat.c
     src/core/nowlog.c
     src/core/wire.c
     src/core/prefs.c

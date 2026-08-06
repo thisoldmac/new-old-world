@@ -16,6 +16,7 @@
 #include "census.h"
 #include "console_model.h"   /* the exec plane runs the Console's dispatch */
 #include "json.h"
+#include "loopstat.h"
 #include "nowlog.h"
 #include "pixels.h"
 #include "contract.h"
@@ -75,6 +76,12 @@ typedef struct {
     volatile OSStatus connect_result;
     volatile Boolean connect_done;
     Boolean connect_notifier_installed;
+    /* The same notifier serves two eras of one endpoint. During the dial
+       it acknowledges the connect; afterwards it does nothing but notice
+       that bytes arrived. It is ONE notifier because OT allows one per
+       provider, and switching a mode word is the only way to have both
+       without tearing the endpoint down between them. */
+    volatile Boolean notify_data_era;
 
     unsigned char rx[kRxBufferSize];
     long rx_len;
@@ -139,6 +146,76 @@ static void get_cleanup(Boolean keep_file);
 static void chat_drop(void);
 static void preview_fail(const char *reason);
 
+/* --- the wake plane ------------------------------------------------------
+
+   WHAT THIS EXISTS TO SETTLE. A round trip against this guest had a
+   115 ms median on 2026-08-06 even when the answer was a zero-byte
+   "nothing changed" - so the cost was neither the work nor the bytes,
+   and the remaining candidate was the delay before the guest LOOKED at
+   its socket. main.c sleeps six ticks (~100 ms) in WaitNextEvent unless
+   a transfer is already in flight, which fits the number well enough to
+   be believed and is exactly the kind of fit that has been wrong twice
+   in one day here. So it is measured rather than assumed, at the two
+   places the delay can hide:
+
+     - g_pass_stat: how far apart consecutive conn_service passes are.
+     - g_wake_stat: how long between Open Transport SAYING data is here
+       and this loop reading it. That needs a timestamp taken at the
+       moment of arrival, which only a notifier can take.
+
+   NOTIFIER DISCIPLINE. An OT notifier is interrupt-time code: no
+   allocation, no blocking, nothing that can move memory. Everything
+   below it does is write two globals and read the microsecond clock,
+   which is documented interrupt-safe. It deliberately does NOT consume
+   T_DISCONNECT or T_ORDREL in the data era - those stay pending for the
+   main loop's OTLook path, which is where every disconnect in this file
+   is already handled, and a notifier that quietly acknowledged one would
+   make the link's death invisible to the code that reports it. */
+static LoopStat g_pass_stat;         /* interval between service passes */
+static LoopStat g_wake_stat;         /* T_DATA -> the read that took it */
+static volatile UnsignedWide g_data_stamp;
+static volatile Boolean g_data_pending;
+static volatile long g_data_events;  /* T_DATA notifications seen */
+static long g_wake_calls;            /* WakeUpProcess calls made */
+static unsigned long g_last_pass_us_hi, g_last_pass_us_lo;
+static Boolean g_pass_seen;
+/* Captured once, on the main thread, because GetCurrentProcess is not
+   something to be calling from interrupt time. */
+static ProcessSerialNumber g_self_psn;
+static Boolean g_self_psn_known;
+/* Off until asked. The wake is the change this arc is testing, and a
+   mechanism change that cannot be turned off in the field cannot be
+   compared against itself on one boot. */
+static Boolean g_wake_enabled;
+/* The idle sleep main.c asks WaitNextEvent for, in ticks, stated HERE
+   because the wire is what it costs and the wire is what has to defend
+   it. Six ticks is ~100 ms and is where it has always been; one tick
+   still yields to other applications (main.c's comment records why that
+   matters - a starved Macintosh starves the anchor plane) but pays 60
+   passes a second for a machine that is usually idle. Settable so both
+   can be measured on one boot rather than one per rebuild. */
+static long g_idle_sleep_ticks = 6;
+
+static unsigned long wide_delta_us(const UnsignedWide *then,
+                                   const UnsignedWide *now)
+{
+    /* Microseconds() is 64-bit and this only ever spans a fraction of a
+       second, so the low word alone is right except across its wrap -
+       and the high word is what tells us a wrap happened. Anything
+       longer than an hour is reported as an hour: a bad reading must be
+       obviously bad rather than plausibly small. */
+    if (now->hi != then->hi) {
+        if (now->hi - then->hi > 1) {
+            return 3600000000UL;
+        }
+        return (0xFFFFFFFFUL - then->lo) + now->lo + 1UL;
+    }
+    if (now->lo < then->lo) {
+        return 0;
+    }
+    return now->lo - then->lo;
+}
+
 /* Only the connect operation runs asynchronously: on the physical
    PowerBook a synchronous OTConnect to an unreachable address blocks
    inside the call forever (the emulator forgives it - the launch
@@ -153,8 +230,28 @@ static pascal void connect_notifier(void *context, OTEventCode code,
     ConnState *state = (ConnState *)context;
 
     (void)cookie;
-    if (state == NULL || state->ep == kOTInvalidEndpointRef
-        || state->connect_done) {
+    if (state == NULL || state->ep == kOTInvalidEndpointRef) {
+        return;
+    }
+    if (state->notify_data_era) {
+        /* The link is up. Notice arrivals; acknowledge nothing. */
+        if (code == T_DATA || code == T_EXDATA) {
+            ++g_data_events;
+            if (!g_data_pending) {
+                UnsignedWide now;
+
+                Microseconds(&now);
+                g_data_stamp = now;
+                g_data_pending = true;
+            }
+            if (g_wake_enabled && g_self_psn_known) {
+                ++g_wake_calls;
+                WakeUpProcess(&g_self_psn);
+            }
+        }
+        return;
+    }
+    if (state->connect_done) {
         return;
     }
     if (code == T_CONNECT) {
@@ -275,6 +372,11 @@ static int send_control(const char *json)
 
 static void close_endpoint(void)
 {
+    /* Before the notifier goes: after this the endpoint is invalid, and
+       a notification arriving mid-teardown must find the era already
+       shut rather than a half-closed provider. */
+    g.notify_data_era = false;
+    g_data_pending = false;
     if (g.ep != kOTInvalidEndpointRef) {
         if (g.connect_notifier_installed) {
             gNowOT.removeNotifier(g.ep);
@@ -412,14 +514,24 @@ static Boolean g_told_known;
 static AgentAccessTier g_told;
 
 /* The connect completed (either path); the rest of the protocol is
-   written synchronously, so the endpoint goes back to that mode with
-   the notifier gone before the first hello leaves. */
+   written synchronously, so the endpoint goes back to that mode.
+
+   THE NOTIFIER STAYS. It used to be removed here, which left the guest
+   with no way to learn that data had arrived except by asking - and
+   asking is what costs the ~100 ms this arc is about. A synchronous
+   provider still delivers ASYNCHRONOUS events (T_DATA, T_DISCONNECT) to
+   an installed notifier; what it stops delivering is completion events,
+   which the protocol below does not use. So the era flips and the
+   endpoint keeps its ear. */
 static void finish_connect(void)
 {
-    if (g.connect_notifier_installed) {
-        gNowOT.removeNotifier(g.ep);
-        g.connect_notifier_installed = false;
-    }
+    g_data_pending = false;
+    g_data_events = 0;
+    g_wake_calls = 0;
+    loopstat_reset(&g_pass_stat);
+    loopstat_reset(&g_wake_stat);
+    g_pass_seen = false;
+    g.notify_data_era = true;
     if (gNowOT.setSynchronous(g.ep) != noErr) {
         fail("Could not finish connection");
         return;
@@ -469,6 +581,7 @@ static void start_connect(void)
         fail("Could not open a TCP endpoint");
         return;
     }
+    g.notify_data_era = false;        /* the dial's era, until it lands */
     err = gNowOT.installNotifier(g.ep, g_connect_notifier, &g);
     if (err != noErr) {
         fail("Could not install networking callback");
@@ -528,10 +641,6 @@ static void service_connecting(void)
         OSStatus result = g.connect_result;
 
         g.connect_done = false;
-        if (g.connect_notifier_installed) {
-            gNowOT.removeNotifier(g.ep);
-            g.connect_notifier_installed = false;
-        }
         if (result != noErr) {
             fail_ot("Connection refused", result);
             return;
@@ -659,6 +768,19 @@ static int pump_rx(void)
         got = gNowOT.rcv(g.ep, g.rx + g.rx_len,
                          (OTByteCount)(kRxBufferSize - g.rx_len), &flags);
         if (got > 0) {
+            /* The measurement this arc turns on: how long the bytes sat
+               readable before this loop came round to them. Taken on the
+               FIRST read that follows a notification and not on every
+               read, because a bulk stream reads many times per pass and
+               only the first of them answers the question. */
+            if (g_data_pending) {
+                UnsignedWide now;
+                UnsignedWide then = g_data_stamp;
+
+                g_data_pending = false;
+                Microseconds(&now);
+                loopstat_add(&g_wake_stat, wide_delta_us(&then, &now));
+            }
             g.rx_len += got;
             g.last_rx_tick = TickCount();
         } else if (got == kOTNoDataErr) {
@@ -6395,6 +6517,11 @@ void conn_init(void)
     memset(&g, 0, sizeof g);
     g.ep = kOTInvalidEndpointRef;
     g.last_rtt_ms = -1;
+    loopstat_reset(&g_pass_stat);
+    loopstat_reset(&g_wake_stat);
+    /* Once, on the main thread. The wake path needs a PSN at interrupt
+       time and GetCurrentProcess is not a call to be making there. */
+    g_self_psn_known = (GetCurrentProcess(&g_self_psn) == noErr);
     now_prefs_load(&prefs);
     strncpy(g.host, prefs.host, sizeof g.host - 1);
     g.port = prefs.port;
@@ -6447,6 +6574,25 @@ void now_wire_pump(void)
 void conn_service(void)
 {
     ++g_service_passes;
+    /* The loop's own rhythm, sampled where the loop reaches the wire
+       rather than in main.c: every nested Toolbox loop pumps through
+       here too (pump.h), so this counts the passes that could have
+       served a request, which is the quantity the latency is made of. */
+    if (g.phase == kConnConnected || g.phase == kConnHandshaking) {
+        UnsignedWide now;
+
+        Microseconds(&now);
+        if (g_pass_seen) {
+            UnsignedWide then;
+
+            then.hi = g_last_pass_us_hi;
+            then.lo = g_last_pass_us_lo;
+            loopstat_add(&g_pass_stat, wide_delta_us(&then, &now));
+        }
+        g_last_pass_us_hi = now.hi;
+        g_last_pass_us_lo = now.lo;
+        g_pass_seen = true;
+    }
     switch (g.phase) {
     case kConnConnecting:
         service_connecting();
@@ -6563,6 +6709,40 @@ long conn_service_passes(void)
     return g_service_passes;
 }
 
+void conn_wake_stats(ConnWakeStats *out)
+{
+    if (out == NULL) {
+        return;
+    }
+    out->pass = g_pass_stat;
+    out->wake = g_wake_stat;
+    out->data_events = g_data_events;
+    out->wake_calls = g_wake_calls;
+    out->wake_enabled = g_wake_enabled;
+    out->notifier_live = g.notify_data_era;
+    out->sleep_ticks = conn_sleep_ticks();
+}
+
+void conn_set_wake(Boolean on)
+{
+    g_wake_enabled = on;
+    now_log(kLogInfo, "wire", "wake-on-data %s", on ? "on" : "off");
+}
+
+Boolean conn_wake_is_on(void)
+{
+    return g_wake_enabled;
+}
+
+void conn_reset_wake_stats(void)
+{
+    loopstat_reset(&g_pass_stat);
+    loopstat_reset(&g_wake_stat);
+    g_pass_seen = false;
+    g_data_events = 0;
+    g_wake_calls = 0;
+}
+
 void conn_peer_label(char *out, long cap)
 {
     if (g.peer_name[0] != '\0') {
@@ -6581,6 +6761,31 @@ Boolean conn_wants_fast_pump(void)
 {
     return g_xfer.active || g_stream.active || g_offer.active
         || g_put.active || g_ctlq.count > 0;
+}
+
+long conn_sleep_ticks(void)
+{
+    if (conn_wants_fast_pump()) {
+        return 1;
+    }
+    return g_idle_sleep_ticks;
+}
+
+void conn_set_idle_sleep(long ticks)
+{
+    if (ticks < 1) {
+        ticks = 1;                    /* NEVER zero - see main.c */
+    }
+    if (ticks > 60) {
+        ticks = 60;
+    }
+    g_idle_sleep_ticks = ticks;
+    now_log(kLogInfo, "wire", "idle sleep now %ld tick(s)", ticks);
+}
+
+long conn_idle_sleep(void)
+{
+    return g_idle_sleep_ticks;
 }
 
 Boolean conn_is_connected(void)

@@ -663,6 +663,112 @@ static void run_putstat(long id, char *out, long cap)
              conn_rcv_peak(), conn_service_passes());
 }
 
+/* wirestat: how long this guest takes to NOTICE, as a distribution.
+
+   The three numbers a host can see - bytes, walk time, round trip -
+   cannot separate "the answer was expensive" from "nobody looked at the
+   socket for a tenth of a second", and on 2026-08-06 a round trip cost
+   115 ms whose answer was zero bytes. So the guest reports what only it
+   can: the interval between its own service passes, and the delay from
+   Open Transport announcing data to this loop reading it.
+
+   HISTOGRAMS, not medians. A cooperatively scheduled Macintosh produces
+   a tail that a single number hides, and the tail is what a person
+   feels. The bucket edges are published in the rows themselves so a
+   reader is never guessing what a column counts.
+
+   It also SETS the two things under test - the idle sleep and the wake -
+   because a comparison made across two boots is a comparison of two
+   machines. Both are runtime state and neither is saved: a diagnostic
+   that survives a relaunch is a configuration nobody chose. */
+static void wirestat_hist(const LoopStat *s, const char *what,
+                          char *out, long cap, long *pos)
+{
+    int i;
+    int med = loopstat_median_bucket(s);
+    long lo = 0;
+
+    *pos += snprintf(out + *pos, (size_t)(cap - *pos),
+                     ",[\"%s n\",\"%ld\"]"
+                     ",[\"%s mean\",\"%lu us\"]"
+                     ",[\"%s min\",\"%lu us\"]"
+                     ",[\"%s max\",\"%lu us\"]",
+                     what, s->n, what, loopstat_mean_us(s),
+                     what, s->n > 0 ? s->min_us : 0UL, what, s->max_us);
+    for (i = 0; i < kLoopStatBuckets; ++i) {
+        unsigned long hi = loopstat_edge_us(i);
+
+        if (s->buckets[i] == 0 && i != med) {
+            lo = (long)hi;
+            continue;                 /* empty bins are noise, not data */
+        }
+        if (hi != 0) {
+            *pos += snprintf(out + *pos, (size_t)(cap - *pos),
+                             ",[\"%s %ld-%lu us%s\",\"%ld\"]",
+                             what, lo, hi, i == med ? " (median)" : "",
+                             s->buckets[i]);
+        } else {
+            *pos += snprintf(out + *pos, (size_t)(cap - *pos),
+                             ",[\"%s %ld+ us%s\",\"%ld\"]",
+                             what, lo, i == med ? " (median)" : "",
+                             s->buckets[i]);
+        }
+        lo = (long)hi;
+    }
+}
+
+static void run_wirestat(const char *request_json, long id,
+                         char *out, long cap)
+{
+    ConnWakeStats st;
+    char arg[32];
+    long pos;
+
+    /* `wirestat reset` / `sleep N` / `wake on|off`. One word, because the
+       console face types it and the wire face sends the same string. */
+    arg[0] = '\0';
+    now_cmd_arg_word(request_json, "action", arg, sizeof arg);
+    if (strcmp(arg, "reset") == 0) {
+        conn_reset_wake_stats();
+    } else if (strcmp(arg, "wake") == 0) {
+        char onoff[16];
+
+        onoff[0] = '\0';
+        now_cmd_arg_word(request_json, "value", onoff, sizeof onoff);
+        conn_set_wake(strcmp(onoff, "off") != 0);
+        conn_reset_wake_stats();
+    } else if (strcmp(arg, "sleep") == 0) {
+        char ticks[16];
+
+        ticks[0] = '\0';
+        now_cmd_arg_word(request_json, "value", ticks, sizeof ticks);
+        conn_set_idle_sleep(atol(ticks));
+        conn_reset_wake_stats();
+    }
+
+    conn_wake_stats(&st);
+    pos = snprintf(out, (size_t)cap,
+                   "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                   "\"output\":{\"wirestat\":["
+                   "[\"Sleep now\",\"%ld tick(s)\"],"
+                   "[\"Idle sleep\",\"%ld tick(s)\"],"
+                   "[\"Wake on data\",\"%s\"],"
+                   /* Whether the notifier is LIVE, separately from
+                      whether the wake is on. They are different failures:
+                      a notifier that never installed reports no arrivals
+                      at all, which reads exactly like a quiet wire. */
+                   "[\"Notifier\",\"%s\"],"
+                   "[\"Data notifications\",\"%ld\"],"
+                   "[\"WakeUpProcess calls\",\"%ld\"]",
+                   id, st.sleep_ticks, conn_idle_sleep(),
+                   st.wake_enabled ? "on" : "off",
+                   st.notifier_live ? "installed" : "absent",
+                   st.data_events, st.wake_calls);
+    wirestat_hist(&st.pass, "pass", out, cap, &pos);
+    wirestat_hist(&st.wake, "notice", out, cap, &pos);
+    snprintf(out + pos, (size_t)(cap - pos), "]}}");
+}
+
 /* net: what this Mac can say about its own networking, as rows.
    Reuses the [label, value] shape every other command returns, which is
    why it needs no new wire type and no host decoder - the conformance
@@ -1408,6 +1514,10 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "mirror") == 0) {
         run_mirror(id, out, cap);
+        return;
+    }
+    if (strcmp(name, "wirestat") == 0) {
+        run_wirestat(request_json, id, out, cap);
         return;
     }
     if (strcmp(name, "putstat") == 0) {
