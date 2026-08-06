@@ -188,18 +188,18 @@ static void ModalUntil(unsigned long deadline)
     DialogPtr dialog;
     EventRecord event;
 
+    /* **The loop IS the experiment; the dialog is decoration.** An
+       earlier draft fell back to `SpinUntil` when the DLOG was missing,
+       which would silently have turned this mode into the `spin` mode —
+       so the one run that can answer whether a GetNextEvent loop starves
+       background applications would have answered a different question
+       and looked like it had answered this one. A missing resource costs
+       the picture and nothing else. */
     dialog = GetNewDialog(128, NULL, (WindowPtr)-1L);
-    if (dialog == NULL) {
-        /* No DLOG resource is not a reason to return instantly and look
-           like a mode that did nothing. Fall back to the honest worst
-           case — a run that starved MORE than it claimed is readable in
-           the result; one that starved nothing looks like a passing
-           test. */
-        SpinUntil(deadline);
-        return;
+    if (dialog != NULL) {
+        ShowWindow(dialog);
+        DrawDialog(dialog);
     }
-    ShowWindow(dialog);
-    DrawDialog(dialog);
     while (TickCount() < deadline) {
         if (GetNextEvent(everyEvent, &event)) {
             /* Swallowed: a person clicking must not dismiss the
@@ -207,7 +207,7 @@ static void ModalUntil(unsigned long deadline)
                thing the name asked for. */
         }
     }
-    DisposeDialog(dialog);
+    if (dialog != NULL) DisposeDialog(dialog);
 }
 
 int main(void)

@@ -168,6 +168,56 @@ int main(void)
               && t.anchors[0].cur_ap_name[0] == 0,
           "zeroed slot reads as absent");
 
+    /* P6, the liveness endpoint. The resident dials the host itself, and
+       the ONLY way it can learn where is this cell: it has no
+       preferences, no file access at interrupt time, and no way to ask
+       the application that may be the very thing starved. */
+
+    /* Zero epoch is an instruction to stay off the wire, not an old
+       value worth retrying — an application that has never connected and
+       one that has withdrawn consent must look the same here. */
+    memset(&t.endpoint, 0, sizeof(t.endpoint));
+    check(t.endpoint.endpoint_epoch == 0,
+          "a zeroed endpoint says do not dial");
+
+    /* Committed by the epoch LAST, the same publish-last rule the writer
+       lease uses: a resident that sees a nonzero epoch has the whole
+       address, never half of one. */
+    t.endpoint.host_ipv4 = 0x0A000202u;      /* 10.0.2.2, the QEMU gateway */
+    t.endpoint.host_port = 5250;
+    t.endpoint.guest_name[0] = 4;
+    t.endpoint.guest_name[1] = 'M';
+    t.endpoint.guest_name[2] = 'a';
+    t.endpoint.guest_name[3] = 'c';
+    t.endpoint.guest_name[4] = '!';
+    t.endpoint.endpoint_epoch = 1;
+    check(t.endpoint.endpoint_epoch == 1
+              && t.endpoint.host_ipv4 == 0x0A000202u
+              && t.endpoint.host_port == 5250,
+          "a committed endpoint carries the whole address");
+
+    /* The name is carried as a fixed-width Pascal string rather than a
+       pointer, because it is read from a foreign context after the
+       application's heap may be gone — and it must be the SAME name the
+       application dials with, since that name is what associates the two
+       connections on the host. */
+    check(sizeof(t.endpoint.guest_name) == 32,
+          "the guest name is fixed width, never a pointer");
+    check(t.endpoint.guest_name[0] == 4,
+          "the guest name is a Pascal string with its own length");
+
+    /* Old residents are SHORTER, which is how they say they lack this
+       plane; the application must gate on length before reading here. */
+    check(offsetof(NowPeekTable, endpoint) + sizeof(t.endpoint)
+              == sizeof(NowPeekTable),
+          "the endpoint is the tail append, so shorter means absent");
+    check((kNowPeekTableCapLiveness & (kNowPeekTableCapAnchors
+                                       | kNowPeekTableCapTree
+                                       | kNowPeekTableCapAct
+                                       | kNowPeekTableCapContent
+                                       | kNowPeekTableCapEvents)) == 0,
+          "the liveness capability bit collides with no other plane");
+
     if (g_failures != 0) {
         fprintf(stderr, "%d check(s) failed\n", g_failures);
         return EXIT_FAILURE;

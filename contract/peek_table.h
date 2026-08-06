@@ -107,7 +107,13 @@ enum {
     kNowPeekTableCapTree = 1u << 1,     /* P2: semantic-tree assist */
     kNowPeekTableCapAct = 1u << 2,      /* P4: the act plane (below) */
     kNowPeekTableCapContent = 1u << 3,  /* P3: the content plane */
-    kNowPeekTableCapEvents = 1u << 4    /* P5: the transition tail */
+    kNowPeekTableCapEvents = 1u << 4,   /* P5: the transition tail */
+    /* P6: the liveness channel. The resident dials the host ITSELF and
+       keeps that connection alive, so a starved machine still answers
+       for itself — measured 2026-08-05, a Finder modal starved every
+       application on the guest for over 90 s, past the host's silence
+       window, and the wire died against a healthy Macintosh. */
+    kNowPeekTableCapLiveness = 1u << 5
 };
 
 /* P3 asked for 1u << 2 and for its field at the head of the appended
@@ -574,6 +580,43 @@ typedef struct {
     NowPeekU32 resident_owner_epoch;
 } NowPeekWriterLease;
 
+/* P6 liveness. Where the resident dials, and the shape is deliberately
+   the dumbest one that works.
+   ------------------------------------------------------------------
+   IPv4 as four bytes in one word rather than a string, because parsing
+   dotted-quad text at interrupt time is code this component must not
+   have; a name is worse still, since resolving it needs the very
+   application that may be starved. The host NOW connects to is one this
+   machine already reached, so its address is known and numeric by the
+   time the application writes it here.
+
+   `epoch` is the commit word and is written LAST. Zero means "nothing to
+   dial" — an application that has never connected, or one that has
+   stopped consenting — and the resident treats it as an instruction to
+   stay off the wire, not as an old value worth retrying. */
+enum {
+    kNowPeekLivenessFormatNone = 0,
+    kNowPeekLivenessFormatV1 = 1
+};
+
+typedef struct {
+    /* Big-endian a.b.c.d packed into one word; both sides are the same
+       machine, so there is no byte order to negotiate. */
+    NowPeekU32 host_ipv4;
+    NowPeekU32 host_port;
+    /* Bumped by the application whenever the address changes, and
+       written after the two fields above. A resident that saw epoch N
+       and now sees N+1 redials; one that sees 0 disconnects. */
+    NowPeekU32 endpoint_epoch;
+    /* What the machine calls itself on the wire, so the resident's own
+       hello carries the SAME name its application does — that name is
+       what associates the two connections on the host, and a resident
+       inventing one would be a channel vouching for nobody. Pascal
+       string, fixed width, never a pointer into the application's heap:
+       this is read from a foreign context after that heap may be gone. */
+    unsigned char guest_name[32];
+} NowPeekLivenessEndpoint;
+
 /* P2 semantic assist. The evidence and rejected alternatives behind this
    deliberately small operation set are in docs/p2-semantic-evidence.md.
    The records are fixed-size because this code runs from a system-wide event
@@ -913,6 +956,20 @@ typedef struct {
     NowPeekU16 semantic_batch_format;
     NowPeekU16 semantic_batch_length;
     NowPeekSemanticBatchCell semantic_batch;
+    /* U8 P6 append. Where the resident should dial, written by the
+       APPLICATION — the second field it owns, after arm_request, and for
+       the same reason: only the application knows it. The host's address
+       comes from preferences a person set, and the resident has no
+       preferences, no file access at interrupt time and no way to ask.
+       Without this the liveness channel cannot exist at all.
+
+       Written whole and committed by `endpoint_epoch` LAST, which is the
+       publish-last rule the writer lease already uses: a resident that
+       reads a nonzero epoch has the whole address, and one that reads
+       zero has no business dialling. The resident never writes here. */
+    NowPeekU16 endpoint_format;
+    NowPeekU16 endpoint_length;
+    NowPeekLivenessEndpoint endpoint;
 } NowPeekTable;
 
 /* The offsets ARE the contract; a drift here is a defect on the other
@@ -1010,8 +1067,8 @@ _Static_assert(sizeof(NowPeekActV2Cell) == 32 * 4,
    this line, and that is the point: it is the one assert that notices a
    field added anywhere but the tail. */
 _Static_assert(sizeof(NowPeekTable)
-                   == offsetof(NowPeekTable, semantic_batch)
-                    + sizeof(NowPeekSemanticBatchCell),
+                   == offsetof(NowPeekTable, endpoint)
+                    + sizeof(NowPeekLivenessEndpoint),
                "table size");
 _Static_assert(sizeof(NowPeekSemanticRecord) == 48,
                "semantic record size");
@@ -1055,5 +1112,22 @@ _Static_assert(offsetof(NowPeekTable, event_block)
                    == offsetof(NowPeekTable, act_v2)
                        + sizeof(NowPeekActV2Cell),
                "event block appends after act_v2 without moving it");
+
+/* P6's endpoint, appended at the tail after P2's batch cell, so every
+   offset above is byte-for-byte what it was and a resident that predates
+   this region says so simply by being shorter. */
+_Static_assert(sizeof(NowPeekLivenessEndpoint) == 44,
+               "liveness endpoint size");
+_Static_assert(offsetof(NowPeekLivenessEndpoint, endpoint_epoch) == 8,
+               "liveness epoch offset — the commit word, written LAST");
+_Static_assert(offsetof(NowPeekLivenessEndpoint, guest_name) == 12,
+               "liveness guest name offset");
+_Static_assert(offsetof(NowPeekTable, endpoint_format)
+                   == offsetof(NowPeekTable, semantic_batch)
+                       + sizeof(NowPeekSemanticBatchCell),
+               "liveness endpoint appends without moving P2's batch");
+_Static_assert(offsetof(NowPeekTable, endpoint)
+                   == offsetof(NowPeekTable, endpoint_format) + 4,
+               "liveness endpoint cell offset");
 
 #endif /* NOW_PEEK_TABLE_H */

@@ -45,7 +45,15 @@ The cells that say "no" are not oversights.
 of who serves what, message by message, with *served* and *proven* kept
 as separate columns.
 
-**The headline gaps:** resume-by-offset hangs; one large transfer in
+**The headline gaps:** **one dialog on the Macintosh can end the
+session** — the machine is cooperatively scheduled, so an application
+that blocks starves every other one, and a Finder alert was measured on
+2026-08-05 starving the whole guest for over 90 seconds, past the silence
+window after which the host declares a guest gone. The host can now tell
+*starved* from *gone* and says which, but only when the optional NOW
+Extension is installed to answer for the machine; **without it a modal
+still ends the session**, and there is nothing on either side that can
+dismiss one. Beyond that: resume-by-offset hangs; one large transfer in
 about six degrades badly; an unreachable host presents as a hang rather
 than naming the address it cannot reach; NOW-68K's census can now report
 its own CPU, RAM and ROM but not one of its probes has run on a

@@ -32,6 +32,7 @@ endif()
 add_application(NowWedge
     TYPE "APPL"
     CREATOR "NOWw"
-    src/now_wedge.c)
+    src/now_wedge.c
+    src/now_wedge.r)
 
 target_compile_options(NowWedge PRIVATE -mcpu=68000 -Wall -Wextra -Werror -Os)

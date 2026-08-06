@@ -190,7 +190,36 @@ Registration, dial, and the periodic report of § B. The contract gains
 the message family first, per the rule that a behaviour change starts
 there.
 
-### 5 · The wedge instrument — `tools/guest-wedge` · **BUILT 2026-08-05**
+### 5 · The wedge instrument — `tools/guest-wedge` · **BUILT AND RUN 2026-08-05**
+
+**Run on a fresh spin-up, with the modal screendumped mid-run.** Three
+results, and the third is why § 3 can proceed:
+
+| mode | process-level work | reading |
+|---|---|---|
+| `spin` | **starved the full 20 s** | a non-pumping loop denies every other application time |
+| `modal` | **never starved**, 71 s | a modal SITTING there starves nothing; `ModalDialog` pumps and that is enough |
+| `scan` | **never starved**, 71 s | sync File Manager work yields; not the mechanism |
+
+**The "modal sitting there" hypothesis is dead**, and so is "ordinary
+synchronous file work". The mechanism behind the original 90 s is still
+NOT established: the real Finder alert silenced even `hello`, and a spin
+wedge does not, so it reaches deeper than a busy application loop. That
+remains open and `scan` as written does not reach it.
+
+**But the premise § 3 and § 4 rest on is now MEASURED on this guest:**
+`hello` kept answering right through a spin wedge that `stat` could not
+survive. Something answering below the application keeps answering while
+applications are starved — which is the whole bet of the resident
+channel, and it is no longer an argument from the scheduling model.
+
+**The instrument was wrong twice before it was right**, both times as
+rule 2e describes: a swallowed launch reported "nothing happened" as "no
+starvation", and a probe (`hello`) answered below the application could
+not see application starvation at all. Fixed by making the launch a
+positive control that raises, and by probing with `stat`.
+
+### The original § 5 text
 
 Built and cross-compiling; **never yet run on a machine**, which is the
 whole of what it is for, so it proves nothing until it has been. Two
