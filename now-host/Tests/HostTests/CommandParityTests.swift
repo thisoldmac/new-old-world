@@ -324,14 +324,20 @@ final class CommandParityTests: XCTestCase {
     /// them as "wire-only" would have been a lie, because their arguments
     /// are numbers and words a person has.
     ///
-    /// All seven arrived on 2026-07-31, when six verbs that had been built
+    /// Seven arrived on 2026-07-31, when six verbs that had been built
     /// and dispatched by nothing were registered, and `axsnap` — which
     /// takes no arguments at all — was found to have been in the same
     /// position since the reference layer landed. The console face for them
     /// is a `console_model.c` change and is not in the emulator-readiness
     /// scope; it is written down here rather than smuggled into the map
-    /// above, so that the next person reads a list of seven owed console
-    /// verbs instead of a settled asymmetry.
+    /// above, so that the next person reads a list of owed console verbs
+    /// instead of a settled asymmetry.
+    ///
+    /// **Six remain.** `mouseloc` left for `reachedByFallback` on
+    /// 2026-08-06, once the renderer fix made the fallback a complete face
+    /// for a verb that takes no arguments. Count the list, not this
+    /// sentence — a stale count here is what sent docs/command-parity.md
+    /// citing a set of twelve that never existed.
     private static let consoleDebt: [String: String] = [
         "axsnap": "takes nothing and answers about the front process; owed "
                 + "since the reference layer landed",
