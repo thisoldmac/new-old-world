@@ -14,6 +14,119 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## BROKEN, and it is the WORST shape: a ten-second gap in scene polling blinds the whole walk, and the Mirror keeps drawing what it can no longer see (2026-08-06)
+
+Michelle, side by side with the guest: Date & Time's **Set Time Zone**
+modal open on the machine, and in the Mirror "System Folder, Control
+Panels and Date & Time" and no modal at all — with the status line
+reading `5 windows · walk 0ms · transfer 36ms · **same** · content: 13
+new draw ops`. `same` is the guest saying *nothing changed* while a modal
+was visibly open, which is the stale-mirror-that-believes-it-is-current
+failure this project fears most.
+
+It is neither of the two things it looked like. Both were tested on a
+private clone (VM `/private/tmp/nowvm-modal`, wire 5490, guest build
+`c5c39f61dbbf`), asking for WHOLE documents so no answer could be a delta
+artefact.
+
+**The walk is not the defect.** With the modal up the guest publishes it,
+within ~600 ms of the quit and for as long as it is there:
+
+    seq=91  windows=[Date & Time; New Old World]                 digest 2c7784cf
+    seq=92  windows=[Set Time Zone; Date & Time; New Old World]  digest 95b9a08b
+
+`kind:2`, visible, front, 9 dialog items with a `ref` on each, 10
+controls, coverage `complete` for that owner, no error against it.
+
+**The delta plane is not the defect either.** The digest MOVES when the
+window appears, and `scene.same` is decided against the digest of the
+scene *just walked*, not a remembered one (`wire.c :: serve_scene`), so a
+guest cannot answer `same` while the modal is in its own document. The
+host's half keeps it too: `MirrorQuitModalTests` runs that captured
+document through this side's decoder, the replica reducer and the
+projection, and the window survives all three.
+
+**What IS the defect: the anchor plane is held by a ten-second lease that
+only a `scene.request` renews.** `peek.c :: kNowPeekOwnerLeaseTicks` is
+600 ticks. Stop asking for scenes for longer and the next walk is blind —
+measured on the wire, with the modal up the whole time:
+
+    gap  3s → Set Time Zone, Date & Time, New Old World   (95b9a08b)
+    gap  8s → Set Time Zone, Date & Time, New Old World   (95b9a08b)
+    gap 12s → New Old World only                          (ae3f00e1)
+    gap 20s → New Old World only                          (ae3f00e1)
+
+In a blind scene EVERY foreign process reports `now_no_plane` and
+`coverage: unavailable/not-observed`, and the document contains not one
+foreign window. The scene straight after each blind one is right again,
+because the blind walk is the one that RE-claimed: `serve_scene` claims
+the plane and walks immediately, while the extension only arms on its
+next `jGNE` pass. **Re-claiming therefore costs exactly one scene.**
+
+**Why that produced Michelle's frame.** A second agent measured her guest
+at that moment: `requested=8 active=8` — content armed, structure,
+semantics and interaction all inactive — and her Cancel click refused
+five times with `element-not-found: the anchor plane is absent or not
+armed`, at 6.7-8.8 s each. Thirty to forty seconds of acts with no scene
+between them is four leases' worth. Then it is self-sustaining:
+
+- the planes lapse, so the walk goes blind;
+- the blind document is honest but EMPTY of foreign windows, so the host
+  retains its last-known ones as `expectedStale` (`MirrorReplicaReducer`
+  deletes only under `complete` coverage) — which is the Finder folders
+  and the Date & Time panel Michelle could still see;
+- the blind document is STABLE, so every later poll answers `same`;
+- the modal, raised after the planes went down, is in no scene ever;
+- and every act refuses, because the plane it needs is the one that
+  lapsed, which spends more seconds not polling.
+
+The split Michelle reported falls straight out of it: a modal she opens
+by clicking arrives while the planes are up and renders; the one Date &
+Time raises during its own quit arrives after a stall.
+
+**This is not tonight's work.** The lease is from 2026-08-03/04
+(`4ebd575c`, `7e5b0c8f`). Tonight's deltas made it VISIBLE by putting the
+word `same` on screen, and are otherwise innocent — which is the one good
+thing here.
+
+**What is not yet decided, and needs a person.** Three candidate fixes,
+and they are not equivalent:
+
+1. **Do not serve a blind scene.** `serve_scene` already claims the plane
+   before walking; it could pump until `arm_active` includes anchors
+   before it walks, bounded. The other agent measured the arm handshake at
+   ~15 ms tonight, so the bound is cheap. This removes the one-scene lag.
+2. **Do not let the lease lapse under a live consumer.** A connected host
+   that is doing anything at all is not a host that has gone away, so the
+   renewal could ride the wire rather than the scene verb. Against: the
+   lease exists so a plane is not armed on a machine nobody is watching.
+3. **Say it.** The status line reads `5 windows · same` while several of
+   those windows are retentions of a machine the guest could not observe.
+   The reducer already knows — `freshness == .expectedStale`,
+   `actionable == false`, `baseComplete == false` — and
+   `NOWMirrorSource.swift` already has the vocabulary for exactly this
+   (`" · Apple menu expected-stale"`). Windows have no equivalent. **Do
+   this one regardless of which of the other two wins**, because a mirror
+   that cannot see the machine must say so rather than keep drawing.
+
+The fixtures for all of it are in the tree:
+`now-host/Tests/HostTests/Fixtures/scene-quit-modal.json` (the modal, as
+the guest sent it), and `scene-plane-held.json` /
+`scene-plane-lapsed.json` (the same machine, one poll apart, either side
+of the lapse). `MirrorQuitModalTests` pins what this side does with them;
+its staleness assertion has been watched to fail.
+
+**How to open a control panel over the wire, since it costs an hour to
+find.** `launch` refuses one — `not an application (type APPC)`. The
+route that works is the `script` verb:
+
+    tell application "Finder" to open file "Date & Time" of folder \
+      "Control Panels" of folder "System Folder" of startup disk
+
+(`{"source": "...", "timeoutMs": 25000}` — the argument is `source`, not
+`text`.) On a clone whose time zone has never been set, that alone raises
+the Set Time Zone modal, so the case needs no quit to reproduce.
+
 ## MEASURED, and the answer is DON'T BUILD ON IT: how long the content plane takes to arm (2026-08-06)
 
 Plan 013 § A proposes turning the resident into a NOTIFIER — told at

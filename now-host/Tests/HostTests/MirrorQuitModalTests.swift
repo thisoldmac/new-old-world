@@ -47,6 +47,71 @@ final class MirrorQuitModalTests: XCTestCase {
         XCTAssertEqual(modal.dialogItems?.count, 9)
     }
 
+    // MARK: - The lapse
+
+    /// THE SECOND HALF, and the one that explains the frame Michelle saw.
+    ///
+    /// The anchor plane is held by a LEASE the scene owner renews on every
+    /// `scene.request` and which runs for 600 ticks — ten seconds
+    /// (`peek.c :: kNowPeekOwnerLeaseTicks`). Go quiet for longer and the
+    /// next walk is BLIND: measured on the wire, port 5490, build
+    /// c5c39f61dbbf, with the modal up the whole time —
+    ///
+    ///     gap  3s  → Set Time Zone, Date & Time, New Old World  (95b9a08b)
+    ///     gap  8s  → Set Time Zone, Date & Time, New Old World  (95b9a08b)
+    ///     gap 12s  → New Old World only                         (ae3f00e1)
+    ///     gap 20s  → New Old World only                         (ae3f00e1)
+    ///
+    /// and the scene straight after each blind one is right again, because
+    /// the blind walk is the one that RE-claimed: the extension only arms
+    /// on its next pass, so re-claiming costs exactly one scene.
+    ///
+    /// Both fixtures are that measurement. What this test pins is what THIS
+    /// side does with the pair, because the guest's half is honest — every
+    /// foreign process reports `now_no_plane` and coverage
+    /// `unavailable/not-observed`, which is "I could not look", not "there
+    /// is nothing there".
+    func testALapsedPlaneDoesNotDeleteWhatItCouldNotObserve() throws {
+        let session = MirrorGuestSession(guest: "wire-5490",
+                                         incarnation: "session-a")
+        func reduce(_ name: String, previous: MirrorReplica?) throws
+            -> MirrorReplica {
+            let url = try XCTUnwrap(
+                Bundle.module.url(forResource: name, withExtension: "json",
+                                  subdirectory: "Fixtures"))
+            let scene = try NOWMirrorSceneDecoder.decode(
+                irVersion: 2, document: try Data(contentsOf: url))
+            let observation = GuestSceneObservation(
+                session: session, scene: scene,
+                receivedAt: Date(timeIntervalSince1970: Double(scene.seq)))
+            guard case .accepted(let replica) =
+                MirrorReplicaReducer.reduce(observation, previous: previous)
+            else { throw XCTSkip("the reducer rejected a real document") }
+            return replica
+        }
+
+        let held = try reduce("scene-plane-held", previous: nil)
+        XCTAssertTrue(held.windows.values.contains { $0.window.title
+            == "Set Time Zone" }, "the held scene carries the modal")
+
+        let lapsed = try reduce("scene-plane-lapsed", previous: held)
+        let modal = try XCTUnwrap(lapsed.windows.values.first {
+            $0.window.title == "Set Time Zone"
+        }, "a window whose owner reported `unavailable/not-observed` must "
+            + "not be deleted — an unobserved process cannot say a window "
+            + "is gone")
+        XCTAssertEqual(modal.freshness, .expectedStale,
+                       "and it must be RETAINED AS STALE, not as current: "
+                       + "this is the whole difference between a mirror that "
+                       + "says it lost sight of the machine and one that "
+                       + "quietly keeps drawing the last thing it saw")
+        XCTAssertFalse(modal.actionable,
+                       "nothing that stale may be clicked")
+        XCTAssertFalse(lapsed.snapshot.baseComplete,
+                       "the snapshot must not claim complete coverage of a "
+                       + "machine half of which it could not observe")
+    }
+
     func testTheReducerKeepsTheModalWindow() throws {
         let scene = try scene()
         let session = MirrorGuestSession(guest: "wire-5490",
