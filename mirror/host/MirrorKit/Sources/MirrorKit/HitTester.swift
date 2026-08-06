@@ -252,9 +252,22 @@ public enum HitTester {
             // order. Date & Time's Date Formats button occupied the same box
             // as a low-level record; testing controls first made the visible
             // button resolve as an unknown control and every click refuse.
-            for item in (win.dialogItems ?? []).reversed()
-            where item.visible && contains(item.rect, cx, cy) {
-                return .dialogItem(windowID: win.id, item: item)
+            //
+            // Topmost, but ANSWERABLE first. An alert's default-outline slot
+            // is a user item laid over the button it outlines and declared
+            // after it, so plain topmost resolves the click to an item with
+            // no action and no reference — and the mirror refuses a button
+            // that works. Internet Explorer's Error alert, captured
+            // 2026-08-06: item 7 is a user item over item 1's OK, and
+            // `ditemact` on item 1 dismissed the alert while every click in
+            // the mirror did nothing.
+            let items = (win.dialogItems ?? []).reversed().filter {
+                $0.visible && contains($0.rect, cx, cy)
+            }
+            if let answerable = items.first(where: {
+                $0.semantic.action != nil
+            }) ?? items.first {
+                return .dialogItem(windowID: win.id, item: answerable)
             }
             for ctl in win.controls where ctl.visible {
                 if let r = ctl.rect, contains(r, cx, cy) {

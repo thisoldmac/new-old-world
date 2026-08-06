@@ -14,6 +14,89 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED in the host and the guest, UNVERIFIED by any drive: an alert rendered the wrong buttons, and they did nothing (2026-08-06)
+
+Michelle, driving: a guest alert "renders the wrong buttons, and they
+dont work". Both halves are one defect, and none of it was the act plane.
+
+**The specimen.** Internet Explorer's `Error` alert — it raises itself on
+launch on this image, which makes it the cheapest reproducible alert
+there is. Captured live off an emulated G4 with a QMP screendump of the
+same moment (`now-host/Tests/HostTests/Fixtures/scene-ie-error-alert.json`).
+The machine: a stop icon, one line — "Security failure.  The server reply
+is invalid." — and ONE **OK** button wearing the default ring. The
+Mirror: two hatched "Visual unavailable" boxes side by side, the ring
+around one of them, no button, and no text at all.
+
+**The guest was right about the buttons.** Its eight DITL items name item
+1 an enabled `pushButton` titled OK with `isDefault: true`, and items 7
+and 8 `userItem`s — item 7 being the Dialog Manager's default-outline
+slot, which WRAPS the button and is declared after it.
+
+Three consequences, all host-side, all fixed:
+
+- `SceneRenderer` drew a placeholder for every kind it cannot draw, so
+  the outline slot hatched over the OK button and item 8 invented a
+  second box beside it. A user item now draws nothing — its content is
+  the application's, which is P3's business rather than a semantic fact —
+  and no placeholder is drawn over an item it contains.
+- `HitTester` returns the topmost item, so a click landed on item 7,
+  which carries no action and no reference; `InteractionPolicy` refused
+  it by name and the mirror looked dead. A click now resolves to the
+  topmost ANSWERABLE item.
+- **The act plane was never involved.** `ditemact` addressed to item 1's
+  own reference answered `dispatched`, `dispatched-but-unconfirmed`, and
+  the next screendump showed the alert gone. A fire-and-forget act would
+  have left this looking like an act defect for a third time.
+
+**The missing text was a real content gap, and the guest fixed it.** A
+DITL carries the RESOURCE's template; an application that fills a message
+in at runtime calls `SetDialogItemText`, which writes into the item's own
+handle. Item 4 reported an empty `staticText` while its handle held the
+line verbatim. The walk now asks `GetDialogItemText` for it
+(`now-guest-ppc/src/scene/dialog_text.h`), after proving through the
+memory seam that the handle dereferences inside the target partition.
+
+The reason that is a Toolbox call and not one more bounded read is worth
+keeping: **the block header on this heap is not the 24-bit-era layout.**
+Measured with the QEMU oracle on a stopped VM, for the item above —
+master pointer `0x1e357590`, the eight bytes below it
+`00000040 00088278`. The second longword is a ZONE-RELATIVE offset, not
+the master pointer (two items in the same alert differ from their handles
+by the same base, `0x1DFB42A0`), so a back-pointer coherence check
+against the handle fails. And the physical size is 64 for a 48-byte
+string while the tag byte's size-correction nibble reads 0, so
+`physical - 8 - correction` yields 56 and would append eight bytes of
+heap slop to every alert message. `GetHandleSize` knows the logical size;
+nothing else on this side does. That header is now a discovery task
+somebody may want, and it is not needed for this.
+
+**The sibling, from the same evening — Set Time Zone's ring.** Item 1
+`Done` reports `isDefault: true` AND `enabled: false` while the machine
+greys Done and rings **Cancel** (recorded below). `isDefault` comes from
+the DialogRecord's `aDefItem`, which the Dialog Manager initialises to 1
+and only `SetDialogDefaultItem` moves, so it goes stale exactly when an
+application greys its first button. Verified against the IE alert that
+`aDefItem` is otherwise RIGHT: it said 1, the machine ringed item 1. So
+the renderer no longer draws a ring on a disabled item.
+
+**What that does NOT close.** Nothing here knows where the ring WENT. The
+authoritative fact is the control's own `kControlPushButtonDefaultTag`,
+which the resident's classifier could read the same way it reads
+`kControlKindTag` — it would need a flag in `NowPeekSemanticClassRecord`
+and a field on a control's semantics, and no drive has asked for it.
+Until then a disabled default renders no ring at all, which is honest and
+incomplete.
+
+**Also still out of scope, and noted rather than scored** (drive-loop
+rule 2f): the alert's stop icon is a hatched placeholder, and the IE
+window behind it reads "Guest content not reported".
+
+Emulator only, and **no drive has watched any of this in the Mirror
+window**. The evidence is a paired capture and five tests over the
+captured document, each watched to fail with its fix reverted; the guest
+half was watched to change the wire on a live machine (build
+`bcd1b1893664`, wire 5600).
 ## INVESTIGATED, NOT FIXED: the twelve seconds under a modal is NOT starvation — it is NOW's own act wait, which does not pump the wire (2026-08-06)
 
 Investigation only; nothing product-facing was changed. Michelle's live
@@ -1786,6 +1869,13 @@ rather than fired and forgotten:
    greyed until a city is chosen, and the default ring is around
    **Cancel**. So the grey is a correct report and the ring is a renderer
    fidelity defect.
+   *(2026-08-06, later: half-closed, and the cause is named. `isDefault`
+   is the DialogRecord's `aDefItem`, which is initialised to 1 and only
+   `SetDialogDefaultItem` moves — so it is stale here and correct
+   elsewhere, proven against Internet Explorer's alert the same evening.
+   The renderer no longer rings a DISABLED item; where the ring actually
+   WENT still needs the control's own `kControlPushButtonDefaultTag`. See
+   the alert entry at the top of this file.)*
    (With the modal's application in the BACKGROUND every item reports
    `enabled:false`, which is also true of the machine.)
 4. **The truncated explanatory text is the renderer, not the content.**

@@ -1,7 +1,11 @@
-# Nine renders — what a working semantic mirror looks like
+# Renders — what a working semantic mirror looks like
 
-**Date:** 2026-07-31 · **Status:** recorded evidence, carried from the
-parked upstream project `timbottu/mirror`. NOW produced none of these.
+**Date:** 2026-07-31 · **Status:** recorded evidence, nine of them
+carried from the parked upstream project `timbottu/mirror`, which NOW did
+not produce. **Added 2026-08-06:** a tenth entry NOW *did* produce, and
+it breaks two of this page's own rules deliberately — it is a
+before/after pair, and it includes one image that IS a guest screenshot,
+because the defect it records could only be shown beside the machine.
 
 ## What these images are, and are not
 
@@ -9,7 +13,8 @@ Every one of them is a **host-side render** — a macOS application
 drawing a Mac OS 9 desktop from **semantic state read over the wire**,
 plus, in two cases, a bounded region of the guest's real pixels.
 
-They are **not screenshots of the guest.** No image here was captured
+They are **not screenshots of the guest** — with the one labelled
+exception added at the end of this page. Nothing else here was captured
 from the emulator's framebuffer. The window frames, the menu bar, the
 title bars, the scroll bars, the shortcut glyphs and the desktop pattern
 were all drawn by the host from data.
@@ -207,14 +212,40 @@ oracle behind the 40/40 number above: *click the computed point, then
 ask the Finder what is selected.* This is what a correct answer looks
 like.
 
+### `render-2026-08-06-alert-*.png` — the first side-by-side
+
+| the Mirror, before | the Mirror, after |
+|---|---|
+| ![Two hatched placeholder boxes where the alert's button should be](renders/render-2026-08-06-alert-before.png) | ![The alert with its message and one ringed OK button](renders/render-2026-08-06-alert-after.png) |
+
+![The same moment on the machine, over QMP](renders/render-2026-08-06-alert-guest.png)
+
+Internet Explorer's `Error` alert, and the one comparison the section
+below says no render makes: the third image is the guest's own
+framebuffer at the same moment, over QMP, not a render at all.
+
+**What it proves.** The two boxes reading "Visual unavailable" are the
+Dialog Manager's default-outline USER ITEMS — one of them laid over the
+only button in the alert, which is why there was no button to see and why
+clicking did nothing. The message was absent because a DITL carries the
+resource's template while the application had written the line into the
+item's handle. Both are fixed; the alert now draws its text and one OK
+button with the ring on it, in the places the machine puts them.
+
+**What it does not.** The stop icon is still a hatched placeholder
+(drive-loop rule 2f: an application-composited bitmap is noted, not
+scored), the window behind reads "Guest content not reported", and no
+person has driven this in the Mirror window — the "after" is the
+offscreen render of the same captured document.
+
 ## What no render shows
 
-- **Real hardware.** All nine are emulator scenes.
+- **Real hardware.** Every image here is an emulator scene.
 - **A list or column Finder view.** Every folder window here is an icon
   view, which is the only view the item model was measured against.
 - **A document body.** No render carries replayed text from an
   application's own content — the milestone that would have produced one
   was not reached.
-- **A comparison against the guest's own framebuffer.** The pixel-island
-  frames contain guest pixels, but no image here is a side-by-side
-  fidelity check.
+- ~~**A comparison against the guest's own framebuffer.**~~ True of the
+  first nine; the 2026-08-06 alert above is the exception, and the only
+  one.
