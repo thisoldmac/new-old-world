@@ -308,8 +308,59 @@ the invalidation is sound.
 
 ### 5 · The wire follows the guest
 
+**DONE 2026-08-06**, and the contract did go first. `scene.begin` gained
+`digest` / `delta` / `baseline` / `wholeBytes`, and `scene.same` is the
+no-change answer — a control frame with no transfer, sent only in reply
+to a request that quoted `since`. The baseline is named by the **digest
+of what the consumer actually holds** rather than by a sequence number,
+so a host that has drifted repairs itself on the next round trip instead
+of diverging quietly. Idle wire bytes fell to ~10% of what they were
+over ten polls. See [scene-deltas.md](../scene-deltas.md) and the ledger
+entry *"a scene can now answer 'the same', or send only what moved"*.
+Emulator only.
+
 Deltas, or a "no change since generation N" answer that costs a control
 frame instead of a document. Contract first, per the house rule.
+
+## Picking this up cold
+
+**Written 2026-08-06 during the durability pass, at the end of the
+session that measured this plan's results.** If this and the code
+disagree, the code is right; if this and
+[open-issues.md](../open-issues.md) disagree, the ledger is right.
+
+**Done, all of it emulator-only on a mac99 G4:**
+
+| § | what landed | how it is known |
+|---|---|---|
+| 1 | `meta.phases` — eight non-overlapping phases in MICROSECONDS, permanent and additive, publishing its own cost | replaced `latencyMs`, which was `TickCount`-quantised at ~16.6 ms and could not resolve any phase of the walk |
+| 1a | the OT notifier + `WakeUpProcess` wake | round trip 86 ms → 10 ms idle, 15 ms mid-drive, **keeping** the long idle sleep |
+| 2 | the control sweep removed rather than tuned — the app reads the registry of controls it made | 886,398 µs → 713 µs on the focus-change scene; steady state 3.2–4.9 ms → 0.7–1.0 ms |
+| 5 | scene deltas by digest, and `scene.same` | ~90% fewer idle wire bytes |
+
+A correctness fix rode along with § 2 and is worth as much as the speed:
+**`FindControl` refuses an inactive window**, so a backgrounded window
+reported ZERO controls — a false absence nobody had ever observed
+because "the background window has no controls" is not a surprising
+sentence. Foreign windows now retract the control plane instead. **That
+retraction path is built and has not been watched run.**
+
+**Not started: §§ 3 and 4.** § 3's own text argues against starting it
+before a 1400c reading exists; that reading still does not exist.
+
+**The wake owes a metal pass, and this plan's rules do not say so.** By
+§ B's ranking the wake is a tier-2 change, and `## Verification` below
+scopes metal to *tier-3* changes — so read literally, the plan excuses
+the one change in it most likely to behave differently on hardware. It
+is an Open Transport notifier running at interrupt time, where a mistake
+is a crash rather than a slow answer, and it also keeps the notifier
+installed after the dial, which it did not before. Failure modes are
+graceful by construction and `wirestat wake off` restores the shipped
+behaviour from either face without a rebuild — but none of that is a
+substitute for watching it. **Treat the wake as owing metal regardless
+of its tier**; the rule is amended in `## Verification`.
+
+**Nothing in this plan is metal-verified.**
 
 ## What would make this wrong
 
@@ -359,3 +410,12 @@ frame instead of a document. Contract first, per the house rule.
   wins hold on a PowerBook — the emulator's disk advantage means a
   win measured here is not automatically a win there. **Attended, and
   Michelle's call.**
+
+  **Amended 2026-08-06: and the wake, which is tier 2.** Ranking by how
+  deep a change reaches into the guest's model was the right axis for
+  everything else in this plan and the wrong one for this: the wake runs
+  at INTERRUPT time and changes when the notifier is installed, so its
+  failure mode is a crash on a machine nobody has tested rather than a
+  number that does not improve. Tier is a proxy for risk, and where the
+  proxy and the risk disagree, the risk wins. **The wake owes a metal
+  pass.**

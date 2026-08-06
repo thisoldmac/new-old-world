@@ -136,7 +136,7 @@ question should be asked here before any of it is made asynchronous.
 
 ## The work
 
-### 1 · Make the instrument tell the truth · **START HERE**
+### 1 · Make the instrument tell the truth · ~~**START HERE**~~ · **UNDER WAY on `claude/frame-no-finder-wait`; `1bb7fdcf` already split the bracket. See "Picking this up cold" below before touching this.**
 
 The per-stage fields must populate on the LIVE path. Watched, on a real
 cycle, not in a test. Then one run with the Finder healthy and one with
@@ -176,6 +176,44 @@ may make § 3 smaller.
 Scoped in `docs/open-issues.md` against the state engine, acts, the
 status line and serialisation. It earns its own plan once § 1–4 have
 shown what is left.
+
+## Picking this up cold
+
+**Written 2026-08-06 during the durability pass, by a session that is
+not implementing this plan.** If this section and the code disagree, the
+code is right; if it and [open-issues.md](../open-issues.md) disagree,
+the ledger is right.
+
+**This plan is IN PROGRESS. Do not start § 1.** Work is live on the
+branch `claude/frame-no-finder-wait`, in the worktree of the same name,
+under another session's hand as of 2026-08-06. A reader who takes § 1's
+`**START HERE**` at face value will build a second implementation of the
+instrument on top of an in-flight one.
+
+- **§ 1's instrument work has already landed in part.** `1bb7fdcf`
+  (*"diag(host): split the `decode_ms` bracket, and the investigation
+  behind it"*) is the split this plan asks for. The `**START HERE**`
+  marker on § 1 is therefore stale; treat it as "this is where the other
+  session started", not as an invitation.
+- **§§ 2–4 are unstarted** as far as this session can see. Ask the
+  branch before assuming so — a plan committed and begun on the same day
+  is exactly the window where a status paragraph is least reliable.
+- **§ 5 is explicitly not this plan** and has not moved.
+
+**The measurement this plan exists for stands and is not in dispute:**
+`decode_ms` does not measure decoding — it brackets publish-minus-deliver
+around `joinContent` plus two paged AppleScript round trips into the
+guest's Finder, run every cycle; this side's own CPU work is 4 ms; 12
+windows cost 714 ms and 3 windows cost 12,559 ms, so the variable is the
+Finder's responsiveness rather than the window count. The ledger entry
+is *"`decode_ms` hits 12.5 s, none of it is decoding, and the shape of
+the bug is a priority inversion"*.
+
+**Nothing here is metal-verified, and nothing here is fixed.** The
+`## Verification` section below is accurate as written and needs no
+change — in particular its last bullet, that a 1400c's Finder is slower
+than an emulated G4's, so every number in this plan is the optimistic
+one.
 
 ## What would make this wrong
 
