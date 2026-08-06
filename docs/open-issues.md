@@ -14,6 +14,50 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED: a Finder item's type reached the atlas as AppleScript's WORD for it (2026-08-06)
+
+Every icon the roster read produced carried a type of `«cla` or `stri`.
+Neither names a file type, so all 914 of the pack's `creator__type`
+lookups missed and every desktop and Finder item drew as
+generic-by-kind — twenty identical pages on a machine showing Sherlock,
+QuickTime Player and a SimpleText document. It cost art rather than
+contents, which is exactly why nothing ever failed over it.
+
+The cause is one line of AppleScript. The Finder's `file type` is a
+**`type class`**, not text, and the script concatenates it into its
+output row with `&`; AppleScript coerces it the only way it can, to its
+own SOURCE rendering — `«class APPL»`, or `string` where it has a WORD
+for the code. The host then took the first four characters.
+
+**It is not `OSADoScript`'s result form.** The mangling is inside the
+string the guest built, so the `typeChar`/source-vs-display question that
+looks like the culprit is a dead end; asking for a different result form
+would change nothing. Recorded because that is where an hour goes.
+
+Fixed host-side (`NOWMirrorSource.osType(fromAppleScript:)`), chosen over
+the two guest-side cures deliberately: it needs no guest rebuild and it
+can be **proven against the roster fixture already committed**, where the
+alternatives could only be argued. An unrecognised rendering answers nil
+rather than a guess — a wrong OSType is a wrong icon drawn confidently,
+and nil is the generic art we were already drawing.
+
+**Still open, and it is the reason the deeper fix is worth doing.** The
+word table cannot be closed by construction: AppleScript renders from all
+its registered terminology, not just the type names, and that machine
+answered `text returned` for SimpleText's `ttxt`. Any code with a
+keyword this side has not met falls through to generic. The durable cure
+is to make the type pass hand back four characters itself — Standard
+Additions' `info for` is the classic idiom and its `file type` is plain
+text on classic Mac OS — and **that is unverifiable from this desk**: it
+is one AppleScript coercion whose behaviour on Mac OS 9 no test here can
+answer. It wants a VM pass, not an argument.
+
+Also fixed in passing, and worth knowing before writing a test over these
+fixtures: `parseIcons(page + typePass)` **drops the first `F` row**. Each
+blob arrives in source form carrying its own quotes, so concatenating
+them leaves `"F` at the join. One item silently loses its art; it was
+found by looking at a render, not by a test.
+
 ## The `desktopItems` entry below had no evidence because this side threw it away (2026-08-06)
 
 A dated line under **"FIRST LIVE ANSWERS from the 2026-08-05 drive"**, and
