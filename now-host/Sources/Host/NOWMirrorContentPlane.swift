@@ -95,6 +95,11 @@ final class NOWMirrorContentPlane {
     /// a busy application to grow the host indefinitely.
     static let operationCapPerWindow = 1_200
     static let sourceCap = 16
+    /// Drain pages one structural cycle may spend chasing a busy ring.
+    /// Twelve × 4 KiB covers a whole 64 KiB ring's worth of records
+    /// within one cycle, which is the point: the writer must not lap a
+    /// reader that is awake. Idle machines never reach page two.
+    static let pagesPerCycle = 12
     private static let renewAfter: TimeInterval = 9 * 60
 
     init(listener: GuestListener) {
@@ -250,6 +255,30 @@ final class NOWMirrorContentPlane {
 
     private func drain(scene: MirrorKit.Scene,
                        completion: @escaping (Update) -> Void) {
+        drainPage(scene: scene, pagesLeft: Self.pagesPerCycle,
+                  completion: completion)
+    }
+
+    /// One drain, then MORE while the guest says there are more, up to a
+    /// bounded number of pages within this one structural cycle.
+    ///
+    /// THE RING IS THE LIMIT, MEASURED: a compositing application under
+    /// active repaint writes ~12 KB/s into a 64 KiB ring — about five
+    /// seconds of headroom — while the structural cycle that used to
+    /// carry the only drain runs every ~2.2 s and drained ONE page of
+    /// it. Sherlock lost 114018 bytes in one settle that way, and the
+    /// interior text went with them. Chasing the cursor while the guest
+    /// still reports `more` costs nothing when the machine is idle (the
+    /// first page answers `more: false` and the loop ends) and is the
+    /// difference between a composed window and a hatch when it is not.
+    ///
+    /// It is deliberately BOUNDED rather than a loop-until-empty: the
+    /// scene cycle remains the cadence owner — that is the sibling
+    /// perf thread's territory and this must not take it — so a page
+    /// budget caps what one cycle may spend, and anything still pending
+    /// is drained by the next cycle exactly as before.
+    private func drainPage(scene: MirrorKit.Scene, pagesLeft: Int,
+                           completion: @escaping (Update) -> Void) {
         listener.runCommand("qdtrace", args: [
             "op": "drain", "cursor": String(cursor),
         ]) { [weak self] result in
@@ -263,7 +292,13 @@ final class NOWMirrorContentPlane {
                         + Self.failure(result)))
                 return
             }
-            completion(self.apply(decoded, to: scene))
+            let update = self.apply(decoded, to: scene)
+            guard decoded.more, pagesLeft > 1 else {
+                completion(update)
+                return
+            }
+            self.drainPage(scene: scene, pagesLeft: pagesLeft - 1,
+                           completion: completion)
         }
     }
 

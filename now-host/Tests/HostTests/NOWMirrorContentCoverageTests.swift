@@ -179,6 +179,34 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
         XCTAssertTrue(texts(display).contains("Startup Memory Tests"))
     }
 
+    /// THE APPEARANCE ANSWER (plan 015 G3), and it was the load-bearing
+    /// question about control panels: their field VALUES are drawn into
+    /// offscreen worlds that AppearanceLib creates on the panel's
+    /// behalf — Date & Time imports no `NewGWorld` at all — so a
+    /// window-port hook never saw them and the replay could only plate
+    /// them. With the trap patch hooking every world at birth (it
+    /// patches the TRAP, not the caller), the same panel reports 286
+    /// worlds born, 286 died, 0 missed, and its data crosses: the
+    /// date and time digits themselves, plus every control's label.
+    func testDateAndTimeValuesCrossFromTheThemesOwnWorlds() throws {
+        let display = try compose("qdtrace-drain-cp-datetime-hooked",
+                                  window: 0x1f6fd590, psn: "0.34734082",
+                                  title: "Date & Time")
+        let labels = texts(display)
+        /* The values, which is the whole point of that window. */
+        XCTAssertTrue(labels.contains("2026"), "the year crosses")
+        XCTAssertTrue(labels.contains(":"), "the time separator crosses")
+        XCTAssertTrue(labels.contains { $0.trimmingCharacters(
+            in: .whitespaces) == "PM" }, "the meridiem crosses")
+        XCTAssertTrue(labels.contains { Int($0) != nil },
+                      "numeric date/time fields cross")
+        /* And the controls' own text, which the window-port hook never
+           carried either. */
+        for label in ["Clock Options…", "Time Formats…", "Menu Bar Clock"] {
+            XCTAssertTrue(labels.contains(label), "missing \(label)")
+        }
+    }
+
     /// Renders every capture at its own size, for eyes rather than
     /// assertions. Opt-in: NOW_RENDER_DIR names a directory.
     func testRenderEveryCapture() throws {
@@ -193,6 +221,8 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
              0x00a03580, "0.29949953", "Macintosh HD"),
             ("cp-datetime", "qdtrace-drain-cp-datetime",
              0x1f6fd220, "0.35520514", "Date & Time"),
+            ("cp-datetime-hooked", "qdtrace-drain-cp-datetime-hooked",
+             0x1f6fd590, "0.34734082", "Date & Time"),
             ("cp-memory", "qdtrace-drain-cp-memory",
              0x1e9dffa0, "0.36438017", "Memory"),
             ("now-window", "qdtrace-drain-now-window",

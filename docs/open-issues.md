@@ -71,6 +71,48 @@ uncover repaint is total, and typing (`key`) gives only direct window
 drawing — selection redraw worlds are too transient for the chase
 (sighted, chased, gone: measured `misses`).
 
+## ANSWERED: the Appearance path was load-bearing, and the panels' values cross (2026-08-06, plan 015 G3)
+
+Michelle's hypothesis, and it was right in the way that matters:
+**a control panel's field VALUES are drawn into offscreen worlds
+AppearanceLib creates on its behalf.** Date & Time imports no
+`NewGWorld` at all — read from its own PEF — yet with the trap patch
+armed it reports **286 worlds born, 286 died, 0 missed**, because the
+patch is on the TRAP and does not care who the caller is.
+
+Everything a window-port hook could never see now crosses: the date and
+time digits themselves, every control label (`Clock Options…`, `Date
+Formats…`, `Set Time Zone…`, `Use a Network Time Server`, `Time server:
+Apple Americas/…`), and the group titles it already had. Gated by
+`testDateAndTimeValuesCrossFromTheThemesOwnWorlds`.
+
+**Compared against the machine**, which is the step that was skipped
+when the plated render was called an improvement: a QMP screendump from
+the same run reads `3:17:38 PM` where the render reads `3:17:44 PM` —
+six seconds of a ticking clock — with the same fields, groups and
+buttons in the same places. Guarded by `--expect-build`; the guest that
+answered was `1bff0bd2ca39`, this checkout's own.
+
+The consequence is bigger than one panel: **any application themed by
+Appearance is now reachable**, which is most of Mac OS 9's own
+interface. The renderer's control-plate placeholder stays as the honest
+answer for the blits that remain, but it is no longer what a panel
+mostly shows.
+
+## MEASURED: the ring is the limit, and one cycle now drains a whole one (2026-08-06, plan 015 G1)
+
+~12 KB/s into a 64 KiB ring under active repaint is about five seconds
+of headroom, while the structural cycle that carried the only drain
+runs every ~2.2 s and took ONE page of it. That is how Sherlock lost
+114018 bytes in a settle and its interior text with them. A cycle now
+chases the cursor while the guest reports `more`, bounded to 12 pages —
+a whole ring's worth — so an awake reader cannot be lapped, while the
+scene cycle stays the cadence owner (the sibling perf thread's
+territory; this is additive by construction). The ring stays 64 KiB:
+growing it costs system-heap bytes on 68K machines, and the measured
+rate says pacing suffices. If an application beats the paced drain, the
+ring decision reopens with numbers.
+
 ## VOID, and the rule that would have caught it: two late findings came from someone else's machine (2026-08-06)
 
 Two results recorded near the end of the plan-014 arc are **void** and

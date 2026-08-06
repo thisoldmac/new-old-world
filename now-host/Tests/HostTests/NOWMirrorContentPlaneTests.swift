@@ -498,6 +498,36 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
         }
     }
 
+    /// G1: a cycle chases the cursor while the guest says `more`,
+    /// instead of leaving a busy ring to lap an awake reader. The
+    /// listener here answers two pages and then stops, so the assertion
+    /// is that BOTH were consumed inside one join.
+    func testABusyRingIsDrainedAcrossPagesWithinOneCycle() throws {
+        let model = plane()
+        let first = try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"text","port":"0x1eba6800","ticks":1,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
+           "pen":[20,30],"font":3,"size":9,"face":0,
+           "len":4,"fullLen":4,"trunc":false,"text":"Page"}],
+         "nextCursor":64,"writeCursor":256,"records":1,"more":true}
+        """)
+        let second = try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"text","port":"0x1eba6800","ticks":2,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
+           "pen":[20,44],"font":3,"size":9,"face":0,
+           "len":3,"fullLen":3,"trunc":false,"text":"Two"}],
+         "nextCursor":256,"writeCursor":256,"records":1,"more":false}
+        """)
+        _ = model.apply(first, to: try scene())
+        let update = model.apply(second, to: try scene())
+        XCTAssertEqual(update.scene.windows[0].display?.map(\.text),
+                       ["Page", "Two"],
+                       "both pages land in one settled display")
+        XCTAssertEqual(model.cursor, 256, "the cursor caught the writer")
+    }
+
     func testProcessSerialParsesOnlyTheTwoPartWireShape() {
         XCTAssertEqual(NOWMirrorContentPlane.serial("0.29360131")?.hi, 0)
         XCTAssertEqual(NOWMirrorContentPlane.serial("0.29360131")?.lo,
