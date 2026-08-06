@@ -110,6 +110,19 @@ extract. Upstream ported the *specification* — the seven grey levels its
 own theme code uses — and kept the host renderer in sync with that,
 rather than trying to lift images.
 
+> **TRUE, but the conclusion drawn from it was too weak (2026-08-06).**
+> "No bitmaps" was read as "reimplement from a ported spec", and there
+> is a third option the API surface makes obvious once looked at: the
+> Appearance Manager ANSWERS. `GetThemeMetric` over ~40 selectors,
+> `GetThemeBrushAsColor`, `GetThemeTextColor`, `GetThemeAccentColors`,
+> `GetThemeWindowRegion`, `GetThemeScrollBarTrackRect`, `GetThemeFont`
+> — the machine will state its own metrics, colours and geometry — and
+> thirty-odd `DrawTheme*` entry points will draw any element into an
+> offscreen GWorld once, as a bakeable asset. So chrome can be measured
+> from the source rather than guessed at, without shipping pixels at
+> runtime. Plan
+> [016](plans/2026-08-06-016-feat-platinum-from-the-source-plan.md).
+
 Every window frame in [mirror-renders.md](mirror-renders.md) is drawn,
 not extracted.
 
