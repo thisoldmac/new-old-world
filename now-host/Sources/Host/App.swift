@@ -26,6 +26,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private let defaults: UserDefaults
     private lazy var state = HostAppState(registry: registry,
                                           defaults: defaults)
+    /* The same defaults the rest of the delegate writes to, so the
+       sidebar's shape travels with the port, the share and the selected
+       module rather than landing in the generic domain — and so a test's
+       injected suite carries the sidebar too. */
+    private lazy var sidebarPreferences = SidebarPreferences(
+        defaults: defaults,
+        registry: registry)
 
     init(defaults: UserDefaults = UserDefaults(
         suiteName: ProductIdentity.preferencesSuite) ?? .standard) {
@@ -363,7 +370,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
 
     @objc func openMainWindow() {
         if window == nil {
-            let root = HostRootView(registry: registry, state: state)
+            let root = HostRootView(registry: registry, state: state,
+                                    sidebar: sidebarPreferences)
             let controller = NSHostingController(rootView: root)
             /* The WINDOW owns its size, not whichever pane is showing.
                NSHostingController defaults to .preferredContentSize, which

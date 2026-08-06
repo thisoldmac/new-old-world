@@ -264,6 +264,14 @@ channels:
       cloudGet: { $ref: "#/components/messages/cloudGet" }
       cloudPreview: { $ref: "#/components/messages/cloudPreview" }
       cloudRefuse: { $ref: "#/components/messages/cloudRefuse" }
+      chatModels: { $ref: "#/components/messages/chatModels" }
+      chatCatalog: { $ref: "#/components/messages/chatCatalog" }
+      chatSend: { $ref: "#/components/messages/chatSend" }
+      chatDelta: { $ref: "#/components/messages/chatDelta" }
+      chatStatus: { $ref: "#/components/messages/chatStatus" }
+      chatResult: { $ref: "#/components/messages/chatResult" }
+      chatCancel: { $ref: "#/components/messages/chatCancel" }
+      chatReset: { $ref: "#/components/messages/chatReset" }
       previewBegin: { $ref: "#/components/messages/previewBegin" }
       previewEnd: { $ref: "#/components/messages/previewEnd" }
   bulk:
@@ -749,6 +757,85 @@ operations:
       modern machine is the only side that can spell both alphabets.
       The service registry, each service's row semantics, and the
       additive rule for new services live in x-cloud below.
+  guestAsksChat:
+    action: send
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/chatModels"
+      - $ref: "#/channels/control/messages/chatSend"
+      - $ref: "#/channels/control/messages/chatCancel"
+      - $ref: "#/channels/control/messages/chatReset"
+    description: >
+      The guest asks the HOST's language models. One direction by
+      DEFINITION, the cloud rule: the family's subject is the modern
+      machine's model harness — its providers, its credentials, its
+      network — which the classic machine does not have. A host never
+      sends these; a side that receives one it does not serve ignores
+      it like any control message it cannot decode.
+
+      ADDITIVE family, no revision bump — the cloud.services precedent
+      exactly. Discovery is by asking: a guest sends chat.models, and
+      silence past its own deadline means a host that predates the
+      family. That is a status line, not an error.
+
+      DISCOVERY IS TWO-STEP AND LAZY. chat.models without a provider
+      lists providers; with one it lists THAT provider's models, one
+      bounded page at a time (cursor/more, the cloud.list shape), and
+      a guest asks only for the provider somebody selected. Model rows
+      carry a HOST-MINTED ref, not the provider's model name: names
+      are unbounded out in the world and a fixed classic buffer is
+      not, which cost a metal evening (a 48-byte name silently lost
+      its last byte and every send of it came back unknown). The ref
+      is opaque, connection-scoped, and never shown to a person — the
+      label is the human-facing name everywhere.
+
+      THE CONVERSATION LIVES ON THE HOST, per connection. chat.send
+      carries one turn — the text just typed — and never history; the
+      host appends it to the conversation it keeps for this connection
+      and answers from there. A reconnect therefore starts a fresh
+      conversation implicitly; chat.reset exists so a person can get a
+      blank page without dropping the link. One turn streams at a time
+      per connection: a chat.send while one is unfinished is answered
+      chat.result ok:false busy — the answer sink is one transcript,
+      the exec-busy rule.
+
+      chat.cancel asks the host to stop the streaming turn and is
+      ALWAYS answered — chat.result ok:false "cancelled" if stopped,
+      "not-running" if the host no longer has it. The unanswered-cancel
+      wedge is the one stream.stop was hardened against; this family
+      inherits the rule. chat.reset is refused busy while a turn
+      streams (cancel first — one rule, no race between a discard and
+      an arriving delta).
+  hostServesChat:
+    action: receive
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/chatCatalog"
+      - $ref: "#/channels/control/messages/chatDelta"
+      - $ref: "#/channels/control/messages/chatStatus"
+      - $ref: "#/channels/control/messages/chatResult"
+    description: >
+      The host's answers. A turn's reply is zero or more chat.delta
+      frames, then exactly one chat.result — the exec.output split,
+      borrowed with its reason: the result is TERMINAL STATUS ONLY and
+      never carries reply text, so a host that answers in one shot and
+      a host that streams look the same to the guest.
+
+      Every human-readable string — labels, details, delta text, status
+      lines, result messages — is converted BEFORE sending:
+      MacRoman-expressible, composed, no code the guest would have to
+      map. The modern machine is the only side that can spell both
+      alphabets, the hostServesCloud rule verbatim. The guest's prompt
+      travels the other way as MacRoman by construction (it was typed
+      on the guest); the host transcodes it toward its provider.
+
+      chat.status is the family's liveness. A host running a model that
+      pauses to use tools can go a minute without a delta; status says
+      what is happening, and the guest's quiet deadline re-arms on
+      EITHER a delta or a status. A host that serves chat MUST keep one
+      of the two flowing while a turn is open — a guest is entitled to
+      declare a turn dead after 60 seconds of total silence and cancel
+      it.
 
       preview.begin and preview.end bracket a cloud.preview's answer,
       the way capture and scene bracket theirs: begin says what the bulk
@@ -951,6 +1038,30 @@ components:
     cloudRefuse:
       name: cloud.refuse
       payload: { $ref: "#/components/schemas/CloudRefuse" }
+    chatModels:
+      name: chat.models
+      payload: { $ref: "#/components/schemas/ChatModels" }
+    chatCatalog:
+      name: chat.catalog
+      payload: { $ref: "#/components/schemas/ChatCatalog" }
+    chatSend:
+      name: chat.send
+      payload: { $ref: "#/components/schemas/ChatSend" }
+    chatDelta:
+      name: chat.delta
+      payload: { $ref: "#/components/schemas/ChatDelta" }
+    chatStatus:
+      name: chat.status
+      payload: { $ref: "#/components/schemas/ChatStatus" }
+    chatResult:
+      name: chat.result
+      payload: { $ref: "#/components/schemas/ChatResult" }
+    chatCancel:
+      name: chat.cancel
+      payload: { $ref: "#/components/schemas/ChatCancel" }
+    chatReset:
+      name: chat.reset
+      payload: { $ref: "#/components/schemas/ChatReset" }
     previewBegin:
       name: preview.begin
       payload: { $ref: "#/components/schemas/PreviewBegin" }
@@ -1431,6 +1542,257 @@ components:
         reason:
           type: string
           description: Converted, human-readable, shown not swallowed.
+    ChatModels:
+      type: object
+      required: [type, id]
+      additionalProperties: false
+      properties:
+        type: { const: chat.models }
+        id: { type: integer }
+        provider:
+          type: string
+          maxLength: 24
+          description: >
+            Absent: list the PROVIDERS. Present: list this provider's
+            models, one page at a time. The guest asks per provider,
+            on selection — so a provider's models are listed only when
+            somebody is looking at them, and one provider's long
+            catalog never costs another's visibility.
+        cursor:
+          type: integer
+          description: >
+            With provider only: continue that provider's listing from
+            this row index (the cloud.list shape). Absent means the
+            start.
+    ChatCatalog:
+      type: object
+      required: [type, id]
+      additionalProperties: false
+      description: >
+        Two answer shapes, matching the ask's: WITHOUT provider the
+        answer carries `providers`; WITH one it carries `provider`,
+        `models` and `more`. Exactly one shape per frame.
+      properties:
+        type: { const: chat.catalog }
+        id: { type: integer }
+        providers:
+          type: array
+          maxItems: 8
+          description: >
+            Every provider the host's harness KNOWS about, whatever
+            its state — the cloud.report rule: a provider with no key
+            is still reported, so the guest's popup can say why a
+            thing is missing instead of not showing it. An empty array
+            is an honest answer (the host serves chat and has nothing
+            configured), not a refusal.
+          items:
+            type: object
+            required: [provider, label, state]
+            additionalProperties: false
+            properties:
+              provider:
+                type: string
+                maxLength: 24
+                description: >
+                  The selector chat.models takes back. Host registry
+                  id, short by construction.
+              label:
+                type: string
+                description: >
+                  What the popup shows, converted by the host
+                  (MacRoman-expressible, <= 31 bytes).
+              state:
+                enum: [serving, off, no-access, unavailable]
+                description: >
+                  The cloud.report vocabulary. serving lists models
+                  and answers chat.send. off is the host person's
+                  choice. no-access means credentials exist but no
+                  longer work (the fix is at the host's screen).
+                  unavailable means the provider cannot be reached at
+                  all (no key, no local runtime answering).
+              detail:
+                type: string
+                description: >
+                  One converted sentence of state ("Signed in",
+                  "Nothing answering at localhost:11434"). Display
+                  only.
+        provider:
+          type: string
+          maxLength: 24
+          description: With models — whose page this is, echoed.
+        models:
+          type: array
+          maxItems: 16
+          description: >
+            One page of the named provider's models. 16 rows is the
+            FRAME bound, not the catalog's: `more` continues the
+            listing. An empty page with more:false is an honest
+            "nothing (left) to list".
+          items:
+            type: object
+            required: [ref, label]
+            additionalProperties: false
+            properties:
+              ref:
+                type: string
+                maxLength: 8
+                description: >
+                  HOST-MINTED reference chat.send takes back — never
+                  the provider's own model name, which can outgrow any
+                  classic buffer (metal, 2026-08-02: a 48-byte name
+                  lost its last byte in a fixed buffer and the send
+                  came back not-found). Opaque, valid for this
+                  connection, refreshed by every page; a display never
+                  shows it to a person.
+              label:
+                type: string
+                description: >
+                  The model's name FOR HUMANS, converted by the host
+                  (MacRoman-expressible, <= 31 bytes). What every
+                  popup and console listing shows; the ref never
+                  surfaces.
+              detail:
+                type: string
+                description: One converted display-only sentence.
+        more:
+          type: boolean
+          description: >
+            With models: true means another page follows at cursor +
+            the rows received so far, and the guest keeps asking until
+            false — the pagination loop is the guest's, invisible to
+            the person at the screen.
+    ChatSend:
+      type: object
+      required: [type, id, ref, prompt]
+      additionalProperties: false
+      properties:
+        type: { const: chat.send }
+        id:
+          type: integer
+          description: >
+            Correlates every chat.delta, chat.status and the one
+            chat.result, and IS the turn's identity for chat.cancel.
+            No separate session field — the exec.request reason: a
+            second identifier is a second thing to get wrong.
+        ref:
+          type: string
+          maxLength: 8
+          description: >
+            A model's host-minted ref from this connection's catalog
+            pages. Unknown or stale refs are answered chat.result
+            ok:false unknown-model — a well-formed refusal, never a
+            protocol error, which is what keeps the catalog additive.
+        prompt:
+          type: string
+          maxLength: 512
+          description: >
+            The turn as typed, one turn only — the host keeps the
+            conversation (see guestAsksChat). MacRoman-expressible by
+            construction; the host transcodes toward its provider.
+            THE 512 IS THE PROMPT CAP'S ONE STATEMENT: 512 raw bytes
+            escape to at most 3072 on the wire plus envelope, inside
+            the 4 KB control cap — the exec chunk arithmetic. Both
+            halves read this number from here; a longer prompt is
+            refused by the sender before it reaches the wire.
+    ChatDelta:
+      type: object
+      required: [type, id, seq, text]
+      additionalProperties: false
+      properties:
+        type: { const: chat.delta }
+        id: { type: integer, description: Echoes the chat.send id. }
+        seq:
+          type: integer
+          description: >
+            0-based, contiguous, per turn — the exec.output rule: the
+            guest renders in seq order and a gap is a bug worth
+            surfacing rather than papering over.
+        text:
+          type: string
+          description: >
+            A CHUNK of the model's reply, not a line — embedded
+            newlines are content, and a frame carries no promise of
+            ending on a line or word boundary. Converted by the host
+            BEFORE sending (MacRoman-expressible, composed), and
+            bounded by MEASURED encoded bytes so the frame stays under
+            the 4 KB control cap.
+    ChatStatus:
+      type: object
+      required: [type, id, text]
+      additionalProperties: false
+      properties:
+        type: { const: chat.status }
+        id: { type: integer, description: Echoes the chat.send id. }
+        text:
+          type: string
+          description: >
+            One converted line of what the model is doing between
+            deltas ("Reading this Mac's screen", "Thinking"). Display
+            only, deliberately lossy and un-sequenced: each replaces
+            the last, the next delta or the result clears it, and an
+            empty text clears it early. Never part of the transcript.
+            Its second job is liveness — the guest's quiet deadline
+            re-arms on it (see hostServesChat).
+    ChatResult:
+      type: object
+      required: [type, id, ok]
+      additionalProperties: false
+      properties:
+        type: { const: chat.result }
+        id: { type: integer, description: Echoes the request id. }
+        ok: { type: boolean }
+        code:
+          enum: [unknown-model, busy, too-long, cancelled, not-running,
+                 no-credentials, auth-expired, rate-limited, unreachable,
+                 provider-error, turn-limit]
+          description: >
+            Present when ok is false. unknown-model is the additive-
+            catalog answer. busy answers a send or reset while a turn
+            streams. too-long answers a prompt past the cap that
+            reached the wire anyway. cancelled and not-running answer
+            chat.cancel, the exec vocabulary. The rest are the
+            harness's own weather — no-credentials and auth-expired
+            (the fix is at the host's screen), rate-limited (ask again
+            later), unreachable (provider or local runtime not
+            answering), provider-error (it answered and failed),
+            turn-limit (the model kept asking for tools past the
+            host's ceiling; the text streamed so far stands).
+        message:
+          type: string
+          description: >
+            Converted, human-readable, shown not swallowed — the
+            provider's or harness's own words where it has them.
+      description: >
+        TERMINAL STATUS ONLY — never carries reply text; the text
+        lives in chat.delta, including for a host that answers in one
+        shot (the exec.result rule, borrowed with its reason). Exactly
+        one per chat.send, and the answer shape for chat.cancel and
+        chat.reset too.
+    ChatCancel:
+      type: object
+      required: [type, id]
+      additionalProperties: false
+      properties:
+        type: { const: chat.cancel }
+        id:
+          type: integer
+          description: >
+            The chat.send id to stop. Always answered with a
+            chat.result — ok:false cancelled if it was stopped,
+            ok:false not-running if the host no longer has it.
+    ChatReset:
+      type: object
+      required: [type, id]
+      additionalProperties: false
+      properties:
+        type: { const: chat.reset }
+        id:
+          type: integer
+          description: >
+            Asks for a blank conversation; answered chat.result ok
+            when discarded, ok:false busy while a turn streams
+            (cancel first). Reconnecting resets implicitly — this
+            message exists so a person keeps the link.
     Refuse:
       type: object
       required: [type, contract, reason]

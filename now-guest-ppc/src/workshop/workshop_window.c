@@ -8,11 +8,13 @@
 #include "console_module.h"
 #include "diagnostics_module.h"
 #include "network_module.h"
+#include "chat_module.h"
 #include "cloud_module.h"
 #include "files_module.h"
 #include "logs_module.h"
 #include "mcp_module.h"
 #include "mirror_module.h"
+#include "preferences_module.h"
 #include "processes_module.h"
 #include "screenshots_module.h"
 #include "software_module.h"
@@ -74,10 +76,18 @@ static const struct {
       "The other Mac's iCloud: its Drive, Photos and Contacts, served "
       "one page at a time.",
       "iCloud has not moved in yet." },
+    { "Chat",
+      "A model on the other Mac's harness, talking about THIS Mac. It "
+      "can look at what runs here, with the access MCP grants.",
+      "Chat has not moved in yet." },
     { "Mirror",
       "Mirror's own extensions and agent on this Mac. NOW reads them; it "
       "installs nothing.",
       "Mirror has not moved in yet." },
+    { "Preferences",
+      "How this window behaves. Rearrange the rail by Option-dragging a "
+      "row; everything here is remembered between launches.",
+      "Preferences has not moved in yet." },
     { "Logs",
       "This launch's event log. Toggle whether it also reaches the disk.",
       "Logs has not moved in yet." },
@@ -104,9 +114,14 @@ static void invalidate_pane(void)
 static void compute_layout(void)
 {
     Rect content;
+    WorkshopRailSpec spec;
 
     GetWindowPortBounds(g_window, &content);
-    workshop_layout_compute(&content, &g_lay);
+    /* The rail's density and scroll position are the sidebar's state, so
+       the geometry is asked for rather than assumed - a grow, a density
+       change and a scroll all land here and must agree. */
+    workshop_sidebar_rail_spec(&spec);
+    workshop_layout_compute(&content, &spec, &g_lay);
 }
 
 /* Standard bounds: the spec's content size, centered, clamped to the
@@ -196,10 +211,17 @@ Boolean workshop_open(void)
     g_ops[kWorkshopDiagnostics] = diagnostics_module_ops();
     g_ops[kWorkshopNetworking] = network_module_ops();
     g_ops[kWorkshopCloud] = cloud_module_ops();
+    g_ops[kWorkshopChat] = chat_module_ops();
     g_ops[kWorkshopMirror] = mirror_module_ops();
+    g_ops[kWorkshopPreferences] = preferences_module_ops();
     g_ops[kWorkshopLogs] = logs_module_ops();
     g_ops[kWorkshopConnection] = connection_module_ops();
     now_prefs_load(&prefs);
+    /* Before the first compute_layout, never after: the rail's density
+       decides its row height, and therefore every rectangle in the
+       window that the rail's width does not already fix. */
+    workshop_sidebar_load_prefs();
+    workshop_sidebar_set_relayout_fn(workshop_resized);
     if (restorable_bounds(&prefs.workshop_rect)) {
         bounds = prefs.workshop_rect;
     } else {
@@ -342,15 +364,16 @@ static void draw_header(void)
 
     DrawThemePlacard(&g_lay.header,
                      g_active ? kThemeStateActive : kThemeStateInactive);
+    workshop_sidebar_draw_toggle();
     UseThemeFont(kThemeEmphasizedSystemFont, smSystemScript);
-    MoveTo((short)(g_lay.header.left + 12), (short)(g_lay.header.top + 16));
+    MoveTo(g_lay.header_text_left, (short)(g_lay.header.top + 16));
     CopyCStringToPascal(k_module_info[g_selected].title, text);
     DrawString(text);
 
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-    MoveTo((short)(g_lay.header.left + 12), (short)(g_lay.header.top + 31));
+    MoveTo(g_lay.header_text_left, (short)(g_lay.header.top + 31));
     CopyCStringToPascal(k_module_info[g_selected].blurb, text);
-    TruncString((short)(right_edge - g_lay.header.left - 90), text,
+    TruncString((short)(right_edge - g_lay.header_text_left - 90), text,
                 truncEnd);
     DrawString(text);
 
@@ -481,6 +504,11 @@ void workshop_click(const EventRecord *event)
     }
     SetPortWindowPort(g_window);
     GlobalToLocal(&local);
+    /* Before the module: the button lives in the header placard, which
+       belongs to this window rather than to whatever page is showing. */
+    if (workshop_sidebar_toggle_click(local)) {
+        return;
+    }
     if (ops != NULL && g_created[g_selected] && ops->click != NULL
         && ops->click(event, local)) {
         return;
@@ -538,6 +566,7 @@ void workshop_idle(void)
         return;
     }
     workshop_sidebar_idle();
+    workshop_sidebar_tag_idle();
     peer[0] = '\0';
     if (conn_is_connected()) {
         conn_peer_label(peer, sizeof peer);

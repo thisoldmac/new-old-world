@@ -772,6 +772,11 @@ final class GuestListener: ObservableObject {
         return registry
     }()
 
+    /// The chat harness's wire face, or nil for a host that has none
+    /// wired (tests, mostly). Nil means chat.* asks go unanswered,
+    /// which is the honest pre-family silence the contract describes.
+    weak var chatService: ChatWireService?
+
     /// Text conversion for files we serve, mirroring the Files module's
     /// setting for the ones we fetch.
     var convertServedText = true
@@ -2633,6 +2638,10 @@ final class GuestListener: ObservableObject {
                 guard let self, let asker = origin.session else { return }
                 self.serveCloud(ask, on: asker)
             },
+            onServeChat: { [weak self] ask in
+                guard let self, let asker = origin.session else { return }
+                self.serveChat(ask, on: asker)
+            },
             onProcessListing: { [weak self] listing in
                 guard fromActive() else { return }
                 self?.resolveProcessListing(listing)
@@ -2684,6 +2693,9 @@ final class GuestListener: ObservableObject {
                 }
                 guard let key = closedSession.guestKey,
                       self.sessions[key] === closedSession else { return }
+                // A conversation is per connection; a turn still
+                // streaming to a dead socket is cancelled, not leaked.
+                self.chatService?.sessionClosed(key: key)
                 self.sessions[key] = nil
                 self.machineBySession[key] = nil
                 self.healthByGuest[key] = nil

@@ -135,9 +135,22 @@ elif ! port_free "$ANCHOR"; then
     echo "requested anchor port $ANCHOR is in use (another session?)"; exit 1
 fi
 WIRE="${NOW_WIRE_PORT:-5250}"
-port_free "$WIRE" || { echo "port $WIRE is already listening — another NOW host \
+# NOW_SPIN_RESTRICT=1 isolates the guest from every host listener
+# (slirp restrict=on): its dial to 10.0.2.2:5250 fails exactly as it
+# does on hardware with no host up, while the anchor hostfwd still
+# reaches in. This is the mode for UI work while a HUMAN's host app
+# holds 5250 — without it the guest walks into their session, which is
+# the same collision class the metal rules exist for. The wire verify
+# phase is skipped: nothing can dial us, so listening would only hang.
+RESTRICT="${NOW_SPIN_RESTRICT:-0}"
+if [ "$RESTRICT" = "1" ]; then
+    echo "restricted: the guest can reach nothing on this Mac"
+else
+    port_free "$WIRE" || { echo "port $WIRE is already listening — another NOW host \
 is up, and the guest's compiled-in default would dial IT, not us"; exit 1; }
+fi
 HOSTFWD="hostfwd=tcp:127.0.0.1:${ANCHOR}-:1400"
+[ "$RESTRICT" = "1" ] && HOSTFWD="restrict=on,$HOSTFWD"
 printf '%s %s\n' "$ANCHOR" "$WIRE" > "$RUN/ports"
 echo "ports: anchor=$ANCHOR wire=$WIRE"
 
@@ -265,12 +278,17 @@ PY
 #
 # --retries because the guest has just been launched and the first answer
 # after a launch is not always its settled one.
-set +e
-python3 "$NOW/tools/askguest.py" --port "$WIRE" --wait "${NOW_DIAL_WAIT:-180}" \
-    --retries 3 --retry-delay 6 \
-    mirror qdtrace:op=status
-rc=$?
-set -e
+if [ "$RESTRICT" = "1" ]; then
+    echo "== restricted run: the guest cannot dial, skipping the wire verify =="
+    rc=0
+else
+    set +e
+    python3 "$NOW/tools/askguest.py" --port "$WIRE" --wait "${NOW_DIAL_WAIT:-180}" \
+        --retries 3 --retry-delay 6 \
+        mirror qdtrace:op=status
+    rc=$?
+    set -e
+fi
 
 # NOT the gate, deliberately, and this is the honest half of the run.
 # `actselftest` is the act plane's only ABI oracle, and on 2026-08-05 — the

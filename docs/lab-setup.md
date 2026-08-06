@@ -95,3 +95,26 @@ The full procedure, and how to tell contention from a defect, is
 binary and disk image from the environment; run it with `--help` for the
 current list. Its session directory (`.q800/`) is a cloned disk image and
 a build tree, disposable by construction and gitignored.
+
+## Running a second copy of the host app
+
+The checkout is shared and several sessions work in it at once, so a
+build launched to look at it must not write into the desk's real
+preferences. `NOW_PREFS_SUFFIX` gives a run its own UserDefaults suite:
+
+```sh
+NOW_PREFS_SUFFIX=my-thread open -n "path/to/New Old World.app"
+```
+
+Two things to know. A suffixed run starts from **defaults**, so it takes
+the default listening port with them - set another one in that suite
+first (`defaults write dev.newoldworld.now.settings.my-thread listenPort
+-int 5399`), or it will contend with the instance you were trying not to
+disturb. And check what is already listening before you launch:
+
+```sh
+lsof -nP -iTCP -sTCP:LISTEN | grep "New"
+```
+
+Clean up the suite afterwards with `defaults delete
+dev.newoldworld.now.settings.my-thread`.

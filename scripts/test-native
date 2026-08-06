@@ -437,6 +437,8 @@ run_c now-guest-ppc share_path_test.c        ""
 # go negative two thirds of the way through.
 run_c now-guest-ppc files_pull_test.c        ""  src/files/files_pull.c
 run_c now-guest-ppc cloud_model_test.c      ""  src/cloud/cloud_model.c src/core/json.c
+run_c now-guest-ppc chat_model_test.c       ""  src/chat/chat_model.c src/core/json.c
+run_c now-guest-ppc chat_layout_test.c      ""  src/chat/chat_layout.c
 run_c now-guest-ppc cloud_layout_test.c     ""  src/cloud/cloud_layout.c
 # The live search's pure half: case-insensitive substring, folded once
 # per keystroke not once per row, generalized to the two row shapes

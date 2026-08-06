@@ -457,6 +457,21 @@ static const char *const d_mkdir[] = {
     NULL
 };
 
+static const char *const d_chat[] = {
+    "  Talks to a model through the other Mac's harness.",
+    "  The conversation lives over there, one turn at a",
+    "  time. Two steps to pick a model, by name not id:",
+    "    --models     list the other Mac's providers",
+    "    --models P   list provider P's models, numbered",
+    "    --model N    choose number N from that listing",
+    "    --new        start a fresh conversation",
+    "    --stop       end the answer that is streaming",
+    "  chat -- <text> forces text that starts with a dash.",
+    "  While an answer streams this console waits for it;",
+    "  the Chat page is the face that stays interactive.",
+    NULL
+};
+
 /* Order is display order on both consoles. */
 const NowCommandDoc kNowCommandDocs[] = {
     { "gestalt", 1, "report this Mac: system, model, RAM, CarbonLib",
@@ -490,6 +505,9 @@ const NowCommandDoc kNowCommandDocs[] = {
       "census [probe]   (no probe = overview)", d_census },
     { "catsearch", 1, "time a whole-disk application search",
       "catsearch", d_catsearch },
+    { "chat", 0, "talk to a model through the other Mac",
+      "chat <text> | chat --models [provider] | --model <n> | --new | --stop",
+      d_chat },
     { "sw", 1, "what is installed on this Mac",
       "sw [domain]", d_sw },
     { "launch", 1, "open an application on this Mac",

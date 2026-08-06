@@ -28,6 +28,8 @@
 #include "input_cmds.h"
 #include "transitions_cmd.h"
 #include "wire.h"
+#include "contract.h"
+#include "../chat/chat_model.h"
 
 enum {
     kMaxLines = kConsoleMaxLines,
@@ -290,6 +292,324 @@ static void run_screenshot_local(short depth_flag, short bands_flag,
     }
 }
 
+/* --- chat: the other machine's model -------------------------------------
+
+   Console-only ON PURPOSE, and recorded as such in the host's parity
+   map: the family's subject is the HOST's model harness, so the host
+   reaches chat by serving it — there is nothing for it to type at this
+   Mac. What this verb buys is the command-first proof: through the
+   exec plane, `chat hi` typed at the HOST console streams the model's
+   answer back as this console's own lines, before any page exists.
+
+   The wait loop pumps the wire until the terminal result, the wire's
+   own quiet deadline gives up, or the exec that asked is cancelled.
+   While it runs, THIS Mac's own screen does not repaint - stated in
+   help, and the page (not this verb) is the interactive face. The
+   nested pump is audited in docs/nested-loops.md. */
+
+enum { kChatVerbHardCapTicks = 60 * 300 };  /* five minutes, absolute */
+
+/* The chosen model, held as ref + label: the REF is what a send
+   carries and is never printed; the label is what every listing and
+   confirmation shows. `--model <n>` picks n from the last listing. */
+static char g_chat_model_ref[kChatRefMax + 1];
+static char g_chat_model_label[32];
+static ChatModelRow g_chat_listed[kChatMaxModels];
+static int g_chat_listed_count;
+static char g_chat_listed_provider[25];
+static ChatLineFeed g_chat_verb_feed;
+static Boolean g_chat_verb_done;
+
+static void chat_verb_emit_line(void *ctx, const char *text)
+{
+    char out[kMaxCols];
+
+    (void)ctx;
+    snprintf(out, sizeof out, "  %s", text);
+    console_model_append(out);
+}
+
+static void chat_verb_note(int kind, const char *reply)
+{
+    char line[kMaxCols];
+
+    switch (kind) {
+    case kChatAnswerProviders: {
+        ChatProviderRow rows[kChatMaxProviders];
+        int n = chat_parse_providers(reply, rows, kChatMaxProviders);
+        int i;
+
+        if (n < 0) {
+            console_model_append("  chat: unreadable catalog");
+        } else if (n == 0) {
+            console_model_append(
+                "  the other Mac serves chat but has nothing configured");
+        }
+        for (i = 0; i < n; ++i) {
+            if (strcmp(rows[i].state, "serving") == 0) {
+                snprintf(line, sizeof line, "  %-12.12s %.40s",
+                         rows[i].provider, rows[i].label);
+            } else {
+                snprintf(line, sizeof line, "  %-12.12s %.20s (%.14s)",
+                         rows[i].provider, rows[i].label, rows[i].state);
+            }
+            console_model_append(line);
+            if (rows[i].detail[0] != '\0'
+                && strcmp(rows[i].state, "serving") != 0) {
+                snprintf(line, sizeof line, "    %.70s", rows[i].detail);
+                console_model_append(line);
+            }
+        }
+        if (n > 0) {
+            console_model_append(
+                "  chat --models <provider> lists its models");
+        }
+        g_chat_verb_done = true;
+        return;
+    }
+    case kChatAnswerModels: {
+        ChatModelRow page[kChatPageRows];
+        char from[25];
+        int more = 0;
+        int n = chat_parse_models(reply, page, kChatPageRows, &more,
+                                  from, sizeof from);
+        int i;
+
+        if (n < 0 || strcmp(from, g_chat_listed_provider) != 0) {
+            g_chat_verb_done = true;
+            return;
+        }
+        for (i = 0; i < n && g_chat_listed_count < kChatMaxModels; ++i) {
+            g_chat_listed[g_chat_listed_count] = page[i];
+            snprintf(line, sizeof line, "  %2d. %.40s",
+                     g_chat_listed_count + 1, page[i].label);
+            console_model_append(line);
+            ++g_chat_listed_count;
+        }
+        if (more && g_chat_listed_count < kChatMaxModels) {
+            char err[64];
+
+            /* Auto-pagination: the person asked for the listing, not
+               for its pages. */
+            if (now_wire_chat_model_page(g_chat_listed_provider,
+                                         (long)g_chat_listed_count,
+                                         err, sizeof err) == 0) {
+                return;               /* the wait continues */
+            }
+        }
+        if (g_chat_listed_count == 0) {
+            console_model_append("  (nothing to list)");
+        } else {
+            console_model_append("  chat --model <n> picks one");
+        }
+        g_chat_verb_done = true;
+        return;
+    }
+    case kChatAnswerDelta: {
+        char text[kNowMaxControl];
+
+        if (chat_parse_delta(reply, text, sizeof text, NULL)) {
+            chat_feed_text(&g_chat_verb_feed, text);
+        }
+        return;
+    }
+    case kChatAnswerStatus: {
+        char text[128];
+
+        if (chat_parse_status(reply, text, sizeof text)
+            && text[0] != '\0') {
+            snprintf(line, sizeof line, "  .. %.90s", text);
+            console_model_append(line);
+        }
+        return;
+    }
+    case kChatAnswerGap:
+        chat_feed_flush(&g_chat_verb_feed);
+        snprintf(line, sizeof line, "  [%.80s]", reply);
+        console_model_append(line);
+        return;
+    case kChatAnswerResult: {
+        int ok = 0;
+        char code[24];
+        char message[96];
+
+        chat_feed_flush(&g_chat_verb_feed);
+        if (chat_parse_result(reply, &ok, code, sizeof code,
+                              message, sizeof message)
+            && !ok) {
+            if (message[0] != '\0') {
+                snprintf(line, sizeof line, "  chat: %.20s - %.70s",
+                         code, message);
+            } else {
+                snprintf(line, sizeof line, "  chat: %.20s", code);
+            }
+            console_model_append(line);
+        }
+        g_chat_verb_done = true;
+        return;
+    }
+    case kChatAnswerError:
+        chat_feed_flush(&g_chat_verb_feed);
+        snprintf(line, sizeof line, "  chat: %.80s", reply);
+        console_model_append(line);
+        g_chat_verb_done = true;
+        return;
+    default:
+        return;
+    }
+}
+
+/* Pump until the note above declares the exchange over. The wire's own
+   deadlines (15 s for an ask, 60 s of turn silence) are what normally
+   end a wait that will not finish; the hard cap is the backstop, and
+   an exec.cancel from the host ends it immediately. */
+static void chat_verb_wait(void)
+{
+    unsigned long deadline = TickCount() + kChatVerbHardCapTicks;
+    char err[64];
+
+    while (!g_chat_verb_done) {
+        now_wire_pump();
+        if (now_wire_exec_cancelled()) {
+            now_wire_chat_cancel(err, sizeof err);
+            chat_feed_flush(&g_chat_verb_feed);
+            console_model_append("  chat: stopped");
+            return;
+        }
+        if ((unsigned long)TickCount() > deadline) {
+            now_wire_chat_cancel(err, sizeof err);
+            chat_feed_flush(&g_chat_verb_feed);
+            console_model_append("  chat: gave up after five minutes");
+            return;
+        }
+    }
+}
+
+static void run_chat_verb(const char *raw_args)
+{
+    char line[kMaxCols];
+    char err[96];
+    char tok[64];
+    const char *rest;
+    ConnChatNote previous;
+
+    while (*raw_args == ' ') {
+        ++raw_args;
+    }
+    /* Flags are recognised at the START of the line only, so a prompt
+       may contain "--" words; "chat -- <text>" forces prompt reading. */
+    if (strncmp(raw_args, "-- ", 3) == 0) {
+        raw_args += 3;
+        while (*raw_args == ' ') {
+            ++raw_args;
+        }
+    } else if (strncmp(raw_args, "--models", 8) == 0
+               && (raw_args[8] == ' ' || raw_args[8] == '\0')) {
+        rest = next_token(raw_args + 8, tok, sizeof tok);
+        (void)rest;
+        previous = conn_set_chat_note(chat_verb_note);
+        g_chat_verb_done = false;
+        if (tok[0] == '\0') {
+            /* Step one: the providers. */
+            if (now_wire_chat_providers(err, sizeof err) != 0) {
+                snprintf(line, sizeof line, "chat: %.80s", err);
+                console_model_append(line);
+            } else {
+                chat_verb_wait();
+            }
+        } else {
+            /* Step two, lazy: the named provider's models, every page. */
+            g_chat_listed_count = 0;
+            strncpy(g_chat_listed_provider, tok,
+                    sizeof g_chat_listed_provider - 1);
+            g_chat_listed_provider[sizeof g_chat_listed_provider - 1]
+                = '\0';
+            if (now_wire_chat_model_page(g_chat_listed_provider, 0,
+                                         err, sizeof err) != 0) {
+                snprintf(line, sizeof line, "chat: %.80s", err);
+                console_model_append(line);
+            } else {
+                chat_verb_wait();
+            }
+        }
+        conn_set_chat_note(previous);
+        return;
+    } else if (strncmp(raw_args, "--model", 7) == 0
+               && (raw_args[7] == ' ' || raw_args[7] == '\0')) {
+        long n;
+
+        rest = next_token(raw_args + 7, tok, sizeof tok);
+        (void)rest;
+        if (tok[0] == '\0') {
+            snprintf(line, sizeof line, "chat: model is %.31s",
+                     g_chat_model_label[0] != '\0' ? g_chat_model_label
+                                                   : "(not chosen)");
+            console_model_append(line);
+            return;
+        }
+        /* A NUMBER from the last listing - the ref underneath is the
+           host's business, never typed and never shown. */
+        n = strtol(tok, NULL, 10);
+        if (n < 1 || n > g_chat_listed_count) {
+            console_model_append(
+                "chat: pick from a listing - chat --models <provider>, "
+                "then chat --model <n>");
+            return;
+        }
+        strcpy(g_chat_model_ref, g_chat_listed[n - 1].ref);
+        strncpy(g_chat_model_label, g_chat_listed[n - 1].label,
+                sizeof g_chat_model_label - 1);
+        g_chat_model_label[sizeof g_chat_model_label - 1] = '\0';
+        snprintf(line, sizeof line, "chat: model is %.31s",
+                 g_chat_model_label);
+        console_model_append(line);
+        return;
+    } else if (strcmp(raw_args, "--new") == 0) {
+        previous = conn_set_chat_note(chat_verb_note);
+        g_chat_verb_done = false;
+        if (now_wire_chat_reset(err, sizeof err) != 0) {
+            snprintf(line, sizeof line, "chat: %.80s", err);
+            console_model_append(line);
+        } else {
+            chat_verb_wait();
+            console_model_append("  new conversation");
+        }
+        conn_set_chat_note(previous);
+        return;
+    } else if (strcmp(raw_args, "--stop") == 0) {
+        if (now_wire_chat_cancel(err, sizeof err) != 0) {
+            snprintf(line, sizeof line, "chat: %.80s", err);
+            console_model_append(line);
+        }
+        /* The result lands with whoever holds the hook - the page, or
+           the next verb's wait. Nothing to wait for here. */
+        return;
+    }
+
+    if (raw_args[0] == '\0') {
+        console_model_append(
+            "chat: chat <text> - see \"help chat\" for the flags");
+        return;
+    }
+    if (g_chat_model_ref[0] == '\0') {
+        console_model_append(
+            "chat: pick a model first - chat --models <provider>, "
+            "then chat --model <n>");
+        return;
+    }
+    previous = conn_set_chat_note(chat_verb_note);
+    g_chat_verb_done = false;
+    chat_feed_reset(&g_chat_verb_feed, chat_verb_emit_line, NULL);
+    if (now_wire_chat_send(g_chat_model_ref, raw_args,
+                           err, sizeof err) != 0) {
+        snprintf(line, sizeof line, "chat: %.80s", err);
+        console_model_append(line);
+    } else {
+        chat_verb_wait();
+    }
+    conn_set_chat_note(previous);
+}
+
 /* The dispatch proper, WITHOUT the echo. Split out so the exec plane can
    run it without a "> line" the host has already drawn for itself; see
    console_model_exec at the foot of this file. */
@@ -435,6 +755,12 @@ static void console_model_dispatch(const char *input)
         } else if (more) {
             console_model_append("  ... more items follow");
         }
+        return;
+    }
+    if (strcmp(name, "chat") == 0) {
+        /* Takes the rest of the line whole, like launch: prompts have
+           spaces, and the tokenizer does not. */
+        run_chat_verb(raw_args);
         return;
     }
     if (strcmp(name, "launch") == 0) {

@@ -132,6 +132,14 @@ final class HostAppState: ObservableObject {
         }
         return "no Mac connected"
     }
+    private(set) lazy var chat: ChatModuleModel = {
+        let model = ChatModuleModel(
+            agentIntegration: agentIntegration,
+            guestFiles: guestFiles,
+            agentActivity: agentActivity)
+        listener.chatService = model.wireService
+        return model
+    }()
     private(set) lazy var census = CensusModuleModel(listener: listener)
     private(set) lazy var diagnostics = DiagnosticsModel(listener: listener)
     private(set) lazy var networking = NetworkingModel(listener: listener)
@@ -205,6 +213,10 @@ final class HostAppState: ObservableObject {
             currentSessionID: {
                 integration.connectedSessionID()
             })
+        /* Forced now rather than at first page view: a guest may ask
+           chat.models before anyone opens the Chat page, and a lazy
+           wire service would answer that with pre-family silence. */
+        defer { _ = chat }
         let stored = defaults.string(forKey: Self.selectionKey)
         /* Through the rename table, so a person whose saved selection is a
            module's OLD id lands on it rather than on the fallback. */

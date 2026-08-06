@@ -26,6 +26,8 @@ enum {
     kFileCloseItem = 1,
     kFileSharingItem = 3,
     kFileQuitItem = 5,
+    kEditMenuID = 142,
+    kEditPreferencesItem = 1,
     kWindowsMenuID = 140,
     kWindowsWorkshopItem = 1,
     kViewMenuID = 141
@@ -52,6 +54,24 @@ static const unsigned char k_quit_menu_item[] = {
 static const unsigned char k_sharing_menu_item[] = {
     16, 'F', 'i', 'l', 'e', ' ', 'S', 'h', 'a', 'r', 'i', 'n', 'g',
     '.', '.', '.', ' '
+};
+/* The Edit menu carries Preferences and nothing else, on purpose.
+
+   Cut/Copy/Paste are ABSENT rather than present-and-dead. This window
+   has no keyboard-focus machinery - workshop_window.c says why, and the
+   text fields on the Chat and Console pages are classic TextEdit that
+   each own their own TEHandle - so there is no "the focused field" for
+   an Edit command to act on. Wiring them properly means a new module op
+   that hands the Workshop the page's current TEHandle; until that
+   exists, four greyed items would advertise an editing model this
+   application does not have. Preferences is where the era's HIG puts
+   it, so the menu is where it goes. */
+static const unsigned char k_edit_menu_title[] = {
+    4, 'E', 'd', 'i', 't'
+};
+static const unsigned char k_edit_preferences_item[] = {
+    14, 'P', 'r', 'e', 'f', 'e', 'r', 'e', 'n', 'c', 'e', 's',
+    '.', '.', '.'
 };
 static const unsigned char k_view_menu_title[] = {
     4, 'V', 'i', 'e', 'w'
@@ -98,8 +118,17 @@ static const unsigned char k_view_networking_item[] = {
 static const unsigned char k_view_icloud_item[] = {
     8, 'i', 'C', 'l', 'o', 'u', 'd', '/', '0'
 };
+/* Unkeyed: eleventh onward, and the digits are spent. The item number
+   must still BE the module ID — Networking landed without a menu item
+   and every entry below it selected its neighbour. */
+static const unsigned char k_view_chat_item[] = {
+    4, 'C', 'h', 'a', 't'
+};
 static const unsigned char k_view_mirror_item[] = {
     6, 'M', 'i', 'r', 'r', 'o', 'r'
+};
+static const unsigned char k_view_preferences_item[] = {
+    11, 'P', 'r', 'e', 'f', 'e', 'r', 'e', 'n', 'c', 'e', 's'
 };
 static const unsigned char k_view_logs_item[] = {
     4, 'L', 'o', 'g', 's'
@@ -114,6 +143,7 @@ static const unsigned char k_workshop_menu_item[] = {
 static void create_menu_bar(void)
 {
     MenuRef file_menu = NewMenu(kFileMenuID, k_file_menu_title);
+    MenuRef edit_menu = NewMenu(kEditMenuID, k_edit_menu_title);
     MenuRef view_menu = NewMenu(kViewMenuID, k_view_menu_title);
     MenuRef windows_menu = NewMenu(kWindowsMenuID, k_windows_menu_title);
 
@@ -123,6 +153,8 @@ static void create_menu_bar(void)
     AppendMenu(file_menu, k_separator_menu_item);
     AppendMenu(file_menu, k_quit_menu_item);
     InsertMenu(file_menu, 0);
+    AppendMenu(edit_menu, k_edit_preferences_item);
+    InsertMenu(edit_menu, 0);
     /* View selects a Workshop module (Cmd-1..9 then Cmd-0, the item number
        IS the module ID, and the last two have no key); Windows reopens
        the one window. Every module lives in the Workshop now. */
@@ -136,7 +168,9 @@ static void create_menu_bar(void)
     AppendMenu(view_menu, k_view_diagnostics_item);
     AppendMenu(view_menu, k_view_networking_item);
     AppendMenu(view_menu, k_view_icloud_item);
+    AppendMenu(view_menu, k_view_chat_item);
     AppendMenu(view_menu, k_view_mirror_item);
+    AppendMenu(view_menu, k_view_preferences_item);
     AppendMenu(view_menu, k_view_logs_item);
     AppendMenu(view_menu, k_view_connection_item);
     InsertMenu(view_menu, 0);
@@ -251,6 +285,12 @@ static void handle_menu_choice(long choice)
             }
         } else if (LoWord(choice) == kFileQuitItem) {
             g_running = false;
+        }
+    } else if (HiWord(choice) == kEditMenuID) {
+        if (LoWord(choice) == kEditPreferencesItem) {
+            if (workshop_open()) {
+                workshop_select_module(kWorkshopPreferences);
+            }
         }
     } else if (HiWord(choice) == kViewMenuID) {
         /* The item numbers are the module IDs. */

@@ -78,6 +78,14 @@ enum ControlMessage: Equatable, Sendable {
     case cloudGet(CloudGet)
     case cloudPreview(CloudPreview)
     case cloudRefuse(CloudRefuse)
+    case chatModels(ChatModels)
+    case chatCatalog(ChatCatalog)
+    case chatSend(ChatSend)
+    case chatDelta(ChatDelta)
+    case chatStatus(ChatStatus)
+    case chatResult(ChatResult)
+    case chatCancel(ChatCancel)
+    case chatReset(ChatReset)
     case previewBegin(PreviewBegin)
     case previewEnd(PreviewEnd)
 }
@@ -194,6 +202,97 @@ struct CloudRefuse: Codable, Equatable, Sendable {
     var id: Int
     var code: String
     var reason: String?
+}
+
+/* The chat family: the guest asking to talk to THIS Mac's model
+   harness. One direction by definition, the cloud rule — the host
+   never sends the requests, and the conversation lives on this side,
+   per connection, so chat.send carries one turn and never history.
+   The reply is streamed (chat.delta, exec.output's discipline) and
+   the terminal chat.result never carries text. */
+
+struct ChatModels: Codable, Equatable, Sendable {
+    var id: Int
+    /// Absent: list providers. Present: list this provider's models.
+    var provider: String? = nil
+    /// With provider: continue from this row (cloud.list's shape).
+    var cursor: Int? = nil
+}
+
+struct ChatCatalogProvider: Codable, Equatable, Sendable, Identifiable {
+    /// The selector chat.models takes back — host registry id.
+    var provider: String
+    /// Converted; what the popup shows (<= 31 bytes).
+    var label: String
+    /// serving | off | no-access | unavailable — cloud.report's
+    /// vocabulary, reported even when not serving so the popup can say
+    /// WHY a thing is missing.
+    var state: String
+    var detail: String?
+
+    var id: String { provider }
+}
+
+struct ChatCatalogModel: Codable, Equatable, Sendable, Identifiable {
+    /// HOST-MINTED, opaque, connection-scoped — never the provider's
+    /// own model name, which can outgrow a classic buffer (metal,
+    /// 2026-08-02), and never shown to a person.
+    var ref: String
+    /// The model's name for humans, converted (<= 31 bytes).
+    var label: String
+    var detail: String?
+
+    var id: String { ref }
+}
+
+/// Two shapes by the ask's: providers, or one provider's models page.
+struct ChatCatalog: Codable, Equatable, Sendable {
+    var id: Int
+    var providers: [ChatCatalogProvider]? = nil
+    var provider: String? = nil
+    var models: [ChatCatalogModel]? = nil
+    /// With models: another page follows at cursor + rows received.
+    var more: Bool? = nil
+}
+
+struct ChatSend: Codable, Equatable, Sendable {
+    var id: Int
+    /// A host-minted ref from this connection's catalog pages.
+    var ref: String
+    /// One turn, as typed; the contract's 512-byte cap is the SENDER's
+    /// to honour and this side answers too-long rather than truncating.
+    var prompt: String
+}
+
+struct ChatDelta: Codable, Equatable, Sendable {
+    var id: Int
+    /// 0-based, contiguous per turn — a gap is a bug worth surfacing.
+    var seq: Int
+    /// A chunk, not a line; converted before sending, and bounded by
+    /// MEASURED encoded bytes under the 4 KB control cap.
+    var text: String
+}
+
+struct ChatStatus: Codable, Equatable, Sendable {
+    var id: Int
+    /// One transient line of what the model is doing; also the
+    /// family's keep-alive. Empty clears.
+    var text: String
+}
+
+struct ChatResult: Codable, Equatable, Sendable {
+    var id: Int
+    var ok: Bool
+    var code: String?
+    var message: String?
+}
+
+struct ChatCancel: Codable, Equatable, Sendable {
+    var id: Int
+}
+
+struct ChatReset: Codable, Equatable, Sendable {
+    var id: Int
 }
 
 /// One item as pixels, rendered entirely by the host: decode (HEIC
@@ -1210,6 +1309,27 @@ enum ControlMessageCodec {
         case "cloud.refuse":
             return .cloudRefuse(
                 try decoder.decode(CloudRefuse.self, from: data))
+        case "chat.models":
+            return .chatModels(
+                try decoder.decode(ChatModels.self, from: data))
+        case "chat.catalog":
+            return .chatCatalog(
+                try decoder.decode(ChatCatalog.self, from: data))
+        case "chat.send":
+            return .chatSend(try decoder.decode(ChatSend.self, from: data))
+        case "chat.delta":
+            return .chatDelta(try decoder.decode(ChatDelta.self, from: data))
+        case "chat.status":
+            return .chatStatus(
+                try decoder.decode(ChatStatus.self, from: data))
+        case "chat.result":
+            return .chatResult(
+                try decoder.decode(ChatResult.self, from: data))
+        case "chat.cancel":
+            return .chatCancel(
+                try decoder.decode(ChatCancel.self, from: data))
+        case "chat.reset":
+            return .chatReset(try decoder.decode(ChatReset.self, from: data))
         case "preview.begin":
             return .previewBegin(
                 try decoder.decode(PreviewBegin.self, from: data))
@@ -1294,7 +1414,14 @@ enum ControlMessageCodec {
                 with: encoder.encode(value)) as? [String: Any] ?? [:]
             object["type"] = type
             return try JSONSerialization.data(
-                withJSONObject: object, options: [.sortedKeys])
+                /* withoutEscapingSlashes: Foundation writes "/" as "\/"
+                   by default, and a guest that reads a KEY with its
+                   non-decoding string reader then sends the backslash
+                   back verbatim — a chat.catalog model key came back as
+                   "anthropic\\/claude-opus-5" on metal (2026-08-02).
+                   Nothing in this contract wants escaped slashes. */
+                withJSONObject: object,
+                options: [.sortedKeys, .withoutEscapingSlashes])
         }
         switch message {
         case .hello(let hello): return try tagged("hello", hello)
@@ -1338,6 +1465,14 @@ enum ControlMessageCodec {
         case .cloudGet(let m): return try tagged("cloud.get", m)
         case .cloudPreview(let m): return try tagged("cloud.preview", m)
         case .cloudRefuse(let m): return try tagged("cloud.refuse", m)
+        case .chatModels(let m): return try tagged("chat.models", m)
+        case .chatCatalog(let m): return try tagged("chat.catalog", m)
+        case .chatSend(let m): return try tagged("chat.send", m)
+        case .chatDelta(let m): return try tagged("chat.delta", m)
+        case .chatStatus(let m): return try tagged("chat.status", m)
+        case .chatResult(let m): return try tagged("chat.result", m)
+        case .chatCancel(let m): return try tagged("chat.cancel", m)
+        case .chatReset(let m): return try tagged("chat.reset", m)
         case .previewBegin(let m): return try tagged("preview.begin", m)
         case .previewEnd(let m): return try tagged("preview.end", m)
         case .streamRequest(let m): return try tagged("stream.request", m)

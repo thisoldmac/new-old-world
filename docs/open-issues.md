@@ -14,6 +14,141 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## The folding sidebar, both halves (2026-08-05)
+
+The rail folds to icons on the guest and the sidebar does the same on the
+host, both with tooltips on the folded icons, and the host gained the
+guest's other two choices (density, rearrange).
+
+**Guest: emulator-verified.** Folds and unfolds, the icons and the
+Connection lamp draw, the hand-drawn help tag appears over a Data
+Browser and the Browser repaints clean when it goes. A true fresh
+install - prefs file deleted - starts expanded with rich rows, which is
+the default that matters.
+
+One note on reading a shared VM, because it cost a paragraph of wrong
+suspicion: a first launch appeared to open COLLAPSED, and the cause was
+the human clicking the collapse button in the seconds between the launch
+and the screendump. The evidence was all there and pointed the right way
+once anyone thought to ask - nothing writes that prefs file at launch,
+only a quit or a toggle does, and its created and modified stamps were
+seconds apart and dated that day rather than inherited from the base
+image. **When a VM has a display, a person may be using it**, and a
+screendump is a sample of a machine somebody else is also touching, not
+a readout of what the code did.
+
+**Host: confirmed working by the human at the desk**, not by me: screen
+access was declined, so I have never seen it. `swift test` and the Xcode
+target in both configurations are all I can speak to directly.
+
+Open, and worth knowing:
+
+- **Carbon help tags do not display under Mac OS 9.** This toolchain's
+  MacHelp.h carries only the help-tag API (`HMSetControlHelpContent`,
+  `HMDisplayTag`) - classic `HMShowBalloon` is not in these headers at
+  all - and help tags are a Mac OS X facility. The guest's tooltip is
+  therefore drawn by hand. Anyone reaching for the Help Manager on this
+  target should expect a feature that compiles, links, and shows nothing.
+- **The guest's tag is armed from idle**, which runs unslept during a
+  transfer. It is one `GetMouse` and two comparisons per pass and draws
+  only on a change, but it has not been watched during a large transfer,
+  which is the condition that has caught every other idle-path mistake
+  in this window.
+
+## The rearrangeable sidebar: emulator-verified, never on metal (2026-08-04)
+
+The rail gained four things in one arc — a scroll bar that appears only
+on overflow, Option-drag reordering, a compact density, and a
+Preferences page. **Emulator-verified** the same day (OS 9.1 under
+QEMU, a private `--instance 7` clone off the runner-ready snapshot, the
+build pushed over the harness's own `put` channel):
+
+- the page renders and the pinned group draws with its new sliders icon;
+- **compact** fits all eleven nav rows plus the pinned three at the
+  standard window size, keeps the icons, and correctly gives the
+  Connection row its STATE rather than its title as its single line;
+- **Option-drag** arms, draws its XOR insertion line, tracks the
+  pointer, erases the line cleanly on drop, and moved Chat from the
+  foot of the list to just below MCP;
+- the **scroll bar** appears when the window is dragged down toward the
+  minimum in rich density, spans exactly the nav rows, stops above the
+  divider, narrows the rows to make room, and scrolls by one on its
+  arrow;
+- all of it **survives a quit and relaunch** — saved order, density and
+  window rectangle — and **Reset Order** puts the enum order back.
+
+That is the level below metal and it settles the drawing. What it does
+NOT settle, and what to watch for on the PowerBook:
+
+- **The drag against a real hand.** The emulator was driven with
+  synthesised relative motion in 3-pixel steps. A fast human drag is
+  the case where XOR feedback smears, and no synthetic mouse will show
+  that.
+- **Compact baselines under a different system font.** 18-pixel rows
+  with a hard-coded baseline of 13 — arithmetic, not a metrics query.
+  The emulator runs the same fonts the PowerBook does, so this is
+  likely fine and is listed because "likely" is not "watched".
+- **The prefs v19 migration from a file written by an OLDER build.**
+  What was exercised was v19 writing and reading its own record. The
+  remap that matters (Connection 13 -> 14, Logs 12 -> 13) needs a prefs
+  file from before this arc, which the throwaway VM did not have. This
+  is the fifth time that remap has been written and the ordering trap —
+  remap Connection first — has been the bug at least once.
+
+**A control created at an empty rectangle may never render (2026-08-05).**
+Worth knowing beyond this file. The rail's bar is created once and
+Show/Hidden, and the layout reports an EMPTY nav_scroll while everything
+fits — an honest description of "no bar", and a fine creation rect for
+`scrollBarProc`, which drew correctly after a later `SizeControl`.
+`kControlScrollBarLiveProc` does not: born 0x0, it stayed invisible no
+matter how it was resized. The tell was that the bar appeared when the
+app opened INTO a small window and not when the same window was dragged
+down to the same size — two paths to identical geometry, one working.
+Create controls at a real rectangle and let Show/Hide carry visibility.
+
+Two things are known limitations rather than suspicions:
+
+- **The drag does not scroll the list under itself.** Rearranging a row
+  past the visible edge of a scrolled rail means dropping, scrolling,
+  and dragging again. It only bites at rich density in a minimum-size
+  window, which is also the only configuration that scrolls at all.
+- **The Edit menu holds Preferences and nothing else.** Cut/Copy/Paste
+  are absent rather than greyed, because this window has no keyboard
+  focus machinery and the TextEdit fields on Chat and Console each own
+  their own `TEHandle` — there is no "the focused field" for an Edit
+  command to act on. Wiring them needs a new module op handing the
+  Workshop the page's current `TEHandle`. That is the same missing seam
+  as the dead `GetKeyboardFocus` gates noted below.
+
+## The chat.* family: metal-proven end to end; edges still open (2026-08-02)
+
+Four rounds on the real desk moved most of the 2026-08-02 unknowns to
+answered. **Metal-verified**: the Anthropic subscription sign-in
+(paste-back OAuth, the Claude-Code-shaped request gate), oMLX serving
+(after the no-blank-line SSE finding), the guest Chat page drawing,
+streaming and tool use against a real guest — a model paged this
+PowerBook's software and tried to launch a game over the wire.
+**Emulator-verified** (2026-08-02, restricted VM): the TextEdit prompt
+types, edits and refuses correctly; the page renders with both popups.
+Still open:
+
+- **The redraw pass is emulator-still-frame verified only.** Per-row
+  transcript damage and TE's incremental drawing are built exactly to
+  kill the flicker metal showed, but flicker is a motion claim: a human
+  watching a streamed answer on the real screen is the proof.
+- **Ollama and LM Studio probes have still never seen a live runtime**
+  (oMLX has; the other two remain scripted-transport claims).
+- **OpenAI (the hosted service) has never been reached** — key entry,
+  models list and a streamed turn are all unproven.
+- **The turn ceiling raise (12 -> 40) and the launch guidance are
+  untested against the errand that hit them** — re-run the
+  find-and-launch-a-game prompt.
+- **`chat hi` from the host console** (exec plane -> guest `chat` verb)
+  still has not run against a booted guest.
+- **Keyboard focus is dead application-wide** (no root control, on
+  purpose): the three Data Browser pages gate arrows on
+  `GetKeyboardFocus` and so have never taken a key. Spun off as its own
+  task; docs/guest-ui-start-here.md carries the rule.
 ## CLOSED: the liveness vehicle runs, and it runs while applications do not (2026-08-05, later)
 
 The entry below is **fixed**, and it is left standing because the wrong

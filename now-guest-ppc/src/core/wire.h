@@ -316,6 +316,54 @@ int now_wire_cloud_preview(const char *service, const char *item,
                            long max_w, long max_h, long depth,
                            char *err, long cap);
 
+/* --- talking to the other machine's model -------------------------------
+   The chat.* family: the modern machine's model harness, asked one turn
+   at a time. One direction by definition — this machine has no model to
+   serve — and the conversation lives on the host, per connection, so a
+   send carries only the turn just typed.
+
+   A turn's answer STREAMS: many chat.delta frames, transient chat.status
+   lines, then exactly one chat.result that never carries text. The
+   pending turn therefore survives deltas and is cleared only by its
+   result, a 60-second QUIET timeout (re-armed by every delta and
+   status — status is the family's keep-alive while the model runs
+   tools), or the link going away.
+
+   Replies arrive RAW through one hook; chat_model.h parses. On kinds
+   Error and Gap the `reply` is a plain MacRoman reason instead of a
+   frame. The setter RETURNS the previous hook: the console verb borrows
+   the stream for one turn and restores it, the exec-sink discipline. */
+typedef enum {
+    kChatAnswerProviders = 0,         /* reply = the providers catalog */
+    kChatAnswerModels,                /* reply = one models page */
+    kChatAnswerDelta,                 /* reply = the chat.delta frame */
+    kChatAnswerStatus,                /* reply = the chat.status frame */
+    kChatAnswerResult,                /* reply = the chat.result frame */
+    kChatAnswerGap,                   /* reply = a reason; turn continues */
+    kChatAnswerError                  /* reply = a reason; turn is over */
+} ChatAnswerKind;
+typedef void (*ConnChatNote)(int kind, const char *reply);
+ConnChatNote conn_set_chat_note(ConnChatNote fn);
+
+/* Each returns 0 once the question is on the wire; -1 with a reason in
+   err — including the local refusals that save a round trip: a send
+   while a turn streams, or a prompt past the contract's 512-byte cap
+   (chat_model.h mirrors it as kChatPromptMax).
+
+   Discovery is two-step and LAZY (the contract's own words): providers
+   first, then one selected provider's models a page at a time — the
+   asker follows `more` with the next cursor. A send carries a model's
+   REF from those pages, never its name: refs are host-minted and
+   bounded, names are not (metal, 2026-08-02). */
+int now_wire_chat_providers(char *err, long cap);
+int now_wire_chat_model_page(const char *provider, long cursor,
+                             char *err, long cap);
+int now_wire_chat_send(const char *ref, const char *prompt,
+                       char *err, long cap);
+int now_wire_chat_cancel(char *err, long cap);
+int now_wire_chat_reset(char *err, long cap);
+Boolean now_wire_chat_turn_active(void);
+
 /* Where a file the guest is sending has got to, so the panel can show a
    moving bar rather than a line that sits still for a minute. Returns
    false when nothing is being sent. */
@@ -365,5 +413,12 @@ void now_wire_stream_stop(void);
    2026-07-28; docs/remote-console.md's checklist exercises this path
    deliberately and last. */
 int now_exec_read_input(char *out, long cap, const char *prompt);
+
+/* True while the exec this dispatch is running under has been told to
+   stop. A verb that pumps for long stretches (chat's streamed turn is
+   the one today) polls this so a host's exec.cancel ends the wait
+   rather than outliving the exec that asked. False when nothing runs
+   under exec — a person typing at this Mac's own console. */
+Boolean now_wire_exec_cancelled(void);
 
 #endif
