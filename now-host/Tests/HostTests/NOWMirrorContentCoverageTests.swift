@@ -62,18 +62,34 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
         return value
     }
 
-    /// The captured window's own content size: the destination of the
-    /// largest blit into the window port. Derived rather than asserted,
-    /// so a fixture and its render can never disagree about how big the
-    /// application's window was.
+    /// The captured window's own content size, derived from what the
+    /// application actually drew into it: the union of every op's
+    /// bounds on the window port.
+    ///
+    /// The first version took the largest blit's destination, which is
+    /// exactly right for a compositing application and NONSENSE for one
+    /// that does not composite - Date & Time's biggest blit is an icon,
+    /// so its panel rendered as a sliver. A union covers both: a
+    /// composite's full-window blit dominates it, and a panel's spread
+    /// of controls and labels describes it just as well.
     private func contentSize(_ drain: QDTraceDecode.Drain,
                              window: UInt32) -> [Int]? {
-        drain.records
-            .filter { $0.portAddress == window && $0.op.op == "bits" }
-            .compactMap(\.op.dst)
-            .filter { $0.count == 4 }
-            .max { ($0[2] - $0[0]) * ($0[3] - $0[1])
-                     < ($1[2] - $1[0]) * ($1[3] - $1[1]) }
+        var right = 0
+        var bottom = 0
+        for record in drain.records where record.portAddress == window {
+            let op = record.op
+            for box in [op.dst, op.rect].compactMap({ $0 })
+            where box.count == 4 {
+                right = max(right, box[2])
+                bottom = max(bottom, box[3])
+            }
+            if op.op == "text", let pen = op.pen, pen.count == 2 {
+                right = max(right, pen[0])
+                bottom = max(bottom, pen[1])
+            }
+        }
+        guard right > 32, bottom > 32 else { return nil }
+        return [0, 0, right, bottom]
     }
 
     private func capture(_ name: String) throws -> QDTraceDecode.Drain {
@@ -161,6 +177,34 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
                                   window: 0x1e9dffa0, psn: "0.36438017",
                                   title: "Memory")
         XCTAssertTrue(texts(display).contains("Startup Memory Tests"))
+    }
+
+    /// Renders every capture at its own size, for eyes rather than
+    /// assertions. Opt-in: NOW_RENDER_DIR names a directory.
+    func testRenderEveryCapture() throws {
+        guard let dir = ProcessInfo.processInfo
+            .environment["NOW_RENDER_DIR"] else { return }
+        let all: [(String, String, UInt32, String, String)] = [
+            ("finder-icon", "qdtrace-drain-blitsrc-finder",
+             0x00a01c40, "0.29949953", "Macintosh HD"),
+            ("finder-list", "qdtrace-drain-blitsrc-finder-list",
+             0x00a03580, "0.29949953", "Macintosh HD"),
+            ("finder-buttons", "qdtrace-drain-blitsrc-finder-buttons",
+             0x00a03580, "0.29949953", "Macintosh HD"),
+            ("cp-datetime", "qdtrace-drain-cp-datetime",
+             0x1f6fd220, "0.35520514", "Date & Time"),
+            ("cp-memory", "qdtrace-drain-cp-memory",
+             0x1e9dffa0, "0.36438017", "Memory"),
+            ("now-window", "qdtrace-drain-now-window",
+             0x1ecb4550, "0.29360131", "New Old World"),
+            ("sherlock", "qdtrace-drain-sherlock-hooked",
+             0x1e99ffc0, "0.35520514", "Sherlock 2"),
+        ]
+        for (name, fixture, window, psn, title) in all {
+            let png = try RenderShot.png(scene: try composed(
+                fixture, window: window, psn: psn, title: title))
+            try png.write(to: URL(fileURLWithPath: "\(dir)/\(name).png"))
+        }
     }
 
     /// Sherlock 2 WAS the boundary case, and this gate is the boundary
