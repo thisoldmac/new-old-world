@@ -97,6 +97,101 @@ window**. The evidence is a paired capture and five tests over the
 captured document, each watched to fail with its fix reverted; the guest
 half was watched to change the wire on a live machine (build
 `bcd1b1893664`, wire 5600).
+## LIVE RISK, deliberately taken: the act wait now services the wire, and the no-hijack argument's single-cell protection is gone (2026-08-06)
+
+**This is not a defect report. It is a protection that was spent on
+purpose, written down so that if it bites, nobody spends a day deriving
+what was already known.** The latency fix it bought is the entry below
+this one; read that first for what the ten seconds cost.
+
+### What changed
+
+`now-guest-ppc/src/act/act_client.c :: act_yield` now calls
+`now_wire_pump()`. The guest therefore serves host requests **while an
+act is armed** — while a trap patch is live in every process on the
+machine, waiting for a click.
+
+Until this change, [no-hijack-criterion.md](no-hijack-criterion.md) §4
+argued the act plane's **single** request cell was safe because two
+requests could not overlap: the act wait did not service the wire, so a
+second act command sat in the socket until the first finished. That
+document said in as many words that the protection was *incidental* —
+"the guest app's threading model, not an interlock" — and named this
+exact change as one of two that would remove it. It is now removed.
+
+**Authorised by Michelle, 2026-08-06:** *"im ok with side stepping the
+no-hijack work for this. lets just be sure to flag it explicitly."*
+
+### What stands in its place, and what it does not cover
+
+`now-guest-shared/src/now_act_inflight.{c,h}` — a one-act-at-a-time
+latch. `now_act_cell()` refuses a nested act with **`act-busy`** before
+it can write a field; `now_act_submit` claims, `now_act_withdraw`
+releases. The position matters: `act_cmds.c` fills in `op`,
+`control_handle` and `arm_point_h/v` *before* it submits, so a guard at
+submit would have fired after the damage.
+
+It covers the act cell and nothing else. Not covered, and each is a real
+gap rather than a formality:
+
+1. **Everything that is not an act, served mid-arm.** A scene walk, a
+   census, `ps`, a file transfer — all of these now run inside the armed
+   window. A scene walk in particular reads foreign process memory while
+   the patches are installed. Nothing has measured whether that is
+   harmful; it is new, and it is unmeasured.
+2. **Nested command-dispatch depth.** Each command served from inside the
+   pump is a fresh stack frame carrying `char result[kNowCommandResultCap]`
+   (3072 bytes, `wire.c` in the `command.request` arm). A command that
+   itself waits and pumps — `chat`, `quit --wait`, another act — nests
+   again. Bounded in practice; unbounded in principle; not addressed.
+   The same exposure predates this change on the `chat`/`exec.input`
+   path, which is why it was not treated as a blocker.
+3. **A second application linking the act plane.** The other removal
+   §4 names. Untouched.
+4. **The pending-press hijack.** A property of the guard's identity
+   clause, unaffected either way, and still unmeasured.
+
+### What would detect it if it bites, and what it looks like from the host
+
+- **The latch firing at all.** Any act reply with code **`act-busy`**
+  means the wire really did dispatch an act into an armed window. Zero is
+  the expected reading. A non-zero one is not a bug — it is the
+  interlock doing its job — but it is the first evidence that the
+  interleaving is reachable in the product, and it should be reported
+  rather than shrugged at. The guest also counts it:
+  `now_act_inflight_refused()`.
+- **The failure the latch is preventing, if the latch is ever bypassed.**
+  §4 describes it precisely: not a hijack *of* the user, but **the
+  caller's own synthesised click escaping into the interface.** From the
+  host it would look like an act that reported `act-not-taken` or
+  `act-timeout` while something *else* on the guest's screen changed —
+  a window activated, a checkbox toggled, a menu item taken — at
+  coordinates the first request named. **An act that failed and a scene
+  that moved anyway is the signature.** If that is ever seen, this entry
+  is where to start.
+- **What is NOT evidence of this.** A slow act, a refused act, or an act
+  that changes nothing. Those are the ordinary failures the plane has
+  always had.
+
+### What is proven, and it is less than it sounds
+
+- The latch's interleaving is **executed**:
+  `now-guest-shared/tests/now_act_inflight_test.c`, run by
+  `scripts/test-native`. Its load-bearing assertion is that the armed
+  request's identity fields are byte-identical after a second act has
+  been refused.
+- Its wiring is **pinned as source**:
+  `now-guest-shared/tests/act_inflight_wiring_source_test.py` — the pump
+  is present, `now_act_cell()` refuses on the latch, submit claims,
+  withdraw releases, and every verb reports `now_act_why_no_cell()`
+  rather than a hardcoded "no extension". Six mutations were watched
+  failing, including two that first passed and had to have the check
+  strengthened.
+- **Nothing about two overlapping acts has been observed on a Macintosh
+  or in an emulator.** The latch is untried, not proven. `Verification
+  status: tested` for the latch; see the measurement section of the
+  entry below for what the pump itself was measured to do.
+
 ## INVESTIGATED, NOT FIXED: the twelve seconds under a modal is NOT starvation — it is NOW's own act wait, which does not pump the wire (2026-08-06)
 
 Investigation only; nothing product-facing was changed. Michelle's live
@@ -247,6 +342,12 @@ one.
    requests while an act is armed, which is exactly the re-entrancy the
    no-hijack work is about, and it needs its own guard rather than an
    assumption.
+
+   > **DONE, 2026-08-06, and the risk above is now LIVE rather than
+   > hypothetical.** Michelle took the decision and accepted the cost.
+   > The guard shipped with it. See the entry
+   > *"LIVE RISK, deliberately taken: the act wait now services the wire,
+   > and the no-hijack argument's single-cell protection is gone"* above.
 2. **State the act ceiling once, where both sides read it.** The guest
    spends up to ~10 s + overhead; plan 014 gave the host a 20 s
    watchdog chosen against the *script* ceiling (15 s,
