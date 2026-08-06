@@ -286,6 +286,7 @@ void now_scene_collect(NowScene *out, long seq,
     if (out == NULL) {
         return;
     }
+    memset(g_now_dbg_us, 0, sizeof g_now_dbg_us);   /* TEMPORARY: see scene.h */
     screen_size(&w, &h);
     /* ONE epoch for the whole scene, not one per process. What it bounds
        is how much of a SCENE stays addressable, and a scene is what the

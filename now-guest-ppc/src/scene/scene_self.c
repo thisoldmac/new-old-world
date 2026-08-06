@@ -9,6 +9,24 @@
 #include <Menus.h>
 
 #include <string.h>
+#include <Timer.h>
+
+/* TEMPORARY (2026-08-06) — the self walk's own stopwatch. Slots:
+     0 collect_self_menubar, whole
+     1   AcquireRootMenu + ReleaseMenu
+     2   root_items_for, summed over every entry
+     3   add_one_menu, summed over every entry
+     4 the self WINDOW walk (everything after the menu bar)
+     5   find_controls_by_probe, summed
+     6 menus seen   7 items seen
+   Removed with the measurement it exists to settle. */
+static unsigned long dbg_us(void)
+{
+    UnsignedWide t;
+
+    Microseconds(&t);
+    return t.lo;                      /* wraps hourly; deltas are short */
+}
 
 /* **This Mac describing its own application, which it alone can do.**
  *
@@ -326,6 +344,7 @@ static void add_one_menu(NowScene *s, MenuHandle menu, MenuRef items,
     if (menu == NULL) {
         return;
     }
+    ++g_now_dbg_us[6];
     title[0] = 0;
     GetMenuTitle(menu, title);
     pascal_to_c(title, ctitle, sizeof ctitle);
@@ -345,6 +364,7 @@ static void add_one_menu(NowScene *s, MenuHandle menu, MenuRef items,
         pascal_to_c(text, ctext, sizeof ctext);
         GetItemMark(items, i, (short *)&mark);
         GetItemCmd(items, i, (short *)&cmd);
+        ++g_now_dbg_us[7];
         (void)now_scene_add_menu_item(s, index, ctext, i,
                                       (ctext[0] == '-') ? 1 : 0,
                                       IsMenuItemEnabled(items, i) ? 1 : 0,
@@ -419,7 +439,12 @@ static void collect_self_menubar(NowScene *s, int row)
         return;
     }
     head = (NowMenuListHead *)*bar;
-    root = AcquireRootMenu();
+    {
+        unsigned long t = dbg_us();
+
+        root = AcquireRootMenu();
+        g_now_dbg_us[1] += dbg_us() - t;
+    }
     for (offset = 6; offset <= head->last_offset; offset = (short)(offset + 6)) {
         NowMenuListEntry *entry =
             (NowMenuListEntry *)((char *)*bar + offset);
@@ -427,11 +452,20 @@ static void collect_self_menubar(NowScene *s, int row)
            carry the correct number of blank rows. Resolve every live entry
            through Carbon's attached root submenu by menu ID; normal menus
            simply fall back to their installed handle. */
-        MenuRef items = root_items_for(root, entry->menu);
+        MenuRef items;
+        unsigned long t = dbg_us();
+
+        items = root_items_for(root, entry->menu);
+        g_now_dbg_us[2] += dbg_us() - t;
+        t = dbg_us();
         add_one_menu(s, entry->menu, items, entry->left);
+        g_now_dbg_us[3] += dbg_us() - t;
     }
     if (root != NULL) {
+        unsigned long t = dbg_us();
+
         (void)ReleaseMenu(root);
+        g_now_dbg_us[1] += dbg_us() - t;
     }
 }
 
@@ -458,9 +492,13 @@ void now_scene_collect_self(NowScene *s, int row,
         if (GetFrontProcess(&front) == noErr && psn != NULL
                 && SameProcess(&front, (ProcessSerialNumber *)psn, &same)
                        == noErr && same) {
+            unsigned long t = dbg_us();
+
             collect_self_menubar(s, row);
+            g_now_dbg_us[0] += dbg_us() - t;
         }
     }
+    g_now_dbg_us[4] = dbg_us();       /* closed at the end of the walk */
 
     for (; window != NULL && hops < kSelfMaxWindows;
          window = GetNextWindow(window), ++hops) {
@@ -548,8 +586,11 @@ void now_scene_collect_self(NowScene *s, int row,
              * it often enough to meet every control wider than the step.
              * It is O(points x controls) of rect tests on one window and
              * costs less than the transfer that carries the answer. */
+            unsigned long t = dbg_us();
+
             find_controls_by_probe(s, index, window, &content, &budget,
                                    refs);
+            g_now_dbg_us[5] += dbg_us() - t;
         }
         if (workshop_is(window)) {
             WorkshopWriterContext context = { s, index, 1 };
@@ -559,4 +600,5 @@ void now_scene_collect_self(NowScene *s, int row,
             workshop_describe_scene(&writer);
         }
     }
+    g_now_dbg_us[4] = dbg_us() - g_now_dbg_us[4];
 }
