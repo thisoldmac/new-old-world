@@ -1,0 +1,293 @@
+#!/usr/bin/env python3
+"""The commit gate for resident (extension) work: no commit that changes
+the resident may land until the stage image contains it.
+
+    tools/ext-bake-gate digest [--index|--worktree]   # the source digest
+    tools/ext-bake-gate check                         # what pre-commit runs
+    tools/ext-bake-gate record <receipt.json>         # what a bake writes
+
+WHY THIS EXISTS. On 2026-08-06 the newest stage image
+(~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2) was three days old while
+SIX extension commits had landed that day: the re-armed liveness Time
+Manager vehicle, its ABI shim, the MacTCP .IPP probe. Every session
+cloned that image, staged a fresh build into a throwaway clone, and threw
+the clone away — so the resident code baked into the shared oracle was
+never any of them. docs/open-issues.md already carried the rule ("Future
+extension changes must update and cleanly shut down this stage image;
+merely copying a new INIT into a running clone does not change the
+resident code under test") and NOTHING ENFORCED IT, so the verified
+oracle went stale in silence and any Mirror sweep started from an old
+resident with no warning at all. A rule that lives only in prose is a
+rule the tenth session does not know about.
+
+WHAT IT CHECKS. When a commit stages anything under ext/ or
+contract/peek_table.h, the newest receipt in ext/stage-receipts.json must
+be a bake whose recorded source digest EQUALS the digest of the staged
+tree — i.e. the image on disk contains exactly this resident — and must
+record the four facts that make a bake believable: the ext build
+fingerprint the guest itself reported, the image sha256, a passing
+`qemu-img check`, and that the shutdown was guest-clean rather than a QMP
+power cut.
+
+The digest is content-exact and deliberately supersedes the "receipt
+newer than the newest source change" phrasing of the original rule: an
+mtime says when a file was touched, a digest says what is in it, and a
+`git checkout` or a worktree clone rewrites the first while preserving
+the second. The timestamps are still recorded and reported, because a
+human reading a failure wants to know how stale.
+
+DEFERRING is allowed and is a WRITTEN DECISION, never a silent skip:
+
+    TBT_DEFER_EXT_BAKE=1 TBT_DEFER_EXT_BAKE_REASON="..." git commit ...
+
+appends the reason to ext/stage-receipts.json and stages it, so the
+deferral lands in the same commit as the work it excuses. Enforcement is
+the floor, not the rule (AGENTS.md > Git says the same of TBT_ALLOW_MAIN).
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import time
+
+# ext/stage-receipts.json is EXCLUDED from the trigger set: a receipt is
+# the gate's own output, and a commit that carries one must not gate on
+# itself.
+RECEIPTS = "ext/stage-receipts.json"
+TRIGGER_DIRS = ("ext/",)
+TRIGGER_FILES = ("contract/peek_table.h",)
+
+REQUIRED = (
+    ("extBuildFingerprint", "the fingerprint the GUEST reported for the resident"),
+    ("imageSha256", "the sha256 of the installed stage image"),
+    ("qemuImgCheck", "a passing qemu-img check"),
+    ("shutdown", "that the guest shut ITSELF down cleanly"),
+)
+
+
+def run(*args: str) -> str:
+    return subprocess.run(args, capture_output=True, text=True,
+                          check=True).stdout
+
+
+def repo_root() -> str:
+    return run("git", "rev-parse", "--show-toplevel").strip()
+
+
+def triggered(path: str) -> bool:
+    if path == RECEIPTS:
+        return False
+    return path.startswith(TRIGGER_DIRS) or path in TRIGGER_FILES
+
+
+def staged_paths(root: str) -> list[str]:
+    out = run("git", "-C", root, "diff", "--cached", "--name-only",
+              "--diff-filter=ACMRT")
+    return [p for p in out.splitlines() if triggered(p)]
+
+
+def tracked(root: str) -> list[str]:
+    out = run("git", "-C", root, "ls-files", "--", "ext", "contract/peek_table.h")
+    return sorted(p for p in out.splitlines() if triggered(p))
+
+
+def digest(root: str, source: str) -> str:
+    """sha1 over "<path> <blob>" for every gated file.
+
+    `index` reads the blob ids git already has for the staged content;
+    `worktree` hashes the files on disk with the same function, so a
+    clean tree gives the same answer either way and a bake run from a
+    dirty tree gives the digest of what it actually staged into the VM.
+    """
+    lines = []
+    if source == "index":
+        for row in run("git", "-C", root, "ls-files", "-s", "--",
+                       "ext", "contract/peek_table.h").splitlines():
+            meta, _, path = row.partition("\t")
+            if triggered(path):
+                lines.append(f"{path} {meta.split()[1]}")
+        lines.sort()
+    else:
+        for path in tracked(root):
+            full = os.path.join(root, path)
+            if not os.path.exists(full):
+                continue
+            lines.append(f"{path} " + run("git", "-C", root, "hash-object",
+                                          "--", full).strip())
+    return hashlib.sha1("\n".join(lines).encode()).hexdigest()
+
+
+def load(root: str) -> dict:
+    path = os.path.join(root, RECEIPTS)
+    if not os.path.exists(path):
+        return {"receipts": []}
+    with open(path) as fh:
+        return json.load(fh)
+
+
+def save(root: str, doc: dict) -> None:
+    path = os.path.join(root, RECEIPTS)
+    with open(path, "w") as fh:
+        json.dump(doc, fh, indent=2, sort_keys=True)
+        fh.write("\n")
+
+
+def latest_bake(doc: dict) -> dict | None:
+    for entry in reversed(doc.get("receipts", [])):
+        if entry.get("kind") == "bake":
+            return entry
+    return None
+
+
+def newest_source_time(root: str, paths: list[str]) -> float:
+    times = [os.path.getmtime(os.path.join(root, p))
+             for p in paths if os.path.exists(os.path.join(root, p))]
+    return max(times) if times else 0.0
+
+
+def iso(ts: float) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(ts))
+
+
+def fail(lines: list[str]) -> int:
+    print("", file=sys.stderr)
+    print("[ext-bake-gate] refusing this commit: the stage image does not "
+          "contain this resident.", file=sys.stderr)
+    for line in lines:
+        print(f"  {line}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("  Bake it, which takes one command and about five minutes:",
+          file=sys.stderr)
+    print("      scripts/bake-ext-image", file=sys.stderr)
+    print("  Or defer it as a WRITTEN decision, never in silence:",
+          file=sys.stderr)
+    print("      TBT_DEFER_EXT_BAKE=1 \\", file=sys.stderr)
+    print("      TBT_DEFER_EXT_BAKE_REASON=\"why this can wait\" git commit ...",
+          file=sys.stderr)
+    print("", file=sys.stderr)
+    print("  WHY: on 2026-08-06 the stage image was three days old while six",
+          file=sys.stderr)
+    print("  extension commits had landed that day. Every session cloned it,",
+          file=sys.stderr)
+    print("  staged a build into a throwaway clone and discarded the clone, so",
+          file=sys.stderr)
+    print("  the resident under test was never any of them. The rule was in",
+          file=sys.stderr)
+    print("  docs/open-issues.md and nothing enforced it, so the verified",
+          file=sys.stderr)
+    print("  oracle went stale in silence.", file=sys.stderr)
+    print("", file=sys.stderr)
+    return 1
+
+
+def defer(root: str, paths: list[str], want: str) -> int:
+    reason = (os.environ.get("TBT_DEFER_EXT_BAKE_REASON")
+              or os.environ.get("TBT_DEFER_EXT_BAKE_WHY") or "").strip()
+    if len(reason) < 10:
+        print("", file=sys.stderr)
+        print("[ext-bake-gate] TBT_DEFER_EXT_BAKE=1 needs a REASON, and a "
+              "sentence rather than a word.", file=sys.stderr)
+        print("  TBT_DEFER_EXT_BAKE_REASON=\"the PowerBook is off; baking "
+              "tomorrow\" git commit ...", file=sys.stderr)
+        print("  It is written into ext/stage-receipts.json and lands in this "
+              "commit, so", file=sys.stderr)
+        print("  whoever finds a stale image can see who decided that and why.",
+              file=sys.stderr)
+        print("", file=sys.stderr)
+        return 1
+
+    doc = load(root)
+    doc.setdefault("receipts", []).append({
+        "kind": "deferral",
+        "at": iso(time.time()),
+        "extDigest": want,
+        "reason": reason,
+        "branch": run("git", "-C", root, "rev-parse", "--abbrev-ref",
+                      "HEAD").strip(),
+        "paths": paths,
+    })
+    save(root, doc)
+    subprocess.run(["git", "-C", root, "add", "--", RECEIPTS], check=True)
+    print(f"[ext-bake-gate] bake DEFERRED and recorded in {RECEIPTS}: {reason}")
+    print("  The image on disk does not contain this resident. Anything that "
+          "clones it")
+    print("  is testing older resident code until scripts/bake-ext-image runs.")
+    return 0
+
+
+def check(root: str) -> int:
+    paths = staged_paths(root)
+    if not paths:
+        return 0
+
+    want = digest(root, "index")
+    if os.environ.get("TBT_DEFER_EXT_BAKE"):
+        return defer(root, paths, want)
+
+    doc = load(root)
+    entry = latest_bake(doc)
+    shown = ", ".join(paths[:4]) + (" …" if len(paths) > 4 else "")
+    if entry is None:
+        return fail([f"staged resident changes: {shown}",
+                     f"no bake receipt in {RECEIPTS} at all."])
+
+    problems = []
+    if entry.get("extDigest") != want:
+        problems.append("the receipt is for a DIFFERENT resident source:")
+        problems.append(f"  baked   {entry.get('extDigest')}  at {entry.get('at')}")
+        problems.append(f"  staged  {want}")
+        newest = newest_source_time(root, paths)
+        if newest:
+            problems.append(f"  newest staged source change: {iso(newest)}")
+    for key, what in REQUIRED:
+        if not entry.get(key):
+            problems.append(f"the receipt records no {what} ({key}).")
+    if entry.get("shutdown") not in (None, "guest-clean"):
+        problems.append(f"the shutdown was {entry['shutdown']!r}, not "
+                        "'guest-clean' — a QMP quit is a power cut and the "
+                        "next boot sits in Disk First Aid.")
+    if entry.get("qemuImgCheck") not in (None, "clean"):
+        problems.append(f"qemu-img check was {entry['qemuImgCheck']!r}, "
+                        "not 'clean'.")
+    if problems:
+        return fail([f"staged resident changes: {shown}"] + problems)
+
+    print(f"[ext-bake-gate] stage image carries this resident "
+          f"({want[:12]}, baked {entry.get('at')}).")
+    return 0
+
+
+def record(root: str, path: str) -> int:
+    with open(path) as fh:
+        entry = json.load(fh)
+    entry["kind"] = "bake"
+    doc = load(root)
+    doc.setdefault("receipts", []).append(entry)
+    save(root, doc)
+    print(f"[ext-bake-gate] receipt appended to {RECEIPTS}")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    cmd = argv[1] if len(argv) > 1 else "check"
+    root = os.environ.get("TBT_GATE_ROOT") or repo_root()
+    if cmd == "check":
+        return check(root)
+    if cmd == "digest":
+        source = "index"
+        if "--worktree" in argv:
+            source = "worktree"
+        print(digest(root, source))
+        return 0
+    if cmd == "record":
+        return record(root, argv[2])
+    print(__doc__, file=sys.stderr)
+    return 64
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
