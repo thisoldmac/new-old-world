@@ -18,7 +18,14 @@
  *
  *     move.l d0,(lastSel).l    ; 23 C0 <addr>   the selector, for
  *     addq.l #1,(count).l      ; 52 B9 <addr>   attribution
- *     jmp    (old).l           ; 4E F9 <addr>
+ *     tst.w  d0                ; 4A 40          selector 0 = NewGWorld:
+ *     bne.s  +8                ; 66 06          a per-selector counter,
+ *     addq.l #1,(ngw).l        ; 52 B9 <addr>   because the first run
+ *     jmp    (old).l           ; 4E F9 <addr>   found ~0.6 ambient
+ *                                               selector-7 calls per
+ *                                               second drowning any
+ *                                               single NewGWorld in the
+ *                                               raw count
  *
  * The stub and its cells live in a NONRELOCATABLE SYSTEM-HEAP block,
  * because the patch runs in whatever process calls the trap - an
@@ -67,8 +74,9 @@ enum { kQDExtensionsTrap = 0xAB1D };
 enum {
     kCellCount = 0,
     kCellLastSel = 4,
-    kCellCode = 8,
-    kStubBytes = 8 + 18
+    kCellNewGWorld = 8,
+    kCellCode = 12,
+    kStubBytes = 12 + 28
 };
 
 static Ptr gStub;
@@ -112,7 +120,7 @@ static unsigned long InstallWatch(void)
 {
     unsigned long old;
     unsigned char *p;
-    unsigned long cnt_addr, sel_addr;
+    unsigned long cnt_addr, sel_addr, ngw_addr;
 
     gStub = NewPtrSysClear(kStubBytes);
     if (gStub == NULL) return 0;
@@ -121,6 +129,7 @@ static unsigned long InstallWatch(void)
 
     cnt_addr = (unsigned long)(gStub + kCellCount);
     sel_addr = (unsigned long)(gStub + kCellLastSel);
+    ngw_addr = (unsigned long)(gStub + kCellNewGWorld);
     p = (unsigned char *)(gStub + kCellCode);
 
     *p++ = 0x23; *p++ = 0xC0;                     /* move.l d0,(abs).l  */
@@ -129,6 +138,11 @@ static unsigned long InstallWatch(void)
     *p++ = 0x52; *p++ = 0xB9;                     /* addq.l #1,(abs).l  */
     *p++ = (unsigned char)(cnt_addr >> 24); *p++ = (unsigned char)(cnt_addr >> 16);
     *p++ = (unsigned char)(cnt_addr >> 8);  *p++ = (unsigned char)cnt_addr;
+    *p++ = 0x4A; *p++ = 0x40;                     /* tst.w d0           */
+    *p++ = 0x66; *p++ = 0x06;                     /* bne.s past the add */
+    *p++ = 0x52; *p++ = 0xB9;                     /* addq.l #1,(abs).l  */
+    *p++ = (unsigned char)(ngw_addr >> 24); *p++ = (unsigned char)(ngw_addr >> 16);
+    *p++ = (unsigned char)(ngw_addr >> 8);  *p++ = (unsigned char)ngw_addr;
     *p++ = 0x4E; *p++ = 0xF9;                     /* jmp (abs).l        */
     *p++ = (unsigned char)(old >> 24); *p++ = (unsigned char)(old >> 16);
     *p++ = (unsigned char)(old >> 8);  *p++ = (unsigned char)old;
@@ -153,6 +167,12 @@ static unsigned long ReadLastSel(void)
     return gStub != NULL ? *(volatile unsigned long *)(gStub + kCellLastSel) : 0;
 }
 
+static unsigned long ReadNewGWorld(void)
+{
+    return gStub != NULL
+        ? *(volatile unsigned long *)(gStub + kCellNewGWorld) : 0;
+}
+
 static void WriteReport(unsigned long old)
 {
     Str255 fname = "\pNOW Trap Watch.txt";
@@ -162,12 +182,13 @@ static void WriteReport(unsigned long old)
     long len;
     const char *dig = "0123456789abcdef";
     short j = 0, k;
-    unsigned long vals[4];
-    const char *labels[4];
+    unsigned long vals[5];
+    const char *labels[5];
     short n = 0, v;
 
     labels[n] = "count       "; vals[n++] = ReadCount();
     labels[n] = "lastSelector"; vals[n++] = ReadLastSel();
+    labels[n] = "newGWorld   "; vals[n++] = ReadNewGWorld();
     labels[n] = "oldDispatch "; vals[n++] = old;
     labels[n] = "stub        "; vals[n++] = (unsigned long)gStub;
 
@@ -207,8 +228,8 @@ static void DrawStatus(void)
     MoveTo(200, 20);
     DrawString(s);
     MoveTo(12, 40);
-    DrawString((ConstStr255Param)"\plast selector (hi word):");
-    NumToString((long)(ReadLastSel() >> 16), s);
+    DrawString((ConstStr255Param)"\pNewGWorld calls:");
+    NumToString((long)ReadNewGWorld(), s);
     MoveTo(200, 40);
     DrawString(s);
 }
