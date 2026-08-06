@@ -1003,14 +1003,39 @@ static void content_repair(NowPeekU32 a5, NowPeekU32 window,
    pointers out of arbitrary heap bytes; every one of them is an
    arbitrary 32-bit value until this says otherwise, and an unmapped
    read is a bus error taken inside somebody else's application. */
+static Boolean content_probe_in_zone(THz zone, NowPeekU32 addr,
+                                     unsigned long size)
+{
+    NowPeekU32 lo;
+    NowPeekU32 hi;
+
+    if (zone == NULL) {
+        return false;
+    }
+    lo = (NowPeekU32)&zone->heapData;
+    hi = (NowPeekU32)zone->bkLim;
+    return hi > lo && addr >= lo && addr + (NowPeekU32)size <= hi;
+}
+
+/* MEMTOP WAS THE WRONG CEILING, and using it silently disabled this
+   whole plane. Measured 2026-08-06: LMGetMemTop is 0x00e225f0 (~14.8 MB)
+   and the system zone lies below it - but an APPLICATION zone sits
+   around 0x1e93e4d4, ~500 MB higher. MemTop bounds the low/system
+   region, not the address space, so a guard written as
+   `addr <= MemTop` rejects every application-heap pointer there is, and
+   this chase rejected every candidate it examined from the moment that
+   guard landed.
+
+   The zones themselves are the honest bound: they are the memory we are
+   already walking, they are mapped by construction, and a pointer
+   outside both is one we have no business dereferencing anyway. */
 static Boolean content_probe_addr_ok(NowPeekU32 addr, unsigned long size)
 {
-    NowPeekU32 top = (NowPeekU32)LMGetMemTop();
-
-    return addr >= 0x1000UL
-        && (addr & 1UL) == 0
-        && top > 0x1000UL
-        && addr <= top - (NowPeekU32)size;
+    if (addr < 0x1000UL || (addr & 1UL) != 0) {
+        return false;
+    }
+    return content_probe_in_zone(ApplicationZone(), addr, size)
+        || content_probe_in_zone(SystemZone(), addr, size);
 }
 
 static Boolean content_probe_scan(unsigned char *p, unsigned char *limit,

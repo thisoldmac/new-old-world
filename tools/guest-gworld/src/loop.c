@@ -49,6 +49,7 @@
 #include <Types.h>
 
 #include <Folders.h>
+#include <LowMem.h>
 #include <Resources.h>
 #include <string.h>
 
@@ -130,8 +131,8 @@ static void ReportIdentity(void)
     THz appz = ApplicationZone();
     const char *dig = "0123456789abcdef";
     short j = 0, k;
-    unsigned long vals[8];
-    const char *labels[8];
+    unsigned long vals[16];
+    const char *labels[16];
     short n = 0, v;
 
     if (gWorld == NULL) return;
@@ -150,6 +151,14 @@ static void ReportIdentity(void)
         (unsigned long)(appz ? appz->bkLim : 0);
     labels[n] = "portVersion "; vals[n++] =
         (unsigned long)(unsigned short)port->portVersion;
+    /* The ceiling the extension's read guard uses. If this is below the
+       heaps, that guard rejects every candidate and the chase can never
+       match - which is exactly the shape of failure being chased. */
+    labels[n] = "LMGetMemTop "; vals[n++] = (unsigned long)LMGetMemTop();
+    labels[n] = "sysz lo     "; vals[n++] =
+        (unsigned long)(SystemZone() ? (Ptr)&SystemZone()->heapData : 0);
+    labels[n] = "sysz hi     "; vals[n++] =
+        (unsigned long)(SystemZone() ? SystemZone()->bkLim : 0);
 
     for (v = 0; v < n; ++v) {
         for (k = 0; labels[v][k]; ++k) buf[j++] = labels[v][k];

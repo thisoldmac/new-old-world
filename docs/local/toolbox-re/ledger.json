@@ -158,10 +158,24 @@
       "provenance": "doc",
       "evidence": "docs/local/toolbox-re/prior-art.md",
       "at": "2026-08-06T03:58:15-0400"
+    },
+    {
+      "phase": "P1",
+      "claim": "MemTop IS NOT THE TOP OF ADDRESSABLE MEMORY on this machine, and assuming it is silently disables anything that uses it as a ceiling. Measured: LMGetMemTop = 0x00e225f0 (~14.8 MB) and the system zone lies below it (0x2834-0x00d0b9f0), but an APPLICATION zone sits at 0x1e93e4d4-0x1e97be90, around 512 MB. MemTop bounds the low/system region only.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/loop-identity.txt",
+      "at": "2026-08-06T04:04:10-0400"
+    },
+    {
+      "phase": "P2",
+      "claim": "THE CHASE'S FINAL DEFECT, and it was self-inflicted: the range check added to stop the scan crashing the Finder bounds every pointer read to [0x1000, MemTop]. Since application heaps live ~500 MB above MemTop, that guard has rejected EVERY candidate deref since it landed - which is why baseCandidates stayed 0 through the handle fix, the identity fix and the shape fix alike. A safety guard written on a wrong assumption about the address space silently disabled the instrument it was protecting.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/loop-identity.txt",
+      "at": "2026-08-06T04:04:10-0400"
     }
   ],
   "blockers": [],
   "handoff": null,
   "done": false,
-  "fruitless_blocks": 0
+  "fruitless_blocks": 1
 }
