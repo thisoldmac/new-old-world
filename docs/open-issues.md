@@ -14,6 +14,99 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED: the live render was worse than every fixture render, and no gate could see it (2026-08-06, evening)
+
+Reported against a running session: the Mirror "looks largely regressed"
+while the same captures rendered whole in the harness. It was not a
+regression and not the asset pack, which resolves in the app process
+(no `MirrorKit:` warning on stderr with the Mirror open and drawing).
+It was that **the harness and the app were never drawing the same
+scene.** `NOWMirrorContentCoverageTests` composes every capture onto a
+canned scene with `controls = []` and no `dialogItems`, so every fixture
+render is drawn with an EMPTY semantic-exclusion list; the app draws the
+same capture with one entry per DITL row. Date & Time has twenty.
+
+Three defects lived in that blind spot, all now fixed
+([render-composition](render-composition.md) carries the rules):
+
+- **A dialog item could silence P3 and put nothing in its place.**
+  Controls have answered `semanticOwnsDisplay` all along; items had no
+  equivalent gate at all. Date & Time lost its date, its time, both
+  group boxes and every field.
+- **A placeholder was painted over pixels the replay had just drawn.**
+  `DisplayReplay` reported one Bool for a whole window, so nothing could
+  ask about a rectangle. It now reports `Coverage` — and an ERASE is
+  deliberately not counted as ink, because a composite repaint opens
+  with a full-window erase and counting it would silence every
+  placeholder everywhere.
+- **A DITL row typed `icon` fell through to the generic hatch**, though
+  the guest had said an icon is there and named it. Fifteen of NOW's own
+  Workshop sidebar rows drew as fifteen hatches.
+
+`LiveShapedRenderTests` is the gate that was missing: the first scene
+fixture in this tree that carries a window's controls and dialog items,
+asserted in pixels, with each of the first two rules watched failing
+under its own mutation. The `icon` probe was written and DELETED — it did
+not move when the case was removed, so it was not attributing what it
+claimed, and that change is render-inspected only.
+
+Two things found on the way and NOT fixed here:
+
+- **`--open-mirror` could leave a window over a stopped poll.**
+  `start()` refuses when no Mac is active yet, which at launch is the
+  ordinary order of events. Fixed (a bounded retry), but worth knowing
+  it presented as "the mirror is frozen and `mirror_drive` says there is
+  no pinned Mac".
+- **The desktop projection reported zero elements** while nineteen icons
+  were on the screen — the backdrop is the one Finder window whose icons
+  live in `scene.desktopItems` rather than `window.items`. Third
+  instance of that omission shape. Fixed; the desktop icons themselves
+  were never broken, and a render fed the live roster draws all 19 at
+  the Finder's own coordinates.
+
+## OPEN: the dialog walk reports a POINTER where a label belongs (2026-08-06, evening)
+
+**Guest-side.** Memory's captured scene carries twenty
+`staticText`/`editText` DITL rows whose `title` is eight bytes of 68K
+address — `\u{1e}πN,\u{1e}πM@` — rather than the item's text. The walk
+reads the text through a handle and reports the handle when the read
+fails. The same capture reports item rects at `l = 16555` and
+`l = 16448`: the same corruption one field over.
+
+The renderer now refuses a title containing control bytes
+(`SceneRenderer.displayableTitle`), because it had been drawing them —
+the panel read "πO πM@" where the machine says "Disk Cache size is
+calculated when the computer starts up" — and, worse, believing them:
+a non-empty title made the row look like it carried content and silenced
+the guest's own drawing underneath. That is a defence, not a fix.
+Evidence: `/private/tmp/fsweepB/memory-scene.json`, guest build
+`59dce8562ad4`. See [fidelity sweep B](fidelity-sweep-2026-08-06-b.md)
+R-B2.
+
+## OPEN: the system font is Charcoal and the pack has no Charcoal (2026-08-06, evening)
+
+Font id 0 means "the system font", which under the Appearance Manager on
+Mac OS 8.5+ is **Charcoal**. The pack carries no Charcoal strike, so
+`DisplayReplay.strike` answers **Chicago**, which is wider — and where an
+application clips its own text the extra width cuts a glyph off. Date &
+Time draws "Use a Network Time Server" under `clip [40,195,210,217]` and
+the mirror renders "Use a Network Time Serve"; General Controls loses the
+last glyph of two group titles the same way. The captured bytes are
+complete (`len 25 fullLen 25 trunc false`), so this is not truncation and
+not a renderer defect.
+
+`tools/extract-assets-offline` does not extract fonts at all — the
+strikes in `Resources/fonts` predate it — so the fix is an extraction
+path for Charcoal 12, after which one line in `strike` changes.
+
+## OPEN: the desktop pattern is a plausible wrong answer (2026-08-06, evening)
+
+`DesktopPattern.tile` tiles the extracted `ppat` 16 ("Mac OS Default")
+unconditionally. The guest's actual desktop pattern is never read, so
+every render shows purple Mac faces beside a machine showing a blue
+swirl. Not a placeholder and not a hatch — which makes it the more
+dangerous kind of wrong, because nothing about it says it is a guess.
+
 ## FIXED: four renderer-side text defects from the fidelity sweep (2026-08-06)
 
 The sweep (docs/fidelity-sweep-2026-08-06.md) put six items on a red
