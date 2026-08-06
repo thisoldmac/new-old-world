@@ -1213,6 +1213,29 @@ on it — a gate permanently red for a defect the rig neither causes nor
 can fix is a gate nobody reads. It moves back into the gate when this is
 closed.
 
+**2026-08-06, mechanism found and fixed — it was the writer heartbeat,
+and "binds nothing" was the flap's worst phase.** The application renewed
+`writer.heartbeat_ticks` only inside peek calls, and the lease is 3 s
+(`kNowPeekWriterLeaseTicks`), so any wire cadence slower than that let
+the resident see a dead writer between requests and de-arm every plane;
+the next scene then claimed, renewed, and read `arm_active`
+synchronously — before the resident's next jGNE pass could re-echo — so
+the first walk after every quiet gap answered `now_no_plane` for every
+foreign process. Measured on a clone before the fix: 6/6 scenes at a 4 s
+cadence carried no foreign process, while `axsnap` in the same
+connection bound the Finder ok (a command pass renews and pumps, which
+is why the two halves disagreed). The fix is `now_peek_idle()` — the
+event loop renews once per pass, so the heartbeat proves the loop runs,
+which is the fact the lease exists to check. Verified on the same clone:
+five scene polls with 6 s silent gaps all carried the Finder and its
+windows, and its scroll bars arrived classified. Two things this does
+NOT close: the FIRST scene of a fresh connection still misses foreign
+processes (claim-before-echo, by design — the host's second poll covers
+it), and `actselftest`'s `no-such-process` did not change and needs its
+own look. The scene should also say WHICH gate refused in its coverage
+`reason` (`no-plane` vs `not-observed`) — this defect survived two
+sessions because the wording hid the distinction.
+
 ## BROKEN: a Finder-open predicts the wrong owner, so panels time out having worked (2026-08-05)
 
 `MirrorActionExecutor` builds `windowNamedPresent(owner: Finder, title:
