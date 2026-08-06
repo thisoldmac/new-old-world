@@ -19,13 +19,16 @@ import XCTest
 /// wrong answer, it is a guest that cannot connect and cannot say why.
 final class WireLimitsAgreementTests: XCTestCase {
 
-    private static var headerURL: URL {
+    private static var repoRoot: URL {
         URL(fileURLWithPath: #filePath)          // …/now-host/Tests/HostTests/x
             .deletingLastPathComponent()          // …/now-host/Tests/HostTests
             .deletingLastPathComponent()          // …/now-host/Tests
             .deletingLastPathComponent()          // …/host
             .deletingLastPathComponent()          // …/
-            .appendingPathComponent("contract/wire_limits.h")
+    }
+
+    private static var headerURL: URL {
+        repoRoot.appendingPathComponent("contract/wire_limits.h")
     }
 
     /// `#define NAME VALUE` → the value, as an Int. Tolerates the C
@@ -83,5 +86,118 @@ final class WireLimitsAgreementTests: XCTestCase {
         XCTAssertEqual(Contract.revision,
                        try define("NOW_WIRE_CONTRACT_REVISION", in: text),
                        "contract revision disagrees with contract/wire_limits.h")
+    }
+
+    // MARK: - the contract's own statement of it
+
+    /// `contract/asyncapi.yaml` is the source of truth AGENTS.md names, and
+    /// nothing was checking that the header the guests compile agreed with
+    /// it. Everything else in this file compares two copies to each other;
+    /// this compares them to the document.
+    func testTheContractDocumentAgrees() throws {
+        let yaml = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent("contract/asyncapi.yaml"),
+            encoding: .utf8)
+        let re = try NSRegularExpression(pattern: #"^\s*x-contract-revision:\s*(\d+)"#,
+                                         options: [.anchorsMatchLines])
+        let range = NSRange(yaml.startIndex..., in: yaml)
+        guard let m = re.firstMatch(in: yaml, range: range),
+              let r = Range(m.range(at: 1), in: yaml),
+              let stated = Int(yaml[r]) else {
+            return XCTFail("no info.x-contract-revision in contract/asyncapi.yaml")
+        }
+        XCTAssertEqual(Contract.revision, stated,
+                       "this side sends a revision the contract does not state")
+    }
+
+    // MARK: - the Python harnesses
+
+    /// The harnesses are the fourth reader of these numbers and the only one
+    /// no build touches, so they drifted alone: `tools/askguest.py` and
+    /// `tools/liveness-experiment.py` declared revision 1 for as long as the
+    /// contract has said 2, and `scripts/probes/nowwire.py` did too — which
+    /// is not cosmetic, because that file gates the hello it answers, so
+    /// every probe was refusing the guest it had just accepted.
+    ///
+    /// They now import `contract/wire_limits.py`. This holds that file to the
+    /// header, and the next test forbids a harness from going back to a
+    /// literal of its own.
+    func testThePythonSiblingAgrees() throws {
+        let py = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent("contract/wire_limits.py"),
+            encoding: .utf8)
+        let header = try String(contentsOf: Self.headerURL, encoding: .utf8)
+
+        func assign(_ name: String) throws -> Int {
+            let re = try NSRegularExpression(pattern: #"^"# + name + #"\s*=\s*(\S+)"#,
+                                             options: [.anchorsMatchLines])
+            let range = NSRange(py.startIndex..., in: py)
+            guard let m = re.firstMatch(in: py, range: range),
+                  let r = Range(m.range(at: 1), in: py) else {
+                XCTFail("no \(name) in contract/wire_limits.py")
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            let raw = String(py[r])
+            if raw.hasPrefix("0x") || raw.hasPrefix("0X") {
+                guard let v = Int(raw.dropFirst(2), radix: 16) else {
+                    XCTFail("\(name) is not a number: \(raw)")
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                return v
+            }
+            guard let v = Int(raw) else {
+                XCTFail("\(name) is not a number: \(raw)")
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            return v
+        }
+
+        for (python, c) in [("WIRE_CONTRACT_REVISION", "NOW_WIRE_CONTRACT_REVISION"),
+                            ("FRAME_HEADER_BYTES", "NOW_WIRE_FRAME_HEADER_BYTES"),
+                            ("CHANNEL_CONTROL", "NOW_WIRE_CHANNEL_CONTROL"),
+                            ("CHANNEL_BULK", "NOW_WIRE_CHANNEL_BULK"),
+                            ("FLAG_END", "NOW_WIRE_FLAG_END"),
+                            ("MAX_PAYLOAD", "NOW_WIRE_MAX_PAYLOAD")] {
+            XCTAssertEqual(try assign(python), try define(c, in: header),
+                           "\(python) in contract/wire_limits.py disagrees with "
+                           + "\(c) in contract/wire_limits.h")
+        }
+    }
+
+    /// A harness that declares its own revision is the defect, not the wrong
+    /// number — the number was only wrong because nothing tied it to
+    /// anything. So the shape is what is banned: outside
+    /// `contract/wire_limits.py`, no Python file under `tools/` or
+    /// `scripts/probes/` may assign a bare integer revision or put one
+    /// straight into a hello.
+    func testNoHarnessDeclaresItsOwnRevision() throws {
+        let fm = FileManager.default
+        let patterns = [
+            #"^\s*(WIRE_)?CONTRACT(_REVISION)?\s*=\s*\d"#,          // CONTRACT = 1
+            #"^[A-Z_, ]*\bCONTRACT\b[A-Z_, ]*=\s*[\d, ]+$"#,        // CONTROL, END, CONTRACT = 0, 1, 1
+            #""contract"\s*:\s*\d"#,                                // {"contract": 1}
+        ].map { try! NSRegularExpression(pattern: $0, options: [.anchorsMatchLines]) }
+
+        var offenders: [String] = []
+        for dir in ["tools", "scripts/probes"] {
+            let root = Self.repoRoot.appendingPathComponent(dir)
+            guard let walk = fm.enumerator(at: root, includingPropertiesForKeys: nil)
+            else { continue }
+            for case let url as URL in walk where url.pathExtension == "py" {
+                guard let text = try? String(contentsOf: url, encoding: .utf8)
+                else { continue }
+                let range = NSRange(text.startIndex..., in: text)
+                for re in patterns where re.firstMatch(in: text, range: range) != nil {
+                    let rel = url.path.replacingOccurrences(
+                        of: Self.repoRoot.path + "/", with: "")
+                    if !offenders.contains(rel) { offenders.append(rel) }
+                }
+            }
+        }
+        XCTAssertEqual(offenders, [],
+                       "these harnesses state a contract revision of their own "
+                       + "instead of importing contract/wire_limits.py; that is "
+                       + "how tools/askguest.py sat on revision 1 for a whole "
+                       + "revision without anyone noticing")
     }
 }

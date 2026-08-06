@@ -189,6 +189,22 @@ Boolean now_proc_hide_available(const char **which);
 NowProcHideOutcome now_proc_hide_by_name(const char *arg, char *msg,
                                          long cap);
 
+/* Bring THIS application back from hidden, so a route that promises to show
+   a window can keep that promise. A no-op when it is already visible, and
+   silent when the Toolbox cannot do it — this is a repair to a route that
+   does its own reporting, not a verb.
+
+   HIDING NOW DOES NOT MOVE THE FRONT PROCESS. Measured on the emulator
+   2026-08-06: after `hide "New Old World"` the Process Manager still names
+   NOW frontmost, its menu bar is still the one the machine draws, and its
+   Windows > Workshop item is still reachable — but `SelectWindow` on a
+   hidden application's window shows nothing at all. So the menu command
+   "succeeded" with no window, and the host, whose typed postcondition is
+   that this window becomes front, waited out its whole 15 s timeout for a
+   thing that had been asked for correctly. One lane, so everything queued
+   behind it waited too. */
+void now_proc_show_self(void);
+
 /* The seconds the read-back is given before an accepted call is reported
    kProcHideUnconfirmed. Shorter than `front`'s: ShowHideProcess sets the
    layer's visible flag, and IsProcessVisible reads that flag rather than

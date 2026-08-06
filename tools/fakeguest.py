@@ -28,13 +28,17 @@ then this.
 """
 import argparse
 import json
+import os
 import socket
 import struct
 import sys
 import time
 
-CONTROL = 0
-END = 1
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "contract"))
+from wire_limits import (CHANNEL_CONTROL as CONTROL,  # noqa: E402
+                         FLAG_END as END,
+                         WIRE_CONTRACT_REVISION as CONTRACT)
 
 
 def frame(payload: bytes) -> bytes:
@@ -123,7 +127,7 @@ class Peer:
     def serve(self):
         name = ("now-68k" if self.kind == "68k" else "PowerBook 1400c")
         os_ = "7.1" if self.kind == "68k" else "9"
-        self.send({"type": "hello", "contract": 1, "side": "guest",
+        self.send({"type": "hello", "contract": CONTRACT, "side": "guest",
                    "version": "0.3", "name": name, "os": os_,
                    "chunk": 4096})
         for payload in self.read_frames():

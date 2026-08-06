@@ -19,6 +19,7 @@
 #include "screenshots_module.h"
 #include "software_module.h"
 #include "prefs.h"
+#include "proc_actions.h"
 #include "workshop_layout.h"
 #include "workshop_sidebar.h"
 #include "wire.h"
@@ -196,6 +197,14 @@ Boolean workshop_open(void)
     Rect bounds;
     Str255 title;
     NowPrefs prefs;
+
+    /* SHOW THE APPLICATION FIRST. Hiding NOW leaves it frontmost (see
+       proc_actions.h), so Windows > Workshop stays reachable while every
+       window it could select is invisible - and SelectWindow on a hidden
+       application shows nothing. Every route that promises a Workshop page
+       comes through here, so the repair belongs here rather than in each
+       menu item. */
+    now_proc_show_self();
 
     if (g_window != NULL) {
         SelectWindow(g_window);

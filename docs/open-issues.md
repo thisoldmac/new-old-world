@@ -14,6 +14,193 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## BROKEN, contract violation: the PowerPC guest never reads the host's contract revision (2026-08-06)
+
+`contract/asyncapi.yaml`, connection rules: "`contract` is a single
+integer revision. **Unequal revisions => refuse.**" Three of the four
+implementations do that. One does not.
+
+| side | on an unequal revision in the peer's hello |
+| --- | --- |
+| host (`Session.swift:1511`) | refuses, reason names both numbers |
+| NOW-68K (`wire68.c :: handle_host_hello`) | logs it, `set_status_str("Protocol error: contract mismatch")`, `teardown_and_retry(NULL, "protocol-error")` |
+| `scripts/probes/nowwire.py :: _gate` | refuses |
+| **NOW-PPC (`wire.c :: on_hello`)** | **never looks at the field.** It reads `name` and `version`, sets `kConnConnected`, and serves the session |
+
+`on_hello` is twenty lines and `contract` is not among them; the
+handshake dispatch above it (`handle_frame`, `g.phase ==
+kConnHandshaking`) routes `hello` straight there without checking
+either. So the PowerPC guest will hold a full session with a host
+speaking any revision at all, including one that predates every message
+it is about to be sent.
+
+**How it surfaced.** Five Python harnesses declared the revision by hand
+and two of them still said 1 (fixed on `claude/wire-revision-drift`,
+`contract/wire_limits.py` plus three gates in
+`WireLimitsAgreementTests`). Those two had been talking to NOW-PPC
+guests perfectly happily — which is exactly the problem: the guest's
+missing check is what made a year-stale harness look fine. Against
+NOW-68K the same harnesses could never have held a link, and that
+difference is the whole diagnosis.
+
+**Why it is worth more than the tools fix.** The check exists to make a
+version skew fail loudly at the door instead of quietly in the middle of
+a message nobody can decode. A guest that skips it converts "refused,
+here is why" into a session that misbehaves later with no handshake to
+blame, and that is the `two-halves-never-met-in-a-test` shape.
+
+**The fix**, not taken here because this branch is the tools half and a
+guest behaviour change wants a metal pass: read `contract` in
+`on_hello`, and on a mismatch set a status naming both numbers and tear
+the connection down the way `handle_frame` already does for `refuse`
+(return 0). NOW-68K's `handle_host_hello` is the model — including its
+treatment of an ABSENT `contract` as a mismatch, since the field is
+required.
+
+**What is not known.** Whether the guest should also SEND a `refuse`
+before closing. The contract words the refusal as the host's move ("the
+host answers `hello` (accept) or `refuse` and closes") and never says
+what a guest does with a bad host hello, so NOW-68K's silent teardown
+and a hypothetical guest-sent `refuse` are both defensible readings.
+AGENTS.md says the file family is symmetric; if that governs here, the
+contract's prose should say so explicitly rather than leaving two
+implementations to guess. Settle the prose before writing the code.
+
+## UNSETTLED: the host app reported as always-on-top; no window level exists to cause it (2026-08-06)
+
+Michelle: the macOS app window floats above other applications. What was
+measured, without driving anything:
+
+- **No window level is set anywhere.** `NSWindow.level`, a floating
+  panel, `orderFrontRegardless`, `collectionBehavior`, `LSUIElement`: none
+  of them appear in `now-host/`, in the vendored `mirror/` package, in the
+  Xcode target's generated Info.plist, or anywhere in this repository's
+  history on any branch.
+- **The running windows are at level 0.** `CGWindowLayer` read from the
+  window server for every window of both copies running on the desk — the
+  human's (pid 27820) and a freshly built one — was `0`
+  (`NSNormalWindowLevel`). A level-0 window cannot stay above another
+  application's windows once that application activates, so "floats" is
+  not what the window server is being told to do.
+- **The one lever that does steal the front** is
+  `NSApp.activate(ignoringOtherApps: true)` at `App.swift:401`, which runs
+  on EVERY route into `openMainWindow()`: launch,
+  `applicationShouldHandleReopen` (a Dock click, or any `open` of the
+  bundle), the status item's "Open New Old World", ⌘, for Settings, and
+  every module item in the Windows menu. `ignoringOtherApps: true` puts
+  NOW in front of whatever application the person was typing in, rather
+  than waiting to be switched to.
+
+**Not fixed here, deliberately.** The obvious change — dropping
+`ignoringOtherApps` — is not free: from a background app
+`activate(ignoringOtherApps: false)` does nothing at all, which would
+leave "Open New Old World" opening the window behind everything, and the
+two behaviours whose comments sit right there (the mirror window ending up
+behind the main window; `applicationShouldHandleReopen` raising the main
+window) are exactly the ones three rounds of fixes already went into.
+That trade needs someone who can watch the window, and this pass could
+not: computer-use access to the app was declined, so nothing here was
+driven as a person would.
+
+## FIXED: hiding NOW leaves it frontmost, and Windows > Workshop then times out having worked (2026-08-06)
+
+Reported by Michelle from a Mirror drive; measured on a session-private
+emulator clone the same night, guest builds `bf4987c6eca1` (before) and
+`a14d111103f8` (after).
+
+**What hiding NOW actually does.** `hide "New Old World"` — and the
+Application menu's own Hide, which is the same Process Manager call —
+hides the window and **does not move the front process**. Measured, three
+scenes over six seconds and a QMP screendump of the same moment:
+
+- `apps[].front` stays `New Old World`;
+- `axsnap` agrees: `front: New Old World, front: true`;
+- the machine still draws NOW's menu bar (Apple, File, Edit, View,
+  Windows, Help, and the New Old World application menu), over a desktop
+  with no NOW window on it;
+- the scene's window row for it is `visible:false, front:false`, so the
+  scene has **no front window at all** and the content plane says
+  `content: no front window`.
+
+**Why Windows > Workshop then timed out.** The menu item is still
+reachable in that state, and `menuact 140/1` still dispatches through the
+application's own main-loop queue — but `workshop_open` only called
+`SelectWindow`, and selecting a hidden application's window shows
+nothing. Watched: four scenes over twelve seconds, the window
+`visible:false, front:false` throughout. The host had planned
+`windowFront(New Old World)` from `MirrorActionExecutor.presentOrCreated`,
+which that state can never satisfy, so the act burned its whole 15 s
+timeout **having been dispatched correctly** — and the mutation FIFO is
+one lane, so everything behind it waited too. Same shape as the
+Finder-open entry below, different cause.
+
+**The fix** is `now_proc_show_self()` in `workshop_open`: show this
+application before selecting the window. Every route that promises a
+Workshop page comes through there. Watched pass: hidden, then the same
+`menuact 140/1`, and the window was visible and front **5.6 s** later,
+with the Workshop drawn on the machine's own screen.
+
+**What was NOT settled: the menu bar reported empty after the first
+Hide.** In the same report Michelle saw NOW's menu bar render EMPTY in
+the Mirror after the first hide, restored by cycling to the Finder and
+back. That could not be reproduced from the wire. In every hidden-and-
+front state produced here the guest reported `menubar.app: New Old
+World` with all seven menus and `coverage menubar/…/complete`, the
+machine drew them, and feeding those exact IR documents through the
+host's own `MirrorScene.decode` + `MirrorReplicaReducer` kept the menu
+bar with `actionable: true`. So neither the guest's report nor the host's
+retention is dropping it in that state.
+
+The leading hypothesis, **not** a finding: `axsnap` with NOW freshly
+front reported `bind: no-plane, hasWindows: false, hasMenus: false`, and
+the same process after a focus change reported `bind: ok, hasWindows:
+true, hasMenus: true`. A scene assembled through the legacy observe path
+while the plane is unarmed carries no menus at all — and "empty until you
+cycle away and back" is exactly what that would look like. Settling it
+needs someone who can watch the Mirror's own window; this pass could not
+(computer-use access was declined) and did not guess.
+
+## Set Time Zone: the acts reach the modal and apply; the LIST is what is missing (2026-08-06)
+
+Michelle: "controls in some of these modals still dont work". Measured
+against Date & Time's Set Time Zone modal on the same clone, replies read
+rather than fired and forgotten:
+
+1. **The act reaches the guest and applies.** `ditemact` on the modal's
+   Cancel — `{element: now-element-…, item: 2}` — answered `Dispatch:
+   dispatched, Mechanism: the application's Dialog Manager path`, and the
+   next scene and screendump showed the modal *and* Date & Time gone. A
+   `ModalDialog` loop is therefore not the obstacle, and modal-vs-ordinary
+   is not the discriminator.
+   The refusal worth knowing: `ditemact` needs **both** `element` and
+   `item`. With `element` alone it answers `bad-request: ditemact requires
+   item: a 1-based DITL number from 1 through 96`, and a caller that does
+   not read the reply sees a control that "does nothing". The host sends
+   both (`NOWMirrorSource.swift`, `.dialogItem`).
+2. **The list is not addressable at all.** The scene carries the modal's
+   9 DITL items and 10 controls, including the list's scroll bar with
+   `max: 193` — 193 cities — and **no `listCells` and no
+   `listTotalCount` anywhere**. There is no row to name, so no click on
+   that hatched rectangle can hit one. This is row 1 of
+   docs/mirror-element-coverage.md, now confirmed live rather than
+   inferred.
+3. **The greyed Done is TRUTH; the default ring on it is not.** With the
+   modal front the guest reports item 1 `Done enabled:false` and item 2
+   `Cancel enabled:true`, and the machine's own screen agrees — Done is
+   greyed until a city is chosen, and the default ring is around
+   **Cancel**. So the grey is a correct report and the ring is a renderer
+   fidelity defect.
+   (With the modal's application in the BACKGROUND every item reports
+   `enabled:false`, which is also true of the machine.)
+4. **The truncated explanatory text is the renderer, not the content.**
+   The guest reports item 7's title complete: "The time zone must be set
+   to determine the correct time. Select the closest city in your current
+   time zone:" — 110 characters, in a rect three lines tall.
+   `SceneRenderer`'s `case "staticText"` draws it with one `appText` call
+   at one baseline and no wrapping, so it is clipped mid-sentence. A wrap
+   there is verifiable offscreen with the `RenderShot` harness the
+   MirrorKitUI tests already use; it has not been done.
+
 ## CLOSED: the resident channel dials, speaks, and holds the session through a 108-second starvation (2026-08-06)
 
 Plan 012 § 4, and the whole plane it completes. A real Macintosh now
