@@ -48,7 +48,8 @@ int now_content_arm_verdict(const NowContentRequest *req,
     }
     mode = req->mode;
     if (mode != (NowContentU32)kNowContentModeCount
-        && mode != (NowContentU32)kNowContentModeRecord) {
+        && mode != (NowContentU32)kNowContentModeRecord
+        && mode != (NowContentU32)kNowContentModeProbe) {
         /* Includes mode off, and anything outside the enum. A mode we do
            not recognise is not a mode we act on. */
         return kNowContentVerdictIdle;
@@ -271,4 +272,35 @@ NowContentU32 now_content_state_deltas(const NowContentPortState *shadow,
         out |= (NowContentU32)kNowContentDeltaBg;
     }
     return out;
+}
+
+/* The probe's port match. An offscreen CGrafPort is identified, never
+   assumed: the handle in portPixMap must BE the sighted pixmap's handle,
+   the Color QuickDraw discriminator must pass, and portRect must equal
+   the pixmap's bounds. The last test is what makes a linear zone scan
+   honest - a free block that still holds a stale copy of the handle
+   value fails it unless it also holds the whole port, in which case it
+   IS the port, merely disposed, and the repair sweep's stale check is
+   the guard that matters. A zero-area rect never matches: a GWorld has
+   extent, and a zeroed candidate must not pass on zeroed wants. */
+int now_content_probe_match(NowContentU32 cand_pixmap_handle,
+                            NowContentU16 cand_port_version,
+                            NowContentS16 cand_l, NowContentS16 cand_t,
+                            NowContentS16 cand_r, NowContentS16 cand_b,
+                            NowContentU32 want_pixmap_handle,
+                            NowContentS16 want_l, NowContentS16 want_t,
+                            NowContentS16 want_r, NowContentS16 want_b)
+{
+    if (want_pixmap_handle == 0
+        || cand_pixmap_handle != want_pixmap_handle) {
+        return 0;
+    }
+    if ((cand_port_version & 0xC000U) != 0xC000U) {
+        return 0;
+    }
+    if (want_r <= want_l || want_b <= want_t) {
+        return 0;
+    }
+    return cand_l == want_l && cand_t == want_t
+        && cand_r == want_r && cand_b == want_b;
 }

@@ -88,6 +88,7 @@ static const char *mode_name(NowContentU32 mode)
     case kNowContentModeOff:    return "off";
     case kNowContentModeCount:  return "count";
     case kNowContentModeRecord: return "record";
+    case kNowContentModeProbe:  return "probe";
     default:                    return "invalid";
     }
 }
@@ -263,6 +264,23 @@ void now_qdtrace_status_json(const NowQDStatus *st, long id,
         (unsigned long)st->counters.refused_no_target,
         (unsigned long)st->counters.refused_wrong_context,
         (unsigned long)st->counters.refused_expired);
+
+    /* The GWorld probe's own account of itself, present only when the
+       resident's block is new enough to carry it - an older extension
+       simply has no probe and the key is absent rather than zeroed. */
+    if (st->has_probe) {
+        ok = ok && emit(&e,
+            ",\"probe\":{\"pixmapsSeen\":%lu,\"scans\":%lu,\"hits\":%lu,"
+            "\"misses\":%lu,\"offscreenPorts\":%lu,\"staleRows\":%lu,"
+            "\"pendingPixmap\":\"0x%08lx\"}",
+            (unsigned long)st->probe_pixmaps_seen,
+            (unsigned long)st->probe_scans,
+            (unsigned long)st->probe_hits,
+            (unsigned long)st->probe_misses,
+            (unsigned long)st->probe_offscreen_ports,
+            (unsigned long)st->probe_stale_rows,
+            (unsigned long)st->probe_pending_pixmap);
+    }
 
     e.reserve = 0;
     ok = ok && emit(&e, "}}}");

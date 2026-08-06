@@ -104,9 +104,23 @@ static struct {
     NowPeekU32 generation;
     short redraw_requested;
     short shadow_valid;
+    /* The GWorld probe's rows. `offscreen` marks a port that is NOT on
+       any WindowList - the liveness rules that govern window rows would
+       evict it on the first repair sweep - and `pixmap` is the
+       PixMapHandle that identified it, re-checked before every
+       dereference because a DisposeGWorld is invisible from here. */
+    short offscreen;
+    NowPeekU32 pixmap;
     NowContentPortState shadow;
 } gPorts[kNowContentMaxPorts];
 static short gPortCount = 0;
+
+/* Every source pixmap the probe has already chased, hit or miss, so one
+   GWorld blitting sixty times a minute costs one zone scan, not sixty.
+   Reset when the armed identity changes. */
+#define kNowContentProbeSeenMax 16
+static NowPeekU32 gProbeSeen[kNowContentProbeSeenMax];
+static short gProbeSeenCount = 0;
 
 /* Cheap change-detect for the repair sweep, so a 33 MHz machine is not
    charged a WindowList walk on every single event-loop pass. */
@@ -137,6 +151,16 @@ static void content_stamp(void)
     }
 }
 
+static short content_slot_for(GrafPtr port, NowPeekU32 a5);
+
+/* Record mode and probe mode both append ring records; count mode only
+   counts. One place says so, because the ten hooks each ask. */
+static Boolean content_mode_records(void)
+{
+    return gArmedMode == (NowPeekU32)kNowContentModeRecord
+        || gArmedMode == (NowPeekU32)kNowContentModeProbe;
+}
+
 /* Armed, in the armed context, with a mode that records or counts. Every
    hook asks this first; it is the gate that makes a hook left behind on
    some other application's port a strict pass-through. */
@@ -151,8 +175,25 @@ static Boolean content_capture_enabled(void)
         return false;
     }
     GetPort(&port);
-    if (port == NULL || (NowPeekU32)port != gBlock->active_window) {
+    if (port == NULL) {
         return false;
+    }
+    if ((NowPeekU32)port != gBlock->active_window) {
+        /* THE PROBE'S ONE RELAXATION of the capture gate, and its exact
+           shape matters: an op drawn into an offscreen GWorld arrives
+           with the GWorld as the current port, which is never the armed
+           window - the reason the plane has recorded zero ops for every
+           composite ever built. In probe mode, a port records iff WE
+           hooked it as an offscreen row for this same armed context.
+           Any other port - another window, another app's port a hook
+           was left on - stays strict pass-through, exactly as before. */
+        short slot;
+
+        if (gArmedMode != (NowPeekU32)kNowContentModeProbe) {
+            return false;
+        }
+        slot = content_slot_for(port, gArmedA5);
+        return slot >= 0 && gPorts[slot].offscreen;
     }
     if (gBlock->redraw_requested_generation == gBlock->active_generation
         && gBlock->redraw_serviced_generation != gBlock->active_generation) {
@@ -382,6 +423,46 @@ static void content_record_bits(const BitMap *src_bits, const Rect *src_rect,
                                (NowPeekU32)port, &pl, sizeof(pl));
 }
 
+/* THE PROBE'S SIGHTING, from inside the bits hook with the capture guard
+   held: a blit into the armed window whose source is a PixMap we have
+   not chased yet gets its source stashed for the GNE moment. Nothing is
+   dereferenced beyond the BitMap the hook was handed, nothing is
+   allocated, and nothing happens at all outside probe mode. The 0x8000
+   rowBytes bit is Color QuickDraw's own "this BitMap is a PixMap"
+   discriminator; a plain BitMap has no owning port to find. */
+static void content_probe_sight(const BitMap *src_bits)
+{
+    GrafPtr port = NULL;
+    short i;
+
+    if (gArmedMode != (NowPeekU32)kNowContentModeProbe
+        || src_bits == NULL
+        || ((unsigned short)src_bits->rowBytes & 0x8000U) == 0) {
+        return;
+    }
+    /* Only a blit INTO the armed window names a composite worth chasing.
+       A blit inside a hooked GWorld (an icon stamped from a resource,
+       say) is already the recorded evidence the probe wants - chasing
+       its source too would walk an unbounded chain of stamps. */
+    GetPort(&port);
+    if (port == NULL || (NowPeekU32)port != gBlock->active_window) {
+        return;
+    }
+    for (i = 0; i < gProbeSeenCount; ++i) {
+        if (gProbeSeen[i] == (NowPeekU32)src_bits) {
+            return;
+        }
+    }
+    if (gBlock->probe_pending_pixmap != 0) {
+        return;               /* one chase in flight; a later blit re-offers */
+    }
+    gBlock->probe_pending_pixmap = (NowPeekU32)src_bits;
+    gBlock->probe_pending_l = src_bits->bounds.left;
+    gBlock->probe_pending_t = src_bits->bounds.top;
+    gBlock->probe_pending_r = src_bits->bounds.right;
+    gBlock->probe_pending_b = src_bits->bounds.bottom;
+}
+
 /* ---- the ten hooks --------------------------------------------------
  * Every one has the same body and it is deliberately not factored: the
  * guard, the counter, the record, and the tail-call have to be visible
@@ -398,7 +479,7 @@ static pascal void content_text(short byteCount, const void *textBuf,
         gInCapture = 1;
         gBlock->counters.text++;
         content_stamp();
-        if (gArmedMode == kNowContentModeRecord) {
+        if (content_mode_records()) {
             content_record_text(byteCount, textBuf);
         }
         InvokeQDTextUPP(byteCount, textBuf, numer, denom, gStd.textProc);
@@ -414,7 +495,7 @@ static pascal void content_line(Point newPt)
         gInCapture = 1;
         gBlock->counters.line++;
         content_stamp();
-        if (gArmedMode == kNowContentModeRecord) {
+        if (content_mode_records()) {
             content_record_line(newPt);
         }
         InvokeQDLineUPP(newPt, gStd.lineProc);
@@ -430,7 +511,7 @@ static pascal void content_rect(GrafVerb verb, const Rect *r)
         gInCapture = 1;
         gBlock->counters.rect++;
         content_stamp();
-        if (gArmedMode == kNowContentModeRecord) {
+        if (content_mode_records()) {
             content_record_rectlike(kNowContentOpRect, verb, r, 0, 0);
         }
         InvokeQDRectUPP(verb, r, gStd.rectProc);
@@ -447,7 +528,7 @@ static pascal void content_rrect(GrafVerb verb, const Rect *r,
         gInCapture = 1;
         gBlock->counters.rrect++;
         content_stamp();
-        if (gArmedMode == kNowContentModeRecord) {
+        if (content_mode_records()) {
             content_record_rectlike(kNowContentOpRRect, verb, r,
                                     ovalWidth, ovalHeight);
         }
@@ -464,7 +545,7 @@ static pascal void content_oval(GrafVerb verb, const Rect *r)
         gInCapture = 1;
         gBlock->counters.oval++;
         content_stamp();
-        if (gArmedMode == kNowContentModeRecord) {
+        if (content_mode_records()) {
             content_record_rectlike(kNowContentOpOval, verb, r, 0, 0);
         }
         InvokeQDOvalUPP(verb, r, gStd.ovalProc);
@@ -481,7 +562,7 @@ static pascal void content_arc(GrafVerb verb, const Rect *r,
         gInCapture = 1;
         gBlock->counters.arc++;
         content_stamp();
-        if (gArmedMode == kNowContentModeRecord) {
+        if (content_mode_records()) {
             content_record_rectlike(kNowContentOpArc, verb, r,
                                     startAngle, arcAngle);
         }
@@ -498,7 +579,7 @@ static pascal void content_poly(GrafVerb verb, PolyHandle poly)
         gInCapture = 1;
         gBlock->counters.poly++;
         content_stamp();
-        if (gArmedMode == kNowContentModeRecord && poly != NULL
+        if (content_mode_records() && poly != NULL
             && *poly != NULL) {
             content_record_rectlike(kNowContentOpPoly, verb,
                                     &((**poly).polyBBox), 0, 0);
@@ -516,7 +597,7 @@ static pascal void content_rgn(GrafVerb verb, RgnHandle rgn)
         gInCapture = 1;
         gBlock->counters.rgn++;
         content_stamp();
-        if (gArmedMode == kNowContentModeRecord && rgn != NULL
+        if (content_mode_records() && rgn != NULL
             && *rgn != NULL) {
             content_record_rectlike(kNowContentOpRgn, verb,
                                     &((**rgn).rgnBBox), 0, 0);
@@ -536,9 +617,10 @@ static pascal void content_bits(const BitMap *srcBits, const Rect *srcRect,
         gInCapture = 1;
         gBlock->counters.bits++;
         content_stamp();
-        if (gArmedMode == kNowContentModeRecord) {
+        if (content_mode_records()) {
             content_record_bits(srcBits, srcRect, dstRect, mode);
         }
+        content_probe_sight(srcBits);
         InvokeQDBitsUPP(srcBits, srcRect, dstRect, mode, maskRgn,
                         gStd.bitsProc);
         gInCapture = 0;
@@ -631,6 +713,8 @@ static void content_install_port(GrafPtr port, NowPeekU32 a5,
     gPorts[gPortCount].generation = generation;
     gPorts[gPortCount].redraw_requested = 0;
     gPorts[gPortCount].shadow_valid = 0;
+    gPorts[gPortCount].offscreen = 0;
+    gPorts[gPortCount].pixmap = 0;
     gPortCount++;
     ((CGrafPtr)port)->grafProcs = &gHooks;
     gBlock->counters.installs++;
@@ -725,6 +809,30 @@ static void content_request_redraw(NowPeekU32 a5, NowPeekU32 window,
  * leaks its rows until they are forgotten by value below. A leaked row
  * costs a table slot; a wrong restore costs the machine.
  */
+/* An offscreen row's port is on no WindowList, so its liveness has to be
+   re-earned by shape before every dereference: still a colour port, and
+   its portPixMap still the exact handle that identified it. A disposed
+   GWorld fails one of the two - reading freed heap to CHECK is safe on
+   this machine (the zone stays mapped), writing into it is not, which is
+   why a failed check drops the row without a restore. */
+static Boolean content_probe_row_valid(short i)
+{
+    GrafPtr port = gPorts[i].port;
+
+    return port != NULL
+        && gPorts[i].pixmap != 0
+        && content_port_is_color(port)
+        && (NowPeekU32)((CGrafPtr)port)->portPixMap == gPorts[i].pixmap;
+}
+
+static void content_probe_forget_row(short i)
+{
+    if (gBlock->probe_offscreen_ports > 0) {
+        gBlock->probe_offscreen_ports--;
+    }
+    content_forget_slot(i);
+}
+
 static void content_uninstall_context(NowPeekU32 a5)
 {
     WindowPeek head = (WindowPeek)LMGetWindowList();
@@ -736,6 +844,22 @@ static void content_uninstall_context(NowPeekU32 a5)
 
         if (gPorts[i].a5 != a5) {
             i++;
+            continue;
+        }
+        if (gPorts[i].offscreen) {
+            /* The window rows' lifecycle rules are WindowList-shaped and
+               cannot speak for a port that was never on one. Same three
+               spike rules, restated for this shape: restore only from
+               this context, only while we still own the hook, and never
+               dereference a port that stopped matching its identity. */
+            if (content_probe_row_valid(i)
+                && ((CGrafPtr)gPorts[i].port)->grafProcs == &gHooks) {
+                ((CGrafPtr)gPorts[i].port)->grafProcs = gPorts[i].prev;
+                gBlock->counters.uninstalls++;
+            } else {
+                gBlock->probe_stale_rows++;
+            }
+            content_probe_forget_row(i);
             continue;
         }
         memset(&facts, 0, sizeof facts);
@@ -774,8 +898,17 @@ static void content_repair(NowPeekU32 a5, NowPeekU32 window,
     short i = 0;
 
     while (i < gPortCount) {
-        if (gPorts[i].a5 == a5
-            && !content_port_is_live(gPorts[i].port, head)) {
+        if (gPorts[i].a5 == a5 && gPorts[i].offscreen) {
+            /* Not on any WindowList by construction; its staleness test
+               is identity, not membership. */
+            if (!content_probe_row_valid(i)) {
+                gBlock->probe_stale_rows++;
+                content_probe_forget_row(i);
+            } else {
+                i++;
+            }
+        } else if (gPorts[i].a5 == a5
+                   && !content_port_is_live(gPorts[i].port, head)) {
             content_forget_slot(i);
         } else {
             i++;
@@ -784,6 +917,123 @@ static void content_repair(NowPeekU32 a5, NowPeekU32 window,
     content_install_exact_window(a5, window, generation);
     gBlock->counters.repairs++;
     gBlock->hooked_ports = (NowPeekU32)gPortCount;
+}
+
+/* ---- the probe's chase ----------------------------------------------
+ *
+ * The GNE moment's half of the GWorld probe: a bits hook sighted a window
+ * blit sourced from a PixMap nobody has chased, and stashed it. This runs
+ * next, in the SAME armed context, where the Toolbox is safe - and goes
+ * looking for the CGrafPort that owns that pixmap, because a GWorld is a
+ * CGrafPort that no list anywhere will admit to holding.
+ *
+ * The route: RecoverHandle turns the dereferenced PixMap pointer back
+ * into its PixMapHandle (the pixmap IS a handle - GetGWorldPixMap
+ * returns one), then a linear scan of the application zone looks for the
+ * port whose portPixMap field holds exactly that handle and whose
+ * portRect equals the pixmap's bounds (the match itself is pure -
+ * now_content_probe_match, and its false-positive reasoning is tested on
+ * the host cc). A hit is hooked through the ordinary install path and
+ * marked offscreen; a miss is counted, never guessed at. A GWorld whose
+ * port lives outside the application zone - temp memory, the system heap
+ * - lands in probe_misses, and that count is itself a finding.
+ *
+ * Cost, stated: the scan reads every even address in the app zone once
+ * per UNSEEN pixmap (the seen table absorbs repeats), bounded below at
+ * a whole-zone read and above by the 16 MB cap - milliseconds on the
+ * emulated G4 this probe runs on, and the reason this mode is an
+ * experiment rather than a shipping path.
+ */
+static void content_probe_service(NowPeekU32 a5, NowPeekU32 generation)
+{
+    Ptr pm;
+    Handle h;
+    THz zone;
+    unsigned char *p;
+    unsigned char *limit;
+    NowContentS16 wl, wt, wr, wb;
+    short slot;
+
+    if (gArmedMode != (NowPeekU32)kNowContentModeProbe
+        || gBlock->probe_pending_pixmap == 0) {
+        return;
+    }
+    pm = (Ptr)gBlock->probe_pending_pixmap;
+    wl = gBlock->probe_pending_l;
+    wt = gBlock->probe_pending_t;
+    wr = gBlock->probe_pending_r;
+    wb = gBlock->probe_pending_b;
+    gBlock->probe_pending_pixmap = 0;
+    /* Remembered hit OR miss: a pixmap that failed to resolve once will
+       fail the same way sixty times a second, and the scan is the cost
+       being avoided. A full seen table stops chasing new pixmaps rather
+       than forgetting old ones - honest saturation, visible as
+       pixmaps_seen pinned at the cap. */
+    if (gProbeSeenCount >= kNowContentProbeSeenMax) {
+        return;
+    }
+    gProbeSeen[gProbeSeenCount++] = (NowPeekU32)pm;
+    gBlock->probe_pixmaps_seen++;
+
+    h = RecoverHandle(pm);
+    if (h == NULL || (Ptr)*h != pm) {
+        gBlock->probe_misses++;
+        return;
+    }
+    zone = ApplicationZone();
+    if (zone == NULL) {
+        gBlock->probe_misses++;
+        return;
+    }
+    p = (unsigned char *)&zone->heapData;
+    limit = (unsigned char *)zone->bkLim;
+    if (limit <= p
+        || (unsigned long)(limit - p) > 0x01000000UL) {
+        gBlock->probe_misses++;      /* a zone that cannot be believed */
+        return;
+    }
+    gBlock->probe_scans++;
+    limit -= sizeof(CGrafPort);
+    for (; p <= limit; p += 2) {
+        /* Cheap pre-filter inline; the pure match confirms. Memory
+           Manager blocks are at least word-aligned, so step 2 cannot
+           miss a real port's start. */
+        if (*(NowPeekU32 *)(p + 2) != (NowPeekU32)h) {
+            continue;
+        }
+        {
+            CGrafPtr cand = (CGrafPtr)p;
+
+            if (!now_content_probe_match((NowContentU32)cand->portPixMap,
+                                         (NowContentU16)cand->portVersion,
+                                         cand->portRect.left,
+                                         cand->portRect.top,
+                                         cand->portRect.right,
+                                         cand->portRect.bottom,
+                                         (NowContentU32)h,
+                                         wl, wt, wr, wb)) {
+                continue;
+            }
+            if (content_slot_for((GrafPtr)cand, a5) >= 0) {
+                return;              /* already ours; nothing to count */
+            }
+            content_install_port((GrafPtr)cand, a5, generation);
+            slot = content_slot_for((GrafPtr)cand, a5);
+            if (slot >= 0) {
+                gPorts[slot].offscreen = 1;
+                gPorts[slot].pixmap = (NowPeekU32)h;
+                gBlock->probe_hits++;
+                gBlock->probe_offscreen_ports++;
+            } else {
+                /* Full table or foreign grafProcs; install said so in
+                   skipped_ports, and the miss count keeps the probe's
+                   own arithmetic honest. */
+                gBlock->probe_misses++;
+            }
+            return;
+        }
+    }
+    gBlock->probe_misses++;
 }
 
 /* ---- the GNE moment ------------------------------------------------- */
@@ -845,6 +1095,9 @@ void now_content_gne(NowPeekTable *table)
             gArmedA5 = a5;
             gBlock->counters.arms++;
             gLastWindowList = 0;      /* force the first repair */
+            gProbeSeenCount = 0;      /* a new identity owes every pixmap
+                                         a fresh chase */
+            gBlock->probe_pending_pixmap = 0;
             gBlock->display_epoch++;
             if (gBlock->display_epoch == 0) {
                 gBlock->display_epoch = 1;
@@ -875,6 +1128,7 @@ void now_content_gne(NowPeekTable *table)
             gLastWindowList = (NowPeekU32)LMGetWindowList();
             gLastRepairTicks = ticks;
         }
+        content_probe_service(a5, generation);
         break;
 
     case kNowContentVerdictOtherContext:
@@ -887,6 +1141,7 @@ void now_content_gne(NowPeekTable *table)
 
     case kNowContentVerdictNoTarget:
         gBlock->counters.refused_no_target++;
+        gBlock->probe_pending_pixmap = 0;
         gArmedA5 = 0;
         gArmedMode = kNowContentModeOff;
         gBlock->active_a5 = 0;
@@ -923,6 +1178,7 @@ void now_content_gne(NowPeekTable *table)
             gBlock->active_mode = kNowContentModeOff;
             gBlock->active_window = 0;
             gBlock->active_generation = 0;
+            gBlock->probe_pending_pixmap = 0;
         }
         if ((table->arm_active & (NowPeekU32)kNowPeekTableCapContent) != 0
             && gPortCount == 0) {

@@ -236,6 +236,18 @@ typedef struct {
     int overrun;
 
     NowContentCounters counters;
+
+    /* The GWorld probe (kNowContentModeProbe). has_probe says the block
+       is long enough to carry the probe fields at all; a reader talking
+       to an older resident sees 0 here and no probe key in the JSON. */
+    int has_probe;
+    NowContentU32 probe_pending_pixmap;
+    NowContentU32 probe_pixmaps_seen;
+    NowContentU32 probe_scans;
+    NowContentU32 probe_hits;
+    NowContentU32 probe_misses;
+    NowContentU32 probe_offscreen_ports;
+    NowContentU32 probe_stale_rows;
 } NowQDStatus;
 
 void now_qdtrace_status(const NowContentBlock *block,

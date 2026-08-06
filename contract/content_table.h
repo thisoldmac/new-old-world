@@ -121,7 +121,17 @@ enum {
 enum {
     kNowContentModeOff = 0,
     kNowContentModeCount = 1,   /* bump counters only */
-    kNowContentModeRecord = 2   /* count + append ring records */
+    kNowContentModeRecord = 2,  /* count + append ring records */
+    /* THE GWORLD PROBE (docs/gworld-probe-brief.md): record mode, plus
+       the plane follows a window blit back to the offscreen GWorld that
+       sourced it and hooks THAT port too, so the drawing that BUILT the
+       composite is recorded under the GWorld's own port key. An
+       experiment, not a shipping mode: it is armed the same way, scoped
+       to the same one process, and everything it hooks beyond the scene
+       window is counted in the probe_* fields below. An extension that
+       predates this value reads it as unrecognised and stays idle -
+       fail closed, per the rule above. */
+    kNowContentModeProbe = 3
 };
 
 /* Committed operations by bottleneck family, then the honesty counters.
@@ -214,6 +224,31 @@ typedef struct {
     NowContentU32 redraw_serviced_generation;
     NowContentU32 redraw_requests;
     NowContentU32 redraw_services;
+
+    /* --- the GWorld probe (kNowContentModeProbe), appended ----------
+       Accretive under the same rule as v2: every offset above is fixed
+       and a reader gates on `length` before looking here.
+
+       The pending cell is how the draw-time half talks to the GNE-moment
+       half WITHIN the armed process: a bits hook that sees a window blit
+       whose source is a PixMap it has not met stashes that PixMap
+       pointer here, and the next jGNE pass in the same context - the
+       only moment the Toolbox is safe - goes looking for the CGrafPort
+       that owns it and hooks it. One cell, deliberately: a second
+       sighting before service re-offers itself on a later blit. */
+    NowContentU32 probe_pending_pixmap;  /* PixMap* from a blit, 0 = none */
+    NowContentS16 probe_pending_l, probe_pending_t;  /* its bounds, for  */
+    NowContentS16 probe_pending_r, probe_pending_b;  /* the port match   */
+
+    NowContentU32 probe_pixmaps_seen;    /* distinct source pixmaps sighted */
+    NowContentU32 probe_scans;           /* zone scans actually run         */
+    NowContentU32 probe_hits;            /* offscreen ports found + hooked  */
+    NowContentU32 probe_misses;          /* sightings that led to no port   */
+    NowContentU32 probe_offscreen_ports; /* offscreen rows currently held   */
+    NowContentU32 probe_stale_rows;      /* offscreen rows dropped after
+                                            their port stopped matching -
+                                            a disposed GWorld, counted
+                                            rather than dereferenced      */
 } NowContentBlock;
 
 /* ---- ring records --------------------------------------------------
@@ -329,7 +364,10 @@ _Static_assert(offsetof(NowContentBlock, ring) == 140, "ring offset");
 _Static_assert(offsetof(NowContentBlock, arm_window)
                    == 140 + kNowContentRingCap,
                "v2 append offset");
-_Static_assert(sizeof(NowContentBlock) == 192 + kNowContentRingCap,
+_Static_assert(offsetof(NowContentBlock, probe_pending_pixmap)
+                   == 192 + kNowContentRingCap,
+               "probe append offset");
+_Static_assert(sizeof(NowContentBlock) == 228 + kNowContentRingCap,
                "block size");
 
 /* ---- the arm verdict (now_content_logic.c) -------------------------
@@ -432,5 +470,26 @@ enum {
 NowContentU32 now_content_state_deltas(const NowContentPortState *shadow,
                                        int valid,
                                        const NowContentPortState *live);
+
+/* ---- the probe's port match (now_content_logic.c) ------------------
+   The one decision in the GWorld probe a host cc can execute: given the
+   fields read at a candidate heap address, is it the offscreen CGrafPort
+   that owns the blit's source pixmap? Three tests, all required:
+     - portPixMap holds exactly the handle RecoverHandle returned for
+       the sighted PixMap (identity, not shape);
+     - portVersion carries Color QuickDraw's 0xC000 discriminator, the
+       same test now_content.c applies before ever touching grafProcs;
+     - portRect equals the pixmap's bounds, which NewGWorld guarantees
+       for a GWorld and nothing guarantees for a stray pointer that
+       happens to alias the handle value.
+   Pure by construction so the false-positive reasoning is testable: the
+   caller extracts the scalars, this decides. */
+int now_content_probe_match(NowContentU32 cand_pixmap_handle,
+                            NowContentU16 cand_port_version,
+                            NowContentS16 cand_l, NowContentS16 cand_t,
+                            NowContentS16 cand_r, NowContentS16 cand_b,
+                            NowContentU32 want_pixmap_handle,
+                            NowContentS16 want_l, NowContentS16 want_t,
+                            NowContentS16 want_r, NowContentS16 want_b);
 
 #endif /* NOW_CONTENT_TABLE_H */

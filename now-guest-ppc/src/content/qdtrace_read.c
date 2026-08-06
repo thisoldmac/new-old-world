@@ -399,6 +399,21 @@ void now_qdtrace_status(const NowContentBlock *block,
     }
 
     out->counters = block->counters;
+
+    /* The probe fields are an accretive append; the length gate is the
+       whole compatibility story, same as the v2 fields' own rule. */
+    if (block->length >= (NowContentU32)(offsetof(NowContentBlock,
+                                                  probe_stale_rows)
+                                         + sizeof(NowContentU32))) {
+        out->has_probe = 1;
+        out->probe_pending_pixmap = block->probe_pending_pixmap;
+        out->probe_pixmaps_seen = block->probe_pixmaps_seen;
+        out->probe_scans = block->probe_scans;
+        out->probe_hits = block->probe_hits;
+        out->probe_misses = block->probe_misses;
+        out->probe_offscreen_ports = block->probe_offscreen_ports;
+        out->probe_stale_rows = block->probe_stale_rows;
+    }
 }
 
 /* ---- arming --------------------------------------------------------- */
@@ -431,6 +446,8 @@ int now_qdtrace_arm_plan(const char *mode_str,
         mode = (NowContentU32)kNowContentModeCount;
     } else if (strcmp(mode_str, "record") == 0) {
         mode = (NowContentU32)kNowContentModeRecord;
+    } else if (strcmp(mode_str, "probe") == 0) {
+        mode = (NowContentU32)kNowContentModeProbe;
     } else {
         return kNowQDArmBadMode;
     }

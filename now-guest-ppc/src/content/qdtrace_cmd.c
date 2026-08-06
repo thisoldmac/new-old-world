@@ -286,7 +286,8 @@ static void run_start(const char *json, long id, char *out, long cap)
     }
     if (verdict == kNowQDArmBadMode) {
         now_qdtrace_error_json(id, "bad-mode",
-                               "mode must be \"count\" or \"record\"",
+                               "mode must be \"count\", \"record\" or "
+                               "\"probe\"",
                                out, cap);
         return;
     }
@@ -322,8 +323,10 @@ static void run_start(const char *json, long id, char *out, long cap)
              "\"requested\":true,\"armed\":false}}}",
              id, (unsigned long)plan.a5, (unsigned long)plan.window,
              (unsigned long)plan.generation, route,
-             plan.mode == (NowContentU32)kNowContentModeRecord
-                 ? "record" : "count",
+             plan.mode == (NowContentU32)kNowContentModeProbe
+                 ? "probe"
+                 : (plan.mode == (NowContentU32)kNowContentModeRecord
+                        ? "record" : "count"),
              (unsigned long)plan.expiry, (unsigned long)TickCount());
     /* `requested: true, armed: false` is not pessimism. Nothing is hooked
        until the extension's jGNE pass runs INSIDE the target process and
