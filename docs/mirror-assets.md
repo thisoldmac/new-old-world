@@ -58,6 +58,13 @@ An **explicitly unverified alternative** upstream noted and did not use:
 convert the disk image to raw, attach it read-only, and read the named
 resource fork. The wire route was proven and sufficient.
 
+**That alternative is now the route.** It was verified on 2026-08-06 and
+built into `tools/extract-assets-offline`; the step upstream would have
+run aground on — the Apple_HFS partition being an HFS *wrapper* modern
+macOS refuses, with the real volume embedded inside — is written up in
+[asset-extraction-offline.md](asset-extraction-offline.md). The two
+routes were cross-checked: the generic icons come out byte-identical.
+
 > **VERIFIED 2026-08-06, and it is far faster**: see
 > [asset-extraction-offline.md](asset-extraction-offline.md). The whole
 > System file's fork — 7,893,757 bytes, 2,162 resources — is an
@@ -106,7 +113,14 @@ Minimum set for tier 2: Chicago 12, Charcoal 12, Geneva 9 / 10 / 12.
 
 **Window frames, title bars, scroll bars and buttons are drawn
 procedurally by the Appearance Manager.** There are no chrome bitmaps to
-extract. Upstream ported the *specification* — the seven grey levels its
+extract.
+
+**Checked, 2026-08-06.** This was inherited belief until the theme file
+itself was opened offline. `Apple platinum` holds 21 accent `clut`s, 15
+preview `PICT`s, 14 `scen` settings blobs and its own Finder icon —
+**no window furniture of any kind**. The evidence table is in
+[asset-extraction-offline.md](asset-extraction-offline.md); nothing here
+needed correcting. Upstream ported the *specification* — the seven grey levels its
 own theme code uses — and kept the host renderer in sync with that,
 rather than trying to lift images.
 

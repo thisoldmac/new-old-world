@@ -14,6 +14,40 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## ANSWERED: the theme file has no chrome in it, and the pack now comes off the disk image (2026-08-06)
+
+Two questions closed, one deliberately left open.
+
+**The theme file was opened rather than assumed.**
+`System Folder:Appearance:Theme Files:Apple platinum` is an 876 KB
+resource fork holding 21 accent `clut`s, 15 preview `PICT`s (fourteen
+177×125 thumbnails plus a banner), 14 `scen` settings blobs, and its own
+Finder icon. **No window frames, no title bars, no scroll arrows, no
+buttons.** mirror-assets.md's inherited claim that Platinum chrome is
+drawn procedurally survives contact with the file; the evidence table is
+in [asset-extraction-offline.md](asset-extraction-offline.md). The one
+liftable thing in it is *specification, not art* — the 21 eight-entry
+accent ramps — and **that is not extracted yet**.
+
+**The pack is now built offline**, by `tools/extract-assets-offline`: no
+VM, no wire, no guest. 914 per-application icons (was 186), the System
+file's full icon set at both sizes, 40 cursors, 8 patterns, 42 carried
+PICTs. The two routes were cross-checked — the generic icons come out
+byte-identical to the ones the wire route committed.
+
+**Still open, and untouched by any of this: WHICH icon belongs to which
+Finder item.** Icons arrive as identity-less bits. A bigger pack does
+not help; the route is `PlotIconSuite`/`IconServicesLib` interception
+(plan 015 G4), and the entry below on identity-less blits still stands
+unchanged. The renderer's generic-by-kind fallback is pinned by a test
+so the day identity lands, it shows.
+
+**Unverified:** the menu-bar slot's process-signature join. `apps` and
+`processes` share a PSN and a `ProcessRef` reports its creator, so that
+one icon can be real identity — but **no fixture carries an
+apps/processes block**, so no render exercises it. It is covered by a
+unit test against the pack only.
+
 ## ANSWERED: the join works end to end on the control — and A2.1's pointer compare was wrong (2026-08-06, plan 013 slices A–C)
 
 The host can now place a hooked GWorld's ops inside the window its blit

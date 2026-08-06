@@ -89,27 +89,104 @@ unavailable — but it lands you in the wrapper, showing three files, and
 the embedded volume still has to be found. `machfs` and `macresources`
 are both already installed on this Mac.
 
-## What is there, and what is NOT
+## The script
 
-`System Folder:Appearance` holds `Desktop Pictures`, `Sound Sets` and
-`Theme Files`; `Theme Files` contains **`Apple platinum`** and
-`Ensemble Themes`.
+[`tools/extract-assets-offline`](../tools/extract-assets-offline) is the
+four steps above, end to end, writing the pack the host renders from
+(`mirror/host/MirrorKit/Sources/MirrorKitUI/Resources/`). It reuses the
+parsers the live-pull extractor already had
+(`mirror/tools/extract-assets/`) rather than growing a second set — only
+the transport is different, so the two routes cannot disagree about what
+an `icl8` means.
 
-That is worth opening, but do not expect chrome bitmaps in it.
-mirror-assets.md's finding stands until something contradicts it:
-**window frames, title bars, scroll bars and buttons are drawn
-procedurally by the Appearance Manager** — there are no title-bar or
-scroll-arrow images to lift, which is why the host renderer draws them
-from a ported specification. The 2026-08-06 content-plane work is
-consistent with that: themed controls arrive as CopyBits out of worlds
-AppearanceLib composes at draw time, not as stamped art.
+```
+tools/extract-assets-offline                 # default image, default pack
+tools/extract-assets-offline --reuse-work    # skip convert+carve on a rerun
+tools/extract-assets-offline --theme-report  # census the theme file, stop
+```
 
-So the honest split for a host-side asset pack is:
+It is idempotent: each output directory is cleared before it is
+rewritten, and it refuses to finish if a generic icon the renderer names
+is missing rather than shipping a half pack.
+
+**The two routes were checked against each other, not just assumed to
+agree.** The five generic icons the wire route committed —
+`folder`, `document`, `application`, `disk`, `system-folder` — came out
+of the offline route **byte-identical**, CLUT tail fix included.
+
+Measured on `now-mirror-stage.qcow2`, 2026-08-06:
+
+| | count |
+|---|---|
+| System-file icons (`icl8`+`ics8`, masked) | 127, plus 10 named generics (5 × two sizes) |
+| Cursors (`CURS` + hotspots) | 40 |
+| Patterns (`ppat` / `PAT `) | 3 + 5 |
+| Pictures (`PICT`) | 42, carried unconverted |
+| Per-app icons by `(creator, type)` | **914**, 185 creators, from 186 bundles |
+
+The app-icon number is where mounting pays. Over the wire each
+application's fork was a separate pull; here every app on the volume is
+a filesystem walk, so the sweep reaches Extensions, Apple Menu Items and
+Control Strip Modules as cheaply as the Applications folder, and both
+icon sizes come out of each bundle. The pack went from 186 app icons to
+914.
+
+**`PICT` is carried, not converted.** QuickDraw picture decoding was
+removed from macOS and nothing here draws these 42 images, so writing a
+PICT interpreter to convert them would be a large job for art no
+consumer wants. They are written as real `.pict` files with their frame
+size in the manifest; claiming a PNG we cannot produce would be worse.
+
+## What is in the theme file — opened, not assumed
+
+`System Folder:Appearance:Theme Files:Apple platinum` has an **876,024
+byte resource fork**. Opened on 2026-08-06:
+
+| type | count | what it is |
+|---|---|---|
+| `clut` | 21 | the named accent ramps — `Azul`, `Bondi`, `Copper`, `Crimson`, `Emerald`, `French Blue`, `Gold`, `Ivy`, `Lavender`, `Pistachio`, `Magenta`, `Nutmeg`, `Poppy`, `Plum`, `Rose`, `Sapphire`, `Silver`, `Teal`, `Turquoise`, `Sunny`, plus `Black & White`. **8 entries each** (72 B); `Black & White` is empty (8 B). |
+| `PICT` | 15 | fourteen at **177×125** — one per named scene — and one at **389×74**. Appearance control-panel preview thumbnails and its banner. |
+| `scen` | 14 | the named themes as settings blobs (`Mac OS Default`, `Bubbles`, `Convergence`, `Golden Poppy`, `Mono Blue`, `Rio Azul`, `Sunny`, `Roswell`, `Lollipop` 1–5, `Gray Space`), 578 B–66 KB. Not images. |
+| `icl8` `icl4` `ICN#` `ics8` `ics4` `ics#` `BNDL` `FREF` | 1 each | the theme file's **own Finder icon**. |
+| `TMPL` `CNTL` `DITL` `DLOG` `dftb` `dlgx` `tvar` `tthm` `ftag` `vers` | 1–2 each | the file's own dialog, template and version (`1.1.4`, `Mac OS 9.1`). |
+
+`Ensemble Themes` beside it is the same shape with no chrome either: 15
+`PICT`, 15 `scen`, 2 `vers`, 1 `ftag`.
+
+**The finding is confirmed, with evidence: there are no chrome
+bitmaps.** Not a title bar, not a scroll arrow, not a button — nothing
+in the file is window furniture. The only 32×32 icon in it is the
+document icon the Finder shows for the theme file itself. The Appearance
+Manager draws Platinum chrome procedurally, and the host renderer must
+keep drawing it from the ported specification;
+[mirror-assets.md](mirror-assets.md) needed no correction.
+
+What the file *does* contain that is worth having is **specification,
+not art**: the 21 accent ramps are the exact eight-step colour tables the
+Appearance Manager tints highlights and selections with, and lifting
+those numbers is the same move as porting the seven greys. That is a
+colour-table extraction, not a bitmap one, and it is not in this
+extractor yet.
+
+## The honest split for a host-side asset pack
 
 - **Extractable, real bitmaps**: icons (`icl8`/`ics8` + `ICN#`/`ics#`
   masks), cursors (`CURS`), patterns (`ppat`, `PAT `), pictures
   (`PICT`), and the font strikes (`NFNT`/`sfnt`, in the Fonts folder's
   suitcases rather than the System file).
-- **Not extractable, must stay drawn**: Platinum chrome, unless the
-  theme file proves otherwise — in which case that is a finding and
-  belongs in this file with the evidence.
+- **Extractable as numbers**: the theme file's 21 accent `clut`s.
+- **Not extractable, must stay drawn**: Platinum chrome. The theme file
+  was opened and does not contradict this.
+
+## What the extracted small icons changed on screen
+
+`ics8` is not `icl8` shrunk — it is a separate, hand-tuned drawing — so
+the renderer picks by the size of the box it is filling. Regenerating
+every capture (`NOW_RENDER_DIR`) moved the menu-bar app slot in all nine
+and the Finder list rows in three; the icon-view cells are 32×32 and
+correctly did not move. Downsampled 32s had been rendering visibly soft
+against a machine that draws them crisp.
+
+Still generic, and deliberately: **which** icon belongs to which Finder
+item. Icons arrive as bits with no identity, and nothing in this pack
+changes that.
