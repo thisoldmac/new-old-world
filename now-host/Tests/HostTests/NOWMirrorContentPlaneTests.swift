@@ -462,6 +462,7 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
 
         var value = try scene(address: 0x00a01c40)
         value.windows[0].psn = "0.29949953"
+        value.windows[0].title = "Macintosh HD"
         for index in value.windows.indices where index != 0 {
             value.windows[index].psn = "0.99999999"
         }

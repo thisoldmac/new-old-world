@@ -22,7 +22,11 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
             identity: .init(version: "test", name: "Test Host")))
     }
 
-    private func scene(address: UInt32, psn: String) throws
+    /// The canned scene, with windows[0] re-identified as the CAPTURED
+    /// window — address, psn AND title, because a render that draws one
+    /// application's content under another window's name reads exactly
+    /// like the wrong join this plane refuses to make.
+    private func scene(address: UInt32, psn: String, title: String) throws
         -> MirrorKit.Scene {
         let url = try XCTUnwrap(Bundle.module.url(
             forResource: "now-scene-ir-v1", withExtension: "json",
@@ -36,6 +40,7 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
         value.windows[0].front = true
         value.windows[0].addr = address
         value.windows[0].psn = psn
+        value.windows[0].title = title
         value.windows[0].display = nil
         return value
     }
@@ -51,11 +56,12 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
         return drain
     }
 
-    private func compose(_ fixture: String, window: UInt32, psn: String)
-        throws -> [DisplayOp] {
+    private func compose(_ fixture: String, window: UInt32, psn: String,
+                         title: String) throws -> [DisplayOp] {
         let model = plane()
-        let update = model.apply(try capture(fixture),
-                                 to: try scene(address: window, psn: psn))
+        let update = model.apply(
+            try capture(fixture),
+            to: try scene(address: window, psn: psn, title: title))
         return try XCTUnwrap(update.scene.windows[0].display,
                              "\(fixture) composed nothing")
     }
@@ -68,7 +74,8 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
 
     func testFinderListViewComposesHeadersRowsAndDates() throws {
         let display = try compose("qdtrace-drain-blitsrc-finder-list",
-                                  window: 0x00a03580, psn: "0.29949953")
+                                  window: 0x00a03580, psn: "0.29949953",
+                                  title: "Macintosh HD")
         let labels = texts(display)
         for header in ["Name", "Date Modified", "Size"] {
             XCTAssertTrue(labels.contains(header), "missing header \(header)")
@@ -83,7 +90,8 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
 
     func testFinderButtonViewComposesItsLabels() throws {
         let display = try compose("qdtrace-drain-blitsrc-finder-buttons",
-                                  window: 0x00a03580, psn: "0.29949953")
+                                  window: 0x00a03580, psn: "0.29949953",
+                                  title: "Macintosh HD")
         let labels = texts(display)
         for label in ["Applications (Mac OS 9)", "Documents", "TimBotTu"] {
             XCTAssertTrue(labels.contains(label), "missing \(label)")
@@ -98,7 +106,8 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
 
     func testDateAndTimePanelRecordsItsInterior() throws {
         let display = try compose("qdtrace-drain-cp-datetime",
-                                  window: 0x1f6fd220, psn: "0.35520514")
+                                  window: 0x1f6fd220, psn: "0.35520514",
+                                  title: "Date & Time")
         let labels = texts(display)
         for label in ["Current Date", "Current Time", "Time Zone"] {
             XCTAssertTrue(labels.contains(label), "missing \(label)")
@@ -107,15 +116,42 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
 
     func testMemoryPanelRecordsItsInterior() throws {
         let display = try compose("qdtrace-drain-cp-memory",
-                                  window: 0x1e9dffa0, psn: "0.36438017")
+                                  window: 0x1e9dffa0, psn: "0.36438017",
+                                  title: "Memory")
         XCTAssertTrue(texts(display).contains("Startup Memory Tests"))
+    }
+
+    /// Sherlock 2 is the boundary case, and this gate pins the boundary
+    /// rather than pretending it away. Its whole interior — channel
+    /// picker, list rows, radio labels — is built in a transient
+    /// offscreen world per repaint (measured: 7 full-window sights, 7
+    /// misses, 0 hooks), the same wall as Appearance, so none of it can
+    /// cross until slice D0's resident NewGWorld patch lands. What DOES
+    /// cross, and must keep crossing: the window stream's own drawing —
+    /// the Edit… button's well, the search field's caret — and the
+    /// full-window blit that renders as the honest unavailable hatch
+    /// (the BMP background is allowed to hatch; a blank window is not).
+    func testSherlockWindowStreamCrossesAndTheCompositeHatches() throws {
+        let display = try compose("qdtrace-drain-sherlock",
+                                  window: 0x1e9a0780, psn: "0.35520514",
+                                  title: "Sherlock 2")
+        XCTAssertTrue(display.contains {
+            $0.op == "rrect" && $0.rect == [411, 3, 461, 23]
+        }, "the Edit… button's well crosses")
+        XCTAssertTrue(display.contains {
+            $0.op == "rect" && $0.rect == [33, 116, 34, 132]
+        }, "the search field's caret crosses")
+        XCTAssertTrue(display.contains {
+            $0.op == "bits" && $0.dst == [0, 0, 490, 448]
+        }, "the unhookable composite stays visible as geometry to hatch")
     }
 
     // MARK: - NOW's own window, and retention across a retarget
 
     func testNowWindowComposesItsWorkshop() throws {
         let display = try compose("qdtrace-drain-now-window",
-                                  window: 0x1ecb4550, psn: "0.29360131")
+                                  window: 0x1ecb4550, psn: "0.29360131",
+                                  title: "New Old World")
         let labels = texts(display)
         XCTAssertTrue(labels.contains("Screenshots"))
         XCTAssertTrue(labels.contains(
@@ -129,27 +165,34 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
     func testCapturedWindowsStayComposedAcrossARetarget() throws {
         let model = plane()
 
-        var first = try scene(address: 0x1ecb4550, psn: "0.29360131")
-        /* The canned scene's windows[1] is the Desktop; a display attached
-           there satisfies the plane and renders nowhere. Put the Finder
-           on a real window. */
-        let finderIndex = try XCTUnwrap(first.windows.indices.first {
-            $0 != 0 && first.windows[$0].title != "Desktop"
+        /* Each capture composes into a window carrying ITS name: NOW's
+           Workshop into the scene's own 'New Old World' window, the
+           Finder into a 'Macintosh HD'-titled one. A render that put one
+           application's content under another's title read exactly like
+           the wrong join this plane exists to refuse. windows[1] (the
+           Desktop) attaches a display but renders nowhere, so neither
+           capture goes there. */
+        var first = try scene(address: 0x00a01c40, psn: "0.29949953",
+                              title: "Macintosh HD")
+        let nowIndex = try XCTUnwrap(first.windows.indices.first {
+            first.windows[$0].title == "New Old World"
         })
-        first.windows[finderIndex].addr = 0x00a01c40
-        first.windows[finderIndex].psn = "0.29949953"
+        first.windows[nowIndex].addr = 0x1ecb4550
+        first.windows[nowIndex].psn = "0.29360131"
+        first.windows[0].front = false
+        first.windows[nowIndex].front = true
         _ = model.apply(try capture("qdtrace-drain-now-window"), to: first)
 
         var second = first
-        second.windows[0].front = false
-        second.windows[finderIndex].front = true
+        second.windows[nowIndex].front = false
+        second.windows[0].front = true
         let update = model.apply(
             try capture("qdtrace-drain-blitsrc-finder"), to: second)
 
-        let now = try XCTUnwrap(update.scene.windows[0].display,
+        let now = try XCTUnwrap(update.scene.windows[nowIndex].display,
                                 "NOW's window lost its display on retarget")
         XCTAssertTrue(texts(now).contains("Screenshots"))
-        let finder = try XCTUnwrap(update.scene.windows[finderIndex].display)
+        let finder = try XCTUnwrap(update.scene.windows[0].display)
         XCTAssertTrue(texts(finder).contains("Documents"))
 
         if let out = ProcessInfo.processInfo.environment["NOW_RENDER_OUT"] {

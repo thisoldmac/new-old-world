@@ -112,7 +112,15 @@ public enum DisplayReplay {
                 let bounded = bitsClip.intersection(content)
                 if !bounded.isNull { draw.clip(to: Path(bounded)) }
             }
-            drawUnavailableBits(in: draw, frame: rectFrom(d, pt: bitsPoint))
+            let frame = rectFrom(d, pt: bitsPoint)
+            /* Icon-sized blits are NOT hatched here: they get the
+               extracted generic icon in the second pass, IN STREAM
+               ORDER, because a composite build opens with a full-window
+               erase and anything this pass drew under it is wiped. The
+               big placeholders stay in this pass for the original
+               reason - they must never cover text the guest reported. */
+            if Self.iconSized(frame) { continue }
+            drawUnavailableBits(in: draw, frame: frame)
             drew = true
         }
 
@@ -165,7 +173,21 @@ public enum DisplayReplay {
                 draw.stroke(path, with: .color(fg), lineWidth: 1)
                 drew = true
             case "bits":
-                break // unavailable geometry was painted below this pass
+                /* An icon-sized blit gets the extracted generic icon (the
+                   host's own icl8 pack) rather than nothing: identity is
+                   deferred - PlotIconSuite interception - but a
+                   recognisable stub at the right position beats an empty
+                   cell. Drawn here, in stream order, so the composite's
+                   own erases precede it instead of wiping it. */
+                guard let d = op.dst, d.count == 4 else { break }
+                let frame = rectFrom(d, pt: pt)
+                if Self.iconSized(frame),
+                   let icon = IconAtlas.namedIcon("document") {
+                    let draw = drawingContext()
+                    draw.draw(Image(decorative: icon, scale: 1), in: frame)
+                    drew = true
+                }
+                // larger geometry was hatched before this pass
             case "rect", "rrect", "oval", "rgn":
                 guard let r = op.rect, r.count == 4 else { continue }
                 let rect = rectFrom(r, pt: pt)
@@ -188,6 +210,15 @@ public enum DisplayReplay {
             }
         }
         return drew
+    }
+
+    /// Roughly square and within the classic icon range (16×16 list rows
+    /// up to 32×32 icon view, with margin for masks and badges).
+    static func iconSized(_ frame: CGRect) -> Bool {
+        guard frame.width >= 12, frame.width <= 48,
+              frame.height >= 12, frame.height <= 48 else { return false }
+        let aspect = frame.width / max(frame.height, 1)
+        return aspect > 0.7 && aspect < 1.4
     }
 
     private static func rgb(_ c: [Int]) -> Color {
