@@ -16,6 +16,23 @@
       "residentLifecycle": "active",
       "shutdown": "guest-clean",
       "sourceManifest": "41675da7f7c4007c45e3f173923888299321ded0"
+    },
+    {
+      "at": "2026-08-06T01:19:02-0400",
+      "branch": "claude/mirror-thread-content",
+      "commit": "50eb855a22f978fdba1d04d9d85350df52ee2c22",
+      "extBuildFingerprint": "97fb3f546ea169b1bf7d95242eb3c8e89eef9dac",
+      "extDigest": "169303d7fe31aea44f909154775a0d99b8a5c524",
+      "image": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "imageBytes": 632815616,
+      "imageSha256": "0785871ab82aa3dd620d5142db0edf09f7706558c9985292bcfa64175cc31be9",
+      "kind": "bake",
+      "previousImage": "now-mirror-stage.qcow2.bak-20260806-3",
+      "qemuImgCheck": "clean",
+      "residentCapabilities": 127,
+      "residentLifecycle": "active",
+      "shutdown": "guest-clean",
+      "sourceManifest": "72f0accfe49f6931a784b91a7b32919b2a27bf5c"
     }
   ]
 }
