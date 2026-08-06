@@ -54,6 +54,11 @@ add_executable(NowExt
     src/now_event_logic.c
     src/now_content_logic.c
     src/now_liveness.c
+    # P6's entry shim. A Time Manager task is a REGISTER-based callback
+    # (its record arrives in A1), so it needs assembly for exactly the
+    # reason the jGNE filter above does - the file's header carries the
+    # finding and the boot hang it explains.
+    src/now_liveness_tm.S
     # P4, the act plane: its own translation unit and its own six trap
     # trampolines. Separate files, no cross-plane calls - review enforces
     # what tbt's sibling INIT binaries used to.

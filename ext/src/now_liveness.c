@@ -74,20 +74,25 @@ enum {
     kLivenessTickMs = 5000
 };
 
-/* **Everything the task needs travels IN the task record, and no global
-   is touched from interrupt time.**
+/* Everything the task needs travels IN the task record.
 
-   Found by running it, 2026-08-05: the first build kept the table
-   pointer in a static and the counter stopped at 1 — the task fired once
-   and never usefully again. A Time Manager task is entered with an
-   ARBITRARY A5, and Retro68 addresses globals through A5, so from
-   interrupt time this component's statics are somebody else's memory.
-   Reading them is luck; writing them is corruption.
+   The Time Manager hands the task its own record back, so a tick needs
+   no ambient state at all — which is the discipline an interrupt-time
+   context wants regardless of whether it strictly needs it here.
 
-   The Time Manager hands the task its own record back, so anything
-   reachable from that pointer is reachable without A5 at all. That is
-   the whole fix, and it is why this struct exists rather than three
-   more statics. */
+   **2026-08-05, corrected: the reason first written here was wrong, and
+   is left visible because it was a plausible wrong answer.** The first
+   build's counter stopped at 1 and that was blamed on an arbitrary A5,
+   on the theory that Retro68 addresses globals through A5. It does not,
+   in THIS component: `_start` calls RETRO68_RELOCATE and never frees the
+   globals, so the flat blob's statics live at fixed system-heap
+   addresses. The proof is already in the tree — `now_ext_gne.S` reaches
+   `gNowExtOldGNEFilter` with an absolute load, from inside every
+   application's context, and the anchor plane's `gLastA5` fast path
+   works across processes. Both would be luck if the A5 story held.
+
+   The real defect was the callback ABI, and it is now in
+   `now_liveness_tm.S`. */
 typedef struct {
     TMTask task;                /* first: the Time Manager owns this */
     NowPeekTable *table;
@@ -96,6 +101,9 @@ typedef struct {
 
 static LivenessTask gLivenessTask;
 static Boolean gTaskInstalled = false;
+
+/* The assembly shim (now_liveness_tm.S) the Time Manager actually calls. */
+extern void now_liveness_tm_entry(void);
 
 /* What the application published, or nothing. Gated on length and on the
    format word beside it - the accretive rule every other plane follows,
@@ -115,21 +123,34 @@ static const NowPeekLivenessEndpoint *published_endpoint(NowPeekTable *table)
     return &table->endpoint;
 }
 
-static pascal void liveness_tick(TMTaskPtr task)
+/* Called from the assembly shim (`now_liveness_tm.S`), which is what
+   turns the Time Manager's register-based call into this ordinary C one.
+   External linkage for that reason, and named for the component rather
+   than the file so the symbol reads the same from assembly. */
+void now_liveness_tick(TMTaskPtr task)
 {
-    /* **Nothing here may allocate, block, move memory, or touch a
-       global.** This is interrupt time with an arbitrary A5: the Time
-       Manager fires it whether or not any application is being
-       scheduled — which is the entire reason it exists — and everything
-       it needs comes through the record it is handed.
+    /* **Nothing here may allocate, block, move memory, or call anything
+       that could.** This is interrupt time: the Time Manager fires it
+       whether or not any application is being scheduled — which is the
+       entire reason it exists — and everything it needs comes through the
+       record it is handed.
+
+       The magic check is not defensive habit. If this pointer is ever
+       wrong again, the failure mode is a five-second write into somebody
+       else's memory during boot, which is precisely the shape that cost
+       2026-08-05: a wrong pointer must cost a silent tick, not a machine.
 
        Re-primed at the end rather than the start, so a long tick can
        never overlap itself. */
     LivenessTask *self = (LivenessTask *)task;
-    NowPeekTable *table = (self != NULL) ? self->table : NULL;
+    NowPeekTable *table;
     const NowPeekLivenessEndpoint *want;
 
-    if (table != NULL) {
+    if (self == NULL) {
+        return;                       /* nothing to re-prime, either */
+    }
+    table = self->table;
+    if (table != NULL && table->magic == (NowPeekU32)kNowPeekTableMagic) {
         table->liveness_ticks++;
         want = published_endpoint(table);
         self->visible_epoch = (want != NULL) ? want->endpoint_epoch : 0;
@@ -144,31 +165,29 @@ void now_liveness_install(NowPeekTable *table)
 {
     if (gTaskInstalled || table == NULL) return;
 
-    /* **DISARMED, and this is a measured refusal rather than caution.**
-       2026-08-05: with the A5 defect above fixed — so the task fired
-       every 5 s instead of once — a cold boot never completed. The Finder
-       drew an empty menu bar and stopped, the anchor worker never came
-       up, and the machine was still unreachable five minutes later. An
-       extension that can hang a Macintosh at startup is the worst thing
-       this component can be, and it is recoverable only by pulling the
-       file, so it does not ship armed while the cause is unknown.
+    /* **RE-ARMED 2026-08-05**, after the boot hang that disarmed it was
+       diagnosed from the headers rather than guessed at. It hung because
+       `tmAddr` pointed straight at a C function, and a Time Manager task
+       is called with its record in A1 — so the C function read a stack
+       argument that belonged to whatever it interrupted, wrote the
+       counter through it, and re-primed it. `now_liveness_tm.S` carries
+       the finding and the entry point; the shim is the fix.
 
-       The cause is NOT established. The leading suspect is that this task
-       needs the same globals-world shim the jGNE filter has in assembly
-       (`now_ext_gne.S`) — a flat 68K INIT's callbacks run with an
-       arbitrary A5, and `PrimeTime` re-arming from inside a standard Time
-       Manager completion is the other candidate. Both are testable, and
-       neither has been tested.
-
-       The vehicle stays in the tree because the A5 lesson above is worth
-       more than the file, and because whoever picks this up should start
-       from a diagnosis rather than a blank page. Deleting the line below
-       arms it — do that on a clone, never on an image anyone needs. */
-    return;
+       The rule the disarm was made under still stands and is worth
+       restating where it can be acted on: an extension that can hang a
+       Macintosh at startup is the worst thing this component can be,
+       recoverable only by pulling the file from a machine that will not
+       boot. If this ever hangs a boot again, disarm it HERE (a `return`
+       on this line) rather than reasoning about it on someone's image. */
     table->liveness_ticks = 0;
     gLivenessTask.table = table;
     gLivenessTask.visible_epoch = 0;
-    gLivenessTask.task.tmAddr = NewTimerProc(liveness_tick);
+    /* Cast, not NewTimerProc. On classic 68K NewRoutineDescriptor is a
+       no-op macro returning its ProcPtr, so the two are the same address
+       — but writing the cast says out loud that this field holds bare
+       68K code with a non-C ABI, which is the fact the shim exists for.
+       Same shape, and same reason, as the jGNE install in now_ext.c. */
+    gLivenessTask.task.tmAddr = (TimerUPP)now_liveness_tm_entry;
     gLivenessTask.task.tmWakeUp = 0;
     gLivenessTask.task.tmReserved = 0;
     InsTime((QElemPtr)&gLivenessTask.task);
