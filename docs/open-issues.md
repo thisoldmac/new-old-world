@@ -342,6 +342,45 @@ What a fix has to decide, in the order it should be decided:
    test over `kNowCommandDocs` (`cmd_help.c`) asserting every verb
    either has an explicit console case or provably fits the generic
    path. Without one this returns the next time a verb grows a row.
+
+**FIXED 2026-08-06, emulator only (a153d718) — and the diagnosis above
+was half wrong, which is why it stays.** The 512-byte buffer is real and
+was fixed, but it was the *second* limit, not the cause. The cause is
+that `console_model.c`'s fallback read a top-level `message` out of the
+reply and treated its absence as a failure — and **no PowerPC verb has
+ever carried a `message` on success.** So the branch that ran for every
+command that WORKED was the failure branch, and a verb's own words
+reached the screen only when it had refused. This entry reasoned from
+`putstat`'s size because `putstat` was the verb in hand; the shape of
+the bug was not "one verb is too big" but "the renderer understands only
+a reply shape no verb emits on success".
+
+Six verbs were measured printing "command failed" while working:
+`putstat`, `axsnap`, `axtree`, `elements`, `mouseloc`, `observe`.
+Underneath it, `wire.c` sized a `command.result` at 3072 bytes and
+`console_model.c` at 512, and neither number said so — `kNowCommandResultCap`
+is the one number now, which is the "state a limit once, where both
+sides read it" rule from AGENTS.md arriving a third time.
+
+Question 1 above — *which verbs are affected* — is answered by not
+needing to be: `console_reply.c` is one Toolbox-free renderer rather
+than eighteen console cases, and `console_reply_test.c` runs it over
+every reply shape the guest emits.
+
+Question 3 — *a gate that would have caught it* — is the durable part.
+**`CommandParityTests` could not have caught any of this, and no version
+of it structured that way could.** It compares dispatch tables, and a
+table says whether a verb is PRESENT, never whether its answer renders.
+Three checks now close that gap, all mutation-verified: the console must
+delegate to the renderer and must not decide for itself that a command
+failed; both faces must size a reply from the same constant; and every
+`ok:true` reply must open an `output` object. The rule generalises past
+this project — see [command-parity.md](command-parity.md), "Present on
+both faces is not the same as working on both".
+
+Verified at both faces on an emulated G4, build `fea48baffe8f`, wire
+5510, watched fail first on `c5c39f61dbbf`. **Not metal-verified.**
+
 ## BROKEN: no verb reached through the PowerPC console's fallback can be given an ARGUMENT (2026-08-06)
 
 Found while fixing the renderer half of the same seam (see
@@ -626,6 +665,23 @@ than the ten-second lease, because optional planes were holding the
 scene cycle open for 12.5 s at a time. The modal only made the Finder
 slow enough for it to show. See the `decode_ms` entry at the top of this
 file; it is unfixed, and deliberately so pending a design decision.
+
+**2026-08-06, later still — the guest half of it IS fixed, and this
+entry and the scene-gap entry above were describing one defect from two
+ends.** They gave different proximate causes for the same lapse — that
+one says "thirty to forty seconds of acts with no scene", this one says
+"12.5 s cycles" — and both are true of the same mechanism: **only
+`scene.request` renewed the ten-second OWNER lease**, so any reason the
+host stopped asking within ten seconds disarmed the planes, whether the
+reason was act cadence or a stalled cycle. `4b972ade` makes renewal ride
+any inbound host frame, so a live host no longer lapses the lease at
+all, and a scene waits briefly for the arm echo rather than walking
+blind. That covers the Cancel refusal.
+
+What it does **not** close is the `decode_ms` inversion itself: the host
+can still spend 12.5 s in a cycle, and a lease that no longer lapses is
+a guest making the best of a host that stalls. Both halves are owed.
+Emulator only; never on metal.
 
 ## MEASURED, and the answer is DON'T BUILD ON IT: how long the content plane takes to arm (2026-08-06)
 
@@ -942,6 +998,65 @@ inbound `refuse` into a `default:` arm, now logs it and finishes, since
 
 The original entry, unedited:
 
+## FIXED: `latencyMs` was never a measurement — it could not see anything shorter than a tick (2026-08-06)
+
+Recorded 2026-08-06 during the durability pass, because it is the
+instrument behind two of the wrong answers already in this file and it
+had no entry of its own. The defects it caused are written up; the
+defect *in the instrument* was not.
+
+**The mechanism.** `scene_collect.c` computed the scene's only timing
+number as
+
+    out->latency_ms = (long)((TickCount() - t_start) * 1000UL / 60UL);
+
+`TickCount()` advances at 60 Hz. The whole field is therefore quantised
+to **~16.6 ms**, and anything faster than a tick reads as 0 or as 17 —
+not approximately, but *identically*, for every phase of a walk that we
+now know runs in hundreds of microseconds. A scene that spends 290 µs in
+`controls` and one that spends 5,090 µs in `controls` were the same
+number.
+
+**What it cost.** Every question about guest cost was answered by
+differencing two runs of this one field, and the differences were inside
+the quantisation more often than not:
+
+- **The menu-bar misattribution.** A ~1 s self-front scene was confidently
+  blamed on `collect_self_menubar`. The microsecond breakdown then put
+  the menu bar at **0.1%** of the walk and a `FindControl` grid sweep at
+  ~95%. Written up above, at *"NOW's own window cost ~1 s of every
+  scene, and the suspect was the wrong one"*.
+- **The 115 ms round trip could not be decomposed at all.** With a
+  tick-resolution clock the sleep, the notice delay and the work were
+  one undifferentiated number, and the entry above (*"the 115 ms round
+  trip was the guest's own sleep"*) only became answerable once
+  `wirestat` grew histograms of the guest's own service interval and of
+  Open Transport's announce-to-read delay. `notice` at a 48.5 ms mean is
+  three ticks; it is not a thing this field could ever have reported.
+
+**The repair is a better instrument, not a better estimate.**
+`meta.phases` — microseconds, eight non-overlapping phases, **permanent
+and additive on the wire** rather than bolted on for one investigation.
+It calibrates the clock's own cost at startup and publishes it
+(`clockUs`), so it says what it costs rather than asking to be believed,
+and its seams are placed where their count is bounded by processes and
+windows, never by controls or menu items. `scene_phase.h` carries the
+reasoning; `scene_phase_test.c` drives the arithmetic on a host compiler
+with an injected clock.
+
+`latencyMs` still ships, because a consumer may hold an old reader, and
+it is excluded from the scene digest along with `seq`, `capturedAt` and
+`walkMs` (`scene_digest.h`) — a clock reading is not part of what the
+scene *is*. **Do not reason from it.** If a number matters, read
+`meta.phases`.
+
+**The transferable rule** is rule 14 in
+[mirror-measurement-method.md](mirror-measurement-method.md): a clock
+cannot measure anything shorter than its own tick, and a clock's
+resolution belongs beside its first number. TESTED; the phase clock has
+**never run on metal**, where `Microseconds` is a real trap on a real
+68K/PPC bus rather than an emulated one.
+
 ## FIXED on an emulator, NEVER ON METAL: NOW's own window cost ~1 s of every scene, and the suspect was the wrong one (2026-08-06)
 
 **The symptom.** With NOW frontmost — which is what a person does the
@@ -1073,7 +1188,14 @@ AGENTS.md says the file family is symmetric; if that governs here, the
 contract's prose should say so explicitly rather than leaving two
 implementations to guess. Settle the prose before writing the code.
 
-## UNSETTLED: the host app reported as always-on-top; no window level exists to cause it (2026-08-06)
+## FIXED in the host, UNVERIFIED by any drive: the host app reported as always-on-top; no window level exists to cause it (2026-08-06)
+
+*(Re-headed 2026-08-06 during the durability pass. It stood as
+"UNSETTLED" while its own body recorded a landed fix — the ledger's two
+words are BROKEN and UNVERIFIED, and a third one invented for a single
+entry is how a fixed thing goes on reading as an open question. The fix
+is real and the verification is genuinely owed, which is exactly what
+"FIXED in the host, UNVERIFIED by any drive" says.)*
 
 Michelle: the macOS app window floats above other applications. What was
 measured, without driving anything:
@@ -1294,9 +1416,20 @@ rather than fired and forgotten:
 
 ## CLOSED: the resident channel dials, speaks, and holds the session through a 108-second starvation (2026-08-06)
 
-Plan 012 § 4, and the whole plane it completes. A real Macintosh now
-opens a SECOND connection from its optional resident component and keeps
-it alive while every application on the machine is starved.
+Plan 012 § 4, and the whole plane it completes. A Macintosh — **an
+emulated G4 under OS 9, never yet a real one** — opens a SECOND
+connection from its optional resident component and keeps it alive while
+every application on the machine is starved. *(Opening reworded
+2026-08-06: it read "a real Macintosh now opens", which this entry's own
+closing paragraph contradicts. The Macintosh is real in the sense that
+matters to the code and emulated in the sense that matters to a claim,
+and only the second sense belongs in a first sentence.)*
+
+**Two starvation numbers appear in the record and both are right.** This
+entry's **108.8 s** is the instrumented run measured here; plan 012's
+**110 s** is the end-to-end run driven against the host application. They
+are different runs of the same behaviour, not a disagreement, and
+neither has been repeated on metal.
 
 **What was watched, on a fresh cold-booted OS 9 clone (mac99, guest
 build `4fe6d946e1a0`).** Two connections arrived from the same address a
@@ -2603,6 +2736,42 @@ up for the fix — the cold boot cannot run unattended today. The reply an
 agent now gets for a held act (`id: "held"`, `outcome: queued`,
 `awaitsObservation: true`) has never been seen by a real MCP client.
 
+## FIXED: `now/` had no commit hook at all, while AGENTS.md said one was enforcing the rules (2026-08-06)
+
+Found while building the extension bake gate, and worth its own heading
+because the bake gate is not the interesting half.
+
+`AGENTS.md` § Git says a commit on `main` is refused, and names the
+mechanism: *"This is enforced (`.githooks/pre-commit`, plus a PreToolUse
+hook on `Write`/`Edit`/`Bash`)"*. `CLAUDE.md` repeats it. **The file did
+not exist.** `.githooks/pre-commit` was added to this repository on
+2026-08-06 by `543b06af`; `git log --diff-filter=A` on the path returns
+that one commit and nothing before it. For however long that sentence
+had been in AGENTS.md, half of a two-part enforcement was prose. The
+PreToolUse hook is real, which is why nobody noticed — agents were
+stopped, so the floor appeared to hold, and a human committing on `main`
+from a terminal would have met nothing.
+
+The durable shape: **a rule that names its own enforcement is read as
+enforced, and nothing re-checks the naming.** Every other stale-oracle
+finding in this file is about data going stale; this one is about a
+*claim of mechanism* going stale, which is worse, because the whole
+point of writing the mechanism down was so a reader would not have to
+check.
+
+`git config core.hooksPath .githooks` is not automatic in a fresh clone
+or a fresh worktree, so the file existing is still not the same as the
+hook running — `tools/setup-hooks` in the parent tree is the one-time
+step. Anyone auditing this should run the check rather than read this
+paragraph, which is the entire lesson repeating itself.
+
+The gate that occasioned the discovery — a resident commit refusing to
+land without a verified, cleanly shut down image, with an explicit
+recorded deferral — is written up under *"That rule went unfollowed for
+three days, and is now enforced (2026-08-06)"*, inside the CYCLE 25
+section below. It is filed by cycle rather than by date, which is why it
+is hard to find; this heading is the pointer.
+
 ## Three rig facts that each read as something else (2026-08-05)
 
 None of these is a defect in NOW; all three cost time because they
@@ -2700,6 +2869,31 @@ down here.
   and it would unblock keyboard driving generally. Even if it worked it
   would not give a shutdown: a USB keyboard has no power key here either,
   and Shut Down has no Command-key equivalent in the Finder.
+
+**A fourth, added 2026-08-06: sessions collide on wire ports, and the
+collision is silent in both directions.** Several agent sessions were
+working this tree at once, each spinning up its own guest, and the port
+each dialled was chosen by habit rather than by allocation. Two
+consequences were observed and neither announced itself:
+
+- **A `quit` landed on another session's guest.** The wire carries no
+  identity a sender checks before acting, so a control verb sent to
+  "the guest on port N" reaches whichever guest is on port N. From the
+  sender's side it succeeded. From the other session's side a machine
+  died mid-task for no reason it could see.
+- **A guest answered that was not the build under test.** This is the
+  same failure AGENTS.md already names for the metal gates — *"any
+  session's VM, running any branch's build, can answer your listener"* —
+  arriving on the emulator, where it is more likely rather than less,
+  because emulated guests are cheap and everyone starts one.
+
+The metal rule is the cure and it generalises: **pick a port nothing
+else is dialling, and assert a capability only the build under test has
+before believing anything it says** (`requireTheBuildUnderTest()` is the
+pattern). A session should also say which port it took. Michelle's own
+stack sits on wire 5540 and is not to be touched;
+`docs/68k-metal-runbook.md` is the procedure for telling contention from
+a defect, and it applies here even though no metal is involved.
 
 ## BROKEN: the anchor plane is active and binds nothing (2026-08-05)
 
