@@ -14,7 +14,7 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
-## PART-ANSWERED: the GWorld mechanism is sound; the chase's control is not yet honest (2026-08-06)
+## ANSWERED: a foreign process's offscreen GWorld is hookable, and its labels are readable (2026-08-06)
 
 `qdtrace start mode=probe` exists and is emulator-run: it sights a blit
 into the armed window, then sweeps the application and system zones for
@@ -40,13 +40,33 @@ Every geographic assumption the chase makes also holds: port in the
 APPLICATION zone, `portRect == bounds`, `grafProcs` NULL at allocation,
 `RecoverHandle` agreeing; `useTempMem` moves only the pixels.
 
-**STILL OPEN — the chase.** With NOW armed, 7 sightings and 14 zone
-scans found 0 candidates. Since the spike proves the port is in a swept
-zone and shaped as expected, the suspect is now the SIGHTING rather
-than the search: the 7 pixmaps chased were probably never the preview
-GWorld's, so the control may have tested nothing. **No outcome is
-claimed for any application** until a control run demonstrably chases
-the right blit.
+**THE CHASE WORKS**, proven on a purpose-built control
+(`tools/guest-gworld/src/loop.c`, one GWorld held for the process's
+life) whose port address the probe matched exactly. Then on the Finder:
+holding the hook across a reflowing resize, its offscreen port gave 8
+text + 24 rect + 11 rgn + 8 bits while the window port gave 4 opaque
+blits — and the text carries real filenames at true pens ('Documents'
+[280,67], 'TimBotTu' [282,131], 'TBT' [40,195], header '10 items, 3.21
+GB available' [135,14]). **Window icon-view labels are recoverable as
+semantic text**, composable host-side with no pixels on the wire.
+Corpus finding: `gworld-offscreen-ports-are-hookable`.
+
+THREE DEFECTS had to be cleared, and each hid the next: small blits
+stealing the chase slot (fixed by largest-wins); a dereferenced pixmap
+pointer carried across the draw-time/event-loop gap, when LockPixels
+relocates the RECORD out of the app zone (fixed by matching on SHAPE);
+and — the one that masked both fixes — a read guard bounded to
+`[0x1000, MemTop]`, where MemTop is ~14.8 MB and application heaps sit
+~512 MB above it, so it rejected every candidate it ever examined.
+
+**STILL OPEN.** Icons arrive as identity-less `bits` while labels
+arrive as text, so full host-side composition still needs
+`PlotIconSuite`/`IconRef` interception. The broad spread (list view, a
+control panel, a double-buffered app) is unrun: after a long session
+the scene walk stops returning Finder windows with addresses, so phases
+lose their target — a fresh VM per phase is needed. Ring pressure is
+real: a composite-heavy app overran the 64 KiB ring inside one settle
+(lostBytes 835410).
 
 **Paid for on the way**: the scan crashed the Finder. It dereferenced a
 `portPixMap` read out of arbitrary heap bytes with only a NULL/odd

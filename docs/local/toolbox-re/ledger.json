@@ -244,7 +244,13 @@
       "at": "2026-08-06T04:18:24-0400"
     }
   ],
-  "blockers": [],
+  "blockers": [
+    {
+      "phase": "P4",
+      "why": "The broad spread (list view, control panel, double-buffered app) is incomplete: after a long session the scene walk stops returning Finder windows with addresses - the anchor binding goes stale - so phases cannot find their target. Verified by screendump that the windows ARE open. Needs a fresh VM per phase rather than chaining phases on one boot.",
+      "at": "2026-08-06T04:22:37-0400"
+    }
+  ],
   "handoff": {
     "text": "STATE AT 2026-08-06 ~05:45. The GWorld probe WORKS end to end and outcome 1 is measured: a resident, from outside, finds and hooks another process's offscreen GWorld and records the drawing that builds a composite - proven on a purpose-built control (tools/guest-gworld/src/loop.c), where one drain separated the window port (612 bits ops, opaque) from the offscreen port (60 text carrying the real string 'offscreen row' at true pens, 70 rect, 10 line).\n\nTHREE DEFECTS FOUND AND FIXED, in the order they were hiding each other: (1) the sighting let small blits steal the chase slot - fixed by largest-wins; (2) the chase carried a DEREFERENCED pixmap pointer across the draw-time/event-loop gap, but LockPixels relocates the PixMap RECORD out of the app zone, so handle, deref and baseAddr are all snapshots - fixed by matching on SHAPE (bounds + rowBytes + portRect); (3) THE BIG ONE - the range check added to stop the scan crashing the Finder bounded reads to [0x1000, MemTop], and MemTop here is ~14.8 MB while app heaps live at ~512 MB, so it rejected every candidate and silently disabled the plane through both earlier fixes. Now bounded by ApplicationZone/SystemZone.\n\nTHE FINDER: its offscreen port IS findable (lastMatch 0x1f472e60, offscreenPorts 1) but no ops were captured from it, because the composite is built before the hook goes in. NEXT STEP: hold the hook (do NOT re-arm - that bumps the generation and unhooks) and force a repaint, then drain. My last attempt closed the Finder window with repeated winact resizes; reopen one first. If a post-hook repaint yields no offscreen ops, the transient hypothesis is live - the Finder imports NewGWorld and DisposeGWorld but NO UpdateGWorld, so it cannot resize a world in place and likely destroys and recreates per repaint.\n\nALSO OPEN: PlotIconSuite changes path when grafProcs is set (prior-art.md), so icon visibility may be self-fulfilling; the CarbonLib-vs-InterfaceLib CopyBits link-order question is answerable statically from a built PEF; ring overruns fast on a composite-heavy app (lostBytes 835410 in one settle).\n\nDELIVERABLES: docs/local/toolbox-re/{PLAN,REFERENCE,prior-art}.md, ledger.json (31 rows, all with provenance), anatomy-report.txt. Rig: guest FS mounts read-only on the host (see REFERENCE section 1); tools/pef.py reads any PEF's imports/exports.",
     "at": "2026-08-06T04:14:21-0400"
