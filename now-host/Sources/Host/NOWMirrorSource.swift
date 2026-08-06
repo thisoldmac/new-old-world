@@ -1050,11 +1050,20 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
            either side of it. */
         let typesByName = Dictionary(uniqueKeysWithValues:
             Self.parseIconTypes(art.truncated ? "" : (art.value ?? "")))
-        return roster.map { item in
-            guard let pair = typesByName[item.name] else { return item }
+        return Self.applyingArt(roster, types: typesByName)
+    }
+
+    /// The item roster and the type pass, joined by name — the one place a
+    /// file's type and creator are attached to the icon that will be drawn
+    /// with them.
+    static func applyingArt(_ items: [MirrorKit.Scene.DesktopItem],
+                            types: [String: (String, String)])
+        -> [MirrorKit.Scene.DesktopItem] {
+        items.map { item in
+            guard let pair = types[item.name] else { return item }
             var out = item
-            out.type = Self.osType(fromAppleScript: pair.0)
-            out.creator = Self.osType(fromAppleScript: pair.1)
+            out.type = osType(fromAppleScript: pair.0)
+            out.creator = osType(fromAppleScript: pair.1)
             return out
         }
     }
@@ -1335,16 +1344,17 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                 continue
             }
         }
-        return items.map { item in
-            guard let pair = types[item.name] else { return item }
-            var out = item
-            out.type = osType(fromAppleScript: pair.0)
-            out.creator = osType(fromAppleScript: pair.1)
-            return out
-        }
+        return applyingArt(items, types: types)
     }
 
-    private static func parseIconTypes(_ raw: String)
+    /// The type pass on its own, unquoted before anything is joined to it.
+    ///
+    /// It must be parsed from its OWN blob. Appending it to a page's output
+    /// and parsing the pair together leaves the page's closing quote and the
+    /// type pass's opening quote inside the text, so the first `F` row reads
+    /// as `"F` and is silently dropped — one desktop item losing its art with
+    /// nothing to show for it.
+    static func parseIconTypes(_ raw: String)
         -> [(String, (String, String))] {
         let text = unquote(raw)
         return text.components(separatedBy: CharacterSet.newlines)

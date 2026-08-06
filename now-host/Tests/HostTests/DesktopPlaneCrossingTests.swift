@@ -31,6 +31,22 @@ final class DesktopPlaneCrossingTests: XCTestCase {
         let types: Page
     }
 
+    /// The roster as `readIcons` builds it: pages parsed on their own, the
+    /// type pass parsed on its OWN blob, joined by name.
+    ///
+    /// Not `parseIcons(page + types)`. Concatenating them leaves a quote pair
+    /// inside the text and the first `F` row parses as `"F` and is dropped —
+    /// which is why "Browse the Internet" alone lost its icon in a render
+    /// built that way, on a desktop where every other item had one.
+    private func placedItems(_ roster: Roster)
+        -> [MirrorKit.Scene.DesktopItem] {
+        let types = Dictionary(uniqueKeysWithValues:
+            NOWMirrorSource.parseIconTypes(roster.types.output))
+        return NOWMirrorSource.applyingArt(
+            roster.pages.flatMap { NOWMirrorSource.parseIcons($0.output) },
+            types: types)
+    }
+
     private func fixture(_ name: String) throws -> Data {
         let url = try XCTUnwrap(
             Bundle.module.url(forResource: name, withExtension: "json",
@@ -73,8 +89,7 @@ final class DesktopPlaneCrossingTests: XCTestCase {
         // These two assertions were pinned to the WRONG values on 2026-08-06
         // so the defect could not be discovered a third time; they moved with
         // the fix, which is what that note asked for.
-        let withArt = NOWMirrorSource.parseIcons(
-            roster.pages[0].output + roster.types.output)
+        let withArt = placedItems(roster)
         XCTAssertEqual(withArt.first { $0.name == "HELLO_CLAUDE.txt" }?.type,
                        "TEXT",
                        "AppleScript's word for the code, back to the code")
@@ -94,9 +109,7 @@ final class DesktopPlaneCrossingTests: XCTestCase {
     func testTheRealTypesReachThePerApplicationIconPack() throws {
         let roster = try JSONDecoder().decode(
             Roster.self, from: try fixture("now-finder-desktop-roster"))
-        let items = roster.pages.flatMap {
-            NOWMirrorSource.parseIcons($0.output + roster.types.output)
-        }
+        let items = placedItems(roster)
 
         /* Against the GENERIC art, not against nil. `icon(for:)` never
            answers nil for a file — it falls through to the generic page or
@@ -125,6 +138,11 @@ final class DesktopPlaneCrossingTests: XCTestCase {
                            "\(name): \(item.creator ?? "nil")__"
                                + "\(item.type ?? "nil") drew generic art")
         }
+
+        // Every file the type pass named got its type — all fourteen. The
+        // six without one are the folders and the disk, which the pass
+        // deliberately never asks about.
+        XCTAssertEqual(items.filter { $0.type != nil }.count, 14)
 
         // And nothing carries a mangled code any more.
         for item in items {
@@ -196,6 +214,21 @@ final class DesktopPlaneCrossingTests: XCTestCase {
         XCTAssertTrue(
             next.snapshot.scene.desktopItems?
                 .contains { $0.name == "NOW-DTOP-9c41" } ?? false)
+    }
+
+    /// The same desktop, drawn, for eyes rather than assertions — one
+    /// machine's own roster over one machine's own scene. Opt-in:
+    /// NOW_RENDER_DIR names a directory.
+    func testRenderTheDesktopFromThatMachinesRoster() throws {
+        guard let dir = ProcessInfo.processInfo
+            .environment["NOW_RENDER_DIR"] else { return }
+        let roster = try JSONDecoder().decode(
+            Roster.self, from: try fixture("now-finder-desktop-roster"))
+        var scene = try JSONDecoder().decode(
+            MirrorKit.Scene.self, from: try fixture("now-scene-desktop-bare"))
+        scene.desktopItems = placedItems(roster)
+        let png = try RenderShot.png(scene: scene)
+        try png.write(to: URL(fileURLWithPath: "\(dir)/desktop-roster.png"))
     }
 
     private func accept(_ scene: MirrorKit.Scene,
