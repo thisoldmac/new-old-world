@@ -97,13 +97,40 @@ misread its own progress before:
 A thing can be served and completely unproven. Most of the 68K file
 family is exactly that today.
 
+> **A machine can now open TWO connections, and only one of them is a
+> guest (2026-08-06).** `hello.role` is `session` or `resident`, absent
+> meaning `session` — which is every connection that existed before plan
+> 012. A `resident` channel comes from the optional NOW Extension, is a
+> claim about the MACHINE rather than about any application on it, and
+> may send only `hello`, `ping` and `bye`; the host refuses anything else
+> on it by name. It is also the one dial permitted to repeat a live
+> session's name, because sharing that name is exactly how the host
+> associates the two.
+>
+> **Which guest sends it: NEITHER, and that is not an asymmetry between
+> them.** The resident component is not a guest application. It is a 68K
+> INIT shared by both machines, it dials over MacTCP's `.IPP` driver
+> through the Device Manager, and the connection it holds is filed by the
+> host outside the guest registry entirely — never a guest, never
+> offered a command, never counted against `maxGuests`. So this row
+> belongs to the extension and the table below is unchanged by it.
+>
+> **What IS unverified, stated so it does not read as coverage.** The
+> channel has been watched on an emulated G4 under OS 9 only. The same
+> INIT on a 68K Macintosh under System 7.1 talks to real MacTCP rather
+> than to Open Transport's compatibility driver, and nothing has run it
+> there; the PowerBook 1400c under OS 9 is likewise untested. Plan 012
+> § C expected the asymmetry to be OT-versus-MacTCP and it is not — the
+> Device Manager route is the same code on both — but "the same code" is
+> not "the same behaviour", and only one of the two has been watched.
+
 ## Inbound message types
 
 What each guest does when the host sends it. ✅ served · ❌ not served.
 
 | Message | PPC | 68K | Note |
 |---|:--:|:--:|---|
-| `hello`, `bye`, `pong`, `refuse`, `error` | ✅ | ✅ | the handshake and keepalive floor. What each guest SENDS in `hello` now differs — see the note above |
+| `hello`, `bye`, `pong`, `refuse`, `error` | ✅ | ✅ | the handshake and keepalive floor. What each guest SENDS in `hello` now differs — see the notes above |
 | `command.request` | ✅ | ✅ | verb sets differ — see below |
 | `census.request` | ✅ | ✅ | both answer, probe by probe — the subsets differ, see below |
 | `process.list` | ✅ | ✅ | |

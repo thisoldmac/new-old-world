@@ -14,6 +14,128 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## CLOSED: the resident channel dials, speaks, and holds the session through a 108-second starvation (2026-08-06)
+
+Plan 012 § 4, and the whole plane it completes. A real Macintosh now
+opens a SECOND connection from its optional resident component and keeps
+it alive while every application on the machine is starved.
+
+**What was watched, on a fresh cold-booted OS 9 clone (mac99, guest
+build `4fe6d946e1a0`).** Two connections arrived from the same address a
+second apart:
+
+```
+[session]  {"type":"hello","contract":2,"side":"guest",...,
+            "name":"Power Mac G4","os":"9"}
+[resident] {"type":"hello","contract":2,"side":"guest",
+            "role":"resident","version":"0.1",
+            "name":"Power Mac G4","os":"9"}
+```
+
+The `name` and `os` are **identical**, and that is the load-bearing part
+rather than a nicety: the host associates a resident channel with its
+application by fingerprinting exactly those two fields plus the address,
+so a resident that invented its own name would be a channel vouching for
+nobody. `capabilities: 127` — both P6 bits, the vehicle and the channel.
+
+Then `tools/guest-wedge spin 110`, with `tools/liveness-channel.py`
+timestamping both connections:
+
+| what | measured |
+|---|---|
+| the application, starved | **108.8 s** with no answer, past the host's 75 s window and past the 90 s Finder incident that started this |
+| the resident, meanwhile | **three pings**, at 86.6 s / 121.6 s / 156.6 s, every one answered |
+| either connection dropped | **no** |
+
+So the premise the plane rests on is no longer an argument from the
+scheduling model at either end. Something answering below the
+application kept ANSWERING ON THE WIRE while applications could not.
+
+**Then the same thing against the REAL host**, which is what § 4 was for
+and the first time either half of § 1 had met a real guest. An
+application starved 110 s kept its session — the same two sockets before
+and after, `55223` and `55224`.
+
+**And the mutation was watched to fail.** A build whose application never
+publishes the endpoint, cold-booted the same way, opened ONE connection
+instead of two; the identical 110-second wedge replaced its session
+(`56005` → `56063`). So the survival above is the resident doing it, and
+not the host having quietly stopped timing anybody out. This also fixes
+the honest limit of the guest-side fix below: it stops the guest tearing
+its own link down, and it does not keep a session that nothing is
+answering for.
+
+**How it is built, and the one decision worth arguing with.** MacTCP's
+`.IPP` driver through the Device Manager — `PBOpen` and `PBControl` are
+traps, so a flat 68K code resource needs no library, which is what
+killed Open Transport at the linker. **No completion routines.** The
+plan expected register-based callbacks each needing `now_liveness_tm.S`'s
+shim treatment; they buy nothing here. This component already has a
+periodic interrupt-time context, the channel's entire job is one frame
+every thirty seconds, `ioResult` is the same fact the callback would
+carry read from memory instead — and the ABI is genuinely ambiguous for
+these callbacks in a way Timer.h's was not (`MacTCP.h` declares a
+STACK-based completion; the Device Manager documents A0/D0). Guessing
+wrong there costs a five-second corruption of somebody else's memory,
+which is exactly what disarmed the vehicle for a day. The full argument
+is in `ext/src/now_liveness_net.c`'s header.
+
+**What this does NOT close.** The channel has been watched on an emulated
+G4 only. MacTCP on a real PowerBook under OS 9 is not OT's MacTCP
+compatibility on an emulator, and nothing has run on 68K/System 7.1 at
+all, where the extension is the same INIT but the stack is real MacTCP.
+Metal is attended and Michelle's call.
+
+## FIXED, and found only by driving the real host: the GUEST killed the very session the resident was holding open (2026-08-06)
+
+The entry above nearly read the other way. The first end-to-end run
+against the real host — resident channel up, host correctly holding the
+session — **still lost the session**, and both connections were replaced
+within 150 s of the wedge.
+
+`now-guest-ppc/src/core/wire.c :: service_heartbeat` compared
+`last_rx_tick` against a 65-second dead-link window. When the event loop
+next ran after the 110-second starvation it saw a 110-second gap and
+declared the link dead: *"Reconnecting (no answer)"*. **Nothing had been
+silent.** The application was not running to listen, and then blamed the
+far side for it.
+
+It is the same defect as the host's, from the other end, and the guest's
+version is the plainer one: the host at least observed real silence and
+had to be told a machine might be alive behind it.
+
+The cure is the same shape. A gap between two consecutive passes of our
+own event loop longer than ten seconds is PROOF of starvation rather
+than evidence of it, so the interval is forgiven — the dead-link clock
+advances past it instead of counting it, which keeps a genuinely dead
+link noticed one window later rather than never. A healthy pass is
+milliseconds, and the pump runs from every nested Toolbox loop
+(`pump.h`), so nothing legitimate lands between one second and ten.
+
+**It deliberately needs no extension.** `liveness_ticks` says the same
+thing more precisely and an application that has one could read it, but
+"keeps its session through a modal" must not be a thing only some
+machines do — the product degrades honestly without a resident component
+(docs/resident-components.md).
+
+### The instrument was feeding the clock it was measuring
+
+Worth more than the fix. The **same** 108-second starvation measured
+through `tools/liveness-channel.py` did **not** drop the link, twice, and
+that is why this survived a whole afternoon of green runs.
+
+That instrument polls the session with `mirror` every five seconds. The
+requests piled up in the socket while the guest was starved; when it came
+back it read all twenty-two of them before `service_heartbeat` ran, and
+`last_rx_tick` was refreshed on the way past. **The probe supplied the
+traffic whose absence was the thing under test.**
+
+Same class as `probe-oracles-were-blind` and the `hello`-probe trap in
+`tools/wedge-experiment.py`, and the general form is worth stating: an
+instrument that talks to the subject on the channel it is measuring is
+not a passive observer of that channel. The real host, which pings
+nothing by contract, was the only observer quiet enough to see it.
+
 ## The folding sidebar, both halves (2026-08-05)
 
 The rail folds to icons on the guest and the sidebar does the same on the

@@ -307,6 +307,20 @@ void now_mirror_probe(MirrorFacts *facts)
         facts->transport_probe = kNowPeekTransportUntried;
         facts->transport_result = 0;
     }
+    /* Gated independently again, and for the third time deliberately: an
+       extension with the probe and without the channel is exactly the
+       build that shipped before this one. */
+    if (table->length >= (unsigned long)(offsetof(NowPeekTable,
+                                                  channel_sends)
+                                         + sizeof(NowPeekU32))) {
+        facts->channel_state = table->channel_state;
+        facts->channel_result = (long)table->channel_result;
+        facts->channel_sends = table->channel_sends;
+    } else {
+        facts->channel_state = kNowPeekChannelIdle;
+        facts->channel_result = 0;
+        facts->channel_sends = 0;
+    }
     {
         NowPeekBuildIdentity identity;
         if (now_peek_build_identity(&identity)) {

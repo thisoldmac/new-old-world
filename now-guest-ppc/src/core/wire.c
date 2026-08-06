@@ -33,6 +33,17 @@ enum {
     kHelloTimeoutTicks = 60 * 8,      /* 8s for the host's hello */
     kPingIntervalTicks = 60 * 30,     /* ping after 30s of silence */
     kDeadTicks = 60 * 65,             /* no traffic for 65s => dead */
+    /* **A gap between two consecutive passes of our own event loop that
+       is too long to be scheduling.** Above this, the application was
+       not RUNNING for that interval - and time we were not running is
+       not time the host was silent.
+
+       Ten seconds. A healthy pass is milliseconds; the pump is called
+       from the main loop and from every nested Toolbox loop (pump.h), so
+       even a modal or a long file operation keeps it well under a
+       second. Nothing legitimate lands between one second and ten, which
+       is why the threshold can be this far from both. */
+    kStarvedPassTicks = 60 * 10,
     kBackoffMinTicks = 60 * 2,        /* 2s, doubling... */
     kBackoffMaxTicks = 60 * 30,       /* ...to 30s */
     kRetryFloorTicks = 60 * 1,        /* the contract's only cadence rule */
@@ -66,6 +77,10 @@ typedef struct {
 
     unsigned long phase_deadline;     /* connect/hello timeout */
     unsigned long last_rx_tick;       /* any inbound bytes */
+    /* When this loop last ran. A long gap here means the APPLICATION was
+       not scheduled, which is a different fact from the host being quiet
+       - see service_heartbeat(). Zero until the first pass. */
+    unsigned long last_pass_tick;
     unsigned long next_ping_tick;
     long pings_sent;                  /* since last pong */
     long ping_id;
@@ -280,6 +295,12 @@ static void link_drop_transfers(void)
     preview_fail("Connection lost");  /* local hook only; no wire touched */
     ctlq_clear();
     now_peek_disconnect();             /* release every wire-owned plane */
+    /* And tell the resident to stay off the wire. It holds its OWN
+       connection to the same host, so a link this application has given
+       up on is one nothing here can still vouch for; the endpoint is
+       withdrawn on every path out for the same reason every transfer is
+       ended here rather than at each call site. */
+    now_peek_withdraw_endpoint();
 }
 
 /* Move to backoff after a failure; status keeps the reason already set. */
@@ -751,10 +772,19 @@ static void on_hello(const char *reply)
     }
     g.phase = kConnConnected;
     g.connected_tick = TickCount();
+    /* **Published here and not one step earlier.** The resident cannot
+       report a failed dial to anybody - it has no UI, no log and no
+       application to tell - so it is handed an address only once THIS
+       side has watched the host answer. An address that has not answered
+       is not one to give something that cannot complain about it. */
+    now_peek_publish_endpoint((unsigned long)g.address, g.port);
     g.backoff_ticks = 0;              /* success resets backoff */
     g.last_fail[0] = '\0';
     g.pings_sent = 0;
     g.next_ping_tick = TickCount() + kPingIntervalTicks;
+    /* Per LINK, so a reconnection after a long backoff does not read as
+       a starvation the moment the heartbeat first runs. */
+    g.last_pass_tick = 0;
     if (g.last_rtt_ms >= 0) {
         snprintf(g.status, sizeof g.status, "Connected: %s (v%s) - %ld ms",
                  g.peer_name, g.peer_version, g.last_rtt_ms);
@@ -5986,6 +6016,58 @@ static void service_heartbeat(void)
 {
     unsigned long now = TickCount();
     char ping[48];
+
+    /* **Time we were not scheduled is not time the host was silent, and
+       this is the one place that used to assume it was.**
+       -----------------------------------------------------------------
+       Found 2026-08-06, driving plan 012's resident channel end to end
+       against the real host. The host had just been taught that a
+       starved Macintosh is not a gone one - and the session still died,
+       because the GUEST reached the same wrong conclusion from the other
+       end. A `guest-wedge spin 110` starved every application for 108 s;
+       when this loop next ran, `last_rx_tick` was 110 s old and it
+       declared the link dead. The resident's channel had answered for
+       the machine throughout, the host had held the session open, and
+       the application tore it down anyway.
+
+       The guest's version of the error is the plainer one. The host at
+       least observed real silence and had to be told the machine might
+       be alive behind it; here nothing was silent at all - we were not
+       running to listen, and then blamed the far side for it.
+
+       A pass gap this long is proof of the starvation rather than
+       evidence of it, so the interval is FORGIVEN: the dead-link clock
+       is advanced past it instead of counting it. What that preserves is
+       the thing the timeout is for - a link that is genuinely dead is
+       still noticed, one window later, because the clock resumes from
+       now rather than being reset to now.
+
+       This deliberately needs no extension. The resident's
+       `liveness_ticks` says the same thing more precisely and an
+       application that has one could read it, but a rule this important
+       must not be optional: the product degrades honestly without a
+       resident component (docs/resident-components.md), and "keeps its
+       session through a modal" should not be a thing only some machines
+       do. */
+    if (g.last_pass_tick != 0 && now - g.last_pass_tick > kStarvedPassTicks) {
+        unsigned long starved = now - g.last_pass_tick;
+
+        if (now - g.last_rx_tick > starved) {
+            g.last_rx_tick += starved;
+        } else {
+            g.last_rx_tick = now;
+        }
+        /* The ping is owed from now, not from before the starvation: a
+           ping the host would have seen 100 s ago is one we could not
+           have sent. */
+        if (g.next_ping_tick < now) {
+            g.next_ping_tick = now;
+        }
+        now_log(kLogWarn, "wire",
+                "not scheduled for %lus - forgiving the gap rather than "
+                "calling the link dead", starved / 60);
+    }
+    g.last_pass_tick = now;
 
     if (now - g.last_rx_tick > kDeadTicks) {
         fail("Reconnecting (no answer)");
