@@ -44,36 +44,37 @@ struct MirrorCycleClocks: Equatable {
     /// measurement.
     var phases: NOWSceneDocument.Phases?
 
-    /// **DIAGNOSTIC (2026-08-06). Added to answer one question and
-    /// removable once it is answered: where the `decode_ms` bracket goes.**
+    /// **Where OUR half of the cycle went**, the same way `phases` says
+    /// where the guest's did.
     ///
-    /// `decode_ms` is a bracket, not a decode. It runs from "the delivery
+    /// `decode_ms` is a bracket, not a decode: it runs from "the delivery
     /// arrived" to "the Mirror published it", and everything this side
-    /// does in between is charged to it — including several guest
-    /// round-trips. On 2026-08-06 it read 12,457 ms on a six-window
-    /// machine and 324 ms on the same machine one window earlier, and
-    /// every reading of that number began by looking for a quadratic in
-    /// the JSON, because the field's name was the only thing anyone had.
-    /// The JSON is not it: the captured six-window document decodes,
-    /// reduces and projects in 4 ms (`MirrorDecodeCostTests`).
-    ///
-    /// So the bracket is split into the four things it actually contains,
-    /// in the order the cycle does them. Nil for a cycle that did not
-    /// reach that stage — never zero, which would be a measurement.
+    /// does in between is charged to it. On 2026-08-06 it read 12,457 ms
+    /// and every reading of that number started by looking for a
+    /// quadratic in the JSON — because the field's name is the only thing
+    /// anyone had. The document decodes, reduces and projects in 4 ms
+    /// (`MirrorDecodeCostTests`); the rest was guest round-trips inside
+    /// the bracket. One extra field would have said so in a grep.
     ///
     /// - `own` — decode, reduce, project. This host's own CPU.
-    /// - `content` — the P3 join. One or two guest commands.
-    /// - `icons` — the Finder icon roster. AppleScript, paged 8 items per
-    ///   container, skipped entirely when the layout key is unchanged.
-    /// - `visibility` — the process visibility census. AppleScript, paged
-    ///   8 processes, and issued on EVERY cycle.
-    ///
-    /// They should very nearly sum to `decode_ms`; `dc_own_ms` plus a
-    /// large remainder is itself the finding.
+    /// - `content` — the P3 join: guest round-trips, ours to schedule but
+    ///   not ours to speed up.
     var ownWork: TimeInterval?
     var contentJoin: TimeInterval?
-    var iconRoster: TimeInterval?
-    var visibilityCensus: TimeInterval?
+
+    /// **How many guest commands this cycle GAVE UP on.**
+    ///
+    /// `command.request` gained a watchdog on 2026-08-06
+    /// (`GuestListener.commandWatchdogSeconds`), and a bound that is not
+    /// reported is a silent truncation: the cycle would publish a scene
+    /// missing its content join and nothing anywhere would say the answer
+    /// had been abandoned rather than arrived. So a cycle that expired a
+    /// command says `timeouts=N` on its own line.
+    ///
+    /// Emitted only when non-zero, for the reason `phfaults` is: a field
+    /// that reads `0` on every line of a log teaches a reader to stop
+    /// seeing it, and this one has to be visible the one time it appears.
+    var guestTimeouts: Int?
 
     var request: TimeInterval? {
         deliveredAt.map { $0.timeIntervalSince(requestedAt) }
@@ -103,11 +104,11 @@ struct MirrorCycleClocks: Equatable {
             ("idle_ms", Self.ms(idleBefore)),
             ("request_ms", Self.ms(request)),
             ("decode_ms", Self.ms(decode)),
-        ] + Self.bracketFields(self) + [
+        ] + Self.bracketFields(own: ownWork, content: contentJoin) + [
             ("total_ms", Self.ms(total)),
             ("windows", windows.map(String.init) ?? "-"),
             ("elements", elements.map(String.init) ?? "-"),
-        ] + Self.phaseFields(phases))
+        ] + Self.timeoutField(guestTimeouts) + Self.phaseFields(phases))
     }
 
     /// **The phases go HERE and not on the ambient status line.**
@@ -126,20 +127,24 @@ struct MirrorCycleClocks: Equatable {
     /// be diffed, and diffing two runs is the whole point.
     /// `phcost_us` rides beside them because a breakdown that will not
     /// state its own weight is asking to be trusted rather than read.
-    /// DIAGNOSTIC — see `ownWork`. Absent rather than dashed for a stage
-    /// a cycle never reached, so nobody reads a `-` as a zero, and absent
-    /// entirely for a cycle that failed before decoding: the split has to
-    /// be as honest about not knowing as the fields it sits beside.
-    private static func bracketFields(_ clocks: MirrorCycleClocks)
+    /// Present only for a cycle that got far enough to have them, the way
+    /// `phaseFields` is — a cycle that never decoded has no split, and a
+    /// `-` there would invite someone to read absence as zero.
+    private static func bracketFields(own: TimeInterval?,
+                                      content: TimeInterval?)
             -> [(String, String)] {
         var fields: [(String, String)] = []
-        for (key, value) in [("dc_own_ms", clocks.ownWork),
-                             ("dc_content_ms", clocks.contentJoin),
-                             ("dc_icons_ms", clocks.iconRoster),
-                             ("dc_vis_ms", clocks.visibilityCensus)] {
-            if let value { fields.append((key, ms(value))) }
-        }
+        if let own { fields.append(("dc_own_ms", ms(own))) }
+        if let content { fields.append(("dc_content_ms", ms(content))) }
         return fields
+    }
+
+    /// See `guestTimeouts`. Zero is not written: it is the ordinary case,
+    /// and a field present on every line stops being read by the time it
+    /// matters.
+    private static func timeoutField(_ count: Int?) -> [(String, String)] {
+        guard let count, count > 0 else { return [] }
+        return [("timeouts", String(count))]
     }
 
     private static func phaseFields(_ phases: NOWSceneDocument.Phases?)

@@ -213,6 +213,143 @@ The Option-2 prototype is in this branch's reflog (commit
 `fix(host): the Finder complements no longer hold the scene cycle open`)
 with a mutation-tested cadence guard, if it is wanted.
 
+### ANSWERED, live (2026-08-06): the visibility census dominates
+
+Plan 014 §1's question — which round-trip owns the bracket — is closed,
+and the instrument that answers it was never broken.
+
+**The instrument was fine; the log was being read wrong.** The fields
+were reported "absent from every live cycle". They are not: they were
+absent from the lines in `acts.log`, because the last line any host wrote
+before the reading was `13:58:19` and the app built from `1bb7fdcf` —
+the commit that added them — did not start until `13:58:24`. That build
+had never run a Mirror cycle. (`nm` on the packaged executable shows
+`MirrorCycleClocks.bracketFields`; the stack's README names the commit.)
+Filed here because it is the *fourth* misread number in three days and
+the cheapest one to have avoided: **`acts.log` is shared by every host on
+the Mac and `cycle` lines carry no guest identity** (drive-loop §2m), so
+a reading has to be attributed by a mark and a process start, not by
+being at the end of the file.
+
+**Measured**, own VM on wire 5560, guest build
+`711abdbd25ec 2026-08-06T18:26:52Z`, resident `97fb3f54…`, host from this
+branch. Finder healthy, guest idle, n=85 cycles, one window / 68
+elements:
+
+| field | median | p90 | max |
+|---|---|---|---|
+| `decode_ms` | 353 | 423 | 1675 |
+| `dc_own_ms` | **9** | 9 | 10 |
+| `dc_content_ms` | 5 | 6 | 9 |
+| `dc_icons_ms` | 0 | 0 | 1349 |
+| `dc_vis_ms` | **338** | 401 | 746 |
+
+They sum to `decode_ms`. **The visibility census is ~96% of the bracket
+on every steady-state cycle**; this host's own CPU is 2.5% of it, which
+is the 4 ms `MirrorDecodeCostTests` already measured, seen live. The icon
+roster is 0 while the layout key holds — the guard doing its job, now
+visible rather than inferred — and **1349–1565 ms** on any cycle where a
+Finder window opened or closed, taking `decode_ms` to 1.7–1.9 s.
+
+So the census costs ~4× less than a roster read and is paid **every
+cycle, forever**, for state that changes only when an application starts,
+quits, hides or shows. That is §D's question answered in its favour, and
+it is why §4 was done together with §3 rather than after it.
+
+**Loaded, two ways.** The `NOW Wedge modal 45` instrument: `outcome=failed
+request_ms=20839`. A Finder-owned alert ("Could not find the application
+program that created…"): `outcome=starved`, `request_ms` 20,008–21,318,
+`decode_ms=0` for as long as it was up — and the anchor worker stopped
+answering even `hello`, so the machine could not be driven at all and the
+clone had to be discarded.
+
+That is a **different sub-case from the one that bit Michelle**, and the
+difference matters: her log has `request_ms=82` with `decode_ms=12457`,
+i.e. NOW answering promptly while the Finder was merely busy. Her modal
+belonged to a *foreign* application. A **Finder**-owned modal starves the
+whole cooperative machine including NOW, so the complements never run and
+this repair cannot help — nothing on the host can. Worth knowing before
+someone measures the wrong modal and concludes the fix did nothing.
+
+### What plan 014 changed (2026-08-06)
+
+- **§2.** `GuestListener.runCommand` arms a watchdog — it had none, on
+  the family the whole content join and both complements travel on.
+  **20 s**, chosen against the guest's own `kNowScriptDefaultMs` (15 s,
+  `input_args.h`) so the guest's typed refusal always beats the host's
+  bare timeout; `testTheCommandWatchdogOutlastsTheGuestsOwnScriptCeiling`
+  fails on the 3 s the ledger above proposed. The wrong "15s a
+  command.request gets" comment is corrected in the same commit, with
+  what it actually described. A timeout is **reported**: `timeouts=N` on
+  the cycle line, omitted at zero.
+- **§3.** The cycle publishes on decode and rearms; the complements run
+  beside it, guarded by the pinned RUN. The layout-key recheck at apply
+  time replaces the cycle-hold as the thing that stops a roster landing
+  on a layout the machine has left.
+- **§3, honesty.** A frame published before its roster now carries a
+  `finder-items` coverage claim — typed status and a reason, the same
+  vocabulary `process-visibility` uses — and the status line says
+  `awaiting icons`. Absence stays absence in the scene; what changed is
+  that it no longer goes unsaid. (`process-visibility` was already marked
+  `.stale` on every structural accept, so the census never presents as
+  current between reads.)
+- **§4.** The census is keyed on the process roster with a 3 s floor and
+  invalidated explicitly by the hide act.
+
+### Measured after, same rig, same guest (2026-08-06)
+
+Fresh clone, guest build `711abdbd25ec 2026-08-06T18:59:20Z`, wire 5560,
+host from this branch. **258 cycles, every one `outcome=ok`.**
+
+| | before | after |
+|---|---|---|
+| `decode_ms` median | 353 | **16** |
+| `total_ms` median | 364 | **25** |
+| `total_ms` p90 | 436 | **27** |
+| cycle on a layout change | 1936 | **26** |
+| planes | 15/15 | 15/15 (257/258 samples) |
+| cycles reporting `timeouts=` | — | 0 |
+
+The complements still cost what they always cost — the log carries
+`NOWBASE finder containers=2 complete=yes ms=1478` and
+`NOWBASE visibility processes=7 complete=yes ms=277` — but they are no
+longer inside the cycle, so a 1.5 s roster read now sits beside a 26 ms
+cycle instead of becoming one. **The census fired 17 times in 62 cycles**
+rather than 62, which is the 3 s floor working.
+
+The layout-change case is the clearest single line: opening a Finder
+window took `decode_ms` from 17 ms to 17 ms, where before the same
+transition on the same rig read `decode_ms=1920 dc_icons_ms=1565`.
+
+**NOT verified end to end: Michelle's own act.** "A dialog act that
+settles rather than refusing" could not be driven from here.
+`tools/now-agent` reaches ONE host per user at a fixed path and her
+packaged app holds it; taking it would have disturbed a live session, and
+computer use was out of scope for this arc. What IS verified is the whole
+causal chain beneath the symptom — the cycle is 25 ms against a 10 s
+lease, the planes read 15/15 throughout, and
+`testAStarvedFinderCannotHoldTheSceneCycleOpen` fails if a complement can
+extend the cycle again. The act itself is **unverified** and should be
+the first thing a drive re-tests.
+
+**Still not covered by a test: the watchdog FIRING.** The bound and its
+reporting are guarded; that the expiry actually settles a stored
+completion is not, because the suites here would have to wait 20 s for it
+and no other request family's watchdog is covered either. Watched only in
+the sense that the code path is the one `exec` has used since it was
+written.
+
+### Scope for the asynchronous content plane (plan 014 §5, NOT DONE)
+
+Explicitly out of 014. What §1's numbers say about it: the content join
+is **5–12 ms**, three orders below the census, so making it asynchronous
+buys nothing measurable on a healthy guest. Its case is the starved one,
+where it shares the guest's serial event loop with everything else — and
+in the starved case measured here the guest did not answer `scene.request`
+either, so the cycle was already lost upstream of P3. **Ordinary evidence
+does not currently justify the plan**; the four bullets under Option 3
+above remain the scope if one is written.
+
 ## FIXED, emulator only: the 115 ms round trip was the guest's own sleep (2026-08-06)
 
 The deltas arc took the scene walk from ~950 ms to 3–8 ms and cut idle
