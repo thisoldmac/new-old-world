@@ -388,7 +388,13 @@ def parse_bundle(fork: resfork.ResourceFork):
 
 
 def sweep_bundles(mnt: str) -> list[str]:
-    """Every file under the app roots that could carry a BNDL."""
+    """Every file under the app roots that could carry a BNDL.
+
+    Sorted, because two files can declare the same (creator, type) and the
+    first writer wins — an unsorted walk would make the pack depend on
+    directory order, and a rerun on another machine would differ for no
+    reason a reader could see.
+    """
     found = []
     for root in APP_SWEEP_ROOTS:
         start = os.path.join(mnt, root)
@@ -396,8 +402,9 @@ def sweep_bundles(mnt: str) -> list[str]:
             found.append(start)
             continue
         for dirpath, dirnames, filenames in os.walk(start):
-            dirnames[:] = [d for d in dirnames if d not in SWEEP_SKIP_NAMES]
-            for name in filenames:
+            dirnames[:] = sorted(d for d in dirnames
+                                 if d not in SWEEP_SKIP_NAMES)
+            for name in sorted(filenames):
                 if name in SWEEP_SKIP_NAMES or name.startswith("."):
                     continue
                 found.append(os.path.join(dirpath, name))
