@@ -119,4 +119,15 @@ if [ "$which" = both ] || [ "$which" = 68k ]; then
         tools/guest-shutdown "${NOW68K_TOOLCHAIN:-}" shutdown
 fi
 
+# The rig's wedge applet, sibling of the one above and here for the same
+# reason: this script is the only thing in the tree that drives a
+# cross-compiler. It starves the guest on purpose, for a bounded time, so
+# the liveness work of plan 012 can be tested without hand-driving the
+# Finder into a modal - which on 2026-08-05 cost a staged image, because
+# that wedge could not be released from software.
+if [ "$which" = both ] || [ "$which" = 68k ]; then
+    build_guest "guest-wedge (NOW Wedge, rig instrument)" \
+        tools/guest-wedge "${NOW68K_TOOLCHAIN:-}" wedge
+fi
+
 exit $rc

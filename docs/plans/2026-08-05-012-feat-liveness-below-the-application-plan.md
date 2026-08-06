@@ -190,7 +190,25 @@ Registration, dial, and the periodic report of § B. The contract gains
 the message family first, per the rule that a behaviour change starts
 there.
 
-### 5 · The wedge instrument — `tools/guest-wedge`
+### 5 · The wedge instrument — `tools/guest-wedge` · **BUILT 2026-08-05**
+
+Built and cross-compiling; **never yet run on a machine**, which is the
+whole of what it is for, so it proves nothing until it has been. Two
+things changed while writing it:
+
+- **No `DebugStr`.** The first draft announced the run through it. On a
+  machine with no debugger installed — which is every machine this runs
+  on — `DebugStr` raises a system error, so the instrument whose entire
+  justification is that it *lets go again* would have had a failure mode
+  needing a person to dismiss a dialog. That is the wedge it exists to
+  replace. The run is announced by the applet's NAME instead, which the
+  process list already carries.
+- **The name is the argument.** It is launched by name through the anchor
+  worker and there is nowhere else to put one, so `NOW Wedge spin 30`
+  carries both mode and duration, and one staged binary serves every
+  experiment.
+
+The original text follows.
 
 A staged applet and a sibling of `tools/guest-shutdown`, which is already
 exactly this pattern: a small guest applet built by `build-guests`,
