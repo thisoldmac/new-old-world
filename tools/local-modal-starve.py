@@ -164,6 +164,12 @@ def main() -> int:
     ap.add_argument("--script", default="",
                     help="AppleScript source to run instead of a wedge "
                          "(raises a REAL application's modal)")
+    ap.add_argument("--press", default="",
+                    help="press the control with this title, by ctlact, "
+                         "instead of a wedge. This is how a REAL "
+                         "application's own ModalDialog is raised: the "
+                         "application runs its own click handler, so what "
+                         "follows is its loop and not an instrument's")
     ap.add_argument("--baseline", type=int, default=6,
                     help="probes before the wedge")
     ap.add_argument("--after", type=float, default=30.0,
@@ -229,7 +235,25 @@ def main() -> int:
     # than an inference: it is stamped here, and a failed launch raises.
     print("\n== the wedge ==", flush=True)
     started = time.time()
-    if a.script:
+    if a.press:
+        # THE PREMISE IS ENFORCED BEFORE THE CLOCK STARTS (measurement rule
+        # 1): the control has to be found, in a scene read now, or there is
+        # nothing to attribute a number to.
+        doc, _ = link.scene(full=True, timeout=90.0)
+        found = None
+        for win in doc.get("windows") or []:
+            for ctl in win.get("controls") or []:
+                if (ctl.get("title") or "").strip().rstrip("…") == \
+                        a.press.strip().rstrip("…"):
+                    found = ctl
+        if found is None:
+            raise SystemExit(f"no control titled {a.press!r} in this scene — "
+                             "refusing to measure a press that did not happen")
+        started = time.time()
+        mid = link.send_async("ctlact", {"element": found["ref"], "part": 10})
+        print(f"{started - t0:7.1f}s  pressed {a.press!r} (id {mid})",
+              flush=True)
+    elif a.script:
         # A real application's modal, raised over the wire. This is
         # deliberately sent with send_async and NOT waited for: the script
         # verb does not return until the application it drives does, and
