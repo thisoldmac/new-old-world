@@ -239,6 +239,83 @@ final class MirrorReplicaReducerTests: XCTestCase {
         XCTAssertNil(invalidated.windows.values.first?.window.display)
     }
 
+    /// The desktop plane is a HOST contribution — no guest producer emits
+    /// `desktopItems`, and every structural scene therefore omits the key
+    /// honestly. It must survive the next structural scene the way a
+    /// window's `items` does, and for the same reason: absent means "this
+    /// producer does not report it", not "the desktop is empty".
+    ///
+    /// This is the whole of the long-standing defect. The roster read
+    /// worked all along; the icons were published for the fraction of a
+    /// second between the enrichment and the next poll, and the poll
+    /// erased them — so `desktopItems` read nil on every drive while the
+    /// Finder's own folder windows, which the replica retains per window
+    /// record, kept theirs.
+    func testDesktopItemsSurviveTheNextStructuralScene() throws {
+        let finder = "process-finder"
+        let first = try reduce(scene(
+            seq: 1, processes: [("Finder", finder, true)],
+            windows: [(finder, "Macintosh HD", "Finder")],
+            processCoverage: .complete,
+            windowCoverage: [finder: .complete]))
+
+        var contribution = first.snapshot.scene
+        contribution.desktopItems = [
+            .init(name: "Macintosh HD", kind: "disk", type: nil,
+                  creator: nil, x: 736, y: 28, placed: true, alias: false,
+                  invisible: false),
+            .init(name: "Trash", kind: "folder", type: nil, creator: nil,
+                  x: 716, y: 510, placed: true, alias: false,
+                  invisible: false),
+        ]
+        let enriched = try XCTUnwrap(
+            MirrorReplicaReducer.enrich(contribution, previous: first))
+        XCTAssertEqual(enriched.snapshot.scene.desktopItems?.count, 2)
+
+        // The next ordinary poll. Its scene omits `desktopItems`, exactly
+        // as every real guest scene does.
+        let next = try reduce(scene(
+            seq: 2, processes: [("Finder", finder, true)],
+            windows: [(finder, "Macintosh HD", "Finder")],
+            processCoverage: .complete,
+            windowCoverage: [finder: .complete]), previous: enriched)
+
+        XCTAssertEqual(
+            next.snapshot.scene.desktopItems?.map(\.name),
+            ["Macintosh HD", "Trash"],
+            "a structural scene that never reports the desktop plane must "
+                + "not delete it")
+    }
+
+    /// The other half of the same rule: a producer that DOES report the
+    /// plane still speaks for it. Retention may not outrank an answer.
+    func testAReportedDesktopPlaneWins() throws {
+        let finder = "process-finder"
+        let first = try reduce(scene(
+            seq: 1, processes: [("Finder", finder, true)],
+            windows: [(finder, "Macintosh HD", "Finder")],
+            processCoverage: .complete,
+            windowCoverage: [finder: .complete]))
+        var contribution = first.snapshot.scene
+        contribution.desktopItems = [
+            .init(name: "Trash", kind: "folder", type: nil, creator: nil,
+                  x: 716, y: 510, placed: true, alias: false,
+                  invisible: false),
+        ]
+        let enriched = try XCTUnwrap(
+            MirrorReplicaReducer.enrich(contribution, previous: first))
+
+        var reporting = scene(
+            seq: 2, processes: [("Finder", finder, true)],
+            windows: [(finder, "Macintosh HD", "Finder")],
+            processCoverage: .complete,
+            windowCoverage: [finder: .complete])
+        reporting.desktopItems = []
+        let next = try reduce(reporting, previous: enriched)
+        XCTAssertEqual(next.snapshot.scene.desktopItems, [],
+                       "an empty array is a claim, and it must be kept")
+    }
+
     func testV1CanDisplayButCannotDeleteOrAuthorize() throws {
         var legacy = scene(
             seq: 1, processes: [("Finder", "0.3", true)],

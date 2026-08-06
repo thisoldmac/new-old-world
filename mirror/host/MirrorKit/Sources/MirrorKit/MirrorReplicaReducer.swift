@@ -133,8 +133,15 @@ public enum MirrorReplicaReducer {
                 observation.coverage(scope: "windows", owner: $0.incarnation)?
                     .status == .complete
             }
+        /* The desktop plane obeys the same rule as a window's `items`: an
+           ABSENT key is "this producer does not report it", so the retained
+           roster stands; a PRESENT one — including an empty array — is an
+           answer, and it wins. No guest reports this plane at all, so
+           without the retention the projection lost it on every poll. */
+        let desktopItems = scene.desktopItems ?? previous?.desktopItems
         let projectionScene = project(scene, applications: applications,
-                                      windows: windows, menubar: menubar)
+                                      windows: windows, menubar: menubar,
+                                      desktopItems: desktopItems)
         let digest = semanticDigest(applications: applications,
                                     windows: windows, menubar: menubar,
                                     coverage: scene.meta.coverage ?? [],
@@ -156,6 +163,7 @@ public enum MirrorReplicaReducer {
         return .accepted(.init(
             session: session, lastSequence: scene.seq,
             applications: applications, windows: windows, menubar: menubar,
+            desktopItems: desktopItems,
             tombstones: tombstones, snapshot: projection))
     }
 
@@ -208,15 +216,21 @@ public enum MirrorReplicaReducer {
             changed = true
         }
 
-        var projectionScene = project(
-            previous.snapshot.scene,
-            applications: previous.applications,
-            windows: windows, menubar: previous.menubar)
-        if let desktopItems = enriched.desktopItems,
-           desktopItems != projectionScene.desktopItems {
-            projectionScene.desktopItems = desktopItems
+        /* Recorded on the REPLICA, not only on the projection it produces.
+           Writing it to the snapshot alone is what made this plane last
+           exactly one poll: the next structural scene rebuilt the
+           projection and had nowhere to read the roster back from. */
+        var desktopItems = previous.desktopItems
+        if let contributed = enriched.desktopItems,
+           contributed != desktopItems {
+            desktopItems = contributed
             changed = true
         }
+        let projectionScene = project(
+            previous.snapshot.scene,
+            applications: previous.applications,
+            windows: windows, menubar: previous.menubar,
+            desktopItems: desktopItems)
         guard changed else { return nil }
         let digest = semanticDigest(
             applications: previous.applications, windows: windows,
@@ -238,7 +252,8 @@ public enum MirrorReplicaReducer {
         return .init(
             session: previous.session, lastSequence: previous.lastSequence,
             applications: previous.applications, windows: windows,
-            menubar: previous.menubar, tombstones: previous.tombstones,
+            menubar: previous.menubar, desktopItems: desktopItems,
+            tombstones: previous.tombstones,
             snapshot: projection)
     }
 
@@ -269,8 +284,10 @@ public enum MirrorReplicaReducer {
         _ latest: Scene,
         applications: [MirrorProcessIdentity: MirrorApplicationRecord],
         windows: [MirrorWindowIdentity: MirrorWindowRecord],
-        menubar: MirrorMenubarRecord?) -> Scene {
+        menubar: MirrorMenubarRecord?,
+        desktopItems: [Scene.DesktopItem]?) -> Scene {
         var projected = latest
+        projected.desktopItems = desktopItems
         let unprovenApps = latest.apps.filter { $0.incarnation == nil }
         let unprovenProcesses = (latest.processes ?? []).filter {
             $0.incarnation == nil

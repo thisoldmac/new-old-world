@@ -30,7 +30,7 @@ travel; this note records what was built and what it refuses to claim.
 | `windows[].ref`, `windows[].controls[].ref` | **conditional** — per element, when the reference layer could name it |
 | `menus[].apple`, `controls[].{role,checked}` | **absent** — nothing this walk reads determines them |
 | `windows[].display[]`, `.items[]` | **absent** |
-| `desktopItems[]` | **absent** |
+| `desktopItems[]` | **absent** — by design; the HOST reads it (see below) |
 
 **Absent, not empty, and the difference is the whole point.** An empty
 `controls` array asserts *this window has no controls*; an absent key says
@@ -45,6 +45,22 @@ shipped `"controls":[]` and taught every consumer a false fact.
 `meta.errors` is the one array emitted even when empty, because it is not an
 unreported plane: it is the list of things that went wrong during a walk that
 did happen, and zero of them is a real answer.
+
+### `desktopItems[]` is absent here and always will be
+
+Worth saying out loud, because this row's absence was read as a failure
+for a week (docs/open-issues.md, 2026-08-06). **No guest can produce this
+plane.** This walk reads the Toolbox — windows, controls, menus — and a
+desktop icon is none of those: it is a file the Finder draws, and only
+the Finder knows where. So the row is `absent` as a permanent statement
+of what this producer is, not a to-do.
+
+The HOST reads it, over AppleScript, in `NOWMirrorSource.readIcons`, and
+merges it into the scene on that side. A capture taken by speaking
+`scene.request` to a guest directly — every probe in `tools/` — therefore
+**cannot** carry `desktopItems`, and its absence there is evidence of
+nothing. Two live captures were once cited as proof the desktop read was
+broken; they were proof only that a probe is not the Mirror.
 
 ### Coverage is what permits deletion
 
