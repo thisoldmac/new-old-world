@@ -55,3 +55,4 @@ assets/icons/macos/NewOldWorld.iconset/
 
 # Module cache xcodebuild drops beside the project on command-line builds.
 now-host/NewOldWorld.xcodeproj/-Xcc/
+tools/gwprobe-out/
