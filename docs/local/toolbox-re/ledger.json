@@ -1,0 +1,48 @@
+{
+  "schema": "now-toolbox-re/v1",
+  "started": "2026-08-06T03:31:21-0400",
+  "started_epoch": 1786001481.568342,
+  "deadline_epoch": 1786032081.568332,
+  "deadline": "2026-08-06T12:01:21-0400",
+  "rows": [
+    {
+      "phase": "P0",
+      "claim": "The guest filesystem mounts read-only on the host: qemu-img convert to raw, parse the Apple Partition Map (HFS at block 1544), dd the partition out, hdiutil attach -readonly. Full static corpus with no VM running and no time limit.",
+      "provenance": "static",
+      "evidence": "/private/tmp/tbcorpus",
+      "at": "2026-08-06T03:38:31-0400"
+    },
+    {
+      "phase": "P0",
+      "claim": "The Mac OS ROM (2448470 bytes) is a CHRP boot script wrapping a compressed body; the only valid PEF in it (0x2055c4, arch pwpc) is a small embedded driver importing DriverServicesLib/NameRegistryLib/PowerMgrLib. The Toolbox code is NOT statically readable from the ROM file - it exists decompressed only in RAM, so Toolbox CODE must come from the live lane.",
+      "provenance": "static",
+      "evidence": "/private/tmp/tbcorpus/MacOSROM.data",
+      "at": "2026-08-06T03:38:31-0400"
+    },
+    {
+      "phase": "P4",
+      "claim": "THE FINDER USES GWORLDS, established statically from its own PEF import table: it imports NewGWorld, DisposeGWorld, SetGWorld, GetGWorld, GetGWorldPixMap, GetGWorldDevice, LockPixels, UnlockPixels and CopyBits from InterfaceLib. No inference, no emulator - the binary says so.",
+      "provenance": "static",
+      "evidence": "/private/tmp/tbcorpus/finder-imports.txt",
+      "at": "2026-08-06T03:38:31-0400"
+    },
+    {
+      "phase": "P4",
+      "claim": "The Finder imports NO UpdateGWorld. It has NewGWorld and DisposeGWorld and no way to resize one in place, so an offscreen world is created and destroyed rather than kept and updated - direct support for the TRANSIENT hypothesis that explains every null in the probe arc.",
+      "provenance": "static",
+      "evidence": "/private/tmp/tbcorpus/finder-imports.txt",
+      "at": "2026-08-06T03:38:31-0400"
+    },
+    {
+      "phase": "P5",
+      "claim": "The Finder plots icons through PlotIconSuite/PlotIcon/PlotIconRef and links IconServicesLib (22 symbols) plus GetIconSuite/NewIconSuite/DisposeIconSuite - so icon identity in a composite is an IconSuite/IconRef, and that is the interception surface for host-side composition.",
+      "provenance": "static",
+      "evidence": "/private/tmp/tbcorpus/finder-imports.txt",
+      "at": "2026-08-06T03:38:31-0400"
+    }
+  ],
+  "blockers": [],
+  "handoff": null,
+  "done": false,
+  "fruitless_blocks": 0
+}
