@@ -58,6 +58,16 @@ An **explicitly unverified alternative** upstream noted and did not use:
 convert the disk image to raw, attach it read-only, and read the named
 resource fork. The wire route was proven and sufficient.
 
+> **VERIFIED 2026-08-06, and it is far faster**: see
+> [asset-extraction-offline.md](asset-extraction-offline.md). The whole
+> System file's fork — 7,893,757 bytes, 2,162 resources — is an
+> ordinary file read instead of 24 s at ~330 KB/s, with resource forks
+> exposed by macOS at `<file>/..namedfork/rsrc`. The step that makes it
+> look impossible is that the `Apple_HFS` partition is an HFS WRAPPER
+> whose embedded HFS+ volume must be located through the MDB; modern
+> macOS refuses the wrapper because HFS Standard support is gone. No VM
+> boots, and the read-only-on-a-copy rule above is unchanged.
+
 Two host-side parsing options were named as **hypotheses, not tried**: a
 Python resource-fork package (cleaner programmatically, was not
 installed) and `fondu` for converting the classic font resources to BDF.
