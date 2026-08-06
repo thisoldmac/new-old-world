@@ -92,6 +92,14 @@ it is the world-replacement fact at its sharpest, and the D0 resident
 `NewGWorld` patch (port handed over at creation) is the mechanism that
 would close it. Until D0 is re-run from the resident, Appearance-style
 per-widget compositors are out of reach and should be stated so.
+**Sherlock 2 joined it the same evening**, at full-window scale: its
+entire interior is one transient 490×448 composite (7 sights, 7 misses,
+0 hooks), so the channel picker, list rows and radio labels are all
+behind the same wall — only its window stream's own drawing crosses
+(the Edit… well, the search caret), and the coverage suite gates
+exactly that plus the honest hatch. D0's resident NewGWorld patch is
+now the single mechanism between the mirror and both applications'
+interiors, which makes it the next slice by a wide margin.
 
 Two rig facts from the same sweep: `menuact` works on a FRESH boot (the
 View-menu marks move; the earlier no-op was the stale kd01 boot — the
