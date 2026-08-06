@@ -675,8 +675,20 @@ written is not it. If you need the answer, the next mode to try is one
 that reproduces the alert's own work — enumerating the volume's
 applications the way the "select an alternate program" list does.
 
-**Do not** write this up as "the modal starves the machine". That
-specific claim is dead: measured, 71 s, nothing starved.
+~~**Do not** write this up as "the modal starves the machine". That
+specific claim is dead: measured, 71 s, nothing starved.~~
+
+**RETRACTED 2026-08-06 — this paragraph rested on the 71 s the `modal`
+mode never earned.** The advice happens to survive, for a different
+reason and in a narrower form. A **Finder-owned** modal does starve the
+machine, reproduced deliberately, and that is in status.md under *What
+does not work*. A **foreign application's** modal does not: measured at
+a **20× tax** (scene median 21 ms idle → 413 ms, n=145) with acts
+working straight through it. So the sentence to write is neither of the
+originals — it is *"which application owns the modal decides whether it
+is a wedge or a tax"*, and the wedge instrument was never able to tell
+you that, because none of its modes ran an application's own
+`ModalDialog` at all.
 
 ### The one measured thing the whole plane rests on
 
