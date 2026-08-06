@@ -255,11 +255,39 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
     func testRenderSweepCaptures() throws {
         guard let dir = ProcessInfo.processInfo
             .environment["NOW_RENDER_DIR"] else { return }
-        for (name, fixture, window, psn, title) in Self.sweepCaptures {
-            let png = try RenderShot.png(scene: try composed(
-                fixture, window: window, psn: psn, title: title))
-            try png.write(to: URL(fileURLWithPath: "\(dir)/\(name).png"))
+        for capture in Self.sweepCaptures {
+            let png = try RenderShot.png(scene: try composedSweep(capture))
+            try png.write(to: URL(fileURLWithPath: "\(dir)/\(capture.0).png"))
         }
+    }
+
+    /// A sweep capture composed at the window's REAL size.
+    ///
+    /// `composed` derives the window from `contentSize` — a union of
+    /// everything drawn — which is a reasonable guess when nothing
+    /// better exists and a BAD one to judge chrome by: Scrapbook's
+    /// union came out nearly twice the window's true width, so the
+    /// render drew a 780-wide window whose centred title fell off the
+    /// visible area, and "the title never renders" was about to go on
+    /// the red list as a mirror defect. It is a harness artifact.
+    ///
+    /// The sweep already knows the answer — `<label>-scene.json`
+    /// carries the window's own rect, straight off the guest — so the
+    /// survey uses that and the union is not consulted at all. Nothing
+    /// in the product does this: `contentSize` exists because the
+    /// coverage fixtures predate the sweep, and a production scene
+    /// carries the real rect the way this table does.
+    private func composedSweep(
+        _ capture: (String, String, UInt32, String, String, Int, Int)
+    ) throws -> MirrorKit.Scene {
+        let (_, fixture, window, psn, title, width, height) = capture
+        let drain = try self.capture(fixture)
+        let update = plane().apply(
+            drain, to: try scene(address: window, psn: psn, title: title,
+                                 content: [0, 0, width, height]))
+        XCTAssertNotNil(update.scene.windows[0].display,
+                        "\(fixture) composed nothing")
+        return update.scene
     }
 
     /// Every sweep capture must still COMPOSE, whatever it looks like.
@@ -267,24 +295,27 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
     /// looking: a fixture that decodes and produces a display cannot
     /// regress into one that produces nothing.
     func testEverySweepCaptureComposes() throws {
-        for (name, fixture, window, psn, title) in Self.sweepCaptures {
-            let display = try compose(fixture, window: window, psn: psn,
-                                      title: title)
-            XCTAssertFalse(display.isEmpty, "\(name) composed nothing")
+        for capture in Self.sweepCaptures {
+            let display = try XCTUnwrap(
+                composedSweep(capture).windows[0].display)
+            XCTAssertFalse(display.isEmpty, "\(capture.0) composed nothing")
         }
     }
 
-    static let sweepCaptures: [(String, String, UInt32, String, String)] = [
+    /// label, fixture, window address, psn, title, and the window's OWN
+    /// width and height as the guest reported them in the same run.
+    static let sweepCaptures:
+        [(String, String, UInt32, String, String, Int, Int)] = [
         ("appearance", "qdtrace-drain-sweep-appearance",
-         0x1ea880b0, "0.35520514", "Appearance"),
+         0x1ea880b0, "0.35520514", "Appearance", 464, 330),
         ("date-and-time", "qdtrace-drain-sweep-date-and-time",
-         0x1f6fcca0, "0.35979265", "Date & Time"),
+         0x1f6fcca0, "0.35979265", "Date & Time", 364, 361),
         ("memory", "qdtrace-drain-sweep-memory",
-         0x1ea37530, "0.36438017", "Memory"),
+         0x1ea37530, "0.36438017", "Memory", 352, 318),
         ("sound", "qdtrace-drain-sweep-sound",
-         0x1e612eb0, "0.37355521", "Sound"),
+         0x1e612eb0, "0.37355521", "Sound", 400, 367),
         ("general-controls", "qdtrace-drain-sweep-general-controls",
-         0x1e5cc1c0, "0.37814273", "General Controls"),
+         0x1e5cc1c0, "0.37814273", "General Controls", 348, 454),
         /* The CONTROL for the flattened-epoch finding: the same Sound
            window, same build, captured over ONE repaint pass instead of
            three. `sound` loses its whole sound list; this one keeps it,
@@ -292,7 +323,15 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
            passes got flattened into the single displayEpoch the
            resident hands out per ARM. */
         ("sound-1pass", "qdtrace-drain-sweep-sound-1pass",
-         0x1e612eb0, "0.37355521", "Sound"),
+         0x1e612eb0, "0.37355521", "Sound", 400, 367),
+        ("finder-desktop", "qdtrace-drain-sweep-finder",
+         0x009a6610, "0.29949953", "Desktop", 800, 600),
+        ("note-pad", "qdtrace-drain-sweep-note-pad",
+         0x1e581360, "0.38338561", "Note Pad", 220, 290),
+        ("stickies", "qdtrace-drain-sweep-stickies",
+         0x1e503798, "0.38600705", "Stickies", 100, 70),
+        ("scrapbook", "qdtrace-drain-sweep-scrapbook",
+         0x1e3eec00, "0.38862849", "Scrapbook", 402, 327),
     ]
 
     /// THE FLATTENED-EPOCH FINDING, and it is a DRAW-ORDER defect, not

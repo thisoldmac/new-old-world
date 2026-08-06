@@ -1,0 +1,11203 @@
+{
+ "cmd": "drain",
+ "ops": [
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "origin",
+   "origin": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rgn",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    0,
+    0,
+    402,
+    307
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    0,
+    306
+   ],
+   "to": [
+    0,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    0,
+    0
+   ],
+   "to": [
+    401,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    10,
+    219
+   ],
+   "to": [
+    10,
+    10
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    10,
+    10
+   ],
+   "to": [
+    391,
+    10
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    11,
+    218
+   ],
+   "to": [
+    11,
+    11
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    11,
+    11
+   ],
+   "to": [
+    390,
+    11
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    12,
+    217
+   ],
+   "to": [
+    12,
+    12
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    12,
+    12
+   ],
+   "to": [
+    389,
+    12
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    13,
+    216
+   ],
+   "to": [
+    13,
+    13
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    13,
+    13
+   ],
+   "to": [
+    388,
+    13
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    11,
+    219
+   ],
+   "to": [
+    391,
+    219
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    391,
+    219
+   ],
+   "to": [
+    391,
+    11
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    12,
+    218
+   ],
+   "to": [
+    390,
+    218
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    390,
+    218
+   ],
+   "to": [
+    390,
+    12
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    13,
+    217
+   ],
+   "to": [
+    389,
+    217
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    389,
+    217
+   ],
+   "to": [
+    389,
+    13
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    14,
+    216
+   ],
+   "to": [
+    388,
+    216
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    388,
+    216
+   ],
+   "to": [
+    388,
+    14
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    19,
+    296
+   ],
+   "to": [
+    19,
+    256
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    19,
+    256
+   ],
+   "to": [
+    382,
+    256
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    20,
+    295
+   ],
+   "to": [
+    20,
+    257
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    20,
+    257
+   ],
+   "to": [
+    381,
+    257
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    20,
+    296
+   ],
+   "to": [
+    382,
+    296
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    382,
+    296
+   ],
+   "to": [
+    382,
+    257
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    21,
+    295
+   ],
+   "to": [
+    381,
+    295
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    381,
+    295
+   ],
+   "to": [
+    381,
+    258
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    230,
+    383,
+    246
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    352,
+    230,
+    368,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 8
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    367,
+    230,
+    383,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 8
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    230,
+    353,
+    246
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    17,
+    16
+   ],
+   "dst": [
+    19,
+    230,
+    36,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 80
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    43690,
+    43690,
+    43690
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 1,
+   "rect": [
+    38,
+    233,
+    352,
+    243
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    30583,
+    30583,
+    30583
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    36,
+    244
+   ],
+   "to": [
+    36,
+    231
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    36,
+    231
+   ],
+   "to": [
+    351,
+    231
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    34952,
+    34952,
+    34952
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    37,
+    244
+   ],
+   "to": [
+    37,
+    232
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    37,
+    232
+   ],
+   "to": [
+    351,
+    232
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    52428,
+    52428,
+    52428
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    36,
+    244
+   ],
+   "to": [
+    351,
+    244
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    48059,
+    48059,
+    48059
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    37,
+    243
+   ],
+   "to": [
+    351,
+    243
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    19,
+    230,
+    353,
+    246
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    21,
+    258,
+    381,
+    295
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    21,
+    258,
+    381,
+    295
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    25,
+    268
+   ],
+   "font": 3,
+   "size": 9,
+   "face": 1,
+   "len": 5,
+   "fullLen": 5,
+   "trunc": false,
+   "text": "Item:"
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    60,
+    268
+   ],
+   "font": 3,
+   "size": 9,
+   "face": 0,
+   "len": 7,
+   "fullLen": 7,
+   "trunc": false,
+   "text": "1 of 14"
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    23,
+    280
+   ],
+   "font": 3,
+   "size": 9,
+   "face": 1,
+   "len": 5,
+   "fullLen": 5,
+   "trunc": false,
+   "text": "Type:"
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    60,
+    280
+   ],
+   "font": 3,
+   "size": 9,
+   "face": 0,
+   "len": 11,
+   "fullLen": 11,
+   "trunc": false,
+   "text": "styled text"
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    26,
+    292
+   ],
+   "font": 3,
+   "size": 9,
+   "face": 1,
+   "len": 5,
+   "fullLen": 5,
+   "trunc": false,
+   "text": "Size:"
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    60,
+    292
+   ],
+   "font": 3,
+   "size": 9,
+   "face": 0,
+   "len": 9,
+   "fullLen": 9,
+   "trunc": false,
+   "text": "658 bytes"
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    15,
+    15,
+    387,
+    215
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    19,
+    383,
+    211
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    19,
+    32766,
+    28
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    26
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    28,
+    32766,
+    48
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    43
+   ],
+   "font": 16,
+   "size": 18,
+   "face": 1,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "U"
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    34,
+    43
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 60,
+   "fullLen": 60,
+   "trunc": false,
+   "text": "se the Scrapbook as a place to keep pictures, text, movies, "
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    48,
+    32766,
+    62
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    58
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 56,
+   "fullLen": 56,
+   "trunc": false,
+   "text": "sounds, and 3D objects that you want to access quickly.\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    62,
+    32766,
+    76
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    72
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    76,
+    32766,
+    90
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    86
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 29,
+   "fullLen": 29,
+   "trunc": false,
+   "text": "  \u2022 Build a graphics library\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    90,
+    32766,
+    99
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    97
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    99,
+    32766,
+    113
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    109
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 53,
+   "fullLen": 53,
+   "trunc": false,
+   "text": "  \u2022 Build a library containing 3D objects and scenes\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    113,
+    32766,
+    122
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    120
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    122,
+    32766,
+    136
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    132
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 3,
+   "fullLen": 3,
+   "trunc": false,
+   "text": "   "
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    26,
+    132
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 40,
+   "fullLen": 40,
+   "trunc": false,
+   "text": "\u2022 Store your favorite sounds and movies\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    136,
+    32766,
+    145
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    143
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    145,
+    32766,
+    159
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    155
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 3,
+   "fullLen": 3,
+   "trunc": false,
+   "text": "   "
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    26,
+    155
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 52,
+   "fullLen": 52,
+   "trunc": false,
+   "text": "\u2022 Keep a letterhead design to paste into your memos\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    159,
+    32766,
+    168
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    166
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    168,
+    32766,
+    182
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    178
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 3,
+   "fullLen": 3,
+   "trunc": false,
+   "text": "   "
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    26,
+    178
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 58,
+   "fullLen": 58,
+   "trunc": false,
+   "text": "\u2022 Store a distribution list or other frequently used text\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    182,
+    32766,
+    196
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    192
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    196,
+    32766,
+    210
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    206
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 50,
+   "fullLen": 50,
+   "trunc": false,
+   "text": "      See your user\u2019s guide for more information.\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    210,
+    32766,
+    219
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    217
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    387,
+    292,
+    402,
+    307
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    0,
+    292
+   ],
+   "to": [
+    402,
+    292
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56021,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    387,
+    0
+   ],
+   "to": [
+    387,
+    292
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56262,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    230,
+    383,
+    246
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 56262,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    352,
+    230,
+    368,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 8
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 56262,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    367,
+    230,
+    383,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 8
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56262,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    230,
+    353,
+    246
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56262,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    61166,
+    61166,
+    61166
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56262,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    20,
+    231,
+    352,
+    245
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56262,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    21845,
+    21845,
+    21845
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56262,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    19,
+    231
+   ],
+   "to": [
+    19,
+    244
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56262,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    352,
+    231
+   ],
+   "to": [
+    352,
+    244
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56262,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56262,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    19,
+    230
+   ],
+   "to": [
+    352,
+    230
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56262,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    19,
+    245
+   ],
+   "to": [
+    352,
+    245
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56262,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56262,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56262,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    387,
+    292,
+    402,
+    307
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    230,
+    383,
+    246
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    352,
+    230,
+    368,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 8
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    367,
+    230,
+    383,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 8
+  },
+  {
+   "op": "worldborn",
+   "port": "0x203d6130",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "world": "0x203d6130",
+   "pixmap": "0x201000c8",
+   "rect": [
+    0,
+    0,
+    17,
+    16
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "origin",
+   "origin": [
+    19,
+    230
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    230,
+    36,
+    246
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x203d6130",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    19,
+    230,
+    36,
+    246
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    26214,
+    39321,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x203d6130",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 1,
+   "rect": [
+    20,
+    231,
+    35,
+    245
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    13107,
+    26214,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x203d6130",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    34,
+    232
+   ],
+   "to": [
+    34,
+    244
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x203d6130",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    34,
+    244
+   ],
+   "to": [
+    21,
+    244
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    39321,
+    52428,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x203d6130",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    20,
+    243
+   ],
+   "to": [
+    20,
+    232
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x203d6130",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    21,
+    231
+   ],
+   "to": [
+    33,
+    231
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    61166,
+    61166,
+    61166
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x203d6130",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    20,
+    231
+   ],
+   "to": [
+    20,
+    231
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x203d6130",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    19,
+    230,
+    36,
+    246
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x203d6130",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    8,
+    8
+   ],
+   "dst": [
+    23,
+    234,
+    31,
+    242
+   ],
+   "mode": 0,
+   "srcRowBytes": 4
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    230,
+    353,
+    246
+   ]
+  },
+  {
+   "op": "blitsrc",
+   "port": "0x1e3eec00",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "srcPort": "0x203d6130",
+   "srcPixmap": "0x201000c8"
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    17,
+    16
+   ],
+   "dst": [
+    19,
+    230,
+    36,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 80
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    43690,
+    43690,
+    43690
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 1,
+   "rect": [
+    38,
+    233,
+    352,
+    243
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    30583,
+    30583,
+    30583
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    36,
+    244
+   ],
+   "to": [
+    36,
+    231
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    36,
+    231
+   ],
+   "to": [
+    351,
+    231
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    34952,
+    34952,
+    34952
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    37,
+    244
+   ],
+   "to": [
+    37,
+    232
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    37,
+    232
+   ],
+   "to": [
+    351,
+    232
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    52428,
+    52428,
+    52428
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    36,
+    244
+   ],
+   "to": [
+    351,
+    244
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    48059,
+    48059,
+    48059
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    37,
+    243
+   ],
+   "to": [
+    351,
+    243
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    19,
+    230,
+    353,
+    246
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "rgn",
+   "port": "0x1e3eec00",
+   "ticks": 56454,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    0,
+    0,
+    402,
+    307
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    0,
+    306
+   ],
+   "to": [
+    0,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    0,
+    0
+   ],
+   "to": [
+    401,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    10,
+    219
+   ],
+   "to": [
+    10,
+    10
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    10,
+    10
+   ],
+   "to": [
+    391,
+    10
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    11,
+    218
+   ],
+   "to": [
+    11,
+    11
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    11,
+    11
+   ],
+   "to": [
+    390,
+    11
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    12,
+    217
+   ],
+   "to": [
+    12,
+    12
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    12,
+    12
+   ],
+   "to": [
+    389,
+    12
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    13,
+    216
+   ],
+   "to": [
+    13,
+    13
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    13,
+    13
+   ],
+   "to": [
+    388,
+    13
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    11,
+    219
+   ],
+   "to": [
+    391,
+    219
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    391,
+    219
+   ],
+   "to": [
+    391,
+    11
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    12,
+    218
+   ],
+   "to": [
+    390,
+    218
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    390,
+    218
+   ],
+   "to": [
+    390,
+    12
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    13,
+    217
+   ],
+   "to": [
+    389,
+    217
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    389,
+    217
+   ],
+   "to": [
+    389,
+    13
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    14,
+    216
+   ],
+   "to": [
+    388,
+    216
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    388,
+    216
+   ],
+   "to": [
+    388,
+    14
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    19,
+    296
+   ],
+   "to": [
+    19,
+    256
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    19,
+    256
+   ],
+   "to": [
+    382,
+    256
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    20,
+    295
+   ],
+   "to": [
+    20,
+    257
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    20,
+    257
+   ],
+   "to": [
+    381,
+    257
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    20,
+    296
+   ],
+   "to": [
+    382,
+    296
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    382,
+    296
+   ],
+   "to": [
+    382,
+    257
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    21,
+    295
+   ],
+   "to": [
+    381,
+    295
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    381,
+    295
+   ],
+   "to": [
+    381,
+    258
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    230,
+    383,
+    246
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    352,
+    230,
+    368,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 8
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    367,
+    230,
+    383,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 8
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    230,
+    353,
+    246
+   ]
+  },
+  {
+   "op": "blitsrc",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "srcPort": "0x203d6130",
+   "srcPixmap": "0x201000c8"
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    17,
+    16
+   ],
+   "dst": [
+    19,
+    230,
+    36,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 80
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    43690,
+    43690,
+    43690
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 1,
+   "rect": [
+    38,
+    233,
+    352,
+    243
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    30583,
+    30583,
+    30583
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    36,
+    244
+   ],
+   "to": [
+    36,
+    231
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    36,
+    231
+   ],
+   "to": [
+    351,
+    231
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    34952,
+    34952,
+    34952
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    37,
+    244
+   ],
+   "to": [
+    37,
+    232
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    37,
+    232
+   ],
+   "to": [
+    351,
+    232
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    52428,
+    52428,
+    52428
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    36,
+    244
+   ],
+   "to": [
+    351,
+    244
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    48059,
+    48059,
+    48059
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    37,
+    243
+   ],
+   "to": [
+    351,
+    243
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    19,
+    230,
+    353,
+    246
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    21,
+    258,
+    381,
+    295
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    21,
+    258,
+    381,
+    295
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    25,
+    268
+   ],
+   "font": 3,
+   "size": 9,
+   "face": 1,
+   "len": 5,
+   "fullLen": 5,
+   "trunc": false,
+   "text": "Item:"
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    60,
+    268
+   ],
+   "font": 3,
+   "size": 9,
+   "face": 0,
+   "len": 7,
+   "fullLen": 7,
+   "trunc": false,
+   "text": "1 of 14"
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    23,
+    280
+   ],
+   "font": 3,
+   "size": 9,
+   "face": 1,
+   "len": 5,
+   "fullLen": 5,
+   "trunc": false,
+   "text": "Type:"
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    60,
+    280
+   ],
+   "font": 3,
+   "size": 9,
+   "face": 0,
+   "len": 11,
+   "fullLen": 11,
+   "trunc": false,
+   "text": "styled text"
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    26,
+    292
+   ],
+   "font": 3,
+   "size": 9,
+   "face": 1,
+   "len": 5,
+   "fullLen": 5,
+   "trunc": false,
+   "text": "Size:"
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    60,
+    292
+   ],
+   "font": 3,
+   "size": 9,
+   "face": 0,
+   "len": 9,
+   "fullLen": 9,
+   "trunc": false,
+   "text": "658 bytes"
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    15,
+    15,
+    387,
+    215
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    19,
+    383,
+    211
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    19,
+    32766,
+    28
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    26
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    28,
+    32766,
+    48
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    43
+   ],
+   "font": 16,
+   "size": 18,
+   "face": 1,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "U"
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    34,
+    43
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 60,
+   "fullLen": 60,
+   "trunc": false,
+   "text": "se the Scrapbook as a place to keep pictures, text, movies, "
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    48,
+    32766,
+    62
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    58
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 56,
+   "fullLen": 56,
+   "trunc": false,
+   "text": "sounds, and 3D objects that you want to access quickly.\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    62,
+    32766,
+    76
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    72
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    76,
+    32766,
+    90
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    86
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 29,
+   "fullLen": 29,
+   "trunc": false,
+   "text": "  \u2022 Build a graphics library\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    90,
+    32766,
+    99
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    97
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    99,
+    32766,
+    113
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    109
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 53,
+   "fullLen": 53,
+   "trunc": false,
+   "text": "  \u2022 Build a library containing 3D objects and scenes\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    113,
+    32766,
+    122
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    120
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    122,
+    32766,
+    136
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    132
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 3,
+   "fullLen": 3,
+   "trunc": false,
+   "text": "   "
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    26,
+    132
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 40,
+   "fullLen": 40,
+   "trunc": false,
+   "text": "\u2022 Store your favorite sounds and movies\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    136,
+    32766,
+    145
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    143
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    145,
+    32766,
+    159
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    155
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 3,
+   "fullLen": 3,
+   "trunc": false,
+   "text": "   "
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    26,
+    155
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 52,
+   "fullLen": 52,
+   "trunc": false,
+   "text": "\u2022 Keep a letterhead design to paste into your memos\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    159,
+    32766,
+    168
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    166
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    168,
+    32766,
+    182
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    178
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 3,
+   "fullLen": 3,
+   "trunc": false,
+   "text": "   "
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    26,
+    178
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 58,
+   "fullLen": 58,
+   "trunc": false,
+   "text": "\u2022 Store a distribution list or other frequently used text\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    182,
+    32766,
+    196
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    192
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    196,
+    32766,
+    210
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    206
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 50,
+   "fullLen": 50,
+   "trunc": false,
+   "text": "      See your user\u2019s guide for more information.\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    210,
+    32766,
+    219
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    217
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    387,
+    292,
+    402,
+    307
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    0,
+    292
+   ],
+   "to": [
+    402,
+    292
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56455,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    387,
+    0
+   ],
+   "to": [
+    387,
+    292
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56779,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    230,
+    383,
+    246
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 56779,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    352,
+    230,
+    368,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 8
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 56779,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    367,
+    230,
+    383,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 8
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56779,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    230,
+    353,
+    246
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56779,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    61166,
+    61166,
+    61166
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56779,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    20,
+    231,
+    352,
+    245
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56779,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    21845,
+    21845,
+    21845
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56779,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    19,
+    231
+   ],
+   "to": [
+    19,
+    244
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56779,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    352,
+    231
+   ],
+   "to": [
+    352,
+    244
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56779,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56779,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    19,
+    230
+   ],
+   "to": [
+    352,
+    230
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56779,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    19,
+    245
+   ],
+   "to": [
+    352,
+    245
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56779,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56779,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56779,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    387,
+    292,
+    402,
+    307
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    230,
+    383,
+    246
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    352,
+    230,
+    368,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 8
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    367,
+    230,
+    383,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 8
+  },
+  {
+   "op": "worlddied",
+   "port": "0x203d6130",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "world": "0x203d6130"
+  },
+  {
+   "op": "worldborn",
+   "port": "0x203d6130",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "world": "0x203d6130",
+   "pixmap": "0x20100138",
+   "rect": [
+    0,
+    0,
+    17,
+    16
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "origin",
+   "origin": [
+    19,
+    230
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    230,
+    36,
+    246
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x203d6130",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    19,
+    230,
+    36,
+    246
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    26214,
+    39321,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x203d6130",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 1,
+   "rect": [
+    20,
+    231,
+    35,
+    245
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    13107,
+    26214,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x203d6130",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    34,
+    232
+   ],
+   "to": [
+    34,
+    244
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x203d6130",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    34,
+    244
+   ],
+   "to": [
+    21,
+    244
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    39321,
+    52428,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x203d6130",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    20,
+    243
+   ],
+   "to": [
+    20,
+    232
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x203d6130",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    21,
+    231
+   ],
+   "to": [
+    33,
+    231
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    61166,
+    61166,
+    61166
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x203d6130",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    20,
+    231
+   ],
+   "to": [
+    20,
+    231
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x203d6130",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    19,
+    230,
+    36,
+    246
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x203d6130",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    8,
+    8
+   ],
+   "dst": [
+    23,
+    234,
+    31,
+    242
+   ],
+   "mode": 0,
+   "srcRowBytes": 4
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    230,
+    353,
+    246
+   ]
+  },
+  {
+   "op": "blitsrc",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "srcPort": "0x203d6130",
+   "srcPixmap": "0x20100138"
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    17,
+    16
+   ],
+   "dst": [
+    19,
+    230,
+    36,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 80
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    43690,
+    43690,
+    43690
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 1,
+   "rect": [
+    38,
+    233,
+    352,
+    243
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    30583,
+    30583,
+    30583
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    36,
+    244
+   ],
+   "to": [
+    36,
+    231
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    36,
+    231
+   ],
+   "to": [
+    351,
+    231
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    34952,
+    34952,
+    34952
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    37,
+    244
+   ],
+   "to": [
+    37,
+    232
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    37,
+    232
+   ],
+   "to": [
+    351,
+    232
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    52428,
+    52428,
+    52428
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    36,
+    244
+   ],
+   "to": [
+    351,
+    244
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    48059,
+    48059,
+    48059
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    37,
+    243
+   ],
+   "to": [
+    351,
+    243
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    19,
+    230,
+    353,
+    246
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "rgn",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    0,
+    0,
+    402,
+    307
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    0,
+    306
+   ],
+   "to": [
+    0,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    0,
+    0
+   ],
+   "to": [
+    401,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    10,
+    219
+   ],
+   "to": [
+    10,
+    10
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    10,
+    10
+   ],
+   "to": [
+    391,
+    10
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    11,
+    218
+   ],
+   "to": [
+    11,
+    11
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    11,
+    11
+   ],
+   "to": [
+    390,
+    11
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    12,
+    217
+   ],
+   "to": [
+    12,
+    12
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    12,
+    12
+   ],
+   "to": [
+    389,
+    12
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    13,
+    216
+   ],
+   "to": [
+    13,
+    13
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    13,
+    13
+   ],
+   "to": [
+    388,
+    13
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    11,
+    219
+   ],
+   "to": [
+    391,
+    219
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    391,
+    219
+   ],
+   "to": [
+    391,
+    11
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    12,
+    218
+   ],
+   "to": [
+    390,
+    218
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    390,
+    218
+   ],
+   "to": [
+    390,
+    12
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    13,
+    217
+   ],
+   "to": [
+    389,
+    217
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    389,
+    217
+   ],
+   "to": [
+    389,
+    13
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    14,
+    216
+   ],
+   "to": [
+    388,
+    216
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    388,
+    216
+   ],
+   "to": [
+    388,
+    14
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    19,
+    296
+   ],
+   "to": [
+    19,
+    256
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    19,
+    256
+   ],
+   "to": [
+    382,
+    256
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    20,
+    295
+   ],
+   "to": [
+    20,
+    257
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    20,
+    257
+   ],
+   "to": [
+    381,
+    257
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    20,
+    296
+   ],
+   "to": [
+    382,
+    296
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    382,
+    296
+   ],
+   "to": [
+    382,
+    257
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    21,
+    295
+   ],
+   "to": [
+    381,
+    295
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    381,
+    295
+   ],
+   "to": [
+    381,
+    258
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    230,
+    383,
+    246
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    352,
+    230,
+    368,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 8
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    367,
+    230,
+    383,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 8
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    230,
+    353,
+    246
+   ]
+  },
+  {
+   "op": "blitsrc",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "srcPort": "0x203d6130",
+   "srcPixmap": "0x20100138"
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    17,
+    16
+   ],
+   "dst": [
+    19,
+    230,
+    36,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 80
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    43690,
+    43690,
+    43690
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 1,
+   "rect": [
+    38,
+    233,
+    352,
+    243
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    30583,
+    30583,
+    30583
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    36,
+    244
+   ],
+   "to": [
+    36,
+    231
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    36,
+    231
+   ],
+   "to": [
+    351,
+    231
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    34952,
+    34952,
+    34952
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    37,
+    244
+   ],
+   "to": [
+    37,
+    232
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    37,
+    232
+   ],
+   "to": [
+    351,
+    232
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    52428,
+    52428,
+    52428
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    36,
+    244
+   ],
+   "to": [
+    351,
+    244
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    48059,
+    48059,
+    48059
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    37,
+    243
+   ],
+   "to": [
+    351,
+    243
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    19,
+    230,
+    353,
+    246
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    21,
+    258,
+    381,
+    295
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    21,
+    258,
+    381,
+    295
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    25,
+    268
+   ],
+   "font": 3,
+   "size": 9,
+   "face": 1,
+   "len": 5,
+   "fullLen": 5,
+   "trunc": false,
+   "text": "Item:"
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    60,
+    268
+   ],
+   "font": 3,
+   "size": 9,
+   "face": 0,
+   "len": 7,
+   "fullLen": 7,
+   "trunc": false,
+   "text": "1 of 14"
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    23,
+    280
+   ],
+   "font": 3,
+   "size": 9,
+   "face": 1,
+   "len": 5,
+   "fullLen": 5,
+   "trunc": false,
+   "text": "Type:"
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    60,
+    280
+   ],
+   "font": 3,
+   "size": 9,
+   "face": 0,
+   "len": 11,
+   "fullLen": 11,
+   "trunc": false,
+   "text": "styled text"
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    26,
+    292
+   ],
+   "font": 3,
+   "size": 9,
+   "face": 1,
+   "len": 5,
+   "fullLen": 5,
+   "trunc": false,
+   "text": "Size:"
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    60,
+    292
+   ],
+   "font": 3,
+   "size": 9,
+   "face": 0,
+   "len": 9,
+   "fullLen": 9,
+   "trunc": false,
+   "text": "658 bytes"
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    15,
+    15,
+    387,
+    215
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    19,
+    383,
+    211
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    19,
+    32766,
+    28
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    26
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    28,
+    32766,
+    48
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    43
+   ],
+   "font": 16,
+   "size": 18,
+   "face": 1,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "U"
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    34,
+    43
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 60,
+   "fullLen": 60,
+   "trunc": false,
+   "text": "se the Scrapbook as a place to keep pictures, text, movies, "
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    48,
+    32766,
+    62
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    58
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 56,
+   "fullLen": 56,
+   "trunc": false,
+   "text": "sounds, and 3D objects that you want to access quickly.\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    62,
+    32766,
+    76
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    72
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    76,
+    32766,
+    90
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    86
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 29,
+   "fullLen": 29,
+   "trunc": false,
+   "text": "  \u2022 Build a graphics library\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    90,
+    32766,
+    99
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    97
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    99,
+    32766,
+    113
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    109
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 53,
+   "fullLen": 53,
+   "trunc": false,
+   "text": "  \u2022 Build a library containing 3D objects and scenes\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    113,
+    32766,
+    122
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    120
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    122,
+    32766,
+    136
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    132
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 3,
+   "fullLen": 3,
+   "trunc": false,
+   "text": "   "
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    26,
+    132
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 40,
+   "fullLen": 40,
+   "trunc": false,
+   "text": "\u2022 Store your favorite sounds and movies\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    136,
+    32766,
+    145
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    143
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    145,
+    32766,
+    159
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    155
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 3,
+   "fullLen": 3,
+   "trunc": false,
+   "text": "   "
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    26,
+    155
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 52,
+   "fullLen": 52,
+   "trunc": false,
+   "text": "\u2022 Keep a letterhead design to paste into your memos\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    159,
+    32766,
+    168
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    166
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    168,
+    32766,
+    182
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    178
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 3,
+   "fullLen": 3,
+   "trunc": false,
+   "text": "   "
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    26,
+    178
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 58,
+   "fullLen": 58,
+   "trunc": false,
+   "text": "\u2022 Store a distribution list or other frequently used text\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    182,
+    32766,
+    196
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    192
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    196,
+    32766,
+    210
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    206
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 50,
+   "fullLen": 50,
+   "trunc": false,
+   "text": "      See your user\u2019s guide for more information.\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    210,
+    32766,
+    219
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    217
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    387,
+    292,
+    402,
+    307
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    0,
+    292
+   ],
+   "to": [
+    402,
+    292
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 56982,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    387,
+    0
+   ],
+   "to": [
+    387,
+    292
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57303,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    230,
+    383,
+    246
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 57303,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    352,
+    230,
+    368,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 8
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 57303,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    367,
+    230,
+    383,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 8
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57303,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    230,
+    353,
+    246
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57303,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    61166,
+    61166,
+    61166
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 57303,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    20,
+    231,
+    352,
+    245
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57303,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    21845,
+    21845,
+    21845
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57303,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    19,
+    231
+   ],
+   "to": [
+    19,
+    244
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57303,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    352,
+    231
+   ],
+   "to": [
+    352,
+    244
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57303,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57303,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    19,
+    230
+   ],
+   "to": [
+    352,
+    230
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57303,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    19,
+    245
+   ],
+   "to": [
+    352,
+    245
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57303,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57303,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 57303,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    387,
+    292,
+    402,
+    307
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    230,
+    383,
+    246
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    352,
+    230,
+    368,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 8
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    367,
+    230,
+    383,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 8
+  },
+  {
+   "op": "worlddied",
+   "port": "0x203d6130",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "world": "0x203d6130"
+  },
+  {
+   "op": "worldborn",
+   "port": "0x203d6130",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "world": "0x203d6130",
+   "pixmap": "0x20100128",
+   "rect": [
+    0,
+    0,
+    17,
+    16
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "origin",
+   "origin": [
+    19,
+    230
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    230,
+    36,
+    246
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x203d6130",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    19,
+    230,
+    36,
+    246
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    26214,
+    39321,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x203d6130",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 1,
+   "rect": [
+    20,
+    231,
+    35,
+    245
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    13107,
+    26214,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x203d6130",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    34,
+    232
+   ],
+   "to": [
+    34,
+    244
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x203d6130",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    34,
+    244
+   ],
+   "to": [
+    21,
+    244
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    39321,
+    52428,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x203d6130",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    20,
+    243
+   ],
+   "to": [
+    20,
+    232
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x203d6130",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    21,
+    231
+   ],
+   "to": [
+    33,
+    231
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    61166,
+    61166,
+    61166
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x203d6130",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    20,
+    231
+   ],
+   "to": [
+    20,
+    231
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x203d6130",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x203d6130",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    19,
+    230,
+    36,
+    246
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x203d6130",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    8,
+    8
+   ],
+   "dst": [
+    23,
+    234,
+    31,
+    242
+   ],
+   "mode": 0,
+   "srcRowBytes": 4
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    230,
+    353,
+    246
+   ]
+  },
+  {
+   "op": "blitsrc",
+   "port": "0x1e3eec00",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "srcPort": "0x203d6130",
+   "srcPixmap": "0x20100128"
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    17,
+    16
+   ],
+   "dst": [
+    19,
+    230,
+    36,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 80
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    43690,
+    43690,
+    43690
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 57501,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 1,
+   "rect": [
+    38,
+    233,
+    352,
+    243
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    30583,
+    30583,
+    30583
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    36,
+    244
+   ],
+   "to": [
+    36,
+    231
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    36,
+    231
+   ],
+   "to": [
+    351,
+    231
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    34952,
+    34952,
+    34952
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    37,
+    244
+   ],
+   "to": [
+    37,
+    232
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    37,
+    232
+   ],
+   "to": [
+    351,
+    232
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    52428,
+    52428,
+    52428
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    36,
+    244
+   ],
+   "to": [
+    351,
+    244
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    48059,
+    48059,
+    48059
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    37,
+    243
+   ],
+   "to": [
+    351,
+    243
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    19,
+    230,
+    353,
+    246
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "rgn",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    0,
+    0,
+    402,
+    307
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    0,
+    306
+   ],
+   "to": [
+    0,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    0,
+    0
+   ],
+   "to": [
+    401,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    10,
+    219
+   ],
+   "to": [
+    10,
+    10
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    10,
+    10
+   ],
+   "to": [
+    391,
+    10
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    11,
+    218
+   ],
+   "to": [
+    11,
+    11
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    11,
+    11
+   ],
+   "to": [
+    390,
+    11
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    12,
+    217
+   ],
+   "to": [
+    12,
+    12
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    12,
+    12
+   ],
+   "to": [
+    389,
+    12
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    13,
+    216
+   ],
+   "to": [
+    13,
+    13
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    13,
+    13
+   ],
+   "to": [
+    388,
+    13
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    11,
+    219
+   ],
+   "to": [
+    391,
+    219
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    391,
+    219
+   ],
+   "to": [
+    391,
+    11
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    12,
+    218
+   ],
+   "to": [
+    390,
+    218
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    390,
+    218
+   ],
+   "to": [
+    390,
+    12
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    13,
+    217
+   ],
+   "to": [
+    389,
+    217
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    389,
+    217
+   ],
+   "to": [
+    389,
+    13
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    14,
+    216
+   ],
+   "to": [
+    388,
+    216
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    388,
+    216
+   ],
+   "to": [
+    388,
+    14
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    19,
+    296
+   ],
+   "to": [
+    19,
+    256
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    19,
+    256
+   ],
+   "to": [
+    382,
+    256
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    20,
+    295
+   ],
+   "to": [
+    20,
+    257
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    20,
+    257
+   ],
+   "to": [
+    381,
+    257
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    20,
+    296
+   ],
+   "to": [
+    382,
+    296
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    382,
+    296
+   ],
+   "to": [
+    382,
+    257
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    21,
+    295
+   ],
+   "to": [
+    381,
+    295
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    381,
+    295
+   ],
+   "to": [
+    381,
+    258
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    230,
+    383,
+    246
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    352,
+    230,
+    368,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 8
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    367,
+    230,
+    383,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 8
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    230,
+    353,
+    246
+   ]
+  },
+  {
+   "op": "blitsrc",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "srcPort": "0x203d6130",
+   "srcPixmap": "0x20100128"
+  },
+  {
+   "op": "bits",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    17,
+    16
+   ],
+   "dst": [
+    19,
+    230,
+    36,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 80
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    43690,
+    43690,
+    43690
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 57502,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 1,
+   "rect": [
+    38,
+    233,
+    352,
+    243
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    30583,
+    30583,
+    30583
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    36,
+    244
+   ],
+   "to": [
+    36,
+    231
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    36,
+    231
+   ],
+   "to": [
+    351,
+    231
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    34952,
+    34952,
+    34952
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    37,
+    244
+   ],
+   "to": [
+    37,
+    232
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    37,
+    232
+   ],
+   "to": [
+    351,
+    232
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    52428,
+    52428,
+    52428
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    36,
+    244
+   ],
+   "to": [
+    351,
+    244
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    48059,
+    48059,
+    48059
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    37,
+    243
+   ],
+   "to": [
+    351,
+    243
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    19,
+    230,
+    353,
+    246
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    21,
+    258,
+    381,
+    295
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    21,
+    258,
+    381,
+    295
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    25,
+    268
+   ],
+   "font": 3,
+   "size": 9,
+   "face": 1,
+   "len": 5,
+   "fullLen": 5,
+   "trunc": false,
+   "text": "Item:"
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    60,
+    268
+   ],
+   "font": 3,
+   "size": 9,
+   "face": 0,
+   "len": 7,
+   "fullLen": 7,
+   "trunc": false,
+   "text": "1 of 14"
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    23,
+    280
+   ],
+   "font": 3,
+   "size": 9,
+   "face": 1,
+   "len": 5,
+   "fullLen": 5,
+   "trunc": false,
+   "text": "Type:"
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    60,
+    280
+   ],
+   "font": 3,
+   "size": 9,
+   "face": 0,
+   "len": 11,
+   "fullLen": 11,
+   "trunc": false,
+   "text": "styled text"
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    26,
+    292
+   ],
+   "font": 3,
+   "size": 9,
+   "face": 1,
+   "len": 5,
+   "fullLen": 5,
+   "trunc": false,
+   "text": "Size:"
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    60,
+    292
+   ],
+   "font": 3,
+   "size": 9,
+   "face": 0,
+   "len": 9,
+   "fullLen": 9,
+   "trunc": false,
+   "text": "658 bytes"
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    15,
+    15,
+    387,
+    215
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    19,
+    19,
+    383,
+    211
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    19,
+    32766,
+    28
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    26
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    28,
+    32766,
+    48
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    43
+   ],
+   "font": 16,
+   "size": 18,
+   "face": 1,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "U"
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    34,
+    43
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 60,
+   "fullLen": 60,
+   "trunc": false,
+   "text": "se the Scrapbook as a place to keep pictures, text, movies, "
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    48,
+    32766,
+    62
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    58
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 56,
+   "fullLen": 56,
+   "trunc": false,
+   "text": "sounds, and 3D objects that you want to access quickly.\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    62,
+    32766,
+    76
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    72
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    76,
+    32766,
+    90
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    86
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 29,
+   "fullLen": 29,
+   "trunc": false,
+   "text": "  \u2022 Build a graphics library\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    90,
+    32766,
+    99
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    97
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    99,
+    32766,
+    113
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    109
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 53,
+   "fullLen": 53,
+   "trunc": false,
+   "text": "  \u2022 Build a library containing 3D objects and scenes\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    113,
+    32766,
+    122
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    120
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    122,
+    32766,
+    136
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    132
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 3,
+   "fullLen": 3,
+   "trunc": false,
+   "text": "   "
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    26,
+    132
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 40,
+   "fullLen": 40,
+   "trunc": false,
+   "text": "\u2022 Store your favorite sounds and movies\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    136,
+    32766,
+    145
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    143
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    145,
+    32766,
+    159
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    155
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 3,
+   "fullLen": 3,
+   "trunc": false,
+   "text": "   "
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    26,
+    155
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 52,
+   "fullLen": 52,
+   "trunc": false,
+   "text": "\u2022 Keep a letterhead design to paste into your memos\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    159,
+    32766,
+    168
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    166
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    168,
+    32766,
+    182
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    178
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 3,
+   "fullLen": 3,
+   "trunc": false,
+   "text": "   "
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    26,
+    178
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 58,
+   "fullLen": 58,
+   "trunc": false,
+   "text": "\u2022 Store a distribution list or other frequently used text\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    182,
+    32766,
+    196
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    192
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    196,
+    32766,
+    210
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    206
+   ],
+   "font": 16,
+   "size": 12,
+   "face": 0,
+   "len": 50,
+   "fullLen": 50,
+   "trunc": false,
+   "text": "      See your user\u2019s guide for more information.\r"
+  },
+  {
+   "op": "rect",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    210,
+    32766,
+    219
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "pen": [
+    20,
+    217
+   ],
+   "font": 16,
+   "size": 9,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\r"
+  },
+  {
+   "op": "state",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    387,
+    292,
+    402,
+    307
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    0,
+    292
+   ],
+   "to": [
+    402,
+    292
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e3eec00",
+   "ticks": 57503,
+   "a5": "0x1e4f90b8",
+   "psn": "0.38862849",
+   "displayEpoch": 12,
+   "generation": 1,
+   "from": [
+    387,
+    0
+   ],
+   "to": [
+    387,
+    292
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  }
+ ],
+ "cursor": 0,
+ "nextCursor": 3378580,
+ "writeCursor": 3378580,
+ "pending": 0,
+ "records": 586,
+ "wraps": 0,
+ "more": false,
+ "resync": false,
+ "torn": false,
+ "busy": false,
+ "lostBytes": 0,
+ "dropped": 0,
+ "provenance": {
+  "build": "1bff0bd2ca39",
+  "vm": "nowvm-fsw1",
+  "run": "fidelity-sweep scrapbook (record mode, worlds hooked at birth)",
+  "capturedAt": "2026-08-06",
+  "guest": "mac99/OS 9.1 emulated"
+ }
+}
