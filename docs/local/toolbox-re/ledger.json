@@ -39,6 +39,69 @@
       "provenance": "static",
       "evidence": "/private/tmp/tbcorpus/finder-imports.txt",
       "at": "2026-08-06T03:38:31-0400"
+    },
+    {
+      "phase": "P1",
+      "claim": "Layouts, from offsetof in the extension's own dialect (68K Retro68/UI 3.4): GrafPort and CGrafPort are both 108 bytes; BitMap 14; PixMap 50; GDevice 62; QDProcs 52; CQDProcs 80. CGrafPort: device@0 portPixMap@2 portVersion@6 grafVars@8 chExtra@12 pnLocHFrac@14 portRect@16 visRgn@24 clipRgn@28 grafProcs@104. GrafPort shares device@0/portRect@16/visRgn@24/clipRgn@28/grafProcs@104 but has portBits@2 where the colour port has portPixMap - which is exactly why the 0xC000 test at portVersion@6 must precede any grafProcs write.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy-report.txt",
+      "at": "2026-08-06T03:43:21-0400"
+    },
+    {
+      "phase": "P1",
+      "claim": "Verified live on a real window port, not only compiled: portVersion carries the 0xC000 discriminator, portPixMap and grafProcs read correctly at the compiled offsets, and a fresh window's grafProcs is NULL.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy-report.txt",
+      "at": "2026-08-06T03:43:22-0400"
+    },
+    {
+      "phase": "P2",
+      "claim": "A GWorldPtr IS its CGrafPtr - same address, no private wrapper record - and the port is a RELOCATABLE block: RecoverHandle on the port itself returns a handle. Inside Macintosh's 'an always-locked handle in the application heap' is confirmed on this machine.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy-report.txt",
+      "at": "2026-08-06T03:43:22-0400"
+    },
+    {
+      "phase": "P2",
+      "claim": "THE CHASE'S KEY IS NOT STABLE: a GWorld pixmap's baseAddr MOVES under LockPixels, on every flavour tested (device depth, 8, 32, useTempMem, keepLocal, pixelsPurgeable, noNewDevice). The probe matched a candidate port by comparing the blit's reported baseAddr against the port's pixmap baseAddr read LATER - so it was comparing a locked-time value with an unlocked-time one. This alone would make the chase fail on a GWorld that is behaving perfectly.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy-report.txt",
+      "at": "2026-08-06T03:43:22-0400"
+    },
+    {
+      "phase": "P2",
+      "claim": "Lifetime: a disposed GWorld's address is REUSED by the very next NewGWorld of the same size (0x1ea59e00 twice running). An observer polling for offscreen ports cannot tell one repaint's world from the next by address, and a stale row pointing at a disposed world will silently come to point at a live different one.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy-report.txt",
+      "at": "2026-08-06T03:43:22-0400"
+    },
+    {
+      "phase": "P2",
+      "claim": "useTempMem puts the PIXELS outside both heaps (baseAddr 0x1f8059a4 against an app heap around 0x1ea5xxxx) while the PORT stays in the application heap - so a port-hunting sweep of the app zone is looking in the right place even for a temp-memory world.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy-report.txt",
+      "at": "2026-08-06T03:43:22-0400"
+    },
+    {
+      "phase": "P3",
+      "claim": "A window port and an offscreen GWorld port dispatch IDENTICALLY: text hooks fired 1 and 1. The content plane's mechanism is not window-specific, which is the premise the whole probe rests on, now measured on both port kinds side by side in one program.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy-report.txt",
+      "at": "2026-08-06T03:43:22-0400"
+    },
+    {
+      "phase": "P3",
+      "claim": "StdText does NOT nest through StdBits on this machine - with NO re-entrancy guard installed, a DrawString produced text=1 bits=0 on both a window and an offscreen port. ext/src/now_content.c justifies its guard by 'StdText blits each glyph through StdBits'; that rationale does not reproduce here. The guard may be protecting a different case, or none.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy-report.txt",
+      "at": "2026-08-06T03:43:23-0400"
+    },
+    {
+      "phase": "P3",
+      "claim": "A GWorld->window CopyBits reports a source pixmap record that IS the GWorld port's own dereferenced portPixMap - so the probe's chase is looking for a real relationship, and the join it wants does exist.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy-report.txt",
+      "at": "2026-08-06T03:43:23-0400"
     }
   ],
   "blockers": [],

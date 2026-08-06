@@ -44,3 +44,16 @@ add_application(NowGWorld
     src/now_gworld.c)
 
 target_compile_options(NowGWorld PRIVATE -mcpu=68000 -Wall -Wextra -Werror -Os)
+
+# The anatomy applet: the same rig, a wider question. The spike asks
+# whether the bottlenecks fire at all; this one prints the structure
+# layouts THIS dialect compiles, walks the whole QDOffscreen surface flag
+# by flag, and asks whether a window port and an offscreen port dispatch
+# alike. Separate binary because the spike's answer is a yes/no anyone
+# can act on and this one's is a reference document.
+add_application(NowAnatomy
+    TYPE "APPL"
+    CREATOR "NOWa"
+    src/anatomy.c)
+
+target_compile_options(NowAnatomy PRIVATE -mcpu=68000 -Wall -Wextra -Werror -Os)
