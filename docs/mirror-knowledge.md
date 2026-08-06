@@ -34,6 +34,7 @@ look is this page, and the second is the upstream repository.
 | [mirror-act-plane.md](mirror-act-plane.md) | driving an application — in-process trap answering, the Toolbox facts underneath it, identity-not-position, input verbs |
 | [mirror-content-plane.md](mirror-content-plane.md) | reading what an application draws — QuickDraw bottleneck capture, pixel islands, the Timbuktu prior art |
 | [mirror-journaling.md](mirror-journaling.md) | the Event Manager journal: measured, and closed |
+| [toolbox-and-gworld.md](toolbox-and-gworld.md) | the Toolbox measured — structure layouts, GWorld internals and lifetime, bottleneck dispatch, and how a composite is read from an offscreen port |
 | [mirror-assets.md](mirror-assets.md) | extracting the guest's own fonts, icons, cursors and patterns |
 | [mirror-renders.md](mirror-renders.md) | nine rendered scenes, and what each proves |
 | [mirror-measurement-method.md](mirror-measurement-method.md) | how upstream learned to measure — twelve rules, each bought with a retraction |

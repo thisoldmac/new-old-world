@@ -8,8 +8,13 @@ on physical hardware. Every claim carries how it was established:
 - **doc** — asserted by documentation or prior art; evidence, not a
   measurement of this machine
 
-The ledger (`ledger.json`) is the primary record; this file is the shape
-a reader needs. [PLAN.md](PLAN.md) is the arc.
+This is the reference. The durable claims also live in the parent's
+corpus as findings — `gworld-offscreen-ports-are-hookable`,
+`memtop-is-not-the-address-space-ceiling`,
+`quickdraw-bottlenecks-are-native-ppc-routine-descriptors` — and what to
+build on them is [plan 013](plans/2026-08-06-013-feat-composing-interiors-host-side-plan.md).
+The working notes it was graduated from (`docs/local/toolbox-re/`) are
+scratch and gitignored by design.
 
 ## 1. Getting at the corpus
 
