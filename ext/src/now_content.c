@@ -962,6 +962,13 @@ static Boolean content_probe_addr_ok(NowPeekU32 addr, unsigned long size)
         && addr <= top - (NowPeekU32)size;
 }
 
+static Boolean content_probe_scan(unsigned char *p, unsigned char *limit,
+                                  Handle h,
+                                  NowContentS16 wl, NowContentS16 wt,
+                                  NowContentS16 wr, NowContentS16 wb,
+                                  NowPeekU32 wbase, NowContentU16 wrow,
+                                  NowPeekU32 a5, NowPeekU32 generation);
+
 static void content_probe_service(NowPeekU32 a5, NowPeekU32 generation)
 {
     Ptr pm;
@@ -972,7 +979,7 @@ static void content_probe_service(NowPeekU32 a5, NowPeekU32 generation)
     NowContentS16 wl, wt, wr, wb;
     NowPeekU32 wbase;
     NowContentU16 wrow;
-    short slot;
+    short which;
 
     if (gArmedMode != (NowPeekU32)kNowContentModeProbe
         || gBlock->probe_pending_pixmap == 0) {
@@ -1007,20 +1014,50 @@ static void content_probe_service(NowPeekU32 a5, NowPeekU32 generation)
     if (h != NULL && (Ptr)*h != pm) {
         h = NULL;
     }
-    zone = ApplicationZone();
-    if (zone == NULL) {
-        gBlock->probe_misses++;
-        return;
+    /* TWO ZONES, and the second is not a guess. RecoverHandle searches
+       the CURRENT zone only, so a GWorld whose pixmap handle lives in
+       temp memory - the system heap under MultiFinder - fails to
+       recover from inside the application AND is invisible to an
+       application-zone scan. Both of this evening's negatives are that
+       one fact if the Finder's composite is a temp-memory GWorld, so
+       the system zone is swept too, in the same pass, before any
+       conclusion is drawn about what the Finder does or does not
+       expose. */
+    for (which = 0; which < 2; ++which) {
+        zone = (which == 0) ? ApplicationZone() : SystemZone();
+        if (zone == NULL) {
+            continue;
+        }
+        p = (unsigned char *)&zone->heapData;
+        limit = (unsigned char *)zone->bkLim;
+        if (limit <= p
+            || (unsigned long)(limit - p) > 0x04000000UL) {
+            continue;                /* a zone that cannot be believed */
+        }
+        gBlock->probe_scans++;
+        limit -= sizeof(CGrafPort);
+        if (content_probe_scan(p, limit, h, wl, wt, wr, wb, wbase, wrow,
+                               a5, generation)) {
+            return;
+        }
     }
-    p = (unsigned char *)&zone->heapData;
-    limit = (unsigned char *)zone->bkLim;
-    if (limit <= p
-        || (unsigned long)(limit - p) > 0x01000000UL) {
-        gBlock->probe_misses++;      /* a zone that cannot be believed */
-        return;
-    }
-    gBlock->probe_scans++;
-    limit -= sizeof(CGrafPort);
+    gBlock->probe_misses++;
+}
+
+/* One zone's sweep. Returns true when it resolved the sighting either
+   way - a hit, or a match that was already ours - so the caller stops.
+   Split out of the service function because it now runs twice and a
+   loop with two exits inside a loop with two zones is how an early
+   return goes to the wrong place. */
+static Boolean content_probe_scan(unsigned char *p, unsigned char *limit,
+                                  Handle h,
+                                  NowContentS16 wl, NowContentS16 wt,
+                                  NowContentS16 wr, NowContentS16 wb,
+                                  NowPeekU32 wbase, NowContentU16 wrow,
+                                  NowPeekU32 a5, NowPeekU32 generation)
+{
+    short slot;
+
     for (; p <= limit; p += 2) {
         /* Cheap pre-filters inline; a pure match confirms. Memory
            Manager blocks are at least word-aligned, so step 2 cannot
@@ -1086,7 +1123,7 @@ static void content_probe_service(NowPeekU32 a5, NowPeekU32 generation)
             gBlock->probe_last_match = (NowPeekU32)cand;
             if (content_slot_for((GrafPtr)cand, a5) >= 0) {
                 gBlock->probe_already_ours++;
-                return;              /* already ours, and now it says so */
+                return true;         /* already ours, and now it says so */
             }
             content_install_port((GrafPtr)cand, a5, generation);
             slot = content_slot_for((GrafPtr)cand, a5);
@@ -1105,10 +1142,10 @@ static void content_probe_service(NowPeekU32 a5, NowPeekU32 generation)
                    own arithmetic honest. */
                 gBlock->probe_misses++;
             }
-            return;
+            return true;
         }
     }
-    gBlock->probe_misses++;
+    return false;
 }
 
 /* ---- the GNE moment ------------------------------------------------- */
