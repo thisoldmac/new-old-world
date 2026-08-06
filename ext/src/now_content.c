@@ -1004,7 +1004,7 @@ static Boolean content_probe_addr_ok(NowPeekU32 addr, unsigned long size)
 }
 
 static Boolean content_probe_scan(unsigned char *p, unsigned char *limit,
-                                  Handle h,
+                                  Handle h, NowPeekU32 wpm,
                                   NowContentS16 wl, NowContentS16 wt,
                                   NowContentS16 wr, NowContentS16 wb,
                                   NowPeekU32 wbase, NowContentU16 wrow,
@@ -1078,7 +1078,8 @@ static void content_probe_service(NowPeekU32 a5, NowPeekU32 generation)
         }
         gBlock->probe_scans++;
         limit -= sizeof(CGrafPort);
-        if (content_probe_scan(p, limit, h, wl, wt, wr, wb, wbase, wrow,
+        if (content_probe_scan(p, limit, h, (NowPeekU32)pm,
+                               wl, wt, wr, wb, wbase, wrow,
                                a5, generation)) {
             return;
         }
@@ -1092,7 +1093,7 @@ static void content_probe_service(NowPeekU32 a5, NowPeekU32 generation)
    loop with two exits inside a loop with two zones is how an early
    return goes to the wrong place. */
 static Boolean content_probe_scan(unsigned char *p, unsigned char *limit,
-                                  Handle h,
+                                  Handle h, NowPeekU32 wpm,
                                   NowContentS16 wl, NowContentS16 wt,
                                   NowContentS16 wr, NowContentS16 wb,
                                   NowPeekU32 wbase, NowContentU16 wrow,
@@ -1144,11 +1145,24 @@ static Boolean content_probe_scan(unsigned char *p, unsigned char *limit,
                                                sizeof(PixMap))) {
                         continue;
                     }
-                    /* The weaker question first: does ANY port point
-                       at these pixels? Counted before the strict match
-                       so a zero here is a fact about the machine and a
-                       nonzero with no hit is a fact about this code. */
-                    if ((NowPeekU32)pm2->baseAddr == wbase
+                    /* THE STABLE JOIN, and the reason the two before it
+                       could not work. The anatomy applet (2026-08-06)
+                       measured a GWorld pixmap's baseAddr MOVING under
+                       LockPixels - so matching a draw-time baseAddr
+                       against one read at the GNE moment compares two
+                       different numbers for the same pixels. It also
+                       measured what a GWorld->window CopyBits actually
+                       passes: the port's own DEREFERENCED portPixMap.
+                       So the owning port is the one whose portPixMap
+                       derefs to exactly the record the blit named -
+                       pointer identity, stable across locking, and no
+                       RecoverHandle (which the Finder's blit refuses
+                       anyway). */
+                    if ((NowPeekU32)pm2 == wpm) {
+                        matched = 1;
+                    }
+                    if (!matched
+                        && (NowPeekU32)pm2->baseAddr == wbase
                         && ((unsigned short)cand->portVersion & 0xC000U)
                                == 0xC000U) {
                         if (gBlock->probe_base_candidates == 0) {
@@ -1160,15 +1174,22 @@ static Boolean content_probe_scan(unsigned char *p, unsigned char *limit,
                         }
                         gBlock->probe_base_candidates++;
                     }
-                    matched = now_content_probe_pixmap_match(
-                        (NowContentU16)cand->portVersion,
-                        cand->portRect.left, cand->portRect.top,
-                        cand->portRect.right, cand->portRect.bottom,
-                        (NowContentU32)pm2->baseAddr,
-                        (NowContentU16)pm2->rowBytes,
-                        pm2->bounds.left, pm2->bounds.top,
-                        pm2->bounds.right, pm2->bounds.bottom,
-                        wbase, wrow, wl, wt, wr, wb);
+                    /* The shape route stays as a FALLBACK for a source
+                       that is not the port's own record - a hand-built
+                       PixMap aimed at the same pixels would still be
+                       found this way - but it never overwrites a
+                       pointer-identity hit. */
+                    if (!matched) {
+                        matched = now_content_probe_pixmap_match(
+                            (NowContentU16)cand->portVersion,
+                            cand->portRect.left, cand->portRect.top,
+                            cand->portRect.right, cand->portRect.bottom,
+                            (NowContentU32)pm2->baseAddr,
+                            (NowContentU16)pm2->rowBytes,
+                            pm2->bounds.left, pm2->bounds.top,
+                            pm2->bounds.right, pm2->bounds.bottom,
+                            wbase, wrow, wl, wt, wr, wb);
+                    }
                 }
             }
             if (!matched) {
