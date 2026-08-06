@@ -14,6 +14,82 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED in the host, UNVERIFIED by any drive: Apple menu items did nothing, and the act was never the missing part (2026-08-06)
+
+Michelle, driving: "apple menu items dont work (apple menu -> control
+panels, sherlock, system profiler etc)". The menu drew correctly and
+selecting a row did nothing on the machine.
+
+The act was sent, reached the guest, and was dispatched. `acts.log`
+carries all three attempts, each planning
+`menuCommand(menuID: -16383, itemIndex: 3/6/14, titleLeft: 10)` and
+answering in **18–50 ms with settlement `unknown`** — the self branch of
+`menuact`, which queues the choice for NOW's own main loop and returns
+without settlement rows. Compare the Finder's File > Quit on the same
+drive: **~800 ms, `dispatched-but-unconfirmed`**, the foreign act plane.
+Two mechanisms, and the fast one ends at `main.c :: handle_menu_choice`,
+which serves menus 129, 140 and the rest of NOW's own bar and has **no
+Apple-menu case at all**. The choice fell off the end of the switch.
+
+Fixed by routing every row below the Apple menu's first separator to
+`openAppleMenuItem`, which asks the guest Finder to open the file by
+name — the mechanism that already existed and was wired to Key Caps
+alone. `ObjectResolver.isAppleMenuItemsEntry` makes the decision where
+the sibling rows are visible, and `MirrorDriveService` calls the same
+function so the agent face cannot drift.
+
+**No drive has watched an Apple menu row open.** Verified only by
+mutation: restoring the Key-Caps-only rule reproduces the three logged
+plans byte-for-byte.
+
+### Two things it does not fix
+
+- **A folder alias will time out having worked.** `openAppleMenuItem`
+  predicts `processNamedPresent(name)`, which is right for Sherlock 2
+  and Apple System Profiler and wrong for Control Panels — an alias to a
+  FOLDER, which opens a Finder *window*. That burns the full 15 s
+  settlement holding the one mutation lane, the same shape
+  `MirrorActionExecutor.finderOpen` documents and fixed for itself by
+  classifying the item. Here the item cannot be classified: every Apple
+  Menu Items entry is an alias, and an alias reports its own kind and
+  never its target's. It needs either a postcondition meaning "a process
+  OR a Finder window by this name", or a guest probe that resolves an
+  alias. Functionally the open works; only the reporting lies.
+- **At the machine, the same click still does nothing.** This is a
+  host-side route. A person sitting at the guest with NOW frontmost who
+  chooses Apple > Sherlock 2 gets the same silence, because
+  `handle_menu_choice` still has no Apple case and `OpenDeskAcc` is not
+  in CarbonLib. Whether the guest should serve its own Apple menu — and
+  through what, since the obvious call is absent — is open, and it is a
+  command-parity question, not a Mirror one.
+
+## BROKEN, and it is NOT the host's click translation: a modal's Cancel is refused because the planes went inactive (2026-08-06)
+
+Michelle, same drive: in Date & Time's Set Time Zone modal — which
+renders — "Cancel doesn't work", while an earlier session's `ditemact`
+sent straight over the wire had dismissed that same button.
+
+That pairing reads like a host translation defect and is not one. The
+host resolved the click correctly and sent the right act:
+`plan=dialogItem(ref: "now-element-5f5c3825-…", item: 2)`, the same verb
+and the same item number the wire test used. **The guest refused it**:
+
+    element-not-found: the anchor plane is absent or not armed
+
+after 6.7–8.8 s, five times over. The `actmeta` line at that moment says
+why: `requested=8 active=8`, with
+`structure=inactive semantics=inactive interaction=inactive` and only
+`content` active. The planes the act needs had gone down; `requested`
+had dropped from 15 to 8.
+
+So the open question is **what takes the structure/semantics/interaction
+planes inactive while the content plane stays up**, and whether a modal
+being frontmost is what does it — which would tie this to the existing
+"one modal wedges the whole Mirror" entry below. Until that is answered,
+do not attribute a dead-looking Mirror click to hit-testing without
+reading `actmeta` at the same timestamp first: the refusal was recorded
+plainly and was still nearly diagnosed as the wrong half.
+
 ## MEASURED, and the answer is DON'T BUILD ON IT: how long the content plane takes to arm (2026-08-06)
 
 Plan 013 § A proposes turning the resident into a NOTIFIER — told at
