@@ -19,6 +19,14 @@ order, cheapest first, and stops at the first failure naming it.
   `cc` and run it here — frame codecs, JSON, layout arithmetic, command
   parsing, file lists. `scripts/test-native` runs both guests' suites in
   one command. No guest required.
+- **MirrorKit's own suite** — `scripts/test-mirrorkit` — is the vendored
+  `mirror/` SwiftPM package that turns drained drawing records into
+  scenes and renders them. Ordinary Swift; no guest required. It has been
+  stage 2 of `test-all` since 2026-08-06.
+- **The guest cross-builds** — `scripts/build-guests` — need
+  [Retro68](https://github.com/autc04/Retro68), and **skip cleanly
+  (exit 0) without it**, so this stage does not stop you. Nothing else in
+  the tree invokes a cross-compiler.
 - **The contract** (`contract/asyncapi.yaml`) is a text file, and it is
   where a behaviour change starts.
 - **`tools/fakeguest.py`** exercises the host against a hand-written peer.
