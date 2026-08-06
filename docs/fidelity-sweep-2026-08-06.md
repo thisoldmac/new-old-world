@@ -123,9 +123,36 @@ Both were one step from the red list, and both were the harness:
   `windows[1]` of the canned scene, which the coverage helper documents
   as attaching a display that renders nowhere. Scored N/A, not 0.
 
+A third candidate died the same way, and it is the one worth keeping in
+mind: the Sound list's disappearance was first written up as the
+composition *losing* the rows. The gate written to hold that claim
+**failed** — the rows are in the composed display — and the real
+mechanism (draw order, R3) came out of the failure. The claim would have
+read perfectly plausibly in this document.
+
 The lesson generalises: **a survey's first duty is to its own
-instrument.** Two of the five candidate findings from the first pass
-were the measuring apparatus.
+instrument.** Three of the first pass's candidate findings were the
+measuring apparatus or a wrong reading of it.
+
+## Verification status
+
+**Tested**, in the project's sense — never metal. `scripts/test-all`
+green: 122 native tests, both guests cross-compile (source hash
+`1bff0bd2ca39`, unchanged by this work), and the host suite passes. Each
+individual claim below that could be gated *is* gated, and each of those
+gates was watched to fail before it was believed:
+
+| Claim | Gate |
+|---|---|
+| every sweep capture still composes | `testEverySweepCaptureComposes` |
+| a later pass paints over the Sound list; one pass does not | `testFlattenedPassesPutAWindowBlitOverTheSoundList` |
+| the Finder's selection never reaches the capture, and the painted half renders wrong | `testTheFindersSelectionNeverReachesTheCapture` |
+
+The scores themselves are **judgements**, not measurements. They come
+from a person-equivalent reading of a render beside a screendump of the
+same moment, against the rubric above. Another reader could move a 2 to
+a 3. What should not move is the red list, because each item there names
+a mechanism and points at the bytes.
 
 ## The table
 
