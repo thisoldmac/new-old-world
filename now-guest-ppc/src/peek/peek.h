@@ -44,6 +44,19 @@ void now_peek_status_line(char *out, long cap);
    arm_request (ours). Re-probes Gestalt each call - cheap (a trap). */
 const NowPeekTable *now_peek_table(void);
 
+/* Renew the writer heartbeat from the event loop, once per pass.
+ *
+ * The heartbeat is the resident's proof this application is ALIVE
+ * (kNowPeekWriterLeaseTicks, 3 s), and until this existed it was renewed
+ * only inside peek calls - so it measured wire-call frequency, not
+ * liveness. Any host that polled slower than the lease de-armed every
+ * plane between polls, and the first walk after each gap read
+ * arm_active before the resident's next pass could re-echo it: every
+ * foreign process answered no-plane on exactly the scenes a person was
+ * waiting for. That flap is the ledger's "anchor plane is active and
+ * binds nothing", measured 2026-08-06 at a 4 s poll cadence. */
+void now_peek_idle(void);
+
 /* **Who wants a plane armed.**
  *
  * A direct arm/disarm pair made the LAST caller decide for everybody.

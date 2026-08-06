@@ -16,6 +16,7 @@
 #include "prefs.h"
 #include "wire.h"
 #include "observe.h"
+#include "peek.h"
 #include "act_cmds.h"
 #include "workshop_layout.h"
 #include "workshop_window.h"
@@ -472,6 +473,11 @@ int main(void)
         conn_service();
         dispatch_pending_menu_choice();
         workshop_idle();
+        /* The writer heartbeat, renewed because this loop is running -
+           which is the fact it exists to prove. Renewed anywhere else it
+           measures something else; see now_peek_idle's header comment
+           for the flap that taught this. */
+        now_peek_idle();
         ask_about_replacing();
         /* NEVER SLEEP ZERO. A zero sleep tells WaitNextEvent to return
            at once, so this application spins and, on a cooperatively

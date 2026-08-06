@@ -215,6 +215,14 @@ static void publish_claims(void)
     publish_claims_to(table, now);
 }
 
+void now_peek_idle(void)
+{
+    /* now_peek_table() is already the renew-and-republish path; calling
+       it for its side effect keeps one implementation of the writer
+       protocol. Cost when the extension is absent: one Gestalt trap. */
+    (void)now_peek_table();
+}
+
 const NowPeekTable *now_peek_table(void)
 {
     NowPeekTable *table = raw_table();
