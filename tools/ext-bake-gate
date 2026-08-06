@@ -36,6 +36,14 @@ mtime says when a file was touched, a digest says what is in it, and a
 the second. The timestamps are still recorded and reported, because a
 human reading a failure wants to know how stale.
 
+WHAT IT CANNOT CHECK, said plainly: the image on disk is shared and the
+last bake wins. A receipt certifies that THIS source was baked, verified
+by the guest and installed — not that the file still contains it, because
+another branch may bake over it minutes later (watched on 2026-08-06, two
+sessions baking within the hour). The `imageSha256` is what tells you
+afterwards which resident a sweep actually cloned: compare it against the
+file before believing a result, and re-bake if it differs.
+
 DEFERRING is allowed and is a WRITTEN DECISION, never a silent skip:
 
     TBT_DEFER_EXT_BAKE=1 TBT_DEFER_EXT_BAKE_REASON="..." git commit ...
