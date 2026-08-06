@@ -173,7 +173,22 @@ is broken; a wedge that renders as a disconnection is a lie. The status
 line already carries the lane's depth and the cancel affordance from 011
 § A — this joins them.
 
-### 3 · The resident's interrupt-time context
+### 3 · The resident's interrupt-time context · **BUILT, DISARMED, UNPROVEN**
+
+The Time Manager task exists (`ext/src/now_liveness.c`) and **does not
+install**: armed, it hung a cold boot — empty menu bar, no Finder, no
+worker, unreachable after five minutes. Two defects one behind the other,
+both found only by running it, both in
+[open-issues.md](../open-issues.md): a tick that fired once (arbitrary A5
+at interrupt time, so this component's statics are somebody else's
+memory), and — with that fixed, so it fired every 5 s — the boot hang.
+
+Its deliverable was to PROVE the vehicle runs while applications are
+starved. That is unproven in the strongest sense: it cannot be left
+running. `liveness_ticks` and its `livenessTicks` report are built and
+correct; nothing has made them climb.
+
+### 3 (original text) · The resident's interrupt-time context
 
 The new thing, and the one to build slowly. A Time Manager task, a
 deferred task for anything that touches OT, no allocation, and OT client
@@ -184,7 +199,20 @@ time. `classic-mac-init-platform` is the skill; the charter is
 Its first job is only to exist and tick: prove the vehicle runs while
 every application is starved, before it is asked to carry a wire.
 
-### 4 · The liveness channel
+### 4 · The liveness channel · **BLOCKED — answered by the linker**
+
+OT's 68K libraries are CFM/SLM fragments; this extension is a flat 68K
+code resource. They do not link (`__SLM11FuncDispatch`,
+`__gOTClientRecord`, …) across four library combinations. § C's metal
+question, answered without a machine.
+
+**The next attempt is MacTCP's `.ipp` driver through the Device
+Manager** — the only route that keeps the resident an INIT, drivable
+from flat 68K with `PBControl` and completion routines, and still
+provided by OS 9's OT for exactly these callers. CFM fragment and OT
+module are the fallbacks.
+
+### 4 (original text) · The liveness channel
 
 Registration, dial, and the periodic report of § B. The contract gains
 the message family first, per the rule that a behaviour change starts
