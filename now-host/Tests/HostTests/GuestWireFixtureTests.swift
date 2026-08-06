@@ -1055,6 +1055,30 @@ final class GuestWireFixtureTests: XCTestCase {
         }
     }
 
+    /// **A guest can refuse too**, and this side has to be able to read it.
+    /// The contract binds the revision gate to whoever RECEIVES a hello,
+    /// so `refuse` is no longer only the host's message — and its
+    /// `contract` is the SENDER's revision, which is the number a stale
+    /// peer needs to be told. Decoded rather than pattern-matched because
+    /// the failure this pins is the one the file family keeps producing:
+    /// a message one side sends and the other cannot decode at all, which
+    /// arrives as a link that simply died.
+    func test68KRefuseAsTheGuestWritesIt() throws {
+        for (json, reason) in [
+            (Guest68KWire.refuseRevision, "contract revision 1 != 2"),
+            (Guest68KWire.refuseAbsentRevision,
+             "host hello states no contract revision; this guest speaks 2"),
+        ] {
+            guard case .refuse(let refusal) = try decode(json) else {
+                return XCTFail("not a refuse")
+            }
+            // The literal 2 is the guest's own revision, held to the
+            // contract by WireLimitsAgreementTests rather than here.
+            XCTAssertEqual(refusal.contract, Contract.revision)
+            XCTAssertEqual(refusal.reason, reason)
+        }
+    }
+
     // MARK: - NOW-68K's file family (the send half)
 
     /// The offer this guest makes when a person types `put`. Decoded
@@ -1418,6 +1442,16 @@ enum Guest68KWire {
     static let byeNormal = #"{"type":"bye","code":"normal"}"#
     static let byeProtocolError = #"{"type":"bye","code":"protocol-error"}"#
     static let byeShuttingDown = #"{"type":"bye","code":"shutting-down"}"#
+
+    /// The guest's own refusal of a host hello it cannot speak to, as
+    /// send_refuse_and_close() assembles it. Both reasons handle_host_hello
+    /// can produce, because they are different findings: a revision that
+    /// disagrees, and a hello that states none at all.
+    static let refuseRevision = #"{"type":"refuse","contract":2,"#
+        + #""reason":"contract revision 1 != 2"}"#
+    static let refuseAbsentRevision = #"{"type":"refuse","contract":2,"#
+        + #""reason":"host hello states no contract revision; "#
+        + #"this guest speaks 2"}"#
 
     static let pingFirst = #"{"type":"ping","id":1}"#
     static let pingLater = #"{"type":"ping","id":7}"#

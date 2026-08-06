@@ -58,6 +58,18 @@ face** can ask for, gap by gap. Neither restates the other's tables.
 > `Mirror` rather than naming fields, so the next field declared without a
 > place in a second list fails on its own.
 
+> **Inbound `hello` was ticked for both guests while only one gated it
+> (2026-08-06).** NOW-PPC's `on_hello` read `name` and `version` and
+> served the session; the contract revision it was sent was never
+> looked at, so the tick meant "reads the message", not "serves the
+> rule". Both guests now gate it and both SEND `refuse` naming their own
+> revision and the peer's — including for an ABSENT `contract`, which
+> the contract's connection rules now state is a mismatch rather than a
+> tolerance. Watched on an emulated Power Mac G4 (guest build
+> `48a2af200ab7`): revision 1 refused, no revision refused, revision 2
+> served. The permanent check is
+> `WireLimitsAgreementTests.testBothGuestsGateTheContractRevisionInTheirHelloHandler`.
+
 > **`hello` is no longer byte-identical between the guests (2026-07-30).**
 > Inbound handling still is — every row in the table below is unchanged —
 > but the PowerPC guest now SENDS two fields the 68K guest does not: a

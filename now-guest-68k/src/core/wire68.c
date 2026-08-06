@@ -839,7 +839,11 @@ static void send_bye_and_close(const char *code)
  * have just decided we cannot speak. */
 static void send_refuse_and_close(const char *reason)
 {
-    char payload[128];
+    /* The envelope is ~40 bytes and handle_host_hello's reason buffer is
+     * 80, so this holds the longest refusal that can reach it with room
+     * to spare - and a longer one truncates into a shorter message
+     * rather than overrunning, because numfmt is bounded. */
+    char payload[160];
     long pos = 0;
     int ok = 1;
 
@@ -1081,7 +1085,6 @@ static void handle_host_hello(const char *json, long len)
     long contract = -1;
     char name[32];
     char version[24];
-
     int found = now68k_json_find_int(json, (size_t)len, "contract", &contract);
 
     if (!found || contract != NOW68K_CONTRACT_REVISION) {
@@ -1089,6 +1092,12 @@ static void handle_host_hello(const char *json, long len)
         long pos = 0;
         long spos;
         int absent = !found;
+
+        /* Terminated before the first append, the way status_begin() does
+         * it: numfmt leaves *pos unspecified on a failure, and the
+         * recovery below re-derives the position with strlen(), which on
+         * an untouched buffer would be reading whatever the stack held. */
+        reason[0] = '\0';
 
         /* The numbers, not just the fact. This used to read "contract
          * mismatch" and tear down with a bye, which told a person nothing
