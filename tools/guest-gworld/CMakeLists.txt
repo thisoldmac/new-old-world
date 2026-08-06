@@ -69,3 +69,14 @@ add_application(NowGWorldLoop
     src/loop.c)
 
 target_compile_options(NowGWorldLoop PRIVATE -mcpu=68000 -Wall -Wextra -Werror -Os)
+
+# Slice D0's one-boot question (plan 013): does a tail-patch on the
+# QDOffscreen dispatch trap ($AB1D) fire when a CFM caller - the PPC
+# Finder - creates a GWorld? src/trapwatch.c carries the protocol; the
+# 68K loop applet doubles as its positive control.
+add_application(NowTrapWatch
+    TYPE "APPL"
+    CREATOR "NOWt"
+    src/trapwatch.c)
+
+target_compile_options(NowTrapWatch PRIVATE -mcpu=68000 -Wall -Wextra -Werror -Os)
