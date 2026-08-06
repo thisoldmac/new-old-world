@@ -95,7 +95,7 @@ def _strike_pixel(strike: Strike, col: int, row: int) -> int:
     return (byte >> (7 - (col & 7))) & 1
 
 
-def render_strike(strike: Strike, chars: range = range(32, 127),
+def render_strike(strike: Strike, chars: range = range(32, 256),
                   cols: int = 16, pad: int = 1):
     """Render printable glyphs into a packed sheet. Returns (PIL.Image, metrics).
 
@@ -103,6 +103,22 @@ def render_strike(strike: Strike, chars: range = range(32, 127),
     verbatim (full strike height so the baseline is consistent across glyphs).
     Metrics record the glyph's pixel box in the sheet, its advance, and its left
     side bearing so the consumer can place it pen-relative.
+
+    THE RANGE RUNS TO 256 AND THE KEYS ARE MACROMAN, and both halves of
+    that were wrong until 2026-08-06. The default stopped at 127, so no
+    sheet carried a single character above ASCII — and the guest's text
+    is MacRoman, in which 0xC9 is an ellipsis and 0xA5 a bullet. Every
+    "Save Theme…", every Scrapbook bullet and every curly apostrophe in
+    the fidelity sweep drew as blank space, because the consumer
+    substitutes the space glyph for a character the strike does not
+    carry. That is R6, and it was never a mapping error in the renderer:
+    the glyphs are in the NFNT and were never asked for.
+
+    Keying by `chr(c)` would have been the SECOND half of the same
+    defect: the consumer looks a glyph up by the character the guest's
+    JSON decoded to, and `chr(0xC9)` is 'É' where MacRoman 0xC9 is '…'.
+    Every high glyph would have been filed under the wrong name — a
+    wrong glyph rather than a missing one, which is the worse failure.
     """
     present = [c for c in chars
               if strike.first_char <= c <= strike.last_char
@@ -129,7 +145,7 @@ def render_strike(strike: Strike, chars: range = range(32, 127),
             for col in range(gw):
                 if _strike_pixel(strike, x0 + col, row):
                     px[cx + col, cy + row] = (0, 0, 0, 255)
-        glyphs[chr(c)] = {
+        glyphs[bytes([c]).decode("mac_roman")] = {
             "x": cx, "y": cy, "w": gw, "h": strike.frect_h,
             "advance": advance, "left": left,
         }

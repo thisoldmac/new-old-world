@@ -168,6 +168,76 @@ final class RendererTextFidelityTests: XCTestCase {
         }
     }
 
+    // MARK: - R6, MacRoman punctuation dropped silently
+
+    /// Every character the sweep's thirteen captures actually draw must
+    /// exist in the strike that would draw it.
+    ///
+    /// The extracted strikes carried ASCII 0x20..0x7E and nothing else,
+    /// because the extractor's default range stopped at 127 — so `…` in
+    /// five button titles, `•` in all five Scrapbook bullets and the
+    /// apostrophe in "user's guide" all drew as blank space, the
+    /// consumer's substitute for a character it has no glyph for. The
+    /// glyphs were in the NFNT the whole time and were never asked for.
+    ///
+    /// This gate reads the CORPUS rather than a list of characters
+    /// somebody thought of: a capture that starts drawing a new one fails
+    /// it, which is the only version of this that keeps working.
+    func testEveryCharacterTheGuestDrawsHasAGlyphToDrawItWith() throws {
+        let captures = [
+            "appearance", "date-and-time", "memory", "sound", "sound-1pass",
+            "general-controls", "finder", "finder-selected", "note-pad",
+            "stickies", "scrapbook", "sherlock-2", "key-caps",
+        ]
+        var missing: Set<String> = []
+        var seen = 0
+        for capture in captures {
+            for run in try textOps("qdtrace-drain-sweep-\(capture)") {
+                guard let text = run.text,
+                      let strike = DisplayReplay.strike(font: run.font ?? 3,
+                                                        size: run.size ?? 12)
+                else { continue }
+                for character in text {
+                    // Control characters are the guest's own layout marks
+                    // (Key Caps labels its modifier keys with them, and
+                    // Memory ends a wrapped line with a carriage return);
+                    // no strike has ever carried a glyph for those.
+                    guard !character.isASCII
+                            || character.asciiValue.map({ $0 >= 0x20 }) == true
+                    else { continue }
+                    seen += 1
+                    if !strike.has(character) {
+                        missing.insert("\(strike.face) \(strike.pointSize): "
+                                       + "\(character)")
+                    }
+                }
+            }
+        }
+        XCTAssertGreaterThan(seen, 10_000, "the corpus stopped being read")
+        XCTAssertEqual(missing.sorted(), [],
+                       "these draw as blank space, silently")
+    }
+
+    /// And the strikes must carry the MacRoman range under the characters
+    /// the guest's JSON decodes to — not under the Unicode characters
+    /// those byte values happen to name. Keying 0xC9 as `É` rather than
+    /// `…` would file every high glyph under the wrong name and produce a
+    /// WRONG glyph, which is worse than a missing one.
+    func testTheStrikesAreKeyedByMacRomanNotByByteValue() throws {
+        let strike = try XCTUnwrap(FontBook.font("geneva-10"))
+        // MacRoman 0xC9 is an ellipsis and 0xA5 a bullet; the Unicode
+        // characters at those code points are É and ¥, which the strike
+        // also carries — at 0x83 and 0xB4 — so both must be present AND
+        // different, or the table is keyed by the byte.
+        XCTAssertTrue(strike.has("…"), "no ellipsis glyph")
+        XCTAssertTrue(strike.has("•"), "no bullet glyph")
+        XCTAssertTrue(strike.has("É"), "no É glyph")
+        XCTAssertTrue(strike.has("¥"), "no ¥ glyph")
+        XCTAssertNotEqual(strike.width("…"), strike.width("É"),
+                          "the ellipsis and É are the same glyph — the "
+                          + "table is keyed by byte value, not by MacRoman")
+    }
+
     // MARK: - R8, a selected label rendered as a solid black bar
 
     /// The Finder paints a selected label's background and writes the text
