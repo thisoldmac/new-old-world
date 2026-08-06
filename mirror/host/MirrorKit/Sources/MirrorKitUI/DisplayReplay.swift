@@ -16,6 +16,15 @@ import MirrorKit
 /// marker is a background annotation rather than substitute pixels. Drawing
 /// those markers first keeps missing bitmap data visible without allowing it
 /// to cover text and controls the guest did report.
+///
+/// THE PLACEHOLDER GRADING BELOW IS ONE PLANE ANSWERING ANOTHER'S
+/// SILENCE, not a local heuristic, and the rule it implements is
+/// docs/render-composition.md — read that before adding another case.
+/// A placeholder is a CLAIM about the machine and must be no stronger
+/// than the evidence: "missing" only for content nobody could reach,
+/// "a control" for a control-shaped blit, and never a more precise type
+/// than the drawing stream supports, because typing controls is P2's
+/// job and where P2 knows, P2 draws.
 public enum DisplayReplay {
 
     /// Draw `ops` into `content` (mirror-space rect for the window's content
