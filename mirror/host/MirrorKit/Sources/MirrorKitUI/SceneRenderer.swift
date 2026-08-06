@@ -1209,6 +1209,28 @@ public struct SceneRenderer {
     /// they are backgrounds, they routinely wrap most of a dialog, and a
     /// background that swallowed every op inside it would be this defect
     /// with a different name.
+    /// A DITL row's `title`, if it is TEXT at all.
+    ///
+    /// It is not always. The guest's dialog walk reports the item's text
+    /// by reading a handle, and when that read fails it reports the
+    /// POINTER — `\u{1e}πN,\u{1e}πM@` is eight bytes of 68K address, and
+    /// the Memory panel's 2026-08-06 capture carries twenty rows like it.
+    /// Drawn, they are mojibake over the panel's own words; believed, they
+    /// make a row look like it carries content and silence the drawing
+    /// underneath it. Both happened.
+    ///
+    /// Control bytes are the discriminator because no Mac OS dialog label
+    /// contains one, and a corrupted read reliably does. This is a
+    /// renderer-side defence, not a fix: the walk reporting an address as
+    /// a string is a guest defect and belongs in docs/open-issues.md.
+    static func displayableTitle(_ title: String) -> String? {
+        guard !title.isEmpty,
+              !title.unicodeScalars.contains(where: {
+                  $0.value < 0x20 || $0.value == 0x7f
+              }) else { return nil }
+        return title
+    }
+
     static func dialogItemOwnsDisplay(_ item: MirrorKit.Scene.DialogItem)
         -> Bool {
         switch item.semantic.kind {
@@ -1217,7 +1239,8 @@ public struct SceneRenderer {
         case "popupMenu":
             return item.semantic.value != nil
         case "staticText", "editText":
-            return !((item.semantic.value ?? item.title).isEmpty)
+            return item.semantic.value != nil
+                || Self.displayableTitle(item.title) != nil
         default:
             return false
         }
@@ -1243,14 +1266,17 @@ public struct SceneRenderer {
         case "separator":
             ctx.fill(Path(frame), with: .color(Platinum.g4))
         case "staticText":
-            appText(item.semantic.value ?? item.title, ctx, x: frame.minX,
+            appText(item.semantic.value
+                    ?? Self.displayableTitle(item.title) ?? "",
+                    ctx, x: frame.minX,
                     baselineY: frame.minY
                         + CGFloat(FontBook.app?.ascent ?? 10),
                     color: item.enabled ? Platinum.g6 : Platinum.g3)
         case "editText":
             ctx.fill(Path(frame), with: .color(Platinum.g0))
             ctx.stroke(Path(frame), with: .color(Platinum.g6), lineWidth: 1)
-            appText(item.semantic.value ?? item.title, ctx,
+            appText(item.semantic.value
+                    ?? Self.displayableTitle(item.title) ?? "", ctx,
                     x: frame.minX + 3, baselineY: frame.midY + 4,
                     color: item.enabled ? Platinum.g6 : Platinum.g3)
             if item.semantic.focused == true {

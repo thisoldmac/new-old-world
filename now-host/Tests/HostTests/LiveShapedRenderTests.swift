@@ -123,6 +123,52 @@ final class LiveShapedRenderTests: XCTestCase {
         XCTAssertTrue(text.contains("2026"), "the year crosses")
     }
 
+    /// **Render a whole sweep the way the APP would draw it.**
+    ///
+    /// Opt-in, for eyes: `NOW_SWEEP_DIR` names a `tools/fidelity-sweep.py`
+    /// output directory and `NOW_RENDER_DIR` where to put the PNGs. Each
+    /// target is composed onto ITS OWN `<label>-scene.json` — the scene the
+    /// capture came from, controls and dialog items intact — rather than
+    /// onto the coverage harness's canned one.
+    ///
+    /// That difference is the whole reason this exists. The canned scene
+    /// renders every capture with an empty exclusion list, so a sweep
+    /// judged from those PNGs scores a picture the app never draws. The
+    /// 2026-08-06 sweep was judged that way and could not have seen the
+    /// defect it was later used to find.
+    ///
+    /// Pair the output against `<label>-guest.ppm` with
+    /// tools/fidelity-pair.py.
+    func testRenderASweepAsTheAppWouldDrawIt() throws {
+        guard let sweep = ProcessInfo.processInfo
+                .environment["NOW_SWEEP_DIR"],
+              let out = ProcessInfo.processInfo
+                .environment["NOW_RENDER_DIR"] else { return }
+        let summary = try JSONSerialization.jsonObject(
+            with: Data(contentsOf: URL(fileURLWithPath:
+                "\(sweep)/sweep-summary.json")))
+        let results = ((summary as? [String: Any])?["results"]
+            as? [[String: Any]]) ?? []
+        for result in results
+        where (result["status"] as? String) == "ok" {
+            guard let label = result["label"] as? String else { continue }
+            let scene = try NOWMirrorSceneDecoder.decode(
+                irVersion: 2,
+                document: Data(contentsOf: URL(fileURLWithPath:
+                    "\(sweep)/\(label)-scene.json")))
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(
+                with: Data(contentsOf: URL(fileURLWithPath:
+                    "\(sweep)/\(label).json"))) as? [String: Any])
+            let drain = try XCTUnwrap(QDTraceDecode.drain(object))
+            let plane = NOWMirrorContentPlane(listener: GuestListener(
+                identity: .init(version: "test", name: "Test Host")))
+            let update = plane.apply(drain, to: scene)
+            print("### \(label): \(update.sentence)")
+            let png = try RenderShot.png(scene: update.scene)
+            try png.write(to: URL(fileURLWithPath: "\(out)/\(label).png"))
+        }
+    }
+
     /// **The fixture harness cannot stand in for this, and here is the
     /// proof.** If someone later "simplifies" the scene above to the
     /// canned one, the suite must fail rather than quietly become a
