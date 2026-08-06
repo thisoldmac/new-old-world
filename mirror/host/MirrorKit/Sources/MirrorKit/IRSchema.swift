@@ -239,6 +239,16 @@ public enum IRSchema {
         "Scene.Window.addr",
 
         "Scene.Window.ref",
+
+        /* 2026-08-06. The guest's own account of a text run's length.
+           These ride the wire already — the resident has emitted `len`,
+           `fullLen` and `trunc` on every text record since QDPeek
+           shipped — and it was the HOST that dropped them, so a
+           truncation the guest declared became a silent one at the
+           glass (R2 of the fidelity sweep). Additive in the ordinary
+           sense: nothing changes shape, and a reader that has never
+           heard of them is exactly as correct as it was yesterday. */
+        "DisplayOp.len", "DisplayOp.fullLen", "DisplayOp.trunc",
     ]
 
     // MARK: - IR v2 semantic evidence
