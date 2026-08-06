@@ -554,6 +554,39 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         }
     }
 
+    /// **A window that is drawn is not necessarily a window that was
+    /// seen, and the status line has to say which.**
+    ///
+    /// The reducer already knows: a window whose owning process reported
+    /// `unavailable/not-observed` is RETAINED rather than deleted — an
+    /// unobserved process cannot testify that its window is gone — and it
+    /// is marked `.expectedStale` and un-actionable when it is. Nothing
+    /// carried that fact to the person. On 2026-08-06 the line read
+    /// `5 windows · walk 0ms · transfer 36ms · same` while three of those
+    /// five were retentions of a machine the guest could not observe at
+    /// all, and `same` was the guest correctly reporting that its blind
+    /// document had not changed. Every word was true and the sentence was
+    /// a lie by omission.
+    ///
+    /// Menu retention already had this vocabulary one line away
+    /// (`Apple menu expected-stale`); windows now share it.
+    private func observationPhrase(_ count: Int) -> String {
+        Self.observationPhrase(count, replica: shadowEngine?.replica)
+    }
+
+    /// Nonisolated because it reads only its arguments: the phrase is a
+    /// pure function of a replica, and a test that had to hop the main
+    /// actor to check a string would be testing the hop.
+    nonisolated static func observationPhrase(_ count: Int,
+                                              replica: MirrorReplica?)
+        -> String {
+        let stale = replica?.windows.values.filter {
+            $0.freshness == .expectedStale
+        }.count ?? 0
+        guard stale > 0 else { return "\(count) windows" }
+        return "\(count) windows, \(stale) expected-stale"
+    }
+
     private func accept(_ delivery: GuestListener.SceneDelivery,
                         generation: Int) {
         guard isCurrentCycle(generation) else { return }
@@ -583,7 +616,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             guard pinnedGuestKey == cycleIO.activeKey() else {
                 shadowEngine?.compareVisible(decoded)
                 scene = projectedScene(fallback: decoded)
-                ambient = "(decoded.windows.count) windows · pinned Mac "
+                ambient = observationPhrase(decoded.windows.count)
+                    + " · pinned Mac "
                     + "is in the background; content and actions paused"
                     + menuStatus
                 finishCycle(generation)
@@ -599,7 +633,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                     self.refreshComplements(decoded,
                                             generation: generation) {
                         guard self.isCurrentCycle(generation) else { return }
-                        self.ambient = "\(decoded.windows.count) windows · "
+                        self.ambient =
+                            self.observationPhrase(decoded.windows.count)
+                            + " · "
                             + (failure.map {
                                 "content release refused: \($0)"
                             } ?? "content off") + menuStatus
@@ -638,7 +674,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                     case .whole:
                         wire = "whole \(delivery.wireBytes)B"
                     }
-                    self.ambient = "\(update.scene.windows.count) windows · walk "
+                    self.ambient =
+                        self.observationPhrase(update.scene.windows.count)
+                        + " · walk "
                         + "\(delivery.walkMs.map { "\($0)ms" } ?? "?") · transfer "
                         + "\(delivery.transferMs)ms · \(wire) · \(update.sentence)"
                         + menuStatus

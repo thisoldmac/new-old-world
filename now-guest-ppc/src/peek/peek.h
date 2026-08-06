@@ -77,6 +77,23 @@ void now_peek_claim_until(NowPeekOwner owner, unsigned long caps,
 void now_peek_release(NowPeekOwner owner, unsigned long caps);
 void now_peek_disconnect(void);
 
+/* **Wait, briefly, for a claim to become an ARMED plane.**
+ *
+ * Claiming publishes a request; the resident echoes it into `arm_active`
+ * on its next pass, and until it does every reader gates itself off
+ * (`peek_read.c :: resolve` returns no-plane) and answers "I could not
+ * look" for the whole machine. A caller that claims and reads in the
+ * same breath therefore gets one blind answer per lapse - measured
+ * 2026-08-06: a scene walked after a ten-second gap carried NOW's own
+ * window and nothing else, and the NEXT one was complete.
+ *
+ * Bounded and honest: returns 1 only when the plane is genuinely armed,
+ * 0 when the deadline passed, no resident answered, or this build does
+ * not own the writer. It never asserts an arm it did not observe.
+ * Returns as soon as the echo lands (~15 ms measured), so the bound is
+ * a ceiling, not a cost. */
+int now_peek_settle(unsigned long caps, unsigned long max_ticks);
+
 /* **Where the resident should dial, and whether it should dial at all.**
  *
  * The optional resident component answers for the MACHINE while every
