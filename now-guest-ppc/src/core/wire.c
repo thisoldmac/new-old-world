@@ -278,6 +278,12 @@ static void link_drop_transfers(void)
     preview_fail("Connection lost");  /* local hook only; no wire touched */
     ctlq_clear();
     now_peek_disconnect();             /* release every wire-owned plane */
+    /* And tell the resident to stay off the wire. It holds its OWN
+       connection to the same host, so a link this application has given
+       up on is one nothing here can still vouch for; the endpoint is
+       withdrawn on every path out for the same reason every transfer is
+       ended here rather than at each call site. */
+    now_peek_withdraw_endpoint();
 }
 
 /* Move to backoff after a failure; status keeps the reason already set. */
@@ -749,6 +755,12 @@ static void on_hello(const char *reply)
     }
     g.phase = kConnConnected;
     g.connected_tick = TickCount();
+    /* **Published here and not one step earlier.** The resident cannot
+       report a failed dial to anybody - it has no UI, no log and no
+       application to tell - so it is handed an address only once THIS
+       side has watched the host answer. An address that has not answered
+       is not one to give something that cannot complain about it. */
+    now_peek_publish_endpoint((unsigned long)g.address, g.port);
     g.backoff_ticks = 0;              /* success resets backoff */
     g.last_fail[0] = '\0';
     g.pings_sent = 0;

@@ -108,6 +108,15 @@ static short gTransportRefNum = 0;
 /* The assembly shim (now_liveness_tm.S) the Time Manager actually calls. */
 extern void now_liveness_tm_entry(void);
 
+/* The channel (now_liveness_net.c). Its own translation unit for the
+   reason the content plane is two: this file is the VEHICLE and its only
+   claim is that it runs when nothing else does. Mixing the transport in
+   would make a file that hangs a boot harder to disarm, and disarming it
+   is the recovery procedure. */
+extern void now_liveness_net_prepare(NowPeekTable *table, short refnum);
+extern void now_liveness_net_pump(NowPeekTable *table,
+                                  const NowPeekLivenessEndpoint *want);
+
 /* What the application published, or nothing. Gated on length and on the
    format word beside it - the accretive rule every other plane follows,
    where an older application is SHORTER and says so by being shorter. */
@@ -118,7 +127,17 @@ static const NowPeekLivenessEndpoint *published_endpoint(NowPeekTable *table)
                                      + sizeof(NowPeekLivenessEndpoint))) {
         return NULL;
     }
-    if (table->endpoint_format != kNowPeekLivenessFormatV1) return NULL;
+    /* V2 or later only. V1 named no OS string, and without one the host
+       cannot fingerprint this channel onto its own application's session
+       — a channel it cannot attach to anything is indistinguishable from
+       no channel, so dialling on V1 would spend a connection to prove
+       nothing. Nothing ever published V1; it is refused rather than
+       supported so that a future V1 writer fails visibly. */
+    if (table->endpoint_format < kNowPeekLivenessFormatV2) return NULL;
+    if (table->length < (NowPeekU32)(offsetof(NowPeekTable, endpoint_os)
+                                     + sizeof table->endpoint_os)) {
+        return NULL;
+    }
     /* Zero is an instruction to stay off the wire, not an old value worth
        retrying: an application that has never connected and one that has
        withdrawn consent must look the same here. */
@@ -157,6 +176,11 @@ void now_liveness_tick(TMTaskPtr task)
         table->liveness_ticks++;
         want = published_endpoint(table);
         self->visible_epoch = (want != NULL) ? want->endpoint_epoch : 0;
+        /* The journey. Everything it does is asynchronous or a memory
+           read — see now_liveness_net.c's header for why there are no
+           completion routines, which is the one design choice here worth
+           arguing with. */
+        now_liveness_net_pump(table, want);
     }
     PrimeTime((QElemPtr)task, kLivenessTickMs);
 }
@@ -215,6 +239,20 @@ void now_liveness_probe_transport(NowPeekTable *table)
         table->transport_probe = kNowPeekTransportOpen;
     } else {
         table->transport_probe = kNowPeekTransportRefused;
+    }
+    /* And, in the same one-shot non-interrupt pass, the only other thing
+       this component ever does that could move memory: creating the TCP
+       stream. It is here rather than in the tick for exactly the reason
+       the open above is. A refused driver hands it 0 and it records a
+       machine with no transport rather than trying anyway. */
+    now_liveness_net_prepare(table, (err == noErr) ? gTransportRefNum : 0);
+    /* The channel's own capability bit, and it is a SECOND bit rather
+       than a widening of the vehicle's: capabilities are bits and are
+       never inferred from a version, so "there is a resident here that
+       ticks" and "there is one that can speak" stay separately
+       answerable. Set only when a stream actually exists. */
+    if (table->channel_state != kNowPeekChannelNoTransport) {
+        table->caps |= kNowPeekTableCapLivenessNet;
     }
 }
 

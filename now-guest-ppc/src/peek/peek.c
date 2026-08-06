@@ -1,5 +1,7 @@
 #include "peek.h"
 
+#include "commands.h"
+
 #include <Files.h>
 #include <Folders.h>
 #include <Gestalt.h>
@@ -270,6 +272,92 @@ void now_peek_disconnect(void)
 {
     now_peek_leases_disconnect(&g_leases);
     publish_claims();
+}
+
+/* P6, the liveness endpoint - WHERE the resident should dial, and the
+   only thing in this table only the application can know.
+   -------------------------------------------------------------------
+   The resident has no preferences, no file access at interrupt time and
+   no way to ask a person anything, so without this the liveness channel
+   cannot exist at all. The host's address came from a preference a human
+   set and has already been dialled successfully by the time this is
+   called, which is why it is published on `hello` rather than on connect
+   intent: an address that has not answered is not one to hand a resident
+   that cannot report a failure.
+
+   `endpoint_epoch` is the commit word and is written LAST, the same rule
+   the writer lease follows. Everything else is written before it, so a
+   resident that reads a nonzero epoch has the whole record. */
+static int endpoint_region_ready(const NowPeekTable *table)
+{
+    unsigned long need = (unsigned long)offsetof(NowPeekTable, endpoint_os)
+        + (unsigned long)sizeof table->endpoint_os;
+
+    return table != NULL && table->length >= need;
+}
+
+/* A C string into a fixed-width Pascal one, truncated rather than
+   refused: a machine with a 40-character name should still get a
+   liveness channel, and the host folds the name to a fingerprint. */
+static void set_pascal(unsigned char *dst, unsigned long cap,
+                       const char *src)
+{
+    unsigned long n = 0;
+
+    while (src[n] != '\0' && n + 1 < cap && n < 255) {
+        dst[n + 1] = (unsigned char)src[n];
+        ++n;
+    }
+    dst[0] = (unsigned char)n;
+}
+
+void now_peek_publish_endpoint(unsigned long host_ipv4, unsigned short port)
+{
+    NowPeekTable *table = raw_table();
+    NowPeekU32 now = (NowPeekU32)TickCount();
+    char name[64];
+
+    if (table == NULL || !endpoint_region_ready(table)
+        || !maintain_writer(table, now)) {
+        return;
+    }
+    /* The SAME name the wire's own hello carries. That is not tidiness:
+       the host associates a resident channel with its application by
+       fingerprinting name and OS, so a resident inventing its own name
+       would be a channel vouching for nobody. */
+    now_machine_name(name, sizeof name);
+    table->endpoint.host_ipv4 = (NowPeekU32)host_ipv4;
+    table->endpoint.host_port = (NowPeekU32)port;
+    set_pascal(table->endpoint.guest_name,
+               sizeof table->endpoint.guest_name, name);
+    /* Literal, and it is literal in send_hello() too - one string in two
+       places is exactly the drift this project has paid for, so if that
+       one ever becomes computed this must read the same source. */
+    set_pascal(table->endpoint_os, sizeof table->endpoint_os, "9");
+    table->endpoint_length = (NowPeekU16)sizeof table->endpoint;
+    table->endpoint_format = kNowPeekLivenessFormatV2;
+    table->endpoint.endpoint_epoch += 1;      /* commit, and LAST */
+    if (table->endpoint.endpoint_epoch == 0) {
+        table->endpoint.endpoint_epoch = 1;   /* 0 means stay off the wire */
+    }
+}
+
+void now_peek_withdraw_endpoint(void)
+{
+    NowPeekTable *table = raw_table();
+    NowPeekU32 now = (NowPeekU32)TickCount();
+
+    if (table == NULL || !endpoint_region_ready(table)
+        || !maintain_writer(table, now)) {
+        return;
+    }
+    /* Zero is an INSTRUCTION, not an absence: an application that has
+       never connected and one that has stopped consenting must look the
+       same to the resident, and neither is an old address worth
+       retrying. The address itself is left alone - the epoch is what is
+       read, and clearing bytes a reader may be mid-copy of would buy
+       nothing. */
+    table->endpoint.endpoint_epoch = 0;
 }
 
 int now_peek_build_identity(NowPeekBuildIdentity *out)

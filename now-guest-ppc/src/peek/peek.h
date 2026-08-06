@@ -64,6 +64,22 @@ void now_peek_claim_until(NowPeekOwner owner, unsigned long caps,
 void now_peek_release(NowPeekOwner owner, unsigned long caps);
 void now_peek_disconnect(void);
 
+/* **Where the resident should dial, and whether it should dial at all.**
+ *
+ * The optional resident component answers for the MACHINE while every
+ * application on it is starved (plan 012), and to do that it must hold
+ * its own connection - it may not borrow this one, because two writers
+ * on one frame stream is a corruption the host answers by dropping the
+ * link. But it has no preferences, no file access at interrupt time and
+ * nobody to ask, so the address can only come from here.
+ *
+ * Publish AFTER the host has answered, withdraw on every path out.
+ * `host_ipv4` is the numeric address in host order - the same UInt32 the
+ * wire dialled with, never a name: resolving one needs the application
+ * that may be the thing that is starved. */
+void now_peek_publish_endpoint(unsigned long host_ipv4, unsigned short port);
+void now_peek_withdraw_endpoint(void);
+
 /* Exact resident identity. Returns false for old/short/unknown layouts. */
 int now_peek_build_identity(NowPeekBuildIdentity *out);
 int now_peek_build_matches(
