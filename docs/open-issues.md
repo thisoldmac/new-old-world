@@ -14,6 +14,58 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## BROKEN, contract violation: the PowerPC guest never reads the host's contract revision (2026-08-06)
+
+`contract/asyncapi.yaml`, connection rules: "`contract` is a single
+integer revision. **Unequal revisions => refuse.**" Three of the four
+implementations do that. One does not.
+
+| side | on an unequal revision in the peer's hello |
+| --- | --- |
+| host (`Session.swift:1511`) | refuses, reason names both numbers |
+| NOW-68K (`wire68.c :: handle_host_hello`) | logs it, `set_status_str("Protocol error: contract mismatch")`, `teardown_and_retry(NULL, "protocol-error")` |
+| `scripts/probes/nowwire.py :: _gate` | refuses |
+| **NOW-PPC (`wire.c :: on_hello`)** | **never looks at the field.** It reads `name` and `version`, sets `kConnConnected`, and serves the session |
+
+`on_hello` is twenty lines and `contract` is not among them; the
+handshake dispatch above it (`handle_frame`, `g.phase ==
+kConnHandshaking`) routes `hello` straight there without checking
+either. So the PowerPC guest will hold a full session with a host
+speaking any revision at all, including one that predates every message
+it is about to be sent.
+
+**How it surfaced.** Five Python harnesses declared the revision by hand
+and two of them still said 1 (fixed on `claude/wire-revision-drift`,
+`contract/wire_limits.py` plus three gates in
+`WireLimitsAgreementTests`). Those two had been talking to NOW-PPC
+guests perfectly happily — which is exactly the problem: the guest's
+missing check is what made a year-stale harness look fine. Against
+NOW-68K the same harnesses could never have held a link, and that
+difference is the whole diagnosis.
+
+**Why it is worth more than the tools fix.** The check exists to make a
+version skew fail loudly at the door instead of quietly in the middle of
+a message nobody can decode. A guest that skips it converts "refused,
+here is why" into a session that misbehaves later with no handshake to
+blame, and that is the `two-halves-never-met-in-a-test` shape.
+
+**The fix**, not taken here because this branch is the tools half and a
+guest behaviour change wants a metal pass: read `contract` in
+`on_hello`, and on a mismatch set a status naming both numbers and tear
+the connection down the way `handle_frame` already does for `refuse`
+(return 0). NOW-68K's `handle_host_hello` is the model — including its
+treatment of an ABSENT `contract` as a mismatch, since the field is
+required.
+
+**What is not known.** Whether the guest should also SEND a `refuse`
+before closing. The contract words the refusal as the host's move ("the
+host answers `hello` (accept) or `refuse` and closes") and never says
+what a guest does with a bad host hello, so NOW-68K's silent teardown
+and a hypothetical guest-sent `refuse` are both defensible readings.
+AGENTS.md says the file family is symmetric; if that governs here, the
+contract's prose should say so explicitly rather than leaving two
+implementations to guess. Settle the prose before writing the code.
+
 ## UNSETTLED: the host app reported as always-on-top; no window level exists to cause it (2026-08-06)
 
 Michelle: the macOS app window floats above other applications. What was
