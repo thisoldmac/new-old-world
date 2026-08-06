@@ -27,7 +27,8 @@ is still exactly true. The only metal-verified things in this product —
 on **2026-07-29** — predate the whole arc.
 
 **Gates as of this revision:** 3/3 guest cross-builds, **69 native tests**,
-0 failures. Verified today by running them.
+0 failures. Verified on 2026-08-01 by running them. (That count is a
+snapshot: `scripts/test-all` reported 122 native tests on 2026-08-06.)
 
 ### Two things landed after Phase 2 closed
 
@@ -167,7 +168,7 @@ for a distinction to survive a codebase.
   candidacy and `stack_base` bounds the same address space from the other end —
   and *both can be satisfied by a partition that was recycled.* The name cannot.
 - **`-Warray-bounds` refuses low-memory address constants** under `-Werror`
-  (`0x0910`, `0x904`), twice today. Route through a `volatile`. Anyone writing a
+  (`0x0910`, `0x904`), twice on 2026-08-01. Route through a `volatile`. Anyone writing a
   resident that reads a low-memory array will hit it.
 - **A resting state needs four fields, not three**: glyph, headline, what is true,
   and **what would change it**. The fourth is the difference between idle and
@@ -265,7 +266,7 @@ this is the shape of the session.
   is emulator-only — it hard-froze the 1400c and needed a physical reboot.
   `sertx` soft-wedged the harness and its fix is still un-retested on metal.
 - **Quit the host app before running the suite** — it holds the per-user agent
-  socket and a `now-logs` file. This cost a wrong diagnosis today; the
+  socket and a `now-logs` file. This cost a wrong diagnosis on 2026-08-01; the
   symptom is socket-bound tests timing out with a port number that is never
   the problem.
 - **Do not trust `PRODUCT_VERSION` to say which build answered.** `hello`

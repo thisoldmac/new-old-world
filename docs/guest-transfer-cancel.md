@@ -27,7 +27,7 @@ read from source:
 So `WaitNextEvent` is reached between every chunk. `mouseDown` is delivered
 normally while a pull runs. A button in the Files pane **can** be clicked
 mid-transfer — this is not the synchronous-probe shape that bit the repo
-earlier today (a ~3 s call that never reached the event loop).
+earlier on 2026-07-31 (a ~3 s call that never reached the event loop).
 
 Corroborating evidence that the design already assumes this: `files_browser_idle()`
 (`files_browser_view.c:417`) is documented as running "every event-loop pass

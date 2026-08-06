@@ -167,7 +167,7 @@ look dead.
 ### Historical recount
 
 **Date:** 2026-07-31, **recounted 2026-08-01** · **Status:** audit,
-current as of `main` today
+current as of `main` on 2026-08-01
 
 Written after Michelle said *"make sure you're not cutting corners — there was a
 lot of work done in mirror and its new home is gonna be New Old World."* She was
@@ -371,7 +371,7 @@ and honours all four of the mirror's hardened rules verbatim.
 `QUICKDRAW-CONTENT-PLANE.md`, `TIMBUKTU-QD-FINDINGS.md`, `TIMBUKTU-TEARDOWN.md`,
 `ASSET-EXTRACTION.md`, `PROTOTYPE-NOTES.md`, `HANDOFF.md`, and `STATUS.md` at
 **55 KB**. These carry measurements NOW will otherwise re-derive — which has
-already happened twice today.
+already happened twice on 2026-08-01.
 
 They landed as nine documents, **refactored by subject rather than
 transcribed by file**: [mirror-act-plane.md](mirror-act-plane.md),
@@ -405,7 +405,7 @@ without them.
 
 ## The pattern this audit exists to stop
 
-Twice today NOW re-derived something Mirror had already answered:
+Twice on 2026-08-01 NOW re-derived something Mirror had already answered:
 
 - **The menu-list layout.** M5 was declared blocked because `LMGetMenuList()`'s
   structure is in no header we have. `axmenu.c` had carried `6` / `6` / `14` all
@@ -520,7 +520,7 @@ look is upstream, and the second is upstream's docs.
 ## Corpus impact
 
 `corpus_impact: none` — an audit of two checkouts, no new measurement. Every
-number here is a file count or a line count taken today and reproducible by
+number here is a file count or a line count taken on 2026-08-01 and reproducible by
 running the same commands.
 
 **Unchanged by the 2026-08-01 recount, for the same reason.** The recount
