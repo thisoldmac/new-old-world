@@ -852,6 +852,15 @@ public struct SceneRenderer {
     /// which is exactly the missing-arrows render this line fixed.
     static func isWindowFurniture(_ ctl: MirrorKit.Scene.Control) -> Bool {
         ctl.semantic?.kind == "scrollBar" || ctl.role == "scrollbar"
+            /* A DERIVED CELL draws over the display for the same reason,
+               and it is the only honest arrangement here. Its evidence IS
+               the display — so it must not clip the rectangle it was
+               derived from (`semanticOwnsDisplay` stays false for it) —
+               but the two facts it adds, the cell's frame and WHICH ONE
+               IS SELECTED, are precisely what the drawing stream could
+               not say. So it draws a frame and a selection over content
+               it leaves intact, rather than replacing it. */
+            || ctl.semantic?.kind == MirrorKit.DrawnCellGrid.cellKind
     }
 
     /// Whether P2 carries enough visual facts to replace P3 inside the whole
@@ -960,6 +969,9 @@ public struct SceneRenderer {
             appText(ctl.title, ctx, x: frame.minX + 4,
                     baselineY: frame.midY + 4,
                     color: ctl.enabled ? Platinum.g6 : Platinum.g3)
+            return
+        case MirrorKit.DrawnCellGrid.cellKind:
+            drawDrawnCell(ctx, ctl, frame)
             return
         case "dataBrowser", "userPane", "imageWell", "systemControl":
             /* These are real guest-proven regions, but this semantic slice
@@ -1196,6 +1208,45 @@ public struct SceneRenderer {
                                   item.title.isEmpty
                                     ? "Visual unavailable" : item.title)
         }
+    }
+
+    /// One cell of a grid derived from the drawing stream
+    /// (`MirrorKit.DrawnCellGrid`): a Platinum well frame, and — where the
+    /// derivation could read it — the selection.
+    ///
+    /// It draws FRAMES, never a fill, and that restraint is the whole
+    /// design. The cell's own picture is already on the canvas: the replay
+    /// put the well's theme art and the channel icon there in guest order,
+    /// and this control is a second reading of the same ops rather than a
+    /// replacement for them. Filling the rectangle would erase the one
+    /// thing inside it nobody else can supply.
+    private func drawDrawnCell(_ ctx: GraphicsContext,
+                               _ ctl: MirrorKit.Scene.Control,
+                               _ frame: CGRect) {
+        let box = frame.insetBy(dx: 0.5, dy: 0.5)
+        // Recessed well: shadow on the top/left, highlight on the
+        // bottom/right — the Platinum inset, drawn as two open paths so
+        // the interior stays untouched.
+        var shadow = Path()
+        shadow.move(to: CGPoint(x: box.minX, y: box.maxY))
+        shadow.addLine(to: CGPoint(x: box.minX, y: box.minY))
+        shadow.addLine(to: CGPoint(x: box.maxX, y: box.minY))
+        ctx.stroke(shadow, with: .color(Platinum.g4), lineWidth: 1)
+        var light = Path()
+        light.move(to: CGPoint(x: box.minX, y: box.maxY))
+        light.addLine(to: CGPoint(x: box.maxX, y: box.maxY))
+        light.addLine(to: CGPoint(x: box.maxX, y: box.minY))
+        ctx.stroke(light, with: .color(Platinum.g0), lineWidth: 1)
+
+        /* Selection is the fact P3 could not state, so it is drawn
+           unmistakably: the guest marks the live channel by blitting a
+           different well from its sprite sheet, and a ring in the
+           selection colour is this side's equivalent. `checked` is only
+           ever set where the derivation actually read a selection. */
+        guard ctl.checked else { return }
+        ctx.stroke(Path(box), with: .color(Platinum.selection), lineWidth: 1)
+        ctx.stroke(Path(box.insetBy(dx: 1, dy: 1)),
+                   with: .color(Platinum.selection), lineWidth: 1)
     }
 
     private func drawUnavailableVisual(_ ctx: GraphicsContext,
