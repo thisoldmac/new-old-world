@@ -438,6 +438,16 @@ void now_qdtrace_status(const NowContentBlock *block,
         out->probe_sight_b = block->probe_sight_b;
         out->probe_sight_small = block->probe_sight_small;
     }
+    if (block->length >= (NowContentU32)(offsetof(NowContentBlock,
+                                                  qdext_installed)
+                                         + sizeof(NowContentU32))) {
+        out->has_qdext = 1;
+        out->qdext_calls = block->qdext_calls;
+        out->qdext_new_gworld = block->qdext_new_gworld;
+        out->qdext_last_selector = block->qdext_last_selector;
+        out->qdext_foreign = block->qdext_foreign;
+        out->qdext_installed = block->qdext_installed;
+    }
 }
 
 /* ---- arming --------------------------------------------------------- */

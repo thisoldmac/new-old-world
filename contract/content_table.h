@@ -302,6 +302,38 @@ typedef struct {
        snapshot. 0 = the source did not recover (a stack or
        nonrelocatable PixMap, which is a legitimate CopyBits idiom). */
     NowContentU32 probe_pending_handle;
+
+    /* --- the QDExtensions trap patch (plan 014, E1), appended --------
+       Accretive under the same rule as everything above it: a reader
+       gates on `length` before looking, and no offset moved.
+
+       WHAT THESE ANSWER, and it is one question the whole approach
+       rests on: does a 68K patch on $AB1D see a CFM caller's
+       NewGWorld? The sight-then-chase discovery cannot reach a world
+       that is created, drawn and disposed inside one event-loop pass
+       (Sherlock 2: 7 composites offered, 0 hooked), so creation-time
+       notification is the only route to those interiors - and it
+       exists only if these counters move.
+
+       `qdext_calls` counts every dispatch through the patch in the
+       ARMED context; `qdext_new_gworld` counts selector 0 alone,
+       because the raw count is dominated by ambient traffic (measured
+       ~0.6 selector-7 calls a second in an idle process, which drowns
+       a single NewGWorld). `qdext_last_selector` is the whole d0 -
+       paramBytes in the high word, selector in the low - so a
+       surprising number is legible rather than merely wrong.
+       `qdext_foreign` counts dispatches seen in a context that is NOT
+       the armed one: nonzero means the patch is live machine-wide,
+       which is a scope fact worth seeing rather than inferring. */
+    NowContentU32 qdext_calls;
+    NowContentU32 qdext_new_gworld;
+    NowContentU32 qdext_last_selector;
+    NowContentU32 qdext_foreign;
+    /* 0 = never installed, else the incumbent we chain to. Reported so
+       a patch that failed to install is distinguishable from one that
+       installed and never fired - the two look identical in counters
+       alone, and that ambiguity voided the applet experiment. */
+    NowContentU32 qdext_installed;
 } NowContentBlock;
 
 /* ---- ring records --------------------------------------------------
@@ -447,7 +479,10 @@ _Static_assert(offsetof(NowContentBlock, arm_window)
 _Static_assert(offsetof(NowContentBlock, probe_pending_pixmap)
                    == 192 + kNowContentRingCap,
                "probe append offset");
-_Static_assert(sizeof(NowContentBlock) == 292 + kNowContentRingCap,
+_Static_assert(offsetof(NowContentBlock, qdext_calls)
+                   == 292 + kNowContentRingCap,
+               "qdext append offset");
+_Static_assert(sizeof(NowContentBlock) == 312 + kNowContentRingCap,
                "block size");
 
 /* ---- the arm verdict (now_content_logic.c) -------------------------

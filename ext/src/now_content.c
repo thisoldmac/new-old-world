@@ -68,6 +68,11 @@ _Static_assert(offsetof(CGrafPort, portVersion) == 6,
    from any later context, which is why the extension never calls
    Retro68FreeGlobals. */
 
+/* _QDExtensions, the selector dispatch NewGWorld and DisposeGWorld
+   arrive on (QDOffscreen.h's FOURWORDINLINE: 0x203C, 0x0016, 0x0000,
+   0xAB1D). ToolTrap, like every other trap this extension touches. */
+#define kNowContentQDExtTrap 0xAB1D
+
 static NowContentBlock *gBlock = NULL;
 
 /* The A5 world we are armed on, or 0. Written only by the GNE applier,
@@ -85,6 +90,45 @@ static NowPeekU32 gArmedMode = kNowContentModeOff;
    airtight (a 41-character run recorded text=41, bits=0). Classic Mac OS
    draws one thing at a time, so one resident flag suffices. */
 static short gInCapture = 0;
+
+/* ---- the QDExtensions trap patch (plan 014, E1) ---------------------
+   The incumbent $AB1D dispatch, referenced from assembly, so it is a
+   plain module global with external linkage exactly like the act
+   plane's six. */
+void *gNowContentOldQDExt = NULL;
+extern void now_content_qdext_patch(void);
+
+/* Called from the shim on every $AB1D dispatch, with the selector word
+   the caller loaded into d0. Counts and nothing else: E1 exists to find
+   out whether this runs at all for a CFM caller, and a slice that also
+   hooked would confuse "the patch fires" with "the hook works".
+
+   Bounded and allocation-free by construction - two reads and an
+   increment - because this runs inside whatever process called
+   NewGWorld, at whatever moment it chose to. */
+void now_content_qdext_note(long selector)
+{
+    if (gBlock == NULL) {
+        return;
+    }
+    if (gArmedA5 == 0 || (NowPeekU32)LMGetCurrentA5() != gArmedA5) {
+        /* Live but outside the armed context. Counted separately rather
+           than ignored: the count is the plane's own evidence about
+           whether a patch installed in one process is reached from
+           another, which is the question the applet experiment could
+           not answer about itself. */
+        gBlock->qdext_foreign++;
+        return;
+    }
+    gBlock->qdext_calls++;
+    gBlock->qdext_last_selector = (NowPeekU32)selector;
+    /* NewGWorld is selector 0 on this dispatch; the high word is the
+       parameter byte count (22 for NewGWorld) and is not part of the
+       comparison. */
+    if ((selector & 0xFFFFL) == 0) {
+        gBlock->qdext_new_gworld++;
+    }
+}
 
 /* The standard bottlenecks, and our record: a copy of the standard set
    with the ten families we track overridden. Every hook tail-calls
@@ -1363,6 +1407,48 @@ static Boolean content_probe_scan(unsigned char *p, unsigned char *limit,
  * target that is suspended, wedged, or gone keeps its patch until it runs
  * again - or forever, which is the leaked-row case above.
  */
+/* ---- installing the QDExtensions patch -------------------------------
+ *
+ * On every armed pass, in the armed process's own context - the act
+ * plane's rule and for its reason. An application's trap patch is
+ * PROCESS-LOCAL under the Process Manager (measured 2026-08-06: a rig
+ * applet's $AB1D patch never saw a separate 68K process's NewGWorld),
+ * so installing from wherever the request happened to arrive would
+ * instrument the wrong process. Installing here means the patch exists
+ * in the armed process and, as far as this plane asks anything of the
+ * machine, nowhere else.
+ *
+ * Never removed, for the act plane's paid reason: a patch that vanishes
+ * while a caller is inside it is a jump into freed code. Disarming
+ * makes the note function decline instead, so the trap behaves exactly
+ * as it would with no extension present.
+ *
+ * The `old == shim` check is what makes calling this on every pass safe
+ * rather than fatal: saving `old` when it is already our own shim would
+ * point the chain at itself and the first call through it would not
+ * return.
+ */
+static void content_qdext_install(void)
+{
+    void *old;
+
+    if (gBlock == NULL) {
+        return;
+    }
+    old = (void *)NGetTrapAddress(kNowContentQDExtTrap, ToolTrap);
+    if (old == NULL) {
+        return;
+    }
+    if (old == (void *)now_content_qdext_patch) {
+        gBlock->qdext_installed = (NowPeekU32)gNowContentOldQDExt;
+        return;
+    }
+    gNowContentOldQDExt = old;
+    NSetTrapAddress((UniversalProcPtr)now_content_qdext_patch,
+                    kNowContentQDExtTrap, ToolTrap);
+    gBlock->qdext_installed = (NowPeekU32)old;
+}
+
 void now_content_gne(NowPeekTable *table)
 {
     NowContentRequest req;
@@ -1426,6 +1512,14 @@ void now_content_gne(NowPeekTable *table)
         gBlock->active_psn_lo = gBlock->arm_psn_lo;
         gBlock->active_generation = generation;
         table->arm_active |= (NowPeekU32)kNowPeekTableCapContent;
+
+        /* Probe mode only, for now: the patch is an experiment and the
+           shipping content plane should not grow a trap patch whose
+           consumer does not exist yet (013 A2.2's rule, applied to a
+           riskier mechanism than the record it was written for). */
+        if (gArmedMode == (NowPeekU32)kNowContentModeProbe) {
+            content_qdext_install();
+        }
 
         content_install_exact_window(a5, gBlock->active_window,
                                      generation);

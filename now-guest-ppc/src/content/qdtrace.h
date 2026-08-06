@@ -260,6 +260,15 @@ typedef struct {
     NowContentU32 probe_last_sight;
     NowContentS16 probe_sight_l, probe_sight_t, probe_sight_r, probe_sight_b;
     NowContentU32 probe_sight_small;
+
+    /* The QDExtensions trap patch (plan 014, E1). has_qdext gates on the
+       block being long enough, exactly like has_probe. */
+    int has_qdext;
+    NowContentU32 qdext_calls;
+    NowContentU32 qdext_new_gworld;
+    NowContentU32 qdext_last_selector;
+    NowContentU32 qdext_foreign;
+    NowContentU32 qdext_installed;
 } NowQDStatus;
 
 void now_qdtrace_status(const NowContentBlock *block,

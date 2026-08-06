@@ -64,6 +64,7 @@ add_executable(NowExt
     # what tbt's sibling INIT binaries used to.
     src/now_ext_act.c
     src/now_ext_act_patch.S
+    src/now_content_qdext.S
     ../now-guest-shared/src/now_act_guard.c
     ../now-guest-shared/src/now_semantic_guard.c)
 add_dependencies(NowExt generate_now_ext_identity)

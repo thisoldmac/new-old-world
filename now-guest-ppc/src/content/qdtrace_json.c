@@ -302,6 +302,21 @@ void now_qdtrace_status_json(const NowQDStatus *st, long id,
             (unsigned long)st->probe_sight_small);
     }
 
+    /* The trap patch's own account of itself. `installed` separates a
+       patch that never went in from one that went in and never fired -
+       the ambiguity that voided the applet experiment. */
+    if (st->has_qdext) {
+        ok = ok && emit(&e,
+            ",\"qdext\":{\"installed\":\"0x%08lx\",\"calls\":%lu,"
+            "\"newGWorld\":%lu,\"lastSelector\":\"0x%08lx\","
+            "\"foreign\":%lu}",
+            (unsigned long)st->qdext_installed,
+            (unsigned long)st->qdext_calls,
+            (unsigned long)st->qdext_new_gworld,
+            (unsigned long)st->qdext_last_selector,
+            (unsigned long)st->qdext_foreign);
+    }
+
     e.reserve = 0;
     ok = ok && emit(&e, "}}}");
     if (!ok) {
