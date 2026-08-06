@@ -22,6 +22,7 @@ has ported, not NOW measurements.
 | process | a process-list verb | any stable guest worker | which apps run, which is front | proven live, mac99 |
 | window / menu | a full accessibility tree | the observer INIT | window rects, z-order, controls, menus, dialog text | proven live, mac99 |
 | content | the QuickDraw op stream, plus pixel islands where an app composites offscreen | the QuickDraw INIT | window interiors | proven live, mac99, 2026-07-17 — see [mirror-content-plane.md](mirror-content-plane.md) |
+| content, offscreen (2026-08-06) | the same op stream from a hooked GWorld, joined to the window by `blitsrc`; worlds hooked at CREATION by a `_QDExtensions` trap patch | the same resident | interiors of applications that composite offscreen — which is most of the ones a person cares about | emulator-verified on mac99/OS 9.1, **not metal**; the row above's "plus pixel islands" is now a fallback rather than the plan. See [render-composition.md](render-composition.md) |
 
 **The limitation that forces the INIT.** A process-list verb tells you
 *which* applications run and which is front, but **cannot draw foreign
