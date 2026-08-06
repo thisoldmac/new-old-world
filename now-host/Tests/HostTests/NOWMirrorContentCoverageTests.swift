@@ -285,7 +285,61 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
          0x1e612eb0, "0.37355521", "Sound"),
         ("general-controls", "qdtrace-drain-sweep-general-controls",
          0x1e5cc1c0, "0.37814273", "General Controls"),
+        /* The CONTROL for the flattened-epoch finding: the same Sound
+           window, same build, captured over ONE repaint pass instead of
+           three. `sound` loses its whole sound list; this one keeps it,
+           and the only difference between the two runs is how many
+           passes got flattened into the single displayEpoch the
+           resident hands out per ARM. */
+        ("sound-1pass", "qdtrace-drain-sweep-sound-1pass",
+         0x1e612eb0, "0.37355521", "Sound"),
     ]
+
+    /// THE FLATTENED-EPOCH FINDING, and it is a DRAW-ORDER defect, not
+    /// a composition one. The distinction cost one wrong hypothesis:
+    /// the first version of this test asserted the three-pass capture
+    /// had LOST the sound list, and failed, because the rows are all
+    /// present in the composed display. They are simply painted over.
+    ///
+    /// `displayEpoch` advances once per ARM and never per repaint pass,
+    /// so a capture spanning three front/back cycles arrives as one
+    /// frame carrying three successive repaints end to end. The Sound
+    /// panel builds its interior from two offscreen worlds and blits a
+    /// full-window composite from one of them; concatenated, a LATER
+    /// pass's full-window blit lands after an EARLIER pass's list blit
+    /// and covers it. The renders say so plainly — `sound.png` has an
+    /// empty list box, `sound-1pass.png` has all nine rows — and the
+    /// only difference between the two runs is the number of passes.
+    ///
+    /// So the invariant is about ORDER: in the flattened capture a
+    /// window-spanning op follows the list content; in the one-pass
+    /// capture it does not.
+    func testFlattenedPassesPutAWindowBlitOverTheSoundList() throws {
+        func lastSpanningOpAfterList(_ fixture: String) throws -> Bool {
+            let display = try compose(fixture, window: 0x1e612eb0,
+                                      psn: "0.37355521", title: "Sound")
+            let list = display.lastIndex {
+                $0.op == "text" && $0.text == "ChuToy"
+            }
+            let spanning = display.lastIndex { op -> Bool in
+                guard op.op == "bits" || op.op == "rect",
+                      let box = op.dst ?? op.rect, box.count == 4
+                else { return false }
+                return (box[2] - box[0]) >= 350 && (box[3] - box[1]) >= 250
+            }
+            let listIndex = try XCTUnwrap(list, "\(fixture) has no list rows")
+            guard let spanning else { return false }
+            return spanning > listIndex
+        }
+        XCTAssertTrue(try lastSpanningOpAfterList("qdtrace-drain-sweep-sound"),
+                      "the three-pass capture no longer paints over its "
+                      + "list — the flattening was fixed, or the capture "
+                      + "changed shape")
+        XCTAssertFalse(
+            try lastSpanningOpAfterList("qdtrace-drain-sweep-sound-1pass"),
+            "the one-pass control now paints over its list too — it has "
+            + "stopped being a control")
+    }
 
     /// Sherlock 2 WAS the boundary case, and this gate is the boundary
     /// moving. Its whole interior is built in a transient offscreen
