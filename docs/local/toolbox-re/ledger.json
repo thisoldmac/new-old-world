@@ -277,6 +277,13 @@
       "provenance": "static",
       "evidence": "docs/local/toolbox-re/app-offscreen-table.txt",
       "at": "2026-08-06T04:24:54-0400"
+    },
+    {
+      "phase": "P5",
+      "claim": "CORRECTION to the previous row, which I got wrong reading my own table: the applications importing SetStdCProcs are Sherlock 2 and GRAPHING CALCULATOR, not Appearance. Appearance does NOT import it. So the unhookable-by-design set (own bottlenecks installed, which the content plane refuses via skipped_ports) is {Sherlock 2, Graphing Calculator}; Appearance uses GWorlds and should be hookable.",
+      "provenance": "static",
+      "evidence": "docs/local/toolbox-re/app-offscreen-table.txt",
+      "at": "2026-08-06T04:26:00-0400"
     }
   ],
   "blockers": [

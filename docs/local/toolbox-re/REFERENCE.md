@@ -166,6 +166,36 @@ is already semantic and images that need identity from elsewhere
   IconSuite or IconRef — the interception surface for host-side
   composition, since a `bits` op carries geometry and never pixels.
 
+## 5b. Which applications composite offscreen
+
+Derived statically from PEF import tables — nothing was launched. Full
+table in `app-offscreen-table.txt`.
+
+| Application | GWorlds? | Notes |
+|---|---|---|
+| Finder | **yes** | + `PlotIconSuite`/`PlotIconRef`; no `UpdateGWorld` |
+| Sherlock 2 | **yes** | also imports `SetStdCProcs` — installs its own bottlenecks |
+| Graphing Calculator | **yes** | the ONLY one importing `UpdateGWorld`; also `SetStdCProcs` |
+| Appearance cdev | **yes** | no own bottlenecks, so hookable |
+| Network Browser | no | no `NewGWorld`, no `CopyBits` |
+| Dock | no | `PlotIconRef` only |
+| Date & Time cdev | no | `PlotIconSuite` only |
+| Energy Saver, AppleTalk cdevs | no | draw straight to their windows |
+
+Two patterns worth more than the table:
+
+- **Create-and-destroy is the era's norm.** Only Graphing Calculator can
+  resize an offscreen world in place; everyone else must dispose and
+  recreate, so any hook on such a world has to be re-established. The
+  Finder is not unusual here.
+- **Some applications are unhookable by this plane, by design.** Sherlock 2
+  and Graphing Calculator install their own `grafProcs` via
+  `SetStdCProcs`, and the content plane refuses a port whose `grafProcs`
+  is already non-NULL rather than chain onto procs it knows nothing
+  about. That refusal is now a measured limitation.
+- **The applications that do NOT composite are already fully visible** to
+  a plain window-port hook — their content needs no chase at all.
+
 ## 6. Memory: the two facts that invalidate naive tooling
 
 **`MemTop` is not the top of addressable memory** (measured).
