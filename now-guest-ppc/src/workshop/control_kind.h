@@ -33,4 +33,10 @@ ControlRef now_control_new(WindowRef window, const Rect *bounds,
    emitter's range guess in place, which is the honest ordering. */
 const char *now_control_role(ControlRef control);
 
+/* How many controls this application has ever made. Not an identity and
+   not a count of live controls - a CHANGE in it means the set of controls
+   on screen may have grown, which is the one thing a cache of a
+   FindControl sweep cannot notice on its own. See scene_self.c. */
+unsigned long now_control_generation(void);
+
 #endif
