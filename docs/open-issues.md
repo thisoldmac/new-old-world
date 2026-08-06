@@ -119,6 +119,34 @@ strongest sense — the vehicle cannot be left running at all. The
 `liveness_ticks` counter and its `livenessTicks` report are built and
 correct; nothing has yet made them climb.
 
+## UNBLOCKED at the first gate: MacTCP's `.ipp` driver DOES open from the extension (2026-08-05, later)
+
+The entry below stands — Open Transport is still ruled out, and for the
+structural reason it gives. What has changed is that its named successor
+has been asked, in the same cheap way, and **answered yes**.
+
+On a fresh cold boot the resident opened MacTCP's `.IPP` driver with a
+plain `PBOpenSync` and reported `transportProbe: 1` (open),
+`transportResult: 0` (noErr). The guest booted normally alongside it —
+`capabilities: 63`, lifecycle `active`. So the Device-Manager route is
+real from a flat 68K code resource on OS 9: no library, no CFM, nothing
+for a linker to refuse.
+
+**What this proves is exactly one thing, and the temptation is to read it
+as more.** A driver opened. Nothing has been created, dialled, sent or
+received. `TCPCreate` and `TCPActiveOpen` are `PBControl` calls this has
+not made, their completion routines are register-based callbacks that
+will need their own shim — the lesson the vehicle just charged for — and
+whether OT's MacTCP compatibility actually serves a connection to a
+resident client is untested. **The first gate is clear; that is all.**
+
+**The probe was watched to report the other answer.** A build asking for
+a driver that does not exist (`.NOP`), cold-booted the same way, reported
+`transportProbe: 2` (refused) and `transportResult: -43` — the Device
+Manager's own `fnfErr`. That mutation is not ceremony: a field reading
+"open" unconditionally would be indistinguishable from the result above,
+which is the class `probe-oracles-were-blind` names.
+
 ## BLOCKED, and the answer came from the LINKER: the extension cannot be an Open Transport client (2026-08-05)
 
 Plan 012 § 4 has the resident dial the host itself, so a starved machine

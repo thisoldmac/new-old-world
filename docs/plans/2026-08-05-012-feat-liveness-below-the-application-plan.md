@@ -218,7 +218,27 @@ time. `classic-mac-init-platform` is the skill; the charter is
 Its first job is only to exist and tick: prove the vehicle runs while
 every application is starved, before it is asked to carry a wire.
 
-### 4 · The liveness channel · **BLOCKED — answered by the linker**
+### 4 · The liveness channel · **FIRST GATE CLEAR, transport not built**
+
+**2026-08-05, later.** The MacTCP route named below was asked the same
+cheap question that killed OT, and passed it: the resident opened `.IPP`
+with `PBOpenSync` on a cold-booted OS 9 guest — `transportProbe: 1`,
+`transportResult: 0` — with the machine booting normally around it. No
+library, no CFM, nothing for a linker to refuse.
+
+**The channel itself is NOT built and this must not be read as though it
+were.** A driver opened; nothing was created, dialled or sent. What
+remains is the whole of § 4: `TCPCreate` and `TCPActiveOpen` over
+`PBControl`, a receive buffer in the system heap, register-based
+completion routines each needing the shim discipline the vehicle just
+charged for, the frame codec and a `hello` carrying
+`role: resident` under the SAME machine name the application dials with.
+
+The probe was watched to report a refusal: a build asking for `.NOP`,
+cold-booted the same way, answered `transportProbe: 2` /
+`transportResult: -43` (`fnfErr`).
+
+### 4 (as it stood when blocked) · **BLOCKED — answered by the linker**
 
 OT's 68K libraries are CFM/SLM fragments; this extension is a flat 68K
 code resource. They do not link (`__SLM11FuncDispatch`,
