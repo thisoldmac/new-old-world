@@ -45,15 +45,21 @@ The cells that say "no" are not oversights.
 of who serves what, message by message, with *served* and *proven* kept
 as separate columns.
 
-**The headline gaps:** **one dialog on the Macintosh can end the
-session** — the machine is cooperatively scheduled, so an application
-that blocks starves every other one, and a Finder alert was measured on
-2026-08-05 starving the whole guest for over 90 seconds, past the silence
-window after which the host declares a guest gone. The host can now tell
-*starved* from *gone* and says which, but only when the optional NOW
-Extension is installed to answer for the machine; **without it a modal
-still ends the session**, and there is nothing on either side that can
-dismiss one. Beyond that: resume-by-offset hangs; one large transfer in
+**The headline gaps:** **a dialog on the Macintosh no longer ends the
+session, and that has now been watched rather than argued.** The machine
+is cooperatively scheduled, so an application that blocks starves every
+other one — a Finder alert was measured on 2026-08-05 starving the whole
+guest for over 90 seconds, past the silence window after which the host
+declares a guest gone. Both halves now know better: the guest stops
+counting time it was not scheduled against its own dead-link clock, and
+with the optional NOW Extension installed the machine holds a second
+connection that answers for itself while every application is starved.
+On 2026-08-06 an application starved for 108 seconds kept its session,
+with the resident pinging three times through the gap. **Still open:**
+nothing on either side can dismiss the dialog — the machine is legible
+and survivable while wedged, not serviceable — and the resident channel
+has been watched on an emulator only, never on real hardware and never
+on 68K/System 7.1. Beyond that: resume-by-offset hangs; one large transfer in
 about six degrades badly; an unreachable host presents as a hang rather
 than naming the address it cannot reach; NOW-68K's census can now report
 its own CPU, RAM and ROM but not one of its probes has run on a
