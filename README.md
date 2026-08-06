@@ -39,6 +39,9 @@ noticed. Adding them: see [docs/images/README.md](docs/images/README.md).
 | Hardware census (14 probes) | yes | 14 probes, 4 of them honestly `absent`/`refused` on this hardware | metal-verified (PPC); **68K's probes have never run at all** |
 | Two Macs on one port, with a picker for which one you are driving | yes | yes | tested; **never run against real hardware** |
 | iCloud: the host's Drive, Photos and Contacts served to the guest's iCloud page — drive browser with history and breadcrumbs, live filter-as-you-type, photo preview and download at chosen resolution, contact cards | yes | no | metal-verified (PPC) for Drive and the granted services; the newest layout pass is tested only — [docs/icloud.md](docs/icloud.md) |
+| Window **interiors** — what an application actually drew, not just its frame: the content plane's ring of QuickDraw records, drained and replayed | yes, with the optional NOW Extension | no — no resident for System 7.1 | emulator-verified: records crossed the wire from a live Finder and from Sherlock 2 on mac99/OS 9.1 (2026-08-06) |
+| Offscreen worlds joined to the window they land in — including a world created, drawn and disposed inside one event pass | yes | no | emulator-verified (guest side); the host's composition is tested against committed captures — **the live host app has never been watched composing** |
+| Rendering that interior: measured Platinum accent ramps, scrollbar arrows, derived cell grids, and placeholders graded to the evidence | host-side | host-side | tested against committed captures; judged by eye in [docs/fidelity-sweep-2026-08-06.md](docs/fidelity-sweep-2026-08-06.md) |
 
 The cells that say "no" are not oversights.
 [docs/contract-coverage.md](docs/contract-coverage.md) is the inventory
@@ -103,6 +106,39 @@ pump that is not being scheduled), and every number here is from an
 emulator — a PowerBook 1400c is far slower, and for the wire the
 emulator likely understates the win rather than flattering it.
 
+**The windows gained interiors on 2026-08-06, and the honest word for
+all of it is emulator-verified.** Until then a mirrored window was a
+frame with a title: the host knew a window existed and what controls it
+declared, not what the application had *drawn* inside it. The content
+plane now carries that — a ring of QuickDraw records, drained and
+replayed — and the hard case is solved rather than deferred: an
+application that composes its picture in an offscreen world and blits
+the finished thing in used to present as one opaque rectangle, so the
+resident patches the QDExtensions dispatch in the target's own context
+and hooks each world **at creation**, before anything is drawn into it.
+A world created, drawn, blitted and disposed inside a single event pass
+— which is how Sherlock 2 and Appearance draw, and which no
+after-the-fact search can reach — is joined to the window it lands in,
+nested worlds included.
+
+**What that costs, stated plainly.** It needs the optional NOW
+Extension: without the resident there is no interior at all, and the
+verb says so rather than answering emptily. Nothing here has touched
+metal — the records were watched crossing the wire from a live Finder
+and from Sherlock 2 on an emulated Mac OS 9.1, and **the live host
+application has never been watched composing one**; the composition is
+proven only by replaying committed captures in tests. The ring is 64 KiB
+and the host drains twelve pages a cycle, so a busy application can
+still outrun it — the drain reports what it lost rather than presenting
+a gap as a picture. And a render is not a photograph: where the host has
+no art for something it draws a graded placeholder, and how close the
+whole picture actually comes was judged by eye for the first time in
+[docs/fidelity-sweep-2026-08-06.md](docs/fidelity-sweep-2026-08-06.md),
+whose red list is open work. Three fixes aimed at that list — region
+fidelity and `INVERT`, and a file-type mangling that currently defeats
+the per-application icon lookup — are **in flight as this is written**
+and are not described here as done.
+
 ## Try the modern half
 
 The host application needs no vintage hardware, and most of this
@@ -112,10 +148,12 @@ repository can be worked on without any:
 scripts/test-all
 ```
 
-That runs the guests' native logic tests, both guest cross-builds
-(skipped if you have no Retro68), then the host suites and both Xcode
-configurations — cheapest first, stopping at the first failure. To build
-and launch the host app itself:
+That runs four gates, cheapest first, stopping at the first failure and
+naming it: the guests' native logic tests, MirrorKit's own suite, both
+guest cross-builds (skipped if you have no Retro68), then the host
+suites and both Xcode configurations. Green there means **tested** — not
+metal-verified, and the guest stage means only that the guests compile.
+To build and launch the host app itself:
 
 ```bash
 ./scripts/build-host-app /private/tmp/now-host-product
@@ -163,7 +201,8 @@ enforces it.
 | `now-guest-68k/` | NOW-68K. A *sibling* of the Carbon guest, not a port of it, and filed the same way: `core/`, `ui/`, `commands/`, `console/`, `connection/`, `files/`, `processes/`, `screenshots/`, `census/`. |
 | `now-guest-shared/` | Source compiled by **both** guests, one file per unit rather than a copy each. Only for logic that is genuinely identical on both machines — see docs/naming.md for the bar. |
 | `now-host/` | Swift package (`GuestListener` + modules) and `NewOldWorld.xcodeproj` for signed builds. |
-| `ext/` | The optional resident 68K component. Always optional — the product degrades honestly without it. |
+| `ext/` | The optional resident 68K component — the anchor, transition and content planes, including the QDExtensions trap patch that hooks an offscreen world at creation. Always optional: the product degrades honestly without it. |
+| `mirror/` | Vendored into this tree as tracked files: **MirrorKit**, its own SwiftPM package, which turns drained records into scenes and renders them. It has its own suite, and `scripts/test-all` runs it (stage 2). `mirror/host/MirrorKit/Sources/MirrorKitUI/Resources/` is the shipped Platinum asset pack. |
 | `assets/` | Art the product ships, each pack with the generator that draws it. `assets/icons/classic/` is the guests' icon as a classic family (`ICN#`/`icl4`/`icl8`/`ics#`/`ics4`/`ics8`), drawn at 32×32 and 16×16 rather than scaled down, and not wired into a build yet. `assets/icons/macos/` is the host app icon, which generates the asset catalog the Xcode target builds. |
 | `docs/` | Architecture, measurements, and the ledgers. `docs/local/` is gitignored scratch. |
 | `spikes/` | Throwaway feasibility probes, kept for their findings. |
