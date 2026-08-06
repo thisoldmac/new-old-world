@@ -65,6 +65,8 @@ extern void now_ext_act_apply(NowPeekTable *table);
    and never to each other. */
 extern void now_content_boot(NowPeekTable *table);
 extern void now_content_gne(NowPeekTable *table);
+/* P6: the liveness channel's Time Manager task (now_liveness.c). */
+extern void now_liveness_install(NowPeekTable *table);
 /* P5, the transition tail (now_event.c). Same two-entry shape, and the
    pass takes the words this filter has ALREADY read: two reads of
    LMGetWindowList in one pass could disagree, and a record that did not
@@ -437,6 +439,13 @@ void _start(void)
        pointer, and the shim owns the non-C ABI. */
     gNowExtOldGNEFilter = LMGetGNEFilter();
     LMSetGNEFilter((GetNextEventFilterUPP)now_ext_gne_filter);
+
+    /* P6, the extension's first INTERRUPT-time context, installed last
+       for the same reason the filter is: a callback that can fire must
+       not be able to find a half-built world. Everything above runs only
+       when some application calls GetNextEvent or a patched trap — which
+       is exactly what a starved machine has none of. */
+    now_liveness_install(table);
 
     /* Resident forever: no Retro68FreeGlobals(), no unwind past here. */
 }

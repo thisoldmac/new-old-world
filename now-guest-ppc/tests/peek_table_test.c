@@ -208,9 +208,17 @@ int main(void)
 
     /* Old residents are SHORTER, which is how they say they lack this
        plane; the application must gate on length before reading here. */
-    check(offsetof(NowPeekTable, endpoint) + sizeof(t.endpoint)
+    check(offsetof(NowPeekTable, liveness_ticks) + sizeof(NowPeekU32)
               == sizeof(NowPeekTable),
-          "the endpoint is the tail append, so shorter means absent");
+          "the tick counter is the tail, so shorter means absent");
+
+    /* The vehicle's own proof-of-life. A COUNT, not a timestamp: a
+       stopped clock and a stopped task are indistinguishable in a
+       timestamp, and telling them apart is the whole job. */
+    t.liveness_ticks = 0;
+    check(t.liveness_ticks == 0, "a resident that never ticked reads zero");
+    t.liveness_ticks = 7;
+    check(t.liveness_ticks == 7, "the tick counter is resident-written");
     check((kNowPeekTableCapLiveness & (kNowPeekTableCapAnchors
                                        | kNowPeekTableCapTree
                                        | kNowPeekTableCapAct

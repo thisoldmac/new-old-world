@@ -53,6 +53,7 @@ add_executable(NowExt
     src/now_event.c
     src/now_event_logic.c
     src/now_content_logic.c
+    src/now_liveness.c
     # P4, the act plane: its own translation unit and its own six trap
     # trampolines. Separate files, no cross-plane calls - review enforces
     # what tbt's sibling INIT binaries used to.
@@ -70,6 +71,7 @@ target_compile_options(NowExt PRIVATE -mcpu=68000 -Wall -Wextra -Werror -Os)
 set_target_properties(NowExt PROPERTIES
     OUTPUT_NAME NowExt.flt
     LINK_FLAGS "-Wl,--mac-flat -Wl,-Map,NowExt.map")
+
 
 # INIT 128 in a file of type INIT, creator 'NOWx' (the extension's own,
 # distinct from the app's 'NOWo'). Rez reads the built flat blob.

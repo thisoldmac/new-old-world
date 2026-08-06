@@ -970,6 +970,17 @@ typedef struct {
     NowPeekU16 endpoint_format;
     NowPeekU16 endpoint_length;
     NowPeekLivenessEndpoint endpoint;
+    /* **Proof the interrupt-time vehicle runs**, written by the resident
+       and by nothing else. The Time Manager task bumps it on every tick,
+       so an application that reads it before and after a starvation can
+       say whether anything on this machine kept running while no
+       application did — which is the premise the whole plane rests on,
+       made checkable rather than argued.
+
+       It is deliberately a COUNT and not a timestamp: a stopped clock
+       and a stopped task look identical in a timestamp, and this must be
+       able to distinguish them. */
+    NowPeekU32 liveness_ticks;
 } NowPeekTable;
 
 /* The offsets ARE the contract; a drift here is a defect on the other
@@ -1067,8 +1078,8 @@ _Static_assert(sizeof(NowPeekActV2Cell) == 32 * 4,
    this line, and that is the point: it is the one assert that notices a
    field added anywhere but the tail. */
 _Static_assert(sizeof(NowPeekTable)
-                   == offsetof(NowPeekTable, endpoint)
-                    + sizeof(NowPeekLivenessEndpoint),
+                   == offsetof(NowPeekTable, liveness_ticks)
+                    + sizeof(NowPeekU32),
                "table size");
 _Static_assert(sizeof(NowPeekSemanticRecord) == 48,
                "semantic record size");
@@ -1129,5 +1140,9 @@ _Static_assert(offsetof(NowPeekTable, endpoint_format)
 _Static_assert(offsetof(NowPeekTable, endpoint)
                    == offsetof(NowPeekTable, endpoint_format) + 4,
                "liveness endpoint cell offset");
+_Static_assert(offsetof(NowPeekTable, liveness_ticks)
+                   == offsetof(NowPeekTable, endpoint)
+                    + sizeof(NowPeekLivenessEndpoint),
+               "liveness tick counter is the tail");
 
 #endif /* NOW_PEEK_TABLE_H */

@@ -101,11 +101,11 @@ long now_mirror_json(const MirrorFacts *facts, long id, char *out, long cap)
                       ",\"residentMajor\":%lu,\"residentMinor\":%lu,"
                       "\"tableLength\":%lu,\"capabilities\":%lu,"
                       "\"requested\":%lu,\"active\":%lu,"
-                      "\"heartbeat\":%lu",
+                      "\"heartbeat\":%lu,\"livenessTicks\":%lu",
                       facts->resident_major, facts->resident_minor,
                       facts->table_length, facts->capabilities,
                       facts->requested_bits, facts->active_bits,
-                      facts->heartbeat);
+                      facts->heartbeat, facts->liveness_ticks);
     }
     if (facts->has_build_identity && n < cap) {
         char source[41];

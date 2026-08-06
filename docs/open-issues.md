@@ -14,6 +14,48 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## BLOCKED, and the answer came from the LINKER: the extension cannot be an Open Transport client (2026-08-05)
+
+Plan 012 § 4 has the resident dial the host itself, so a starved machine
+answers for itself. **It cannot, from this component, and the reason is
+structural rather than a matter of effort.**
+
+Linking OT's client glue into `ext/` fails at link time on
+`__SLM11FuncDispatch`, `__SLM11VTableDispatch`,
+`__SLM11ConstructorDispatch`, `__SLM11ExtblDispatch` and
+`__gOTClientRecord`. Those are Shared Library Manager dispatch stubs:
+**OT's 68K libraries are CFM/SLM fragments, and the NOW Extension is a
+flat 68K code resource** (`-Wl,--mac-flat`). The two linkage models do
+not meet. Four library combinations were tried, including the
+application flavour (`OpenTransportApp`) and the compatibility library;
+the best was fifteen unresolved symbols.
+
+**This is 012 § C's metal question answered at link time** — the risk
+was named as "OT 1.x on a PowerBook may not behave as OT 2.x on an
+emulated G4", and it turns out not to reach a machine at all. Much the
+cheapest place to find it.
+
+**The routes left, none of them a small edit:**
+
+- **Reach TCP through the Device Manager instead.** MacTCP's `.ipp`
+  driver is driven with `PBControl` and completion routines, which a flat
+  68K INIT can do and which is how resident code did networking before
+  OT. OS 9's OT still provides it for exactly these callers. This keeps
+  the extension an INIT and is the smallest of the three.
+- **Ship the resident as a CFM fragment**, which can link OT properly but
+  is a different kind of component with a different install story.
+- **Ship it as an OT module**, which is what OT's own layering intends
+  for something living below applications, and is the largest change.
+
+**What landed anyway, and why it still matters:** the VEHICLE. The
+extension now has its first interrupt-time context (a Time Manager task,
+`ext/src/now_liveness.c`) which runs whether or not any application is
+being scheduled — the thing every existing context in this component is
+not. It bumps `liveness_ticks` in the shared table and nothing else does,
+so the premise the whole plane rests on is now checkable rather than
+argued: under `tools/guest-wedge spin` an application-level probe stops
+answering, and this counter must keep climbing.
+
 ## BROKEN: the guest's deafness OUTLIVES the host's liveness window, so an ordinary modal kills the session (2026-08-05, second drive)
 
 **This is the one that makes the other deafness entries conditional**, and

@@ -291,6 +291,10 @@ void now_mirror_probe(MirrorFacts *facts)
     facts->requested_bits = table->arm_request;
     facts->active_bits = table->arm_active;
     facts->heartbeat = table->heartbeat;
+    facts->liveness_ticks =
+        (table->length >= (unsigned long)(offsetof(NowPeekTable, liveness_ticks)
+                                          + sizeof(NowPeekU32)))
+            ? table->liveness_ticks : 0;
     {
         NowPeekBuildIdentity identity;
         if (now_peek_build_identity(&identity)) {

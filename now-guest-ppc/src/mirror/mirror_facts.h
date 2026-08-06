@@ -72,6 +72,12 @@ typedef struct MirrorFacts {
     unsigned long requested_bits;
     unsigned long active_bits;
     unsigned long heartbeat;
+    /* P6's proof-of-life: the resident's interrupt-time task bumps this
+       and nothing else does, so a reader either side of a starvation can
+       say whether anything on the machine kept running while no
+       application did. Zero means a resident without the vehicle — which
+       an older one reports simply by being shorter. */
+    unsigned long liveness_ticks;
     Boolean has_build_identity;
     unsigned long source_manifest[kMirrorIdentityWords];
     unsigned long build_fingerprint[kMirrorIdentityWords];
