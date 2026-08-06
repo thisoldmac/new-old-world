@@ -88,10 +88,11 @@ if ! python3 "$NOW/tools/askguest.py" --port "$WIRE" --wait 180 --retries 3 \
 fi
 cat "$RUN/mirror.txt"
 
-python3 - "$RUN/mirror.txt" "$MIRROR_JSON" "$WANT_BUILD" "$WANT_SOURCE" "$WANT_CAPS" <<'PY' || {
-    echo "the resident in the image is NOT this build; nothing installed, VM left running." >&2
-    exit 1
-}
+# `if !` rather than `cmd <<'PY' || { … }`: with the brace form the heredoc
+# body starts INSIDE the block, bash swallows the failure branch as script
+# text, and the whole file dies with "unexpected end of file" — 200 lines
+# and one boot later. Watched 2026-08-06.
+if ! python3 - "$RUN/mirror.txt" "$MIRROR_JSON" "$WANT_BUILD" "$WANT_SOURCE" "$WANT_CAPS" <<'PY'
 import json, sys
 raw, out, want_build, want_source, want_caps = sys.argv[1:6]
 found = None
@@ -130,6 +131,10 @@ json.dump(found, open(out, "w"), indent=2)
 print(f"  resident VERIFIED: active, capabilities {found['capabilities']}, "
       f"fingerprint {found['buildFingerprint'][:12]}")
 PY
+then
+    echo "the resident in the image is NOT this build; nothing installed, VM left running." >&2
+    exit 1
+fi
 
 echo
 echo "== bake: quit the applications and let the guest shut ITSELF down =="
