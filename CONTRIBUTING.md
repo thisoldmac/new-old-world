@@ -100,6 +100,17 @@ commitments yet. Use it freely; see
 [docs/local/README.md](docs/local/README.md) for how a note graduates
 from one to the other.
 
+## Set up the hooks once
+
+    tools/setup-hooks
+
+It points git at `.githooks`, which is repo-local config every worktree
+inherits. Two refusals live there: a direct commit on `main`, and a commit
+that changes the resident extension without baking it into the shared QEMU
+stage image first (`scripts/bake-ext-image`). Both are overridable —
+`TBT_ALLOW_MAIN=1`, `TBT_DEFER_EXT_BAKE=1` with a written reason — because
+enforcement is the floor and not the rule. See AGENTS.md.
+
 ## Local machine configuration
 
 Nothing about your network belongs in a commit. Addresses, credentials

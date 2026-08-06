@@ -213,6 +213,12 @@ def defer(root: str, paths: list[str], want: str) -> int:
     save(root, doc)
     subprocess.run(["git", "-C", root, "add", "--", RECEIPTS], check=True)
     print(f"[ext-bake-gate] bake DEFERRED and recorded in {RECEIPTS}: {reason}")
+    # `git commit -a` and `git commit -- <paths>` build a TEMPORARY index, so
+    # a file staged by a hook does not join that commit — it waits, staged,
+    # for the next one. Said here rather than discovered later by someone
+    # whose deferral is missing from the commit it was meant to excuse.
+    print(f"  (staged into this commit — with `git commit -a` or an explicit")
+    print(f"   pathspec, name {RECEIPTS} in it or it lands in the next one.)")
     print("  The image on disk does not contain this resident. Anything that "
           "clones it")
     print("  is testing older resident code until scripts/bake-ext-image runs.")
