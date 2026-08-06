@@ -721,28 +721,43 @@ static void run_wirestat(const char *request_json, long id,
                          char *out, long cap)
 {
     ConnWakeStats st;
-    char arg[32];
+    char line[64];
+    char action[24];
+    char value[24];
     long pos;
 
-    /* `wirestat reset` / `sleep N` / `wake on|off`. One word, because the
-       console face types it and the wire face sends the same string. */
-    arg[0] = '\0';
-    now_cmd_arg_word(request_json, "action", arg, sizeof arg);
-    if (strcmp(arg, "reset") == 0) {
-        conn_reset_wake_stats();
-    } else if (strcmp(arg, "wake") == 0) {
-        char onoff[16];
+    action[0] = value[0] = '\0';
+    /* TWO FACES, ONE GRAMMAR. A console sends the raw line and a typed
+       caller sends args; now_cmd_arg_word answers the named arg for the
+       second but the line's FIRST word for the first, so asking it twice
+       on a console line would return "sleep" for both `action` and
+       `value`. The line is therefore split here, once. */
+    if (now_cmd_line(request_json, line, sizeof line)) {
+        const char *p = line;
+        long i;
 
-        onoff[0] = '\0';
-        now_cmd_arg_word(request_json, "value", onoff, sizeof onoff);
-        conn_set_wake(strcmp(onoff, "off") != 0);
-        conn_reset_wake_stats();
-    } else if (strcmp(arg, "sleep") == 0) {
-        char ticks[16];
+        while (*p == ' ') { ++p; }
+        for (i = 0; i < (long)sizeof action - 1 && *p && *p != ' '; ++i) {
+            action[i] = *p++;
+        }
+        action[i] = '\0';
+        while (*p == ' ') { ++p; }
+        for (i = 0; i < (long)sizeof value - 1 && *p && *p != ' '; ++i) {
+            value[i] = *p++;
+        }
+        value[i] = '\0';
+    } else {
+        now_cmd_arg_word(request_json, "action", action, sizeof action);
+        now_cmd_arg_word(request_json, "value", value, sizeof value);
+    }
 
-        ticks[0] = '\0';
-        now_cmd_arg_word(request_json, "value", ticks, sizeof ticks);
-        conn_set_idle_sleep(atol(ticks));
+    if (strcmp(action, "reset") == 0) {
+        conn_reset_wake_stats();
+    } else if (strcmp(action, "wake") == 0) {
+        conn_set_wake(strcmp(value, "off") != 0);
+        conn_reset_wake_stats();
+    } else if (strcmp(action, "sleep") == 0) {
+        conn_set_idle_sleep(atol(value));
         conn_reset_wake_stats();
     }
 
