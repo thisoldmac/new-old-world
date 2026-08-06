@@ -1,0 +1,1965 @@
+{
+ "version": 2,
+ "seq": 150,
+ "capturedAt": 1786032378.0,
+ "source": "peek",
+ "screen": {
+  "w": 800,
+  "h": 600
+ },
+ "apps": [
+  {
+   "psn": "0.29360131",
+   "name": "New Old World",
+   "front": true,
+   "incarnation": "process-99dd9e1a"
+  },
+  {
+   "psn": "0.29491201",
+   "name": "Control Strip Extension",
+   "front": false,
+   "incarnation": "process-0b067fe1",
+   "error": "ax_oracle_not_found"
+  },
+  {
+   "psn": "0.29622273",
+   "name": "DVD AutoLauncher",
+   "front": false,
+   "incarnation": "process-9e34e371",
+   "error": "ax_oracle_not_found"
+  },
+  {
+   "psn": "0.29687809",
+   "name": "FBC Indexing Scheduler",
+   "front": false,
+   "incarnation": "process-e5cb7f38",
+   "error": "ax_oracle_not_found"
+  },
+  {
+   "psn": "0.29753345",
+   "name": "Folder Actions",
+   "front": false,
+   "incarnation": "process-73dce0f7",
+   "error": "ax_oracle_not_found"
+  },
+  {
+   "psn": "0.29818881",
+   "name": "tbt-appe",
+   "front": false,
+   "incarnation": "process-0062b949",
+   "error": "ax_oracle_not_found"
+  },
+  {
+   "psn": "0.29949953",
+   "name": "Finder",
+   "front": false,
+   "incarnation": "process-a4b55a72",
+   "error": "ax_oracle_not_found"
+  },
+  {
+   "psn": "0.30736386",
+   "name": "tbt-worker",
+   "front": false,
+   "incarnation": "process-e2115fef",
+   "error": "ax_oracle_not_found"
+  }
+ ],
+ "processes": [
+  {
+   "psn": "0.29360131",
+   "name": "New Old World",
+   "front": true,
+   "signature": "NOWo",
+   "incarnation": "process-99dd9e1a"
+  },
+  {
+   "psn": "0.29491201",
+   "name": "Control Strip Extension",
+   "front": false,
+   "signature": "sdev",
+   "incarnation": "process-0b067fe1"
+  },
+  {
+   "psn": "0.29622273",
+   "name": "DVD AutoLauncher",
+   "front": false,
+   "signature": "dval",
+   "incarnation": "process-9e34e371"
+  },
+  {
+   "psn": "0.29687809",
+   "name": "FBC Indexing Scheduler",
+   "front": false,
+   "signature": "fbcb",
+   "incarnation": "process-e5cb7f38"
+  },
+  {
+   "psn": "0.29753345",
+   "name": "Folder Actions",
+   "front": false,
+   "signature": "ssrv",
+   "incarnation": "process-73dce0f7"
+  },
+  {
+   "psn": "0.29818881",
+   "name": "tbt-appe",
+   "front": false,
+   "signature": "TbtL",
+   "incarnation": "process-0062b949"
+  },
+  {
+   "psn": "0.29949953",
+   "name": "Finder",
+   "front": false,
+   "signature": "MACS",
+   "incarnation": "process-a4b55a72"
+  },
+  {
+   "psn": "0.30736386",
+   "name": "tbt-worker",
+   "front": false,
+   "signature": "TbNW",
+   "incarnation": "process-e2115fef"
+  }
+ ],
+ "menubar": {
+  "app": "New Old World",
+  "menus": [
+   {
+    "title": "",
+    "apple": true,
+    "id": -16383,
+    "left": 10,
+    "items": [
+     {
+      "title": "",
+      "index": 1,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": ""
+     },
+     {
+      "title": "",
+      "index": 2,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": ""
+     },
+     {
+      "title": "",
+      "index": 3,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": ""
+     },
+     {
+      "title": "",
+      "index": 4,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": ""
+     },
+     {
+      "title": "",
+      "index": 5,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": ""
+     },
+     {
+      "title": "",
+      "index": 6,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": ""
+     },
+     {
+      "title": "",
+      "index": 7,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": ""
+     },
+     {
+      "title": "",
+      "index": 8,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": ""
+     },
+     {
+      "title": "",
+      "index": 9,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": ""
+     },
+     {
+      "title": "",
+      "index": 10,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": ""
+     },
+     {
+      "title": "",
+      "index": 11,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": ""
+     },
+     {
+      "title": "",
+      "index": 12,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": ""
+     },
+     {
+      "title": "",
+      "index": 13,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": ""
+     },
+     {
+      "title": "",
+      "index": 14,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": ""
+     },
+     {
+      "title": "",
+      "index": 15,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": ""
+     },
+     {
+      "title": "",
+      "index": 16,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": ""
+     }
+    ]
+   },
+   {
+    "title": "File",
+    "apple": false,
+    "id": 129,
+    "left": 38,
+    "items": [
+     {
+      "title": "Close",
+      "index": 1,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "W"
+     },
+     {
+      "title": "- ",
+      "index": 2,
+      "separator": true,
+      "enabled": false,
+      "mark": false,
+      "cmd": ""
+     },
+     {
+      "title": "File Sharing... ",
+      "index": 3,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": ""
+     },
+     {
+      "title": "- ",
+      "index": 4,
+      "separator": true,
+      "enabled": false,
+      "mark": false,
+      "cmd": ""
+     },
+     {
+      "title": "Quit",
+      "index": 5,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "Q"
+     }
+    ]
+   },
+   {
+    "title": "Edit",
+    "apple": false,
+    "id": 142,
+    "left": 73,
+    "items": [
+     {
+      "title": "Preferences...",
+      "index": 1,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": ""
+     }
+    ]
+   },
+   {
+    "title": "View",
+    "apple": false,
+    "id": 141,
+    "left": 110,
+    "items": [
+     {
+      "title": "Screenshots",
+      "index": 1,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "1"
+     },
+     {
+      "title": "Files",
+      "index": 2,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "2"
+     },
+     {
+      "title": "Console",
+      "index": 3,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "3"
+     },
+     {
+      "title": "Processes",
+      "index": 4,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "4"
+     },
+     {
+      "title": "Hardware",
+      "index": 5,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "5"
+     },
+     {
+      "title": "Software",
+      "index": 6,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "6"
+     },
+     {
+      "title": "MCP",
+      "index": 7,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "7"
+     },
+     {
+      "title": "Diagnostics",
+      "index": 8,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "8"
+     },
+     {
+      "title": "Networking",
+      "index": 9,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "9"
+     },
+     {
+      "title": "iCloud",
+      "index": 10,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "0"
+     },
+     {
+      "title": "Chat",
+      "index": 11,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": ""
+     },
+     {
+      "title": "Mirror",
+      "index": 12,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": ""
+     },
+     {
+      "title": "Preferences",
+      "index": 13,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": ""
+     },
+     {
+      "title": "Logs",
+      "index": 14,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": ""
+     },
+     {
+      "title": "Connection",
+      "index": 15,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": ""
+     }
+    ]
+   },
+   {
+    "title": "Windows",
+    "apple": false,
+    "id": 140,
+    "left": 154,
+    "items": [
+     {
+      "title": "Workshop",
+      "index": 1,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": ""
+     }
+    ]
+   },
+   {
+    "title": "Help",
+    "apple": false,
+    "id": -16490,
+    "left": 225,
+    "items": [
+     {
+      "title": "About Balloon Help\u2026",
+      "index": 1,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "\u001c"
+     },
+     {
+      "title": "-",
+      "index": 2,
+      "separator": true,
+      "enabled": false,
+      "mark": false,
+      "cmd": "\u001c"
+     },
+     {
+      "title": "Show/Hide Balloons",
+      "index": 3,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "\u001c"
+     },
+     {
+      "title": "-",
+      "index": 4,
+      "separator": true,
+      "enabled": false,
+      "mark": false,
+      "cmd": ""
+     }
+    ]
+   },
+   {
+    "title": "",
+    "apple": false,
+    "id": -16489,
+    "left": 665,
+    "items": [
+     {
+      "title": "Hide New Old World",
+      "index": 1,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "\u001c"
+     },
+     {
+      "title": "Hide Others",
+      "index": 2,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "\u001c"
+     },
+     {
+      "title": "Show All",
+      "index": 3,
+      "separator": false,
+      "enabled": false,
+      "mark": false,
+      "cmd": "\u001c"
+     },
+     {
+      "title": "-",
+      "index": 4,
+      "separator": true,
+      "enabled": false,
+      "mark": false,
+      "cmd": "\u001c"
+     },
+     {
+      "title": "Finder",
+      "index": 5,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": ""
+     },
+     {
+      "title": "New Old World",
+      "index": 6,
+      "separator": false,
+      "enabled": true,
+      "mark": true,
+      "cmd": ""
+     }
+    ]
+   }
+  ]
+ },
+ "windows": [
+  {
+   "id": "0.29360131/New Old World#0",
+   "app": "New Old World",
+   "psn": "0.29360131",
+   "title": "New Old World",
+   "rect": {
+    "l": 22,
+    "t": 48,
+    "r": 779,
+    "b": 555
+   },
+   "front": false,
+   "z": 0,
+   "visible": false,
+   "ref": "now-window-b5ea8a5a-475b-4c07-e5eb-001c36ae1779",
+   "addr": 517008560,
+   "incarnation": "process-99dd9e1a/window-1ed0ecb0",
+   "kind": 8,
+   "controls": [
+    {
+     "role": "scrollbar",
+     "title": "",
+     "rect": {
+      "l": 135,
+      "t": 10,
+      "r": 151,
+      "b": 340
+     },
+     "enabled": true,
+     "visible": true,
+     "value": 0,
+     "min": 0,
+     "max": 1,
+     "ref": "now-element-380792fe-159a-d8b7-9807-b2d8e6c276d9",
+     "semantic": {
+      "knowledge": "known",
+      "kind": "scrollBar",
+      "action": "scroll",
+      "value": "0",
+      "provenance": "guest-control-manager",
+      "completeness": "complete"
+     }
+    },
+    {
+     "role": "popup",
+     "title": "Depth:",
+     "rect": {
+      "l": 518,
+      "t": 64,
+      "r": 720,
+      "b": 84
+     },
+     "enabled": true,
+     "visible": true,
+     "value": 4,
+     "min": 1,
+     "max": 6,
+     "ref": "now-element-ae925f73-caf8-1b4a-5195-4cb1a6806448",
+     "semantic": {
+      "knowledge": "known",
+      "kind": "popupMenu",
+      "action": "choose",
+      "value": "8-bit",
+      "provenance": "guest-control-manager",
+      "completeness": "complete"
+     }
+    },
+    {
+     "role": "checkbox",
+     "title": "Compress on wire (PackBits)",
+     "rect": {
+      "l": 520,
+      "t": 92,
+      "r": 720,
+      "b": 108
+     },
+     "enabled": true,
+     "visible": true,
+     "value": 1,
+     "min": 0,
+     "max": 1,
+     "ref": "now-element-ef07e6b2-a8d0-f243-6800-2d60a13fbc19",
+     "semantic": {
+      "knowledge": "known",
+      "kind": "checkBox",
+      "action": "press",
+      "state": "on",
+      "provenance": "guest-control-manager",
+      "completeness": "complete"
+     }
+    },
+    {
+     "role": "checkbox",
+     "title": "Predictive capture",
+     "rect": {
+      "l": 520,
+      "t": 134,
+      "r": 720,
+      "b": 150
+     },
+     "enabled": true,
+     "visible": true,
+     "value": 0,
+     "min": 0,
+     "max": 1,
+     "ref": "now-element-e9413ec0-1351-c705-63a7-2aba8e3266b7",
+     "semantic": {
+      "knowledge": "known",
+      "kind": "checkBox",
+      "action": "press",
+      "state": "off",
+      "provenance": "guest-control-manager",
+      "completeness": "complete"
+     }
+    },
+    {
+     "role": "checkbox",
+     "title": "Interlaced fields",
+     "rect": {
+      "l": 520,
+      "t": 154,
+      "r": 720,
+      "b": 170
+     },
+     "enabled": true,
+     "visible": true,
+     "value": 0,
+     "min": 0,
+     "max": 1,
+     "ref": "now-element-a0c72f99-35e8-6dec-5342-fa47e5a9c82a",
+     "semantic": {
+      "knowledge": "known",
+      "kind": "checkBox",
+      "action": "press",
+      "state": "off",
+      "provenance": "guest-control-manager",
+      "completeness": "complete"
+     }
+    },
+    {
+     "role": "triangle",
+     "title": "",
+     "rect": {
+      "l": 508,
+      "t": 226,
+      "r": 520,
+      "b": 238
+     },
+     "enabled": true,
+     "visible": true,
+     "value": 0,
+     "min": 0,
+     "max": 1,
+     "ref": "now-element-4b7aca6b-0fae-3516-b2f4-c2e12d8c4144",
+     "semantic": {
+      "knowledge": "known",
+      "kind": "disclosureTriangle",
+      "action": "press",
+      "state": "off",
+      "provenance": "guest-control-manager",
+      "completeness": "complete"
+     }
+    },
+    {
+     "role": "button",
+     "title": "Take Screenshot",
+     "rect": {
+      "l": 172,
+      "t": 423,
+      "r": 302,
+      "b": 443
+     },
+     "enabled": true,
+     "visible": true,
+     "value": 0,
+     "min": 0,
+     "max": 1,
+     "ref": "now-element-5964d913-5f4e-9d06-9c6d-67e1baa17f1c",
+     "semantic": {
+      "knowledge": "known",
+      "kind": "pushButton",
+      "action": "press",
+      "provenance": "guest-control-manager",
+      "completeness": "complete"
+     }
+    },
+    {
+     "role": "button",
+     "title": "Send to dtcapture",
+     "rect": {
+      "l": 312,
+      "t": 423,
+      "r": 462,
+      "b": 443
+     },
+     "enabled": true,
+     "visible": true,
+     "value": 0,
+     "min": 0,
+     "max": 1,
+     "ref": "now-element-7cd6838f-e613-ff5e-e21f-aacd0bd2d444",
+     "semantic": {
+      "knowledge": "known",
+      "kind": "pushButton",
+      "action": "press",
+      "provenance": "guest-control-manager",
+      "completeness": "complete"
+     }
+    },
+    {
+     "role": "button",
+     "title": "Start Streaming",
+     "rect": {
+      "l": 472,
+      "t": 423,
+      "r": 622,
+      "b": 443
+     },
+     "enabled": true,
+     "visible": true,
+     "value": 0,
+     "min": 0,
+     "max": 1,
+     "ref": "now-element-2b2443d3-9107-d3ee-61a5-8ca5ea8f4a40",
+     "semantic": {
+      "knowledge": "known",
+      "kind": "pushButton",
+      "action": "press",
+      "provenance": "guest-control-manager",
+      "completeness": "complete"
+     }
+    }
+   ],
+   "dialogItems": [
+    {
+     "number": 1,
+     "title": "",
+     "rect": {
+      "l": 160,
+      "t": 0,
+      "r": 744,
+      "b": 38
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "placard",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 2,
+     "title": "",
+     "rect": {
+      "l": 160,
+      "t": 455,
+      "r": 744,
+      "b": 478
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "placard",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 3,
+     "title": "",
+     "rect": {
+      "l": 8,
+      "t": 8,
+      "r": 152,
+      "b": 470
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "panel",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 4,
+     "title": "",
+     "rect": {
+      "l": 9,
+      "t": 374,
+      "r": 151,
+      "b": 375
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "separator",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 5,
+     "title": "",
+     "rect": {
+      "l": 9,
+      "t": 10,
+      "r": 135,
+      "b": 40
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "selectionBand",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 6,
+     "title": "Screenshots",
+     "rect": {
+      "l": 17,
+      "t": 17,
+      "r": 33,
+      "b": 33
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "icon",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 7,
+     "title": "Screenshots",
+     "rect": {
+      "l": 39,
+      "t": 13,
+      "r": 131,
+      "b": 26
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 8,
+     "title": "Capture and stream",
+     "rect": {
+      "l": 39,
+      "t": 25,
+      "r": 131,
+      "b": 39
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 9,
+     "title": "Files",
+     "rect": {
+      "l": 17,
+      "t": 47,
+      "r": 33,
+      "b": 63
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "icon",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 10,
+     "title": "Files",
+     "rect": {
+      "l": 39,
+      "t": 43,
+      "r": 131,
+      "b": 56
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 11,
+     "title": "Browse and exchange",
+     "rect": {
+      "l": 39,
+      "t": 55,
+      "r": 131,
+      "b": 69
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 12,
+     "title": "Console",
+     "rect": {
+      "l": 17,
+      "t": 77,
+      "r": 33,
+      "b": 93
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "icon",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 13,
+     "title": "Console",
+     "rect": {
+      "l": 39,
+      "t": 73,
+      "r": 131,
+      "b": 86
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 14,
+     "title": "Local commands",
+     "rect": {
+      "l": 39,
+      "t": 85,
+      "r": 131,
+      "b": 99
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 15,
+     "title": "Processes",
+     "rect": {
+      "l": 17,
+      "t": 107,
+      "r": 33,
+      "b": 123
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "icon",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 16,
+     "title": "Processes",
+     "rect": {
+      "l": 39,
+      "t": 103,
+      "r": 131,
+      "b": 116
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 17,
+     "title": "Running applications",
+     "rect": {
+      "l": 39,
+      "t": 115,
+      "r": 131,
+      "b": 129
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 18,
+     "title": "Hardware",
+     "rect": {
+      "l": 17,
+      "t": 137,
+      "r": 33,
+      "b": 153
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "icon",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 19,
+     "title": "Hardware",
+     "rect": {
+      "l": 39,
+      "t": 133,
+      "r": 131,
+      "b": 146
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 20,
+     "title": "Census and probes",
+     "rect": {
+      "l": 39,
+      "t": 145,
+      "r": 131,
+      "b": 159
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 21,
+     "title": "Software",
+     "rect": {
+      "l": 17,
+      "t": 167,
+      "r": 33,
+      "b": 183
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "icon",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 22,
+     "title": "Software",
+     "rect": {
+      "l": 39,
+      "t": 163,
+      "r": 131,
+      "b": 176
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 23,
+     "title": "What is installed",
+     "rect": {
+      "l": 39,
+      "t": 175,
+      "r": 131,
+      "b": 189
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 24,
+     "title": "MCP",
+     "rect": {
+      "l": 17,
+      "t": 197,
+      "r": 33,
+      "b": 213
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "icon",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 25,
+     "title": "MCP",
+     "rect": {
+      "l": 39,
+      "t": 193,
+      "r": 131,
+      "b": 206
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 26,
+     "title": "Who may drive this Mac",
+     "rect": {
+      "l": 39,
+      "t": 205,
+      "r": 131,
+      "b": 219
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 27,
+     "title": "Diagnostics",
+     "rect": {
+      "l": 17,
+      "t": 227,
+      "r": 33,
+      "b": 243
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "icon",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 28,
+     "title": "Diagnostics",
+     "rect": {
+      "l": 39,
+      "t": 223,
+      "r": 131,
+      "b": 236
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 29,
+     "title": "Measure this Mac",
+     "rect": {
+      "l": 39,
+      "t": 235,
+      "r": 131,
+      "b": 249
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 30,
+     "title": "Networking",
+     "rect": {
+      "l": 17,
+      "t": 257,
+      "r": 33,
+      "b": 273
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "icon",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 31,
+     "title": "Networking",
+     "rect": {
+      "l": 39,
+      "t": 253,
+      "r": 131,
+      "b": 266
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 32,
+     "title": "Link, address and ports",
+     "rect": {
+      "l": 39,
+      "t": 265,
+      "r": 131,
+      "b": 279
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 33,
+     "title": "iCloud",
+     "rect": {
+      "l": 17,
+      "t": 287,
+      "r": 33,
+      "b": 303
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "icon",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 34,
+     "title": "iCloud",
+     "rect": {
+      "l": 39,
+      "t": 283,
+      "r": 131,
+      "b": 296
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 35,
+     "title": "The other Mac's cloud",
+     "rect": {
+      "l": 39,
+      "t": 295,
+      "r": 131,
+      "b": 309
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 36,
+     "title": "Chat",
+     "rect": {
+      "l": 17,
+      "t": 317,
+      "r": 33,
+      "b": 333
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "icon",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 37,
+     "title": "Chat",
+     "rect": {
+      "l": 39,
+      "t": 313,
+      "r": 131,
+      "b": 326
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 38,
+     "title": "Ask the other Mac's model",
+     "rect": {
+      "l": 39,
+      "t": 325,
+      "r": 131,
+      "b": 339
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 39,
+     "title": "Mirror",
+     "rect": {
+      "l": 8,
+      "t": -71,
+      "r": 24,
+      "b": -55
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "icon",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 40,
+     "title": "Mirror",
+     "rect": {
+      "l": 30,
+      "t": -60,
+      "r": -4,
+      "b": -47
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 41,
+     "title": "Its extensions and agent",
+     "rect": {
+      "l": 30,
+      "t": -48,
+      "r": -4,
+      "b": -34
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 42,
+     "title": "Preferences",
+     "rect": {
+      "l": 17,
+      "t": 386,
+      "r": 33,
+      "b": 402
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "icon",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 43,
+     "title": "Preferences",
+     "rect": {
+      "l": 39,
+      "t": 382,
+      "r": 147,
+      "b": 395
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 44,
+     "title": "How this window behaves",
+     "rect": {
+      "l": 39,
+      "t": 394,
+      "r": 147,
+      "b": 408
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 45,
+     "title": "Logs",
+     "rect": {
+      "l": 17,
+      "t": 416,
+      "r": 33,
+      "b": 432
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "icon",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 46,
+     "title": "Logs",
+     "rect": {
+      "l": 39,
+      "t": 412,
+      "r": 147,
+      "b": 425
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 47,
+     "title": "This launch's events",
+     "rect": {
+      "l": 39,
+      "t": 424,
+      "r": 147,
+      "b": 438
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 48,
+     "title": "Connection",
+     "rect": {
+      "l": 17,
+      "t": 446,
+      "r": 33,
+      "b": 462
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "icon",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 49,
+     "title": "Connection",
+     "rect": {
+      "l": 39,
+      "t": 442,
+      "r": 147,
+      "b": 455
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 50,
+     "title": "dtcapture",
+     "rect": {
+      "l": 39,
+      "t": 454,
+      "r": 147,
+      "b": 468
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 51,
+     "title": "Screenshots",
+     "rect": {
+      "l": 172,
+      "t": 4,
+      "r": 732,
+      "b": 19
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 52,
+     "title": "Capture this Mac, send a still, or stream its screen.",
+     "rect": {
+      "l": 172,
+      "t": 19,
+      "r": 642,
+      "b": 35
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 53,
+     "title": "dtcapture",
+     "rect": {
+      "l": 612,
+      "t": 4,
+      "r": 732,
+      "b": 19
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 54,
+     "title": "Screenshot preview unavailable",
+     "rect": {
+      "l": 172,
+      "t": 46,
+      "r": 492,
+      "b": 286
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "picture",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 55,
+     "title": "No screenshot yet.",
+     "rect": {
+      "l": 188,
+      "t": 158,
+      "r": 476,
+      "b": 174
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 56,
+     "title": "Streaming",
+     "rect": {
+      "l": 520,
+      "t": 116,
+      "r": 720,
+      "b": 130
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 57,
+     "title": "Advanced Transport",
+     "rect": {
+      "l": 526,
+      "t": 224,
+      "r": 732,
+      "b": 240
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 58,
+     "title": "Rate: Automatic",
+     "rect": {
+      "l": 520,
+      "t": 178,
+      "r": 720,
+      "b": 194
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    },
+    {
+     "number": 59,
+     "title": "Ready.",
+     "rect": {
+      "l": 170,
+      "t": 458,
+      "r": 725,
+      "b": 474
+     },
+     "enabled": true,
+     "visible": true,
+     "semantic": {
+      "knowledge": "known",
+      "kind": "staticText",
+      "provenance": "guest-workshop-model",
+      "completeness": "complete"
+     }
+    }
+   ]
+  }
+ ],
+ "meta": {
+  "errors": [
+   "Control Strip Extension: ax_oracle_not_found",
+   "DVD AutoLauncher: ax_oracle_not_found",
+   "FBC Indexing Scheduler: ax_oracle_not_found",
+   "Folder Actions: ax_oracle_not_found",
+   "tbt-appe: ax_oracle_not_found",
+   "Finder: ax_oracle_not_found",
+   "tbt-worker: ax_oracle_not_found"
+  ],
+  "coverage": [
+   {
+    "scope": "processes",
+    "status": "complete"
+   },
+   {
+    "scope": "windows",
+    "owner": "process-99dd9e1a",
+    "status": "complete"
+   },
+   {
+    "scope": "windows",
+    "owner": "process-0b067fe1",
+    "status": "unavailable",
+    "reason": "not-observed"
+   },
+   {
+    "scope": "windows",
+    "owner": "process-9e34e371",
+    "status": "unavailable",
+    "reason": "not-observed"
+   },
+   {
+    "scope": "windows",
+    "owner": "process-e5cb7f38",
+    "status": "unavailable",
+    "reason": "not-observed"
+   },
+   {
+    "scope": "windows",
+    "owner": "process-73dce0f7",
+    "status": "unavailable",
+    "reason": "not-observed"
+   },
+   {
+    "scope": "windows",
+    "owner": "process-0062b949",
+    "status": "unavailable",
+    "reason": "not-observed"
+   },
+   {
+    "scope": "windows",
+    "owner": "process-a4b55a72",
+    "status": "unavailable",
+    "reason": "not-observed"
+   },
+   {
+    "scope": "windows",
+    "owner": "process-e2115fef",
+    "status": "unavailable",
+    "reason": "not-observed"
+   },
+   {
+    "scope": "menubar",
+    "owner": "process-99dd9e1a",
+    "status": "complete"
+   }
+  ],
+  "plane": "peek anchors: processes, windows, controls, dialog text, and th",
+  "latencyMs": 0,
+  "phases": {
+   "us": {
+    "enumerate": 2609,
+    "bind": 177,
+    "windows": 1691,
+    "controls": 1177,
+    "menubar": 1327,
+    "semantics": 0,
+    "refs": 120,
+    "encode": 610
+   },
+   "clockReads": 46,
+   "clockUs": 144,
+   "faults": 0
+  }
+ },
+ "provenance": {
+  "build": "1bff0bd2ca39",
+  "vm": "nowvm-dtop",
+  "run": "dtcapture desktop-items-read-fix",
+  "capturedAt": "2026-08-06",
+  "guest": "mac99/OS 9.1 emulated",
+  "note": "live capture; build is the guest hello's src hash. A fixture without provenance is a claim about an unidentified machine.",
+  "what": "one structural scene, NOW hidden so the desktop is bare. It carries no desktopItems key at all - that is the guest being honest, not a failure, and it is exactly the scene that used to erase the roster."
+ }
+}

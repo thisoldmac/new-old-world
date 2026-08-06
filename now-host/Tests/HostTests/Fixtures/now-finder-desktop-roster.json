@@ -1,0 +1,42 @@
+{
+ "build": "1bff0bd2ca39 2026-08-06T19:45:20Z",
+ "pages": [
+  {
+   "output": "\"N\t20\rI\tTrash\t716\t510\tfolder\rI\tMacintosh HD\t736\t28\tdisk\rI\tBrowse the Internet\t716\t187\talias\rI\tDevHarness\t608\t476\tfolder\rI\tFrom Claude.txt\t608\t540\tdocument\rI\tharness\t480\t28\tapplication program\rI\tharness.log\t736\t92\tdocument\rI\tHELLO_CLAUDE.txt\t608\t92\tSimpleText text document\r\"",
+   "osaErr": "0",
+   "truncated": "false",
+   "timeoutMs": "15000",
+   "wrapped": "true"
+  },
+  {
+   "output": "\"N\t20\rI\tHelloWorld\t608\t348\tapplication program\rI\tMail\t716\t268\talias\rI\tQuickTime Player\t716\t349\talias\rI\tRegister with Apple\t716\t430\talias\rI\tRumpus 2.0 PRO (Classic)\t559\t289\talias\rI\tRumpus_Pro2.0 Folder\t608\t156\tfolder\rI\tRumpus_Pro2.0.sit\t608\t412\tStuffIt Expander\u2122 document\rI\trunner.debug\t480\t156\tdocument\r\"",
+   "osaErr": "0",
+   "truncated": "false",
+   "timeoutMs": "15000",
+   "wrapped": "true"
+  },
+  {
+   "output": "\"N\t20\rI\trunner.port\t480\t220\tdocument\rI\tSherlock 2\t557\t26\talias\rI\tTBTRunner\t480\t92\tfolder\rI\tNOW-DTOP-9c41\t608\t220\tfolder\r\"",
+   "osaErr": "0",
+   "truncated": "false",
+   "timeoutMs": "15000",
+   "wrapped": "true"
+  }
+ ],
+ "types": {
+  "output": "\"F\tBrowse the Internet\t\u00abclass adrp\u00bb\t\u00abclass aplt\u00bb\t\rF\tFrom Claude.txt\tstring\t\u00abclass ????\u00bb\t\rF\tharness\t\u00abclass APPL\u00bb\t\u00abclass ????\u00bb\t\rF\tharness.log\tstring\t\u00abclass ????\u00bb\t\rF\tHELLO_CLAUDE.txt\tstring\ttext returned\t\rF\tHelloWorld\t\u00abclass APPL\u00bb\t\u00abclass ????\u00bb\t\rF\tMail\t\u00abclass adrp\u00bb\t\u00abclass aplt\u00bb\t\rF\tQuickTime Player\t\u00abclass adrp\u00bb\t\u00abclass TVOD\u00bb\t\rF\tRegister with Apple\t\u00abclass adrp\u00bb\t\u00abclass aplt\u00bb\t\rF\tRumpus 2.0 PRO (Classic)\t\u00abclass adrp\u00bb\t\u00abclass Rmps\u00bb\t\rF\tRumpus_Pro2.0.sit\t\u00abclass SITD\u00bb\t\u00abclass SITx\u00bb\t\rF\trunner.debug\tstring\t\u00abclass ????\u00bb\t\rF\trunner.port\tstring\t\u00abclass ????\u00bb\t\rF\tSherlock 2\t\u00abclass adrp\u00bb\t\u00abclass fndf\u00bb\t\r\"",
+  "osaErr": "0",
+  "truncated": "false",
+  "timeoutMs": "15000",
+  "wrapped": "true"
+ },
+ "provenance": {
+  "build": "1bff0bd2ca39",
+  "vm": "nowvm-dtop",
+  "run": "dtcapture desktop-items-read-fix",
+  "capturedAt": "2026-08-06",
+  "guest": "mac99/OS 9.1 emulated",
+  "note": "live capture; build is the guest hello's src hash. A fixture without provenance is a claim about an unidentified machine.",
+  "what": "the guest's verbatim replies to the four AppleScripts NOWMirrorSource.readIcons sends for the desktop container, taken in the same connection as now-scene-desktop-bare.json. NOW-DTOP-9c41 is a folder made on that VM's desktop so a render could be attributed to this machine and no other."
+ }
+}
