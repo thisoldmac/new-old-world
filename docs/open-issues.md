@@ -14,7 +14,7 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
-## UNRESOLVED: the GWorld probe's own control fails, so it has no verdict (2026-08-06)
+## PART-ANSWERED: the GWorld mechanism is sound; the chase's control is not yet honest (2026-08-06)
 
 `qdtrace start mode=probe` exists and is emulator-run: it sights a blit
 into the armed window, then sweeps the application and system zones for
@@ -28,18 +28,25 @@ emits one content-sized blit, `src == dst`, zero text, zero per-icon
 ops — an independent reproduction of
 `finder-window-icons-are-offscreen-blits` on a new binary.
 
-**BROKEN — the chase.** NOW's own Screenshots module blits a GWorld
-preview into its own window through a dereferenced handle
-(`screenshots_module.c:383`), and the probe cannot find that port
-either: 7 sightings, 14 zone scans, 0 hits, and 0 blocks anywhere in
-either heap whose pixmap points at the sighted pixels. **A chase that
-cannot find a GWorld we allocated ourselves says nothing about anyone
-else's**, so the Finder's identical zero is NOT evidence, and no
-outcome — 1, 2 or 3 — is reported for any application. Suspects,
-untested: `useTempMem` pixels living outside both swept zones; the
-system zone's 64 MB sanity bound silently skipping it (`scans` proves
-the loops ran, never that they covered anything); a port reachable only
-through a master pointer the 2-byte walk never lands on.
+**SOUND — the mechanism**, and this is the premise everything else
+rested on. `tools/guest-gworld`, a 68K applet that allocates its own
+GWorld and hooks it in its own context, fires every family on all three
+allocation flavours: `text 1, line 1, rect 2, rgn 1, bits 1`. Offscreen
+drawing DOES consult `grafProcs`, so **outcome 3 is off the table as a
+mechanism claim** — any null from the foreign probe is a DISCOVERY
+failure. `PlotIconSuite` emitted a blit into the offscreen port, which
+answers outcome 2 favourably for the family most likely to have failed.
+Every geographic assumption the chase makes also holds: port in the
+APPLICATION zone, `portRect == bounds`, `grafProcs` NULL at allocation,
+`RecoverHandle` agreeing; `useTempMem` moves only the pixels.
+
+**STILL OPEN — the chase.** With NOW armed, 7 sightings and 14 zone
+scans found 0 candidates. Since the spike proves the port is in a swept
+zone and shaped as expected, the suspect is now the SIGHTING rather
+than the search: the 7 pixmaps chased were probably never the preview
+GWorld's, so the control may have tested nothing. **No outcome is
+claimed for any application** until a control run demonstrably chases
+the right blit.
 
 **Paid for on the way**: the scan crashed the Finder. It dereferenced a
 `portPixMap` read out of arbitrary heap bytes with only a NULL/odd
