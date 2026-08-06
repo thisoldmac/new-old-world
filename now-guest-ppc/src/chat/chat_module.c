@@ -1,4 +1,5 @@
 #include "chat_module.h"
+#include "control_kind.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -658,20 +659,20 @@ static OSErr chat_create(WindowRef owner, const Rect *body)
     chat_transcript_reset(&g_transcript);
 
     text[0] = 0;
-    g_provider_popup = NewControl(owner, &g_r.provider_popup, text, false,
+    g_provider_popup = now_control_new(owner, &g_r.provider_popup, text, false,
                                   popupTitleLeftJust, kChatProvidersMenuID,
                                   0, popupMenuProc, 0);
-    g_model_popup = NewControl(owner, &g_r.model_popup, text, false,
+    g_model_popup = now_control_new(owner, &g_r.model_popup, text, false,
                                popupTitleLeftJust, kChatModelsMenuID, 0,
                                popupMenuProc, 0);
     CopyCStringToPascal("New Chat", text);
-    g_new_btn = NewControl(owner, &g_r.new_button, text, false, 0, 0, 1,
+    g_new_btn = now_control_new(owner, &g_r.new_button, text, false, 0, 0, 1,
                            pushButProc, 0);
     CopyCStringToPascal("Send", text);
-    g_send_btn = NewControl(owner, &g_r.send_button, text, false, 0, 0, 1,
+    g_send_btn = now_control_new(owner, &g_r.send_button, text, false, 0, 0, 1,
                             pushButProc, 0);
     g_scroll_action_upp = NewControlActionUPP(scroll_action);
-    g_scroll = NewControl(owner, &g_r.scrollbar, text, false, 0, 0, 0,
+    g_scroll = now_control_new(owner, &g_r.scrollbar, text, false, 0, 0, 0,
                           scrollBarProc, 0);
     {
         Rect view;
@@ -1169,7 +1170,8 @@ const WorkshopModuleOps *chat_module_ops(void)
         chat_key,
         chat_activate,
         chat_idle,
-        chat_status_text
+        chat_status_text,
+        NULL   /* describe_scene: this page does not self-describe yet */
     };
 
     return &k_ops;

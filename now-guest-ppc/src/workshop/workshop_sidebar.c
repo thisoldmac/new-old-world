@@ -1,4 +1,5 @@
 #include "workshop_sidebar.h"
+#include "control_kind.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -593,7 +594,7 @@ Boolean workshop_sidebar_create(WindowRef owner, const WorkshopLayout *lay,
        SetControlViewSize is CarbonLib 1.0 and later, well under this
        app's 1.6 floor. */
     scroll_bar_rect(&bar);
-    g_scroll = NewControl(owner, &bar, empty, false, 0, 0, 0,
+    g_scroll = now_control_new(owner, &bar, empty, false, 0, 0, 0,
                           kControlScrollBarLiveProc, 0);
     if (g_scroll == NULL) {
         DisposeControlActionUPP(g_scroll_action_upp);

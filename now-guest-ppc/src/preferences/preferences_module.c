@@ -1,4 +1,5 @@
 #include "preferences_module.h"
+#include "control_kind.h"
 
 #include <string.h>
 
@@ -119,18 +120,18 @@ static OSErr prefs_create(WindowRef owner, const Rect *body)
     compute_rects(body, &g_r);
 
     CopyCStringToPascal("Sidebar", text);
-    g_group = NewControl(owner, &g_r.sidebar_box, text, false, 0, 0, 0,
+    g_group = now_control_new(owner, &g_r.sidebar_box, text, false, 0, 0, 0,
                          kControlGroupBoxTextTitleProc, 0);
     CopyCStringToPascal("Compact rows", text);
-    g_compact = NewControl(owner, &g_r.compact_check, text, false,
+    g_compact = now_control_new(owner, &g_r.compact_check, text, false,
                            workshop_sidebar_compact() ? 1 : 0, 0, 1,
                            checkBoxProc, 0);
     CopyCStringToPascal("Collapse to icons", text);
-    g_collapse = NewControl(owner, &g_r.collapse_check, text, false,
+    g_collapse = now_control_new(owner, &g_r.collapse_check, text, false,
                             workshop_sidebar_collapsed() ? 1 : 0, 0, 1,
                             checkBoxProc, 0);
     CopyCStringToPascal("Reset Order", text);
-    g_reset = NewControl(owner, &g_r.reset_button, text, false, 0, 0, 0,
+    g_reset = now_control_new(owner, &g_r.reset_button, text, false, 0, 0, 0,
                          pushButProc, 0);
     if (g_group == NULL || g_compact == NULL || g_collapse == NULL
         || g_reset == NULL) {
@@ -299,7 +300,8 @@ static const WorkshopModuleOps k_ops = {
     NULL,
     prefs_activate,
     NULL,
-    prefs_status_line
+    prefs_status_line,
+    NULL   /* describe_scene: this page does not self-describe yet */
 };
 
 const WorkshopModuleOps *preferences_module_ops(void)
