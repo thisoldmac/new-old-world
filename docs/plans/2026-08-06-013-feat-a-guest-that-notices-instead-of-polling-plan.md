@@ -27,11 +27,30 @@ chain, not a foreign process, and not proportional to the work done.
 
 Two things follow, and the second is the reason for this plan.
 
-**The narrow finding.** The only step that runs exclusively when NOW is
-frontmost is `collect_self_menubar` — the menu bar read through the
-TOOLBOX. The same job for another application goes through the
-validated memory reader and costs a tenth as much for more items. A
-fix for that specific gap is already in flight and is not this plan.
+**The narrow finding — and it was WRONG, corrected the same day.**
+This plan first said the cost was `collect_self_menubar`, the menu bar
+read through the Toolbox, inferred by differencing the two conditions
+above. A microsecond breakdown taken before any code changed says
+otherwise: **the whole menu bar is 1.0–2.5 ms, about 0.1% of the
+total.** The ~1 s is `find_controls_by_probe` — a `FindControl` grid
+sweep over NOW's own window, 3,724 points across a 757×487 content
+area.
+
+**Why the differential lied, which is the transferable part.** The
+inference assumed the two conditions differed only by the menu-bar
+step. They also differ by WINDOW ACTIVATION, and `FindControl` answers
+an inactive window immediately: ~2.7 µs per point in the background
+against ~240 µs in the foreground. The same sweep, ninety times the
+cost, for a reason that has nothing to do with menus. A differential is
+only as good as the claim that one variable moved, and here two did.
+
+The fix taken is this plan's own thesis in miniature, at tier 1: cache
+what the sweep DISCOVERED (which controls exist, and where each was
+found), re-prove it at one `FindControl` per control per pass, and
+invalidate on control creation, disposal or movement. Same Toolbox
+call, roughly 3,700× less often, no layout assumptions. Measured
+916 ms → **0 ms** median in steady state, with the full sweep now paid
+once per UI change instead of once per poll.
 
 **The wide finding.** Every cost here comes from RE-DERIVING the
 machine's state on a timer. The scene walk enumerates processes, binds
@@ -217,10 +236,15 @@ frame instead of a document. Contract first, per the house rule.
   that matters — its disk is host-backed — so a fix tuned to emulator
   timings may miss on metal, and a cost that looks small here may
   dominate there.
-- **Treating the menu bar as the problem.** It is the first measured
-  instance of the problem. If § 1 shows the same shape elsewhere, this
-  plan is right; if the menu bar is a one-off, slices 3–5 are premature
-  and should be re-argued rather than executed.
+- **Treating one measured instance as the problem.** The menu bar was
+  this plan's first candidate and it was refuted within hours — the
+  cost was a control sweep, found only because § 1 was done before any
+  fix. That is the plan working, and it is also the warning: the next
+  instance will not be where anyone expects either. If § 1's breakdown
+  shows the same SHAPE elsewhere — full re-derivation per poll of
+  something that rarely changes — slices 3–5 are right; if the control
+  sweep turns out to be the only one, they are premature and should be
+  re-argued rather than executed.
 
 ## Verification
 
