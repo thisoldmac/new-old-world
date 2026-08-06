@@ -14,6 +14,36 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED: the PowerPC guest never reads the host's contract revision (2026-08-06)
+
+**Fixed and watched on an emulated Power Mac G4 the same night**, guest
+build `48a2af200ab7 2026-08-06T06:54:16Z`, on a session-private clone
+(wire 5421). A host answering `contract: 1` is refused with
+`{"type":"refuse","contract":2,"reason":"contract revision 1 != 2"}` and
+the guest closes; a host answering no `contract` at all is refused with
+"host hello states no contract revision; this guest speaks 2"; a host
+answering 2 is served, and between all three the guest redialled on its
+own backoff without being asked. The permanent check is
+`WireLimitsAgreementTests
+.testBothGuestsGateTheContractRevisionInTheirHelloHandler`, which reads
+both guests' hello handlers and was watched failing with the old
+`on_hello` pasted back in.
+
+**The open question this entry ended on — whether a guest should SEND a
+refuse — is now settled in the contract**, not in one guest's habits.
+`contract/asyncapi.yaml`'s connection rules say the gate binds whoever
+RECEIVES a hello (both halves of it), that an ABSENT `contract` is a
+mismatch rather than a tolerance, and that the refusal is sent and names
+both numbers: a silent hang-up is indistinguishable from a dropped
+network at the far end, which is the one thing gating at the door exists
+to tell apart. Two implementations moved to meet it — NOW-68K, which
+refused silently with a `bye` and a status reading "contract mismatch",
+now sends `refuse` naming both numbers; and the host, which dropped an
+inbound `refuse` into a `default:` arm, now logs it and finishes, since
+"never swallowed" is that schema's own word.
+
+The original entry, unedited:
+
 ## FIXED on an emulator, NEVER ON METAL: NOW's own window cost ~1 s of every scene, and the suspect was the wrong one (2026-08-06)
 
 **The symptom.** With NOW frontmost — which is what a person does the

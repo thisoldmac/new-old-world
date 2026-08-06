@@ -577,6 +577,11 @@ final class GuestWireConformanceTests: XCTestCase {
         "ping": "test68KPingAsTheGuestWritesIt",
         "error": "test68KErrorReplyAsTheGuestWritesIt",
         "bye": "test68KByeAsTheGuestWritesIt",
+        // The guest's half of the revision gate (wire68.c,
+        // send_refuse_and_close). `refuse` used to be the host's message
+        // alone; the contract binds the check to whoever RECEIVES a hello,
+        // so both guests now send one.
+        "refuse": "test68KRefuseAsTheGuestWritesIt",
         "process.result": "test68KProcessResultAsTheGuestWritesIt",
         "file.accept": "test68KFileAcceptAsTheGuestWritesIt",
         "file.refuse": "test68KFileRefuseAsTheGuestWritesIt",

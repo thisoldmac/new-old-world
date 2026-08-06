@@ -37,6 +37,33 @@
 #   The handshake is per-connection: a reconnect re-hellos.
 # - `contract` is a single integer revision. Unequal revisions => refuse.
 #   Breaking changes bump it; additive optional fields do not.
+#   THE RULE BINDS WHOEVER RECEIVES A HELLO, both halves of it. The guest
+#   dials, so the host gates first and the sentence above reads as the
+#   host's move — but the answer is a `hello` too, and a receiver that
+#   does not gate it will serve a whole session to a peer speaking a
+#   revision it has never heard of, then discover the skew in the middle
+#   of a message nobody can decode, with no handshake left to blame.
+#   Measured 2026-08-06: harnesses left on revision 1 could never hold a
+#   link to NOW-68K, which gates, and held one to NOW-PPC, which did not,
+#   for an entire revision. The half that skipped the check is the half
+#   that hid the drift.
+#   An ABSENT `contract` is a MISMATCH, not a tolerance. The field is
+#   required; a hello without one comes from something that predates this
+#   handshake or is not speaking this contract at all, and there is no
+#   number to compare. Refuse it, and say it was absent rather than
+#   reporting a revision nobody sent.
+#   THE REFUSAL IS SENT — `refuse`, carrying the refuser's OWN revision
+#   and a reason naming both numbers — by whichever side detects the
+#   skew, and then that side closes. Hanging up silently is a different
+#   answer: from the far end it is indistinguishable from a dropped
+#   network, and telling those two apart is the entire value of gating at
+#   the door. The peer may be merely stale, and the refusal is where it
+#   learns by how much.
+#   What follows the close differs only because the roles do. The host
+#   waits to be dialled again. The guest, which dials, retries on its
+#   normal backoff and keeps wanting a connection: a wrong revision is
+#   the peer's fact, not a withdrawal of the person's intent, and the
+#   right host may be one launch away.
 # - The host serves SEVERAL guests concurrently, told apart by the identity
 #   in their `hello` — `name`, compared trimmed and case-folded. A dial from
 #   a machine that is not already connected is accepted and served alongside
@@ -1797,9 +1824,19 @@ components:
       type: object
       required: [type, contract, reason]
       additionalProperties: false
+      description: >
+        The answer to a `hello` that will not be served, sent by EITHER
+        side — usually the host, which gates first, but a guest refuses a
+        host hello it cannot speak to by the same rule (see the preamble's
+        connection rules). The sender closes after it.
       properties:
         type: { const: refuse }
-        contract: { type: integer }
+        contract:
+          type: integer
+          description: >
+            The REFUSER'S own revision, not the one it was sent. On a
+            revision mismatch that is the whole point of the message: it
+            is how the stale side learns which number to be.
         reason:
           type: string
           description: Human-readable; shown in the UI, never swallowed.

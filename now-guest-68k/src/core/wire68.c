@@ -780,26 +780,12 @@ static void flush_outbound(void)
  * window, when net.h now gives us net_close() for exactly the orderly
  * exit the contract requires. Bye is documented best-effort, so a queue
  * or send failure here is logged and we still proceed to close. */
-static void send_bye_and_close(const char *code)
+/* Get what was just queued onto the wire, then drive net_close()'s
+ * queued-send/TCPClose sequence to completion. Shared by the two
+ * messages that are followed by a close of our own (bye, refuse). */
+static void flush_and_close(void)
 {
-    char payload[64];
-    long pos = 0;
-    int ok = 1;
     unsigned long deadline;
-
-    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
-                                      "{\"type\":\"bye\",\"code\":\"");
-    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
-                                      code);
-    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
-                                      "\"}");
-    if (ok && pos > 0) {
-        if (!enqueue_control_send(payload, pos)) {
-            now68k_log("wire: bye dropped, outbound queue full");
-        }
-    } else {
-        now68k_log("wire: bye payload build failed");
-    }
 
     flush_outbound();
     net_close();
@@ -815,6 +801,74 @@ static void send_bye_and_close(const char *code)
          * outstanding. */
         net_disconnect();
     }
+}
+
+static void send_bye_and_close(const char *code)
+{
+    char payload[64];
+    long pos = 0;
+    int ok = 1;
+
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                      "{\"type\":\"bye\",\"code\":\"");
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                      code);
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                      "\"}");
+    if (ok && pos > 0) {
+        if (!enqueue_control_send(payload, pos)) {
+            now68k_log("wire: bye dropped, outbound queue full");
+        }
+    } else {
+        now68k_log("wire: bye payload build failed");
+    }
+
+    flush_and_close();
+}
+
+/* Refuse the host's hello, then close - the same shape as the bye above,
+ * for the one message that is not a bye.
+ *
+ * The contract's connection rules bind the revision gate to whoever
+ * RECEIVES a hello, and say the refusal is SENT: a silent hang-up is
+ * indistinguishable from a dropped network at the far end, which is the
+ * one thing gating at the door exists to tell apart. `contract` here is
+ * OURS - a peer that is merely stale learns from this message which
+ * number to be. Best effort, like bye: a queue that will not take it
+ * still ends in a close, because the alternative is serving a session we
+ * have just decided we cannot speak. */
+static void send_refuse_and_close(const char *reason)
+{
+    /* The envelope is ~40 bytes and handle_host_hello's reason buffer is
+     * 80, so this holds the longest refusal that can reach it with room
+     * to spare - and a longer one truncates into a shorter message
+     * rather than overrunning, because numfmt is bounded. */
+    char payload[160];
+    long pos = 0;
+    int ok = 1;
+
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                      "{\"type\":\"refuse\",\"contract\":");
+    ok = ok && now68k_fmt_append_long(payload, (long)sizeof payload, &pos,
+                                       (long)NOW68K_CONTRACT_REVISION);
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                      ",\"reason\":\"");
+    /* Not escaped, and never given peer text: every caller passes a
+     * literal built here, the same rule send_error_reply follows for the
+     * same reason - this writer does not escape. */
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                      reason);
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                      "\"}");
+    if (ok && pos > 0) {
+        if (!enqueue_control_send(payload, pos)) {
+            now68k_log("wire: refuse dropped, outbound queue full");
+        }
+    } else {
+        now68k_log("wire: refuse payload build failed");
+    }
+
+    flush_and_close();
 }
 
 /* ---- the single failure funnel ----------------------------------------- */
@@ -1031,13 +1085,61 @@ static void handle_host_hello(const char *json, long len)
     long contract = -1;
     char name[32];
     char version[24];
+    int found = now68k_json_find_int(json, (size_t)len, "contract", &contract);
 
-    if (!now68k_json_find_int(json, (size_t)len, "contract", &contract)
-        || contract != NOW68K_CONTRACT_REVISION) {
+    if (!found || contract != NOW68K_CONTRACT_REVISION) {
+        char reason[80];
+        long pos = 0;
+        long spos;
+        int absent = !found;
+
+        /* Terminated before the first append, the way status_begin() does
+         * it: numfmt leaves *pos unspecified on a failure, and the
+         * recovery below re-derives the position with strlen(), which on
+         * an untouched buffer would be reading whatever the stack held. */
+        reason[0] = '\0';
+
+        /* The numbers, not just the fact. This used to read "contract
+         * mismatch" and tear down with a bye, which told a person nothing
+         * about WHICH revision the peer speaks and told the peer nothing
+         * at all - and the contract now states both halves of that: the
+         * reason names both numbers, and the refusal is sent rather than
+         * being a silent hang-up. An ABSENT field lands here too and says
+         * so, because the contract requires the field and there is then
+         * no revision to compare. */
         now68k_log_num("wire: host hello has an unexpected contract "
                         "revision", contract);
-        set_status_str("Protocol error: contract mismatch");
-        teardown_and_retry(NULL, "protocol-error");
+        if (absent) {
+            (void)now68k_fmt_append_str(reason, (long)sizeof reason, &pos,
+                                         "host hello states no contract "
+                                         "revision; this guest speaks ");
+            (void)now68k_fmt_append_long(reason, (long)sizeof reason, &pos,
+                                          (long)NOW68K_CONTRACT_REVISION);
+        } else {
+            (void)now68k_fmt_append_str(reason, (long)sizeof reason, &pos,
+                                         "contract revision ");
+            (void)now68k_fmt_append_long(reason, (long)sizeof reason, &pos,
+                                          contract);
+            (void)now68k_fmt_append_str(reason, (long)sizeof reason, &pos,
+                                         " != ");
+            (void)now68k_fmt_append_long(reason, (long)sizeof reason, &pos,
+                                          (long)NOW68K_CONTRACT_REVISION);
+        }
+        if (pos < 0 || pos >= (long)sizeof reason) {
+            pos = (long)strlen(reason);
+        }
+        reason[pos] = '\0';
+
+        status_begin(&spos);
+        status_append(&spos, "Protocol error: ");
+        status_append(&spos, reason);
+        status_end(spos);
+
+        send_refuse_and_close(reason);
+        /* No bye: the refusal IS the answer and the stream is already
+         * closed above. This still routes through the one failure funnel
+         * so the retry the contract asks of a guest gets scheduled. */
+        teardown_and_retry(NULL, NULL);
         return;
     }
 
