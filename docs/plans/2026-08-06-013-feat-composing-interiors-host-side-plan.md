@@ -105,6 +105,57 @@ format bump would strand every already-baked image.
 Also in this slice: `docs/contract-coverage.md` in the same commit, per
 AGENTS.md.
 
+### A2 — SETTLED BEFORE IMPLEMENTATION
+
+Three decisions taken here so the next thread does not re-derive them.
+The first is a correction to this plan's own earlier wording.
+
+**1. How the guest resolves a blit's source port — and the trap.**
+
+An earlier draft of this plan said "the value the payload needs is in
+hand at the moment `content_record_bits` runs". **That is not true as
+written, and taking it at face value reproduces the defect that cost a
+whole night.**
+
+`content_record_bits` receives `src_bits`: a *dereferenced* PixMap
+pointer, and `LockPixels` relocates the record, so that pointer differs
+from where the record lived a moment earlier. A hooked row stores
+`gPorts[i].pixmap = (NowPeekU32)cand->portPixMap` — the **handle**.
+Comparing the two directly compares a handle against a deref and never
+matches.
+
+The correct algorithm, and it is cheap (16 rows maximum):
+
+    for each row i with gPorts[i].offscreen and gPorts[i].a5 == armed:
+        if *(PixMapHandle)gPorts[i].pixmap == (PixMap *)src_bits:
+            this blit's source is gPorts[i].port
+
+Both sides are read **at the same instant**, so relocation cannot
+separate them. Do not stash a deref at hook time and compare later; do
+not call `RecoverHandle` on `src_bits` (it searches the current zone and
+the locked record is not in one). See
+`gworld-offscreen-ports-are-hookable`.
+
+**2. Emit the source record in probe mode only, for now.**
+
+`content_record_bits` runs in Record mode too, so the naive change
+touches the *shipping* content plane, not just the experiment. Gate the
+new record on `kNowContentModeProbe` until the join is proven end to
+end. Two reasons: the shipping path should not grow a record whose
+consumer does not exist yet, and every `ext/` change is gated by
+`tools/ext-bake-gate`, so a resident change that is not yet worth baking
+into the shared oracle is a change worth deferring in writing rather
+than baking. Widen to Record mode in a later, deliberate commit.
+
+**3. The host side lands in `NOWMirrorContentPlane.swift`.**
+
+`now-host/Sources/Host/NOWMirrorContentPlane.swift` (420 lines) is where
+a drain is applied; it already keys on "WindowRecord/GrafPort address —
+the exact key both planes report", already routes records by
+`record.portAddress`, and already lets MirrorKit replay text and
+primitives while CopyBits stays unsupported. The join belongs there, not
+in a new component.
+
 ### B — the guest fills it in
 
 `ext/src/now_content.c`. When `content_record_bits` runs and the source
