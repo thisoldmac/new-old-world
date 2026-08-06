@@ -239,6 +239,54 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
         }
     }
 
+    /// The 2026-08-06 fidelity sweep's captures, rendered for eyes.
+    ///
+    /// SEPARATE from `testRenderEveryCapture` on purpose. That list is
+    /// the coverage gate's own evidence and every entry there is also
+    /// asserted on somewhere above; this list is a SURVEY — windows
+    /// captured to be judged against the machine's own pixels, most of
+    /// which have no assertion yet and some of which are here precisely
+    /// because they render badly. Mixing the two would let a survey
+    /// entry read as a proven surface.
+    ///
+    /// The renders pair with `<label>-guest.ppm` from the same run via
+    /// tools/fidelity-pair.py; the verdicts are in
+    /// docs/fidelity-sweep-2026-08-06.md.
+    func testRenderSweepCaptures() throws {
+        guard let dir = ProcessInfo.processInfo
+            .environment["NOW_RENDER_DIR"] else { return }
+        for (name, fixture, window, psn, title) in Self.sweepCaptures {
+            let png = try RenderShot.png(scene: try composed(
+                fixture, window: window, psn: psn, title: title))
+            try png.write(to: URL(fileURLWithPath: "\(dir)/\(name).png"))
+        }
+    }
+
+    /// Every sweep capture must still COMPOSE, whatever it looks like.
+    /// This is the one thing the survey can assert without a human
+    /// looking: a fixture that decodes and produces a display cannot
+    /// regress into one that produces nothing.
+    func testEverySweepCaptureComposes() throws {
+        for (name, fixture, window, psn, title) in Self.sweepCaptures {
+            let display = try compose(fixture, window: window, psn: psn,
+                                      title: title)
+            XCTAssertFalse(display.isEmpty, "\(name) composed nothing")
+        }
+    }
+
+    static let sweepCaptures: [(String, String, UInt32, String, String)] = [
+        ("appearance", "qdtrace-drain-sweep-appearance",
+         0x1ea880b0, "0.35520514", "Appearance"),
+        ("date-and-time", "qdtrace-drain-sweep-date-and-time",
+         0x1f6fcca0, "0.35979265", "Date & Time"),
+        ("memory", "qdtrace-drain-sweep-memory",
+         0x1ea37530, "0.36438017", "Memory"),
+        ("sound", "qdtrace-drain-sweep-sound",
+         0x1e612eb0, "0.37355521", "Sound"),
+        ("general-controls", "qdtrace-drain-sweep-general-controls",
+         0x1e5cc1c0, "0.37814273", "General Controls"),
+    ]
+
     /// Sherlock 2 WAS the boundary case, and this gate is the boundary
     /// moving. Its whole interior is built in a transient offscreen
     /// world per repaint, which the sight-then-chase route hooked 0 of

@@ -206,6 +206,30 @@ class Sweep:
             self.guest.command("front", {"target": app})
             pump(5)
 
+        # A FRONT/BACK CYCLE IS NOT ALWAYS AN INVALIDATION, and a sweep
+        # that assumes it is reports a window the guest drew perfectly
+        # as an empty capture. Monitors did exactly that on 2026-08-06:
+        # fully drawn on the screendump, entirely inside NOW's window,
+        # 0 records. Occluding a window does not oblige Mac OS to send
+        # its application an update event.
+        #
+        # So when the cycle yields nothing, hide the application and
+        # reveal it — that removes the window from the list and forces
+        # a real update on return — and RECORD that the repaint was
+        # escalated, because a capture obtained by a stronger poke is
+        # evidence about a different moment than the others.
+        forced = False
+        if not records and self.args.force_repaint:
+            print("  0 records from front/back — escalating to hide/reveal",
+                  flush=True)
+            self.guest.command("hide", {"target": app})
+            pump(3)
+            self.guest.command("reveal", {"target": app})
+            pump(6)
+            self.guest.command("front", {"target": app})
+            pump(6)
+            forced = True
+
         shot = os.path.join(self.args.outdir, "%s-guest.ppm" % label)
         got_shot = screendump(self.args.qmp, shot) if self.args.qmp else False
         status = (self.guest.command("qdtrace", {"op": "status"})
@@ -236,7 +260,9 @@ class Sweep:
                 "build": self.expect or "unverified",
                 "vm": self.args.vm,
                 "run": "fidelity-sweep %s (record mode, worlds hooked "
-                       "at birth)" % label,
+                       "at birth%s)" % (label,
+                                        "; repaint forced by hide/reveal"
+                                        if forced else ""),
                 "capturedAt": self.args.date,
                 "guest": "mac99/OS 9.1 emulated",
             },
@@ -248,6 +274,7 @@ class Sweep:
                 "window": "0x%08x" % addr, "psn": psn,
                 "title": target.get("title"), "rect": target.get("rect"),
                 "records": len(records), "perPort": mix,
+                "forcedRepaint": forced,
                 "texts": texts, "screendump": got_shot,
                 "qdext": status.get("qdext")}
 
@@ -291,6 +318,10 @@ def main():
                         help="stop after N (the scene walk goes stale; "
                              "re-boot rather than chaining a long sweep)")
     parser.add_argument("--repaints", type=int, default=3)
+    parser.add_argument("--force-repaint", action="store_true",
+                        help="when the front/back cycle records nothing, "
+                             "escalate to hide/reveal and say so in the "
+                             "provenance")
     parser.add_argument("--launch-settle", type=float, default=10.0)
     parser.add_argument("--ttl", type=int, default=7200)
     parser.add_argument("--wait", type=int, default=180)
