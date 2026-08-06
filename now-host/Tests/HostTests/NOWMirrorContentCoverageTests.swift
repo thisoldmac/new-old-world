@@ -332,6 +332,10 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
          0x1e503798, "0.38600705", "Stickies", 100, 70),
         ("scrapbook", "qdtrace-drain-sweep-scrapbook",
          0x1e3eec00, "0.38862849", "Scrapbook", 402, 327),
+        ("sherlock-2", "qdtrace-drain-sweep-sherlock-2",
+         0x1e9f7550, "0.34406401", "Sherlock", 490, 468),
+        ("key-caps", "qdtrace-drain-sweep-key-caps",
+         0x1e945a40, "0.36044802", "Key Caps", 480, 220),
     ]
 
     /// THE FLATTENED-EPOCH FINDING, and it is a DRAW-ORDER defect, not

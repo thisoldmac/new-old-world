@@ -10045,3 +10045,31 @@ Standard File dialog, an alert, a pulled-down menu, and ten remaining
 control panels. Calculator and Key Caps failed to launch through the
 anchor (`-192`; and a dropped connection with eleven processes open)
 rather than being judged.
+
+### Key Caps' whole keyboard collapses onto the window origin (2026-08-06)
+
+Added by the same sweep, after a second guest boot. Every one of Key
+Caps' ~80 key frames arrives as a rect at the origin — `[0,0,21,21]`,
+`[0,0,26,21]`, `[0,0,31,21]` … 4691 of them, differing only in width —
+while its key LABELS arrive correctly spread (`pen [12,65]`, `[53,65]`,
+`[73,65]`). The render is a handful of stacked boxes in the corner of an
+empty window; only the chrome is right.
+
+A missing `SetOrigin` was the obvious suspect and is NOT the answer in
+general: `kNowContentStateOrigin` exists, the emitter handles it, and
+1013 origin state ops appear across this sweep's other captures. Key
+Caps' own capture has zero — all 240 of its state ops are clip changes.
+The shape fits an application drawing each key through a scratch bitmap
+swapped under a port whose address never changes, where the recorded
+coordinates are true of the scratch and meaningless against the window.
+Confirm that before building on it. Capture-side. Fixture
+`qdtrace-drain-sweep-key-caps.json`.
+
+### SimpleText and Calculator cannot be launched through the anchor (2026-08-06)
+
+`launch err -192` for the application, for a document, and for the Apple
+Menu Items copy alike, on two separate guest boots. This blocked the
+single most informative window the sweep wanted — a text editor with a
+document open — and it is a RIG gap, not a mirror result. Sherlock 2,
+Note Pad, Stickies, Scrapbook and every control panel launched from the
+same anchor in the same runs, so it is specific rather than general.

@@ -144,8 +144,11 @@ paired as `<label>-pair.png` by `tools/fidelity-pair.py`.
 | **Appearance** | 1 | 3 | 2 | 1 | 3 | Two tab labels and both theme swatches painted over by a later pass. Long description silently truncated at 64 bytes. |
 | **Memory** | 1 | 2 | 2 | 2 | 3 | Every string present and every string too wide: 251 of 266 text ops ask for size 9 and render at 12, so labels overrun their controls and spill past the window edge. |
 | **Sound** (3 passes) | 1 | 3 | 2 | 0 | 3 | Same window as the good row above. The entire sound list is painted over by a later pass's full-window blit. |
+| **Sherlock 2** | 2 | 3 | 2 | 2 | 3 | The list is excellent — header, row, and the volume's real index date. The 16-icon channel grid arrives as one generic document icon (another thread owns that); the Custom popup's label is absent. |
 | **Monitors** | 0 | – | – | 0 | – | Nothing to render. Fully drawn on the machine, fully occluded by NOW, and **0 captured ops** on its window port — even after escalating to hide/reveal. |
+| **Key Caps** | 0 | 0 | 1 | 0 | 3 | The worst render in the sweep. All ~80 key frames arrive as `[0, 0, w, 21]` — every key collapsed onto the window origin — so the keyboard draws as a handful of stacked boxes in the corner. Only the chrome is right. |
 | Finder desktop | – | – | – | – | – | N/A — harness cannot place a desktop capture (see above). 20 desktop item labels were captured. |
+| SimpleText, Calculator | – | – | – | – | – | Not judged: `launch err -192` through the anchor. Not a mirror result. |
 
 No window in this sweep drew a **"Bitmap unavailable" hatch**. That is
 worth stating plainly: `DisplayReplay.controlSized` is doing its job, and
@@ -284,6 +287,31 @@ Individually cosmetic; together they are the most-repeated visible
 difference in the sweep, and the wrong-glyph cases mean the bitmap
 strike's mapping above 0x7F wants checking, not just filling in.
 
+### R7 — Key Caps' whole keyboard collapses onto the window origin (CAPTURE)
+
+Every one of Key Caps' ~80 key frames arrives as a rect at the origin —
+`[0, 0, 21, 21]`, `[0, 0, 26, 21]`, `[0, 0, 31, 21]`, … — 4691 of them
+across the capture, differing only in width. The key *labels* arrive
+correctly spread (`pen [12, 65]`, `[53, 65]`, `[73, 65]`, `[93, 65]` …),
+so the capture is not uniformly broken: the text stream describes the
+keyboard and the rect stream does not. The render is the predictable
+consequence — a few stacked boxes in the top-left corner of an otherwise
+empty window.
+
+The obvious suspect is a missing `SetOrigin`, and **it was checked and
+is not the answer in general**: `kNowContentStateOrigin` exists, the
+emitter handles it, and 1013 origin state ops appear across this sweep's
+captures. Key Caps' own capture has **zero** — all 240 of its state ops
+are clip changes.
+
+So the question to pick up is what Key Caps does that the hook records
+faithfully and misleadingly: the shape fits an application drawing each
+key through a scratch bitmap it swaps under a port whose address never
+changes (`SetPortBits`-style), where the recorded coordinates are true
+of the scratch and meaningless against the window. Confirm that before
+building on it. Evidence: `qdtrace-drain-sweep-key-caps.json`,
+`key-caps-pair.png`.
+
 ## What is NOT broken, and should be said
 
 - **No false "Bitmap unavailable" hatch, anywhere, across eleven
@@ -291,9 +319,11 @@ strike's mapping above 0x7F wants checking, not just filling in.
 - **The join works.** Sound's list, Appearance's labels, Date & Time's
   values and General Controls' entire layout all cross from offscreen
   worlds hooked at birth and land at the right coordinates.
-- **PLACEMENT is the strongest axis** — 3 on nine of ten scored windows.
-  No whole-region offset appeared in this sweep; the destination-origin
-  arithmetic fixed earlier the same day is holding.
+- **PLACEMENT is the strongest axis** — 3 on nine of eleven scored
+  windows. No whole-region offset appeared in this sweep; the
+  destination-origin arithmetic fixed earlier the same day is holding.
+  (Key Caps' collapse is not that defect: it is a capture whose rect
+  coordinates never described the window.)
 - **Chrome is right once the window is sized right**: title, close box,
   zoom box, grow box and scroll bars all draw correctly at the guest's
   own geometry.
@@ -301,12 +331,24 @@ strike's mapping above 0x7F wants checking, not just filling in.
 ## Gaps in this sweep — what a follow-up should cover
 
 Not attempted or not reached, and honestly so: SimpleText with a
-document and with a dialog, Sherlock 2, the three Finder *window* views
-(only the desktop was captured), a Get Info window, a Standard File
-dialog, an alert, and a pulled-down menu. Calculator and Key Caps both
-failed to launch through the anchor (`-192`, and a dropped connection
-after eleven processes were open) rather than being judged. The
-remaining control panels — Keyboard, Mouse, Startup Disk, Extensions
-Manager, Energy Saver, Numbers, Text, Apple Menu Options, File Sharing,
-Control Strip — are untouched.
+document and with a dialog, the three Finder *window* views (only the
+desktop was captured), a Get Info window, a Standard File dialog, an
+alert, and a pulled-down menu. **SimpleText and Calculator failed to
+launch through the anchor** (`launch err -192`, for the application, for
+a document, and for the Apple Menu Items copy alike) rather than being
+judged — that is a rig gap, not a mirror result, and it is what a
+follow-up should close first, because a text editor with a document open
+is the single most informative untested window here. The remaining
+control panels — Keyboard, Mouse, Startup Disk, Extensions Manager,
+Energy Saver, Numbers, Text, Apple Menu Options, File Sharing, Control
+Strip — are untouched.
+
+**One tuning question this sweep raises and does not settle.** The
+number of repaint passes is a real trade: three passes cost Sound its
+list (R3) but gave Appearance, Memory and General Controls four thousand
+records each; one pass fixed Sound and left Sherlock 2 with 9 distinct
+strings against the 20-plus a three-pass capture of the same window
+yields. Until R3 is cured there is no setting that is right for every
+window, and a capture's pass count belongs in its provenance — which is
+why `--force-repaint` writes the escalation into the record.
 
