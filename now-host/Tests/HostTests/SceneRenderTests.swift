@@ -100,4 +100,57 @@ final class SceneRenderTests: XCTestCase {
         XCTAssertGreaterThan(selected.blueComponent, 0.5,
                              "guest-left pixel should be selection blue")
     }
+
+    /// **A DITL row that draws nothing must not silence the machine.**
+    ///
+    /// The renderer excludes the P3 replay under every semantic frame, and
+    /// a CONTROL earns that exclusion through `semanticOwnsDisplay`. Dialog
+    /// items had no such gate: every visible row excluded the drawing
+    /// beneath it whether or not the host drew anything in its place. Date
+    /// & Time's twenty DITL rows took its date, its time, both group boxes
+    /// and every field with them (2026-08-06) — while the same capture
+    /// rendered whole in the fixture harness, whose scenes carry no dialog
+    /// items at all, so nothing in the gate could see it.
+    ///
+    /// A `userItem` is the sharpest case: `drawDialogItem` draws literally
+    /// nothing for one, so a render with it over the guest's own text must
+    /// be pixel-identical to a render with no item there.
+    func testAUserItemDoesNotSilenceTheDrawingUnderIt() throws {
+        func render(withItem: Bool) throws -> Data {
+            let item = withItem ? #"""
+            ,"dialogItems":[{"number":1,"rect":{"l":0,"t":0,"r":180,"b":40},
+              "title":"","enabled":true,"visible":true,
+              "ref":"item-1",
+              "semantic":{"knowledge":"known","kind":"userItem"}}]
+            """# : ""
+            let document = #"""
+            {
+              "version":2,"seq":1,"capturedAt":1,"source":"peek",
+              "screen":{"w":320,"h":200},
+              "apps":[{"psn":"0.3","name":"Panel","front":true}],
+              "processes":[{"psn":"0.3","name":"Panel","front":true,
+                            "signature":"tim2"}],
+              "windows":[{
+                "id":"0.3/Panel#0","app":"Panel","psn":"0.3","title":"Panel",
+                "rect":{"l":20,"t":40,"r":220,"b":140},
+                "front":true,"z":0,"visible":true,"controls":[],
+                "ref":"window-ref","kind":2,
+                "display":[
+                  {"op":"text","ticks":1,"pen":[8,20],"text":"8/ 6/2026"}
+                ]\#(item)
+              }],
+              "meta":{"errors":[],"coverage":[]}
+            }
+            """#
+            let scene = try JSONDecoder().decode(
+                MirrorKit.Scene.self, from: Data(document.utf8))
+            return try RenderShot.png(scene: scene)
+        }
+
+        XCTAssertEqual(try render(withItem: true),
+                       try render(withItem: false),
+                       "a user item — which draws nothing at all — changed "
+                       + "the picture, so it is excluding the guest's own "
+                       + "drawing and putting nothing in its place")
+    }
 }

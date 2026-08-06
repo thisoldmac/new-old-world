@@ -698,7 +698,18 @@ public struct SceneRenderer {
                   let local = control.rect else { return nil }
             return rect(local).offsetBy(dx: content.minX, dy: content.minY)
         } + (win.dialogItems ?? []).compactMap { item -> CGRect? in
+            /* ONLY AN ITEM THIS HOST ACTUALLY DRAWS may silence the
+               guest's own drawing under it. A control earns that right
+               through `semanticOwnsDisplay`; a dialog item had no
+               equivalent gate, so every visible DITL row — user items,
+               unknown resource shells, pictures, the slots an
+               application draws itself — excluded the replay and then
+               drew nothing or a hatch in its place. Date & Time lost its
+               date, its time, both group boxes and every field to
+               twenty such rows (2026-08-06). `drawsConcretely` is the
+               same question `drawDialogItem` already asks itself. */
             guard item.visible,
+                  Self.dialogItemOwnsDisplay(item),
                   item.ref.map({ !semanticControlRefs.contains($0) }) ?? true
             else { return nil }
             return rect(item.rect).offsetBy(dx: content.minX, dy: content.minY)
@@ -1168,6 +1179,37 @@ public struct SceneRenderer {
         case "panel", "placard", "selectionBand", "separator", "staticText",
              "editText", "checkBox", "radioButton", "popupMenu", "pushButton":
             return true
+        default:
+            return false
+        }
+    }
+
+    /// Whether a DITL row may SILENCE the guest's own drawing beneath it —
+    /// the dialog-item half of ``semanticOwnsDisplay``, which controls have
+    /// had all along and items did not.
+    ///
+    /// The two questions are not the same. `drawsConcretely` asks whether
+    /// the placeholder branch should stand down; this asks whether the row
+    /// carries the CONTENT that region needs. A `staticText` with no value
+    /// and no title draws an empty box, so letting it exclude the replay
+    /// trades the machine's own words for nothing — which is how Date &
+    /// Time lost its date and its time on 2026-08-06 while the same capture
+    /// rendered whole in the fixture harness, whose scenes carry no dialog
+    /// items at all.
+    ///
+    /// `panel`, `placard` and `selectionBand` are deliberately NOT here:
+    /// they are backgrounds, they routinely wrap most of a dialog, and a
+    /// background that swallowed every op inside it would be this defect
+    /// with a different name.
+    static func dialogItemOwnsDisplay(_ item: MirrorKit.Scene.DialogItem)
+        -> Bool {
+        switch item.semantic.kind {
+        case "checkBox", "radioButton", "pushButton", "separator":
+            return true
+        case "popupMenu":
+            return item.semantic.value != nil
+        case "staticText", "editText":
+            return !((item.semantic.value ?? item.title).isEmpty)
         default:
             return false
         }
