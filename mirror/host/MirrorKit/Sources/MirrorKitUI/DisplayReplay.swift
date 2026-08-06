@@ -226,30 +226,34 @@ public enum DisplayReplay {
                 let rect = rectFrom(r, pt: pt)
                 let draw = drawingContext()
                 /* A REGION'S BOX IS NOT ALWAYS ITS SHAPE, and since the
-                   contract gained the discriminator the renderer can
-                   tell. The FRAME verb is the one where drawing the box
-                   anyway is a claim stronger than the evidence — a solid
-                   outline states where the boundary runs — so a region
-                   PROVEN irregular is outlined dashed. Every other verb
-                   keeps the filled box: for an erase or a paint the box
-                   is the best available approximation of the same area,
-                   and 39 of the 39 region ops in the measured corpus are
-                   erases. `.unreported` (an older resident) keeps the
-                   old rendering unchanged rather than accusing a region
-                   nobody measured. */
-                let regionIsIrregular = op.op == "rgn"
-                    && MirrorKit.RegionShape(op) != .rectangular
-                    && MirrorKit.RegionShape(op) != .unreported
+                   contract gained the shape discriminator
+                   (`MirrorKit.RegionShape`) the host can finally tell
+                   which. The PIXELS are deliberately unchanged by that
+                   knowledge, and the decision is worth stating because
+                   the obvious move is to paint the doubt:
+
+                   - Every one of the 39 region ops in the measured
+                     capture corpus is an ERASE, and for an erase the
+                     bounding box is the same area approximated. Painting
+                     a marker over it would replace a probably-right
+                     background with a certainly-wrong annotation.
+                   - Frame, paint and fill of a NON-rectangular region
+                     are the cases where a hard rectangle really is a
+                     claim stronger than the evidence — and there are
+                     zero of them to look at. Grading a placeholder
+                     nobody has a capture of is how the replay acquired
+                     its arbitrary local heuristics before
+                     docs/render-composition.md existed.
+
+                   So the honesty lives where it can be checked: the
+                   deferred-op inventory names an approximated region as
+                   such, and separates it from one whose box is exact and
+                   from one whose resident never said. When a capture
+                   with a non-rectangular fill exists, grade it then,
+                   against it. */
                 switch op.verb ?? 0 {
                 case 0:   // frame
-                    if regionIsIrregular {
-                        draw.stroke(Path(rect), with: .color(fg),
-                                    style: StrokeStyle(lineWidth: 1,
-                                                       dash: [2, 2]))
-                    } else {
-                        draw.stroke(Path(rect), with: .color(fg),
-                                    lineWidth: 1)
-                    }
+                    draw.stroke(Path(rect), with: .color(fg), lineWidth: 1)
                     drew = true
                 case 1, 4:  // paint / fill
                     draw.fill(Path(rect), with: .color(fg))
