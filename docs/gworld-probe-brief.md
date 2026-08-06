@@ -8,6 +8,30 @@ Everything about the Mirror's blank window interiors turns on the
 answer, so this is an experiment to run before it is an architecture to
 design. **It is scoped to measure, not to ship.**
 
+> **ANSWERED, and outcome 1 shipped (2026-08-06).** This page is kept as
+> the brief it was — the question, the three publishable outcomes, and
+> the rig — but it must not be read as open work. Hooking an offscreen
+> GWorld's `grafProcs` **does** yield the per-item drawing: probe-mode
+> drains carried 8 text, 24 rect, 11 rgn and 8 bits records out of a
+> hooked offscreen port across one Finder resize, with the true
+> filenames at their true pens. The blit became the join this page
+> hypothesised — a `blitsrc` record names the source port and the host
+> re-homes the accumulated ops into the window at the destination.
+>
+> One thing the brief did not anticipate went further than it: the chase
+> that finds a world by sighting a blit cannot reach a world created,
+> drawn, blitted and disposed inside one event pass, which is how
+> Sherlock 2 and Appearance draw. That is solved by patching
+> `_QDExtensions` (`$AB1D`) in the target's own context and hooking each
+> world at CREATION — 77 born, 77 died, 0 missed against Sherlock 2.
+>
+> All of it is emulator-only; nothing here has touched metal. The
+> architecture that came out of it is
+> [render-composition.md](render-composition.md), the record vocabulary
+> is expanded in [contract-coverage.md](contract-coverage.md), and how
+> good the resulting picture looks is judged in
+> [fidelity-sweep-2026-08-06.md](fidelity-sweep-2026-08-06.md).
+
 ## Why this exists
 
 The Mirror renders meaning, not pixels: the content plane (P3) hooks a
