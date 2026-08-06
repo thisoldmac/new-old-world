@@ -14,6 +14,57 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED: four renderer-side text defects from the fidelity sweep (2026-08-06)
+
+The sweep (docs/fidelity-sweep-2026-08-06.md) put six items on a red
+list. Four were renderer-side and are closed on
+`claude/renderer-text-fidelity`; each carries a STATUS line in the sweep
+document itself, and each is gated in
+`now-host/Tests/HostTests/RendererTextFidelityTests.swift` over the same
+committed capture that exhibited it, watched failing by mutation.
+
+- **R1, small system text a third too large.** `applFont` (font 1) is
+  **Geneva**, not the system font, and its size was being thrown away as
+  well as its face — so Memory's 251 body runs drew as Chicago 12 and
+  113 of them measured wider than the clip the application had set for
+  them. `a93f6f3f`.
+- **R2, a declared truncation silent at the glass.** `len`, `fullLen`
+  and `trunc` rode the wire and the host dropped them. `a93f6f3f`,
+  `c6b85d75`.
+- **R6's dropped punctuation.** Not a mapping defect: the extractor's
+  char range stopped at 127, so no strike ever held a MacRoman
+  character. 95 → 224 glyphs per strike, keyed by MacRoman. `bfc51477`.
+- **R8, a selected label as a solid black bar.** Text painted into its
+  own highlight is drawn in the port's background colour. `a93f6f3f`.
+
+**Still open from the same sweep**, and each is somebody else's shape of
+problem:
+
+- **R6's WRONG glyphs are a different defect.** "Check Disl",
+  "8/ 6/202(" and Date & Time's clipped group titles are font 0 — the
+  system font, which under Appearance is **Charcoal**. Charcoal ships no
+  NFNT strike (TrueType-only; the pack's manifest has said so since
+  extraction), so the replay stands Chicago 12 in for it, Chicago is
+  wider, and the last glyph of a run falls outside its clip. Nothing
+  above 0x7F is involved. `fonts/ttf/Charcoal.ttf` carries no
+  `bdat`/`bloc`, so there are no embedded bitmaps to lift and closing
+  this needs a TrueType rasterizer at the guest's own ppem — or an
+  honest decision to keep substituting and say so.
+- **Font id 2002 is treated as an ordinary family and is not one.** It
+  draws the menu-bar clock, Appearance's "Current Theme:" line and all
+  102 of Key Caps' key labels — every one of them a system-font site —
+  so it is almost certainly Charcoal under a dynamically-assigned id.
+  Deliberately NOT hard-coded: ids at that magnitude are allocated by
+  the Font Manager at runtime and are not stable across machines, so
+  mapping the number would be a guess dressed as a fact. It wants
+  either a name from the guest beside the id, or the Charcoal work
+  above, not a constant.
+- **The strikes carry style 0 only.** `op.face` (the QuickDraw text
+  face) is decoded and never consulted, and the pack holds exactly one
+  styled strike (`geneva-9-italic`, not bundled). Bold group titles
+  render regular. Small, and it is a real difference in every panel.
+- R3, R4, R5 and R7 are unchanged — see the sweep.
+
 ## FIXED: MirrorKit's own 165-test suite was never in the gate — five days ungated, three of them red (2026-08-06)
 
 `mirror/host/MirrorKit` is a full SwiftPM package, vendored into this tree

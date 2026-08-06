@@ -191,6 +191,15 @@ Six items. Each says which side it is on, what the evidence is, and
 enough to pick it up cold. **None of these is fixed here** — this is a
 survey, and four other agents are working the same tree.
 
+**Four of them are fixed now, on `claude/renderer-text-fidelity`**, and
+each item below carries its own STATUS line. The scores in the table
+above describe the tree named at the top of this file and were NOT
+re-judged: a fix is not a score. What the fixes do carry is a
+render-beside-screendump pair each, and gates in
+`now-host/Tests/HostTests/RendererTextFidelityTests.swift` over these
+same committed fixtures, every one of them watched failing by putting
+the defect back.
+
 ### R1 — Small system text renders 33% too large, and overruns (RENDERER)
 
 `mirror/host/MirrorKit/Sources/MirrorKitUI/DisplayReplay.swift`,
@@ -215,6 +224,18 @@ The Geneva branch immediately below already does the right thing
 a bundled Charcoal/Chicago at 9 and 10 to fall back to. Evidence:
 `qdtrace-drain-sweep-memory.json`, `memory-pair.png`.
 
+**STATUS: FIXED**, `a93f6f3f`. The diagnosis above is right about the
+size and wrong about the face, and the machine's own pixels settle it:
+font **1 is `applFont`, which is Geneva**, not the system font, and
+Memory's body text is Geneva 9 in `memory-guest.ppm`. So the cure was
+not a Chicago at 9 — it was to stop sending `applFont` to the system
+branch at all. Sizes now round to the nearest bundled strike with ties
+going SMALL (too wide overruns, too narrow only sits loose), and Geneva
+18/20/24 joined the bundle. Gated two ways: the strike chosen for those
+251 ops is Geneva 9, and none of them is measured wider than the clip
+the application itself set for it — 113 were, at Chicago 12, which is
+also how "Check Disk" lost its last glyph.
+
 ### R2 — Text over 64 bytes is truncated, and the render hides that it was (RENDERER)
 
 The capture is **honest**: a text record carries `len`, `fullLen` and
@@ -233,6 +254,15 @@ A truncation the guest declared becomes a silent one at the glass.
 The cheap correct fix is an ellipsis when `trunc` is set; the honest one
 also widens the record. Do not raise the cap without measuring the ring:
 64 bytes is a deliberate bound, and the record already says when it bit.
+
+**STATUS: FIXED**, `a93f6f3f`. All three fields reach `DisplayOp` (and
+the IR property freeze, additively — `c6b85d75`), and a truncated run
+draws with an ellipsis. The cap was not touched, for the reason stated
+above. `fullLen` is carried and deliberately not painted: it is there
+for a tooltip or a semantic join, and printing "69" beside the text
+would be the mirror talking about itself inside a picture of the
+machine. The argument for the mark, and against the alternatives, is at
+`DisplayReplay.shownText`.
 
 ### R3 — A later repaint pass paints over an earlier one (RENDERER, caused by a capture-side flattening)
 
@@ -314,6 +344,35 @@ missing one and may be a separate defect in the strike's high range.
 Individually cosmetic; together they are the most-repeated visible
 difference in the sweep, and the wrong-glyph cases mean the bitmap
 strike's mapping above 0x7F wants checking, not just filling in.
+
+**STATUS: the dropped punctuation is FIXED** (`bfc51477`); **the
+wrong-glyph half was a different defect and is NOT.** They only looked
+like one item.
+
+The drops were never a mapping defect at all — they were an ABSENCE.
+`render_strike`'s default char range stopped at 127, so no extracted
+sheet ever held a character above ASCII, and the consumer substitutes
+the space glyph for one it does not carry. The glyphs were in the NFNT
+the whole time and nobody asked for them. The range now runs to 256 and
+the keys are **MacRoman** rather than `chr(c)` — that second half is
+what would have turned a missing glyph into a wrong one, since
+`chr(0xC9)` is `É` where MacRoman 0xC9 is `…`. Re-extracted off a
+session-private mac99; every strike goes 95 → 224 glyphs, and every
+ASCII metric is byte-identical to the old sheets (checked, not
+assumed). Date & Time's four button ellipses and Scrapbook's five
+bullets now match the guest's own screendumps.
+
+The wrong glyphs are a **face substitution**. `Check Disl` and
+`8/ 6/202(` are font 0 — the system font, which under Appearance is
+**Charcoal** — and Charcoal has NO NFNT strike in its suitcase (it is
+TrueType-only; the pack's own manifest has said so since extraction).
+The replay stands Chicago 12 in for it, Chicago is wider, and the last
+glyph of a run is cut by the clip the application set. Nothing above
+0x7F is involved. Closing it needs a rasterizer for the Tier-1
+`fonts/ttf/Charcoal.ttf` — it carries no `bdat`/`bloc`, so there are no
+embedded bitmaps to lift — and until then the same signature costs
+Date & Time "Current Date" and "Use a Network Time Server" their last
+letters too.
 
 ### R7 — Key Caps' whole keyboard collapses onto the window origin (CAPTURE)
 
@@ -410,6 +469,18 @@ because this label was never inverted — it was painted.
 Evidence: `qdtrace-drain-sweep-finder-selected.json` (11 paint ops, 0
 invert ops, all ten labels present), `finder-selected-pair.png`. Gated
 by `testTheFindersSelectionNeverReachesTheCapture`.
+
+**STATUS: FIXED**, `a93f6f3f`. A run whose pen sits inside a rectangle
+just painted in the colour the run would itself use is drawn in the
+port's BACKGROUND colour — which is the white the machine's screendump
+shows on that black bar. The rule is narrow on purpose: it fires only
+where the alternative is provably invisible, and an ordinary run over
+an ordinary fill keeps the colour it was given.
+
+**This did not touch the invert work and could not have.** That capture
+carries eleven paints and zero inverts; the label was painted, never
+inverted, so nothing an invert implementation does reaches it. The two
+items are adjacent and independent, exactly as this section says.
 
 ## What is NOT broken, and should be said
 
