@@ -187,7 +187,10 @@ def wait_for_disk_quiet(sock_path, disk, settle=8.0, cap=120.0):
 # image preserved after it has its HFS "volume unmounted" bit still clear.
 # ---------------------------------------------------------------------
 
-CONTROL, END = 0, 1
+sys.path.insert(0, os.path.join(NOW, "contract"))
+from wire_limits import (CHANNEL_CONTROL as CONTROL,  # noqa: E402
+                         FLAG_END as END,
+                         WIRE_CONTRACT_REVISION as CONTRACT)
 
 
 def _frame(payload):
@@ -209,7 +212,7 @@ class _Wire:
         self.buf = b""
         self.id = 900
         self.read()                       # the guest's hello
-        self.send({"type": "hello", "contract": 1, "side": "host",
+        self.send({"type": "hello", "contract": CONTRACT, "side": "host",
                    "version": "0.0", "name": "shutdown"})
 
     def send(self, msg):

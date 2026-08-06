@@ -18,10 +18,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts",
                                 "probes"))
 import nowwire  # noqa: E402
 
-# The probe harness still declares contract revision 1; the guest under test
-# says 2 and its hello is refused. Take the guest's number here rather than
-# editing a shared harness from a scratch instrument.
-nowwire.WIRE_CONTRACT_REVISION = 2
+# The monkey-patch that lived here is gone: nowwire now takes its revision
+# from contract/wire_limits.py, which is the one place it is declared. An
+# instrument overriding it would be declaring a revision of its own, which
+# is exactly what WireLimitsAgreementTests bans and how this drifted before.
 
 SLOTS = ["menubar", "acquireRoot", "rootItemsFor", "addOneMenu",
          "selfWindows", "ctlProbe", "menus", "items"]

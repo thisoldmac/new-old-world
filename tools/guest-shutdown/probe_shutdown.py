@@ -12,6 +12,15 @@ screen is the evidence rather than an exit code.
 """
 import json, os, socket, struct, subprocess, sys, time
 
+# The revision is declared ONCE, in contract/wire_limits.py. An inline
+# number here is how tools/askguest.py sat on revision 1 for a whole
+# revision - and it would have been worse than cosmetic: a stale
+# revision cannot hold a link to a 68K guest at all.
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__)))), "contract"))
+from wire_limits import WIRE_CONTRACT_REVISION as CONTRACT  # noqa: E402
+
 WIRE = int(sys.argv[1])
 RUN = sys.argv[2]
 ROUTE = sys.argv[3]
@@ -79,7 +88,7 @@ def rf():
 
 _, p = rf()
 print("guest:", json.loads(p).get("build"), flush=True)
-c.sendall(frame(json.dumps({"type": "hello", "contract": 1, "side": "host",
+c.sendall(frame(json.dumps({"type": "hello", "contract": CONTRACT, "side": "host",
                             "version": "0.0", "name": "probe"}).encode()))
 rid = 900
 
