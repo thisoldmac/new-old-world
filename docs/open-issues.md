@@ -2170,6 +2170,91 @@ slice 5c item 1's control-panel half is still unexercised because of it —
 the classifier's positive branch cannot fire against a roster that is
 never there.
 
+> **FOUND AND FIXED, 2026-08-06 (later the same day). It was never a
+> read failure, and it was never on the guest.** The Finder-item read
+> works and has worked throughout; the host threw the answer away one
+> poll after it arrived.
+>
+> **What the machine said.** On a session-private emulated Power Mac G4
+> (VM `nowvm-dtop`, wire 5250, guest build `1bff0bd2ca39` verified in
+> the hello before anything was believed), the four AppleScripts
+> `NOWMirrorSource.readIcons` sends for the `desktop` container were
+> replayed verbatim. All four answered `osaErr 0`, untruncated:
+>
+> ```
+> N  20
+> I  Trash            716  510  folder
+> I  Macintosh HD     736   28  disk
+> I  HELLO_CLAUDE.txt 608   92  SimpleText text document
+> ...  (three pages, 8 + 8 + 4, plus the type pass for 14 files)
+> ```
+>
+> `every item of desktop` is not the problem; `desktop-object` is the
+> only spelling that fails (`osaErr -1753`), and nothing sends it.
+>
+> **Where it went.** `desktopItems` is a HOST contribution — no producer
+> emits it, because a desktop icon is not a window, a control or a menu
+> — so every structural scene omits the key honestly, and
+> `MirrorReplicaReducer.project()` starts from that scene
+> (`var projected = latest`). A window's `items` survive because the
+> replica retains them per window record; the desktop plane had no home
+> at all. So the roster was published for the fraction of a second
+> between the enrichment and the next poll, and the poll erased it.
+> `refreshIconsIfStale` then never re-fetched, because the layout key
+> was already current — which is why it reads as a WHOLE failure rather
+> than a flicker, and why the Finder's own Desktop window shows
+> `itemTotal: 0`.
+>
+> That also explains the "INTERMITTENT" entry above: the absent-item
+> refusal fired once because a caller happened to ask inside that
+> fraction of a second. Nothing was racing or expiring. Both entries
+> describe one defect.
+>
+> **The fix.** The plane is retained on `MirrorReplica` and carried
+> through `project()` under the rule the windows already use: an ABSENT
+> key retains, a PRESENT one — including an empty array — is an answer
+> and wins.
+>
+> **The tests.** `MirrorReplicaReducerTests` holds both halves of that
+> rule. `DesktopPlaneCrossingTests` holds the whole crossing on the
+> guest's own committed bytes — the roster capture and one structural
+> scene from the same connection, which carries no `desktopItems` key —
+> and was watched failing with the retention reverted:
+> `XCTAssertEqual failed: ("nil") is not equal to ("Optional(20)")`.
+> The older icon tests build the strings they parse, which is precisely
+> how the roster read carried the blame for a week.
+>
+> **Two things this run did NOT settle, both stated as open.**
+>
+> - *The 2026-08-06 "reconfirmation" immediately above is VOID as
+>   evidence.* Those two captures came from a python probe speaking
+>   `scene.request` directly to the guest, which never runs the host's
+>   icon enrichment at all. A guest scene with no `desktop` key is the
+>   producer being honest (docs/scene-producer.md lists the plane as
+>   absent by design) and says nothing about the Mirror. The finding it
+>   was cited for — that the defect survives the anchor-plane work — was
+>   true by luck.
+> - *A NEW defect, found while proving this one and not fixed here: the
+>   Finder type pass answers, and its answer is not a type code.*
+>   `OSADoScript` renders its result in SOURCE form, so `file type of`
+>   comes back as the AppleScript literal `«class APPL»` (or `string`
+>   for a coerced one) and `readIcons` takes its first four characters.
+>   Every icon on that desktop carries `type: "«cla"` or `"stri"`, which
+>   names no file type at all. It costs icon ART and not contents, which
+>   is why nothing ever failed over it. Pinned by an expectation in
+>   `DesktopPlaneCrossingTests` so it cannot be discovered a third time.
+>
+> **Status: TESTED, not watched in the window.** The guest half is live
+> and build-verified, the crossing is proven on those live bytes, and a
+> host built from this commit was run against that VM with the Mirror
+> open and logged no roster failure — but nobody photographed the
+> render. Two instruments were unavailable to this session and both are
+> worth knowing about: the local agent socket is one per user and was
+> held by another session's host (`unsafeEndpoint("Another New Old World
+> host owns the local endpoint")`), and `screencapture` has no Screen
+> Recording grant from a shell. So `desktopItems` crossing into a
+> DRAWN desktop is still owed one pair of eyes.
+
 ## FIXED, watched on an emulator (not metal): `transitions start` could not arm, by any route (2026-08-05)
 
 **Found by driving, on the first live run of the verb, and fixed and
