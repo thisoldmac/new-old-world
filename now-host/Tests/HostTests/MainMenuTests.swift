@@ -198,4 +198,43 @@ final class MainMenuTests: XCTestCase {
             belongs in the main menu, where it lives in exactly one place.
             """)
     }
+
+    /// **Only a route from OUTSIDE the app may take the front.**
+    ///
+    /// Both items open the same window, and which selector each carries is
+    /// the whole of the always-on-top fix (2026-08-06): the status item is
+    /// reached from whatever application the person was in and a status menu
+    /// does not activate its own app, so it must bring NOW forward; the main
+    /// menu is only reachable when NOW is already active, so activating there
+    /// buys nothing and `ignoringOtherApps: true` merely takes the front from
+    /// whoever had it. Pointing either one at the other's selector puts back
+    /// one of the two defects — a window that opens behind everything, or an
+    /// app that reads as always on top.
+    func testOnlyTheOutsideRouteBringsTheAppForward() throws {
+        let delegate = quietAppDelegate()
+        let status = delegate.makeStatusMenu()
+        let open = try XCTUnwrap(status.items.first {
+            $0.title.hasPrefix("Open ")
+        })
+        XCTAssertEqual(open.action,
+                       #selector(AppDelegate.openMainWindowFromOutsideTheApp),
+                       """
+                       The status item's Open must bring the app forward: it \
+                       is clicked from another application, and a status menu \
+                       does not activate its own app.
+                       """)
+
+        let main = delegate.makeMainMenu()
+        let inApp = try XCTUnwrap(allItems(main).first {
+            $0.action == #selector(AppDelegate.openMainWindow)
+                || $0.action
+                    == #selector(AppDelegate.openMainWindowFromOutsideTheApp)
+        })
+        XCTAssertEqual(inApp.action, #selector(AppDelegate.openMainWindow),
+                       """
+                       A main-menu item is reached with NOW already active. \
+                       Activating from there can only take the front from \
+                       another application on a route nobody asked it to.
+                       """)
+    }
 }

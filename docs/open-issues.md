@@ -200,16 +200,30 @@ measured, without driving anything:
   NOW in front of whatever application the person was typing in, rather
   than waiting to be switched to.
 
-**Not fixed here, deliberately.** The obvious change — dropping
-`ignoringOtherApps` — is not free: from a background app
-`activate(ignoringOtherApps: false)` does nothing at all, which would
-leave "Open New Old World" opening the window behind everything, and the
-two behaviours whose comments sit right there (the mirror window ending up
-behind the main window; `applicationShouldHandleReopen` raising the main
-window) are exactly the ones three rounds of fixes already went into.
-That trade needs someone who can watch the window, and this pass could
-not: computer-use access to the app was declined, so nothing here was
-driven as a person would.
+**Fixed by narrowing the routes, not by dropping the call.** Simply
+asking politely would not do: from a background app
+`activate(ignoringOtherApps: false)` does nothing at all, and a status
+item's menu does not activate its own application — so "Open New Old
+World" would open the window behind everything, which is the shape of the
+two regressions this file already carries comments about. So the forceful
+activation stays, and moves to `openMainWindowFromOutsideTheApp()`, called
+by exactly the two routes where a person asked for this window from
+outside the app: the status item, and `applicationShouldHandleReopen`.
+
+Launch and the in-app menu routes (⌘, for Settings, every module item)
+now open the window without activating — the menu routes are already
+active, so they lost nothing, and a launch the person performed is
+activated by macOS itself while one they did not perform stays put.
+
+**What should change:** the app no longer pulls itself in front when it is
+launched or relaunched in the background, and no longer re-takes the front
+from another application on its own. **What should NOT change:** clicking
+the Dock icon still raises the main window, "Open New Old World" in the
+status menu still brings the app forward from whatever you were in, and
+Open Mirror still leaves the mirror window in front (`NOWMirrorWindow.show`
+still does not activate, precisely because activating trips reopen, which
+raises the main window over it). Michelle is the verification step here —
+this was not driven, by her direction.
 
 ## FIXED: hiding NOW leaves it frontmost, and Windows > Workshop then times out having worked (2026-08-06)
 
@@ -260,14 +274,84 @@ host's own `MirrorScene.decode` + `MirrorReplicaReducer` kept the menu
 bar with `actionable: true`. So neither the guest's report nor the host's
 retention is dropping it in that state.
 
-The leading hypothesis, **not** a finding: `axsnap` with NOW freshly
-front reported `bind: no-plane, hasWindows: false, hasMenus: false`, and
-the same process after a focus change reported `bind: ok, hasWindows:
-true, hasMenus: true`. A scene assembled through the legacy observe path
-while the plane is unarmed carries no menus at all — and "empty until you
-cycle away and back" is exactly what that would look like. Settling it
-needs someone who can watch the Mirror's own window; this pass could not
-(computer-use access was declined) and did not guess.
+**The plane-bind hypothesis is DISPROVEN** (2026-08-06, second pass). It
+was worth testing because `axsnap` does report `bind: no-plane,
+hasMenus: false` with NOW freshly front and `bind: ok, hasMenus: true`
+a few seconds later — so there IS an unarmed window, and "empty until you
+cycle away and back" is what one would look like. It reads `axsnap` and a
+scene at the SAME moment, 28 paired samples across the four phases the
+report names — fresh connection, the first hide, away to the Finder, back
+to NOW:
+
+| phase | axsnap bind | scene menubar |
+|---|---|---|
+| fresh, first pass | `no-plane`, `hasMenus: false` | **New Old World, 7 menus, coverage complete** |
+| fresh, passes 2-8 | `ok` | New Old World, 7 menus |
+| the first hide, 10 passes over 32 s | `ok` | New Old World, 7 menus |
+| the Finder, 4 passes | `ok` | Finder, 8 menus |
+| back to NOW, 6 passes | `ok` | New Old World, 7 menus |
+
+The unarmed pass is real and it lasts about three seconds — and **the
+scene taken in that exact moment still carries the whole menu bar**. That
+is the shape of the thing: `scene_self.c` reads the live `MenuList`
+through the Toolbox from inside our own process, and the anchor bind is
+the FOREIGN memory reader. They are not the same source and the self path
+does not wait for the plane.
+
+**And the RENDERER is cleared too, offscreen** (third pass). `RenderShot`
+rasterises the same `SceneRenderer` the Mirror's window uses, with no
+screen involved, so the last stretch could be tested after all. The two
+live documents are now fixtures —
+`now-host/Tests/HostTests/Fixtures/now-scene-self-hidden-but-front.json`
+and `…-front-visible.json`, captured three seconds either side of a hide
+on guest build `bf4987c6eca1` — and `MirrorMenubarRenderTests` renders
+them and counts the ink in the menu-title band:
+
+| document | ink in the title band |
+|---|---|
+| hidden-but-front (her exact state) | **705** |
+| front and visible | **705** |
+| the same document with `menubar` stripped, as the negative control | **77** |
+
+So the renderer draws all seven titles for the document she was looking
+at. The 77 is worth knowing on its own: it is the Apple glyph
+`shouldSynthesizeAppleMenu` falls back to when a scene carries no menus
+at all — **a Mirror bar showing an apple and nothing else is exactly what
+"the menu is empty" looks like**, which says the scene the window was
+drawing had no menubar even though the one that arrived did.
+
+**What is left, and what would tell them apart.** Every static stage is
+now cleared by a test, so the remaining candidates are all live state in
+the running app, and none of them is worth guessing between:
+
+- **The window was drawing an older projection than the document that had
+  just arrived.** `NOWMirrorSource.scene` is
+  `shadowEngine?.snapshot?.scene ?? decoded`, so a projection that had not
+  taken the new observation would be drawn instead of it.
+- **A plane toggle.** `planePolicyDidChange` republishes from the engine's
+  snapshot; a scene projected under a different plane policy is a
+  different scene.
+- **Nothing retained yet.** `reduceMenubar` retains a previous record when
+  no menubar claim is complete — retention can only KEEP a bar, never
+  empty one, unless the first scene of that Mirror session had none.
+
+The instrument that separates them already existed and **said nothing**:
+`MirrorEngineDiagnostics` compares the visible scene against the engine's
+projection on every cycle and names the disagreeing field — including
+`menubar` — into a 64-entry ring that was never logged, never shown in
+the Diagnostics pane and never exported, so its answer died with the
+process. It now writes each difference to `HostLog` (`mirror` area, warn
+level), which means the NEXT reproduction leaves a line in
+`~/Library/Logs/` saying whether the projection and the arriving document
+disagreed about the menu bar at that second — the first candidate
+confirmed or eliminated without anyone watching. If that line is absent
+while the bar is empty, the projection matched and the third candidate is
+the one to chase.
+
+Her two details both point the same way and are worth carrying: it is the
+FIRST hide after launch and it self-heals on an application cycle, so it
+is transitional rather than steady — and a cycle is exactly what forces a
+fresh projection.
 
 ## Set Time Zone: the acts reach the modal and apply; the LIST is what is missing (2026-08-06)
 
