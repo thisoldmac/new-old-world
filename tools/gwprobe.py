@@ -115,6 +115,13 @@ def main():
     ap.add_argument("--no-front", action="store_true")
     ap.add_argument("--open-new", action="store_true",
                     help="drive File > New if the app has no window")
+    ap.add_argument("--pre", action="append", default=[],
+                    help="verb[:k=v,...] to issue BEFORE arming (build the "
+                         "composite the chase is meant to sight)")
+    ap.add_argument("--repaint", default="resize",
+                    choices=("resize", "hide-reveal", "none"),
+                    help="how to force a SECOND composite once the GWorld "
+                         "is hooked, without re-arming (which unhooks it)")
     ap.add_argument("--after", action="append", default=[],
                     help="verb[:k=v,...] to issue after arming")
     ap.add_argument("--reveal", help="reveal this path in the Finder first")
@@ -144,6 +151,22 @@ def main():
                                    {"target": a.front or a.app})),
               flush=True)
         time.sleep(3)
+
+    def issue_pre(spec):
+        nm, _, rest = spec.partition(":")
+        ar = {}
+        for pair in filter(None, rest.split(",")):
+            k, _, v = pair.partition("=")
+            try:
+                ar[k] = int(v)
+            except ValueError:
+                ar[k] = v
+        print("  pre %s -> %s" % (nm, json.dumps(g.command(nm, ar))[:200]),
+              flush=True)
+
+    for spec in a.pre:
+        issue_pre(spec)
+        time.sleep(4)
 
     def find_target(scene):
         best = None
@@ -212,6 +235,19 @@ def main():
     print(json.dumps(started), flush=True)
     if not started.get("ok"):
         return 1
+    def issue(spec):
+        nm, _, rest = spec.partition(":")
+        ar = {}
+        for pair in filter(None, rest.split(",")):
+            k, _, v = pair.partition("=")
+            try:
+                ar[k] = int(v)
+            except ValueError:
+                ar[k] = v
+        r = g.command(nm, ar)
+        print("  %s -> %s" % (nm, json.dumps(r)[:220]), flush=True)
+        return r
+
     for spec in a.after:
         nm, _, rest = spec.partition(":")
         ar = {}
@@ -236,17 +272,24 @@ def main():
     mid_status = g.command("qdtrace", {"op": "status"})
     probe_mid = (mid_status.get("output", {}).get("qdtrace", {})
                  .get("probe", {}))
-    if probe_mid.get("hits", 0) > 0 and target.get("ref"):
+    print("  probe after settle: %s" % json.dumps(probe_mid), flush=True)
+    if a.repaint != "none" and target.get("ref"):
         # A reflowing resize forces the app to REBUILD its composite -
         # the drawing we are here to see - with every hook left standing
         # (a re-arm would bump the generation and unhook the GWorld).
         r = target.get("rect", {})
         w = max(200, (r.get("r", 400) - r.get("l", 0)) - 60)
         hgt = max(150, (r.get("b", 300) - r.get("t", 0)))
-        rr = g.command("winact", {"window": target["ref"],
-                                  "action": "resize",
-                                  "width": w, "height": hgt})
-        print("chase hit; reflow resize: %s" % json.dumps(rr), flush=True)
+        if a.repaint == "resize":
+            rr = g.command("winact", {"window": target["ref"],
+                                      "action": "resize",
+                                      "width": w, "height": hgt})
+        else:
+            g.command("hide", {"target": a.app})
+            time.sleep(2)
+            rr = g.command("reveal", {"target": a.app})
+        print("  second composite (%s): %s"
+              % (a.repaint, json.dumps(rr)[:220]), flush=True)
         time.sleep(a.settle)
 
     status1 = g.command("qdtrace", {"op": "status"})
