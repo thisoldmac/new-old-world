@@ -52,7 +52,7 @@ def main() -> int:
     for i in range(args.samples):
         doc, env = link.scene()
         meta = doc.get("meta", {})
-        dbg = meta.get("dbgUs", [])
+        dbg = meta.get("dbgUs", [])   # absent once the instrumentation is gone
         lat.append(meta.get("latencyMs"))
         procs = doc.get("processes", [])
         front = next((p.get("name") for p in procs if p.get("front")), "?")

@@ -18,6 +18,20 @@ static struct {
 
 static int g_next;
 
+/* Bumped by every control this application makes. The scene's self walk
+   caches what its FindControl grid discovered and revalidates the cached
+   refs one point each; revalidation catches a control that went away, and
+   this catches one that arrived - which revalidation cannot see, because
+   a new control does not disturb the old ones. Every creation goes
+   through the wrapper below (control_kind_source_test.py enforces it), so
+   this counter cannot miss one. */
+static unsigned long g_generation;
+
+unsigned long now_control_generation(void)
+{
+    return g_generation;
+}
+
 ControlRef now_control_new(WindowRef window, const Rect *bounds,
                            ConstStr255Param title, Boolean visible,
                            short value, short min, short max,
@@ -30,6 +44,7 @@ ControlRef now_control_new(WindowRef window, const Rect *bounds,
     if (made == NULL) {
         return NULL;
     }
+    ++g_generation;
     for (i = 0; i < kSlots; ++i) {
         if (g_slots[i].control == made) {
             g_slots[i].procID = procID;

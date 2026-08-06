@@ -9,24 +9,6 @@
 #include <Menus.h>
 
 #include <string.h>
-#include <Timer.h>
-
-/* TEMPORARY (2026-08-06) — the self walk's own stopwatch. Slots:
-     0 collect_self_menubar, whole
-     1   AcquireRootMenu + ReleaseMenu
-     2   root_items_for, summed over every entry
-     3   add_one_menu, summed over every entry
-     4 the self WINDOW walk (everything after the menu bar)
-     5   find_controls_by_probe, summed
-     6 menus seen   7 items seen
-   Removed with the measurement it exists to settle. */
-static unsigned long dbg_us(void)
-{
-    UnsignedWide t;
-
-    Microseconds(&t);
-    return t.lo;                      /* wraps hourly; deltas are short */
-}
 
 /* **This Mac describing its own application, which it alone can do.**
  *
@@ -226,22 +208,123 @@ static void add_control_tree(NowScene *s, int window, ControlRef control,
     }
 }
 
-/* Every control the Control Manager will admit to, found by asking
-   where they are rather than by reading how they are stored.
+/* --- the sweep, and why its RESULT is remembered ------------------------
+ *
+ * Every control the Control Manager will admit to, found by asking where
+ * they are rather than by reading how they are stored. The step is the
+ * smallest widget this can miss: a checkbox is 12pt tall and a scroll
+ * arrow 16, so 10 finds both. Controls are deduplicated by ControlRef,
+ * which is the identity the Control Manager itself uses.
+ *
+ * WHAT IT COST. The sweep over the Workshop's 757x487 content is 3,724
+ * points, and FindControl on an ACTIVE window is ~240us a point on a
+ * G4-class machine: ~900ms, every scene, spent to rediscover seven
+ * controls that had not moved. Measured 2026-08-06 with a per-step
+ * microsecond breakdown - and it is invisible in the obvious A/B, because
+ * FindControl answers an INACTIVE window immediately (~2.7us a point), so
+ * the identical sweep costs 10ms whenever anything else is in front. NOW
+ * being frontmost is what a person does; it put a second on every poll.
+ *
+ * WHAT IS CACHED IS THE DISCOVERY, NOT THE ANSWER. The rows are rebuilt
+ * from the live Toolbox on every pass - title, bounds, value, enabled,
+ * visible - so nothing a person changes goes stale. Only the QUESTION
+ * "which controls does this window have, and where do I find each one" is
+ * remembered, and it is re-proved every pass at one point per control:
+ *
+ *   - a control that went away, moved or was hidden no longer answers at
+ *     the point that found it, and the sweep runs again;
+ *   - a control that ARRIVED disturbs nothing that is cached, so
+ *     revalidation cannot see it - now_control_generation() can, because
+ *     every control this application makes goes through now_control_new
+ *     and the source test enforces that;
+ *   - a window that was resized is a different question and is re-asked.
+ *
+ * A cached ControlRef is only ever COMPARED, never dereferenced, until
+ * FindControl has answered with it - so a ref left dangling by a
+ * DisposeControl is a failed match rather than a read of freed memory.
+ */
+enum {
+    kSelfProbeStep = 10,
+    kSelfProbeSeenMax = 64,
+    /* Only windows with no root control take this path, and in this
+       application that is all of them; four is the Workshop and any
+       dialogs a person has open at once. A fifth evicts the oldest and
+       costs it one sweep. */
+    kSelfProbeCacheWindows = 4
+};
 
-   The step is the smallest widget this can miss: a checkbox is 12pt
-   tall and a scroll arrow 16, so 6 finds both with room. Controls are
-   deduplicated by ControlRef, which is the identity the Control Manager
-   itself uses. */
+typedef struct {
+    WindowRef     window;              /* NULL = free slot */
+    Rect          content;
+    unsigned long generation;
+    short         count;
+    ControlRef    control[kSelfProbeSeenMax];
+    Point         where[kSelfProbeSeenMax];
+    unsigned long used;                /* for eviction: last scene seen */
+} SelfProbeCache;
+
+static SelfProbeCache g_probe_cache[kSelfProbeCacheWindows];
+static unsigned long g_probe_clock;
+
+static SelfProbeCache *probe_slot_for(WindowRef window)
+{
+    int i;
+    int oldest = 0;
+
+    for (i = 0; i < kSelfProbeCacheWindows; ++i) {
+        if (g_probe_cache[i].window == window) {
+            return &g_probe_cache[i];
+        }
+    }
+    for (i = 0; i < kSelfProbeCacheWindows; ++i) {
+        if (g_probe_cache[i].window == NULL) {
+            oldest = i;
+            break;
+        }
+        if (g_probe_cache[i].used < g_probe_cache[oldest].used) {
+            oldest = i;
+        }
+    }
+    memset(&g_probe_cache[oldest], 0, sizeof g_probe_cache[oldest]);
+    g_probe_cache[oldest].window = window;
+    return &g_probe_cache[oldest];
+}
+
+/* Does every control this slot remembers still answer where it was
+   found? One FindControl per control, against a live window. */
+static Boolean probe_cache_still_true(const SelfProbeCache *slot,
+                                      WindowRef window, const Rect *content)
+{
+    short i;
+
+    if (slot->count <= 0 || slot->generation != now_control_generation()) {
+        return false;
+    }
+    if (slot->content.top != content->top
+            || slot->content.left != content->left
+            || slot->content.bottom != content->bottom
+            || slot->content.right != content->right) {
+        return false;
+    }
+    for (i = 0; i < slot->count; ++i) {
+        ControlRef hit = NULL;
+
+        if (FindControl(slot->where[i], window, &hit) == 0
+                || hit != slot->control[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static void find_controls_by_probe(NowScene *s, int index, WindowRef window,
                                    const Rect *content, int *budget,
                                    NowObsWalk *refs)
 {
-    enum { kStep = 10, kSeenMax = 64 };
-    ControlRef seen[kSeenMax];
-    int seen_count = 0;
+    SelfProbeCache *slot;
     GrafPtr saved = NULL;
     short x, y;
+    short i;
     short w = (short)(content->right - content->left);
     short h = (short)(content->bottom - content->top);
 
@@ -250,11 +333,28 @@ static void find_controls_by_probe(NowScene *s, int index, WindowRef window,
     GetPort(&saved);
     SetPortWindowPort(window);
 
-    for (y = 0; y < h && *budget > 0; y = (short)(y + kStep)) {
-        for (x = 0; x < w && *budget > 0; x = (short)(x + kStep)) {
+    slot = probe_slot_for(window);
+    slot->used = ++g_probe_clock;
+
+    if (probe_cache_still_true(slot, window, content)) {
+        for (i = 0; i < slot->count && *budget > 0; ++i) {
+            add_control_tree(s, index, slot->control[i], content,
+                             kSelfMaxDepth, budget, refs, window);
+        }
+        if (saved != NULL) {
+            SetPort(saved);
+        }
+        return;
+    }
+
+    slot->count = 0;
+    slot->content = *content;
+    slot->generation = now_control_generation();
+
+    for (y = 0; y < h && *budget > 0; y = (short)(y + kSelfProbeStep)) {
+        for (x = 0; x < w && *budget > 0; x = (short)(x + kSelfProbeStep)) {
             Point pt;
             ControlRef hit = NULL;
-            int i;
             int already = 0;
 
             pt.h = x;
@@ -262,8 +362,8 @@ static void find_controls_by_probe(NowScene *s, int index, WindowRef window,
             if (FindControl(pt, window, &hit) == 0 || hit == NULL) {
                 continue;
             }
-            for (i = 0; i < seen_count; ++i) {
-                if (seen[i] == hit) {
+            for (i = 0; i < slot->count; ++i) {
+                if (slot->control[i] == hit) {
                     already = 1;
                     break;
                 }
@@ -271,8 +371,10 @@ static void find_controls_by_probe(NowScene *s, int index, WindowRef window,
             if (already) {
                 continue;
             }
-            if (seen_count < kSeenMax) {
-                seen[seen_count++] = hit;
+            if (slot->count < kSelfProbeSeenMax) {
+                slot->control[slot->count] = hit;
+                slot->where[slot->count] = pt;
+                ++slot->count;
             }
             add_control_tree(s, index, hit, content, kSelfMaxDepth,
                              budget, refs, window);
@@ -344,7 +446,6 @@ static void add_one_menu(NowScene *s, MenuHandle menu, MenuRef items,
     if (menu == NULL) {
         return;
     }
-    ++g_now_dbg_us[6];
     title[0] = 0;
     GetMenuTitle(menu, title);
     pascal_to_c(title, ctitle, sizeof ctitle);
@@ -364,7 +465,6 @@ static void add_one_menu(NowScene *s, MenuHandle menu, MenuRef items,
         pascal_to_c(text, ctext, sizeof ctext);
         GetItemMark(items, i, (short *)&mark);
         GetItemCmd(items, i, (short *)&cmd);
-        ++g_now_dbg_us[7];
         (void)now_scene_add_menu_item(s, index, ctext, i,
                                       (ctext[0] == '-') ? 1 : 0,
                                       IsMenuItemEnabled(items, i) ? 1 : 0,
@@ -439,12 +539,7 @@ static void collect_self_menubar(NowScene *s, int row)
         return;
     }
     head = (NowMenuListHead *)*bar;
-    {
-        unsigned long t = dbg_us();
-
-        root = AcquireRootMenu();
-        g_now_dbg_us[1] += dbg_us() - t;
-    }
+    root = AcquireRootMenu();
     for (offset = 6; offset <= head->last_offset; offset = (short)(offset + 6)) {
         NowMenuListEntry *entry =
             (NowMenuListEntry *)((char *)*bar + offset);
@@ -452,20 +547,12 @@ static void collect_self_menubar(NowScene *s, int row)
            carry the correct number of blank rows. Resolve every live entry
            through Carbon's attached root submenu by menu ID; normal menus
            simply fall back to their installed handle. */
-        MenuRef items;
-        unsigned long t = dbg_us();
+        MenuRef items = root_items_for(root, entry->menu);
 
-        items = root_items_for(root, entry->menu);
-        g_now_dbg_us[2] += dbg_us() - t;
-        t = dbg_us();
         add_one_menu(s, entry->menu, items, entry->left);
-        g_now_dbg_us[3] += dbg_us() - t;
     }
     if (root != NULL) {
-        unsigned long t = dbg_us();
-
         (void)ReleaseMenu(root);
-        g_now_dbg_us[1] += dbg_us() - t;
     }
 }
 
@@ -492,13 +579,9 @@ void now_scene_collect_self(NowScene *s, int row,
         if (GetFrontProcess(&front) == noErr && psn != NULL
                 && SameProcess(&front, (ProcessSerialNumber *)psn, &same)
                        == noErr && same) {
-            unsigned long t = dbg_us();
-
             collect_self_menubar(s, row);
-            g_now_dbg_us[0] += dbg_us() - t;
         }
     }
-    g_now_dbg_us[4] = dbg_us();       /* closed at the end of the walk */
 
     for (; window != NULL && hops < kSelfMaxWindows;
          window = GetNextWindow(window), ++hops) {
@@ -586,11 +669,8 @@ void now_scene_collect_self(NowScene *s, int row,
              * it often enough to meet every control wider than the step.
              * It is O(points x controls) of rect tests on one window and
              * costs less than the transfer that carries the answer. */
-            unsigned long t = dbg_us();
-
             find_controls_by_probe(s, index, window, &content, &budget,
                                    refs);
-            g_now_dbg_us[5] += dbg_us() - t;
         }
         if (workshop_is(window)) {
             WorkshopWriterContext context = { s, index, 1 };
@@ -600,5 +680,4 @@ void now_scene_collect_self(NowScene *s, int row,
             workshop_describe_scene(&writer);
         }
     }
-    g_now_dbg_us[4] = dbg_us() - g_now_dbg_us[4];
 }

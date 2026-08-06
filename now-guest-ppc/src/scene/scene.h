@@ -1,13 +1,6 @@
 #ifndef NOW_SCENE_H
 #define NOW_SCENE_H
 
-/* TEMPORARY (2026-08-06): a microsecond breakdown of the SELF walk, so a
-   probe can see which step of a ~1 s self-front scene spends the time.
-   Filled by scene_self.c, published by scene_json.c as meta.dbgUs, and
-   removed once the cost is measured and fixed. */
-#define kNowDbgSlots 8
-extern unsigned long g_now_dbg_us[kNowDbgSlots];
-
 /* The scene envelope: NOW's guest producing Mirror's frozen v1 scene IR
    over the part of the machine it can honestly walk today.
    (mirror/docs/IR-V1.md; docs/scene-producer.md for what is and is not

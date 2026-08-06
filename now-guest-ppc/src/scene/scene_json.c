@@ -6,12 +6,6 @@
 #include "axwalk.h"    /* NowAxDefProcOrigin: scene.h stores one as a short */
 #include "json.h"
 
-/* TEMPORARY (2026-08-06) — a per-scene microsecond breakdown of the SELF
-   walk, defined here because this file is the one both the guest and the
-   native tests compile. scene_self.c fills it; the encoder publishes it as
-   meta.dbgUs so a probe can read where a ~1 s self-front scene goes. */
-unsigned long g_now_dbg_us[kNowDbgSlots];
-
 /* The IR v2 encoder.
 
    One pass, counting always and writing only while it fits, so a single
@@ -918,18 +912,6 @@ static void put_meta(Sink *k, const NowScene *s)
     if (s->latency_ms >= 0) {
         put(k, ",\"latencyMs\":");
         put_num(k, s->latency_ms);
-    }
-    /* TEMPORARY (2026-08-06): where the self walk's time actually goes.
-       Removed once the menu-bar cost is measured and fixed. */
-    {
-        int d;
-
-        put(k, ",\"dbgUs\":[");
-        for (d = 0; d < kNowDbgSlots; ++d) {
-            if (d) put(k, ",");
-            put_num(k, (long)g_now_dbg_us[d]);
-        }
-        put(k, "]");
     }
     /* `bytes` is absent, not zero: it is the encoded size, and the
        encode is what is happening right now. */
