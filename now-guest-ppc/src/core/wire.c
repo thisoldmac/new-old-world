@@ -6193,7 +6193,7 @@ static int handle_frame(const char *reply)
     }
     if (now_json_type_is(reply, "command.request")) {
         char name[48];
-        char result[3072];
+        char result[kNowCommandResultCap];
         long id = now_json_find_int(reply, "id", 0);
 
         if (!now_json_find_string(reply, "name", name, sizeof name)) {

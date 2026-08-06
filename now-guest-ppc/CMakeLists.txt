@@ -9,6 +9,7 @@ add_application(now-guest-ppc
     src/commands/commands.c
     src/commands/gestalt_json.c
     src/console/console_model.c
+    src/console/console_reply.c
     src/console/console_module.c
     # Not under src/: one implementation both guests compile, the way
     # contract/ carries the headers both guests include. See its own

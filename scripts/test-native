@@ -517,6 +517,8 @@ run_c now-guest-ppc sw_vers_parse_test.c     ""  src/software/sw_vers_parse.c
 run_c now-guest-ppc workshop_layout_test.c   ""  src/workshop/workshop_layout.c
 run_c now-guest-ppc cmd_help_test.c         ""  src/commands/cmd_help.c
 run_c now-guest-ppc cmd_line_test.c         ""  src/commands/cmd_line.c src/core/json.c
+run_c now-guest-ppc console_reply_test.c  ""  src/console/console_reply.c \
+                                                 src/core/json.c
 # The gestalt reply's serializer, driven at caps the real machine never
 # reaches. See the test's header: the bug it pins could not have been found
 # on hardware, because no machine answers enough selectors to overflow.

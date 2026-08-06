@@ -25,6 +25,19 @@ flags u8, transfer u16, length u32. Control channel 0, END flag 1.
 Verb syntax: `name` or `name:key=value,key=value`. Values that parse as an
 integer are sent as numbers, because the guest's argument readers are typed
 (now_json_find_int vs now_json_find_string) and a quoted 3 is not a 3.
+
+THE OTHER FACE: prefix a spec with `exec ` and the rest of it is sent as an
+exec.request line instead — the whole line, untouched, the way a host
+console sends it — and what comes back is the text the guest's OWN console
+would have drawn.
+
+    tools/askguest.py --port 5510 putstat "exec putstat"
+
+Those two lines ask one Macintosh the same question through its two faces,
+and printing them side by side is the only way to see the class of defect
+docs/command-parity.md is about: a verb PRESENT on both faces and working
+on one. `putstat` answered its table on the wire and printed
+"command failed" at the console for as long as anyone had been typing it.
 """
 
 import argparse
@@ -124,9 +137,45 @@ def main() -> int:
     send({"type": "hello", "contract": CONTRACT, "side": "host",
           "version": "0", "name": a.name, "chunk": 4096})
 
+    def run_exec(mid, line):
+        """The console face. Collects exec.output in seq order until the one
+        exec.result that terminates it, and prints the text verbatim — the
+        host composes no sentence of its own (contract: ExecResult)."""
+        req = {"type": "exec.request", "id": mid, "line": line}
+        print(f"\n-> {json.dumps(req)}", flush=True)
+        send(req)
+        chunks = {}
+        while True:
+            try:
+                msg = read_message()
+            except Exception as e:
+                print(f"<- (no reply: {e})", flush=True)
+                return False
+            if msg.get("type") == "ping":
+                send({"type": "pong", "id": msg.get("id", 0)})
+                continue
+            if msg.get("id") != mid:
+                continue
+            if msg.get("type") == "exec.output":
+                chunks[msg.get("seq", len(chunks))] = msg.get("text", "")
+                continue
+            if msg.get("type") != "exec.result":
+                continue
+            text = "".join(chunks[k] for k in sorted(chunks))
+            for out_line in text.split("\r" if "\r" in text else "\n"):
+                print(f"<| {out_line}", flush=True)
+            print("<- " + json.dumps(msg), flush=True)
+            return bool(msg.get("ok"))
+
     rc = 0
     mid = 100
     for spec in a.verbs:
+        if spec.startswith("exec "):
+            mid += 1
+            ok = run_exec(mid, spec[len("exec "):])
+            if not ok:
+                rc = 1
+            continue
         name, args = parse_verb(spec)
         for attempt in range(a.retries + 1):
             mid += 1

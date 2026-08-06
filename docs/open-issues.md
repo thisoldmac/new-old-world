@@ -14,6 +14,55 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## BROKEN: no verb reached through the PowerPC console's fallback can be given an ARGUMENT (2026-08-06)
+
+Found while fixing the renderer half of the same seam (see
+[command-parity.md](command-parity.md), "Present on both faces is not the
+same as working on both"). `console_model.c` handles 27 verbs with a
+`strcmp` of their own and falls through for the other eighteen —
+`activate`, `actselftest`, `aesend`, `axsnap`, `axtree`, `ctlact`,
+`ditemact`, `elements`, `handle`, `menuact`, `mouseloc`, `observe`,
+`putstat`, `qdtrace`, `script`, `textget`, `textset`, `winact`. The
+fall-through is:
+
+    now_command_run(name, NULL, 0, result, sizeof result);
+
+`NULL` is the whole request, so the verb sees no arguments at all. Twelve
+of the eighteen therefore answer a validation refusal and nothing else,
+no matter what a person types after the verb. Measured on the emulator,
+build `fea48baffe8f`, wire 5510, through the exec plane:
+
+    > winact          winact requires action: one of select, close, move, resize, zoom
+    > menuact         menuact requires menu (the menu's id) and item (its 1-based position…)
+    > script          script requires source: one AppleScript, as a string
+    > aesend          aesend requires event: one of quit, oapp, odoc, pdoc
+    > activate        activate needs a whole process serial number: serialHi and serialLo…
+
+Typing the arguments changes nothing, because the console never passes
+them. The refusals are correct and useful sentences — they are just the
+only sentences those verbs can produce at that keyboard.
+
+Six of the eighteen take no arguments and now work: `putstat` and
+`mouseloc` render real tables, and `axsnap`, `axtree`, `elements`,
+`observe` and `qdtrace` answer objects of references, which the console
+says it cannot show as a table rather than claiming a failure.
+
+**What it would take.** A grammar, not a renderer: something that turns
+the rest of a typed line into the `args` object the wire sends, with
+types (`now_json_find_int` vs `now_json_find_string` — a quoted 3 is not
+a 3). `now-guest-ppc/src/commands/cmd_line.c` already reads the OTHER
+direction and is the obvious place to put its inverse. `script` and
+`aesend` and the act verbs are the ones a person would most want, and
+`docs/command-parity.md`'s `consoleDebt` map is the list. The three verbs
+whose arguments are opaque `now-element-` references are a different
+problem and probably stay untypeable.
+
+**Why it is parked.** The reported defect was a renderer printing
+"command failed" for commands that had succeeded; that is fixed and
+verified at both faces. A console argument grammar is a design decision
+about what a person can type at a classic Mac, and folding it into the
+same change would have made both harder to review.
+
 ## BROKEN, and it is the WORST shape: a ten-second gap in scene polling blinds the whole walk, and the Mirror keeps drawing what it can no longer see (2026-08-06)
 
 Michelle, side by side with the guest: Date & Time's **Set Time Zone**

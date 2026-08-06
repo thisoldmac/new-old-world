@@ -96,7 +96,6 @@ Kept in the test as data, not prose, so they cannot rot:
 
 | Verb | Face | Why |
 |---|---|---|
-| `putstat` | wire only | a diagnostic the host reads to size a transfer; nothing for a person at the guest to do with it |
 | `help`, `clear`, `?` | console only | act on the console window itself and mean nothing on a wire |
 | `put`, `mv`, `trash`, `untrash`, `mkdir` | console only (PPC) | the host reaches the same capability through the `file.*` message families, not through x-commands |
 | `put` | **both faces (NOW-68K)** | the same capability, the opposite decision — see below |
@@ -246,6 +245,76 @@ it once below both faces; the wire renderer and the console renderer follow.
 What is new is that the console renderer now reaches the HOST too, so "add a
 verb, it appears in both places in the same commit" has become "…and it is
 typeable from a host binary nobody rebuilt".
+
+## Present on both faces is not the same as working on both
+
+Added 2026-08-06, and it is the first entry here that the parity gate
+could not have caught.
+
+`putstat` was in the table above as a deliberate asymmetry — wire only, a
+diagnostic with nothing for a person at the guest to do with it. Someone
+typed it at the guest anyway and got `command failed`, while the same
+verb answered the host its whole eleven-row table. So the asymmetry had
+never been one: `putstat` had had a console face the whole time, reached
+through `console_model.c`'s fall-through to `now_command_run`, and the
+only thing missing was a renderer that could read what came back.
+
+**The cause was not `putstat`.** The fallback read a top-level `message`
+out of the reply and called its absence a failure. No PowerPC verb has
+ever carried one on success — every one of them answers
+`output: {<verb>: [[label, value], …]}` — so the branch that ran for
+every command that WORKED was the failure branch, and a command's own
+words reached the screen only when it had refused. Six verbs were
+measured saying `command failed` while succeeding on the wire in the same
+second: `putstat`, `axsnap`, `axtree`, `elements`, `mouseloc`, `observe`.
+
+A second limit was underneath it. `wire.c` gave a `command.result` 3072
+bytes and `console_model.c` gave it 512, and neither number said so, so
+any verb answering more than 512 bytes was truncated mid-JSON for a
+person at the keyboard — `qdtrace` at the guest's own console said
+"no room for a qdtrace status reply" on a machine whose wire had just
+returned the whole table. That is AGENTS.md's *state a limit once, where
+both sides read it*, one layer below where it usually applies;
+`kNowCommandResultCap` is the one number now.
+
+The fix is one renderer (`src/console/console_reply.c`), not eighteen
+console verbs. A verb's answer renders as rows; a refusal renders as the
+guest's own sentence, which is the one case that was never broken; an
+answer that is an object of references says so and does **not** claim to
+have failed.
+
+### Why nothing saw it
+
+Every check in `CommandParityTests` before this compared **dispatch
+tables**, and a table can only say whether a verb is PRESENT. It cannot
+say whether the answer renders — and `putstat` was present on both faces
+and working on one for eleven days, wearing a justification in the
+exemption map.
+
+That is the shape to watch for, so the gate grew a half it did not have:
+
+- `console_reply_test.c` (native) runs the renderer over one reply of
+  every shape the guest emits. It is the only check in this class that
+  does not need a Macintosh in the room.
+- `testTheConsoleRendersAnAnswerAndNotOnlyAFailure` asserts the console
+  still delegates to that renderer, and that `console_model.c` no longer
+  decides for itself that a command failed.
+- `testBothFacesGiveACommandResultTheSameRoom` asserts the two faces size
+  a reply from the same constant.
+- `testEverySuccessfulPowerPCReplyCarriesAnOutputObject` pins the
+  assumption the renderer rests on, so a verb that answered `ok:true`
+  some other way fails here rather than rendering as nothing.
+
+Neither half is sufficient: the Swift gate cannot execute a renderer, and
+the native test cannot see whether the guest still calls it.
+
+**What is still owed.** The fallback passes `request_json = NULL`, so no
+verb reached that way can be given an argument from the console. Twelve
+of the eighteen therefore render a correct, useful refusal — `winact
+requires action: one of select, close, move, resize, zoom` — and remain
+untypeable. That is `consoleDebt` in the parity test and an entry in
+[open-issues.md](open-issues.md); it is a grammar, not a renderer, and it
+was not fixed here.
 
 ## The MCP is a client, not a face
 
