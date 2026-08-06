@@ -1,5 +1,35 @@
 # Fidelity sweep, 2026-08-06 — the host render against the guest's own pixels
 
+## WHICH BUILD THIS TABLE DESCRIBES — read this before quoting a score
+
+Scores age badly and silently. This table is a **deliberate baseline**,
+taken immediately *before* the icon asset pack landed, and it is only
+meaningful against the exact tree named here.
+
+| | |
+|---|---|
+| **Renderer tree** | branch `claude/fidelity-sweep-2026-08-06`, forked from `claude/gworld-interior-host-render-98ddd5` at `eb952325`. Every render in this document was produced from a working tree whose only differences from that fork point are `tools/fidelity-*.py`, this file, the new fixtures, and the render-list entries that name them. |
+| **Asset pack** | the **OLD** one: `MirrorKitUI/Resources/appicons` carries **186** per-app icons and `Resources/icons` carries **5** generic System-file icons (`application`, `disk`, `document`, `folder`, `system-folder`), one size only. |
+| **Guest build** | `1bff0bd2ca39 2026-08-06T20:04:32Z`, asserted by `--expect-build auto` on **every** capture — no foreign guest answered this listener. |
+| **Guest machine** | QEMU `mac99`, Mac OS 9.1, 800×600, run `nowvm-fsw1`. Nothing here touched metal. |
+
+**The asset pack changed on another branch while this sweep was running**
+— 186 → 914 per-app icons, 5 → 127+10 System-file icons, and 16×16 art
+shipped beside 32×32 so the renderer picks by size instead of
+downsampling. That change regenerated all nine of the previously
+committed capture renders. **None of it is in the tree above**, which was
+confirmed by counting the resource directories rather than by reasoning
+about branch order, so no row here mixes two asset packs. Every ICON
+observation below is therefore a statement about the OLD pack and is
+expected to move; the A/B is the point.
+
+Axes other than icon art — TEXT, PLACEMENT, CHROME, and the hatch
+question under CONTROLS — do not depend on the asset pack, and those
+rows should survive the A/B unchanged. If one of them moves, that is
+itself a finding.
+
+## What this is
+
 **Status: SURVEY.** Nothing here is a fix. Every row is a judgement about
 one window, made by looking at two images of the same moment: the host's
 render of a capture, and a QMP screendump of the machine taken while that
