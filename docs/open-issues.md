@@ -107,6 +107,30 @@ scene-walk staleness trap again, now with an act-plane face), and the
 render fix for scrollbars was chrome, not capture: a ranged scrollbar
 is window furniture and draws over display-owned content.
 
+## ANSWERED: a 68K trap patch DOES see the CFM Finder's NewGWorld (2026-08-06, plan 014 E1)
+
+The question that voided the applet experiment, asked properly - from
+the resident, installed on the armed pass in the armed process's own
+context - and answered on the first boot:
+
+    qdext: {installed: 0x0058e61c, calls: 6509, newGWorld: 2,
+            lastSelector: 0x00080006, foreign: 0}
+
+`installed` names the incumbent, so the patch demonstrably went in;
+`calls` counts dispatches seen INSIDE the armed Finder; **`newGWorld: 2`
+is two selector-0 dispatches from a native PowerPC application**. That
+is the whole precondition of plan 014: a native caller executes no
+A-trap itself, but its InterfaceLib glue reads the trap dispatch table
+at call time, and the Finder resolves NewGWorld against InterfaceLib
+(E0, read from its own PEF import table). `foreign: 0` says the patch
+did not fire outside the armed context, which is the scoping property
+the plane promises.
+
+So creation-time notification EXISTS, and the transient worlds that beat
+the sight-then-chase route (Sherlock 2, Appearance) are reachable. The
+escalations named as fallbacks - CFM TVector redirection, pixel islands
+for composite-locked windows - are not needed and should not be built.
+
 ## NO VERDICT on D0: an applet cannot ask the trap-patch question (2026-08-06)
 
 Plan 013 slice D0 asks whether a `NewGWorld` trap patch fires for a CFM

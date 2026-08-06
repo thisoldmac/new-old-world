@@ -96,7 +96,17 @@ static short gInCapture = 0;
    plain module global with external linkage exactly like the act
    plane's six. */
 void *gNowContentOldQDExt = NULL;
+/* The tail wrap's saved words, and its re-entrancy guard. Globals
+   rather than a re-entrant frame, because the frame they would have to
+   live in is the caller's and it belongs to the trap: see the shim's
+   own header for why no legal caller can re-enter, and what the guard
+   does when one does anyway. */
+void *gNowContentQDExtOut = NULL;
+void *gNowContentQDExtRet = NULL;
+short gNowContentQDExtBusy = 0;
 extern void now_content_qdext_patch(void);
+
+static short content_slot_for(GrafPtr port, NowPeekU32 a5);
 
 /* Called from the shim on every $AB1D dispatch, with the selector word
    the caller loaded into d0. Counts and nothing else: E1 exists to find
@@ -197,8 +207,6 @@ static void content_stamp(void)
         gBlock->ticks = (NowPeekU32)LMGetTicks();
     }
 }
-
-static short content_slot_for(GrafPtr port, NowPeekU32 a5);
 
 /* Record mode and probe mode both append ring records; count mode only
    counts. One place says so, because the ten hooks each ask. */
@@ -894,6 +902,103 @@ static void content_install_port(GrafPtr port, NowPeekU32 a5,
     gBlock->counters.installs++;
     gBlock->hooked_ports = (NowPeekU32)gPortCount;
 }
+
+/* ---- E2: the world, hooked at the instant it is created --------------
+ *
+ * Called from the shim's tail with the GWorldPtr the real NewGWorld
+ * just wrote, INSIDE the creating process, before that process has
+ * drawn one operation into it. That timing is the whole slice: an
+ * application whose world is created, drawn, blitted and disposed in a
+ * single event-loop pass (Sherlock 2, Appearance) is unreachable by
+ * the sight-then-chase route and reachable here.
+ *
+ * Everything below is stores into blocks we already hold plus one
+ * grafProcs write into the block we were just handed. No allocation, no
+ * Toolbox call that can move memory, no WindowList walk: this runs at
+ * whatever moment the application chose to allocate.
+ */
+void now_content_qdext_born(GrafPtr port)
+{
+    short slot;
+
+    if (gBlock == NULL || port == NULL || gArmedA5 == 0
+        || gArmedMode != (NowPeekU32)kNowContentModeProbe
+        || (NowPeekU32)LMGetCurrentA5() != gArmedA5) {
+        return;
+    }
+    /* content_install_port refuses a port that is not a colour port or
+       already carries the application's own grafProcs, and counts both
+       in skipped_ports - the same rules the chase obeys, and for the
+       same reasons. A GWorld is always a colour port; the check stays
+       because the argument came off a stack we did not build. */
+    content_install_port(port, gArmedA5, gBlock->active_generation);
+    slot = content_slot_for(port, gArmedA5);
+    if (slot < 0) {
+        gBlock->qdext_born_missed++;
+        return;
+    }
+    gPorts[slot].offscreen = 1;
+    gPorts[slot].pixmap = (NowPeekU32)((CGrafPtr)port)->portPixMap;
+    gBlock->qdext_born++;
+    gBlock->probe_offscreen_ports++;
+    {
+        NowContentWorldPayload wp;
+
+        wp.port = (NowPeekU32)port;
+        wp.pixmap = gPorts[slot].pixmap;
+        wp.l = ((CGrafPtr)port)->portRect.left;
+        wp.t = ((CGrafPtr)port)->portRect.top;
+        wp.r = ((CGrafPtr)port)->portRect.right;
+        wp.b = ((CGrafPtr)port)->portRect.bottom;
+        content_stamp();
+        (void)now_content_ring_put(gBlock, kNowContentOpWorldBorn, 0,
+                                   (NowPeekU32)port, &wp, sizeof(wp));
+    }
+}
+
+/* Called from the shim's head on DisposeGWorld, BEFORE the world goes,
+   so the row is dropped while its port is still a port. The host needs
+   this at least as much as the resident does: worldDied is its signal
+   to release the ops it is holding for that source, replacing a
+   bounded-retention guess with the application's own word. */
+void now_content_qdext_died(GrafPtr port)
+{
+    short slot;
+
+    if (gBlock == NULL || port == NULL || gArmedA5 == 0
+        || (NowPeekU32)LMGetCurrentA5() != gArmedA5) {
+        return;
+    }
+    slot = content_slot_for(port, gArmedA5);
+    if (slot < 0) {
+        return;                  /* never ours; nothing to say */
+    }
+    /* Restore the procs we installed, while the block is still alive.
+       DisposeGWorld frees it either way, but leaving our own pointer in
+       a block about to be recycled is the kind of tidiness this class
+       of code does not get to skip. */
+    if (content_port_is_color(gPorts[slot].port)
+        && ((CGrafPtr)gPorts[slot].port)->grafProcs == &gHooks) {
+        ((CGrafPtr)gPorts[slot].port)->grafProcs = gPorts[slot].prev;
+    }
+    if (gPorts[slot].offscreen && gBlock->probe_offscreen_ports > 0) {
+        gBlock->probe_offscreen_ports--;
+    }
+    content_forget_slot(slot);
+    gBlock->hooked_ports = (NowPeekU32)gPortCount;
+    gBlock->qdext_died++;
+    {
+        NowContentWorldPayload wp;
+
+        wp.port = (NowPeekU32)port;
+        wp.pixmap = 0;
+        wp.l = 0; wp.t = 0; wp.r = 0; wp.b = 0;
+        content_stamp();
+        (void)now_content_ring_put(gBlock, kNowContentOpWorldDied, 0,
+                                   (NowPeekU32)port, &wp, sizeof(wp));
+    }
+}
+
 
 static void content_install_exact_window(NowPeekU32 a5,
                                          NowPeekU32 window,

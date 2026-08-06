@@ -145,6 +145,14 @@ static int decode_payload(NowQDRecord *rec, const unsigned char *body,
         }
         copy_out(&rec->p.state, body, want);
         return 1;
+    case kNowContentOpWorldBorn:
+    case kNowContentOpWorldDied:
+        want = (NowContentU32)sizeof(NowContentWorldPayload);
+        if (body_len < want) {
+            return 0;
+        }
+        copy_out(&rec->p.world, body, want);
+        return 1;
     case kNowContentOpBlitSource:
         want = (NowContentU32)sizeof(NowContentBlitSourcePayload);
         if (body_len < want) {
@@ -439,7 +447,7 @@ void now_qdtrace_status(const NowContentBlock *block,
         out->probe_sight_small = block->probe_sight_small;
     }
     if (block->length >= (NowContentU32)(offsetof(NowContentBlock,
-                                                  qdext_installed)
+                                                  qdext_born_missed)
                                          + sizeof(NowContentU32))) {
         out->has_qdext = 1;
         out->qdext_calls = block->qdext_calls;
@@ -447,6 +455,9 @@ void now_qdtrace_status(const NowContentBlock *block,
         out->qdext_last_selector = block->qdext_last_selector;
         out->qdext_foreign = block->qdext_foreign;
         out->qdext_installed = block->qdext_installed;
+        out->qdext_born = block->qdext_born;
+        out->qdext_died = block->qdext_died;
+        out->qdext_born_missed = block->qdext_born_missed;
     }
 }
 

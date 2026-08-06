@@ -155,6 +155,7 @@ typedef struct {
         NowContentBitsPayload bits;
         NowContentStatePayload state;
         NowContentBlitSourcePayload blitsrc;
+        NowContentWorldPayload world;
     } p;
     /* TEXT only: the inline bytes, NUL-terminated for the emitter's
        convenience. `p.text.len` is the byte count that is real;
@@ -269,6 +270,9 @@ typedef struct {
     NowContentU32 qdext_last_selector;
     NowContentU32 qdext_foreign;
     NowContentU32 qdext_installed;
+    NowContentU32 qdext_born;
+    NowContentU32 qdext_died;
+    NowContentU32 qdext_born_missed;
 } NowQDStatus;
 
 void now_qdtrace_status(const NowContentBlock *block,

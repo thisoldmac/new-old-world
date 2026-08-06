@@ -108,6 +108,8 @@ static const char *op_name(unsigned char op)
     case kNowContentOpComment: return "comment";
     case kNowContentOpState:   return "state";
     case kNowContentOpBlitSource: return "blitsrc";
+    case kNowContentOpWorldBorn: return "worldborn";
+    case kNowContentOpWorldDied: return "worlddied";
     default:                   return "unknown";
     }
 }
@@ -309,12 +311,16 @@ void now_qdtrace_status_json(const NowQDStatus *st, long id,
         ok = ok && emit(&e,
             ",\"qdext\":{\"installed\":\"0x%08lx\",\"calls\":%lu,"
             "\"newGWorld\":%lu,\"lastSelector\":\"0x%08lx\","
-            "\"foreign\":%lu}",
+            "\"foreign\":%lu,\"born\":%lu,\"died\":%lu,"
+            "\"bornMissed\":%lu}",
             (unsigned long)st->qdext_installed,
             (unsigned long)st->qdext_calls,
             (unsigned long)st->qdext_new_gworld,
             (unsigned long)st->qdext_last_selector,
-            (unsigned long)st->qdext_foreign);
+            (unsigned long)st->qdext_foreign,
+            (unsigned long)st->qdext_born,
+            (unsigned long)st->qdext_died,
+            (unsigned long)st->qdext_born_missed);
     }
 
     e.reserve = 0;
@@ -415,6 +421,26 @@ static int drain_sink(void *ctx, const NowQDRecord *rec)
             (int)rec->p.bits.dr, (int)rec->p.bits.db,
             (unsigned)rec->p.bits.mode,
             (unsigned)rec->p.bits.src_row_bytes)) {
+            e->pos = before;
+            return 0;
+        }
+        break;
+    case kNowContentOpWorldBorn:
+        if (!emit(e, ",\"world\":\"0x%08lx\",\"pixmap\":\"0x%08lx\","
+                  "\"rect\":[%d,%d,%d,%d]}",
+                  (unsigned long)rec->p.world.port,
+                  (unsigned long)rec->p.world.pixmap,
+                  (int)rec->p.world.l, (int)rec->p.world.t,
+                  (int)rec->p.world.r, (int)rec->p.world.b)) {
+            e->pos = before;
+            return 0;
+        }
+        break;
+    case kNowContentOpWorldDied:
+        /* No shape: after disposal there is nothing left to read, and a
+           rect copied from a freed block would be a plausible lie. */
+        if (!emit(e, ",\"world\":\"0x%08lx\"}",
+                  (unsigned long)rec->p.world.port)) {
             e->pos = before;
             return 0;
         }

@@ -334,6 +334,14 @@ typedef struct {
        installed and never fired - the two look identical in counters
        alone, and that ambiguity voided the applet experiment. */
     NowContentU32 qdext_installed;
+    /* E2's own arithmetic: worlds hooked at birth, worlds dropped at
+       death, and births the port table could not take (full, or a port
+       carrying the application's own grafProcs). A widget-per-world
+       application can exhaust 16 rows in one pass, so the missed count
+       is the honesty counter that says so. */
+    NowContentU32 qdext_born;
+    NowContentU32 qdext_died;
+    NowContentU32 qdext_born_missed;
 } NowContentBlock;
 
 /* ---- ring records --------------------------------------------------
@@ -369,6 +377,14 @@ typedef struct {
    old host is a misparse, while an unknown op is stepped over whole and
    the old reader loses only the join it never had. */
 #define kNowContentOpBlitSource 12
+/* A world's birth and death, emitted by the QDExtensions trap patch
+   (plan 014, E2) in the creating process at the instant NewGWorld
+   returns and DisposeGWorld is entered. Accretive like blitsrc: an
+   older reader steps over both whole. worldDied is what lets a host
+   release held ops on the application's own word rather than on a
+   retention guess. */
+#define kNowContentOpWorldBorn  13
+#define kNowContentOpWorldDied  14
 #define kNowContentOpWrap    255
 
 #define kNowContentFlagTruncText 0x01  /* run longer than kNowContentTextMax */
@@ -449,6 +465,16 @@ typedef struct {
     NowContentU32 src_pixmap;
 } NowContentBlitSourcePayload;
 
+/* WORLDBORN carries the world's identity and shape; WORLDDIED carries
+   the port alone and zeroes the rest, because after disposal there is
+   nothing left to read and a shape copied from a freed block would be
+   a plausible lie. */
+typedef struct {
+    NowContentU32 port;
+    NowContentU32 pixmap;
+    NowContentS16 l, t, r, b;
+} NowContentWorldPayload;
+
 /* The offsets ARE the contract. */
 _Static_assert(sizeof(NowContentRecHeader) == 32, "rec header layout");
 _Static_assert(offsetof(NowContentRecHeader, port) == 4, "rec port offset");
@@ -462,6 +488,8 @@ _Static_assert(sizeof(NowContentBitsPayload) == 20, "bits payload layout");
 _Static_assert(sizeof(NowContentStatePayload) == 14, "state payload layout");
 _Static_assert(sizeof(NowContentBlitSourcePayload) == 8,
                "blit source payload layout");
+_Static_assert(sizeof(NowContentWorldPayload) == 16,
+               "world payload layout");
 
 _Static_assert(sizeof(NowContentCounters) == 84, "counters layout");
 _Static_assert(offsetof(NowContentBlock, arm_a5) == 12, "arm a5 offset");
@@ -482,7 +510,7 @@ _Static_assert(offsetof(NowContentBlock, probe_pending_pixmap)
 _Static_assert(offsetof(NowContentBlock, qdext_calls)
                    == 292 + kNowContentRingCap,
                "qdext append offset");
-_Static_assert(sizeof(NowContentBlock) == 312 + kNowContentRingCap,
+_Static_assert(sizeof(NowContentBlock) == 324 + kNowContentRingCap,
                "block size");
 
 /* ---- the arm verdict (now_content_logic.c) -------------------------

@@ -45,7 +45,12 @@
     .even
     .globl now_content_qdext_patch
     .extern now_content_qdext_note
+    .extern now_content_qdext_born
+    .extern now_content_qdext_died
     .extern gNowContentOldQDExt
+    .extern gNowContentQDExtOut
+    .extern gNowContentQDExtRet
+    .extern gNowContentQDExtBusy
 
 /*
  * Entry state is the caller's, exactly as the dispatcher would see it:
@@ -65,5 +70,99 @@ now_content_qdext_patch:
     jsr now_content_qdext_note
     addq.l #4,%sp                   /* C is caller-pops                */
     movem.l (%sp)+,%d0-%d2/%a0-%a1  /* d0 restored: the dispatcher's   */
+
+/*
+ * E2, THE TAIL WRAP - and it applies to selector 0 alone.
+ *
+ * NewGWorld's result is not its return value: the caller passes
+ * `GWorldPtr *offscreenGWorld` and the new world lands where that
+ * points, AFTER the dispatch runs. So this is the one selector we let
+ * return to us instead of chaining away. Everything else jumps, keeping
+ * the "a declined call is indistinguishable from no extension" property
+ * for the whole rest of the dispatch.
+ *
+ * THE FRAME, stated rather than recalled (now_ext_act_patch.S's rule).
+ * Pascal pushes the result slot first, then the arguments left to
+ * right, and the CALLEE removes the arguments. For
+ *
+ *   pascal QDErr NewGWorld(GWorldPtr *offscreenGWorld, short pixelDepth,
+ *                          const Rect *boundsRect, CTabHandle cTable,
+ *                          GDHandle aGDevice, GWorldFlags flags)
+ *
+ * the stack at entry is, upward from sp:
+ *
+ *      0(%sp)   return address
+ *      4(%sp)   flags            (pushed last, so nearest)
+ *      8(%sp)   aGDevice
+ *     12(%sp)   cTable
+ *     16(%sp)   boundsRect
+ *     20(%sp)   pixelDepth       (2 bytes)
+ *     22(%sp)   offscreenGWorld  <- the out parameter we need
+ *     26(%sp)   the QDErr result slot
+ *
+ * 4 + 4 + 4 + 4 + 2 + 4 = 22 parameter bytes, which is exactly the
+ * 0x0016 the caller loaded into d0's high word - the frame agreeing
+ * with the selector word is the check that this layout is right.
+ *
+ * Popping our return address leaves sp pointing at `flags`, so a `jsr`
+ * through the incumbent presents it the frame it expects with its own
+ * return address on top. It pops the 22 argument bytes itself, so on
+ * return sp points at the caller's result slot - untouched by us, and
+ * where the caller will read it.
+ *
+ * RE-ENTRANCY: the two saved words are resident globals, guarded by a
+ * flag rather than made re-entrant. NewGWorld allocates memory, so it
+ * cannot legally be called at interrupt time, and classic Mac OS is
+ * cooperative - a second entry while we are inside the first is not
+ * reachable by any legal caller. If it happens anyway, the guard sends
+ * the call down the plain chain, which is the behaviour of no
+ * extension at all rather than a corrupted return.
+ */
+    cmpi.w #4,%d0                   /* low word 4 = DisposeGWorld      */
+    beq.s now_content_qdext_dispose
+    tst.w %d0                       /* low word: 0 = NewGWorld         */
+    bne.s now_content_qdext_chain
+    tst.w gNowContentQDExtBusy
+    bne.s now_content_qdext_chain
+
+    move.w #1,gNowContentQDExtBusy
+    move.l 22(%sp),gNowContentQDExtOut   /* the out parameter          */
+    move.l (%sp)+,gNowContentQDExtRet    /* caller's return address    */
+    movea.l gNowContentOldQDExt,%a0
+    jsr (%a0)                            /* the real NewGWorld         */
+
+    movem.l %d0-%d2/%a0-%a1,-(%sp)
+    movea.l gNowContentQDExtOut,%a0
+    move.l (%a0),-(%sp)                  /* the newborn GWorldPtr      */
+    jsr now_content_qdext_born
+    addq.l #4,%sp
+    movem.l (%sp)+,%d0-%d2/%a0-%a1
+    clr.w gNowContentQDExtBusy
+    movea.l gNowContentQDExtRet,%a0
+    jmp (%a0)                            /* back to the caller         */
+
+/*
+ * DisposeGWorld is selector 4 with 4 parameter bytes
+ * (`0x203C, 0x0004, 0x0004, 0xAB1D`), a pascal procedure - no result
+ * slot - so its whole frame is:
+ *
+ *      0(%sp)   return address
+ *      4(%sp)   offscreenGWorld
+ *
+ * We only need to be told BEFORE the world goes, so this is a head
+ * action and then a plain chain: read the argument, hand it to C to
+ * drop the row and emit worldDied, and leave the stack exactly as we
+ * found it. The port must not be dereferenced after the real dispose
+ * runs, which is precisely why this happens first.
+ */
+now_content_qdext_dispose:
+    movem.l %d0-%d2/%a0-%a1,-(%sp)  /* 20 bytes                        */
+    move.l 24(%sp),-(%sp)           /* 4(%sp) + 20 saved = 24          */
+    jsr now_content_qdext_died
+    addq.l #4,%sp
+    movem.l (%sp)+,%d0-%d2/%a0-%a1
+    /* fall through to the chain, frame untouched */
+
+now_content_qdext_chain:
     movea.l gNowContentOldQDExt,%a0
     jmp (%a0)
