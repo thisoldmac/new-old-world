@@ -9941,3 +9941,107 @@ line rather than paging further.
 (the type/creator lookup a listing off the wire needs, since it has no
 file to ask about) and `GetIconRefFromTypeInfo` is absent. Nothing uses
 either yet; the list is text-only.
+
+---
+
+## Fidelity sweep, 2026-08-06 — six windows-worth of appearance defects
+
+Appended, not edited, per this file's rule. The full survey — rubric,
+eleven scored windows, the render/screendump pairs and the reproduction
+command — is [docs/fidelity-sweep-2026-08-06.md](fidelity-sweep-2026-08-06.md).
+Scores there describe branch `claude/fidelity-sweep-2026-08-06` off
+`eb952325`, guest build `1bff0bd2ca39`, **before** the icon asset pack
+grew from 186 to 914 app icons; the sweep is the deliberate A/B baseline
+for that change.
+
+Everything below is BROKEN rather than unverified: each was seen in a
+render beside the machine's own pixels for the same moment.
+
+### Small system text renders 33% too large, and overruns its window
+
+`DisplayReplay.strike(font:size:)` returns `FontBook.system` (Chicago 12)
+for font 0 and font 1 **regardless of the requested size**. The Memory
+control panel draws 251 of its 266 text ops at font 1 size 9; all 251
+render at 12, so labels overrun their controls ("Disk Cache size is
+calculat", "Percent of available mem", "RAM Disk S") and spill past the
+window's right edge onto the desktop. The Geneva branch three lines
+below already picks a nearest bundled size; the system branch does not,
+and there is no bundled system strike below 12 for it to pick.
+Renderer-side. Fixture `qdtrace-drain-sweep-memory.json`.
+
+### A declared truncation becomes a silent one at the glass
+
+Text records carry `len`, `fullLen` and `trunc`, and the resident sets
+them: Appearance's description arrives `len 64, fullLen 69, trunc true`.
+Neither `NOWMirrorContentPlane` nor `DisplayReplay` reads either field,
+so the render draws 64 characters as if they were the whole string. The
+capture is honest and the renderer discards the honesty. Renderer-side.
+
+### A later repaint pass paints over an earlier one
+
+`displayEpoch` advances once per ARM and never per repaint pass, so a
+capture spanning several front/back cycles arrives as one frame with the
+passes concatenated. Where an application composites from more than one
+offscreen world, a later pass's full-window blit lands on an earlier
+pass's content and erases it.
+
+The Sound panel is the clean case and it has a control: the same window
+on the same build, one repaint pass instead of three, keeps all nine
+sound-list rows; the three-pass capture renders an empty list box. The
+rows are present in BOTH composed displays, so this is draw order, not
+composition — the first version of the gate asserted they were missing
+and failed, which is how the mechanism got named. Gated by
+`testFlattenedPassesPutAWindowBlitOverTheSoundList`. The same signature
+costs Appearance its first two tab labels and both theme swatches.
+
+Curable on either side: advance the epoch per update pass in the
+resident, or have the plane keep only the last complete pass.
+
+### The Monitors control panel reports nothing at all
+
+`Monitors` / `VGA Display` (`0x1e91a310`) is fully drawn on the
+screendump, sits entirely inside NOW's window, and produced **0 records
+on its own port** — twice. The second attempt escalated past the
+front/back cycle to hide/reveal and got 17 records, none of them on the
+panel's window; only the shared theme world answered. Not occlusion, not
+a gentle rig: the panel's drawing never reaches the hooked port. It is
+the only window in the sweep the mirror can say nothing about.
+Capture-side.
+
+### Control glyphs are absent with the content plane alone
+
+Checkbox ticks, radio dots and slider thumbs draw as neutral plates in
+every panel. This is the honest fallback `controlSized` prescribes for a
+small themed blit, and it is scoped: the semantic plane was
+`requested: 0, active: 0` for the whole sweep, and that plane is what
+knows a blit is a checkbox. The open question is whether the shipping
+product ever renders a control panel with the content plane alone — if
+it does, those windows look like this.
+
+### MacRoman punctuation drops, and sometimes drops to the wrong glyph
+
+`…` drops from every button title that has one, `•` from all five
+Scrapbook bullets, `'` from "user's guide". Two cases are worse than
+missing: "Check Disk" renders "Check Disl" and "8/ 6/2026" renders
+"8/ 6/202(". The wrong-glyph cases mean the bitmap strike's mapping
+above 0x7F wants checking, not just filling in. Renderer-side.
+
+### Not defects — two harness artifacts caught before they were reported
+
+Recorded because a later reader will hit them again. **Window titles
+appeared to never render**: the coverage test sizes a captured window
+from `contentSize`, a union of everything drawn, which made Scrapbook
+nearly twice its true width and pushed the centred title off the visible
+area. The sweep records each window's real rect and `composedSweep` now
+uses it. **The Finder desktop appeared to render empty**: a desktop
+capture composes onto the canned scene's `windows[1]`, which that
+helper documents as attaching a display that renders nowhere.
+
+### Still unjudged after this sweep
+
+SimpleText with a document and with a dialog, Sherlock 2, the three
+Finder *window* views (only the desktop was captured), Get Info, a
+Standard File dialog, an alert, a pulled-down menu, and ten remaining
+control panels. Calculator and Key Caps failed to launch through the
+anchor (`-192`; and a dropped connection with eleven processes open)
+rather than being judged.
