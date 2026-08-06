@@ -167,6 +167,34 @@ final class DisplayReplayInvertTests: XCTestCase {
                 try XCTUnwrap(pixel(png, x: x + 150, y: y + 70)).0)
     }
 
+    // MARK: - The blit grading bound, held to the corpus that set it
+
+    /// Sherlock 2's magnifier is a 48×48 unjoined CopyBits, and the old
+    /// icon bound of 48 painted a generic DOCUMENT icon over a round
+    /// button — a placeholder typed more precisely than the drawing stream
+    /// allows. It reads as an untyped control plate now.
+    ///
+    /// The sizes below are the whole near-square blit census of the nine
+    /// committed captures, so this fails if anyone widens the bound back
+    /// over a real control or narrows it under a real icon.
+    func testTheIconBoundKeepsEveryRealIconAndReleasesTheMagnifier() {
+        for size in [CGSize(width: 12, height: 12),
+                     CGSize(width: 16, height: 16),
+                     CGSize(width: 18, height: 18),
+                     CGSize(width: 21, height: 20),
+                     CGSize(width: 32, height: 24),
+                     CGSize(width: 32, height: 32)] {
+            XCTAssertTrue(
+                DisplayReplay.iconSized(CGRect(origin: .zero, size: size)),
+                "\(size) is an icon in the measured corpus")
+        }
+        let magnifier = CGRect(x: 417, y: 98, width: 48, height: 48)
+        XCTAssertFalse(DisplayReplay.iconSized(magnifier),
+                       "a 48×48 blit is Sherlock's magnifier, not an icon")
+        XCTAssertTrue(DisplayReplay.controlSized(magnifier),
+                      "and it lands on the untyped control plate instead")
+    }
+
     func testAllThreeRegionShapeStatesRenderTheSamePixels() throws {
         for (name, ext) in [("rectangular", [10, 0]),
                             ("irregular", [42, 0]),
