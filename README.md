@@ -131,23 +131,36 @@ owned by a *foreign* application turns out to be far less than that —
 measured, a **20× tax and no starvation at all** (scene median 21 ms
 idle → 413 ms), and acts work straight through it.
 
-**But the slow loops are NOT closed, and the cause is now named.** The
-9–12 second Mirror loops have a second cause, on our own side, and it is
-still there. The guest's act client waits for a target to take an armed
-act in two phases of 5 s each, spinning in a nested loop that **does not
-pump the wire** — so an act nobody takes holds the connection off for
-~10 s, and every scene request in that window reports the act's duration
-as its own. Measured: an act refused after 6.6 s and a scene request
-issued in the same instant answered in 6634 ms, the same number twice.
-The two 12-second numbers in Michelle's log are therefore **one event
-seen from both ends**, not two problems — and because the anchor plane's
-ten-second lease is renewed by the traffic that wait holds off, a long
-act lapses the lease the paragraph below repaired, and the next act
-refuses. Investigated 2026-08-06, **not fixed**: pumping inside an armed
-window is exactly the re-entrancy the no-hijack work exists to prevent,
-so it is a decision rather than a patch. See
-[docs/status.md](docs/status.md) and
-[docs/nested-loops.md](docs/nested-loops.md).
+**The slow loops had a second cause on our own side, and it is now
+fixed — by spending a safety argument.** The guest's act client waits for
+a target to take an armed act in two phases of 5 s each, and that wait
+**did not pump the wire**, so an act nobody takes held the connection off
+for ~10 s and every scene request in that window reported the act's
+duration as its own. Measured: an act refused after 6.6 s and a scene
+request issued in the same instant answered in 6634 ms, the same number
+twice — **one event seen from both ends**, not two problems. It also
+lapsed the anchor plane's ten-second lease, because renewal rides the
+traffic that wait held off, so the next act refused.
+
+The wait now pumps. Re-measured on the same shape: the act still costs
+its whole deadline (5.07 s — the machine still will not take it) and
+**80 scene requests were answered during it, median 65 ms**, where there
+used to be one at 6634 ms. A taken act is unchanged at 0.08–0.20 s.
+
+**What it cost is written down rather than buried.** Pumping inside an
+armed window is exactly the re-entrancy the no-hijack work exists to
+prevent: NOW's act plane is a single cell, and until now the only thing
+keeping a second request out of it was that this wait did not service the
+wire. That protection was traded away deliberately, with Michelle's
+approval, for the latency above. What stands in its place is narrower —
+a one-act-at-a-time interlock that refuses a second act with `act-busy`
+before it can write a field, watched firing on a machine. It guards the
+act cell and nothing else; scene walks, census and file transfers now all
+run while a trap patch is live in every process, and nothing has measured
+whether that is safe. See
+[docs/no-hijack-criterion.md](docs/no-hijack-criterion.md) (the box at
+the top), [docs/nested-loops.md](docs/nested-loops.md) and
+[docs/open-issues.md](docs/open-issues.md). Emulator only; no metal.
 
 **Acts stop binding when the host's cycle runs long.** The anchor
 plane's OWNER lease is 10 seconds and only a `scene.request` renewed it,
@@ -158,9 +171,9 @@ appeared to refuse. Nothing was taking the planes down; the host had
 stopped asking inside the lease. Renewal now rides any inbound host
 frame, and a scene waits briefly for the arm echo instead of walking
 blind and reporting the blindness as an empty screen. It is not the
-*whole* of them, as this once claimed: the act wait above lapses the
-same lease from the guest's side, so the fix removed one way in and left
-another.
+*whole* of them, as this once claimed: the act wait above lapsed the
+same lease from the guest's side. That second way in is closed too, since
+the wait now pumps and the traffic that renews the lease runs during it.
 
 **An alert rendered the wrong buttons, and they did nothing.** Recorded
 as "the wrong default button" — it was wrong buttons, dead clicks and a
@@ -188,11 +201,9 @@ Apple case; and Windows ▸ Workshop timed out for a hidden application,
 because hiding NOW does not move the front process and `SelectWindow`
 shows nothing for a hidden app.
 
-Three things measured the same day and **not** fixed: a background
+Two things measured the same day and **not** fixed: a background
 application cannot be armed for content capture AT ALL (nothing can make
-a process pump that is not being scheduled); the act wait above still
-blocks the wire for up to ten seconds, which is the named and open cause
-of the slow loops; and every number above is
+a process pump that is not being scheduled); and every number above is
 from an emulator — a PowerBook 1400c is far slower, and for the wire the
 emulator likely understates the win rather than flattering it.
 

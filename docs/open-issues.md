@@ -173,6 +173,60 @@ gap rather than a formality:
   that changes nothing. Those are the ordinary failures the plane has
   always had.
 
+### Measured, 2026-08-06, and the interlock was watched firing
+
+Session-private clone, VM `/private/tmp/nowvm-actpump`, wire **5630**,
+anchor 1740, guest build **`04f5dba645ad 2026-08-06T21:23:11Z`** —
+asserted against the hello before any number below was believed.
+Instrument: `tools/local-act-pump.py`, which encodes the procedure and
+refuses a wrong build, an unarmed anchor plane and an act it could not
+aim. Emulated G4; **no metal**.
+
+The act made to run its full deadline is `ctlact` at a control in NOW's
+own window while another process is in front — a click in a background
+window activates it rather than reaching `TrackControl`, so the request
+expires. Its answer is `act-timeout` (one phase), not `act-not-taken`.
+
+**1. The queue is collapsed.**
+
+| | before (2026-08-06, guest `711abdbd25ec`) | after (guest `04f5dba645ad`) |
+|---|---|---|
+| the act | 6.6 s | **5.07 s** — still its whole deadline, as it must be |
+| scenes answered during it | **one, in 6634 ms** | **80, median 65 ms** (min 18, max 146) |
+
+The act's own cost did not move and was not supposed to: the machine
+still will not take it. What moved is that the wire is no longer inside
+that wait with it.
+
+**The polling is not what makes the act expire**, which had to be ruled
+out before the polled number meant anything: the same act run **silently**,
+with nothing asked of the guest while it waited, took 5.09 s and 5.00 s.
+
+**A taken act is still fast.** `menuact` File → New Folder against the
+front Finder: **0.15 s, 0.20 s, 0.08 s**, `ok` each time. Pumping did not
+tax the path that works.
+
+**2. The lease is held across a full-deadline act.** `requested=7,
+active=7` before and after, and the NEXT act answered `act-timeout` — its
+own deadline — rather than `act-plane-absent`. **Read this narrowly:**
+this act is ONE 5 s phase, and the lease is 10 s, so this run did not
+reproduce the >10 s lapse it is supposed to prevent. What it does show is
+the renewal path running — 80 host requests were answered *inside* the
+act window, and every one of them renews. A two-phase act could not be
+produced on this clone, because phase 1 never succeeded against the only
+target available.
+
+**3. The interlock fired, on a machine.** Two `ctlact`s sent back to back
+with no read between them:
+
+    5.02s  first  -> act-timeout
+    5.02s  second -> act-busy
+
+That single line is two findings at once. The second act **reached the
+guest's dispatcher while the first was armed** — impossible before the
+pump, and the exact hazard this trade bought — and it was **refused
+before it could write a field**. Both halves watched rather than argued.
+
 ### What is proven, and it is less than it sounds
 
 - The latch's interleaving is **executed**:
@@ -185,14 +239,35 @@ gap rather than a formality:
   is present, `now_act_cell()` refuses on the latch, submit claims,
   withdraw releases, and every verb reports `now_act_why_no_cell()`
   rather than a hardcoded "no extension". Six mutations were watched
-  failing, including two that first passed and had to have the check
-  strengthened.
-- **Nothing about two overlapping acts has been observed on a Macintosh
-  or in an emulator.** The latch is untried, not proven. `Verification
-  status: tested` for the latch; see the measurement section of the
-  entry below for what the pump itself was measured to do.
+  failing, two of which first PASSED and forced the check to be
+  strengthened (a paired idempotence check that a toggling release
+  survived; a fixed-width window that reached past `ditemact`'s
+  not-fired exit into the success path's withdraw).
+- **What a busy refusal PROTECTS is still unproven.** The run above shows
+  the latch refusing. It does not show what would have happened without
+  it, because that would mean removing the guard on a live machine and
+  watching an armed request's own synthesised click escape into the
+  interface. Nobody has done that, here or upstream.
+- **Michelle's own Set Time Zone case was not reproduced.** Foreign
+  processes report `not-observed` on this clone (the anchor-bind defect
+  already in this ledger), so no control panel could be driven. What the
+  reading above establishes is the mechanism, not her instance. Separately,
+  code reading says a Mirror button click becomes `ditemact`, which is
+  **single-phase** — the resident half sets `fired` at serve time
+  (`ext/src/now_ext_act.c`), so a dialog dismissal has no phase 2 to burn.
+  A slow dismissal therefore has to have been queued behind something
+  else's act wait, or refused off a lapsed lease — both of which are what
+  the pump addresses. That is inference from the source, not a
+  measurement of her machine.
 
-## INVESTIGATED, NOT FIXED: the twelve seconds under a modal is NOT starvation — it is NOW's own act wait, which does not pump the wire (2026-08-06)
+## INVESTIGATED, then FIXED the same day: the twelve seconds under a modal is NOT starvation — it is NOW's own act wait, which did not pump the wire (2026-08-06)
+
+> The investigation below stands as written and its numbers are the
+> BEFORE. §6's first recommendation was taken: `act_yield` now pumps.
+> The cost that made it a decision rather than a patch — the no-hijack
+> argument's single-cell protection — was paid, and the entry above
+> carries what replaced it, what it does not cover, and the after
+> numbers.
 
 Investigation only; nothing product-facing was changed. Michelle's live
 session (host `87960f70`, guest `711abdbd25ec`) with Date & Time's **Set

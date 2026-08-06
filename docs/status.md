@@ -625,9 +625,9 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   *foreign* case that turns out to be merely expensive. The number that
   was doing the work in the "12 seconds under a modal" story is the next
   bullet, and it is not a modal at all.)*
-- **INVESTIGATED, NOT FIXED: the 9–12 second Mirror loops have a named
-  cause on our own side, and it is still there** (2026-08-06, emulator,
-  investigation only — nothing product-facing was changed). The guest's
+- **FIXED, emulator only: the 9–12 second Mirror loops had a named cause
+  on our own side, and closing it spent a safety argument** (2026-08-06).
+  The guest's
   act client waits for a target to take an armed act in two phases,
   `now_act_submit` then `now_act_await_fired`, each bounded by
   `kNowActDeadlineTicks` = 300 ticks = **5 s**, and each spinning on
@@ -646,15 +646,36 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   talking" repaired, and the next act refuses `plane absent` — which is
   the "refused the first time, worked the second" report.
 
-  **Why it is not simply fixed.** Making `act_yield` pump means serving
-  requests while an act is armed, which is exactly the re-entrancy the
-  no-hijack work exists to prevent, so it needs a guard and a decision
-  rather than a one-line edit. It is Michelle's call. A second thing is
-  open beside it: **the act ceiling is stated nowhere once** — 5 s per
-  phase here, against plan 014's 20 s host watchdog, which was chosen
-  against the *script* ceiling with nothing naming this one.
-  [nested-loops.md](nested-loops.md) now carries the row this loop spent
-  weeks missing, and [open-issues.md](open-issues.md) the measurement.
+  **What fixing it cost.** `act_yield` now calls `now_wire_pump()`.
+  Re-measured on the same shape (guest `04f5dba645ad`, wire 5630): the
+  act still runs its whole deadline — **5.07 s**, as it must, because the
+  machine still will not take it — and **80 scene requests were answered
+  during it, median 65 ms**, where there used to be one at 6634 ms. A
+  taken act is unchanged at 0.08–0.20 s, and the owner lease read 7/7
+  across the act.
+
+  But pumping inside an armed window means serving requests while an act
+  is armed, which is exactly the re-entrancy the no-hijack work exists to
+  prevent — and NOW's act plane is a **single cell** whose only
+  protection was that this wait did not service the wire.
+  [no-hijack-criterion.md](no-hijack-criterion.md) said so in writing and
+  named this change as the one that would remove it. **Michelle took the
+  decision and the protection was spent.** What stands in its place is
+  narrower: a one-act-at-a-time interlock that refuses a second act with
+  `act-busy` before it can write a field. It was watched firing on a
+  machine — two `ctlact`s sent back to back answered `act-timeout` and
+  `act-busy` — which is simultaneously proof that the new hazard is real
+  and that the guard meets it. It covers the act cell and **nothing
+  else**: scene walks, census and file transfers now all run while a trap
+  patch is live in every process, and nothing has measured whether that
+  is safe.
+
+  A second thing is still open beside it: **the act ceiling is stated
+  nowhere once** — 5 s per phase here, against plan 014's 20 s host
+  watchdog, which was chosen against the *script* ceiling with nothing
+  naming this one. [nested-loops.md](nested-loops.md) carries the row
+  this loop spent weeks missing, and [open-issues.md](open-issues.md)
+  both measurements and what the trade does not cover.
 - **Twelve verbs render correctly at the guest's console and cannot be
   given an argument** (2026-08-06, emulator). `console_model.c` handles
   27 verbs with a `strcmp` of its own and falls through for eighteen
@@ -685,9 +706,11 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   nothing in the handshake to fix. *(2026-08-06, later: "nothing to fix"
   is right about the handshake and wrong about the **wait**. When the
   arm does not complete, the client sits in `act_yield` for its full 5 s
-  per phase without pumping the wire — so the case this bullet describes
-  is precisely the case that costs the Mirror ten seconds. See the act
-  wait bullet above; the fast path was never the problem.)*
+  per phase — so the case this bullet describes is precisely the case
+  that cost the Mirror ten seconds. That wait now pumps the wire, so it
+  no longer costs the Mirror anything but the act's own time. The
+  underlying inability to arm a background application is unchanged. See
+  the act wait bullet above; the fast path was never the problem.)*
 - **Ten of the twelve capabilities added on this arc have never crossed a
   real wire.** They are `now_hardware_census`, `now_machine_facts`,
   `now_software_inventory`, `now_catalog_search`, `now_guest_log_tail`,
