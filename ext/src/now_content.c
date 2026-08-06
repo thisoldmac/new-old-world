@@ -947,6 +947,21 @@ static void content_repair(NowPeekU32 a5, NowPeekU32 window,
  * emulated G4 this probe runs on, and the reason this mode is an
  * experiment rather than a shipping path.
  */
+/* Is this address safe to READ `size` bytes from? Physical RAM only,
+   from the first page to MemTop, and even-aligned. The scan reads
+   pointers out of arbitrary heap bytes; every one of them is an
+   arbitrary 32-bit value until this says otherwise, and an unmapped
+   read is a bus error taken inside somebody else's application. */
+static Boolean content_probe_addr_ok(NowPeekU32 addr, unsigned long size)
+{
+    NowPeekU32 top = (NowPeekU32)LMGetMemTop();
+
+    return addr >= 0x1000UL
+        && (addr & 1UL) == 0
+        && top > 0x1000UL
+        && addr <= top - (NowPeekU32)size;
+}
+
 static void content_probe_service(NowPeekU32 a5, NowPeekU32 generation)
 {
     Ptr pm;
@@ -1037,11 +1052,21 @@ static void content_probe_service(NowPeekU32 a5, NowPeekU32 generation)
                     PixMapHandle ph = cand->portPixMap;
                     PixMap *pm2;
 
-                    if (ph == NULL || ((unsigned long)ph & 1) != 0) {
+                    /* THE CRASH THIS EXISTS TO PREVENT, watched
+                       2026-08-06: the Finder quit unexpectedly during a
+                       scan. `ph` is read out of ARBITRARY heap bytes, so
+                       it is any 32-bit value at all; NULL and odd were
+                       the only checks, and a wild pointer into unmapped
+                       space is a bus error taken inside the application
+                       we are guests in. Reads are only safe within RAM,
+                       and nothing but a range check makes them so. */
+                    if (!content_probe_addr_ok((NowPeekU32)ph,
+                                               sizeof(Ptr))) {
                         continue;
                     }
                     pm2 = (PixMap *)*(NowPeekU32 *)ph;
-                    if (pm2 == NULL || ((unsigned long)pm2 & 1) != 0) {
+                    if (!content_probe_addr_ok((NowPeekU32)pm2,
+                                               sizeof(PixMap))) {
                         continue;
                     }
                     matched = now_content_probe_pixmap_match(
