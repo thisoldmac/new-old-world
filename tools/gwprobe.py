@@ -24,8 +24,12 @@ from wire_limits import (CHANNEL_CONTROL as CONTROL,  # noqa: E402
                          FLAG_END as END,
                          WIRE_CONTRACT_REVISION)
 
+class WrongGuest(RuntimeError):
+    """The machine that answered is not the build under test."""
+
+
 class Guest:
-    def __init__(self, port, wait=90, timeout=45):
+    def __init__(self, port, wait=90, timeout=45, expect_build=None):
         srv = socket.socket()
         srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         srv.bind(("127.0.0.1", port))
@@ -41,6 +45,20 @@ class Guest:
         hello = self.read_frame()[3]
         self.hello = json.loads(hello.decode("utf-8", "replace"))
         print("guest: %s" % self.hello.get("build"), flush=True)
+        # WHO ANSWERED. Every QEMU guest on this Mac sees the host as
+        # 10.0.2.2, so any session's VM, running any branch's build, can
+        # dial this listener - and one did, voiding two findings
+        # (open-issues.md, 2026-08-06). A driver that cannot name the
+        # build that answered produces claims about an unidentified
+        # machine; with --expect-build it refuses them instead.
+        if expect_build:
+            got = (self.hello.get("build") or "").split()[0]
+            if got != expect_build:
+                self.sock.close()
+                raise WrongGuest(
+                    "guest build %r is not the build under test %r - "
+                    "another session's VM answered this listener"
+                    % (got, expect_build))
         self.send_json({"type": "hello", "contract": WIRE_CONTRACT_REVISION,
                         "side": "host",
                         "version": "0", "name": "gwprobe", "chunk": 4096})
@@ -146,13 +164,33 @@ def main():
                          "arm-time cursor, and a single drain then resyncs "
                          "to live and answers empty - measured 2026-08-06, "
                          "0 records against 915 recorded ops.")
+    ap.add_argument("--expect-build",
+                    help="refuse any guest whose hello build stamp does "
+                         "not begin with this. Pass 'auto' to read the "
+                         "hash from THIS checkout's build products (the "
+                         "same derivation scripts/build-guests uses), so "
+                         "the value is read rather than typed")
     ap.add_argument("--outdir", default=os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "gwprobe-out"))
     a = ap.parse_args()
 
     outdir = os.path.join(a.outdir, a.label)
     os.makedirs(outdir, exist_ok=True)
-    g = Guest(a.port)
+    expect = a.expect_build
+    if expect == "auto":
+        import hashlib
+        repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        out = os.path.join(os.environ.get("TMPDIR", "/tmp"),
+                           "now-guest-builds",
+                           hashlib.sha1(repo.encode()).hexdigest()[:12])
+        gen = os.path.join(out, "ppc", "build_stamp_gen.h")
+        with open(gen) as f:
+            for line in f:
+                if "NOW_SRC_HASH" in line:
+                    expect = line.split('"')[1]
+                    break
+        print("expecting build %s (from %s)" % (expect, gen), flush=True)
+    g = Guest(a.port, expect_build=expect)
 
     if a.reveal:
         print(json.dumps(g.command("reveal", {"target": a.reveal})),
