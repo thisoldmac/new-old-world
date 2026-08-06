@@ -54,6 +54,64 @@ final class MirrorCycleClocksTests: XCTestCase {
                        + "total_ms=6500 windows=3 elements=40")
     }
 
+    /// A cycle from a guest that reports phases carries them into the
+    /// measurement line, sorted, with the breakdown's own cost beside
+    /// them. Sorted because two runs of a measurement grammar whose field
+    /// order changes cannot be diffed, and diffing runs is the point.
+    func testPhasesRideTheMeasurementLineInAStableOrder() {
+        let clocks = MirrorCycleClocks(
+            requestedAt: Date(timeIntervalSince1970: 0),
+            deliveredAt: Date(timeIntervalSince1970: 1),
+            publishedAt: Date(timeIntervalSince1970: 1),
+            idleBefore: 0, semantics: true, interaction: true,
+            outcome: "ok", windows: 1, elements: 7,
+            phases: .init(us: ["controls": 916_000, "menubar": 2_100,
+                               "bind": 40],
+                          clockReads: 52, clockUs: 104, faults: 0))
+
+        let line = clocks.baselineLine
+        XCTAssertTrue(line.hasSuffix(
+            "ph_bind_us=40 ph_controls_us=916000 ph_menubar_us=2100 "
+            + "phcost_us=104 phreads=52"), line)
+        /* Absent rather than `phfaults=0`: a field that is always zero
+           teaches a reader to stop seeing it, and this one only means
+           anything when it is not. */
+        XCTAssertFalse(line.contains("phfaults"), line)
+    }
+
+    /// The absence rule, on this side of the wire. A guest too old to
+    /// report phases must leave the line exactly as it was — not eight
+    /// zeroes, which would read as "the walk did nothing".
+    func testAGuestThatReportsNoPhasesAddsNothingToTheLine() {
+        let clocks = MirrorCycleClocks(
+            requestedAt: Date(timeIntervalSince1970: 0),
+            deliveredAt: Date(timeIntervalSince1970: 1),
+            publishedAt: Date(timeIntervalSince1970: 1),
+            idleBefore: 0, semantics: true, interaction: true,
+            outcome: "ok", windows: 1, elements: 7, phases: nil)
+
+        XCTAssertFalse(clocks.baselineLine.contains("ph_"),
+                       clocks.baselineLine)
+        XCTAssertTrue(clocks.baselineLine.hasSuffix("elements=7"),
+                      clocks.baselineLine)
+    }
+
+    /// A seam fault means one of the numbers above it is wrong, so it is
+    /// stated loudly when it happens.
+    func testASeamFaultIsCarriedRatherThanSwallowed() {
+        let clocks = MirrorCycleClocks(
+            requestedAt: Date(timeIntervalSince1970: 0),
+            deliveredAt: Date(timeIntervalSince1970: 1),
+            publishedAt: Date(timeIntervalSince1970: 1),
+            idleBefore: 0, semantics: true, interaction: true,
+            outcome: "ok", windows: 1, elements: 7,
+            phases: .init(us: ["windows": 10], clockReads: 4, clockUs: 8,
+                          faults: 2))
+
+        XCTAssertTrue(clocks.baselineLine.contains("phfaults=2"),
+                      clocks.baselineLine)
+    }
+
     func testACycleThatNeverAnsweredIsStillRecordedAndNotAsZero() {
         let clocks = MirrorCycleClocks(
             requestedAt: Date(timeIntervalSince1970: 0),
