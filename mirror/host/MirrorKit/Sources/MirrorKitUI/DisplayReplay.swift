@@ -119,7 +119,10 @@ public enum DisplayReplay {
                erase and anything this pass drew under it is wiped. The
                big placeholders stay in this pass for the original
                reason - they must never cover text the guest reported. */
-            if Self.iconSized(frame) { continue }
+            /* Control-shaped blits are theme art, not missing content;
+               they are drawn as plates in the second pass, in stream
+               order, for the same reason icons are. */
+            if Self.iconSized(frame) || Self.controlSized(frame) { continue }
             drawUnavailableBits(in: draw, frame: frame)
             drew = true
         }
@@ -186,6 +189,9 @@ public enum DisplayReplay {
                     let draw = drawingContext()
                     draw.draw(Image(decorative: icon, scale: 1), in: frame)
                     drew = true
+                } else if Self.controlSized(frame) {
+                    drawControlPlate(in: drawingContext(), frame: frame)
+                    drew = true
                 }
                 // larger geometry was hatched before this pass
             case "rect", "rrect", "oval", "rgn":
@@ -210,6 +216,45 @@ public enum DisplayReplay {
             }
         }
         return drew
+    }
+
+    /// A blit the size and shape of an ordinary control.
+    ///
+    /// This exists because "Bitmap unavailable" was the wrong CLAIM for
+    /// most of what a control panel blits. Under Appearance, a themed
+    /// field, button or popup is DRAWN by blitting theme art — so Date
+    /// & Time's every field arrived as a small CopyBits and the replay
+    /// hatched each one as missing data. Nothing was missing: that
+    /// window is chrome the host can draw natively, and a hatch saying
+    /// otherwise is a false negative in the one direction that reads as
+    /// a broken mirror.
+    ///
+    /// The bound is shape-based rather than a whitelist: a themed
+    /// control is short and not window-spanning. Anything bigger keeps
+    /// the honest hatch, because at that size an unjoined blit really
+    /// is content we failed to reach.
+    static func controlSized(_ frame: CGRect) -> Bool {
+        frame.height >= 6 && frame.height <= 48
+            && frame.width >= 8 && frame.width <= 460
+            && !(frame.width > 200 && frame.height > 40)
+    }
+
+    /// A control-shaped blit, drawn as the Platinum plate it is: a face
+    /// with a light bevel. Deliberately NOT typed as field-or-button —
+    /// the drawing stream does not say which, and a plate is the honest
+    /// shape both share. The semantic plane is what knows the type, and
+    /// where it does, it draws over this.
+    private static func drawControlPlate(in ctx: GraphicsContext,
+                                         frame: CGRect) {
+        guard frame.width > 2, frame.height > 2 else { return }
+        ctx.fill(Path(frame), with: .color(Platinum.g1))
+        ctx.stroke(Path(frame.insetBy(dx: 0.5, dy: 0.5)),
+                   with: .color(Platinum.g4), lineWidth: 1)
+        var light = Path()
+        light.move(to: CGPoint(x: frame.minX + 1, y: frame.maxY - 1))
+        light.addLine(to: CGPoint(x: frame.minX + 1, y: frame.minY + 1))
+        light.addLine(to: CGPoint(x: frame.maxX - 1, y: frame.minY + 1))
+        ctx.stroke(light, with: .color(Platinum.g0), lineWidth: 1)
     }
 
     /// Roughly square and within the classic icon range (16×16 list rows
