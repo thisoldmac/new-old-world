@@ -1081,10 +1081,6 @@ static Boolean content_probe_scan(unsigned char *p, unsigned char *limit,
                     (NowContentU32)h, wl, wt, wr, wb);
             }
             if (!matched) {
-                if (cand->portRect.top != wt
-                    || cand->portRect.left != wl) {
-                    continue;
-                }
                 {
                     PixMapHandle ph = cand->portPixMap;
                     PixMap *pm2;
@@ -1105,6 +1101,22 @@ static Boolean content_probe_scan(unsigned char *p, unsigned char *limit,
                     if (!content_probe_addr_ok((NowPeekU32)pm2,
                                                sizeof(PixMap))) {
                         continue;
+                    }
+                    /* The weaker question first: does ANY port point
+                       at these pixels? Counted before the strict match
+                       so a zero here is a fact about the machine and a
+                       nonzero with no hit is a fact about this code. */
+                    if ((NowPeekU32)pm2->baseAddr == wbase
+                        && ((unsigned short)cand->portVersion & 0xC000U)
+                               == 0xC000U) {
+                        if (gBlock->probe_base_candidates == 0) {
+                            gBlock->probe_first_candidate = (NowPeekU32)cand;
+                            gBlock->probe_cand_l = cand->portRect.left;
+                            gBlock->probe_cand_t = cand->portRect.top;
+                            gBlock->probe_cand_r = cand->portRect.right;
+                            gBlock->probe_cand_b = cand->portRect.bottom;
+                        }
+                        gBlock->probe_base_candidates++;
                     }
                     matched = now_content_probe_pixmap_match(
                         (NowContentU16)cand->portVersion,

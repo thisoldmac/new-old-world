@@ -266,6 +266,18 @@ typedef struct {
        table before the scan looked. */
     NowContentU32 probe_last_match;
     NowContentU32 probe_already_ours;
+    /* THE DECISIVE COUNT, and it deliberately asks a WEAKER question
+       than the match does: how many CGrafPort-shaped blocks anywhere in
+       either heap have a pixmap pointing at the sighted pixels, rect
+       agreement not required. Zero means no port owns those pixels and
+       the semantic road is closed by mechanism rather than by a strict
+       comparison; nonzero means a port exists and the match was too
+       strict, which is a bug in the instrument and not an answer about
+       the application. Without this the two are indistinguishable. */
+    NowContentU32 probe_base_candidates;
+    NowContentU32 probe_first_candidate;
+    NowContentS16 probe_cand_l, probe_cand_t;   /* its portRect, so a  */
+    NowContentS16 probe_cand_r, probe_cand_b;   /* near-miss is legible */
 } NowContentBlock;
 
 /* ---- ring records --------------------------------------------------
@@ -384,7 +396,7 @@ _Static_assert(offsetof(NowContentBlock, arm_window)
 _Static_assert(offsetof(NowContentBlock, probe_pending_pixmap)
                    == 192 + kNowContentRingCap,
                "probe append offset");
-_Static_assert(sizeof(NowContentBlock) == 244 + kNowContentRingCap,
+_Static_assert(sizeof(NowContentBlock) == 260 + kNowContentRingCap,
                "block size");
 
 /* ---- the arm verdict (now_content_logic.c) -------------------------
