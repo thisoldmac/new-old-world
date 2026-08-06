@@ -469,7 +469,9 @@ static void content_record_bits(const BitMap *src_bits, const Rect *src_rect,
         return;
     }
     content_emit_state(port);
-    /* THE JOIN, probe mode only (013 A2.2): name the source port before
+    /* THE JOIN, record or probe mode (013 A2.2 — it was probe-only when
+       written, and the gate below has been content_mode_records() since
+       the trap patch landed): name the source port before
        the bits record that reveals its work. Each offscreen row's handle
        is dereferenced HERE, at the same instant the comparison runs -
        never stashed at hook time - because LockPixels relocates the

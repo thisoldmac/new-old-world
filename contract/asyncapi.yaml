@@ -4688,7 +4688,14 @@ components:
               the target's own context, so a world created, drawn and
               disposed inside a single event pass — which the chase
               cannot reach, and which is how Sherlock 2 and Appearance
-              draw — is hooked at creation instead. In this mode, a
+              draw — is hooked at creation instead. NOTE that the trap
+              patch, and the `blitsrc` / `worldborn` / `worlddied`
+              records, are NOT confined to probe mode: all of them are
+              gated on record mode OR probe mode, and the host arms with
+              `record`. Only the sight-then-chase scan is probe-only.
+              (Corrected 2026-08-06: this prose said probe-only, which
+              read as though the host's own arming mode got none of it.)
+              In either recording mode, a
               `bits` record whose source resolves to
               a port this plane hooked is PRECEDED by a `blitsrc` record
               naming that port (`srcPort`), which is the join the host
@@ -4746,10 +4753,10 @@ components:
               accounting and an `ops` array of records — each record's
               `op` is one of text / line / rect / rrect / oval / arc /
               poly / rgn / bits / comment / state, plus `blitsrc`
-              (probe mode only: carries `srcPort` and `srcPixmap`,
+              (record or probe mode: carries `srcPort` and `srcPixmap`,
               0x-hex strings, and joins the ops recorded under that
               offscreen port to the `bits` record that follows it) and
-              `worldborn` / `worlddied` (probe mode only: the resident's
+              `worldborn` / `worlddied` (record or probe mode: the resident's
               QDExtensions trap patch reporting an offscreen world
               hooked at CREATION and released at disposal — `world` is
               the port, and `worldborn` adds `pixmap` and `rect`.
