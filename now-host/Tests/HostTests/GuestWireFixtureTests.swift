@@ -56,6 +56,49 @@ final class GuestWireFixtureTests: XCTestCase {
                        "late confirmation keeps its earlier timeout")
     }
 
+    /// send_scene_same() in now-guest-ppc/src/core/wire.c, built across
+    /// several snprintf calls because its phases block loops over the
+    /// phase table. This is the answer a guest gives when the machine did
+    /// not change — the cheapest and most common one in the family, and
+    /// the only one that costs no transfer at all.
+    func testSceneSameAsTheGuestWritesIt() throws {
+        let json = """
+        {"type":"scene.same","id":7,"seq":412,"digest":"9017d2cd",\
+        "capturedAt":712345.5,"walkMs":4,"phases":{"us":{"enumerate":812,\
+        "bind":1904,"windows":2201,"controls":63,"menubar":1044,\
+        "semantics":0,"refs":190,"encode":589},"clockReads":42,\
+        "clockUs":21,"faults":0},"settlements":[]}
+        """
+        guard case .sceneSame(let same) = try decode(json) else {
+            return XCTFail("not a scene.same")
+        }
+        XCTAssertEqual(same.id, 7)
+        XCTAssertEqual(same.seq, 412, "the producer's counter still moves")
+        XCTAssertEqual(same.digest, "9017d2cd",
+                       "the digest is restated rather than implied, so a "
+                           + "consumer can prove the answer is about the "
+                           + "baseline it named")
+        XCTAssertEqual(same.walkMs, 4)
+        XCTAssertEqual(same.settlements?.count, 0)
+    }
+
+    /// The same message from a guest with no clock installed. `phases` is
+    /// ABSENT rather than zeroed, and the settlement tail is empty — which
+    /// is the shortest form the guest can emit, and the one whose trailing
+    /// comma had to be stepped back over.
+    func testSceneSameWithoutPhasesAsTheGuestWritesIt() throws {
+        let json = """
+        {"type":"scene.same","id":8,"seq":413,"digest":"deadbeef",\
+        "capturedAt":712399.5,"walkMs":3}
+        """
+        guard case .sceneSame(let same) = try decode(json) else {
+            return XCTFail("not a scene.same")
+        }
+        XCTAssertNil(same.settlements,
+                     "absent is not empty: an older guest said nothing about "
+                         + "settlements, it did not report none")
+    }
+
     /// now_wire_chat_send() in now-guest-ppc/src/core/wire.c, its prompt
     /// carrying the one guest-emitted chat string with arbitrary human
     /// text. Pinned for exec.output's reason: escaping is the one place
