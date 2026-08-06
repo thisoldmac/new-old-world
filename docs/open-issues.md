@@ -137,11 +137,60 @@ through the Toolbox from inside our own process, and the anchor bind is
 the FOREIGN memory reader. They are not the same source and the self path
 does not wait for the plane.
 
-So no scene the guest emits in this sequence is missing its menu bar, the
-host's decode and reduce keep it, and the empty bar is somewhere between
-that projection and the pixels. Settling it needs someone who can watch
-the Mirror's own window; two passes over the wire could not, and neither
-guessed.
+**And the RENDERER is cleared too, offscreen** (third pass). `RenderShot`
+rasterises the same `SceneRenderer` the Mirror's window uses, with no
+screen involved, so the last stretch could be tested after all. The two
+live documents are now fixtures —
+`now-host/Tests/HostTests/Fixtures/now-scene-self-hidden-but-front.json`
+and `…-front-visible.json`, captured three seconds either side of a hide
+on guest build `bf4987c6eca1` — and `MirrorMenubarRenderTests` renders
+them and counts the ink in the menu-title band:
+
+| document | ink in the title band |
+|---|---|
+| hidden-but-front (her exact state) | **705** |
+| front and visible | **705** |
+| the same document with `menubar` stripped, as the negative control | **77** |
+
+So the renderer draws all seven titles for the document she was looking
+at. The 77 is worth knowing on its own: it is the Apple glyph
+`shouldSynthesizeAppleMenu` falls back to when a scene carries no menus
+at all — **a Mirror bar showing an apple and nothing else is exactly what
+"the menu is empty" looks like**, which says the scene the window was
+drawing had no menubar even though the one that arrived did.
+
+**What is left, and what would tell them apart.** Every static stage is
+now cleared by a test, so the remaining candidates are all live state in
+the running app, and none of them is worth guessing between:
+
+- **The window was drawing an older projection than the document that had
+  just arrived.** `NOWMirrorSource.scene` is
+  `shadowEngine?.snapshot?.scene ?? decoded`, so a projection that had not
+  taken the new observation would be drawn instead of it.
+- **A plane toggle.** `planePolicyDidChange` republishes from the engine's
+  snapshot; a scene projected under a different plane policy is a
+  different scene.
+- **Nothing retained yet.** `reduceMenubar` retains a previous record when
+  no menubar claim is complete — retention can only KEEP a bar, never
+  empty one, unless the first scene of that Mirror session had none.
+
+The instrument that separates them already existed and **said nothing**:
+`MirrorEngineDiagnostics` compares the visible scene against the engine's
+projection on every cycle and names the disagreeing field — including
+`menubar` — into a 64-entry ring that was never logged, never shown in
+the Diagnostics pane and never exported, so its answer died with the
+process. It now writes each difference to `HostLog` (`mirror` area, warn
+level), which means the NEXT reproduction leaves a line in
+`~/Library/Logs/` saying whether the projection and the arriving document
+disagreed about the menu bar at that second — the first candidate
+confirmed or eliminated without anyone watching. If that line is absent
+while the bar is empty, the projection matched and the third candidate is
+the one to chase.
+
+Her two details both point the same way and are worth carrying: it is the
+FIRST hide after launch and it self-heals on an application cycle, so it
+is transitional rather than steady — and a cycle is exactly what forces a
+fresh projection.
 
 ## Set Time Zone: the acts reach the modal and apply; the LIST is what is missing (2026-08-06)
 
