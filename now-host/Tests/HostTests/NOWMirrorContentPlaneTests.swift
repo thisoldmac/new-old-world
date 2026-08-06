@@ -407,6 +407,41 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
                        "an untouched colour is not restored")
     }
 
+    /// The control run's own drain, captured live off a mac99 guest on
+    /// 2026-08-06 (tools/gwprobe.py, label control-join-3): one rebuild
+    /// burst of the loop applet's GWorld — six 'offscreen row' texts at
+    /// pens the applet's source states outright — then the blitsrc+bits
+    /// pair that reveals it. The join must place all six texts and leave
+    /// no hatch. This is the two halves meeting on real bytes, not on a
+    /// hand-typed fixture.
+    func testControlCaptureJoinsSixOffscreenRowsIntoTheWindow() throws {
+        let url = try XCTUnwrap(Bundle.module.url(
+            forResource: "qdtrace-drain-blitsrc-control",
+            withExtension: "json", subdirectory: "Fixtures"))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: url)) as? [String: Any])
+        let capture = try XCTUnwrap(QDTraceDecode.drain(object))
+        XCTAssertTrue(capture.recordCountAgrees,
+                      "the captured drain decodes whole")
+
+        var value = try scene(address: 0x1e9431f0)
+        value.windows[0].psn = "0.35782658"
+        for index in value.windows.indices where index != 0 {
+            value.windows[index].psn = "0.99999999"
+        }
+        let model = plane()
+        let update = model.apply(capture, to: value)
+
+        let display = try XCTUnwrap(update.scene.windows[0].display)
+        XCTAssertEqual(display.filter { $0.op == "text" }.map(\.text),
+                       Array(repeating: "offscreen row", count: 6))
+        XCTAssertFalse(display.map(\.op).contains("bits"),
+                       "the joined composite replaced the hatch")
+        XCTAssertEqual(display.first { $0.op == "text" }?.pen, [14, 24],
+                       "the first row lands at the applet's own pen")
+        XCTAssertTrue(update.sentence.contains("joined 1 composite"))
+    }
+
     func testProcessSerialParsesOnlyTheTwoPartWireShape() {
         XCTAssertEqual(NOWMirrorContentPlane.serial("0.29360131")?.hi, 0)
         XCTAssertEqual(NOWMirrorContentPlane.serial("0.29360131")?.lo,

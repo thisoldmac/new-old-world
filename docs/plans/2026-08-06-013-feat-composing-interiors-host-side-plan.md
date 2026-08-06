@@ -138,6 +138,18 @@ not call `RecoverHandle` on `src_bits` (it searches the current zone and
 the locked record is not in one). See
 `gworld-offscreen-ports-are-hookable`.
 
+**CORRECTED 2026-08-06, by the control run.** The same-instant compare
+above is necessary but NOT sufficient: the record the bits bottleneck
+receives is a **copy** of the source PixMap, not the GWorld's own —
+`loop.c`'s blit of `*pix` arrived at odd address `0x1eb6aaae` while the
+live deref sat elsewhere — so pointer identity never fired and zero
+`blitsrc` records crossed the wire against a hooked, drawing GWorld.
+The working resolve keeps identity as the cheap first test and falls
+back to **shape** via `now_content_probe_pixmap_match` (the same route
+the chase itself was forced onto), with the row's port and pixmap
+geometry read through the deref at the same instant. Two routes naming
+different rows refuse, like any other ambiguity.
+
 **2. Emit the source record in probe mode only, for now.**
 
 `content_record_bits` runs in Record mode too, so the naive change

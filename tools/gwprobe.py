@@ -130,6 +130,13 @@ def main():
     ap.add_argument("--mode", default="probe")
     ap.add_argument("--ttl", type=int, default=7200)
     ap.add_argument("--settle", type=float, default=10.0)
+    ap.add_argument("--drain-seconds", type=float, default=0.0,
+                    help="keep draining LIVE for this long after the ring "
+                         "empties. A source that draws faster than the ring "
+                         "holds (the loop control blits every pass) laps the "
+                         "arm-time cursor, and a single drain then resyncs "
+                         "to live and answers empty - measured 2026-08-06, "
+                         "0 records against 915 recorded ops.")
     ap.add_argument("--outdir", default=os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "gwprobe-out"))
     a = ap.parse_args()
@@ -297,17 +304,19 @@ def main():
     # across arms and a drain from 0 replays the previous phase.
     cursor = ring_floor
     recs = []
-    for i in range(64):
+    live_until = time.time() + a.drain_seconds
+    for i in range(256):
         d = g.command("qdtrace", {"op": "drain", "cursor": str(cursor),
                                   "maxRecords": 500})
         out = d.get("output", {}).get("qdtrace", {})
         recs.extend(out.get("ops", []))
         nxt = out.get("nextCursor", cursor)
         more = out.get("more", False)
-        if nxt == cursor or not more:
-            cursor = nxt
-            break
         cursor = nxt
+        if not more:
+            if time.time() >= live_until:
+                break
+            time.sleep(0.4)
     status2 = g.command("qdtrace", {"op": "status"})
     g.command("qdtrace", {"op": "stop"})
 
