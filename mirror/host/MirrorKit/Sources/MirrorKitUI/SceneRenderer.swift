@@ -1373,8 +1373,12 @@ public struct SceneRenderer {
             let rowFrame = CGRect(x: body.minX,
                                   y: body.minY + CGFloat(rowIndex) * rowHeight,
                                   width: body.width, height: rowHeight)
+            /* The selected row is filled with the MEASURED highlight, not
+               with the chrome grey it used to borrow. 0xCCCCCC was the
+               Gray Space theme's answer; this machine's default scene
+               writes 0xCCCCFF. */
             if rowCells.contains(where: \.selected) {
-                clipped.fill(Path(rowFrame), with: .color(Platinum.g2))
+                clipped.fill(Path(rowFrame), with: .color(Platinum.highlight))
             }
             for column in 0..<columnCount {
                 let cellWidth = body.width / CGFloat(columnCount)
