@@ -1,0 +1,21 @@
+{
+  "receipts": [
+    {
+      "at": "2026-08-06T01:10:11-0400",
+      "branch": "claude/ext-commit-gate",
+      "commit": "3a2d434551007831b96f6e996c28404593296ce4",
+      "extBuildFingerprint": "bb95520ae51365c053f56d57d86bb10af09629c3",
+      "extDigest": "4cb1e7e3c0c48aa02ad984af097e2ccd3932a048",
+      "image": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "imageBytes": 629866496,
+      "imageSha256": "46a51dcd0337baf3918a1fec6f2987bacbdf174d3dc28ffee61e04430bd5850c",
+      "kind": "bake",
+      "previousImage": "now-mirror-stage.qcow2.bak-20260806-2",
+      "qemuImgCheck": "clean",
+      "residentCapabilities": 63,
+      "residentLifecycle": "active",
+      "shutdown": "guest-clean",
+      "sourceManifest": "41675da7f7c4007c45e3f173923888299321ded0"
+    }
+  ]
+}

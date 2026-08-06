@@ -2564,6 +2564,55 @@ Future extension changes must update and cleanly shut down this stage image
 before a Mirror sweep; merely copying a new INIT into a running clone does not
 change the resident code under test.
 
+**That rule went unfollowed for three days, and is now enforced
+(2026-08-06).** On 6 August the image on disk was still the 3 August one
+while six extension commits had landed that day — the re-armed liveness
+Time Manager vehicle, its ABI shim, the MacTCP `.IPP` probe. Every session
+cloned the stale image, staged a fresh build into a throwaway clone and
+discarded the clone, which is exactly the mistake the paragraph above
+names. The rule was written and nothing checked it, so the *verified*
+oracle went stale in silence: any sweep started from an old resident with
+no warning, and a green sweep would have said nothing about the code
+anybody was working on.
+
+The gate is now three pieces, and the sequence a resident change follows:
+
+- `scripts/bake-ext-image` — clone the oracle, stage this checkout's ext
+  and app, cold boot so the INIT loads, ask the **guest** `mirror` and
+  require lifecycle `active`, the expected capability word and a
+  `buildFingerprint` equal to the local build's, then a guest-clean
+  shutdown (`tools/shutdown-guest.py`, never a QMP `quit`), `qemu-img
+  check`, `.bak-YYYYMMDD` of the old image, install, receipt. Any failure
+  installs nothing and leaves the VM up.
+- `ext/stage-receipts.json` — the repo-tracked receipts. Each bake records
+  the source digest, the guest-reported fingerprint, the image sha256, the
+  `qemu-img check` result and that the shutdown was guest-clean.
+- `tools/ext-bake-gate`, from `.githooks/pre-commit` — refuses any commit
+  staging `ext/` or `contract/peek_table.h` unless the newest receipt is a
+  bake of exactly that source. `TBT_DEFER_EXT_BAKE=1` with
+  `TBT_DEFER_EXT_BAKE_REASON="…"` defers it and writes the reason into the
+  receipts file, so a deferral lands as a written decision in the same
+  commit as the work.
+
+Two images were installed on 2026-08-06. The hand-run bake that found the
+staleness produced sha256
+`62be7be4d73a848f9d72818f42c879df7b4dfdfc83a18f6fdd2779529b297eae` and
+preserved the 3 August one as `.bak-20260806`; the first run of
+`scripts/bake-ext-image` then produced sha256
+`46a51dcd0337baf3918a1fec6f2987bacbdf174d3dc28ffee61e04430bd5850c`,
+keeping the previous as `.bak-20260806-2`. That image is the one
+`ext/stage-receipts.json` certifies: the guest answered `mirror` with
+lifecycle `active`, capabilities 63 and buildFingerprint
+`bb95520ae51365c053f56d57d86bb10af09629c3`, shut itself down in three
+seconds, and `qemu-img check` found no errors.
+
+**Still stale for one branch, and this is the gate working rather than a
+defect.** `claude/012-resident-transport` gives the resident its own
+MacTCP connection and a sixth plane — capability word 127, not 63 — so the
+image above does not contain that resident. The first commit touching
+`ext/` on a branch carrying it will be refused until `scripts/bake-ext-image`
+runs there, which is exactly the warning nobody got on 3–6 August.
+
 ## CYCLE 24 RED BASELINE; FIX BUILT, NOT UX-VERIFIED (2026-08-03)
 
 Cycle 24 was driven through the uniquely identified native C24 Mirror and

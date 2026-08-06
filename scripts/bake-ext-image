@@ -1,0 +1,248 @@
+#!/usr/bin/env bash
+# Bake the current resident into the shared Mirror stage image, and write
+# the receipt that lets the commit gate believe it happened.
+#
+#     scripts/bake-ext-image
+#     NOW_WIRE_PORT=5311 scripts/bake-ext-image     # pick your own ports
+#
+# From a worktree OUTSIDE the TimBotTu tree (agents often work in
+# /private/tmp, because a deep worktree path overflows the 104-byte UNIX
+# socket cap), two things do not come for free: `.env.lab` is gitignored
+# and must be copied in, and `NOW_LAB_ROOT` must name the TimBotTu clone —
+# spin-up-ppc finds the emulator instruments by walking UP, and there is
+# nothing above /private/tmp. Both fail loudly rather than baking nothing.
+#
+# THE ORACLE IS A FILE ON DISK: ~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2
+# is what every Mirror sweep clones, so the resident code under test is
+# whatever was baked into THAT image — not whatever this checkout last
+# compiled. On 2026-08-06 the image was three days old while six extension
+# commits had landed that day; each session staged a fresh build into a
+# throwaway clone and threw the clone away, which changes nothing about the
+# shared image. This script is the other half of that loop, and
+# tools/ext-bake-gate is what stops a resident commit landing without it.
+#
+# THE FIVE RULES IT ENCODES:
+#
+#   1. NEVER TOUCH THE BASE IN PLACE. scripts/spin-up-ppc clones it and
+#      boots the clone; the new stage image is that clone, promoted only
+#      after it has proven itself.
+#   2. THE GUEST IS THE ORACLE, NOT THE EXIT CODE. `mirror` is asked over
+#      the wire and its answer is parsed: lifecycle active, the expected
+#      capability word, and a buildFingerprint EQUAL to the one this
+#      checkout's build carries. A file arriving is not an INIT loading.
+#   3. FAIL WITH THE VM UP. An unverified image is never installed and the
+#      machine is left running so a person can look at it. The old image
+#      is untouched on every failure path.
+#   4. GUEST-CLEAN SHUTDOWN, NEVER QMP `quit`. A quit is a power cut: it
+#      sets the unclean-volume bit and the next boot spends minutes in
+#      Disk First Aid — and the flush that carries the resident into the
+#      qcow2 may not have happened at all.
+#   5. THE OLD IMAGE IS KEPT. .bak-YYYYMMDD beside it, never overwritten.
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NOW="$(cd "$HERE/.." && pwd)"
+
+ASSETS="${NOW_STAGE_ASSETS:-$HOME/Lab/Assets/os91-qemu}"
+STAGE="${NOW_STAGE_IMAGE:-$ASSETS/now-mirror-stage.qcow2}"
+RUN="${NOW_SPIN_RUN:-/private/tmp/nowvm-bake-$$}"
+WIRE="${NOW_WIRE_PORT:-5311}"
+# The capability word the resident must publish, DERIVED from the contract
+# rather than typed here: every kNowPeekTableCap* bit in
+# contract/peek_table.h, OR'd. A bake that comes back with a smaller word —
+# a plane that failed to arm — is then a failure rather than a green run
+# with a quiet regression in it, and a branch that adds a plane (63 -> 127,
+# the resident transport) does not have to remember to edit this script.
+WANT_CAPS="${NOW_EXT_CAPABILITIES:-}"
+if [ -z "$WANT_CAPS" ]; then
+    WANT_CAPS="$(python3 - "$NOW/contract/peek_table.h" <<'PY'
+import re, sys
+bits = 0
+for shift in re.findall(r"kNowPeekTableCap\w+\s*=\s*1u?\s*<<\s*(\d+)",
+                        open(sys.argv[1]).read()):
+    bits |= 1 << int(shift)
+print(bits)
+PY
+)"
+fi
+echo "   expected capability word: $WANT_CAPS (from contract/peek_table.h)"
+
+[ -f "$STAGE" ] || { echo "no stage image at $STAGE (set NOW_STAGE_IMAGE)" >&2; exit 1; }
+
+OUT="${TMPDIR:-/tmp}/now-guest-builds/$(printf '%s' "$NOW" | shasum | cut -c1-12)"
+IDENTITY="$OUT/ext/now_ext_identity.r"
+
+echo "== bake: build the guests, so the image gets THIS checkout's resident =="
+"$NOW/scripts/build-guests"
+
+[ -f "$IDENTITY" ] || {
+    echo "no build identity at $IDENTITY — scripts/build-guests did not run the" >&2
+    echo "extension target, so there is nothing to compare the guest's answer to." >&2
+    exit 1
+}
+# The generated Rez carries the raw source hash followed by the resident
+# build fingerprint, 40 hex characters each. This is the LOCAL build's
+# identity; rule 2 compares it to what the guest says about itself.
+IDENT_HEX="$(tr -d '\r\n ' < "$IDENTITY" | sed -n 's/.*\$"\([0-9a-f]*\)".*/\1/p')"
+WANT_SOURCE="${IDENT_HEX:0:40}"
+WANT_BUILD="${IDENT_HEX:40:40}"
+[ "${#WANT_BUILD}" = 40 ] || { echo "could not read a fingerprint from $IDENTITY" >&2; exit 1; }
+echo "   local build fingerprint: $WANT_BUILD"
+
+echo
+echo "== bake: clone the oracle, stage, cold boot, and let the guest speak =="
+rm -rf "$RUN"
+NOW_SPIN_BASE="$STAGE" NOW_SPIN_RUN="$RUN" NOW_WIRE_PORT="$WIRE" \
+    "$NOW/scripts/spin-up-ppc"
+
+ANCHOR="$(cut -d' ' -f1 "$RUN/ports")"
+QMP="$RUN/qmp.sock"
+DISK="$RUN/session.qcow2"
+
+echo
+echo "== bake: THE GATE — ask the guest what resident it is running =="
+MIRROR_JSON="$RUN/mirror.json"
+if ! python3 "$NOW/tools/askguest.py" --port "$WIRE" --wait 180 --retries 3 \
+        --retry-delay 6 mirror > "$RUN/mirror.txt" 2>&1; then
+    cat "$RUN/mirror.txt"
+    echo "the guest did not answer \`mirror\`; VM left running at $QMP" >&2
+    exit 1
+fi
+cat "$RUN/mirror.txt"
+
+# `if !` rather than `cmd <<'PY' || { … }`: with the brace form the heredoc
+# body starts INSIDE the block, bash swallows the failure branch as script
+# text, and the whole file dies with "unexpected end of file" — 200 lines
+# and one boot later. Watched 2026-08-06.
+if ! python3 - "$RUN/mirror.txt" "$MIRROR_JSON" "$WANT_BUILD" "$WANT_SOURCE" "$WANT_CAPS" <<'PY'
+import json, sys
+raw, out, want_build, want_source, want_caps = sys.argv[1:6]
+found = None
+for line in open(raw):
+    # askguest prints the wire verbatim with a direction marker: "-> " for
+    # what it asked, "<- " for what the guest said. Reading only lines that
+    # START with "{" found nothing in a reply that was plainly there, and
+    # the script then said "the resident is NOT this build" about a guest
+    # that had just identified itself correctly. Watched 2026-08-06: a
+    # parser bug wearing the failure message of a real defect.
+    line = line.strip()
+    if line[:3] in ("-> ", "<- "):
+        line = line[3:]
+    if not line.startswith("{"):
+        continue
+    try:
+        msg = json.loads(line)
+    except ValueError:
+        continue
+    ext = msg.get("output", {}).get("mirror", {}).get("extension")
+    if ext:
+        found = ext
+if found is None:
+    sys.exit("no mirror.extension in the guest's reply")
+problems = []
+if found.get("lifecycle") != "active":
+    problems.append(f"lifecycle is {found.get('lifecycle')!r}, not 'active'"
+                    f" ({found.get('reason', 'no reason given')})")
+if str(found.get("capabilities")) != want_caps:
+    problems.append(f"capabilities {found.get('capabilities')} != {want_caps}"
+                    " — a plane failed to arm, or this is another session's VM")
+if found.get("buildFingerprint") != want_build:
+    problems.append(f"buildFingerprint {found.get('buildFingerprint')} != "
+                    f"{want_build} (the local build) — the INIT that loaded is"
+                    " not the one just staged")
+if found.get("sourceManifest") != want_source:
+    problems.append(f"sourceManifest {found.get('sourceManifest')} != {want_source}")
+if problems:
+    print("the guest's own account of the resident does not match this build:")
+    for p in problems:
+        print(f"  - {p}")
+    sys.exit(1)
+json.dump(found, open(out, "w"), indent=2)
+print(f"  resident VERIFIED: active, capabilities {found['capabilities']}, "
+      f"fingerprint {found['buildFingerprint'][:12]}")
+PY
+then
+    echo "the resident in the image is NOT this build; nothing installed, VM left running." >&2
+    exit 1
+fi
+
+echo
+echo "== bake: quit the applications and let the guest shut ITSELF down =="
+# shutdown-guest.py quits the front application first and then launches the
+# staged applet, which calls the Shutdown Manager. It waits for the QEMU
+# process to exit on its own. If it will not go, we stop here with the VM
+# intact rather than reaching for `quit` — see rule 4.
+python3 "$NOW/tools/shutdown-guest.py" "$QMP" --port "$ANCHOR" \
+    --timeout "${NOW_SHUTDOWN_WAIT:-180}" || {
+        echo "clean shutdown FAILED; VM left running at $QMP, nothing installed." >&2
+        echo "  Do not fall back to a QMP quit: the volume would be dirty and the" >&2
+        echo "  resident's writes may never have reached the qcow2." >&2
+        exit 1
+    }
+SHUTDOWN=guest-clean
+
+echo
+echo "== bake: qemu-img check =="
+CHECK="$RUN/qemu-img-check.txt"
+if ! qemu-img check "$DISK" > "$CHECK" 2>&1; then
+    cat "$CHECK"
+    echo "qemu-img check FAILED; nothing installed." >&2
+    exit 1
+fi
+cat "$CHECK"
+grep -q "No errors were found" "$CHECK" || {
+    echo "qemu-img check did not say 'No errors were found'; nothing installed." >&2
+    exit 1
+}
+
+echo
+echo "== bake: preserve the old image, install the new one =="
+BAK="$STAGE.bak-$(date +%Y%m%d)"
+n=1
+while [ -e "$BAK" ]; do n=$((n + 1)); BAK="$STAGE.bak-$(date +%Y%m%d)-$n"; done
+cp -c "$STAGE" "$BAK"            # APFS clone: instant, and costs no space
+cp -c "$DISK" "$STAGE.new"
+mv "$STAGE.new" "$STAGE"
+SHA="$(shasum -a 256 "$STAGE" | cut -d' ' -f1)"
+BYTES="$(stat -f %z "$STAGE")"
+echo "   $STAGE"
+echo "   sha256 $SHA"
+echo "   previous image kept as $(basename "$BAK")"
+
+echo
+echo "== bake: the receipt =="
+RECEIPT="$RUN/receipt.json"
+python3 - "$RECEIPT" "$NOW" "$STAGE" "$SHA" "$BYTES" "$BAK" "$SHUTDOWN" \
+        "$MIRROR_JSON" "$WANT_BUILD" "$WANT_SOURCE" <<'PY'
+import json, subprocess, sys, time, os
+(out, now, image, sha, size, bak, shutdown, mirror_json,
+ build, source) = sys.argv[1:11]
+def git(*a):
+    return subprocess.run(["git", "-C", now, *a], capture_output=True,
+                          text=True).stdout.strip()
+ext = json.load(open(mirror_json))
+digest = subprocess.run([f"{now}/tools/ext-bake-gate", "digest", "--worktree"],
+                        capture_output=True, text=True, check=True).stdout.strip()
+json.dump({
+    "at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+    "extDigest": digest,
+    "extBuildFingerprint": build,
+    "sourceManifest": source,
+    "residentLifecycle": ext.get("lifecycle"),
+    "residentCapabilities": ext.get("capabilities"),
+    "image": image.replace(os.path.expanduser("~"), "~"),
+    "imageSha256": sha,
+    "imageBytes": int(size),
+    "previousImage": os.path.basename(bak),
+    "qemuImgCheck": "clean",
+    "shutdown": shutdown,
+    "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
+    "commit": git("rev-parse", "HEAD"),
+}, open(out, "w"), indent=2)
+PY
+"$NOW/tools/ext-bake-gate" record "$RECEIPT"
+git -C "$NOW" add -- ext/stage-receipts.json
+
+echo
+echo "baked, verified and installed. Commit the receipt with the work:"
+echo "    git -C $NOW commit -- ext/stage-receipts.json ..."

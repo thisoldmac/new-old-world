@@ -205,6 +205,50 @@ quietly went to whatever machine a stale default named.
   a few minutes early, because CMake touches `build_stamp.c` at the end
   of a build; `touch now-guest-ppc/src/core/build_stamp.c` first to force it current.
 
+## The stage image is the resident under test
+
+`~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2` is the local oracle: every
+Mirror sweep and every `scripts/spin-up-ppc` clones it. So the resident
+code under test is **whatever was baked into that image**, not whatever
+this checkout last compiled — and staging a fresh INIT into a throwaway
+clone changes the clone, never the image.
+
+- **A commit that touches `ext/` or `contract/peek_table.h` must be baked
+  first**, and this is enforced: `tools/ext-bake-gate`, run from
+  `.githooks/pre-commit`, refuses the commit unless the newest receipt in
+  `ext/stage-receipts.json` records a bake of exactly this source. The
+  receipt carries the four facts that make a bake believable — the build
+  fingerprint the **guest itself** reported, the image sha256, a passing
+  `qemu-img check`, and that the shutdown was guest-clean.
+- **`scripts/bake-ext-image` is the one command.** It clones the oracle,
+  stages this checkout's ext and app, cold-boots so the INIT loads, asks
+  the guest `mirror` and checks its answer against the local build, lets
+  the guest shut *itself* down, checks the image, keeps the old one as
+  `.bak-YYYYMMDD`, installs the new one and writes the receipt. On any
+  failure it installs **nothing** and leaves the VM running to be looked
+  at.
+- **Deferring is a written decision, never silence.** `TBT_DEFER_EXT_BAKE=1`
+  with `TBT_DEFER_EXT_BAKE_REASON="…"` allows the commit and writes the
+  reason into `ext/stage-receipts.json`, so it lands in the same commit as
+  the work it excuses. As with `TBT_ALLOW_MAIN=1`, the enforcement is the
+  floor and not the rule.
+
+- **The image is shared and the last bake wins.** A receipt says this
+  source was baked, verified and installed; it cannot say the file still
+  holds it, because another branch may bake over it an hour later. Before
+  believing a sweep, check the image's sha256 against the receipt's
+  `imageSha256` — and if they differ, bake again. That is one `shasum`,
+  and it is the difference between a result and a guess.
+
+Why it is enforced rather than remembered: on 2026-08-06 the newest stage
+image was from 3 August while **six** extension commits had landed that
+day — the re-armed liveness Time Manager vehicle, its ABI shim, the MacTCP
+`.IPP` probe. Every session cloned the stale image, staged a fresh build
+into a clone and discarded the clone. The rule was already written down in
+[docs/open-issues.md](docs/open-issues.md) and nothing checked it, so the
+verified oracle went stale in silence and any sweep started from an old
+resident with no warning.
+
 ## Git
 
 This checkout is **shared**. Other sessions have worktrees off it, and
@@ -216,7 +260,9 @@ agents branch in their own worktrees — so the shared checkout stays on
   continuing, not off main. `main` receives finished work by
   fast-forward or merge; it is never where work is typed. This is
   enforced (`.githooks/pre-commit`, plus a PreToolUse hook on
-  `Write`/`Edit`/`Bash`), and the enforcement is the floor, not the
+  `Write`/`Edit`/`Bash`) — **run `tools/setup-hooks` once per clone** to
+  point git at it, which every worktree off that checkout then inherits.
+  The enforcement is the floor, not the
   rule: don't reach for `TBT_ALLOW_MAIN=1` to get past a block you
   should have avoided by branching. The namespaces in use are
   `claude/`, `codex/`, `thread/` and `fork/` — pick the one that says

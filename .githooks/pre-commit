@@ -1,0 +1,43 @@
+#!/bin/sh
+# Two refusals, both of which AGENTS.md states as rules and neither of
+# which anything in THIS repository enforced until now.
+#
+# Enable once per clone:  tools/setup-hooks
+#   (sets core.hooksPath -> .githooks; it is a repo-local git config, so
+#    every worktree off this checkout inherits it and no agent has to be
+#    told about it in a brief.)
+#
+#   1. main-guardrail — no direct commit on `main`. The checkout is
+#      shared; work happens on a branch and lands by merge/ff.
+#      Deliberate main commit: TBT_ALLOW_MAIN=1 git commit ...
+#      (This file was named by AGENTS.md long before it existed here: the
+#      guard lived only in the PARENT TimBotTu checkout, so a `now`
+#      worktree had documentation for enforcement it did not have.)
+#
+#   2. ext-bake-gate — no commit that changes the resident until the
+#      stage image contains it, cleanly shut down. tools/ext-bake-gate
+#      carries the reasoning and the failure text.
+#      Deliberate deferral: TBT_DEFER_EXT_BAKE=1 with a written reason.
+#
+# Merges are exempt from pre-commit by git's own design: it runs
+# pre-merge-commit for those.
+
+if [ -z "${TBT_ALLOW_MAIN:-}" ]; then
+    branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || echo "")
+    if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
+        echo "" >&2
+        echo "[main-guardrail] refusing to commit directly on '$branch'." >&2
+        echo "  Branch first, then commit there and merge/ff into main:" >&2
+        echo "    git checkout -b claude/<slug>         # off the parent branch" >&2
+        echo "  Deliberate main commit: TBT_ALLOW_MAIN=1 git commit ..." >&2
+        echo "" >&2
+        exit 1
+    fi
+fi
+
+root=$(git rev-parse --show-toplevel)
+if [ -x "$root/tools/ext-bake-gate" ]; then
+    "$root/tools/ext-bake-gate" check || exit 1
+fi
+
+exit 0

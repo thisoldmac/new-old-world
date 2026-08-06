@@ -1,0 +1,15 @@
+#!/bin/sh
+# Point this clone's git at .githooks. Run once per clone:
+#
+#     tools/setup-hooks
+#
+# core.hooksPath is repo-local config stored in the common .git directory,
+# so every worktree cut off this checkout inherits it — which is the point:
+# agents work in worktrees, and a guard a worktree does not have is a guard
+# that fires for the human and nobody else.
+set -eu
+root=$(git rev-parse --show-toplevel)
+git -C "$root" config core.hooksPath .githooks
+echo "core.hooksPath = .githooks"
+echo "  pre-commit: main-guardrail (TBT_ALLOW_MAIN=1 overrides)"
+echo "              ext-bake-gate  (TBT_DEFER_EXT_BAKE=1 + reason defers)"
