@@ -6,6 +6,18 @@
    dispatches host requests through now_command_run (JSON), and the guest's
    own console gathers the same data directly. */
 
+/* How much room a command.result needs, stated ONCE because the two
+   callers are the two faces and a reply that fits one and not the other is
+   a capability that works on one face only.
+
+   It was 3072 in wire.c and 512 in console_model.c, and neither number
+   said so. Any verb answering more than 512 bytes was therefore truncated
+   mid-JSON for anyone typing it at the machine — parsed as nothing, and
+   reported as "command failed" — while the same verb answered the host in
+   full. That is AGENTS.md's "state a limit once, where both sides read
+   it", one guest below where it usually applies. */
+enum { kNowCommandResultCap = 3072 };
+
 /* Runs `name` and writes a complete command.result JSON (echoing `id`) into
    out. `request_json` is the raw command.request (for args; may be NULL).
    Unknown names produce ok=false / "unknown-command" — a result, never a

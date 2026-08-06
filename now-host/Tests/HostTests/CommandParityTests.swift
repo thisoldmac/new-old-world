@@ -244,14 +244,44 @@ final class CommandParityTests: XCTestCase {
               + "from file.progress and file.done instead",
     ]
 
-    private static let wireOnly: [String: String] = [
-        "putstat": """
-            a diagnostic the host reads to size a transfer before sending; \
-            there is nothing for a person at the guest to do with it. \
-            Recorded as a deliberate asymmetry on 2026-07-25 rather than \
-            fixed — if it ever grows a human-facing use, it needs a \
-            console verb.
-            """,
+    /// Verbs a person would have nothing to do with, so the guest's console
+    /// deliberately does not offer them.
+    ///
+    /// **EMPTY, and how it emptied is the lesson.** Its only entry was
+    /// `putstat`, recorded on 2026-07-25 as a deliberate asymmetry: a
+    /// diagnostic the host reads to size a transfer, with nothing for a
+    /// person at the guest to do with it. On 2026-08-05 someone typed it at
+    /// the guest anyway and got "command failed" — which meant the verb had
+    /// had a console face the whole time, reached through
+    /// `console_model.c`'s fallback, and the only thing missing was a
+    /// renderer that could read its answer. The asymmetry was never a
+    /// decision; it was a defect nobody had run into, wearing a
+    /// justification.
+    ///
+    /// So the entry did not move to another map. It went away, and
+    /// `putstat` prints its eleven rows at the machine like every other
+    /// verb. Leave this empty until a verb genuinely earns it — and when
+    /// one seems to, check first that a person typing it gets an answer.
+    private static let wireOnly: [String: String] = [:]
+
+    /// Verbs the console reaches WITHOUT a `strcmp` of their own, because
+    /// `console_model.c` falls through to `now_command_run` and renders
+    /// whatever comes back.
+    ///
+    /// This map exists because the dispatch-table comparison below cannot
+    /// see them: there is no line in the console's source with their name
+    /// in it, and there does not need to be. That is the good shape — the
+    /// same delegation NOW-68K gets from `now68k_commands_run` — but it
+    /// means a verb can be reachable and invisible to this file at once,
+    /// which is how `putstat` stayed exempt for eleven days.
+    ///
+    /// Only verbs that take **no arguments** belong here. The fallback
+    /// passes `request_json = NULL`, so an argument-taking verb reaches it
+    /// and can only be refused; those are `consoleDebt`, and the debt is
+    /// the arguments rather than the dispatch.
+    private static let reachedByFallback: [String: String] = [
+        "putstat": "no arguments; renders as rows through console_reply.c",
+        "mouseloc": "no arguments; renders as rows through console_reply.c",
     ]
 
     /// Verbs with no console face because **a person cannot usefully type
@@ -307,7 +337,6 @@ final class CommandParityTests: XCTestCase {
                 + "since the reference layer landed",
         "activate": "takes two serial numbers",
         "actselftest": "takes nothing, or two serial numbers",
-        "mouseloc": "takes nothing",
         "script": "takes the script source, which is the rest of the line",
         "aesend": "takes an event name, two serials and a path",
         "qdtrace": "takes an op and its arguments",
@@ -321,6 +350,7 @@ final class CommandParityTests: XCTestCase {
 
         let missingFromConsole = wire.subtracting(console)
             .subtracting(Self.wireOnly.keys)
+            .subtracting(Self.reachedByFallback.keys)
             .subtracting(Self.notTypeable.keys)
             .subtracting(Self.consoleDebt.keys)
         XCTAssertTrue(missingFromConsole.isEmpty, """
@@ -358,7 +388,9 @@ final class CommandParityTests: XCTestCase {
 
         for maps in [(Self.notTypeable, Self.consoleDebt),
                      (Self.notTypeable, Self.wireOnly),
-                     (Self.consoleDebt, Self.wireOnly)] {
+                     (Self.consoleDebt, Self.wireOnly),
+                     (Self.notTypeable, Self.reachedByFallback),
+                     (Self.consoleDebt, Self.reachedByFallback)] {
             XCTAssertTrue(Set(maps.0.keys).isDisjoint(with: maps.1.keys), """
                 A verb is exempted twice, under two claims that cannot both \
                 be true: overlap between \(maps.0.keys.sorted()) and \
@@ -667,6 +699,111 @@ final class CommandParityTests: XCTestCase {
             n68_fileenum_page(), which is the same drift from the other \
             side.
             """)
+    }
+
+    // MARK: - Present on both faces is not the same as working on both
+
+    /// Everything above this line compares DISPATCH TABLES, and a table can
+    /// only say whether a verb is present. On 2026-08-05 `putstat` was
+    /// found answering its whole table over the wire and printing
+    /// "command failed" at the guest's own console — present on both faces
+    /// and working on one, which every check in this file was blind to.
+    ///
+    /// The cause was not `putstat`. `console_model.c`'s fallback read a
+    /// top-level "message" out of the reply and called its absence a
+    /// failure, and NO PowerPC verb has ever carried one on success: they
+    /// all answer `output: {<verb>: [rows]}`. So the fallback ran its
+    /// failure branch for every command that worked, and printed the
+    /// command's own words only when it did not. Six verbs were measured
+    /// saying "command failed" while succeeding — `putstat`, `axsnap`,
+    /// `axtree`, `elements`, `mouseloc`, `observe`.
+    ///
+    /// The three checks below are the static half. The behavioural half is
+    /// `now-guest-ppc/tests/console_reply_test.c`, which runs the renderer
+    /// over one reply of every shape the guest emits; neither is
+    /// sufficient alone, because this file cannot execute a renderer and
+    /// that one cannot see whether the guest still calls it.
+    func testTheConsoleRendersAnAnswerAndNotOnlyAFailure() throws {
+        let console = try source("now-guest-ppc/src/console/console_model.c")
+
+        XCTAssertTrue(console.contains("console_reply_render"), """
+            console_model.c no longer hands the command.result to \
+            console_reply_render. Whatever it does instead is a second \
+            renderer for replies — and the first one printed \
+            "command failed" for every verb that succeeded, for as long as \
+            anybody had been typing them. One implementation, two \
+            renderers: see docs/command-parity.md.
+            """)
+        XCTAssertFalse(console.contains("\"command failed\""), """
+            console_model.c decides for itself that a command failed. That \
+            sentence belongs in console_reply.c and only for a reply that \
+            cannot be read at all; a copy here is how it came to be printed \
+            for eighteen verbs that had answered perfectly well.
+            """)
+    }
+
+    /// The other half of the same defect, and the one AGENTS.md already has
+    /// a rule for: **state a limit once, where both sides read it.**
+    ///
+    /// `wire.c` gave a `command.result` 3072 bytes and `console_model.c`
+    /// gave it 512, and neither number said so. Every verb answering more
+    /// than 512 bytes was therefore truncated mid-JSON for a person at the
+    /// keyboard — unparseable, reported as a failure — while the identical
+    /// verb answered the host in full. Measured: `qdtrace` at the guest's
+    /// own console said "no room for a qdtrace status reply" on a machine
+    /// whose wire had just returned the whole table.
+    func testBothFacesGiveACommandResultTheSameRoom() throws {
+        for path in ["now-guest-ppc/src/core/wire.c",
+                     "now-guest-ppc/src/console/console_model.c"] {
+            let text = try source(path)
+            guard let line = text.split(separator: "\n").first(where: {
+                $0.contains("char result[")
+            }) else {
+                XCTFail("\(path) no longer declares a command.result buffer")
+                continue
+            }
+            XCTAssertTrue(line.contains("kNowCommandResultCap"), """
+                \(path) sizes its command.result with a literal rather than \
+                commands.h's kNowCommandResultCap. Two numbers for one \
+                limit is how the console came to truncate replies the wire \
+                carried whole — a capability that works on one face only, \
+                with nothing in either file admitting there was a limit.
+                """)
+        }
+    }
+
+    /// Why the renderer may assume rows: because every success reply IS
+    /// one. This pins the assumption rather than leaving it as folklore —
+    /// a verb that answered `ok:true` with a bare "message" would render as
+    /// nothing at all, and would look exactly like the defect above.
+    func testEverySuccessfulPowerPCReplyCarriesAnOutputObject() throws {
+        let files = [
+            "now-guest-ppc/src/commands/commands.c",
+            "now-guest-ppc/src/act/act_cmds.c",
+            "now-guest-ppc/src/input/input_cmds.c",
+            "now-guest-ppc/src/machine/mach_reply.c",
+        ]
+        for path in files {
+            let text = try source(path)
+            // The success templates, as written: a snprintf of a
+            // command.result with ok true. What must follow, in the same
+            // literal or the next one, is an "output" key.
+            var searched = text.startIndex..<text.endIndex
+            while let hit = text.range(of: #"\"ok\":true,"#,
+                                       range: searched) {
+                let window = text[hit.upperBound...].prefix(200)
+                XCTAssertTrue(window.contains(#"\"output\""#), """
+                    \(path) has an ok:true command.result that does not \
+                    open an "output" object. The console's renderer shows \
+                    a verb's answer by walking output's rows, so a reply \
+                    of another shape is invisible to a person at the \
+                    machine while reading perfectly on the wire. Give it \
+                    rows, or teach console_reply.c the new shape and say \
+                    here which verb has it.
+                    """)
+                searched = hit.upperBound..<text.endIndex
+            }
+        }
     }
 
     /// Both guests must only claim verbs the contract declares. The

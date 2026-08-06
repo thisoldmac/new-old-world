@@ -14,6 +14,167 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## BROKEN: no verb reached through the PowerPC console's fallback can be given an ARGUMENT (2026-08-06)
+
+Found while fixing the renderer half of the same seam (see
+[command-parity.md](command-parity.md), "Present on both faces is not the
+same as working on both"). `console_model.c` handles 27 verbs with a
+`strcmp` of their own and falls through for the other eighteen —
+`activate`, `actselftest`, `aesend`, `axsnap`, `axtree`, `ctlact`,
+`ditemact`, `elements`, `handle`, `menuact`, `mouseloc`, `observe`,
+`putstat`, `qdtrace`, `script`, `textget`, `textset`, `winact`. The
+fall-through is:
+
+    now_command_run(name, NULL, 0, result, sizeof result);
+
+`NULL` is the whole request, so the verb sees no arguments at all. Twelve
+of the eighteen therefore answer a validation refusal and nothing else,
+no matter what a person types after the verb. Measured on the emulator,
+build `fea48baffe8f`, wire 5510, through the exec plane:
+
+    > winact          winact requires action: one of select, close, move, resize, zoom
+    > menuact         menuact requires menu (the menu's id) and item (its 1-based position…)
+    > script          script requires source: one AppleScript, as a string
+    > aesend          aesend requires event: one of quit, oapp, odoc, pdoc
+    > activate        activate needs a whole process serial number: serialHi and serialLo…
+
+Typing the arguments changes nothing, because the console never passes
+them. The refusals are correct and useful sentences — they are just the
+only sentences those verbs can produce at that keyboard.
+
+Six of the eighteen take no arguments and now work: `putstat` and
+`mouseloc` render real tables, and `axsnap`, `axtree`, `elements`,
+`observe` and `qdtrace` answer objects of references, which the console
+says it cannot show as a table rather than claiming a failure.
+
+**What it would take.** A grammar, not a renderer: something that turns
+the rest of a typed line into the `args` object the wire sends, with
+types (`now_json_find_int` vs `now_json_find_string` — a quoted 3 is not
+a 3). `now-guest-ppc/src/commands/cmd_line.c` already reads the OTHER
+direction and is the obvious place to put its inverse. `script` and
+`aesend` and the act verbs are the ones a person would most want, and
+`docs/command-parity.md`'s `consoleDebt` map is the list. The three verbs
+whose arguments are opaque `now-element-` references are a different
+problem and probably stay untypeable.
+
+**Why it is parked.** The reported defect was a renderer printing
+"command failed" for commands that had succeeded; that is fixed and
+verified at both faces. A console argument grammar is a design decision
+about what a person can type at a classic Mac, and folding it into the
+same change would have made both harder to review.
+
+## BROKEN, and it is the WORST shape: a ten-second gap in scene polling blinds the whole walk, and the Mirror keeps drawing what it can no longer see (2026-08-06)
+
+Michelle, side by side with the guest: Date & Time's **Set Time Zone**
+modal open on the machine, and in the Mirror "System Folder, Control
+Panels and Date & Time" and no modal at all — with the status line
+reading `5 windows · walk 0ms · transfer 36ms · **same** · content: 13
+new draw ops`. `same` is the guest saying *nothing changed* while a modal
+was visibly open, which is the stale-mirror-that-believes-it-is-current
+failure this project fears most.
+
+It is neither of the two things it looked like. Both were tested on a
+private clone (VM `/private/tmp/nowvm-modal`, wire 5490, guest build
+`c5c39f61dbbf`), asking for WHOLE documents so no answer could be a delta
+artefact.
+
+**The walk is not the defect.** With the modal up the guest publishes it,
+within ~600 ms of the quit and for as long as it is there:
+
+    seq=91  windows=[Date & Time; New Old World]                 digest 2c7784cf
+    seq=92  windows=[Set Time Zone; Date & Time; New Old World]  digest 95b9a08b
+
+`kind:2`, visible, front, 9 dialog items with a `ref` on each, 10
+controls, coverage `complete` for that owner, no error against it.
+
+**The delta plane is not the defect either.** The digest MOVES when the
+window appears, and `scene.same` is decided against the digest of the
+scene *just walked*, not a remembered one (`wire.c :: serve_scene`), so a
+guest cannot answer `same` while the modal is in its own document. The
+host's half keeps it too: `MirrorQuitModalTests` runs that captured
+document through this side's decoder, the replica reducer and the
+projection, and the window survives all three.
+
+**What IS the defect: the anchor plane is held by a ten-second lease that
+only a `scene.request` renews.** `peek.c :: kNowPeekOwnerLeaseTicks` is
+600 ticks. Stop asking for scenes for longer and the next walk is blind —
+measured on the wire, with the modal up the whole time:
+
+    gap  3s → Set Time Zone, Date & Time, New Old World   (95b9a08b)
+    gap  8s → Set Time Zone, Date & Time, New Old World   (95b9a08b)
+    gap 12s → New Old World only                          (ae3f00e1)
+    gap 20s → New Old World only                          (ae3f00e1)
+
+In a blind scene EVERY foreign process reports `now_no_plane` and
+`coverage: unavailable/not-observed`, and the document contains not one
+foreign window. The scene straight after each blind one is right again,
+because the blind walk is the one that RE-claimed: `serve_scene` claims
+the plane and walks immediately, while the extension only arms on its
+next `jGNE` pass. **Re-claiming therefore costs exactly one scene.**
+
+**Why that produced Michelle's frame.** A second agent measured her guest
+at that moment: `requested=8 active=8` — content armed, structure,
+semantics and interaction all inactive — and her Cancel click refused
+five times with `element-not-found: the anchor plane is absent or not
+armed`, at 6.7-8.8 s each. Thirty to forty seconds of acts with no scene
+between them is four leases' worth. Then it is self-sustaining:
+
+- the planes lapse, so the walk goes blind;
+- the blind document is honest but EMPTY of foreign windows, so the host
+  retains its last-known ones as `expectedStale` (`MirrorReplicaReducer`
+  deletes only under `complete` coverage) — which is the Finder folders
+  and the Date & Time panel Michelle could still see;
+- the blind document is STABLE, so every later poll answers `same`;
+- the modal, raised after the planes went down, is in no scene ever;
+- and every act refuses, because the plane it needs is the one that
+  lapsed, which spends more seconds not polling.
+
+The split Michelle reported falls straight out of it: a modal she opens
+by clicking arrives while the planes are up and renders; the one Date &
+Time raises during its own quit arrives after a stall.
+
+**This is not tonight's work.** The lease is from 2026-08-03/04
+(`4ebd575c`, `7e5b0c8f`). Tonight's deltas made it VISIBLE by putting the
+word `same` on screen, and are otherwise innocent — which is the one good
+thing here.
+
+**What is not yet decided, and needs a person.** Three candidate fixes,
+and they are not equivalent:
+
+1. **Do not serve a blind scene.** `serve_scene` already claims the plane
+   before walking; it could pump until `arm_active` includes anchors
+   before it walks, bounded. The other agent measured the arm handshake at
+   ~15 ms tonight, so the bound is cheap. This removes the one-scene lag.
+2. **Do not let the lease lapse under a live consumer.** A connected host
+   that is doing anything at all is not a host that has gone away, so the
+   renewal could ride the wire rather than the scene verb. Against: the
+   lease exists so a plane is not armed on a machine nobody is watching.
+3. **Say it.** The status line reads `5 windows · same` while several of
+   those windows are retentions of a machine the guest could not observe.
+   The reducer already knows — `freshness == .expectedStale`,
+   `actionable == false`, `baseComplete == false` — and
+   `NOWMirrorSource.swift` already has the vocabulary for exactly this
+   (`" · Apple menu expected-stale"`). Windows have no equivalent. **Do
+   this one regardless of which of the other two wins**, because a mirror
+   that cannot see the machine must say so rather than keep drawing.
+
+The fixtures for all of it are in the tree:
+`now-host/Tests/HostTests/Fixtures/scene-quit-modal.json` (the modal, as
+the guest sent it), and `scene-plane-held.json` /
+`scene-plane-lapsed.json` (the same machine, one poll apart, either side
+of the lapse). `MirrorQuitModalTests` pins what this side does with them;
+its staleness assertion has been watched to fail.
+
+**How to open a control panel over the wire, since it costs an hour to
+find.** `launch` refuses one — `not an application (type APPC)`. The
+route that works is the `script` verb:
+
+    tell application "Finder" to open file "Date & Time" of folder \
+      "Control Panels" of folder "System Folder" of startup disk
+
+(`{"source": "...", "timeoutMs": 25000}` — the argument is `source`, not
+`text`.) On a clone whose time zone has never been set, that alone raises
+the Set Time Zone modal, so the case needs no quit to reproduce.
 ## FIXED in the host, UNVERIFIED by any drive: Apple menu items did nothing, and the act was never the missing part (2026-08-06)
 
 Michelle, driving: "apple menu items dont work (apple menu -> control
