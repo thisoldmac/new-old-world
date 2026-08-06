@@ -70,6 +70,21 @@
    }
   },
   {
+   "path": "now-host/Tests/HostTests/Fixtures/now-scene-sweep-date-and-time.json",
+   "sha256": "2cf4a84d7fca2dd43e8c238ffb7293f99c1402366a4e2a38c4e4d128365793e7",
+   "bytes": 56969,
+   "ops": null,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "1bff0bd2ca39",
+    "vm": "nowvm-fsw1",
+    "run": "fidelity-sweep date-and-time \u2014 the SCENE the drain of the same name was captured against",
+    "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated",
+    "what": "a whole live scene WITH its controls and dialog items, which is what the coverage harness's canned scene deliberately lacks. Committed 2026-08-06 because a renderer defect that only appears when a window has DITL rows was invisible to every gate."
+   }
+  },
+  {
    "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-blitsrc-control.json",
    "sha256": "ce001825c14fa0d749d430d22b89c3f2ee5baeaea48fd8e405eff8e4a050b859",
    "bytes": 4144,
