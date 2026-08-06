@@ -4366,13 +4366,29 @@ components:
               start only. When true and no serial is supplied, target the
               process that is frontmost when the guest reads the request.
               Serial identity takes precedence; false is not a selector.
+          window:
+            type: string
+            description: >
+              start only, REQUIRED. The exact guest window address to
+              instrument (a string for `a5`'s reason). The guest refuses
+              a start that names no window — there is no all-windows arm
+              — and the scene's window rows are where a host caller gets
+              the address. This field predates this description: the
+              guest has required it since the exact-window arm landed,
+              and the contract only now says so.
           mode:
             type: string
-            enum: [count, record]
+            enum: [count, record, probe]
             description: >
               start only. Absent means count — the cheap mode, chosen as
               the default because the expensive one should be asked for
-              by name.
+              by name. `probe` is record mode plus the GWorld probe
+              (docs/gworld-probe-brief.md): the plane follows a blit into
+              the armed window back to the offscreen GWorld that sourced
+              it, hooks that port too in the same armed context, and
+              records what is drawn there under the GWorld's own port
+              key. An experiment with its own honesty counters
+              (`status`'s `probe` object); not a shipping mode.
           ttlTicks:
             type: integer
             description: >

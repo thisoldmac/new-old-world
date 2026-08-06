@@ -239,6 +239,15 @@ typedef struct {
     NowContentU32 probe_pending_pixmap;  /* PixMap* from a blit, 0 = none */
     NowContentS16 probe_pending_l, probe_pending_t;  /* its bounds, for  */
     NowContentS16 probe_pending_r, probe_pending_b;  /* the port match   */
+    /* The second join key, measured necessary on the OS 9 Finder: its
+       composite blit's source PixMap does NOT RecoverHandle (a stack or
+       nonrelocatable PixMap record aimed at the GWorld's pixels is a
+       normal CopyBits idiom), so the chase also matches a candidate
+       port by what its own portPixMap points AT - same baseAddr, same
+       rowBytes, same bounds. */
+    NowContentU32 probe_pending_base;    /* the sighted PixMap's baseAddr */
+    NowContentU16 probe_pending_row_bytes; /* raw, flags included         */
+    NowContentU16 probe_pending_pad;
 
     NowContentU32 probe_pixmaps_seen;    /* distinct source pixmaps sighted */
     NowContentU32 probe_scans;           /* zone scans actually run         */
@@ -367,7 +376,7 @@ _Static_assert(offsetof(NowContentBlock, arm_window)
 _Static_assert(offsetof(NowContentBlock, probe_pending_pixmap)
                    == 192 + kNowContentRingCap,
                "probe append offset");
-_Static_assert(sizeof(NowContentBlock) == 228 + kNowContentRingCap,
+_Static_assert(sizeof(NowContentBlock) == 236 + kNowContentRingCap,
                "block size");
 
 /* ---- the arm verdict (now_content_logic.c) -------------------------
@@ -491,5 +500,24 @@ int now_content_probe_match(NowContentU32 cand_pixmap_handle,
                             NowContentU32 want_pixmap_handle,
                             NowContentS16 want_l, NowContentS16 want_t,
                             NowContentS16 want_r, NowContentS16 want_b);
+
+/* The deref route: the same verdict when the sighted PixMap could not
+   RecoverHandle. The caller has already dereferenced the candidate's
+   own portPixMap; this compares what it points AT with what the blit
+   named. rowBytes is compared with its flag bits masked (0x3FFF): the
+   sighted record carries a PixMap's flags, and the GWorld's own record
+   carries them too, but nothing guarantees the two idioms set the same
+   high bits over the same pixels. */
+int now_content_probe_pixmap_match(NowContentU16 cand_port_version,
+                                   NowContentS16 cand_l, NowContentS16 cand_t,
+                                   NowContentS16 cand_r, NowContentS16 cand_b,
+                                   NowContentU32 cand_base,
+                                   NowContentU16 cand_row_bytes,
+                                   NowContentS16 pm_l, NowContentS16 pm_t,
+                                   NowContentS16 pm_r, NowContentS16 pm_b,
+                                   NowContentU32 want_base,
+                                   NowContentU16 want_row_bytes,
+                                   NowContentS16 want_l, NowContentS16 want_t,
+                                   NowContentS16 want_r, NowContentS16 want_b);
 
 #endif /* NOW_CONTENT_TABLE_H */

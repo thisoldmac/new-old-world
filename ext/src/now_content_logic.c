@@ -304,3 +304,42 @@ int now_content_probe_match(NowContentU32 cand_pixmap_handle,
     return cand_l == want_l && cand_t == want_t
         && cand_r == want_r && cand_b == want_b;
 }
+
+/* The deref route's verdict. Weaker key than the handle (a baseAddr is
+   one Ptr among many), so it demands MORE agreement: discriminator,
+   the candidate port's own rect, what its pixmap points at, and the
+   sighted pixmap's shape, all four ways. rowBytes is masked to its
+   low 14 bits; the flags above them describe the RECORD, not the
+   pixels. Zero baseAddr never matches - it is what a zeroed block
+   holds, and half the heap is zeroed blocks. */
+int now_content_probe_pixmap_match(NowContentU16 cand_port_version,
+                                   NowContentS16 cand_l, NowContentS16 cand_t,
+                                   NowContentS16 cand_r, NowContentS16 cand_b,
+                                   NowContentU32 cand_base,
+                                   NowContentU16 cand_row_bytes,
+                                   NowContentS16 pm_l, NowContentS16 pm_t,
+                                   NowContentS16 pm_r, NowContentS16 pm_b,
+                                   NowContentU32 want_base,
+                                   NowContentU16 want_row_bytes,
+                                   NowContentS16 want_l, NowContentS16 want_t,
+                                   NowContentS16 want_r, NowContentS16 want_b)
+{
+    if (want_base == 0 || cand_base != want_base) {
+        return 0;
+    }
+    if ((cand_port_version & 0xC000U) != 0xC000U) {
+        return 0;
+    }
+    if ((cand_row_bytes & 0x3FFFU) != (want_row_bytes & 0x3FFFU)) {
+        return 0;
+    }
+    if (want_r <= want_l || want_b <= want_t) {
+        return 0;
+    }
+    if (cand_l != want_l || cand_t != want_t
+        || cand_r != want_r || cand_b != want_b) {
+        return 0;
+    }
+    return pm_l == want_l && pm_t == want_t
+        && pm_r == want_r && pm_b == want_b;
+}

@@ -461,6 +461,9 @@ static void content_probe_sight(const BitMap *src_bits)
     gBlock->probe_pending_t = src_bits->bounds.top;
     gBlock->probe_pending_r = src_bits->bounds.right;
     gBlock->probe_pending_b = src_bits->bounds.bottom;
+    gBlock->probe_pending_base = (NowPeekU32)src_bits->baseAddr;
+    gBlock->probe_pending_row_bytes =
+        (NowContentU16)(unsigned short)src_bits->rowBytes;
 }
 
 /* ---- the ten hooks --------------------------------------------------
@@ -952,6 +955,8 @@ static void content_probe_service(NowPeekU32 a5, NowPeekU32 generation)
     unsigned char *p;
     unsigned char *limit;
     NowContentS16 wl, wt, wr, wb;
+    NowPeekU32 wbase;
+    NowContentU16 wrow;
     short slot;
 
     if (gArmedMode != (NowPeekU32)kNowContentModeProbe
@@ -963,6 +968,8 @@ static void content_probe_service(NowPeekU32 a5, NowPeekU32 generation)
     wt = gBlock->probe_pending_t;
     wr = gBlock->probe_pending_r;
     wb = gBlock->probe_pending_b;
+    wbase = gBlock->probe_pending_base;
+    wrow = gBlock->probe_pending_row_bytes;
     gBlock->probe_pending_pixmap = 0;
     /* Remembered hit OR miss: a pixmap that failed to resolve once will
        fail the same way sixty times a second, and the scan is the cost
@@ -975,10 +982,15 @@ static void content_probe_service(NowPeekU32 a5, NowPeekU32 generation)
     gProbeSeen[gProbeSeenCount++] = (NowPeekU32)pm;
     gBlock->probe_pixmaps_seen++;
 
+    /* The handle route when it works; the deref route regardless. The OS 9
+       Finder's composite blit names a PixMap that does NOT RecoverHandle
+       (measured 2026-08-06 on this rig: three sightings, three misses,
+       zero scans) - a stack or nonrelocatable PixMap record aimed at the
+       GWorld's pixels is an ordinary CopyBits idiom, and the handle was
+       an assumption, not a fact. */
     h = RecoverHandle(pm);
-    if (h == NULL || (Ptr)*h != pm) {
-        gBlock->probe_misses++;
-        return;
+    if (h != NULL && (Ptr)*h != pm) {
+        h = NULL;
     }
     zone = ApplicationZone();
     if (zone == NULL) {
@@ -995,23 +1007,55 @@ static void content_probe_service(NowPeekU32 a5, NowPeekU32 generation)
     gBlock->probe_scans++;
     limit -= sizeof(CGrafPort);
     for (; p <= limit; p += 2) {
-        /* Cheap pre-filter inline; the pure match confirms. Memory
+        /* Cheap pre-filters inline; a pure match confirms. Memory
            Manager blocks are at least word-aligned, so step 2 cannot
-           miss a real port's start. */
-        if (*(NowPeekU32 *)(p + 2) != (NowPeekU32)h) {
-            continue;
-        }
+           miss a real port's start. Two routes to the same verdict:
+           the handle in portPixMap when RecoverHandle produced one,
+           else the port whose rect matches and whose own pixmap points
+           at the sighted pixels. Reads of arbitrary heap bytes are safe
+           on this machine (one flat mapped RAM, no protection); WRITES
+           are what every match below has to earn first. */
         {
             CGrafPtr cand = (CGrafPtr)p;
+            int matched = 0;
 
-            if (!now_content_probe_match((NowContentU32)cand->portPixMap,
-                                         (NowContentU16)cand->portVersion,
-                                         cand->portRect.left,
-                                         cand->portRect.top,
-                                         cand->portRect.right,
-                                         cand->portRect.bottom,
-                                         (NowContentU32)h,
-                                         wl, wt, wr, wb)) {
+            if (h != NULL
+                && *(NowPeekU32 *)(p + 2) == (NowPeekU32)h) {
+                matched = now_content_probe_match(
+                    (NowContentU32)cand->portPixMap,
+                    (NowContentU16)cand->portVersion,
+                    cand->portRect.left, cand->portRect.top,
+                    cand->portRect.right, cand->portRect.bottom,
+                    (NowContentU32)h, wl, wt, wr, wb);
+            }
+            if (!matched) {
+                if (cand->portRect.top != wt
+                    || cand->portRect.left != wl) {
+                    continue;
+                }
+                {
+                    PixMapHandle ph = cand->portPixMap;
+                    PixMap *pm2;
+
+                    if (ph == NULL || ((unsigned long)ph & 1) != 0) {
+                        continue;
+                    }
+                    pm2 = (PixMap *)*(NowPeekU32 *)ph;
+                    if (pm2 == NULL || ((unsigned long)pm2 & 1) != 0) {
+                        continue;
+                    }
+                    matched = now_content_probe_pixmap_match(
+                        (NowContentU16)cand->portVersion,
+                        cand->portRect.left, cand->portRect.top,
+                        cand->portRect.right, cand->portRect.bottom,
+                        (NowContentU32)pm2->baseAddr,
+                        (NowContentU16)pm2->rowBytes,
+                        pm2->bounds.left, pm2->bounds.top,
+                        pm2->bounds.right, pm2->bounds.bottom,
+                        wbase, wrow, wl, wt, wr, wb);
+                }
+            }
+            if (!matched) {
                 continue;
             }
             if (content_slot_for((GrafPtr)cand, a5) >= 0) {
@@ -1021,7 +1065,11 @@ static void content_probe_service(NowPeekU32 a5, NowPeekU32 generation)
             slot = content_slot_for((GrafPtr)cand, a5);
             if (slot >= 0) {
                 gPorts[slot].offscreen = 1;
-                gPorts[slot].pixmap = (NowPeekU32)h;
+                /* The port's OWN portPixMap, not the recovered handle:
+                   the deref route has no handle, and the staleness check
+                   asks "does this port still name the pixmap it was
+                   hooked for", which this answers on both routes. */
+                gPorts[slot].pixmap = (NowPeekU32)cand->portPixMap;
                 gBlock->probe_hits++;
                 gBlock->probe_offscreen_ports++;
             } else {

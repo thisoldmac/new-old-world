@@ -304,6 +304,63 @@ static void test_probe_match(void)
           "an empty-width rect is refused the same way");
 }
 
+/* The deref route, which the OS 9 Finder made necessary: its composite
+   blit's source PixMap does not RecoverHandle, so the chase matches by
+   what a candidate port's own pixmap points at. Weaker key, so more
+   agreement demanded - every refusal here is a heap block that happens
+   to share one property with the sighted pixmap. */
+static void test_probe_pixmap_match(void)
+{
+    check(now_content_probe_pixmap_match(0xC000u, 0, 0, 404, 218,
+                                         0x00801000u, 0x8660u,
+                                         0, 0, 404, 218,
+                                         0x00801000u, 0x8660u,
+                                         0, 0, 404, 218),
+          "same base, rowBytes, port rect and pixmap bounds match");
+    check(now_content_probe_pixmap_match(0xC000u, 0, 0, 404, 218,
+                                         0x00801000u, 0x0660u,
+                                         0, 0, 404, 218,
+                                         0x00801000u, 0x8660u,
+                                         0, 0, 404, 218),
+          "rowBytes flag bits differ between idioms and are masked");
+    check(!now_content_probe_pixmap_match(0xC000u, 0, 0, 404, 218,
+                                          0x00801000u, 0x8661u,
+                                          0, 0, 404, 218,
+                                          0x00801000u, 0x8660u,
+                                          0, 0, 404, 218),
+          "different real rowBytes is a different pixmap");
+    check(!now_content_probe_pixmap_match(0xC000u, 0, 0, 404, 218,
+                                          0u, 0x8660u,
+                                          0, 0, 404, 218,
+                                          0u, 0x8660u,
+                                          0, 0, 404, 218),
+          "a zero baseAddr never matches - half the heap is zeroes");
+    check(!now_content_probe_pixmap_match(0x0000u, 0, 0, 404, 218,
+                                          0x00801000u, 0x8660u,
+                                          0, 0, 404, 218,
+                                          0x00801000u, 0x8660u,
+                                          0, 0, 404, 218),
+          "no CGrafPort discriminator, no port");
+    check(!now_content_probe_pixmap_match(0xC000u, 0, 0, 404, 200,
+                                          0x00801000u, 0x8660u,
+                                          0, 0, 404, 218,
+                                          0x00801000u, 0x8660u,
+                                          0, 0, 404, 218),
+          "a port rect that disagrees with the blit is not the source");
+    check(!now_content_probe_pixmap_match(0xC000u, 0, 0, 404, 218,
+                                          0x00801000u, 0x8660u,
+                                          0, 0, 404, 200,
+                                          0x00801000u, 0x8660u,
+                                          0, 0, 404, 218),
+          "a pixmap whose bounds disagree is not the source either");
+    check(!now_content_probe_pixmap_match(0xC000u, 0, 0, 0, 0,
+                                          0x00801000u, 0x8660u,
+                                          0, 0, 0, 0,
+                                          0x00801000u, 0x8660u,
+                                          0, 0, 0, 0),
+          "zero-area matches nothing on this route too");
+}
+
 static void test_arm_expiry(void)
 {
     NowContentRequest r = good_request();
@@ -719,7 +776,7 @@ static void test_state_null_live(void)
 static void test_layout(void)
 {
     check_eq((long)sizeof(NowContentRecHeader), 32, "v2 record header is 32");
-    check_eq((long)sizeof(NowContentBlock), 228 + kNowContentRingCap,
+    check_eq((long)sizeof(NowContentBlock), 236 + kNowContentRingCap,
              "block is v1 prefix + ring + v2 identity tail + probe tail");
     check_eq((long)offsetof(NowContentBlock, probe_pending_pixmap),
              192 + kNowContentRingCap,
@@ -745,6 +802,7 @@ int main(void)
     test_arm_null_request();
     test_arm_probe_mode();
     test_probe_match();
+    test_probe_pixmap_match();
 
     test_ring_basic_append();
     test_ring_odd_payload_pads_even();
