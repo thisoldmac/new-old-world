@@ -320,7 +320,8 @@ run_py now-guest-ppc qdtrace_arm_order_source_test.py
 # reachable here for the same reason peek_oracle.c is.
 run_c now-guest-ppc scene_build_test.c       ""  src/scene/scene_build.c
 run_c now-guest-ppc scene_json_test.c        ""  src/scene/scene_build.c \
-      src/scene/scene_json.c src/scene/scene_phase.c src/core/json.c
+      src/scene/scene_json.c src/scene/scene_phase.c src/core/json.c \
+      src/scene/scene_digest.c
 # Where a scene's time went, and the three properties its honesty rests
 # on: nested phases must not double-count their parents, a producer with
 # no clock must report NOTHING rather than eight zeroes, and a span that
@@ -328,6 +329,13 @@ run_c now-guest-ppc scene_json_test.c        ""  src/scene/scene_build.c \
 # breakdown exists because differencing two whole-scene numbers produced
 # a confident wrong answer; arithmetic that quietly double-counted would
 # do the same thing again with more authority.
+# The delta plane: the digest that decides "nothing changed", and the
+# byte-exact reconstruction that is the whole resync guarantee. It runs
+# the HOST'S half of the reassembly too, so the guest's half is tested
+# against something that is not itself.
+run_c now-guest-ppc scene_digest_test.c      ""  src/scene/scene_digest.c \
+      src/scene/scene_build.c src/scene/scene_json.c \
+      src/scene/scene_phase.c src/core/json.c
 run_c now-guest-ppc scene_phase_test.c       ""  src/scene/scene_phase.c
 run_py now-guest-ppc scene_self_menubar_source_test.py
 # The bridge between the ported walk and the scene's rules - the layer

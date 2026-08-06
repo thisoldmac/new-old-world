@@ -111,6 +111,10 @@ static ConnState g;
 static OTNotifyUPP g_connect_notifier;
 
 static void send_hello(void);
+/* The delta plane's memory of what this guest last handed a consumer.
+   A baseline is a claim about ONE consumer's state, so a new connection
+   has none - see serve_scene. */
+static void scene_baseline_forget(void);
 static void xfer_cleanup(void);
 static void offer_cleanup(void);
 
@@ -422,6 +426,7 @@ static void finish_connect(void)
     }
     g.phase = kConnHandshaking;
     g.phase_deadline = TickCount() + kHelloTimeoutTicks;
+    scene_baseline_forget();
     send_hello();
 }
 
@@ -1585,6 +1590,18 @@ static void shot_drop(void)
 
 static long g_scene_seq;
 
+/* WHAT THIS GUEST LAST HANDED A CONSUMER, as one key and one hash per
+   entity - a few kilobytes, and nothing in it is proportional to the
+   size of the document. It is what lets a scene answer "the same" for
+   the cost of a control frame, and what a delta is computed against.
+   See scene_digest.h and docs/scene-deltas.md. */
+static NowSceneBaseline g_scene_baseline;
+
+static void scene_baseline_forget(void)
+{
+    now_scene_baseline_clear(&g_scene_baseline);
+}
+
 /* The one failure shape a scene owes the host, so it never waits on a
    transfer that will not come. `reason` is prose for a human; nothing
    branches on it. */
@@ -1595,6 +1612,96 @@ static void scene_fail(long id, unsigned short xfer, const char *reason)
     snprintf(json, sizeof json,
              "{\"type\":\"scene.end\",\"id\":%ld,\"transfer\":%u,"
              "\"ok\":false,\"reason\":\"%s\"}", id, xfer, reason);
+    send_control(json);
+}
+
+/* What the WHOLE document would have measured, beside what the delta
+   actually costs. It is published so the saving is a measurement on the
+   wire rather than a claim in a plan: a host records both numbers, and a
+   delta that stops paying for itself becomes visible without anyone
+   instrumenting anything. */
+static long g_scene_whole_bytes;
+
+static const char *scene_delta_envelope(const char *baseline, long whole)
+{
+    static char buf[80];
+
+    snprintf(buf, sizeof buf,
+             "\"delta\":true,\"baseline\":\"%s\",\"wholeBytes\":%ld,",
+             baseline, whole);
+    return buf;
+}
+
+/* THE NO-CHANGE ANSWER. A control frame and nothing else: no transfer id
+   is spent, no bulk lane is held, and there is no scene.end - because
+   this is not a transfer. It is deliberately NOT a flag on scene.end,
+   which would have made the cheapest and most common outcome in the
+   whole protocol share a code path with failure.
+
+   It is still a FRESH OBSERVATION: capturedAt moves, walkMs and phases
+   describe this walk, and settlements reconcile against it exactly as
+   they do on scene.begin. A consumer republishes what it already holds
+   with the new moment; it does not treat the machine as unobserved. */
+static void send_scene_same(long id, const NowScene *scene, long walk_ms,
+                            const char *digest_hex)
+{
+    static char json[kNowMaxControl];
+    long used;
+    long settled;
+
+    used = snprintf(json, sizeof json,
+                    "{\"type\":\"scene.same\",\"id\":%ld,\"seq\":%ld,"
+                    "\"digest\":\"%s\",\"capturedAt\":%.1f,"
+                    "\"walkMs\":%ld,",
+                    id, scene->seq, digest_hex, scene->captured_at, walk_ms);
+    if (used < 0 || used >= (long)sizeof json) {
+        scene_fail(id, 0, "the scene.same envelope did not fit");
+        return;
+    }
+    if (now_scene_phase_reporting()) {
+        int p;
+        long n;
+
+        n = snprintf(json + used, (long)sizeof json - used, "\"phases\":{\"us\":{");
+        if (n < 0 || used + n >= (long)sizeof json) {
+            scene_fail(id, 0, "the scene.same envelope did not fit");
+            return;
+        }
+        used += n;
+        for (p = 0; p < kNowScenePhaseCount; ++p) {
+            n = snprintf(json + used, (long)sizeof json - used, "%s\"%s\":%lu",
+                         p ? "," : "", now_scene_phase_name(p),
+                         now_scene_phase_us(p));
+            if (n < 0 || used + n >= (long)sizeof json) {
+                scene_fail(id, 0, "the scene.same envelope did not fit");
+                return;
+            }
+            used += n;
+        }
+        n = snprintf(json + used, (long)sizeof json - used,
+                     "},\"clockReads\":%lu,\"clockUs\":%lu,\"faults\":%lu},",
+                     now_scene_phase_clock_reads(), now_scene_phase_clock_us(),
+                     now_scene_phase_faults());
+        if (n < 0 || used + n >= (long)sizeof json) {
+            scene_fail(id, 0, "the scene.same envelope did not fit");
+            return;
+        }
+        used += n;
+    }
+    settled = now_act_encode_settlements(json + used,
+                                         (long)sizeof json - used - 1);
+    if (settled < 0 || used + settled + 1 >= (long)sizeof json) {
+        scene_fail(id, 0, "the scene.same envelope did not fit");
+        return;
+    }
+    /* The trailing comma the settlement encoder expects is written above;
+       when it emits nothing, the comma would be trailing garbage - so it
+       is stepped back over rather than left in the document. */
+    if (settled == 0 && used > 0 && json[used - 1] == ',') {
+        used -= 1;
+    }
+    json[used + settled] = '}';
+    json[used + settled + 1] = '\0';
     send_control(json);
 }
 
@@ -1609,6 +1716,22 @@ static void serve_scene(const char *request)
     long stale_ms = now_json_find_int(request, "staleAfterMs", 0);
     Boolean semantics = now_json_find_bool(request, "semantics", true);
     Boolean interaction = now_json_find_bool(request, "interaction", true);
+    /* THE ASKER'S BASELINE, quoted as a digest rather than a sequence.
+       A sequence says which document the producer THINKS the consumer
+       has; a digest says which one it ACTUALLY holds, and those differ
+       exactly when a consumer mis-applied a delta - the one failure a
+       delta stream has to survive. A `since` this guest does not
+       recognise is not an error and is not refused: it is answered with
+       a whole document, which is always correct and is therefore the
+       recovery path as well as the default. */
+    char since[16];
+    Boolean want_full = now_json_find_bool(request, "full", false);
+    Boolean serve_delta = false;
+    NowSceneSpans *spans = NULL;
+    unsigned long digest = 0;
+    char digest_hex[9];
+    Handle delta = NULL;
+    long delta_len = 0;
     unsigned long stale_ticks;
     unsigned short xfer;
     long chunk;
@@ -1711,6 +1834,8 @@ static void serve_scene(const char *request)
      * pass emits is longer than the digits the count pass sized for, by
      * at most the width of one microsecond count - and now_scene_encode
      * reports what it ACTUALLY used, so `bytes` stays exact. */
+    since[0] = '\0';
+    (void)now_json_find_string(request, "since", since, (long)sizeof since);
     now_scene_phase_enter(kNowScenePhaseEncode);
     needed = now_scene_encoded_size(scene);
     now_scene_phase_leave(kNowScenePhaseEncode);
@@ -1721,15 +1846,108 @@ static void serve_scene(const char *request)
         scene_fail(id, xfer, "not enough memory to encode the scene");
         return;
     }
+    /* The span table is heap, not stack: it is ~10 KB and this runs on a
+       cooperatively scheduled machine whose stack is not that. A guest
+       that cannot afford it serves whole documents, which is what it did
+       before this existed - so the allocation failing costs performance
+       and never correctness. */
+    spans = (NowSceneSpans *)NewPtr((Size)sizeof(NowSceneSpans));
     HLock(doc);
-    if (now_scene_encode(scene, *doc, needed, &needed) != kNowSceneEncodeOk) {
+    if (now_scene_encode_spans(scene, *doc, needed, &needed, spans)
+        != kNowSceneEncodeOk) {
         HUnlock(doc);
         DisposeHandle(doc);
+        if (spans != NULL) DisposePtr((Ptr)spans);
         DisposePtr((Ptr)scene);
         scene_fail(id, xfer, "the scene did not fit its buffer");
         return;
     }
     HUnlock(doc);
+
+    /* WHAT THIS SCENE LOOKS LIKE, as one number over an exactly-specified
+       byte range (contract/asyncapi.yaml, SceneBegin.digest). It excludes
+       seq, capturedAt and phases on purpose: those move on every walk of
+       a machine that did not change, and saying "nothing changed" is the
+       whole point. */
+    HLock(doc);
+    if (spans != NULL) {
+        digest = now_scene_body_digest(*doc, spans);
+    }
+    now_scene_digest_hex(digest, digest_hex);
+
+    if (since[0] != '\0' && !want_full && now_scene_digest_is(digest, since)) {
+        /* THE NO-CHANGE ANSWER: a control frame, no transfer, no bulk
+           lane held. The test is the digest of the scene JUST WALKED
+           against what the host says it holds - not against this guest's
+           own baseline, so a guest that has forgotten its baseline can
+           still answer "the same" truthfully.
+           The run is NOT advanced. A scene.same re-proves the consumer's
+           whole body against a freshly walked machine, so it accumulates
+           no unverified state for a bound to protect. */
+        HUnlock(doc);
+        DisposeHandle(doc);
+        if (spans != NULL) DisposePtr((Ptr)spans);
+        walk_ms = (long)((TickCount() - t_start) * 1000UL / 60UL);
+        send_scene_same(id, scene, walk_ms, digest_hex);
+        DisposePtr((Ptr)scene);
+        return;
+    }
+    if (spans != NULL && since[0] != '\0' && !want_full
+        && g_scene_baseline.held
+        && now_scene_digest_is(g_scene_baseline.digest, since)) {
+        if (g_scene_baseline.run < kNowSceneDeltaMaxRun) {
+            delta_len = now_scene_delta_encode(&g_scene_baseline, *doc, spans,
+                                               scene->seq, scene->captured_at,
+                                               since, NULL, 0);
+            /* ONLY WHEN IT IS SMALLER. There is no case for a delta that
+               costs more than the document it replaces, and both numbers
+               are already in hand. */
+            if (delta_len > 0 && delta_len + 1 < needed) {
+                delta = NewHandle((Size)(delta_len + 1));
+                if (delta != NULL) {
+                    HLock(delta);
+                    if (now_scene_delta_encode(&g_scene_baseline, *doc, spans,
+                                               scene->seq, scene->captured_at,
+                                               since, *delta, delta_len + 1)
+                        == delta_len) {
+                        serve_delta = true;
+                    }
+                    HUnlock(delta);
+                    if (!serve_delta) {
+                        DisposeHandle(delta);
+                        delta = NULL;
+                    }
+                }
+            }
+        }
+    }
+    HUnlock(doc);
+
+    /* The baseline becomes THIS scene either way: after a delta the
+       consumer holds the new document, and after a whole one it holds it
+       too. What differs is the chain length, which only a delta
+       advances. */
+    if (spans != NULL) {
+        unsigned long run = serve_delta ? g_scene_baseline.run + 1 : 0;
+
+        HLock(doc);
+        if (now_scene_baseline_adopt(&g_scene_baseline, *doc, spans, digest)) {
+            g_scene_baseline.run = run;
+        }
+        HUnlock(doc);
+        DisposePtr((Ptr)spans);
+        spans = NULL;
+    }
+    if (serve_delta) {
+        long whole = needed - 1;
+
+        DisposeHandle(doc);
+        doc = delta;
+        needed = delta_len + 1;
+        g_scene_whole_bytes = whole;
+    } else {
+        g_scene_whole_bytes = 0;
+    }
     walk_ms = (long)((TickCount() - t_start) * 1000UL / 60UL);
 
     now_prefs_load(&prefs);
@@ -1743,9 +1961,12 @@ static void serve_scene(const char *request)
     json_used = snprintf(json, sizeof json,
              "{\"type\":\"scene.begin\",\"id\":%ld,\"transfer\":%u,"
              "\"bytes\":%ld,\"irVersion\":%d,\"seq\":%ld,"
-             "\"capturedAt\":%.1f,\"source\":\"%s\",\"walkMs\":%ld,",
+             "\"capturedAt\":%.1f,\"source\":\"%s\",\"walkMs\":%ld,"
+             "\"digest\":\"%s\",%s",
              id, xfer, needed - 1, NOW_SCENE_IR_VERSION, scene->seq,
-             scene->captured_at, scene->source, walk_ms);
+             scene->captured_at, scene->source, walk_ms, digest_hex,
+             serve_delta ? scene_delta_envelope(since, g_scene_whole_bytes)
+                         : "");
     if (json_used < 0 || json_used >= (long)sizeof json) {
         DisposePtr((Ptr)scene);
         DisposeHandle(doc);
