@@ -2472,9 +2472,24 @@ The gate is now three pieces, and the sequence a resident change follows:
   receipts file, so a deferral lands as a written decision in the same
   commit as the work.
 
-The image installed on 2026-08-06 is sha256
-`62be7be4d73a848f9d72818f42c879df7b4dfdfc83a18f6fdd2779529b297eae`, and
-the 3 August one is preserved beside it as `.bak-20260806`.
+Two images were installed on 2026-08-06. The hand-run bake that found the
+staleness produced sha256
+`62be7be4d73a848f9d72818f42c879df7b4dfdfc83a18f6fdd2779529b297eae` and
+preserved the 3 August one as `.bak-20260806`; the first run of
+`scripts/bake-ext-image` then produced sha256
+`46a51dcd0337baf3918a1fec6f2987bacbdf174d3dc28ffee61e04430bd5850c`,
+keeping the previous as `.bak-20260806-2`. That image is the one
+`ext/stage-receipts.json` certifies: the guest answered `mirror` with
+lifecycle `active`, capabilities 63 and buildFingerprint
+`bb95520ae51365c053f56d57d86bb10af09629c3`, shut itself down in three
+seconds, and `qemu-img check` found no errors.
+
+**Still stale for one branch, and this is the gate working rather than a
+defect.** `claude/012-resident-transport` gives the resident its own
+MacTCP connection and a sixth plane — capability word 127, not 63 — so the
+image above does not contain that resident. The first commit touching
+`ext/` on a branch carrying it will be refused until `scripts/bake-ext-image`
+runs there, which is exactly the warning nobody got on 3–6 August.
 
 ## CYCLE 24 RED BASELINE; FIX BUILT, NOT UX-VERIFIED (2026-08-03)
 
