@@ -152,6 +152,40 @@ development evidence tied to guest build `b684adc2f96a`, session
 `a6358eaa-d75e-448e-9777-364388096809`, and VM
 `NOW U8 f214af2 broad sweep`; they are not checked-in fixtures.
 
+## Second use: settling a layout question the code could not ask itself
+
+**2026-08-06.** An alert's message text was missing from the wire, and
+the first repair was header arithmetic — derive the item's length from
+the block header below its data, the documented classic layout. It
+returned **nothing**, silently: no error, no exception, nothing to
+debug. An assumption about a structure fails by producing an answer.
+
+The oracle settled it, on a **stopped VM**, in one run. This heap's
+block header is not the 24-bit-era layout:
+
+- The longword below the data holds a **zone-relative offset**, not the
+  master pointer. Demonstrated rather than inferred: two different items
+  differed from their handles by the *same* base.
+- The tag byte's size-correction nibble reads **zero** while the
+  physical block overshoots the string by **eight bytes** — so the
+  arithmetic would have appended eight bytes of heap slop to every
+  alert, which is a wrong answer that looks right in most captures and
+  would have been much more expensive than the empty one.
+
+The repair was to stop deriving and ask the Memory Manager:
+`GetHandleSize`, behind `GetDialogItemText`. The seam and the reason are
+in `now-guest-ppc/src/scene/dialog_text.h`; the raw bytes are in
+[open-issues.md](open-issues.md) under the alert entry.
+
+**This is the oracle's second distinct job, and worth naming as a
+category.** The first use above explains *what an application contains*
+when the Mirror renders it wrong. This one answers *whether our own
+assumption about a structure is true* — and nothing that parses a block
+using the layout can answer that, because it has no way to disagree with
+itself. Reach for the oracle whenever a derivation over a guest
+structure returns empty or implausible, not only when a surface renders
+badly. It is cheap and it does not need the VM running.
+
 ## Acceptance boundary
 
 Oracle output can explain a red row and guide a metal-compatible producer. It

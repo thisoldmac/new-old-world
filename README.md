@@ -126,17 +126,55 @@ that has not changed and cannot be — but a 1.5 s roster read now sits
 beside a 26 ms cycle instead of becoming one. **Emulator only; no part
 of this has run on metal.** One Macintosh case is beyond any host-side
 repair: a modal owned by the *Finder itself* starves the whole
-cooperative machine, NOW included, and nothing here helps it.
+cooperative machine, NOW included, and nothing here helps it. A modal
+owned by a *foreign* application turns out to be far less than that —
+measured, a **20× tax and no starvation at all** (scene median 21 ms
+idle → 413 ms), and acts work straight through it.
+
+**But the slow loops are NOT closed, and the cause is now named.** The
+9–12 second Mirror loops have a second cause, on our own side, and it is
+still there. The guest's act client waits for a target to take an armed
+act in two phases of 5 s each, spinning in a nested loop that **does not
+pump the wire** — so an act nobody takes holds the connection off for
+~10 s, and every scene request in that window reports the act's duration
+as its own. Measured: an act refused after 6.6 s and a scene request
+issued in the same instant answered in 6634 ms, the same number twice.
+The two 12-second numbers in Michelle's log are therefore **one event
+seen from both ends**, not two problems — and because the anchor plane's
+ten-second lease is renewed by the traffic that wait holds off, a long
+act lapses the lease the paragraph below repaired, and the next act
+refuses. Investigated 2026-08-06, **not fixed**: pumping inside an armed
+window is exactly the re-entrancy the no-hijack work exists to prevent,
+so it is a decision rather than a patch. See
+[docs/status.md](docs/status.md) and
+[docs/nested-loops.md](docs/nested-loops.md).
 
 **Acts stop binding when the host's cycle runs long.** The anchor
 plane's OWNER lease is 10 seconds and only a `scene.request` renewed it,
 so a cycle longer than the lease disarmed the planes with nothing said.
-That is the whole of two symptoms that looked like guest bugs: a
+That accounts for two symptoms that looked like guest bugs: a
 quit-time modal that appeared to be missing, and a Cancel button that
 appeared to refuse. Nothing was taking the planes down; the host had
 stopped asking inside the lease. Renewal now rides any inbound host
 frame, and a scene waits briefly for the arm echo instead of walking
-blind and reporting the blindness as an empty screen.
+blind and reporting the blindness as an empty screen. It is not the
+*whole* of them, as this once claimed: the act wait above lapses the
+same lease from the guest's side, so the fix removed one way in and left
+another.
+
+**An alert rendered the wrong buttons, and they did nothing.** Recorded
+as "the wrong default button" — it was wrong buttons, dead clicks and a
+missing message, and it is the alert path generally rather than one
+application. The guest was right about everything but the text: the
+Dialog Manager's default-outline slots are `userItem`s, one of which
+*wraps* the OK button's rect, and the host drew a placeholder for every
+item kind it could not draw — so a hatched box sat on top of the real
+button, and clicks resolved to the placeholder, which has nothing to
+answer with. The message text was a second bug: a DITL holds the
+resource template, while an application writes its message into the
+item's own handle. Fixed both halves 2026-08-06; **tested and rendered,
+but no drive has watched the repaired alert in the Mirror window**, and
+the alert's icon is still a placeholder.
 
 **The guest's console reported its own successes as failures.** Its
 fallback renderer understood only a reply shape that no verb emits on
@@ -150,9 +188,11 @@ Apple case; and Windows ▸ Workshop timed out for a hidden application,
 because hiding NOW does not move the front process and `SelectWindow`
 shows nothing for a hidden app.
 
-Two things measured the same day and **not** fixed: a background
+Three things measured the same day and **not** fixed: a background
 application cannot be armed for content capture AT ALL (nothing can make
-a process pump that is not being scheduled), and every number above is
+a process pump that is not being scheduled); the act wait above still
+blocks the wire for up to ten seconds, which is the named and open cause
+of the slow loops; and every number above is
 from an emulator — a PowerBook 1400c is far slower, and for the wire the
 emulator likely understates the win rather than flattering it.
 

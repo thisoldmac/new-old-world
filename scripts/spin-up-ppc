@@ -38,6 +38,23 @@
 #      image-lock collisions. The shared base stays pristine.
 #   4. COLLISION-SAFE PORTS. Another session may hold any given one, so
 #      probe and advance rather than attach to whatever answers.
+#   5. TEAR DOWN WHAT YOU STARTED, BY PATH - NOT WITH tools/stop.
+#      Rule 3 makes the run directory session-private via NOW_SPIN_RUN.
+#      The lab's tools/stop DOES NOT KNOW THAT VARIABLE: it derives its
+#      run directory from TIMBOTTU_RUN_ROOT/--instance and otherwise
+#      cleans $LAB/run. So `tools/stop` after a NOW_SPIN_RUN spin-up
+#      does not stop your VM, and it DOES delete another session's
+#      remnants out of the shared checkout - watched 2026-08-06, when it
+#      removed a stale run/overlay.qcow2 there. It reported no VM
+#      running against it, so that instance was probably harmless; the
+#      shape is not. It is the exact hazard rule 3 exists to prevent,
+#      arriving at teardown instead of at boot.
+#      Stop yours the way it was started: QMP `quit` on
+#      "$NOW_SPIN_RUN/qmp.sock" (or tools/shutdown-guest.py for a clean
+#      volume - see rule 1), then remove that directory. Never by port:
+#      lsof -ti tcp:<wire> matches QEMU itself under user-mode
+#      networking, so killing by port kills the VM, and possibly not
+#      yours.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NOW="$(cd "$HERE/.." && pwd)"

@@ -151,6 +151,40 @@ says so at the point of claim rather than in a footnote.
   serves every reply shape (`console_reply.c`, Toolbox-free and natively
   tested), and both faces size a reply from one constant instead of 3072
   bytes on the wire and 512 at the keyboard.
+- **An alert renders its real buttons, they answer clicks, and its
+  message text crosses the wire** (2026-08-06; **tested, and the guest
+  half watched on a live machine — but NO drive has watched the repaired
+  alert in the Mirror window, so the "after" is an offscreen render**).
+  This was recorded as "the Mail alert shows the wrong default button".
+  It was worse and it was more general: wrong buttonS, which did nothing
+  when clicked, and no message text at all — and it is the **alert path
+  generally**, not one application (re-observed on Internet Explorer).
+  **One defect, and the act plane was innocent.** The guest reported
+  everything correctly except the text; items 7 and 8 of the alert are
+  `userItem`s — the Dialog Manager's default-outline slots — and item 7
+  *wraps* item 1's rect. The renderer drew "Visual unavailable" for
+  every kind it could not draw, so item 7 hatched over the OK button and
+  item 8 invented a second box: two placeholders where the machine has
+  one button. The dead clicks were a *consequence* — the hit tester
+  returns the topmost item, which was a placeholder with no action and
+  no ref, so the interaction policy refused it. Proven by sending the
+  act straight at item 1, which dismissed the alert. The missing text
+  was its own bug: a DITL carries the resource **template**, and
+  `SetDialogItemText` writes into the item's handle instead, so the walk
+  was reading an empty template; it now reads back through
+  `GetDialogItemText`. Header arithmetic was tried first and produced
+  nothing *silently* — the QEMU oracle said why, and
+  `now-guest-ppc/src/scene/dialog_text.h` records it. Four rules now
+  hold: a `userItem` draws nothing, no placeholder covers an item it
+  contains, clicks resolve to the topmost **answerable** item, and a
+  disabled item wears no ring. Five tests, each watched failing, plus
+  `axditl_test.c` as the DITL walk's first native coverage; evidence in
+  [mirror-renders.md](mirror-renders.md). **Not closed:** the alert's
+  icon is still a hatched placeholder, and Set Time Zone's default ring
+  is *withheld* on a disabled default rather than moved — `isDefault` is
+  the DialogRecord's `aDefItem`, which only `SetDialogDefaultItem`
+  moves, so it goes stale exactly when an app greys its first button.
+  The authoritative fix needs a flag in `NowPeekSemanticClassRecord`.
 - **The Workshop** — the guest is one window: a sidebar rail of pages
   with Logs and Connection pinned at the bottom behind a divider and a
   status lamp, a header placard per page, a status placard below, and
@@ -580,6 +614,47 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   Finder" under What works today. That bullet had in turn replaced "a
   Mirror round trip waits ~115 ms before it works for 3–8 ms". Two
   bottlenecks removed in one day, each exposing the next.)*
+
+  *(A third correction, 2026-08-06 later: **a foreign application's
+  modal is a 20× tax, not a wedge.** Raised in a real application
+  through `ctlact` so the application runs its own handler, a modal took
+  the scene median from **21 ms idle to 413 ms** (n=145) and starved
+  nothing — acts work straight through it, and `ctlact` on the modal's
+  own Cancel answered in 0.7 s and it was gone from the next scene. The
+  Finder-owned case above is unchanged and still reproduced; it is the
+  *foreign* case that turns out to be merely expensive. The number that
+  was doing the work in the "12 seconds under a modal" story is the next
+  bullet, and it is not a modal at all.)*
+- **INVESTIGATED, NOT FIXED: the 9–12 second Mirror loops have a named
+  cause on our own side, and it is still there** (2026-08-06, emulator,
+  investigation only — nothing product-facing was changed). The guest's
+  act client waits for a target to take an armed act in two phases,
+  `now_act_submit` then `now_act_await_fired`, each bounded by
+  `kNowActDeadlineTicks` = 300 ticks = **5 s**, and each spinning on
+  `act_yield()` — a nested `WaitNextEvent` loop that **does not pump the
+  wire**. That is one of the two AGENTS.md non-negotiables, violated in
+  the act client. So an act the target never takes holds `conn_service`
+  off for ~10 s, and every `scene.request` in that window reports the
+  act's duration as its own: measured, an act refused `act-not-taken`
+  after **6.6 s** and a `scene.request` issued in the same instant
+  answered in **6634 ms**, the same number twice. Two phases plus
+  overhead is **11.7–12.5 s**, so Michelle's `request_ms=12041` and her
+  act's `guest 12099ms` are **one event seen from both ends**, not two
+  problems. It is also self-sustaining: the anchor plane's ten-second
+  owner lease is renewed by host traffic *through `conn_service`*, so a
+  ~10 s act lapses the very lease "Acts keep binding while the host is
+  talking" repaired, and the next act refuses `plane absent` — which is
+  the "refused the first time, worked the second" report.
+
+  **Why it is not simply fixed.** Making `act_yield` pump means serving
+  requests while an act is armed, which is exactly the re-entrancy the
+  no-hijack work exists to prevent, so it needs a guard and a decision
+  rather than a one-line edit. It is Michelle's call. A second thing is
+  open beside it: **the act ceiling is stated nowhere once** — 5 s per
+  phase here, against plan 014's 20 s host watchdog, which was chosen
+  against the *script* ceiling with nothing naming this one.
+  [nested-loops.md](nested-loops.md) now carries the row this loop spent
+  weeks missing, and [open-issues.md](open-issues.md) the measurement.
 - **Twelve verbs render correctly at the guest's console and cannot be
   given an argument** (2026-08-06, emulator). `console_model.c` handles
   27 verbs with a `strcmp` of its own and falls through for eighteen
@@ -607,7 +682,12 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   not scheduling never does. Proven by fronting the target mid-wait
   without re-requesting, which armed it in 40 ms, six times of six. The
   handshake itself is ~15 ms once the target is frontmost, so there is
-  nothing in the handshake to fix.
+  nothing in the handshake to fix. *(2026-08-06, later: "nothing to fix"
+  is right about the handshake and wrong about the **wait**. When the
+  arm does not complete, the client sits in `act_yield` for its full 5 s
+  per phase without pumping the wire — so the case this bullet describes
+  is precisely the case that costs the Mirror ten seconds. See the act
+  wait bullet above; the fast path was never the problem.)*
 - **Ten of the twelve capabilities added on this arc have never crossed a
   real wire.** They are `now_hardware_census`, `now_machine_facts`,
   `now_software_inventory`, `now_catalog_search`, `now_guest_log_tail`,

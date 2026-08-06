@@ -728,7 +728,17 @@ catch, is [source-text-gates.md](source-text-gates.md). It is the reason
 this file's own future gate should be planned as a bounded check with its
 blind spots written down rather than as a guarantee.
 
-Last re-derived: **2026-08-06**, on `claude/wire-latency`, by running the
+Re-derived again **2026-08-06**, on `claude/durability-pass-3`, and
+**nothing moved**: 42 / 39 / 13 from the commands at the foot, and 48 /
+23 message types from the commands at the top. Recorded because the pass
+had reason to expect drift and found none — the alert and act-wait arcs
+that landed between the two derivations touched `scene_walk.c`,
+`dialog_text.[ch]`, `act_client.c` and `scripts/test-native`, and no
+dispatch table, `x-commands` block or `wire.c` type list among them. **A
+derivation that confirms is worth its line**, because otherwise the next
+reader cannot tell a file that was checked from one that was skipped.
+
+Last re-derived before that: **2026-08-06**, on `claude/wire-latency`, by running the
 commands at the foot while adding `wirestat`. The counts are **42 / 39 /
 13**: `wirestat` is the new verb, PowerPC-only, and the three the
 PowerPC guest still does not serve are unchanged (`put`, `cancel`,

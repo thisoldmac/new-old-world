@@ -175,6 +175,21 @@ or `act_client.c` enforces it, and two ordinary changes would remove it:
 If either lands, `now_act_submit` needs a busy refusal before it writes, and
 this paragraph is the reason why.
 
+**2026-08-06: the second one stopped being hypothetical.** That wait was
+measured, and it does not merely freeze the app's UI — it holds
+`conn_service` off for up to **ten seconds** (two 5 s phases), which is
+the named cause of the Mirror's 9–12 second loops and lapses the anchor
+plane's own ten-second lease. The recommended repair is exactly the
+change this section says would remove the protection: make `act_yield`
+pump via `pump.h`. **So the busy refusal is now a prerequisite, not a
+contingency.** Whoever implements the pump implements the interlock in
+the same commit, or the single-cell channel loses the only thing
+defending it — and it loses it silently, because nothing in the code
+asserts the property today. Neither has been done;
+[nested-loops.md](nested-loops.md) and [open-issues.md](open-issues.md)
+carry the measurement, and the call site in `act_client.c` carries the
+note.
+
 ### So the collision the code DOES admit is a press, not a cell
 
 Two requests cannot collide. A request and **a press it did not queue** can,
