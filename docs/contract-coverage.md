@@ -810,6 +810,15 @@ catch, is [source-text-gates.md](source-text-gates.md). It is the reason
 this file's own future gate should be planned as a bounded check with its
 blind spots written down rather than as a guarantee.
 
+Re-derived once more **2026-08-06**, on the closing pass over
+`claude/gworld-interior-host-render-98ddd5` with the perf thread and all
+ten agent branches merged — the first derivation on a tree that has both
+sides of that merge. **Nothing moved: 42 / 39 / 13 and 48 / 23.** This
+is the derivation the note two entries below asks for, and it is worth
+its line for the same reason the last one was: the merge is precisely
+where a hand-carried count drifts, and two threads had already
+disagreed by one in two rows for exactly that reason.
+
 Re-derived again **2026-08-06**, on `claude/durability-pass-3`, and
 **nothing moved**: 42 / 39 / 13 from the commands at the foot, and 48 /
 23 message types from the commands at the top. Recorded because the pass
