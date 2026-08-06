@@ -239,6 +239,208 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
         }
     }
 
+    /// The 2026-08-06 fidelity sweep's captures, rendered for eyes.
+    ///
+    /// SEPARATE from `testRenderEveryCapture` on purpose. That list is
+    /// the coverage gate's own evidence and every entry there is also
+    /// asserted on somewhere above; this list is a SURVEY — windows
+    /// captured to be judged against the machine's own pixels, most of
+    /// which have no assertion yet and some of which are here precisely
+    /// because they render badly. Mixing the two would let a survey
+    /// entry read as a proven surface.
+    ///
+    /// The renders pair with `<label>-guest.ppm` from the same run via
+    /// tools/fidelity-pair.py; the verdicts are in
+    /// docs/fidelity-sweep-2026-08-06.md.
+    func testRenderSweepCaptures() throws {
+        guard let dir = ProcessInfo.processInfo
+            .environment["NOW_RENDER_DIR"] else { return }
+        for capture in Self.sweepCaptures {
+            let png = try RenderShot.png(scene: try composedSweep(capture))
+            try png.write(to: URL(fileURLWithPath: "\(dir)/\(capture.0).png"))
+        }
+    }
+
+    /// A sweep capture composed at the window's REAL size.
+    ///
+    /// `composed` derives the window from `contentSize` — a union of
+    /// everything drawn — which is a reasonable guess when nothing
+    /// better exists and a BAD one to judge chrome by: Scrapbook's
+    /// union came out nearly twice the window's true width, so the
+    /// render drew a 780-wide window whose centred title fell off the
+    /// visible area, and "the title never renders" was about to go on
+    /// the red list as a mirror defect. It is a harness artifact.
+    ///
+    /// The sweep already knows the answer — `<label>-scene.json`
+    /// carries the window's own rect, straight off the guest — so the
+    /// survey uses that and the union is not consulted at all. Nothing
+    /// in the product does this: `contentSize` exists because the
+    /// coverage fixtures predate the sweep, and a production scene
+    /// carries the real rect the way this table does.
+    private func composedSweep(
+        _ capture: (String, String, UInt32, String, String, Int, Int)
+    ) throws -> MirrorKit.Scene {
+        let (_, fixture, window, psn, title, width, height) = capture
+        let drain = try self.capture(fixture)
+        let update = plane().apply(
+            drain, to: try scene(address: window, psn: psn, title: title,
+                                 content: [0, 0, width, height]))
+        XCTAssertNotNil(update.scene.windows[0].display,
+                        "\(fixture) composed nothing")
+        return update.scene
+    }
+
+    /// Every sweep capture must still COMPOSE, whatever it looks like.
+    /// This is the one thing the survey can assert without a human
+    /// looking: a fixture that decodes and produces a display cannot
+    /// regress into one that produces nothing.
+    func testEverySweepCaptureComposes() throws {
+        for capture in Self.sweepCaptures {
+            let display = try XCTUnwrap(
+                composedSweep(capture).windows[0].display)
+            XCTAssertFalse(display.isEmpty, "\(capture.0) composed nothing")
+        }
+    }
+
+    /// label, fixture, window address, psn, title, and the window's OWN
+    /// width and height as the guest reported them in the same run.
+    static let sweepCaptures:
+        [(String, String, UInt32, String, String, Int, Int)] = [
+        ("appearance", "qdtrace-drain-sweep-appearance",
+         0x1ea880b0, "0.35520514", "Appearance", 464, 330),
+        ("date-and-time", "qdtrace-drain-sweep-date-and-time",
+         0x1f6fcca0, "0.35979265", "Date & Time", 364, 361),
+        ("memory", "qdtrace-drain-sweep-memory",
+         0x1ea37530, "0.36438017", "Memory", 352, 318),
+        ("sound", "qdtrace-drain-sweep-sound",
+         0x1e612eb0, "0.37355521", "Sound", 400, 367),
+        ("general-controls", "qdtrace-drain-sweep-general-controls",
+         0x1e5cc1c0, "0.37814273", "General Controls", 348, 454),
+        /* The CONTROL for the flattened-epoch finding: the same Sound
+           window, same build, captured over ONE repaint pass instead of
+           three. `sound` loses its whole sound list; this one keeps it,
+           and the only difference between the two runs is how many
+           passes got flattened into the single displayEpoch the
+           resident hands out per ARM. */
+        ("sound-1pass", "qdtrace-drain-sweep-sound-1pass",
+         0x1e612eb0, "0.37355521", "Sound", 400, 367),
+        ("finder-desktop", "qdtrace-drain-sweep-finder",
+         0x009a6610, "0.29949953", "Desktop", 800, 600),
+        ("note-pad", "qdtrace-drain-sweep-note-pad",
+         0x1e581360, "0.38338561", "Note Pad", 220, 290),
+        ("stickies", "qdtrace-drain-sweep-stickies",
+         0x1e503798, "0.38600705", "Stickies", 100, 70),
+        ("scrapbook", "qdtrace-drain-sweep-scrapbook",
+         0x1e3eec00, "0.38862849", "Scrapbook", 402, 327),
+        ("sherlock-2", "qdtrace-drain-sweep-sherlock-2",
+         0x1e9f7550, "0.34406401", "Sherlock", 490, 468),
+        ("key-caps", "qdtrace-drain-sweep-key-caps",
+         0x1e945a40, "0.36044802", "Key Caps", 480, 220),
+        /* THE SELECTION BASELINE. The guest screendump for this run
+           shows "System Folder" selected — inverted label, darkened
+           icon. Whether the capture carries that is the whole question
+           the invert work needs answered before and after. */
+        ("finder-selected", "qdtrace-drain-sweep-finder-selected",
+         0x009e4a20, "0.29949953", "Macintosh HD", 404, 238),
+    ]
+
+    /// The Finder's selection highlight does not reach the capture.
+    ///
+    /// Selection is drawn by INVERT on this machine, the replay skips
+    /// invert outright, and the accent-ramp thread showed the corpus
+    /// could not tell: a forced-magenta highlight regenerated every
+    /// committed render byte-identically, because no capture had a
+    /// selection in it.
+    ///
+    /// This capture was taken with one deliberately selected — reveal
+    /// selects `System Folder`, and a reflowing resize forces the
+    /// icon-view composite to rebuild (a front/back cycle does not, and
+    /// yields zero text ops). All ten item labels cross. **No invert
+    /// op does**, and no drawing mode other than `srcCopy` appears.
+    ///
+    /// So the gap is upstream of the renderer: fixing invert in the
+    /// replay cannot restore a Finder selection that was never
+    /// recorded. When the capture starts carrying it, this fails and
+    /// says the baseline moved.
+    func testTheFindersSelectionNeverReachesTheCapture() throws {
+        let url = try XCTUnwrap(Bundle.module.url(
+            forResource: "qdtrace-drain-sweep-finder-selected",
+            withExtension: "json", subdirectory: "Fixtures"))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: url)) as? [String: Any])
+        let ops = try XCTUnwrap(object["ops"] as? [[String: Any]])
+
+        XCTAssertTrue(ops.contains {
+            ($0["text"] as? String) == "System Folder"
+        }, "the selected item's own label stopped crossing")
+        XCTAssertTrue(ops.contains {
+            ($0["text"] as? String) == "10 items, 3.21 GB available"
+        }, "the composite stopped being rebuilt — is the resize still "
+           + "reaching the Finder?")
+
+        let inverts = ops.filter { ($0["verb"] as? Int) == 3 }
+        XCTAssertTrue(inverts.isEmpty,
+                      "the Finder's selection now REACHES the capture "
+                      + "(\(inverts.count) invert ops) — the baseline has "
+                      + "moved and the invert work can be measured here")
+
+        /* But the highlight is not wholly absent, and the render says
+           so: the Finder PAINTS the selected label's background, so a
+           filled rect does cross — and `finder-selected.png` draws it
+           as a solid black bar with the label swallowed inside it,
+           because the text that follows is drawn in the same colour.
+           White-on-dark is the missing half, not the fill. */
+        XCTAssertFalse(ops.filter { ($0["verb"] as? Int) == 1 }.isEmpty,
+                       "the painted highlight stopped crossing too — the "
+                       + "selection is now entirely absent, not half-drawn")
+    }
+
+    /// THE FLATTENED-EPOCH FINDING, and it is a DRAW-ORDER defect, not
+    /// a composition one. The distinction cost one wrong hypothesis:
+    /// the first version of this test asserted the three-pass capture
+    /// had LOST the sound list, and failed, because the rows are all
+    /// present in the composed display. They are simply painted over.
+    ///
+    /// `displayEpoch` advances once per ARM and never per repaint pass,
+    /// so a capture spanning three front/back cycles arrives as one
+    /// frame carrying three successive repaints end to end. The Sound
+    /// panel builds its interior from two offscreen worlds and blits a
+    /// full-window composite from one of them; concatenated, a LATER
+    /// pass's full-window blit lands after an EARLIER pass's list blit
+    /// and covers it. The renders say so plainly — `sound.png` has an
+    /// empty list box, `sound-1pass.png` has all nine rows — and the
+    /// only difference between the two runs is the number of passes.
+    ///
+    /// So the invariant is about ORDER: in the flattened capture a
+    /// window-spanning op follows the list content; in the one-pass
+    /// capture it does not.
+    func testFlattenedPassesPutAWindowBlitOverTheSoundList() throws {
+        func lastSpanningOpAfterList(_ fixture: String) throws -> Bool {
+            let display = try compose(fixture, window: 0x1e612eb0,
+                                      psn: "0.37355521", title: "Sound")
+            let list = display.lastIndex {
+                $0.op == "text" && $0.text == "ChuToy"
+            }
+            let spanning = display.lastIndex { op -> Bool in
+                guard op.op == "bits" || op.op == "rect",
+                      let box = op.dst ?? op.rect, box.count == 4
+                else { return false }
+                return (box[2] - box[0]) >= 350 && (box[3] - box[1]) >= 250
+            }
+            let listIndex = try XCTUnwrap(list, "\(fixture) has no list rows")
+            guard let spanning else { return false }
+            return spanning > listIndex
+        }
+        XCTAssertTrue(try lastSpanningOpAfterList("qdtrace-drain-sweep-sound"),
+                      "the three-pass capture no longer paints over its "
+                      + "list — the flattening was fixed, or the capture "
+                      + "changed shape")
+        XCTAssertFalse(
+            try lastSpanningOpAfterList("qdtrace-drain-sweep-sound-1pass"),
+            "the one-pass control now paints over its list too — it has "
+            + "stopped being a control")
+    }
+
     /// Sherlock 2 WAS the boundary case, and this gate is the boundary
     /// moving. Its whole interior is built in a transient offscreen
     /// world per repaint, which the sight-then-chase route hooked 0 of

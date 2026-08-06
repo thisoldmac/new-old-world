@@ -10214,3 +10214,171 @@ line rather than paging further.
 (the type/creator lookup a listing off the wire needs, since it has no
 file to ask about) and `GetIconRefFromTypeInfo` is absent. Nothing uses
 either yet; the list is text-only.
+
+---
+
+## Fidelity sweep, 2026-08-06 — six windows-worth of appearance defects
+
+Appended, not edited, per this file's rule. The full survey — rubric,
+eleven scored windows, the render/screendump pairs and the reproduction
+command — is [docs/fidelity-sweep-2026-08-06.md](fidelity-sweep-2026-08-06.md).
+Scores there describe branch `claude/fidelity-sweep-2026-08-06` off
+`eb952325`, guest build `1bff0bd2ca39`, **before** the icon asset pack
+grew from 186 to 914 app icons; the sweep is the deliberate A/B baseline
+for that change.
+
+Everything below is BROKEN rather than unverified: each was seen in a
+render beside the machine's own pixels for the same moment.
+
+### Small system text renders 33% too large, and overruns its window
+
+`DisplayReplay.strike(font:size:)` returns `FontBook.system` (Chicago 12)
+for font 0 and font 1 **regardless of the requested size**. The Memory
+control panel draws 251 of its 266 text ops at font 1 size 9; all 251
+render at 12, so labels overrun their controls ("Disk Cache size is
+calculat", "Percent of available mem", "RAM Disk S") and spill past the
+window's right edge onto the desktop. The Geneva branch three lines
+below already picks a nearest bundled size; the system branch does not,
+and there is no bundled system strike below 12 for it to pick.
+Renderer-side. Fixture `qdtrace-drain-sweep-memory.json`.
+
+### A declared truncation becomes a silent one at the glass
+
+Text records carry `len`, `fullLen` and `trunc`, and the resident sets
+them: Appearance's description arrives `len 64, fullLen 69, trunc true`.
+Neither `NOWMirrorContentPlane` nor `DisplayReplay` reads either field,
+so the render draws 64 characters as if they were the whole string. The
+capture is honest and the renderer discards the honesty. Renderer-side.
+
+### A later repaint pass paints over an earlier one
+
+`displayEpoch` advances once per ARM and never per repaint pass, so a
+capture spanning several front/back cycles arrives as one frame with the
+passes concatenated. Where an application composites from more than one
+offscreen world, a later pass's full-window blit lands on an earlier
+pass's content and erases it.
+
+The Sound panel is the clean case and it has a control: the same window
+on the same build, one repaint pass instead of three, keeps all nine
+sound-list rows; the three-pass capture renders an empty list box. The
+rows are present in BOTH composed displays, so this is draw order, not
+composition — the first version of the gate asserted they were missing
+and failed, which is how the mechanism got named. Gated by
+`testFlattenedPassesPutAWindowBlitOverTheSoundList`. The same signature
+costs Appearance its first two tab labels and both theme swatches.
+
+Curable on either side: advance the epoch per update pass in the
+resident, or have the plane keep only the last complete pass.
+
+### The Monitors control panel reports nothing at all
+
+`Monitors` / `VGA Display` (`0x1e91a310`) is fully drawn on the
+screendump, sits entirely inside NOW's window, and produced **0 records
+on its own port** — twice. The second attempt escalated past the
+front/back cycle to hide/reveal and got 17 records, none of them on the
+panel's window; only the shared theme world answered. Not occlusion, not
+a gentle rig: the panel's drawing never reaches the hooked port. It is
+the only window in the sweep the mirror can say nothing about.
+Capture-side.
+
+### Control glyphs are absent with the content plane alone
+
+Checkbox ticks, radio dots and slider thumbs draw as neutral plates in
+every panel. This is the honest fallback `controlSized` prescribes for a
+small themed blit, and it is scoped: the semantic plane was
+`requested: 0, active: 0` for the whole sweep, and that plane is what
+knows a blit is a checkbox. The open question is whether the shipping
+product ever renders a control panel with the content plane alone — if
+it does, those windows look like this.
+
+### MacRoman punctuation drops, and sometimes drops to the wrong glyph
+
+`…` drops from every button title that has one, `•` from all five
+Scrapbook bullets, `'` from "user's guide". Two cases are worse than
+missing: "Check Disk" renders "Check Disl" and "8/ 6/2026" renders
+"8/ 6/202(". The wrong-glyph cases mean the bitmap strike's mapping
+above 0x7F wants checking, not just filling in. Renderer-side.
+
+### Not defects — two harness artifacts caught before they were reported
+
+Recorded because a later reader will hit them again. **Window titles
+appeared to never render**: the coverage test sizes a captured window
+from `contentSize`, a union of everything drawn, which made Scrapbook
+nearly twice its true width and pushed the centred title off the visible
+area. The sweep records each window's real rect and `composedSweep` now
+uses it. **The Finder desktop appeared to render empty**: a desktop
+capture composes onto the canned scene's `windows[1]`, which that
+helper documents as attaching a display that renders nowhere.
+
+### Still unjudged after this sweep
+
+SimpleText with a document and with a dialog, Sherlock 2, the three
+Finder *window* views (only the desktop was captured), Get Info, a
+Standard File dialog, an alert, a pulled-down menu, and ten remaining
+control panels. Calculator and Key Caps failed to launch through the
+anchor (`-192`; and a dropped connection with eleven processes open)
+rather than being judged.
+
+### Key Caps' whole keyboard collapses onto the window origin (2026-08-06)
+
+Added by the same sweep, after a second guest boot. Every one of Key
+Caps' ~80 key frames arrives as a rect at the origin — `[0,0,21,21]`,
+`[0,0,26,21]`, `[0,0,31,21]` … 4691 of them, differing only in width —
+while its key LABELS arrive correctly spread (`pen [12,65]`, `[53,65]`,
+`[73,65]`). The render is a handful of stacked boxes in the corner of an
+empty window; only the chrome is right.
+
+A missing `SetOrigin` was the obvious suspect and is NOT the answer in
+general: `kNowContentStateOrigin` exists, the emitter handles it, and
+1013 origin state ops appear across this sweep's other captures. Key
+Caps' own capture has zero — all 240 of its state ops are clip changes.
+The shape fits an application drawing each key through a scratch bitmap
+swapped under a port whose address never changes, where the recorded
+coordinates are true of the scratch and meaningless against the window.
+Confirm that before building on it. Capture-side. Fixture
+`qdtrace-drain-sweep-key-caps.json`.
+
+### SimpleText and Calculator cannot be launched through the anchor (2026-08-06)
+
+`launch err -192` for the application, for a document, and for the Apple
+Menu Items copy alike, on two separate guest boots. This blocked the
+single most informative window the sweep wanted — a text editor with a
+document open — and it is a RIG gap, not a mirror result. Sherlock 2,
+Note Pad, Stickies, Scrapbook and every control panel launched from the
+same anchor in the same runs, so it is specific rather than general.
+
+### A selected label renders as a solid black bar (2026-08-06)
+
+Captured deliberately, because nothing in the corpus had a selection in
+it: `tools/fidelity-sweep.py --reveal` selects an item and `--after`
+issues a reflowing resize, without which the Finder never rebuilds its
+icon-view composite (front/back alone yields 0 text ops).
+
+The Finder draws a selected icon's label by painting its background and
+writing the text over it in the inverse colour. **The paint crosses; the
+inverse does not.** The render draws "System Folder" as a black
+rectangle with nothing legible in it, beside nine correctly-drawn
+labels — worse than no highlight at all, because a black bar reads as
+damage rather than as selection. The replay tracks one `fg` and one `bg`
+per port and draws text in `fg`; nothing carries the text transfer mode.
+
+Adjacent to but DISTINCT from the skipped-invert work: fixing invert
+will not fix this label, because this label was never inverted — it was
+painted. Fixture `qdtrace-drain-sweep-finder-selected.json` (11 paint
+ops, 0 invert ops, all ten labels present). Gated by
+`testTheFindersSelectionNeverReachesTheCapture`. Renderer-side.
+
+### The selection/invert baseline, for the work landing now
+
+The replay skips invert outright ("invert needs destination pixels we do
+not carry"). The accent-ramp thread showed the corpus could not measure
+that: a forced-magenta selection colour regenerated all nine committed
+renders byte-identically, because no capture contained a selection.
+
+This sweep leaves a better before-picture: **157 invert ops (`verb: 3`)
+across five captures** — Stickies 52, Note Pad 52, Sherlock 2 31, Key
+Caps 18, Sound 4 — against 34 previously, plus the deliberately-selected
+Finder capture above. Still missing: a selected LIST row in a capture.
+Sound is the nearest available case and is already committed — its guest
+screendump shows `SimpleBeep` highlighted while `sound-1pass.png` draws
+that row unhighlighted, in a capture whose other nine rows are correct.
