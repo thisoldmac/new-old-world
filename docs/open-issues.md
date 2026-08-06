@@ -14,6 +14,76 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## OPEN, and now MEASURED rather than argued: where a scene's time goes, and the two things the control sweep still gets wrong (2026-08-06)
+
+Plan 013 § 1. Every scene now carries `meta.phases` — microseconds per
+phase, named for what the guest was doing — so the entry below, which was
+written from a THROWAWAY breakdown, no longer needs one. The breakdown
+is permanent, additive on the wire, and publishes its own cost. This
+entry is what the first measurement with it says.
+
+**The conditions**, one clone off `now-mirror-stage.qcow2.bak-20260806`,
+build `9ed6e7d18c19`, wire 5410, control-sweep fix merged. Median of the
+STEADY-STATE scenes in each condition, microseconds:
+
+| phase | Finder front | NOW front |
+|---|---|---|
+| enumerate | 952 | 1045 |
+| bind | 182 | 214 |
+| windows | 696 | 970 |
+| controls | **290** | **5090** |
+| menubar | 107 | 1359 |
+| semantics | 20 | 17 |
+| refs | 153 | 225 |
+| encode | 589 | 596 |
+| **whole walk** | **~3.0 ms** | **~8.5 ms** |
+
+Against the 116 ms / 1116 ms this plan opened with. The sweep fix holds,
+and it holds in both conditions.
+
+**Two costs the fix does not remove, both visible only now.**
+
+1. **A focus change costs one 1.9-second scene.** Measured: the scene in
+   which NOW became frontmost reported `controls = 1,891,174 µs`. The
+   cache is invalidated by the activation and the whole 3,724-point grid
+   is re-swept, in the foreground, at ~240 µs a point. Every subsequent
+   front scene is ~5 ms. So the cost did not go away — it moved from
+   every poll to every focus change, which is a very large improvement
+   and still the single most expensive thing on this machine.
+2. **The background sweep is pure waste, and it is also a HOLE IN THE
+   MIRROR.** `FindControl` answers an inactive window immediately — which
+   is why the sweep is cheap in the background — but "immediately" means
+   it answers NOTHING. Measured: with the Finder in front, NOW's own
+   window walk spends 5–10 ms sweeping 3,724 points and returns **zero
+   controls**. The scene therefore shows NOW's own window as empty
+   whenever NOW is not frontmost. That is not a performance issue with a
+   performance fix; the mirror is reporting an absence it did not
+   observe.
+
+**The wide answer plan 013 asked for: yes, the shape is everywhere.**
+Every remaining phase is a full re-derivation, per poll, of something
+that rarely changes — the process list (`enumerate`, ~1 ms and identical
+in both conditions), the window chains (`windows`), NOW's own menu bar
+(`menubar`, 1.36 ms), and the document itself (`encode`). Nothing in the
+steady state is proportional to what CHANGED. The control sweep was not
+the only one; it was the loudest. **But the absolute numbers are now
+single-digit milliseconds on an emulated G4**, so the case for plan 013's
+slices 3–5 no longer rests on comfort here — it rests entirely on the
+vintage-hardware multiplier, and that argument should be made with a
+number from a 1400c rather than assumed.
+
+**What the breakdown costs, stated because it must be.** 130–330 µs per
+scene on this machine, from 26–66 `Microseconds` calls at a calibrated
+~4.9 µs each — the emulator's trap cost, and it will be lower on real
+PowerPC. That is 0.02% of the 1.9 s scene and up to 8% of a 3 ms one; it
+is bounded by PROCESSES and WINDOWS, never by controls or menu items, so
+it does not grow with the size of the interface. It is left on because a
+breakdown that is off by default is a breakdown nobody has when they
+need it, and every scene publishes `phases.clockUs` so a reader can
+subtract rather than wonder. **If a metal pass shows `Microseconds`
+costing what it costs here, the seam count is what to reduce** — the
+per-process bind/windows/menubar trio is 6 of every 8 clock reads.
+
 ## FIXED on an emulator, NEVER ON METAL: NOW's own window cost ~1 s of every scene, and the suspect was the wrong one (2026-08-06)
 
 **The symptom.** With NOW frontmost — which is what a person does the
