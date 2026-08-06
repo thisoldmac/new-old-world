@@ -112,6 +112,53 @@ final class MirrorQuitModalTests: XCTestCase {
                        + "machine half of which it could not observe")
     }
 
+    /// THE THIRD HALF: the person has to be able to tell the two apart.
+    ///
+    /// The pair above is a mirror that correctly keeps drawing windows it
+    /// could no longer see. On 2026-08-06 the status line over that exact
+    /// state read `5 windows · walk 0ms · transfer 36ms · same` — every
+    /// word true, the sentence a lie by omission. The reducer knew;
+    /// nothing carried it to the face.
+    func testTheStatusLineSaysHowManyWindowsAreOnlyRetained() throws {
+        let session = MirrorGuestSession(guest: "wire-5490",
+                                         incarnation: "session-a")
+        func reduce(_ name: String, previous: MirrorReplica?) throws
+            -> MirrorReplica {
+            let url = try XCTUnwrap(
+                Bundle.module.url(forResource: name, withExtension: "json",
+                                  subdirectory: "Fixtures"))
+            let scene = try NOWMirrorSceneDecoder.decode(
+                irVersion: 2, document: try Data(contentsOf: url))
+            let observation = GuestSceneObservation(
+                session: session, scene: scene,
+                receivedAt: Date(timeIntervalSince1970: Double(scene.seq)))
+            guard case .accepted(let replica) =
+                MirrorReplicaReducer.reduce(observation, previous: previous)
+            else { throw XCTSkip("the reducer rejected a real document") }
+            return replica
+        }
+
+        let held = try reduce("scene-plane-held", previous: nil)
+        XCTAssertEqual(
+            NOWMirrorSource.observationPhrase(held.windows.count,
+                                              replica: held),
+            "\(held.windows.count) windows",
+            "a fully observed machine gets no qualifier — a warning that is "
+            + "always on is not a warning")
+
+        let lapsed = try reduce("scene-plane-lapsed", previous: held)
+        let stale = lapsed.windows.values.filter {
+            $0.freshness == .expectedStale
+        }.count
+        XCTAssertGreaterThan(stale, 0, "the lapsed fixture retains windows")
+        XCTAssertEqual(
+            NOWMirrorSource.observationPhrase(lapsed.windows.count,
+                                              replica: lapsed),
+            "\(lapsed.windows.count) windows, \(stale) expected-stale",
+            "a mirror that could not see the machine must say so on the "
+            + "line a person actually reads")
+    }
+
     func testTheReducerKeepsTheModalWindow() throws {
         let scene = try scene()
         let session = MirrorGuestSession(guest: "wire-5490",

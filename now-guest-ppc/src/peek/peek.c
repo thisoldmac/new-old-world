@@ -267,6 +267,41 @@ void now_peek_claim_until(NowPeekOwner owner, unsigned long caps,
     publish_claims();
 }
 
+int now_peek_settle(unsigned long caps, unsigned long max_ticks)
+{
+    unsigned long deadline = (unsigned long)TickCount() + max_ticks;
+
+    if (caps == 0) {
+        return 1;
+    }
+    for (;;) {
+        EventRecord ev;
+        const NowPeekTable *table = now_peek_table();  /* republishes */
+
+        if (table == NULL) {
+            return 0;                 /* no resident: nothing to wait for */
+        }
+        if ((table->arm_active & (NowPeekU32)caps) == (NowPeekU32)caps) {
+            return 1;
+        }
+        if ((table->arm_request & (NowPeekU32)caps) != (NowPeekU32)caps) {
+            /* Our claim is not even published - this build does not own
+               the writer (a dev-named binary) or the resident has taken
+               the request away. Waiting for an echo of a request nobody
+               made is how a bounded wait becomes a stall on every call. */
+            return 0;
+        }
+        if ((unsigned long)TickCount() >= deadline) {
+            return 0;
+        }
+        /* Give up the processor without dequeuing anything - mask zero,
+           the same yield the act plane uses. It costs no events and it
+           is enough: the resident's echo rides the GNE patch, so OUR own
+           call through it is usually the pass that arms. */
+        (void)WaitNextEvent(0, &ev, 1L, NULL);
+    }
+}
+
 void now_peek_release(NowPeekOwner owner, unsigned long caps)
 {
     if ((int)owner < 0 || (int)owner >= (int)kNowPeekOwnerCount) {

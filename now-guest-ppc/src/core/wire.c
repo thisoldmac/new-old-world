@@ -407,6 +407,39 @@ static void close_endpoint(void)
     g.bulk_remaining = 0;
 }
 
+/* THE PLANES THIS HOST HAS ASKED TO HAVE ARMED, remembered across
+   requests.
+   --------------------------------------------------------------------
+   The owner lease is ten seconds and, until this existed, ONLY a
+   `scene.request` renewed it - so the lease measured scene-poll cadence
+   rather than whether anybody wanted the planes. A host that spent forty
+   seconds clicking things and never asked for a scene between them let
+   four leases expire, and then every act it sent refused with "the
+   anchor plane is absent or not armed" while its Mirror kept drawing the
+   windows it could no longer see (open-issues.md, 2026-08-06).
+
+   This is now_peek_idle's mistake one layer up, and it takes the same
+   shape of fix: renew from something that MEANS a consumer is there.
+   That is not the event loop here - the event loop runs whether or not
+   anyone is watching, and a plane armed on an unwatched machine is work
+   charged to every process on it for nobody. It is host traffic: a host
+   that is sending this guest requests is a host that is using it.
+
+   Two gates keep it honest. It renews only once a scene has actually
+   been asked for on THIS link, so a host that never mirrors never arms
+   anything; and it does not renew on `pong`, which is the reply to our
+   own heartbeat and would make "connected" mean "armed forever". Zeroed
+   when the link drops, where the claim is released anyway. */
+static unsigned long g_scene_plane_caps;
+
+static void renew_scene_planes(void)
+{
+    if (g_scene_plane_caps == 0) {
+        return;
+    }
+    now_peek_claim(kNowPeekOwnerScene, g_scene_plane_caps);
+}
+
 /* Everything in flight, dropped. ONE list, because there were two and
    they had already drifted: enter_backoff() dropped five things and
    conn_disconnect() dropped none, so disconnecting mid-pull left
@@ -425,6 +458,7 @@ static void link_drop_transfers(void)
     chat_drop();                      /* a streaming turn dies with the link */
     preview_fail("Connection lost");  /* local hook only; no wire touched */
     ctlq_clear();
+    g_scene_plane_caps = 0;            /* no consumer, nothing to renew */
     now_peek_disconnect();             /* release every wire-owned plane */
     /* And tell the resident to stay off the wire. It holds its OWN
        connection to the same host, so a link this application has given
@@ -1847,6 +1881,11 @@ static void send_scene_same(long id, const NowScene *scene, long walk_ms,
 /* Walks the machine, encodes the current IR, announces scene.begin and arms the
    incremental sender. Returns immediately - the bytes go out from
    service_transfer, exactly as a capture's do. */
+/* How long a scene may wait for the anchor plane's arm echo before it
+   walks anyway. Ticks, so half a second - a ceiling and not a cost: the
+   echo was measured at ~15 ms, and this returns the moment it lands. */
+enum { kNowSceneArmSettleTicks = 30 };
+
 static void serve_scene(const char *request)
 {
     NowPrefs prefs;
@@ -1952,7 +1991,28 @@ static void serve_scene(const char *request)
         if (interaction) requested |= (unsigned long)kNowPeekTableCapAct;
         now_peek_release(kNowPeekOwnerScene, optional & ~requested);
         now_peek_claim(kNowPeekOwnerScene, requested);
+        /* And remember it, so ANY later thing this host asks for renews
+           the claim rather than only the next scene. See
+           renew_scene_planes(). */
+        g_scene_plane_caps = requested;
     }
+
+    /* THEN WAIT FOR THE PLANE, briefly, rather than walking blind.
+     *
+     * The claim above is a request; the resident echoes it on its next
+     * pass, and a walk that starts before the echo reports no-plane for
+     * every foreign process - one useless scene per lapse, and it is the
+     * scene a person is looking at. Measured 2026-08-06: after a
+     * ten-second quiet gap the walk carried NOW's own window alone with a
+     * modal open on screen, and the next walk carried all three windows.
+     *
+     * Bounded, and it does not lie: now_peek_settle returns as soon as
+     * the resident echoes (~15 ms) and gives up after half a second, and
+     * the walk proceeds either way - a scene that says "not observed" is
+     * still the honest answer when the plane genuinely is not armed. The
+     * arm handshake is unchanged; this only stops asking before it. */
+    (void)now_peek_settle((unsigned long)kNowPeekCapAnchors,
+                          kNowSceneArmSettleTicks);
 
     now_scene_collect(scene, ++g_scene_seq, stale_ticks);
     /* Correlate subsequent acts with the normal-context observation a
@@ -6140,6 +6200,10 @@ static int handle_frame(const char *reply)
                  g.peer_name, g.peer_version, g.last_rtt_ms);
         return 1;
     }
+    /* A HOST DOING ANYTHING AT ALL IS A HOST THAT STILL WANTS THE PLANES.
+       Below the `pong` return on purpose - our own heartbeat's echo is
+       not a consumer asking for something. See renew_scene_planes(). */
+    renew_scene_planes();
     if (now_json_type_is(reply, "capture.request")) {
         serve_capture(reply);
         return 1;
