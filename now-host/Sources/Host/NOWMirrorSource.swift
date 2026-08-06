@@ -964,7 +964,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         """
     }
 
-    private func readIcons(container: String)
+    func readIcons(container: String)
         async -> [MirrorKit.Scene.DesktopItem]? {
         /* Two vectorised passes, not one per icon. The first names every
            item and where the Finder drew it; the second asks the FILES
@@ -991,15 +991,26 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         while expectedTotal == nil || offset < expectedTotal! {
             let source = Self.iconItemsScript(container: container,
                                               offset: offset)
-            let read = await readingOutput("script", ["source": .text(source)])
-            guard let text = read.value, !read.truncated,
-                  let total = Self.iconPageTotal(text),
+            /* `osaFailureIsAnError` because THIS pass is the one that must
+               succeed. A script that raises answers `ok: true` with an
+               empty output row and its reason in `osaErr`; without the
+               opt-in that code was read, matched and then thrown away, so
+               the empty answer fell through to the roster guard and every
+               failure - a raise, a refusal, a Finder that cannot name its
+               own desktop - reported "incomplete or changing item roster".
+               `desktopItems` has never read on any drive and that sentence
+               is all the mirror ever said about why. */
+            let read = await readingOutput("script", ["source": .text(source)],
+                                           osaFailureIsAnError: true)
+            let total = read.value.flatMap(Self.iconPageTotal)
+            guard let text = read.value, !read.truncated, let total,
                   expectedTotal == nil || expectedTotal == total,
                   total <= FinderItems.maxItemsPerWindow else {
-                let reason = read.truncated
-                    ? "guest result truncated"
-                    : (read.error ?? "incomplete or changing item roster")
-                note("could not read the items of \(container) - \(reason)")
+                note("could not read the items of \(container) - "
+                     + Self.rosterPageRefusal(error: read.error,
+                                              truncated: read.truncated,
+                                              total: total,
+                                              expected: expectedTotal))
                 return nil
             }
             expectedTotal = total
@@ -1046,6 +1057,37 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             out.creator = pair.1.isEmpty ? nil : String(pair.1.prefix(4))
             return out
         }
+    }
+
+    /// Why a roster page was refused, in the guest's OWN words wherever it
+    /// gave any.
+    ///
+    /// Five distinct failures used to share one sentence — "incomplete or
+    /// changing item roster" — which is the truth of exactly one of them.
+    /// A raised script, a Finder that cannot name its desktop, a reply this
+    /// side could not parse and a container over the cap all read the same
+    /// from the host, so `desktopItems` failing on every drive since it
+    /// shipped has produced no information at all about the cause. The
+    /// generic line survives only for the case it describes: a total this
+    /// side agreed with, pages that would not add up to it.
+    static func rosterPageRefusal(error: String?, truncated: Bool,
+                                  total: Int?, expected: Int?) -> String {
+        /* The guest's reason outranks the shape of its answer: a truncated
+           reply to a script that RAISED is truncated because it is empty. */
+        if let error { return error }
+        if truncated { return "guest result truncated" }
+        guard let total else {
+            return "the guest answered without an item total"
+        }
+        if let expected, expected != total {
+            return "the item count changed mid-read "
+                + "(\(expected), then \(total))"
+        }
+        if total > FinderItems.maxItemsPerWindow {
+            return "\(total) items is past the "
+                + "\(FinderItems.maxItemsPerWindow)-item cap"
+        }
+        return "incomplete or changing item roster"
     }
 
     static func iconPageTotal(_ raw: String) -> Int? {

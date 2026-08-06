@@ -1145,4 +1145,96 @@ final class NOWMirrorIconParsingTests: XCTestCase {
         XCTAssertEqual(NOWMirrorSource.unquote("\""), "\"",
                        "a lone quote is not a wrapper")
     }
+
+    /// Every roster failure used to wear the same sentence, and only one
+    /// of them was ever that sentence's truth.
+    func testEachRosterRefusalSaysItsOwnReason() {
+        XCTAssertEqual(
+            NOWMirrorSource.rosterPageRefusal(
+                error: "the guest's AppleScript raised osaErr -1728",
+                truncated: true, total: nil, expected: nil),
+            "the guest's AppleScript raised osaErr -1728",
+            "a raise outranks the emptiness the raise caused")
+        XCTAssertEqual(
+            NOWMirrorSource.rosterPageRefusal(
+                error: nil, truncated: true, total: 4, expected: 4),
+            "guest result truncated")
+        XCTAssertTrue(
+            NOWMirrorSource.rosterPageRefusal(
+                error: nil, truncated: false, total: nil, expected: nil)
+                .contains("without an item total"),
+            "an unparseable reply is not a changing roster")
+        XCTAssertTrue(
+            NOWMirrorSource.rosterPageRefusal(
+                error: nil, truncated: false, total: 9, expected: 7)
+                .contains("changed mid-read"))
+        XCTAssertTrue(
+            NOWMirrorSource.rosterPageRefusal(
+                error: nil, truncated: false,
+                total: FinderItems.maxItemsPerWindow + 1, expected: nil)
+                .contains("cap"))
+        XCTAssertEqual(
+            NOWMirrorSource.rosterPageRefusal(
+                error: nil, truncated: false, total: 7, expected: 7),
+            "incomplete or changing item roster",
+            "the generic line survives for the one case it describes")
+    }
+}
+
+/// The roster read's account of a guest that REFUSED the question.
+///
+/// `desktopItems` has never read on any drive, and the matching symptom is
+/// the Finder's own Desktop window publishing `itemTotal: 0` with
+/// seventeen icons on screen (measured 2026-08-05, reconfirmed 2026-08-06
+/// on guest build 1bff0bd2ca39). Whatever the cause, this side said
+/// "incomplete or changing item roster" every time — because the guest's
+/// `osaErr` was read, matched and then thrown away, so an AppleScript that
+/// raised arrived here indistinguishable from a container that is empty.
+@MainActor
+final class NOWMirrorRosterReasonTests: XCTestCase {
+
+    private func source(answering rows: [[String]]) -> NOWMirrorSource {
+        let listener = GuestListener(
+            identity: .init(version: "test", name: "Test Host"))
+        return NOWMirrorSource(
+            listener: listener,
+            act: AgentIntegrationActControl(listener: listener,
+                                            currentSessionID: { nil }),
+            interval: 3_600,
+            sendCommand: { _, _, completion in
+                completion(.init(id: 1, ok: true, output: ["script": rows]))
+            })
+    }
+
+    /// The guest's own code, all the way to the sentence a person reads.
+    func testARaisedScriptReportsTheGuestsOSACodeNotTheCatchAll() async {
+        /* What a raising script actually puts on the wire: ok, an EMPTY
+           output row, and the reason in osaErr. -1728 is the Finder's
+           "can't get", the shape the Desktop read is suspected of. */
+        let src = source(answering: [["output", ""],
+                                     ["osaErr", "-1728"],
+                                     ["truncated", "false"]])
+
+        let items = await src.readIcons(container: "desktop")
+
+        XCTAssertNil(items, "a refusal is still a refusal")
+        XCTAssertTrue(src.lastAct.contains("-1728"),
+                      "the guest's own code must reach the person driving; "
+                      + "got: \(src.lastAct)")
+        XCTAssertFalse(src.lastAct.contains("incomplete or changing"),
+                       "the catch-all hid every real reason: \(src.lastAct)")
+    }
+
+    /// The opposite half, so the fix cannot be "call everything an error".
+    /// A guest that reports no failure reported no failure.
+    func testAnEmptyContainerIsStillAnEmptyContainer() async {
+        let src = source(answering: [["output", "\"N\t0\r\""],
+                                     ["osaErr", "0"],
+                                     ["truncated", "false"]])
+
+        let items = await src.readIcons(container: "desktop")
+
+        XCTAssertEqual(items?.count, 0,
+                       "zero items is an answer, not a refusal")
+    }
 }
