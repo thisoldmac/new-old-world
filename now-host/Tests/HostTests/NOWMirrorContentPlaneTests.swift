@@ -1,5 +1,6 @@
 import XCTest
 import MirrorKit
+import MirrorKitUI
 @testable import Host
 
 @MainActor
@@ -440,6 +441,60 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
         XCTAssertEqual(display.first { $0.op == "text" }?.pen, [14, 24],
                        "the first row lands at the applet's own pen")
         XCTAssertTrue(update.sentence.contains("joined 1 composite"))
+    }
+
+    /// THE PAYOFF (plan 013, slice D): a real Finder icon-view window's
+    /// interior, composed host-side from a drain captured live off the
+    /// CFM Finder on mac99/OS 9.1 (gwprobe finder-join-7, 2026-08-06) —
+    /// ten real labels at their true pens, icon stamps as bits geometry,
+    /// one blitsrc naming the hooked offscreen world, and not one pixel
+    /// on the wire. The pens asserted below are the same values plan 013
+    /// quotes from the original measurement, captured again a day later
+    /// through the whole new pipeline.
+    func testFinderCaptureComposesTheRealInteriorHostSide() throws {
+        let url = try XCTUnwrap(Bundle.module.url(
+            forResource: "qdtrace-drain-blitsrc-finder",
+            withExtension: "json", subdirectory: "Fixtures"))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: url)) as? [String: Any])
+        let capture = try XCTUnwrap(QDTraceDecode.drain(object))
+        XCTAssertTrue(capture.recordCountAgrees)
+
+        var value = try scene(address: 0x00a01c40)
+        value.windows[0].psn = "0.29949953"
+        for index in value.windows.indices where index != 0 {
+            value.windows[index].psn = "0.99999999"
+        }
+        let model = plane()
+        let update = model.apply(capture, to: value)
+
+        let display = try XCTUnwrap(update.scene.windows[0].display)
+        let texts = display.filter { $0.op == "text" }
+        XCTAssertEqual(texts.count, 10, "every label the Finder drew")
+        func pen(_ label: String) -> [Int]? {
+            texts.first { $0.text == label }?.pen
+        }
+        XCTAssertEqual(pen("10 items, 3.21 GB available"), [135, 14])
+        XCTAssertEqual(pen("Documents"), [280, 67])
+        XCTAssertEqual(pen("TimBotTu"), [282, 131])
+        XCTAssertEqual(pen("TBT"), [40, 195])
+        /* Icons arrive as bits geometry (deferred item 1: identity needs
+           PlotIconSuite interception) — hatched rectangles at correct
+           positions is the honest first result, not a shortfall. They
+           are the re-homed source's own stamps, not the joined blit. */
+        XCTAssertGreaterThan(
+            display.filter { $0.op == "bits" }.count, 0,
+            "icon stamps survive as placed geometry")
+        XCTAssertTrue(update.sentence.contains("joined 1 composite"))
+
+        /* Mirror's render-screenshot rule: the composed interior is
+           agent-verifiable as an image of the RENDER — not the guest
+           framebuffer, not the host screen. Opt-in so CI never writes
+           outside its sandbox. */
+        if let out = ProcessInfo.processInfo.environment["NOW_RENDER_OUT"] {
+            let png = try RenderShot.png(scene: update.scene)
+            try png.write(to: URL(fileURLWithPath: out))
+        }
     }
 
     func testProcessSerialParsesOnlyTheTwoPartWireShape() {
