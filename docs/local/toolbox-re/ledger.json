@@ -305,6 +305,20 @@
       "provenance": "measured",
       "evidence": "docs/local/toolbox-re/REFERENCE.md",
       "at": "2026-08-06T04:29:25-0400"
+    },
+    {
+      "phase": "P3",
+      "claim": "QUICKDRAW'S BOTTLENECKS ARE NATIVE POWERPC, measured from inside the machine rather than inferred. SetStdCProcs hands back addresses whose bytes begin 0xAAFE - the Mixed Mode magic - so every standard proc is a ROUTINE DESCRIPTOR, and decoding the RoutineRecord gives ISA=0x01 (kPowerPCISA) for all of them: StdText procInfo 0x00003f80 proc 0x005825a8; StdBits procInfo 0x00000efc proc 0x0058ab38; StdRect procInfo 0x00000340 proc 0x0058afc0. Version 7, flags 0x0004. This confirms the documentation lane's claim on THIS machine and explains why a 68K extension can install 68K UPPs into grafProcs at all: Mixed Mode brokers the transition in both directions, which is the same mechanism behind the project's carbon-upp-is-not-a-cast-on-cfm finding.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy2-report.txt",
+      "at": "2026-08-06T04:31:59-0400"
+    },
+    {
+      "phase": "P0",
+      "claim": "The guest reading its own memory beats QMP for anything context-dependent. memsave at StdText's address returned zeros and a repeating fill because it translates through whatever CPU context the machine stopped in; the same address read by a program ON the guest gave the routine descriptor immediately. QMP is for pixels and for physical/low memory; logical addresses belong to the guest.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy2-report.txt",
+      "at": "2026-08-06T04:31:59-0400"
     }
   ],
   "blockers": [

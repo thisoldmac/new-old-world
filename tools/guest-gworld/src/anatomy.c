@@ -383,6 +383,50 @@ static void ReportDispatch(void)
     DisposeWindow(w);
 }
 
+/* ---- P3: QuickDraw's own code, read from inside its address space ----
+   SetStdCProcs hands out the addresses of the standard bottlenecks, so
+   the implementation is simply THERE to be read - but only from a
+   context whose mapping is right, which QEMU's memsave is not (it
+   translates through whatever CPU context the machine stopped in, and
+   this arc has already been burned by that twice). A program running on
+   the guest has no such problem. */
+static void DumpProc(const char *tag, void *addr, short bytes)
+{
+    const unsigned char *p = (const unsigned char *)addr;
+    const char *dig = "0123456789abcdef";
+    char line[160];
+    short i, j, k;
+
+    Say("");
+    { char t[120]; strcpy(t, "-- "); strcat(t, tag); Say(t); }
+    Hex("   address = ", (unsigned long)addr);
+    if (addr == NULL) { Say("   (null)"); return; }
+    for (i = 0; i < bytes; i += 16) {
+        j = 0;
+        line[j++] = ' '; line[j++] = ' ';
+        for (k = 28; k >= 0; k -= 4)
+            line[j++] = dig[(((unsigned long)(p + i)) >> k) & 0xF];
+        line[j++] = ':';
+        for (k = 0; k < 16 && i + k < bytes; ++k) {
+            line[j++] = ' ';
+            line[j++] = dig[(p[i + k] >> 4) & 0xF];
+            line[j++] = dig[p[i + k] & 0xF];
+        }
+        line[j] = '\0';
+        Say(line);
+    }
+}
+
+static void ReportProcCode(void)
+{
+    Say("");
+    Say("======== P3: the standard bottlenecks' own code ================");
+    DumpProc("StdText", (void *)gStd.textProc, 96);
+    DumpProc("StdBits", (void *)gStd.bitsProc, 96);
+    DumpProc("StdRect", (void *)gStd.rectProc, 64);
+    DumpProc("StdRgn",  (void *)gStd.rgnProc, 64);
+}
+
 static void WriteReport(void)
 {
     Str255 name = "\pNOW Anatomy Report.txt";
@@ -421,6 +465,7 @@ int main(void)
     ReportGWorldSurface();
     ReportLifetime();
     ReportDispatch();
+    ReportProcCode();
 
     Say("");
     Say("end of report");
