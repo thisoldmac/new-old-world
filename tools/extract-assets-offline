@@ -21,6 +21,7 @@ so the two routes cannot disagree about what an icl8 means.
     tools/extract-assets-offline --image X.qcow2       # another image
     tools/extract-assets-offline --reuse-work          # skip convert+carve
     tools/extract-assets-offline --theme-report        # census the theme file
+    tools/extract-assets-offline --accent-ramps        # print the 21 clut ramps
 
 RULES, not preferences. These are Apple's bitmaps. The pack stays in this
 private repo, never publishes, never ships as an artifact. The source
@@ -55,6 +56,12 @@ DEFAULT_IMAGE = os.path.expanduser(
 DEFAULT_OUT = os.path.join(
     REPO, "mirror/host/MirrorKit/Sources/MirrorKitUI/Resources")
 DEFAULT_WORK = "/private/tmp/now-assets-work"
+# The accent ramps are numbers, not art, so they are generated as SOURCE
+# rather than dropped in the pack beside the bitmaps: 168 integers the
+# renderer needs at static-init, with no bundle lookup and no parse that
+# could fail silently into a fallback nobody notices.
+DEFAULT_SWIFT_OUT = os.path.join(
+    REPO, "mirror/host/MirrorKit/Sources/MirrorKitUI/PlatinumAccentRamps.swift")
 
 SYSTEM_FILE = "System Folder/System"
 THEME_FILE = "System Folder/Appearance/Theme Files/Apple platinum"
@@ -504,6 +511,311 @@ def theme_report(mnt: str) -> dict:
             "pictures": pictures, "scenes": scenes, "cluts": cluts}
 
 
+# --- the accent ramps ----------------------------------------------------
+
+def parse_clut(data: bytes) -> list[dict]:
+    """A `clut` resource as a list of {value, r, g, b}, 16 bits per channel.
+
+    The layout is NOT guessed. `clut` is a resource image of QuickDraw's
+    ColorTable, documented in Inside Macintosh: Imaging With QuickDraw,
+    "Color Table" (and declared in Universal Interfaces Quickdraw.h):
+
+        ctSeed    SInt32   4 B
+        ctFlags   UInt16   2 B   (0x0000 pixmap, 0x8000 device)
+        ctSize    SInt16   2 B   number of entries MINUS ONE
+        ctTable   ColorSpec[ctSize + 1]
+                  value   UInt16  2 B
+                  rgb     RGBColor { red, green, blue: UInt16 } 6 B
+
+    which is 8 + 8n bytes. That arithmetic is the check, not a comment:
+    the theme file's ramps are 72 B (n = 8) and its `Black & White` is
+    8 B (ctSize = -1, no entries), exactly as the formula predicts, so a
+    misread layout could not produce both numbers.
+    """
+    if len(data) < 8:
+        raise ValueError(f"clut too short: {len(data)} B")
+    _seed, _flags, size = struct.unpack_from(">iHh", data, 0)
+    n = size + 1
+    if n < 0:
+        raise ValueError(f"clut ctSize {size} is below -1")
+    want = 8 + 8 * n
+    if len(data) != want:
+        raise ValueError(f"clut ctSize {size} implies {want} B, resource is "
+                         f"{len(data)} B — layout mismatch, refusing to guess")
+    entries = []
+    for i in range(n):
+        value, r, g, b = struct.unpack_from(">HHHH", data, 8 + 8 * i)
+        entries.append({"value": value, "r": r, "g": g, "b": b})
+    return entries
+
+
+def eight_bit(v: int) -> int:
+    """16-bit QuickDraw channel -> 8-bit, the way QuickDraw itself does it.
+
+    The high byte. NOT a divide by 257: Apple's own tables carry 0xFFFF,
+    0xEEEE, 0x8888 … — each channel is a byte doubled — so taking the high
+    byte is exact and lossless for every value in this file.
+    """
+    return (v >> 8) & 0xFF
+
+
+def extract_accent_ramps(mnt: str) -> dict:
+    """Every `clut` in the Platinum theme file, as numbers.
+
+    These are the named accent ramps the Appearance Manager tints
+    highlights and selections with. There is no bitmap here — this is
+    specification, and it is the half of the theme file that IS liftable
+    (docs/asset-extraction-offline.md).
+    """
+    path = os.path.join(mnt, THEME_FILE)
+    raw = rsrc(path)
+    if not raw:
+        raise SystemExit(f"no resource fork at {THEME_FILE}")
+    fork = resfork.ResourceFork(raw)
+    ramps = []
+    for res in sorted(fork.of_type("clut"), key=lambda r: r.id):
+        entries = parse_clut(res.data)
+        ramps.append({
+            "id": res.id,
+            "name": res.name,
+            "bytes": len(res.data),
+            "entries": entries,
+            "rgb8": [[eight_bit(e["r"]), eight_bit(e["g"]), eight_bit(e["b"])]
+                     for e in entries],
+        })
+    return {
+        "source": THEME_FILE,
+        "fork_bytes": len(raw),
+        "count": len(ramps),
+        "ramps": ramps,
+    }
+
+
+DEFAULT_SCENE = "Mac OS Default"
+
+
+def parse_scene(data: bytes) -> dict:
+    """A `scen` resource's items, as {tag: bytes}.
+
+    `scen` is a FLATTENED COLLECTION (Collection Manager), not a struct:
+    a header of 16-byte entries — id:UInt32, attributes:UInt32 (0x40000000
+    throughout this file), offset:UInt32, tag:OSType — followed by the
+    data area, in which each item is a UInt32 size immediately before the
+    bytes its entry's offset points at.
+
+    That reading is not asserted from a document, it is CHECKED: the size
+    word in front of every item is consistent across all fourteen scenes
+    and every string it delimits is a well-formed Pascal string. The
+    header walk stops on the first entry whose attributes are not
+    0x40000000 rather than trusting a count, because the leading word is
+    a version and mis-taking it for a count is exactly how this parse
+    went wrong the first time.
+    """
+    items: dict[str, bytes] = {}
+    off = 0
+    while off + 16 <= len(data):
+        _cid, attrs, val = struct.unpack_from(">III", data, off)
+        if attrs != 0x40000000:
+            break
+        tag = data[off + 12:off + 16].decode("mac_roman")
+        items[tag] = val
+        off += 16
+    hdr = off
+    out: dict[str, bytes] = {}
+    for tag, val in items.items():
+        a = hdr + val
+        if a < 4 or a + 4 > len(data):
+            continue
+        size = struct.unpack_from(">I", data, a - 4)[0]
+        if a + size > len(data):
+            continue
+        out[tag] = data[a:a + size]
+    return out
+
+
+def pstring(blob: bytes) -> str | None:
+    if len(blob) >= 1 and blob[0] == len(blob) - 1:
+        return blob[1:].decode("mac_roman")
+    return None
+
+
+def default_scene_accent(mnt: str, ramp_names: set[str]) -> dict:
+    """Which ramp the SHIPPED DEFAULT theme uses, read out of its own scene.
+
+    Two independent slots in `scen` 2000 "Mac OS Default" answer this:
+
+    - one item holds a Pascal string that is always one of the twenty-one
+      clut names — in all fourteen scenes, without exception. That is the
+      accent ramp. Its tag reads as `vfnt`, which cannot be what Apple
+      meant it for; the slot is identified here by the invariant it
+      satisfies, not by a name we would be guessing at.
+    - `hcol` holds the Appearance control panel's HIGHLIGHT COLOUR name
+      ("Purple", "Bondi", "Gray"…) and `lgsf` its literal RGBColor. Those
+      names are the control panel's own list and are NOT ramp names, so
+      the highlight is a separate setting that merely happens to coincide
+      with a ramp step for some themes.
+
+    For the default theme they DO coincide, which is the corroboration:
+    the accent is Lavender and the highlight RGB is Lavender's second
+    step exactly. Two slots written independently agreeing is worth more
+    than either alone.
+    """
+    path = os.path.join(mnt, THEME_FILE)
+    fork = resfork.ResourceFork(rsrc(path))
+    scene = next((r for r in fork.of_type("scen") if r.name == DEFAULT_SCENE),
+                 None)
+    if scene is None:
+        raise SystemExit(f"no `scen` named {DEFAULT_SCENE!r} in {THEME_FILE}")
+    items = parse_scene(scene.data)
+    accent = None
+    for tag, blob in items.items():
+        s = pstring(blob)
+        if s in ramp_names and tag not in ("hcol", "patn", "coll"):
+            accent = {"tag": tag, "name": s}
+    hl = items.get("lgsf")
+    highlight = None
+    if hl and len(hl) == 6:
+        r, g, b = struct.unpack(">HHH", hl)
+        highlight = [eight_bit(r), eight_bit(g), eight_bit(b)]
+    return {"scene": DEFAULT_SCENE, "scene_id": scene.id, "accent": accent,
+            "highlight_name": pstring(items.get("hcol", b"")),
+            "highlight_rgb8": highlight}
+
+
+def active_theme_hint(mnt: str, ramps: dict) -> dict:
+    """What the IMAGE can say about which ramp is in force — no more.
+
+    The theme file NAMES twenty-one ramps and its default scene says which
+    one that theme uses. It does NOT say what AppearanceLib resolves at
+    run time on a machine somebody has since touched — that is a
+    preference. So the offline answer is the SHIPPED DEFAULT plus the one
+    piece of evidence about whether it was ever overridden: the presence
+    of an Appearance preferences file. `GetThemeAccentColors` on a running
+    guest is the only thing that can close it, and that is plan 016 P2.
+    """
+    names = {r["name"] for r in ramps["ramps"]}
+    scene = default_scene_accent(mnt, names)
+    prefs_dir = os.path.join(mnt, "System Folder", "Preferences")
+    overrides = sorted(n for n in os.listdir(prefs_dir)
+                       if "appearance" in n.lower()) if os.path.isdir(prefs_dir) else []
+    return {
+        "shipped_default": scene,
+        "appearance_prefs_present": bool(overrides),
+        "appearance_prefs": overrides,
+        "resolved": scene["accent"]["name"] if scene["accent"] else None,
+        "confidence": ("shipped default, never overridden on this image"
+                       if not overrides else
+                       "an Appearance preferences file exists — the machine "
+                       "may have been changed; ask a running guest"),
+        "seam": ("PlatinumAccent.active — plan 016 P2's query applet "
+                 "(GetThemeAccentColors) replaces this with the running "
+                 "machine's answer"),
+    }
+
+
+def swift_ident(name: str) -> str:
+    parts = [p for p in name.replace("&", " and ").split() if p]
+    head = parts[0].lower()
+    return head + "".join(p[:1].upper() + p[1:].lower() for p in parts[1:])
+
+
+def write_accent_ramps_swift(ramps: dict, path: str, image: str) -> None:
+    """Emit the ramps as SOURCE, not as a pack file.
+
+    They are numbers — 21 names and 160 RGB triples — and the renderer
+    wants them at static-init with no bundle lookup and no decode that
+    could fail quietly into a fallback nobody would ever notice on
+    screen. A JSON file in Resources/ would put a colour the machine
+    measured behind an optional.
+    """
+    active = ramps["active"]
+    lines = [
+        "// GENERATED by tools/extract-assets-offline --- do not edit by hand.",
+        "//",
+        "// The Appearance theme's named accent ramps, read as NUMBERS out of",
+        f"// `{ramps['source']}` on a guest disk image.",
+        "// The theme file carries no chrome bitmaps (docs/asset-extraction-",
+        "// offline.md); these `clut` resources are the half of it that IS",
+        "// liftable, and they are specification rather than art: the exact",
+        "// eight-step tables the Appearance Manager tints with.",
+        "//",
+        f"// Source image: {image}",
+        f"// Extracted:    {datetime.date.today().isoformat()}",
+        f"// Ramps:        {ramps['count']} `clut` resources, {ramps['fork_bytes']} B fork",
+        "//",
+        "// Apple's colour tables. Private repo only, as the bitmaps are.",
+        "",
+        "import Foundation",
+        "",
+        "/// One named accent ramp: eight steps, light to dark, ending in black.",
+        "public struct AccentRamp: Sendable, Equatable {",
+        "    public let name: String",
+        "    /// Resource id of the `clut` this came from, so a value can be",
+        "    /// traced back to the byte range it was read out of.",
+        "    public let clutID: Int",
+        "    /// 0xRRGGBB, light to dark. Empty for `Black & White`, which is a",
+        "    /// real ramp with no entries rather than a missing one.",
+        "    public let steps: [UInt32]",
+        "",
+        "    public var isEmpty: Bool { steps.isEmpty }",
+        "}",
+        "",
+        "public enum PlatinumAccent {",
+        f"    public static let sourceFile = \"{ramps['source']}\"",
+        f"    public static let sourceImage = \"{image}\"",
+        f"    public static let extracted = \"{datetime.date.today().isoformat()}\"",
+        "",
+    ]
+    for r in ramps["ramps"]:
+        steps = ", ".join(f"0x{c[0]:02X}{c[1]:02X}{c[2]:02X}" for c in r["rgb8"])
+        lines.append(f"    public static let {swift_ident(r['name'])} = AccentRamp(")
+        lines.append(f"        name: \"{r['name']}\", clutID: {r['id']},")
+        lines.append(f"        steps: [{steps}])")
+    lines.append("")
+    lines.append("    public static let all: [AccentRamp] = [")
+    for r in ramps["ramps"]:
+        lines.append(f"        {swift_ident(r['name'])},")
+    lines.append("    ]")
+    lines.append("")
+    lines.append("    public static func named(_ name: String) -> AccentRamp? {")
+    lines.append("        all.first { $0.name == name }")
+    lines.append("    }")
+    lines.append("")
+    sd = active["shipped_default"]
+    accent = sd["accent"]["name"] if sd["accent"] else None
+    lines += [
+        "    /// The ramp in force.",
+        "    ///",
+        f"    /// Read offline, from the `{sd['scene']}` scene (`scen`",
+        f"    /// {sd['scene_id']}) in the theme file itself — the shipped default,",
+        "    /// which names its accent in one slot and its highlight colour in",
+        f"    /// another (\"{sd['highlight_name']}\", RGB "
+        f"0x{sd['highlight_rgb8'][0]:02X}{sd['highlight_rgb8'][1]:02X}"
+        f"{sd['highlight_rgb8'][2]:02X}). Those two agree: the highlight is this",
+        "    /// ramp's second step, exactly.",
+        "    ///",
+        f"    /// {active['confidence']}.",
+        "    ///",
+        "    /// THE SEAM: this is what the theme file SAYS, not what a running",
+        "    /// AppearanceLib answers. `GetThemeAccentColors` on the guest is the",
+        "    /// only thing that can close that gap, and it is plan 016 P2's query",
+        "    /// applet. When it lands, this constant is what it replaces.",
+        f"    public static let active = {swift_ident(accent)}",
+        "",
+        "    /// The highlight colour the default scene writes literally, as its",
+        "    /// own RGBColor rather than as a ramp index. Text and list-row",
+        "    /// selection are filled with THIS.",
+        f"    public static let activeHighlight: UInt32 = 0x{sd['highlight_rgb8'][0]:02X}"
+        f"{sd['highlight_rgb8'][1]:02X}{sd['highlight_rgb8'][2]:02X}",
+        "}",
+        "",
+    ]
+    with open(path, "w") as fh:
+        fh.write("\n".join(lines))
+    print(f"accent ramps -> {os.path.relpath(path, REPO)} "
+          f"({ramps['count']} ramps, active {accent})")
+
+
 # --- main ----------------------------------------------------------------
 
 def main() -> None:
@@ -521,6 +833,10 @@ def main() -> None:
                     help="leave the converted copy mounted and on disk")
     ap.add_argument("--theme-report", action="store_true",
                     help="census the Platinum theme file and stop")
+    ap.add_argument("--accent-ramps", action="store_true",
+                    help="print the theme file's 21 accent clut ramps and stop")
+    ap.add_argument("--swift-out", default=DEFAULT_SWIFT_OUT,
+                    help="generated Swift source for the accent ramps")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
 
@@ -545,6 +861,14 @@ def main() -> None:
         if args.theme_report:
             print(json.dumps(theme, indent=1, sort_keys=True))
             return
+
+        ramps = extract_accent_ramps(mnt)
+        ramps["active"] = active_theme_hint(mnt, ramps)
+        if args.accent_ramps:
+            print(json.dumps(ramps, indent=1, sort_keys=True))
+            return
+        write_accent_ramps_swift(ramps, args.swift_out,
+                                 os.path.basename(args.image))
 
         sysfork = resfork.load(os.path.join(mnt, SYSTEM_FILE,
                                             "..namedfork", "rsrc"))
