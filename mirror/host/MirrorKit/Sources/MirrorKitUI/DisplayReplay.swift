@@ -27,13 +27,54 @@ import MirrorKit
 /// job and where P2 knows, P2 draws.
 public enum DisplayReplay {
 
+    /// **What the replay actually put ink on.**
+    ///
+    /// A placeholder is a claim about the machine, and the strongest one
+    /// available — the generic "Visual unavailable" hatch — was being
+    /// painted over regions the guest's own drawing had already filled.
+    /// The claim was not merely redundant there, it was false: the visual
+    /// WAS available, and this host had just drawn it. NOW's own Workshop
+    /// sidebar lost all fourteen of its icons that way, and Date & Time
+    /// lost its date and its time (2026-08-06 screenshots).
+    ///
+    /// Nothing downstream could tell, because the replay reported one
+    /// Bool for a whole window. This is the missing per-region answer.
+    ///
+    /// **An ERASE is not ink.** That is the load-bearing distinction and
+    /// the reason this is not simply "the ops' bounding boxes": a
+    /// composite repaint opens with a full-window erase, so counting
+    /// erases would mark every rectangle of every window as covered and
+    /// silence every placeholder, which is this defect inverted. Only
+    /// operations that add something a person can see are recorded —
+    /// text, lines, frames, paints, fills, inverts, and the placed art or
+    /// plates a blit resolves to.
+    ///
+    /// The replay's OWN unavailable-bitmap marker counts as covered. It
+    /// has already said the honest thing about that rectangle, and a
+    /// second hatch on top of it states nothing new.
+    public final class Coverage {
+        public private(set) var inked: [CGRect] = []
+        public init() {}
+
+        func add(_ rect: CGRect) {
+            guard rect.width > 0, rect.height > 0 else { return }
+            inked.append(rect)
+        }
+
+        /// Whether the replay drew anything inside `frame`.
+        public func covers(_ frame: CGRect) -> Bool {
+            inked.contains { $0.intersects(frame) }
+        }
+    }
+
     /// Draw `ops` into `content` (mirror-space rect for the window's content
     /// area). Returns true if anything was drawn (so the renderer can skip its
-    /// placeholder).
+    /// placeholder); `coverage`, when given, collects WHERE — see ``Coverage``.
     @discardableResult
     public static func draw(_ ops: [MirrorKit.DisplayOp], in ctx: GraphicsContext,
                             content: CGRect,
-                            excluding semanticFrames: [CGRect] = []) -> Bool {
+                            excluding semanticFrames: [CGRect] = [],
+                            coverage: Coverage? = nil) -> Bool {
         guard !ops.isEmpty else { return false }
         var g = ctx
         g.clip(to: Path(content))
@@ -149,6 +190,7 @@ public enum DisplayReplay {
                order, for the same reason icons are. */
             if Self.iconSized(frame) || Self.controlSized(frame) { continue }
             drawUnavailableBits(in: draw, frame: frame)
+            coverage?.add(frame)
             drew = true
         }
 
@@ -186,11 +228,21 @@ public enum DisplayReplay {
                 if let font {
                     font.draw(shown, in: draw, x: where0.x,
                               baselineY: where0.y, color: ink)
+                    coverage?.add(CGRect(
+                        x: where0.x,
+                        y: where0.y - CGFloat(font.ascent),
+                        width: CGFloat(font.width(shown)),
+                        height: CGFloat(font.ascent + font.descent)))
                 } else {
                     draw.draw(draw.resolve(Text(shown)
                         .font(.system(size: CGFloat(op.size ?? 12)))
                         .foregroundColor(ink)),
                         at: CGPoint(x: where0.x, y: where0.y), anchor: .bottomLeading)
+                    coverage?.add(CGRect(
+                        x: where0.x,
+                        y: where0.y - CGFloat(op.size ?? 12),
+                        width: CGFloat(shown.count * (op.size ?? 12)) / 2,
+                        height: CGFloat(op.size ?? 12)))
                 }
                 drew = true
             case "line":
@@ -201,6 +253,7 @@ public enum DisplayReplay {
                 path.addLine(to: pt(t[0], t[1]))
                 let draw = drawingContext()
                 draw.stroke(path, with: .color(fg), lineWidth: 1)
+                coverage?.add(path.boundingRect.insetBy(dx: -0.5, dy: -0.5))
                 drew = true
             case "bits":
                 /* An icon-sized blit gets the extracted generic icon (the
@@ -223,9 +276,11 @@ public enum DisplayReplay {
                        "document", size: IconAtlas.Size.fitting(frame)) {
                     let draw = drawingContext()
                     draw.draw(Image(decorative: icon, scale: 1), in: frame)
+                    coverage?.add(frame)
                     drew = true
                 } else if Self.controlSized(frame) {
                     drawControlPlate(in: drawingContext(), frame: frame)
+                    coverage?.add(frame)
                     drew = true
                 }
                 // larger geometry was hatched before this pass
@@ -262,6 +317,7 @@ public enum DisplayReplay {
                 switch op.verb ?? 0 {
                 case 0:   // frame
                     draw.stroke(Path(rect), with: .color(fg), lineWidth: 1)
+                    coverage?.add(rect)
                     drew = true
                 case 1, 4:  // paint / fill
                     draw.fill(Path(rect), with: .color(fg))
@@ -271,12 +327,14 @@ public enum DisplayReplay {
                        highlights, and a fill further back in the stream
                        has had every chance to be covered. */
                     lastFill = (rect, fg)
+                    coverage?.add(rect)
                     drew = true
                 case 2:   // erase uses the port's current background colour
                     draw.fill(Path(rect), with: .color(bg))
                     drew = true
                 case 3:
                     invert(rect, in: draw)
+                    coverage?.add(rect)
                     drew = true
                 default:
                     break

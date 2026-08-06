@@ -714,9 +714,15 @@ public struct SceneRenderer {
             else { return nil }
             return rect(item.rect).offsetBy(dx: content.minX, dy: content.minY)
         }
+        /* WHAT THE REPLAY INKED, so a placeholder cannot claim a
+           rectangle it already filled. See DisplayReplay.Coverage and
+           docs/render-composition.md > "the rule for anyone adding a
+           placeholder". */
+        let replayCoverage = DisplayReplay.Coverage()
         if let display = win.display {
             DisplayReplay.draw(display, in: contentCtx, content: content,
-                               excluding: semanticFrames)
+                               excluding: semanticFrames,
+                               coverage: replayCoverage)
         }
         if !displayOwnsVisuals, let text = win.text {
             drawWindowText(contentCtx, text, in: content)
@@ -744,7 +750,8 @@ public struct SceneRenderer {
                 && (item.ref.map { !semanticControlRefs.contains($0) }
                     ?? true) {
             drawDialogItem(contentCtx, item, contentOrigin: content.origin,
-                           covering: drawnItems)
+                           covering: drawnItems,
+                           replayed: replayCoverage)
         }
         // Finder icon-view items, in window-local content coords — the
         // Finder's own live positions, so what is drawn is where the guest
@@ -1177,7 +1184,8 @@ public struct SceneRenderer {
     static func drawsConcretely(_ kind: String?) -> Bool {
         switch kind {
         case "panel", "placard", "selectionBand", "separator", "staticText",
-             "editText", "checkBox", "radioButton", "popupMenu", "pushButton":
+             "editText", "checkBox", "radioButton", "popupMenu", "pushButton",
+             "icon":
             return true
         default:
             return false
@@ -1218,7 +1226,8 @@ public struct SceneRenderer {
     private func drawDialogItem(_ ctx: GraphicsContext,
                                 _ item: MirrorKit.Scene.DialogItem,
                                 contentOrigin: CGPoint,
-                                covering drawn: [CGRect] = []) {
+                                covering drawn: [CGRect] = [],
+                                replayed: DisplayReplay.Coverage? = nil) {
         let frame = rect(item.rect).offsetBy(dx: contentOrigin.x,
                                              dy: contentOrigin.y)
         guard frame.width > 0, frame.height > 0 else { return }
@@ -1280,6 +1289,24 @@ public struct SceneRenderer {
                 semantic: item.semantic)
             drawButton(ctx, ctl, frame,
                        isDefault: item.semantic.isDefault == true)
+        case "icon":
+            /* THE GUEST SAID THIS IS AN ICON, so "Visual unavailable" is a
+               false claim: the visual is known to exist and only its
+               PIXELS are missing. NOW's own Workshop sidebar has fifteen
+               of these and every one of them rendered as a hatch
+               (2026-08-06 screenshot), which reads as fifteen broken
+               rows rather than as one thing this host has not been told.
+
+               The generic stub at the item's true position is the answer
+               docs/render-composition.md already gives for an icon-sized
+               blit, and this is the same question one plane over. It
+               yields to the guest's own drawing where P3 carried it —
+               a real icon always beats a stub of one. */
+            guard !(replayed?.covers(frame) ?? false) else { break }
+            if let icon = IconAtlas.namedIcon(
+                "document", size: IconAtlas.Size.fitting(frame)) {
+                ctx.draw(Image(decorative: icon, scale: 1), in: frame)
+            }
         case "userItem":
             /* A user item has no content of its OWN — whatever appears there
                is drawn by the application, which is P3's business and not a
@@ -1302,6 +1329,14 @@ public struct SceneRenderer {
             guard !drawn.contains(where: { frame.contains($0) }) else {
                 break
             }
+            /* AND THE GUEST'S OWN DRAWING OUTRANKS IT TOO. "Visual
+               unavailable" over pixels this host just replayed is not a
+               weaker claim than the evidence, it is a false one — the
+               visual was available and is underneath. NOW's Workshop
+               sidebar lost fourteen icons to this, and Date & Time its
+               date and its time. An erase is deliberately not counted as
+               drawing; see DisplayReplay.Coverage. */
+            guard !(replayed?.covers(frame) ?? false) else { break }
             drawUnavailableVisual(ctx, frame,
                                   item.title.isEmpty
                                     ? "Visual unavailable" : item.title)
