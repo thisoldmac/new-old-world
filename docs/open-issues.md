@@ -296,6 +296,42 @@ someone measures the wrong modal and concludes the fix did nothing.
 - **§4.** The census is keyed on the process roster with a 3 s floor and
   invalidated explicitly by the hide act.
 
+### Measured after, same rig, same guest (2026-08-06)
+
+Fresh clone, guest build `711abdbd25ec 2026-08-06T18:59:20Z`, wire 5560,
+host from this branch. **258 cycles, every one `outcome=ok`.**
+
+| | before | after |
+|---|---|---|
+| `decode_ms` median | 353 | **16** |
+| `total_ms` median | 364 | **25** |
+| `total_ms` p90 | 436 | **27** |
+| cycle on a layout change | 1936 | **26** |
+| planes | 15/15 | 15/15 (257/258 samples) |
+| cycles reporting `timeouts=` | — | 0 |
+
+The complements still cost what they always cost — the log carries
+`NOWBASE finder containers=2 complete=yes ms=1478` and
+`NOWBASE visibility processes=7 complete=yes ms=277` — but they are no
+longer inside the cycle, so a 1.5 s roster read now sits beside a 26 ms
+cycle instead of becoming one. **The census fired 17 times in 62 cycles**
+rather than 62, which is the 3 s floor working.
+
+The layout-change case is the clearest single line: opening a Finder
+window took `decode_ms` from 17 ms to 17 ms, where before the same
+transition on the same rig read `decode_ms=1920 dc_icons_ms=1565`.
+
+**NOT verified end to end: Michelle's own act.** "A dialog act that
+settles rather than refusing" could not be driven from here.
+`tools/now-agent` reaches ONE host per user at a fixed path and her
+packaged app holds it; taking it would have disturbed a live session, and
+computer use was out of scope for this arc. What IS verified is the whole
+causal chain beneath the symptom — the cycle is 25 ms against a 10 s
+lease, the planes read 15/15 throughout, and
+`testAStarvedFinderCannotHoldTheSceneCycleOpen` fails if a complement can
+extend the cycle again. The act itself is **unverified** and should be
+the first thing a drive re-tests.
+
 **Still not covered by a test: the watchdog FIRING.** The bound and its
 reporting are guarded; that the expiry actually settles a stored
 completion is not, because the suites here would have to wait 20 s for it
