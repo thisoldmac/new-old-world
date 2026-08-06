@@ -62,6 +62,15 @@ if [ -z "${NOW_REQUIRE_ASSET_PACK:-}" ]; then
     fi
 fi
 
+# The fixture directory's shape, before anything reads it. Both of these
+# cost under a second and both guard a drift that is invisible in review:
+# a capture written by the old `json.dump(indent=1)` path puts 60,000
+# lines of whitespace into a diff, and a capture whose provenance block
+# was lost is a claim about an unidentified machine.
+echo "==> fixture format and manifest"
+"$repo_root/tools/fixture-store" compact --check >/dev/null
+"$repo_root/tools/fixture-store" manifest --check
+
 echo "==> swift test"
 swift test --package-path "$repo_root/now-host" \
     --scratch-path "$scratch_root/swift"

@@ -19,28 +19,43 @@ before and the after compare equal, which `--check` asserts. It is a
 94% line cut for zero risk, and one op per line keeps the file
 greppable and diffable — a single 1 MB line would not be.
 
-**prune** is the part that needs an argument, so it makes one. It does
-NOT search for "the ops a test happens to assert on"; a fixture trimmed
-to its assertions stops being a capture and starts being a mock, and a
-mock cannot exhibit the defect it was recorded for. Instead it computes
-REACHABILITY: an op can only affect what the mirror composes if it
-draws into a port that reaches the window under test, directly or
-through a chain of `blitsrc` joins. Ports that never reach it are dead
-by construction — another application's offscreen work that happened to
-be in the ring buffer. Dropping those is provable rather than lucky,
-and `scripts/render-fixture-survey` proves it the hard way by
-re-rendering every sweep and comparing the PNGs byte for byte.
+**prune** answers "is there dead weight in these captures?" — and on
+2026-08-06 the answer was **no**, which is the point of running it
+rather than assuming.
 
-`--apply` is required to write. Without it every subcommand reports.
+It does NOT search for "the ops a test happens to assert on". A fixture
+trimmed to its assertions stops being a capture and starts being a
+mock, and a mock cannot exhibit the defect it was recorded for. It
+computes REACHABILITY instead: an op can only affect what the mirror
+composes if it draws into a port that reaches the window under test,
+directly or through a chain of `blitsrc` joins. A port that never
+reaches it is dead by construction — another application's offscreen
+work that happened to be in the ring buffer — and dropping it is
+provable rather than lucky. The window under test is read out of the
+Swift suite, not restated here, because a fixture pruned against the
+wrong window is a fixture pruned to nothing.
 
-**manifest** records path, sha256, size, op count and the fixture's own
-`provenance` block for every capture, pruned and raw alike. A capture
-without provenance is a claim about an unidentified machine, so a
-fixture that has lost its block fails the check. The manifest is what
-makes a copy outside git citable: the raw captures live at
-`$NOW_FIXTURE_STORE` (default `~/Lab/Assets/now-fixture-store`), and
-the hashes in git are how you know the copy is the one the gate was
-written against.
+The measurement: **39,017 ops in, 38,983 out. 0.09%.** The captures
+carry one to three ports each and every one of them reaches the window,
+because the sweep arms per application and the ring holds only that
+application's drawing. The bulk is not junk, it is repaint passes: the
+same panel drawn two or three times because `displayEpoch` advances per
+ARM and not per pass — which is itself the finding
+`qdtrace-drain-sweep-sound` exists to pin, and cannot be trimmed away
+without deleting it.
+
+So this stays as a GUARD, not a cleanup. The next capture may be taken
+with more of the machine awake, and this says so before it lands.
+`--apply` is required to write; without it every subcommand reports.
+
+**manifest** records path, sha256, size, op count and how each fixture
+identifies itself, for every fixture in git. A capture without
+provenance is a claim about an unidentified machine, so a fixture
+carrying neither a drain's `provenance` block nor a scene's
+`source`/`capturedAt` fails the check outright. Nine scene fixtures
+carry the second and are flagged `provenanceIsWeak`: `source: peek` and
+a unix timestamp name a capture SHAPE, not a build or a VM, so they are
+recorded as the thin claim they are rather than counted as provenance.
 """
 
 import argparse
@@ -239,17 +254,34 @@ def sha256(path):
 def cmd_manifest(args):
     entries = []
     missing = []
+    thin = []
     for path in fixtures(args.dir):
         doc = json.loads(open(path).read())
+        # A drain carries a `provenance` block; a scene fixture predates
+        # it and identifies itself with `source` + `capturedAt`. Either
+        # answers "which machine, which build, when" — neither does not,
+        # and that is what fails.
         prov = doc.get("provenance")
+        if prov is None:
+            prov = {k: doc[k] for k in ("source", "capturedAt", "version")
+                    if k in doc} or None
         rel = os.path.relpath(path, HERE)
-        if "ops" in doc and not prov:
+        if prov is None:
             missing.append(rel)
+            continue
+        # "Which machine" is only answered by a build hash and a VM
+        # name. `source: peek` and a unix timestamp identify a shape of
+        # capture, not a machine — so those are recorded as weak rather
+        # than quietly counted as provenance.
+        weak = not (prov.get("build") and prov.get("vm"))
+        if weak:
+            thin.append(rel)
         entries.append({
             "path": rel,
             "sha256": sha256(path),
             "bytes": os.path.getsize(path),
             "ops": len(doc["ops"]) if isinstance(doc.get("ops"), list) else None,
+            "provenanceIsWeak": weak or None,
             "provenance": prov,
         })
     if missing:
@@ -257,12 +289,16 @@ def cmd_manifest(args):
             print("  NO PROVENANCE: %s" % m)
         sys.exit("FAIL: a capture without provenance is a claim about an "
                  "unidentified machine")
+    if thin:
+        print("  %d fixture(s) identify a capture SHAPE but not a machine "
+              "(no build/vm): %s" % (len(thin), ", ".join(
+                  os.path.basename(t) for t in thin)))
     manifest = {
-        "note": "Hashes for every fixture in git. The RAW, unpruned "
-                "captures these were cut from live outside git at "
-                "$NOW_FIXTURE_STORE (default ~/Lab/Assets/now-fixture-"
-                "store); see docs/fixture-bulk.md.",
-        "store": "$NOW_FIXTURE_STORE",
+        "note": "Every fixture in git, with its sha256 and how it "
+                "identifies the machine it came off. Derived - run "
+                "tools/fixture-store manifest --apply, do not hand-edit. "
+                "provenanceIsWeak marks a fixture that names a capture "
+                "shape but no build or VM. See docs/fixture-bulk.md.",
         "fixtures": entries,
     }
     text = json.dumps(manifest, indent=1) + "\n"
