@@ -108,7 +108,48 @@ row stride.
   `portPixMap`** as its source (measured). The join the probe wants
   exists.
 
-## 5. The Finder
+## 5. The Finder — ANSWERED
+
+**The labels in a Finder icon view are recoverable as semantic text.**
+Measured 2026-08-06 by hooking the Finder's offscreen port from a
+resident and holding the hook across a reflowing resize:
+
+| Port | What it emitted |
+|---|---|
+| window `0x00ac7af0` | 4 `bits`, 3 `rect` — the opaque composite |
+| **offscreen `0x1f472e60`** | **8 `text`**, 24 `rect`, 11 `rgn`, 8 `bits` |
+
+The text records carry the real filenames at their true pens:
+
+    '10 items, 3.21 GB available'  pen [135,14]
+    'Documents'                    pen [280,67]
+    'TimBotTu'                     pen [282,131]
+    'TBT'                          pen [40,195]
+    'TBT-paced-dev'                pen [140,195]
+    'TBT-sndbuf-dev'               pen [265,195]
+
+This **supersedes the dead-end verdict** of the corpus finding
+`finder-window-icons-are-offscreen-blits` for the OFFSCREEN port. That
+finding remains exactly right about the window port — which is all
+anyone had looked at.
+
+**The method matters as much as the result**: arm, wait for the chase to
+hook the offscreen port, then force a repaint **without re-arming**.
+Re-arming bumps the generation and unhooks the world, which is why every
+earlier attempt saw an empty offscreen port.
+
+**Lifetime, observed.** Across three resizes the hooked row went stale
+once and `lastMatch` moved `0x1f472e60` → `0x1f472ee0`: the Finder does
+replace its offscreen world, consistent with importing `NewGWorld` and
+`DisposeGWorld` and no `UpdateGWorld`. A hook must be re-established per
+world — but a world lives long enough to be found and read.
+
+**What is still opaque.** Icons arrive as `bits` with no identity while
+their labels arrive as text, so a composite decomposes into content that
+is already semantic and images that need identity from elsewhere
+(`PlotIconSuite`/`IconRef` interception).
+
+## 5a. The Finder, statically
 
 - **It uses GWorlds** (static, from its own PEF import table): it
   imports `NewGWorld`, `DisposeGWorld`, `SetGWorld`, `GetGWorld`,
