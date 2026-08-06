@@ -225,9 +225,31 @@ public enum DisplayReplay {
                 guard let r = op.rect, r.count == 4 else { continue }
                 let rect = rectFrom(r, pt: pt)
                 let draw = drawingContext()
+                /* A REGION'S BOX IS NOT ALWAYS ITS SHAPE, and since the
+                   contract gained the discriminator the renderer can
+                   tell. The FRAME verb is the one where drawing the box
+                   anyway is a claim stronger than the evidence — a solid
+                   outline states where the boundary runs — so a region
+                   PROVEN irregular is outlined dashed. Every other verb
+                   keeps the filled box: for an erase or a paint the box
+                   is the best available approximation of the same area,
+                   and 39 of the 39 region ops in the measured corpus are
+                   erases. `.unreported` (an older resident) keeps the
+                   old rendering unchanged rather than accusing a region
+                   nobody measured. */
+                let regionIsIrregular = op.op == "rgn"
+                    && MirrorKit.RegionShape(op) != .rectangular
+                    && MirrorKit.RegionShape(op) != .unreported
                 switch op.verb ?? 0 {
                 case 0:   // frame
-                    draw.stroke(Path(rect), with: .color(fg), lineWidth: 1)
+                    if regionIsIrregular {
+                        draw.stroke(Path(rect), with: .color(fg),
+                                    style: StrokeStyle(lineWidth: 1,
+                                                       dash: [2, 2]))
+                    } else {
+                        draw.stroke(Path(rect), with: .color(fg),
+                                    lineWidth: 1)
+                    }
                     drew = true
                 case 1, 4:  // paint / fill
                     draw.fill(Path(rect), with: .color(fg))
@@ -235,7 +257,10 @@ public enum DisplayReplay {
                 case 2:   // erase uses the port's current background colour
                     draw.fill(Path(rect), with: .color(bg))
                     drew = true
-                default:   // invert needs destination pixels we do not carry
+                case 3:
+                    invert(rect, in: draw)
+                    drew = true
+                default:
                     break
                 }
             default:
@@ -243,6 +268,38 @@ public enum DisplayReplay {
             }
         }
         return drew
+    }
+
+    /// `invertVerb` (GrafVerb 3), replayed for real.
+    ///
+    /// This was skipped for most of the plane's life with the note
+    /// "invert needs destination pixels we do not carry", and that was
+    /// TRUE of the mirror it was written for — a renderer that placed a
+    /// pixel island had no addressable destination of its own. It stopped
+    /// being true when the host began compositing its own canvas: the
+    /// pixels under the rect are pixels this replay just drew, so the
+    /// operation QuickDraw performs against the framebuffer is available
+    /// as a difference blend against the layer.
+    ///
+    /// Filling with WHITE under `.difference` is exactly `1 - dst` per
+    /// channel, which is what `InvertRect` does on the guest. It is
+    /// correct only because the renderer paints the content face opaque
+    /// before the replay runs (`SceneRenderer`); over a transparent layer
+    /// a difference blend would paint white and claim a highlight that is
+    /// not there.
+    ///
+    /// PARITY IS THE SEMANTIC, not a defect. Invert is how classic Mac OS
+    /// draws a text caret, and a drain holding N blinks of one caret ends
+    /// visibly on or off according to N's parity — Sherlock 2's search
+    /// caret arrives 22 times in one live capture and 11 in another, and
+    /// replaying every one of them reproduces the state the machine was
+    /// actually in at the end of that stream. Coalescing them would be a
+    /// prettier picture of a machine nobody watched.
+    private static func invert(_ rect: CGRect, in ctx: GraphicsContext) {
+        guard rect.width > 0, rect.height > 0 else { return }
+        var flip = ctx
+        flip.blendMode = .difference
+        flip.fill(Path(rect), with: .color(.white))
     }
 
     /// A blit the size and shape of an ordinary control.

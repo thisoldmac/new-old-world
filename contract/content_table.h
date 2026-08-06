@@ -425,12 +425,49 @@ typedef struct {
 } NowContentLinePayload;
 
 /* RECT / RRECT / OVAL / ARC, and POLY / RGN reuse it with the bounding
-   box in l..b and ext = 0 (never the point or region data). */
+   box in l..b (never the point or region data).
+
+   THE SHAPE DISCRIMINATOR (2026-08-06). RGN and POLY used to send ext = 0
+   as well, and that made the host's bounding box UNFALSIFIABLE: it drew
+   every region as a hard rectangle and had no way to say whether that was
+   the shape or an approximation of it. The measured corpus is 39 region
+   ops across nine live captures, every one an erase, and nothing in the
+   data could distinguish a rectangular update region from an L-shaped one
+   - which is itself the argument for sending a discriminator rather than
+   the shape.
+
+   Sending the SHAPE was considered and refused. A region is unbounded in
+   size, the ring is the measured limit (a hooked Sherlock overran 64 KiB
+   in one settle), and the overwhelmingly common region is rectangular, so
+   the expensive answer would be paid on every op to serve the rare one.
+   The cheap discriminator costs nothing at all: it rides in a field the
+   payload already carries and already zeroes, so no record grew, the ring
+   budget is unchanged, and an older host reads ext1 = 0 exactly as it did
+   before.
+
+     RGN  - ext1 = the region's own rgnSize in bytes, ext2 = 0.
+             QuickDraw stores a rectangular region as the minimum 10-byte
+             Region record, so ext1 == 10 means "the bounding box IS the
+             whole shape" and the host's rectangle is exact. ext1 > 10
+             means the box is an approximation and the host must say so
+             rather than draw a confident rectangle.
+     POLY - ext1 = the polygon's own polySize in bytes, ext2 = 0. A
+             polygon is NEVER its bounding box (polySize > 10 always), so
+             this is honesty telemetry rather than a fast path; it is set
+             for symmetry and because the size names how much shape the
+             box is hiding.
+
+   ext1 == 0 is therefore a THIRD state and not a synonym for either: it
+   is a resident that predates this rule, and a host must report "shape
+   unreported" rather than assume rectangular. That distinction is the
+   whole value of the field - a zero pretending to be an answer is the
+   failure this contract keeps refusing elsewhere. */
 typedef struct {
     unsigned char verb;   /* GrafVerb: frame/paint/erase/invert/fill      */
     unsigned char pad;
     NowContentS16 l, t, r, b;
-    NowContentS16 ext1, ext2;    /* oval w/h, or start/arc angle, or 0    */
+    /* oval w/h, or start/arc angle, or rgnSize/polySize, or 0            */
+    NowContentS16 ext1, ext2;
 } NowContentRectPayload;
 
 /* Geometry only, NEVER pixels. The host composes a pixel island from the
