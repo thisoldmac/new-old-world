@@ -14,6 +14,36 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## The `desktopItems` entry below had no evidence because this side threw it away (2026-08-06)
+
+A dated line under **"FIRST LIVE ANSWERS from the 2026-08-05 drive"**, and
+not a cause for it: nobody has yet learned WHY the Finder roster does not
+read. What is now known is why every attempt to learn it came back saying
+the same thing.
+
+The host's roster read asked the guest, matched the guest's `osaErr`, and
+then discarded it. `readingOutput` only promotes a raised script to an
+error when its caller opts in (`osaFailureIsAnError`), and the item pass
+never did — so a script that RAISED arrived here as `ok: true` with an
+empty `output` row, fell through the roster guard, and reported
+**"incomplete or changing item roster"**. So did an unparseable reply, a
+container past the item cap, and a genuinely changing roster. One sentence
+for five different machines' answers, on the one read that has never
+worked.
+
+Fixed host-side, reporting only: the item pass opts in, and each refusal
+now says its own reason — the guest's own `osaErr` where the guest gave
+one (`NOWMirrorSource.rosterPageRefusal`, `NOWMirrorRosterReasonTests`).
+The art pass keeps the old behaviour on purpose; it is built on a script
+that is expected to raise.
+
+**Still unmeasured: the code itself.** Six emulator VMs were up on this
+Mac at the time, any of which would have dialled a listener bound to the
+default wire port — including the session diagnosing `desktopItems` — so
+no live run was taken rather than risk answering with a foreign guest.
+The next drive that reaches a Finder roster now gets the number for free;
+it belongs here when someone has it.
+
 ## ANSWERED: the join works end to end on the control — and A2.1's pointer compare was wrong (2026-08-06, plan 013 slices A–C)
 
 The host can now place a hooked GWorld's ops inside the window its blit
