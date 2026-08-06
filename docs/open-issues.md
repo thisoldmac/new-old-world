@@ -14,6 +14,95 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## MEASURED, and the answer is DON'T BUILD ON IT: how long the content plane takes to arm (2026-08-06)
+
+Plan 013 § A proposes turning the resident into a NOTIFIER — told at
+mutation time instead of asked on a timer. **The content plane's arm
+handshake is that idea already shipping**, so it is the one place the
+proposal can be costed instead of argued: the application writes a
+request, and it is honoured only when the TARGET process next runs the
+resident's jGNE pass and agrees it is the one named
+(`ext/src/now_content.c :: now_content_gne`). The host's status line says
+`content: requested X's trace; waiting for its event loop to arm`, and
+nobody knew whether that sentence covered 40 ms or 4 s.
+
+**The conditions.** One session-private clone off `os91-runner.qcow2`,
+build `9a1d885fcac0`, wire 5450, anchor 1702, `tools/local-arm-latency.py`.
+Time from the `qdtrace start` reply to the first `qdtrace status`
+reporting that generation **and** that A5 live.
+
+| condition | arm | wire floor, SAME condition | n |
+|---|---|---|---|
+| NOW's own window, NOW front | **22 ms** (20–31) | 102 ms | 10 |
+| Finder's window, Finder front | **116 ms** (102–117) | 101 ms | 10 |
+| Finder's window, NOW front | **never**, 25–45 s | 57 ms | 9 |
+| …then brought forward mid-wait | **40 ms** after the front change | 56 ms | 6 |
+| front application holding a modal | **30.1 s** | 30.0 s for ONE status call | 1 |
+| an A5 no process has (control) | never | — | 8 |
+
+**Read the floor column first, because it is the whole finding.** A bare
+`qdtrace status` round trip costs ~101 ms when NOW is in the background —
+that is NOW's own event-loop period, not the network. So the 116 ms
+against a 101 ms floor means **the frontmost Finder pumps within about
+15 ms of the request**, and the 22 ms self case is complete before the
+first status poll can be asked and is not measurable from here at all.
+The arm handshake is fast. The sentence a person reads is mostly the
+host's poll cadence.
+
+The first version of this measurement reported the 116 ms as the arm
+cost, against a floor taken once at startup in a different front
+condition. It is the same mistake plan 013 records against its own first
+finding — two variables moved and the differential was read as one — and
+it was caught only because the floor was re-measured per condition.
+
+**The two large numbers are not handshake problems**, which is why
+nothing here justifies a mechanism:
+
+- **A background application never arms at all.** Not slowly — not at
+  all, over 45 s. The unguarded refusal counter says why, and it is the
+  useful half: `wrongContext` climbed ~1,770 in 25 s, so processes WERE
+  pumping and reading the request the whole time and none of them was the
+  Finder (measurement rule 6 — "never entered" and "entered and declined"
+  are opposite repairs). The deferred run settles it with one variable
+  moved and the same arm: bring the Finder forward without re-requesting
+  and it arms in 40 ms, 6/6. A resident notifier cannot fix this. Nothing
+  can make a process pump that the Process Manager is not running.
+- **Under a modal the wait is the modal.** `tools/guest-wedge modal 30`
+  and the arm landed 30.133 s later — the wedge's own duration. The first
+  `qdtrace status` after the launch took 30.023 s, so the host could not
+  even ASK for 30 s. That is plan 012's liveness territory, already owned,
+  and it is not about arming.
+
+**DECISION: do not build the § A notifier on this evidence.** The host
+arms only the front window's process (`NOWMirrorContentPlane.join` takes
+`scene.windows.first(where: \.front)`) and re-arms on target change or
+after `renewAfter` = 9 minutes against a 10-minute TTL. So the measured
+cost is ~15 ms of real handshake, paid on a focus change and roughly
+never otherwise, on a machine whose whole scene walk is now 3–8 ms. There
+is no mechanism that pays for itself here. Per plan 013's own tiering
+this would have been tier 2, and the plan prefers re-arguing to
+executing — so it is re-argued and dropped.
+
+**What this does NOT settle.**
+
+- **Every number is from mac99.** The dominant term is a Process Manager
+  round, so it should scale with process-switch cost rather than with how
+  much interface exists — but that is reasoning, not a reading, and a
+  1400c has never been asked.
+- **"Just launched" was never measured.** `launch` refuses a control
+  panel (`launch-refused: not an application (type APPC)`), which is the
+  case the observation actually named, and an arm needs an exact window
+  address out of the scene — so a just-launched application cannot be
+  armed until it has already pumped enough to open a window. The product
+  can never request an arm earlier than that.
+- **The modal row is n=1**, and it is the wedge's GetNextEvent loop, not
+  a real application's modal.
+- **The plane measured is the one on `claude/mirror-thread-content`.** The
+  GWorld work on `claude/gworld-probe-grounding-3dcbd4` adds ~600 lines to
+  `ext/src/now_content.c`, four hunks of them inside `now_content_gne`
+  itself. `now_content_arm_verdict` is untouched, so the mechanism
+  survives, but the per-pass constant does not necessarily. Re-measure
+  after that lands.
 ## SHIPPED on an emulator, UNVERIFIED on metal: a scene can now answer "the same", or send only what moved (2026-08-06)
 
 Plan 013 § 5. The wire had become the dominant cost — a 3–8.5 ms walk
