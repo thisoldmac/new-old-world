@@ -287,6 +287,32 @@ static void test_drain_blit_source(void)
     }
 }
 
+/* The world records on the wire (plan 014): born carries shape, died
+   deliberately does not. */
+static void test_drain_world_records(void)
+{
+    NowContentWorldPayload wp;
+
+    init_block(4096);
+    memset(&wp, 0, sizeof wp);
+    wp.port = 0x1f472e60u;
+    wp.pixmap = 0x00445566u;
+    wp.l = 0; wp.t = 0; wp.r = 490; wp.b = 448;
+    (void)now_content_ring_put(&g_block, kNowContentOpWorldBorn, 0,
+                               wp.port, &wp, (NowContentU16)sizeof wp);
+    memset(&wp, 0, sizeof wp);
+    wp.port = 0x1f472e60u;
+    (void)now_content_ring_put(&g_block, kNowContentOpWorldDied, 0,
+                               wp.port, &wp, (NowContentU16)sizeof wp);
+
+    now_qdtrace_drain_json(&g_block, 0, 0, 0, 7, g_out, (long)sizeof g_out);
+    check_balanced(g_out, "world records are balanced");
+    check_has(g_out, "\"op\":\"worldborn\"", "born decoded");
+    check_has(g_out, "\"world\":\"0x1f472e60\"", "and names its world");
+    check_has(g_out, "\"rect\":[0,0,490,448]", "with the world's shape");
+    check_has(g_out, "\"op\":\"worlddied\"", "died decoded");
+}
+
 static void test_drain_truncation_flag(void)
 {
     init_block(4096);
@@ -432,6 +458,7 @@ int main(void)
     test_status_absent_and_mismatched();
     test_drain_json();
     test_drain_blit_source();
+    test_drain_world_records();
     test_drain_truncation_flag();
     test_more_is_not_silence();
     test_output_budget_ends_it_honestly();

@@ -269,6 +269,41 @@ static void test_blit_source_record(void)
     check_eq(c.recs[0].payload_ok, 0, "marked detail-less");
 }
 
+/* The world lifecycle records (plan 014, E2): a world hooked at birth
+   and dropped at death, both keyed by the world's own port. */
+static void test_world_records(void)
+{
+    NowQDDrainResult r;
+    Collector c;
+    NowContentWorldPayload wp;
+
+    memset(&c, 0, sizeof c);
+    init_block(512);
+    memset(&wp, 0, sizeof wp);
+    wp.port = 0x1f472e60u;
+    wp.pixmap = 0x00445566u;
+    wp.l = 0; wp.t = 0; wp.r = 490; wp.b = 448;
+    (void)now_content_ring_put(&g_block, kNowContentOpWorldBorn, 0,
+                               wp.port, &wp, (NowContentU16)sizeof wp);
+    memset(&wp, 0, sizeof wp);
+    wp.port = 0x1f472e60u;
+    (void)now_content_ring_put(&g_block, kNowContentOpWorldDied, 0,
+                               wp.port, &wp, (NowContentU16)sizeof wp);
+
+    now_qdtrace_drain(&g_block, 0, 0, 0, collect, &c, &r);
+    check_eq(r.outcome, kNowQDDrainOk, "world records drain ok");
+    check_eq(c.n, 2, "both world records delivered");
+    check_eq(c.recs[0].op, kNowContentOpWorldBorn, "born keeps its op");
+    check_eq(c.recs[0].payload_ok, 1, "born payload readable");
+    check_eq(c.recs[0].p.world.r, 490, "born carries the world's width");
+    check_eq(c.recs[0].p.world.b, 448, "and its height");
+    check((unsigned long)c.recs[0].p.world.pixmap == 0x00445566u,
+          "born names the pixmap");
+    check_eq(c.recs[1].op, kNowContentOpWorldDied, "died keeps its op");
+    check_eq(c.recs[1].p.world.r, 0,
+             "died carries no shape - the block is gone");
+}
+
 /* A record whose payload is shorter than its family needs still ARRIVES,
    with payload_ok clear. An op that happened and could not be read in
    full is a fact; dropping it would understate the traffic, which is the
@@ -856,6 +891,7 @@ int main(void)
     test_empty();
     test_families();
     test_blit_source_record();
+    test_world_records();
     test_short_payload_still_reports_the_op();
     test_unknown_op_is_reported();
     test_tail_absorption();
