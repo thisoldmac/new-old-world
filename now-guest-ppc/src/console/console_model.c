@@ -1,4 +1,6 @@
 #include "console_model.h"
+#include "loopstat.h"
+#include "wirestat_cmd.h"
 
 #include "mirror_layout.h"
 #include "mirror_probe.h"
@@ -613,6 +615,36 @@ static void run_chat_verb(const char *raw_args)
 /* The dispatch proper, WITHOUT the echo. Split out so the exec plane can
    run it without a "> line" the host has already drawn for itself; see
    console_model_exec at the foot of this file. */
+/* One LoopStat as two console lines: the summary, then the bucket the
+   median fell in. Not the whole histogram - a console is 80 columns and
+   ten bins would wrap into unreadability; the wire face carries every
+   bin for anything that wants to plot it. */
+static void console_show_loopstat(const char *what, const LoopStat *s)
+{
+    char line[kMaxCols];
+    int med = loopstat_median_bucket(s);
+
+    if (s->n <= 0) {
+        snprintf(line, sizeof line, "  %s  (no samples)", what);
+        console_model_append(line);
+        return;
+    }
+    snprintf(line, sizeof line,
+             "  %s  n=%ld mean=%lu us min=%lu max=%lu",
+             what, s->n, loopstat_mean_us(s), s->min_us, s->max_us);
+    console_model_append(line);
+    if (med >= 0) {
+        unsigned long hi = loopstat_edge_us(med);
+
+        if (hi != 0) {
+            snprintf(line, sizeof line, "          median under %lu us", hi);
+        } else {
+            snprintf(line, sizeof line, "          median in the top bin");
+        }
+        console_model_append(line);
+    }
+}
+
 static void console_model_dispatch(const char *input)
 {
     char line[kMaxCols];
@@ -1003,6 +1035,50 @@ static void console_model_dispatch(const char *input)
         if (pn == 0) {
             console_model_append("  (no processes read)");
         }
+        return;
+    }
+    if (strcmp(name, "wirestat") == 0) {
+        /* The same producer the wire verb reads (conn_wake_stats) and the
+           same grammar (wirestat_cmd.c) - two renderings, never two
+           answers, exactly as `net` does it below. It is NOT routed
+           through now_command_run because that path's reply buffer is 512
+           bytes and two histograms do not fit; a console that silently
+           got "command failed" is how `putstat` has been unreachable from
+           the keyboard all along (docs/open-issues.md).
+
+           This verb in particular has to work at the machine: it is the
+           instrument for diagnosing a wire, and a person diagnosing a
+           wire may have nothing but the keyboard in front of them. */
+        ConnWakeStats st;
+        WireStatRequest req;
+        char action[24];
+        char value[24];
+
+        now_wirestat_split(raw_args, action, sizeof action, value,
+                           sizeof value);
+        now_wirestat_parse(action, value, &req);
+        if (req.set_wake) {
+            conn_set_wake(req.wake_on);
+        }
+        if (req.set_sleep) {
+            conn_set_idle_sleep(req.sleep_ticks);
+        }
+        if (req.reset || req.set_wake || req.set_sleep) {
+            conn_reset_wake_stats();
+        }
+        conn_wake_stats(&st);
+        snprintf(line, sizeof line,
+                 "  sleep now %ld tick(s), idle %ld; wake %s; notifier %s",
+                 st.sleep_ticks, conn_idle_sleep(),
+                 st.wake_enabled ? "on" : "off",
+                 st.notifier_live ? "installed" : "absent");
+        console_model_append(line);
+        snprintf(line, sizeof line,
+                 "  %ld data notifications, %ld wakes",
+                 st.data_events, st.wake_calls);
+        console_model_append(line);
+        console_show_loopstat("pass  ", &st.pass);
+        console_show_loopstat("notice", &st.wake);
         return;
     }
     if (strcmp(name, "net") == 0) {

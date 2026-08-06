@@ -29,6 +29,7 @@
 #include "scene_collect.h"
 #include "scene_phase.h"
 #include "software.h"
+#include "wire_sleep.h"
 
 enum {
     /* Room for the one field whose VALUE is not known until the sizing
@@ -183,10 +184,26 @@ static Boolean g_pass_seen;
    something to be calling from interrupt time. */
 static ProcessSerialNumber g_self_psn;
 static Boolean g_self_psn_known;
-/* Off until asked. The wake is the change this arc is testing, and a
-   mechanism change that cannot be turned off in the field cannot be
-   compared against itself on one boot. */
-static Boolean g_wake_enabled;
+/* ON, and this is the one line in this file that wants a metal pass.
+
+   MEASURED on an emulated G4, 2026-08-06: with it off a scene round trip
+   into a quiet connection cost an 86 ms median whose walk was 0 ms and
+   whose answer was zero bytes; with it on, 10 ms. The gap between Open
+   Transport announcing data and this loop reading it went from a 48.5 ms
+   mean to 7.5 ms. It buys that WITHOUT shortening the idle sleep, which
+   is the whole reason to prefer it to the obvious alternative: the loop
+   still sleeps ~110 ms when nothing is happening, so the rest of the
+   Macintosh keeps the time the anchor plane needs.
+
+   WHAT IS NOT PROVEN. Every number above is from an emulator. The
+   notifier fires and WakeUpProcess is documented from CarbonLib 1.0, but
+   nobody has watched this on a PowerBook 1400c, and an OT notifier is
+   interrupt-time discipline where a mistake is a crash rather than a
+   slow answer. The failure modes are graceful by construction - a
+   notifier that never fires, or a WakeUpProcess that does nothing,
+   leaves exactly the behaviour that shipped before this - and
+   `wirestat wake off` restores it from either face without a rebuild. */
+static Boolean g_wake_enabled = true;
 /* The idle sleep main.c asks WaitNextEvent for, in ticks, stated HERE
    because the wire is what it costs and the wire is what has to defend
    it. Six ticks is ~100 ms and is where it has always been; one tick
@@ -6765,32 +6782,17 @@ Boolean conn_wants_fast_pump(void)
 
 long conn_sleep_ticks(void)
 {
-    if (conn_wants_fast_pump()) {
-        return 1;
-    }
-    /* Bytes announced and not yet taken. This closes the wake's one
-       remaining race: a notification that lands while this process is
-       already awake finds WakeUpProcess with nothing to wake, and the
-       request then waits out the NEXT full sleep - which is how two of
-       eleven samples in the first wake run still cost 100 ms while the
-       other nine cost under a millisecond. Costs nothing when the wake
-       is off, because then nothing sets it either. */
-    if (g_data_pending) {
-        return 1;
-    }
-    return g_idle_sleep_ticks;
+    /* The rule itself is in wire_sleep.c, where a host compiler can run
+       it. This supplies the three facts and nothing else. */
+    return now_wire_sleep_ticks(conn_wants_fast_pump(), g_data_pending,
+                                g_idle_sleep_ticks);
 }
 
 void conn_set_idle_sleep(long ticks)
 {
-    if (ticks < 1) {
-        ticks = 1;                    /* NEVER zero - see main.c */
-    }
-    if (ticks > 60) {
-        ticks = 60;
-    }
-    g_idle_sleep_ticks = ticks;
-    now_log(kLogInfo, "wire", "idle sleep now %ld tick(s)", ticks);
+    g_idle_sleep_ticks = now_wire_clamp_idle(ticks);
+    now_log(kLogInfo, "wire", "idle sleep now %ld tick(s)",
+            g_idle_sleep_ticks);
 }
 
 long conn_idle_sleep(void)

@@ -24,6 +24,7 @@
 #include "prefs.h"
 #include "fileshare.h"
 #include "wire.h"
+#include "wirestat_cmd.h"
 #include "mirror_json.h"
 #include "mirror_probe.h"
 #include "net_layout.h"
@@ -724,40 +725,30 @@ static void run_wirestat(const char *request_json, long id,
     char line[64];
     char action[24];
     char value[24];
+    WireStatRequest req;
     long pos;
 
-    action[0] = value[0] = '\0';
     /* TWO FACES, ONE GRAMMAR. A console sends the raw line and a typed
        caller sends args; now_cmd_arg_word answers the named arg for the
        second but the line's FIRST word for the first, so asking it twice
-       on a console line would return "sleep" for both `action` and
-       `value`. The line is therefore split here, once. */
+       on a console line returns "sleep" for both `action` and `value`
+       and `wirestat sleep 3` becomes `sleep 0`. The split and the
+       meaning are in wirestat_cmd.c, with a native test. */
     if (now_cmd_line(request_json, line, sizeof line)) {
-        const char *p = line;
-        long i;
-
-        while (*p == ' ') { ++p; }
-        for (i = 0; i < (long)sizeof action - 1 && *p && *p != ' '; ++i) {
-            action[i] = *p++;
-        }
-        action[i] = '\0';
-        while (*p == ' ') { ++p; }
-        for (i = 0; i < (long)sizeof value - 1 && *p && *p != ' '; ++i) {
-            value[i] = *p++;
-        }
-        value[i] = '\0';
+        now_wirestat_split(line, action, sizeof action, value, sizeof value);
     } else {
+        action[0] = value[0] = '\0';
         now_cmd_arg_word(request_json, "action", action, sizeof action);
         now_cmd_arg_word(request_json, "value", value, sizeof value);
     }
-
-    if (strcmp(action, "reset") == 0) {
-        conn_reset_wake_stats();
-    } else if (strcmp(action, "wake") == 0) {
-        conn_set_wake(strcmp(value, "off") != 0);
-        conn_reset_wake_stats();
-    } else if (strcmp(action, "sleep") == 0) {
-        conn_set_idle_sleep(atol(value));
+    now_wirestat_parse(action, value, &req);
+    if (req.set_wake) {
+        conn_set_wake(req.wake_on);
+    }
+    if (req.set_sleep) {
+        conn_set_idle_sleep(req.sleep_ticks);
+    }
+    if (req.reset || req.set_wake || req.set_sleep) {
         conn_reset_wake_stats();
     }
 
