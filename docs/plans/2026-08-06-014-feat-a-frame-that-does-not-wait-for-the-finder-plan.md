@@ -261,9 +261,38 @@ wanted, is Option 3's four bullets in the ledger.
   per user and her packaged app holds the socket, so taking it would
   have disturbed a live session. **The first thing a drive should
   re-test.**
+
+  **Corrected, later on 2026-08-06 — the CAUSE is no longer open, and
+  this plan was not the whole of it.** The tooling limitation above is
+  why the case was never *driven*; it is not the cause of the symptom.
+  The cause was found the same day and is **NOW's own act client**: its
+  wait did not pump the wire, so an act nobody takes held `conn_service`
+  off for ~10 s and every scene request in that window reported the
+  act's duration as its own. Fixed in `afe5cbd2` — and it cost the
+  no-hijack argument's single-cell protection, which Michelle
+  authorised. See [open-issues.md](../open-issues.md)'s two entries
+  *"LIVE RISK, deliberately taken"* and *"the twelve seconds under a
+  modal is NOT starvation"*. What remains true here is the last
+  sentence: **her case has still not been reproduced**, and on a fresh
+  clone it cannot be, because foreign processes read `not-observed`
+  (the anchor-bind defect). A drive should still re-test it, now to
+  confirm the act-pump fix rather than to find a missing cause.
 - **The watchdog has never been watched FIRING.** Its bound and its
   reporting are guarded by tests; the expiry settling a stored
   completion is not, because the suite would have to wait 20 s for it.
+- **Two defects were found in § 2's watchdog AFTER it landed, and
+  neither is fixed** (2026-08-06). `armWatchdog` keys its map on a
+  request id while three id sequences each start at 1, so a command and
+  an exec sharing a number collide; and `requestCensus` — which is
+  precisely what § 4 rescheduled — arms **no watchdog at all**. Ledger:
+  *"BROKEN, latent, found in passing: two request families draw ids from
+  separate counters and share one watchdog map"*.
+- **The 20 s bound's stated argument does not cover the act path.** It
+  was chosen against the guest's 15 s *script* ceiling. The act path
+  spends 5 s per phase with nothing naming that ceiling in the same
+  place, so the bound survives on arithmetic nobody wrote down.
+  [nested-loops.md](../nested-loops.md) carries the row; stating the act
+  ceiling once, where both sides read it, is the open piece.
 - **A Finder-OWNED modal is not repaired by any of this** and cannot be
   — it starves NOW too. See the ledger's dated 2026-08-06 line under
   *"one modal wedges the whole Mirror"*.

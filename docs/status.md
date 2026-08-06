@@ -20,8 +20,25 @@ than any hardware this project targets, with an emulated bus. It is
 never a substitute for metal, and every emulator-verified claim here
 says so at the point of claim rather than in a footnote.
 
+- [docs/mirror-state-of-play-2026-08-06.md](mirror-state-of-play-2026-08-06.md)
+  is the short version **for the Mirror specifically** — what a person
+  driving it will actually experience, good and bad, in the order they
+  will meet it. Written as a handoff at the end of the 2026-08-05/06
+  session. It is a dated snapshot, not a maintained index; this file and
+  the ledger outrank it.
 - [docs/open-issues.md](open-issues.md) is the ledger, organised around
-  broken versus unverified.
+  broken versus unverified. Its first section is a dated pointer list of
+  the biggest OPEN items, which is the only part of it that is
+  maintained rather than appended.
+- [docs/mirror-element-coverage.md](mirror-element-coverage.md) is the
+  element gap ledger — **190 of 308 corpus items carry
+  `knowledge: unknown`**, which is the root of most remaining Mirror
+  render defects, and the file carries the diagnosis as well as the
+  count.
+- [docs/gworld-probe-brief.md](gworld-probe-brief.md) is the open
+  experiment behind most blank and hatched window interiors: whether an
+  offscreen GWorld's drawing can be seen at all, or whether pixels are
+  the only answer.
 - [docs/contract-coverage.md](contract-coverage.md) is the inventory of
   who serves what, per guest, message by message.
 - [docs/mcp-coverage.md](mcp-coverage.md) is the other half of that: what

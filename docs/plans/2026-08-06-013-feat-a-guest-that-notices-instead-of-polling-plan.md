@@ -399,6 +399,17 @@ of its tier**; the rule is amended in `## Verification`.
   costs § 1 DID find (the 1.9 s focus change, and a background sweep that
   returns nothing at all) are § 2-shaped and are worth more, sooner.
 
+  **Corrected 2026-08-06, later the same day: that last clause is spent,
+  and it should not be read as remaining work.** Both costs were fixed
+  BY § 2, as one defect — the focus-change scene measured
+  886,398 µs → 713 µs, and the background sweep became a retraction of
+  the control plane rather than a false empty. See the table under
+  *Picking this up cold*. The sentence was written before § 2 landed and
+  survived the edit that recorded it; what stands is only the first
+  half — **§§ 3–5 want a 1400c reading before anyone builds them**, and
+  the real next work is not in this plan at all (see
+  [mirror-state-of-play-2026-08-06.md](../mirror-state-of-play-2026-08-06.md)).
+
 ## Verification
 
 - **Native** (`scripts/test-native`, and in its manifest or it is not

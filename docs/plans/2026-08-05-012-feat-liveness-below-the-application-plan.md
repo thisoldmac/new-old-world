@@ -294,7 +294,11 @@ there.
 ### 5 · The wedge instrument — `tools/guest-wedge` · **BUILT AND RUN 2026-08-05**
 
 **Run on a fresh spin-up, with the modal screendumped mid-run.** Three
-results, and the third is why § 3 can proceed:
+results — and read the REFUTATION under the table before any of them.
+(This line used to read *"and the third is why § 3 can proceed"*. The
+third row is `scan`, which is refuted below. What actually lets § 3
+proceed is the `hello`-under-`spin` finding further down, and that one
+stands.)
 
 | mode | process-level work | reading |
 |---|---|---|
@@ -317,11 +321,25 @@ median scene, 145 probes) and no starvation at all. `docs/open-issues.md`
 carries the numbers and what they cost; the sentence below about the
 hypothesis being dead is the one that has to go.
 
-**The "modal sitting there" hypothesis is dead**, and so is "ordinary
-synchronous file work". The mechanism behind the original 90 s is still
+~~**The "modal sitting there" hypothesis is dead**, and so is "ordinary
+synchronous file work".~~ **STRUCK 2026-08-06** — this is the sentence
+the note above says has to go, and it was wrong in both directions. A
+modal *does* cost something (a **20× tax** in a foreign application; a
+**full starvation** when the Finder owns it), and the rows it rested on
+were the instrument, not a modal. The correct statement is in
+[open-issues.md](../open-issues.md) and
+[status.md](../status.md): a **foreign** application's modal is a tax
+NOW works straight through, and a **Finder-owned** modal starves the
+whole cooperative machine and is reproduced deliberately.
+
+The mechanism behind the original 90 s is still
 NOT established: the real Finder alert silenced even `hello`, and a spin
 wedge does not, so it reaches deeper than a busy application loop. That
-remains open and `scan` as written does not reach it.
+remains open and `scan` as written does not reach it. **What has changed
+since:** the Finder-owned case itself is now reproduced on demand
+(`outcome=starved`, `decode_ms=0`, the anchor worker refusing even
+`hello`) — see status.md's *"A modal owned by the FINDER ITSELF"* — so
+the 90 s is unexplained rather than unreachable.
 
 **But the premise § 3 and § 4 rest on is now MEASURED on this guest:**
 `hello` kept answering right through a spin wedge that `stat` could not
@@ -396,6 +414,13 @@ starvation. Watched end to end against the real host on 2026-08-06 — 110
 seconds starved, session kept, and the mutation without the resident
 watched to lose it.
 
+**"The real host" there means the Swift host application rather than a
+test harness. It does not mean real hardware. NOTHING in this plan is
+metal-verified** — every reading in it comes from an emulated G4 under
+OS 9.1, and MacTCP on a PowerBook is not Open Transport's compatibility
+driver on an emulator. Said here as well as under *What is NOT done*
+because it sits two lines below a phrase that is easy to misread.
+
 ### What is DONE and how it was proven
 
 | § | what | evidence |
@@ -449,7 +474,13 @@ watched to lose it.
   non-goal.
 - **The original 90 seconds is still unexplained.** No wedge mode
   reproduces what the Finder's alert did; see below, and do not quietly
-  resolve it.
+  resolve it. **Update 2026-08-06:** the Finder-owned case itself is now
+  reproducible on demand — `outcome=starved`, `decode_ms=0`, and the
+  anchor worker refusing even `hello` — so it is unexplained rather than
+  unreachable, and the specimen to work from exists.
+  [status.md](../status.md), *"A modal owned by the FINDER ITSELF"*. The
+  *foreign*-application modal is a separate and much smaller thing: a
+  20× tax that starves nothing, and acts work through it.
 
 ### Driving the rig, as it actually went
 

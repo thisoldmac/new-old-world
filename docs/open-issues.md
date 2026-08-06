@@ -14,6 +14,68 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## Start here: the biggest OPEN items, as of 2026-08-06
+
+The entries below run roughly newest-first and mix `FIXED`, `BROKEN`,
+`CLOSED`, `LIVE RISK` and `MEASURED` in one sequence, so nothing about
+their order tells you what is still live. This block does, and **only
+this block is maintained** — it is a pointer list with a date on it, not
+a summary that replaces reading the entries. Everything below it is
+append-only as the rule above says.
+
+For what a person driving the Mirror actually experiences right now,
+good and bad, read
+[mirror-state-of-play-2026-08-06.md](mirror-state-of-play-2026-08-06.md)
+first; it is the short version of this list with the wins beside it.
+
+1. **Nothing is metal-verified.** Not one change from 2026-08-05/06 has
+   run on a PowerBook. Two of them are worse than merely unverified
+   because they are the kind that behaves *differently* on hardware
+   rather than merely slower: the **Open Transport wake notifier**, which
+   runs at interrupt time where a mistake is a crash and not a slow
+   answer, and the **act pump**, which now serves wire requests inside a
+   window where a trap patch is live in every process on the machine.
+   Neither has a scheduled pass; a metal pass is attended and Michelle's
+   call. `wirestat wake off` disables the notifier from either face
+   without a rebuild.
+2. **The anchor-bind defect — `actselftest` answers `no-such-process`,
+   and foreign processes report `not-observed` on a fresh clone.** The
+   heartbeat half was found and fixed on 2026-08-06; the
+   `no-such-process` half **did not change**. This is the item that
+   blocks *measuring* the others: it stopped two agents on 2026-08-06
+   from reproducing reported cases, because a clone on which no foreign
+   process binds cannot be driven into a control panel or a foreign
+   modal. Entry: *"BROKEN: the anchor plane is active and binds
+   nothing (2026-08-05)"*, and read its 2026-08-06 append, not just its
+   title. Do **not** read
+   [mirror-parity-ledger.md](mirror-parity-ledger.md)'s "anchor settle
+   window" row as covering this; it carries a correction now saying why.
+3. **The no-hijack protection was traded away, on purpose, with
+   Michelle's approval.** Entry: *"LIVE RISK, deliberately taken"*,
+   immediately below. The signature if it bites is **an act that failed
+   and a scene that moved anyway**; go straight to that entry if you
+   ever see it, because the analysis is already written.
+4. **The element-classification gap — 190 of 308 corpus items carry
+   `knowledge: unknown`**, which is the root of most remaining render
+   defects (a control whose kind is unknown cannot be drawn as the right
+   widget). The cause is diagnosed and it is **not** a missing
+   capability: a complete classifier ships in
+   `ext/src/now_semantic.c :: classify()`, and it is starved by a
+   transport that carries one `NowPeekSemanticCell`, spends it on the
+   lowest-priority claimant, and only for the front process. The
+   inventory is [mirror-element-coverage.md](mirror-element-coverage.md);
+   the diagnosis is *"BROKEN: the control classifier gets one shot per
+   scene, and 121 controls never got one (2026-08-05)"* below, which is
+   marked fixed-pending-verification and is **not** the whole of row 2.
+
+**And one open experiment, which is not a defect.** Most blank and
+hatched window interiors trace to the OS 9 Finder compositing its icon
+views in an offscreen GWorld — 25 ops and zero text for a full repaint.
+Whether that is recoverable semantically is one unanswered question with
+a written brief: [gworld-probe-brief.md](gworld-probe-brief.md). It is
+an experiment to run before it is an architecture to design, and as of
+2026-08-06 a separate worktree owns it — check before starting.
+
 ## FIXED in the host and the guest, UNVERIFIED by any drive: an alert rendered the wrong buttons, and they did nothing (2026-08-06)
 
 Michelle, driving: a guest alert "renders the wrong buttons, and they

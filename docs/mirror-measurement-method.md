@@ -2,9 +2,11 @@
 
 **Date:** 2026-07-31, extended 2026-08-06 · **Status:** recorded
 knowledge. Rules 1–12 are **inherited** from the parked upstream project
-`timbottu/mirror`, mostly dug out of its 55 KB `STATUS.md`. Rules 13–22
+`timbottu/mirror`, mostly dug out of its 55 KB `STATUS.md`. Rules 13–23
 are **NOW's own**, paid for in a single night, and they are the reason
-this file no longer carries Mirror's name in its title.
+this file no longer carries Mirror's name in its title. Rule **23** is
+the exception and says so in its own text: it is the only one here
+written from near-misses rather than from a mistake that was made.
 
 Upstream retracted at least six findings during its life. Every
 retraction traced to one of the rules below, and every rule was written
@@ -181,12 +183,14 @@ operation `5`.
 
 ## The rules NOW paid for itself
 
-Rules 1–12 came in from outside. **13–22 were bought here**, all of them
-on 2026-08-05/06, and all of them the same shape: the
+Rules 1–12 came in from outside. **13–23 were bought here**, all of them
+on 2026-08-05/06. Rules 13–22 are all the same shape: the
 instrument was wrong, and the wrong answer it gave was plausible enough
 to act on. Between them they cost this project six wrong conclusions,
 three of which were written down and had to be retracted — the third
-being plan 012 § 5's modal row, retracted by rule 21.
+being plan 012 § 5's modal row, retracted by rule 21. **Rule 23 is not
+that shape and does not claim to be** — it is about how a correct
+measurement gets *reported*, and it cost nothing, twice.
 
 They are collected here rather than left in the ledger entries they
 came from, because the Macintosh detail in each one is the least
@@ -434,6 +438,56 @@ Two things to carry:
   makes no assumption, in this case raw bytes lifted out of the machine,
   can. It cost one run on a stopped VM.
 
+### 23. Say which number the fix must NOT move, before you measure — and give it its own control
+
+**The one rule here written from near-misses rather than from a paid
+mistake, and it is labelled as such.** Rules 13–22 were each written
+after the wrong answer that cost them. This one was written after two
+occasions in the same session when the wrong answer was *available and
+was not taken*, which is a weaker warrant — but it is not no warrant,
+because on the second occasion somebody felt the need to write the rule
+by hand, in a place only one reader will ever see it, which is exactly
+the situation this file exists to end.
+
+The shape: **a fix whose correct outcome is that a headline number does
+not change.**
+
+- `act_yield` was made to pump the wire. The act it was measured on
+  still costs its **whole 5 s deadline**, and must — the machine still
+  will not take it. What the fix changed is *collateral*: scenes
+  answered during that wait went from **one, at 6634 ms**, to **80, at a
+  65 ms median.** Reported without its prediction, "6.6 s → 5.07 s" reads
+  as a modest speed-up (it is not — those are different arms), and "the
+  act still takes five seconds" reads as no improvement. Neither is the
+  finding.
+- Plan 014 made the host's cycle stop waiting on the Finder. Measured
+  against a **Finder-owned** modal it changes nothing, correctly,
+  because that case starves NOW itself. `status.md` carries a sentence
+  warning the next reader not to conclude the fix did nothing — a rule
+  written in the margin of one entry.
+
+Two halves, and the second is the one with teeth:
+
+1. **State, before the run, which number the fix should move and which
+   it must not.** A prediction written afterwards is a rationalisation;
+   written before, it is what makes an unchanged number a *result*
+   instead of a disappointment.
+2. **An unchanged number needs its own control arm**, because
+   *unchanged* and *changed by two offsetting effects* are
+   indistinguishable in a single reading. Here that arm was running the
+   same act **silently** — nothing asked of the guest while it waited —
+   which gave **5.09 s and 5.00 s** and so established that the polling
+   is not what makes the act expire. Without it, the 5.07 s is
+   compatible with "the pump slowed the act down and something else
+   sped it up by the same amount", and nobody could say which.
+
+This is not rule 5 in different words. Rule 5 proves a fix by
+reproducing the symptom with the fix removed; this is about the fix
+being *present* and the number sitting still on purpose. Nor is it rule
+20 — that one is about a shared blocking point manufacturing
+correlations between numbers, which is the defect this fix addressed
+rather than the way of reporting it.
+
 ## What this looks like in NOW
 
 NOW already holds the same convictions from its own scars — the contract
@@ -455,3 +509,10 @@ it is named for.** A mode called `modal` that never raised one, a
 over a layout the heap does not use — each returned a clean number, and
 in every case the repair was an independent reading from outside the
 thing under test.
+
+Rule 23 adds a third, and it points the other way — at the *report*
+rather than the instrument: **say which number the fix must not move,
+before you measure it.** The first two sentences protect you from
+believing a wrong number. This one protects a right number from being
+read as a disappointment, and it is the only rule here that was written
+before it had to be.

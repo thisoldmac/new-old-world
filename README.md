@@ -277,7 +277,8 @@ enforces it.
 - [docs/status.md](docs/status.md) — what works and what does not, in full.
 - [docs/architecture.md](docs/architecture.md) — the design and its rules.
 - [docs/naming.md](docs/naming.md) — the naming scheme and the `src/` domain split, and why the host has no architecture suffix.
-- [docs/open-issues.md](docs/open-issues.md) — the ledger: broken versus unverified.
+- [docs/open-issues.md](docs/open-issues.md) — the ledger: broken versus unverified. It opens with a dated pointer list of the biggest open items.
+- [docs/mirror-state-of-play-2026-08-06.md](docs/mirror-state-of-play-2026-08-06.md) — the Mirror specifically: what a person driving it experiences today, good and bad.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — including what you can do with no vintage hardware.
 - [AGENTS.md](AGENTS.md) — the full working conventions, for humans and agents alike.
 - [SECURITY.md](SECURITY.md) — the threat model, stated rather than implied.

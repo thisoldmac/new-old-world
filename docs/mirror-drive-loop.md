@@ -9,6 +9,18 @@ reporting a fix nobody had watched work.
 The goal is not a list of closed findings. It is **a faithful,
 functional, accurate mirror of the guest** — one a person can operate.
 
+**Before your FIRST cycle in a session**, read
+[mirror-state-of-play-2026-08-06.md](mirror-state-of-play-2026-08-06.md)
+once: what is already known to be wrong, so a cycle is not spent
+rediscovering it. Three things in particular will cost you a pass each
+if you meet them cold — blank window interiors (an offscreen GWorld,
+[gworld-probe-brief.md](gworld-probe-brief.md)), widgets drawn as the
+wrong widget (62% of elements have no determined kind,
+[mirror-element-coverage.md](mirror-element-coverage.md)), and a clone
+on which no foreign process binds (`actselftest` →
+`no-such-process`). None of them is a new finding, and none of the
+2026-08-05/06 work has run on metal.
+
 ---
 
 ## 1. The rules, recited every pass
