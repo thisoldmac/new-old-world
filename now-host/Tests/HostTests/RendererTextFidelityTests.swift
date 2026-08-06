@@ -13,6 +13,34 @@ import MirrorKit
 /// watched to fail by putting the defect back.
 final class RendererTextFidelityTests: XCTestCase {
 
+    /// Every gate below asserts against the guest's own FONT STRIKES, so
+    /// without the asset pack there is nothing to assert against and the
+    /// failure would say "the renderer is broken" when it means "the
+    /// dependency is absent".
+    ///
+    /// This mirrors `skipUnlessAssetPack()` in the MirrorKit package's own
+    /// suite rather than sharing it: the two test targets do not see each
+    /// other, and duplicating nine lines is cheaper than a shared test
+    /// module. The contract is the same one `scripts/test-host` relies on —
+    /// a visible skip when the pack is absent, and a FAILURE when
+    /// `NOW_REQUIRE_ASSET_PACK` says a machine that has the pack should be
+    /// biting on these.
+    ///
+    /// Found by merging two branches that were each green alone: the
+    /// pack-absent pass and these gates were written in parallel, and only
+    /// the merged tree runs one against the other.
+    private func skipUnlessAssetPack() throws {
+        guard !AssetPack.status.isPresent else { return }
+        if AssetPack.isRequired {
+            XCTFail("NOW_REQUIRE_ASSET_PACK is set and the pack is absent — "
+                    + (AssetPack.bannerText ?? ""))
+            return
+        }
+        throw XCTSkip("Platinum asset pack absent; this gate needs the "
+                      + "guest's own font strikes. "
+                      + (AssetPack.bannerText ?? ""))
+    }
+
     private func ops(_ fixture: String) throws -> [[String: Any]] {
         let url = try XCTUnwrap(Bundle.module.url(
             forResource: fixture, withExtension: "json",
@@ -39,6 +67,7 @@ final class RendererTextFidelityTests: XCTestCase {
     /// the right FACE at the wrong size still overruns, and the right size
     /// in the wrong face is not what the machine drew.
     func testTheMemoryPanelsBodyTextIsDrawnAsGenevaNine() throws {
+        try skipUnlessAssetPack()
         let runs = try textOps("qdtrace-drain-sweep-memory")
             .filter { $0.font == 1 && $0.size == 9 }
         XCTAssertEqual(runs.count, 251,
@@ -67,6 +96,7 @@ final class RendererTextFidelityTests: XCTestCase {
     /// `applFont` runs overran their own clip at Chicago 12; none does at
     /// the size the op asked for.
     func testNoMemoryPanelLabelOverrunsTheClipTheGuestSetForIt() throws {
+        try skipUnlessAssetPack()
         var clips: [String: [Int]] = [:]
         var overruns: [String] = []
         var measured = 0
@@ -104,6 +134,7 @@ final class RendererTextFidelityTests: XCTestCase {
     /// pinned so the rounding rule cannot drift into the other direction.
     /// A tie goes SMALL: too wide overruns the control, too narrow does not.
     func testAnAbsentSizeRoundsToTheNearestBundledStrikeTiesSmall() throws {
+        try skipUnlessAssetPack()
         XCTAssertEqual(FontBook.nearest(face: "geneva", size: 11)?.pointSize,
                        10, "a tie must round down")
         XCTAssertEqual(FontBook.nearest(face: "geneva", size: 13)?.pointSize,
@@ -119,6 +150,7 @@ final class RendererTextFidelityTests: XCTestCase {
     /// The table of bundled sizes must describe the bundle. A row that
     /// names a strike nobody shipped rounds a request onto a nil.
     func testEveryBundledSizeInTheTableIsActuallyBundled() throws {
+        try skipUnlessAssetPack()
         for (face, sizes) in FontBook.bundledSizes {
             for size in sizes {
                 XCTAssertNotNil(FontBook.font("\(face)-\(size)"),
@@ -153,6 +185,7 @@ final class RendererTextFidelityTests: XCTestCase {
     /// an ellipsis an ASCII-only strike renders as blank space would be the
     /// same silence with more ceremony.
     func testATruncatedRunIsDrawnWithAMarkTheStrikeCanRender() throws {
+        try skipUnlessAssetPack()
         let strike = try XCTUnwrap(DisplayReplay.strike(font: 3, size: 10))
         let whole = DisplayReplay.shownText("Save Theme", truncated: false,
                                             in: strike)
@@ -184,6 +217,7 @@ final class RendererTextFidelityTests: XCTestCase {
     /// somebody thought of: a capture that starts drawing a new one fails
     /// it, which is the only version of this that keeps working.
     func testEveryCharacterTheGuestDrawsHasAGlyphToDrawItWith() throws {
+        try skipUnlessAssetPack()
         let captures = [
             "appearance", "date-and-time", "memory", "sound", "sound-1pass",
             "general-controls", "finder", "finder-selected", "note-pad",
@@ -224,6 +258,7 @@ final class RendererTextFidelityTests: XCTestCase {
     /// `…` would file every high glyph under the wrong name and produce a
     /// WRONG glyph, which is worse than a missing one.
     func testTheStrikesAreKeyedByMacRomanNotByByteValue() throws {
+        try skipUnlessAssetPack()
         let strike = try XCTUnwrap(FontBook.font("geneva-10"))
         // MacRoman 0xC9 is an ellipsis and 0xA5 a bullet; the Unicode
         // characters at those code points are É and ¥, which the strike
