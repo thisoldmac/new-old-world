@@ -249,6 +249,13 @@
       "provenance": "static",
       "evidence": "tools/pef.py",
       "at": "2026-08-06T04:23:45-0400"
+    },
+    {
+      "phase": "P3",
+      "claim": "The CarbonLib-vs-InterfaceLib link-order risk is CLOSED statically from our own built PEF: 'New Old World' imports from CarbonLib (285 + 51 symbols) and Apple;Carbon;Networking only - InterfaceLib is not in its import list at all - and CopyBits, NewGWorld, SetGWorld, LockPixels and GetGWorldPixMap all resolve to CarbonLib. No ambiguity to resolve for this binary. It imports NEITHER PlotIconSuite NOR SetStdCProcs, so the bottleneck machinery is entirely the 68K extension's and the PPC application never installs grafProcs itself.",
+      "provenance": "static",
+      "evidence": "tools/pef.py",
+      "at": "2026-08-06T04:23:56-0400"
     }
   ],
   "blockers": [
