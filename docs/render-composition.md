@@ -135,3 +135,40 @@ between what P3 said and what you know.**
   resources by a route the bottlenecks do not show, so the cells are
   titleless and their icons are placeholders. That is the standing
   icon-identity item, not a gap in the derivation.
+
+## Drawing against our own canvas, and knowing when a box is a guess (2026-08-06, later)
+
+Two changes to the replay landed together because they look like the
+same defect — an interior the mirror does not draw right — and are
+opposite in kind. Naming that difference is why they are on this page.
+
+**Invert was OURS.** `DisplayReplay` skipped GrafVerb 3 for years under
+the note "invert needs destination pixels we do not carry", and that was
+true of a renderer whose job was to place a pixel island. It stopped
+being true the moment the host started compositing its own canvas: the
+pixels under an invert are pixels this replay just drew, so the
+operation is a difference blend against the layer. Nothing about the
+contract had to change; the note had simply outlived its renderer.
+
+The generalisable part: **a deferral written against one architecture is
+a claim with an expiry date**, and nothing expires it automatically. The
+sentence "we do not carry those pixels" was load-bearing and stale, and
+the only thing that found it was reading the deferred-op counter.
+
+**Regions were THEIRS**, and the honest move was to say so rather than
+to draw better. The contract sends a region's bounding box and no shape,
+so a rectangle was the only thing available — and the mirror had no way
+to tell a rectangular region (where the box is exact) from an irregular
+one (where it is a guess). Sending the shape was refused on measured
+grounds: regions are unbounded, the ring is the limit. So the guest
+sends a discriminator — the region's own `rgnSize`, in a payload field
+that was already there and already zero — and the renderer's pixels do
+not change at all. What changes is that the deferred-op counter can now
+separate exact from approximate from never-asked.
+
+**The rule this leaves behind:** when a plane cannot draw something, ask
+first whether the drawing is unavailable or merely unmeasured. If it is
+unmeasured, the cheapest true thing to add is usually not the data — it
+is the one number that says whether the approximation is right. Paint
+the doubt only where a capture exists to grade it against; the replay's
+worst habits all came from placeholders graded against nothing.

@@ -225,6 +225,32 @@ public enum DisplayReplay {
                 guard let r = op.rect, r.count == 4 else { continue }
                 let rect = rectFrom(r, pt: pt)
                 let draw = drawingContext()
+                /* A REGION'S BOX IS NOT ALWAYS ITS SHAPE, and since the
+                   contract gained the shape discriminator
+                   (`MirrorKit.RegionShape`) the host can finally tell
+                   which. The PIXELS are deliberately unchanged by that
+                   knowledge, and the decision is worth stating because
+                   the obvious move is to paint the doubt:
+
+                   - Every one of the 39 region ops in the measured
+                     capture corpus is an ERASE, and for an erase the
+                     bounding box is the same area approximated. Painting
+                     a marker over it would replace a probably-right
+                     background with a certainly-wrong annotation.
+                   - Frame, paint and fill of a NON-rectangular region
+                     are the cases where a hard rectangle really is a
+                     claim stronger than the evidence — and there are
+                     zero of them to look at. Grading a placeholder
+                     nobody has a capture of is how the replay acquired
+                     its arbitrary local heuristics before
+                     docs/render-composition.md existed.
+
+                   So the honesty lives where it can be checked: the
+                   deferred-op inventory names an approximated region as
+                   such, and separates it from one whose box is exact and
+                   from one whose resident never said. When a capture
+                   with a non-rectangular fill exists, grade it then,
+                   against it. */
                 switch op.verb ?? 0 {
                 case 0:   // frame
                     draw.stroke(Path(rect), with: .color(fg), lineWidth: 1)
@@ -235,7 +261,10 @@ public enum DisplayReplay {
                 case 2:   // erase uses the port's current background colour
                     draw.fill(Path(rect), with: .color(bg))
                     drew = true
-                default:   // invert needs destination pixels we do not carry
+                case 3:
+                    invert(rect, in: draw)
+                    drew = true
+                default:
                     break
                 }
             default:
@@ -243,6 +272,38 @@ public enum DisplayReplay {
             }
         }
         return drew
+    }
+
+    /// `invertVerb` (GrafVerb 3), replayed for real.
+    ///
+    /// This was skipped for most of the plane's life with the note
+    /// "invert needs destination pixels we do not carry", and that was
+    /// TRUE of the mirror it was written for — a renderer that placed a
+    /// pixel island had no addressable destination of its own. It stopped
+    /// being true when the host began compositing its own canvas: the
+    /// pixels under the rect are pixels this replay just drew, so the
+    /// operation QuickDraw performs against the framebuffer is available
+    /// as a difference blend against the layer.
+    ///
+    /// Filling with WHITE under `.difference` is exactly `1 - dst` per
+    /// channel, which is what `InvertRect` does on the guest. It is
+    /// correct only because the renderer paints the content face opaque
+    /// before the replay runs (`SceneRenderer`); over a transparent layer
+    /// a difference blend would paint white and claim a highlight that is
+    /// not there.
+    ///
+    /// PARITY IS THE SEMANTIC, not a defect. Invert is how classic Mac OS
+    /// draws a text caret, and a drain holding N blinks of one caret ends
+    /// visibly on or off according to N's parity — Sherlock 2's search
+    /// caret arrives 22 times in one live capture and 11 in another, and
+    /// replaying every one of them reproduces the state the machine was
+    /// actually in at the end of that stream. Coalescing them would be a
+    /// prettier picture of a machine nobody watched.
+    private static func invert(_ rect: CGRect, in ctx: GraphicsContext) {
+        guard rect.width > 0, rect.height > 0 else { return }
+        var flip = ctx
+        flip.blendMode = .difference
+        flip.fill(Path(rect), with: .color(.white))
     }
 
     /// A blit the size and shape of an ordinary control.
@@ -286,9 +347,24 @@ public enum DisplayReplay {
 
     /// Roughly square and within the classic icon range (16×16 list rows
     /// up to 32×32 icon view, with margin for masks and badges).
+    ///
+    /// THE UPPER BOUND WAS 48 AND THAT MARGIN WAS DOING HARM. Sherlock 2's
+    /// magnifier button is a 48×48 CopyBits at window-local (417,98) with no
+    /// `blitsrc` — its source world is never hooked, so no pixels and no
+    /// identity cross — and the old bound accepted it and painted a generic
+    /// DOCUMENT icon over a round button. That is a placeholder typed more
+    /// precisely than the drawing stream allows, which is the one rule
+    /// docs/render-composition.md states about this layer.
+    ///
+    /// 36 is measured rather than picked: across all nine committed
+    /// captures every near-square blit is 12×12, 16×16, 18×18, 21×20,
+    /// 32×24 or 32×32 — and the only things above that are Sherlock's
+    /// three magnifier blits. So the bound keeps every real icon and
+    /// releases exactly the control, which then reads as the untyped
+    /// Platinum plate `controlSized` already draws for theme art.
     static func iconSized(_ frame: CGRect) -> Bool {
-        guard frame.width >= 12, frame.width <= 48,
-              frame.height >= 12, frame.height <= 48 else { return false }
+        guard frame.width >= 12, frame.width <= 36,
+              frame.height >= 12, frame.height <= 36 else { return false }
         let aspect = frame.width / max(frame.height, 1)
         return aspect > 0.7 && aspect < 1.4
     }

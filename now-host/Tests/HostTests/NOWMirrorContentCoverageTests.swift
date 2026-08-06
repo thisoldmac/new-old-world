@@ -207,6 +207,49 @@ final class NOWMirrorContentCoverageTests: XCTestCase {
         }
     }
 
+    // MARK: - What the mirror cannot draw yet, over the whole corpus
+
+    /// THE PROJECT'S STANDING ANSWER to "what can the mirror not draw
+    /// yet", asserted over every committed capture at once rather than
+    /// eyeballed. `QDTraceDecode.undrawnName` classifies each op the
+    /// renderer defers and `NOWMirrorContentPlane` reports it in the
+    /// drain sentence; this is the inventory that counter produces.
+    ///
+    /// It was 73 across the nine fixtures on 2026-08-06: 39 regions
+    /// called "bounds only" and 34 rect inverts skipped outright. Invert
+    /// is now drawn, and the regions are reported honestly — the
+    /// contract's shape discriminator is new, so every capture here was
+    /// taken by a resident that never sent it, and "shape unreported" is
+    /// the only true thing to say about them. It is not a synonym for
+    /// "bounds only", which asserted the box was wrong; nobody asked.
+    ///
+    /// A NEW ENTRY HERE IS A REAL FINDING and belongs in
+    /// docs/open-issues.md, not in this dictionary quietly.
+    func testTheDeferredOpInventoryOverEveryCapture() throws {
+        let fixtures = [
+            "qdtrace-drain-blitsrc-control",
+            "qdtrace-drain-blitsrc-finder",
+            "qdtrace-drain-blitsrc-finder-buttons",
+            "qdtrace-drain-blitsrc-finder-list",
+            "qdtrace-drain-cp-datetime",
+            "qdtrace-drain-cp-datetime-hooked",
+            "qdtrace-drain-cp-memory",
+            "qdtrace-drain-now-window",
+            "qdtrace-drain-sherlock",
+            "qdtrace-drain-sherlock-hooked",
+            "qdtrace-drain-sherlock-live",
+        ]
+        var total: [String: Int] = [:]
+        for name in fixtures {
+            for (key, count) in try capture(name).undrawn {
+                total[key, default: 0] += count
+            }
+        }
+        XCTAssertEqual(total, ["rgn (shape unreported)": 39],
+                       "the deferred-op inventory moved — say so in "
+                       + "docs/open-issues.md")
+    }
+
     /// Renders every capture at its own size, for eyes rather than
     /// assertions. Opt-in: NOW_RENDER_DIR names a directory.
     func testRenderEveryCapture() throws {

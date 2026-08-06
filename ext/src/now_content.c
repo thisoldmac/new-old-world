@@ -765,8 +765,12 @@ static pascal void content_poly(GrafVerb verb, PolyHandle poly)
         content_stamp();
         if (content_mode_records() && poly != NULL
             && *poly != NULL) {
+            /* polySize rides in ext1 (content_table.h, the shape
+               discriminator): the bounding box is never a polygon's
+               shape, and the size names how much of it the box hides. */
             content_record_rectlike(kNowContentOpPoly, verb,
-                                    &((**poly).polyBBox), 0, 0);
+                                    &((**poly).polyBBox),
+                                    (**poly).polySize, 0);
         }
         InvokeQDPolyUPP(verb, poly, gStd.polyProc);
         gInCapture = 0;
@@ -783,8 +787,15 @@ static pascal void content_rgn(GrafVerb verb, RgnHandle rgn)
         content_stamp();
         if (content_mode_records() && rgn != NULL
             && *rgn != NULL) {
+            /* rgnSize rides in ext1 (content_table.h, the shape
+               discriminator). 10 is QuickDraw's minimum Region record
+               and means the bbox IS the shape; anything larger tells
+               the host its rectangle is an approximation. One word
+               already in the payload - the region data itself is
+               unbounded and stays where it is. */
             content_record_rectlike(kNowContentOpRgn, verb,
-                                    &((**rgn).rgnBBox), 0, 0);
+                                    &((**rgn).rgnBBox),
+                                    (**rgn).rgnSize, 0);
         }
         InvokeQDRgnUPP(verb, rgn, gStd.rgnProc);
         gInCapture = 0;

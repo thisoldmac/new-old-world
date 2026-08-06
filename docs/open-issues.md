@@ -128,6 +128,101 @@ blob arrives in source form carrying its own quotes, so concatenating
 them leaves `"F` at the join. One item silently loses its art; it was
 found by looking at a render, not by a test.
 
+## The broken INTERIORS: invert drew nothing, regions could not be checked, and the magnifier was a document (2026-08-06)
+
+Two systematic content defects were measured across all nine committed
+capture fixtures, and the point of the entry is that they had **different
+causes** — one was ours to fix, one was never sent.
+
+**FIXED — invert was a renderer gap.** `DisplayReplay` skipped GrafVerb 3
+under the note "invert needs destination pixels we do not carry". That was
+true of the renderer it was written for and stopped being true when the
+host began compositing its own canvas: the pixels beneath an invert are
+pixels the replay just drew, so it is a difference blend against the
+layer. 34 inverts across the corpus were being dropped, and invert is how
+classic Mac OS draws selection, carets and pressed states — so the mirror
+was showing an unselected, uncaretted, unpressed version of every window.
+
+What those 34 actually ARE is worth recording, because the guess was
+wrong. All of them are ONE rect: `[33,116,34,132]`, a 1×16 bar drawn
+immediately after Sherlock's search field — the **text caret**, blinking.
+Not list selection. The visible win is a caret in the search field, which
+matches the machine.
+
+PARITY IS THE SEMANTIC, not a defect: a drain holding N blinks of one
+caret ends visibly on or off by N's parity, and replaying every one of
+them reproduces the state the machine was in at the end of that stream
+(sherlock-live has 22 and ends off; sherlock has 11 and ends on).
+Coalescing them would be a prettier picture of a machine nobody watched.
+
+**CONTRACT CHANGE — a region can now say whether its box is its shape.**
+`content_table.h` said plainly that RGN sends the bounding box and
+`ext = 0`, never the region data, so the host drew every region as a hard
+rectangle and had **no way to know** whether that was right. Sending the
+shape was refused: a region is unbounded, the ring is the measured limit
+(a hooked Sherlock overran 64 KiB in one settle), and the common region is
+rectangular — the expensive answer would be paid on every op to serve the
+rare one. So the guest sends a discriminator instead, and it costs
+literally nothing: the region's own `rgnSize` rides in `ext1`, a field the
+payload already carried and already zeroed. No record grew, the ring
+budget is unchanged, an older host reads 0 exactly as before. 10 is
+QuickDraw's minimum Region record, so `ext1 == 10` means the box IS the
+shape.
+
+Three states, not two. `ext1 == 0` is a resident older than the rule and
+reports as **"shape unreported"** — never as rectangular, because a zero
+pretending to be an answer is what this contract refuses everywhere else.
+Every fixture in the corpus is in that state, which is exactly the point:
+nobody could have answered the question from the old data.
+
+The PIXELS are deliberately unchanged by that knowledge. All 39 region ops
+in the corpus are ERASES, and for an erase the box is the same area
+approximated — a marker over it would replace a probably-right background
+with a certainly-wrong annotation. The verbs where a hard rectangle really
+is a claim stronger than the evidence are frame/paint/fill of a
+non-rectangular region, and **there are zero of those to look at**. Grade
+that placeholder when a capture of one exists, against it.
+
+**FIXED — Sherlock's magnifier was drawn all along, and mis-typed.** It is
+a 48×48 CopyBits at window-local (417,98) with no `blitsrc`: its source
+world is never hooked, so no pixels and no identity cross. The replay's
+icon bound was 12–48 "with margin for masks and badges", so it accepted
+the button and painted a generic **document icon** over it — a placeholder
+typed more precisely than the drawing stream allows, which is the one rule
+docs/render-composition.md states about that layer. The bound is 36 now,
+measured rather than picked: every near-square blit in all nine captures
+is 12×12, 16×16, 18×18, 21×20, 32×24 or 32×32, and the only things above
+are the three magnifier blits. It reads as the untyped control plate.
+
+**CLASSIFIED, still absent — the `Custom…` popup is invisible to
+grafProcs.** This supersedes "absent and unexplained" below. The radio row
+is drawn in one pass into a world the plane DID hook (`0x1e9c6a60`), and
+in that pass: the first radio's box drew, "File Names" drew, the second
+box drew, "Contents" drew, the third radio's box drew at x 201–217 — and
+then **nothing at all** until the `Edit…` button's theme drawing at x 411.
+The popup's whole ~190px span produced no bottleneck traffic of any kind,
+no world of its size was ever born, and there is no blit anywhere in the
+capture between 100 and 250 px wide. So it is not "never drawn" (its
+neighbours in the same row and the same pass drew), not "drawn into a
+world we do not hook" (its neighbours are in the world we hooked), and not
+"drawn and dropped" (there is nothing to drop). It is drawn by a mechanism
+the port's grafProcs cannot see — the same class as the CopyMask item.
+What that mechanism IS remains open.
+
+**arc and poly: no renderer case, deliberately.** Zero of either in the
+corpus, so nothing was built for them. The guest CAN emit both, and poly
+sends a bounding box exactly as rgn does — which for a polygon is never
+the shape, so `polySize` now rides in its `ext1` for symmetry and as
+honesty telemetry. Both stay named whole in the deferred-op inventory: a
+counter that fell silent would read as coverage.
+
+**The deferred-op inventory, which is the standing answer to "what can
+the mirror not draw yet":** 73 → 39 over the corpus. `34 × rect (invert)`
+is gone entirely. The 39 regions moved from `rgn (bounds only)` — which
+asserted the box was wrong — to `rgn (shape unreported)`, which says
+nobody asked. `NOWMirrorContentCoverageTests` gates the whole number; a new entry there is a finding
+and belongs on this page.
+
 ## The `desktopItems` entry below had no evidence because this side threw it away (2026-08-06)
 
 A dated line under **"FIRST LIVE ANSWERS from the 2026-08-05 drive"**, and
@@ -335,7 +430,10 @@ explained:**
   replay would be drift.
 - **The `Custom…` popup and the magnifier button are absent**, and no
   measurement yet says whether their drawing is missing or merely
-  unplaced.
+  unplaced. *(2026-08-06, later: both classified — see "The broken
+  INTERIORS" at the top. The magnifier was drawn all along and mis-typed
+  as an icon, and is fixed; the popup produces no bottleneck traffic at
+  all and is invisible to grafProcs.)*
 
 So Sherlock's TEXT is complete and its LAYOUT is now right for
 everything that draws; what is absent is absent, and the render no
@@ -483,7 +581,10 @@ and their icons are generic stubs.
 
 **BROKEN, unexplained, and NOT this:** the Custom… popup and the
 magnifier button are absent from the render for a different reason
-nobody has looked at.
+nobody has looked at. *(2026-08-06, later: looked at. Two different
+reasons, both at the top of this page — the magnifier is a 48×48 blit
+the replay mis-typed as an icon, now fixed; the popup emits nothing a
+grafProc can see, and stays open.)*
 
 ## The coverage spread, and the one application that beat the chase (2026-08-06, later)
 

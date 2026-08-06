@@ -251,6 +251,75 @@ static void test_drain_json(void)
     check_has(g_out, "\"nextCursor\":", "a cursor to resume from");
 }
 
+/* THE REGION SHAPE DISCRIMINATOR (content_table.h). RGN and POLY reuse
+   the rect payload with the bounding box in l..b, and used to send ext = 0
+   as well - which made the host's box unfalsifiable: it drew every region
+   as a hard rectangle with no way to say whether that was the shape or an
+   approximation of it. The region's own rgnSize rides in ext1 now, in a
+   field the payload already carried and already zeroed, so no record grew
+   and the ring budget is unchanged.
+
+   This gate is on the WIRE half NOW owns. It cannot execute the resident
+   bottleneck that reads `(**rgn).rgnSize` - that is Toolbox code in
+   another process - so what it proves is that a shape word placed in ext1
+   reaches the host intact and distinctly for each of the three states the
+   contract defines. The third state is the one worth having: 0 means a
+   resident older than the rule, and must never be readable as
+   "rectangular". */
+static void test_drain_region_shape_word(void)
+{
+    NowContentRectPayload rp;
+
+    init_block(4096);
+
+    /* rgnSize 10 is QuickDraw's minimum Region record: the box IS the
+       shape, and the host's rectangle is exact. */
+    memset(&rp, 0, sizeof rp);
+    rp.verb = 2;
+    rp.l = 0; rp.t = 21; rp.r = 389; rp.b = 203;
+    rp.ext1 = 10;
+    (void)now_content_ring_put(&g_block, kNowContentOpRgn, 0, 0x7000u,
+                               &rp, (NowContentU16)sizeof rp);
+
+    /* Larger means real shape the box is hiding. */
+    rp.ext1 = 42;
+    (void)now_content_ring_put(&g_block, kNowContentOpRgn, 0, 0x7000u,
+                               &rp, (NowContentU16)sizeof rp);
+
+    /* A polygon's box is NEVER its shape, so polySize is honesty
+       telemetry rather than a fast path - but it must still cross. */
+    rp.verb = 1;
+    rp.ext1 = 24;
+    (void)now_content_ring_put(&g_block, kNowContentOpPoly, 0, 0x7000u,
+                               &rp, (NowContentU16)sizeof rp);
+
+    now_qdtrace_drain_json(&g_block, 0, 0, 0, 9, g_out, (long)sizeof g_out);
+    check_balanced(g_out, "a region drain is balanced");
+    check_has(g_out, "\"records\":3", "three shape records");
+    check_has(g_out, "\"op\":\"rgn\",\"port\":\"0x00007000\"",
+              "the region keeps its window port");
+    check_has(g_out, "\"rect\":[0,21,389,203],\"ext\":[10,0]",
+              "a rectangular region says so with rgnSize 10");
+    check_has(g_out, "\"rect\":[0,21,389,203],\"ext\":[42,0]",
+              "and an irregular one carries its true size");
+    check_has(g_out, "\"op\":\"poly\"", "poly rides the same payload");
+    check_has(g_out, "\"ext\":[24,0]", "carrying polySize");
+
+    /* ext = 0 is a THIRD state, not a synonym for rectangular: it is a
+       resident that predates the rule. The wire must be able to say it,
+       so a bare-payload record still emits the field rather than
+       omitting it into ambiguity. */
+    init_block(4096);
+    memset(&rp, 0, sizeof rp);
+    rp.verb = 2;
+    rp.l = 0; rp.t = 0; rp.r = 40; rp.b = 40;
+    (void)now_content_ring_put(&g_block, kNowContentOpRgn, 0, 0x7000u,
+                               &rp, (NowContentU16)sizeof rp);
+    now_qdtrace_drain_json(&g_block, 0, 0, 0, 9, g_out, (long)sizeof g_out);
+    check_has(g_out, "\"ext\":[0,0]",
+              "an older resident's silence is stated, never omitted");
+}
+
 /* The blit-source record (013): the join key precedes its bits record
    on the wire, as hex strings for `port`'s top-bit reason. */
 static void test_drain_blit_source(void)
@@ -457,6 +526,7 @@ int main(void)
     test_status_json();
     test_status_absent_and_mismatched();
     test_drain_json();
+    test_drain_region_shape_word();
     test_drain_blit_source();
     test_drain_world_records();
     test_drain_truncation_flag();

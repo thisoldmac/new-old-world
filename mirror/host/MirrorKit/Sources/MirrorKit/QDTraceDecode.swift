@@ -162,17 +162,17 @@ public enum QDTraceDecode {
             // the renderer at all.
             return nil
         case "rect", "rrect", "oval":
+            // Verb 3 (invert) left this list on 2026-08-06: the replay
+            // performs it against its own canvas rather than skipping it.
             switch record.op.verb ?? 0 {
-            case 0, 1, 2, 4: return nil
-            case 3: return "\(record.op.op) (invert)"
+            case 0, 1, 2, 3, 4: return nil
             default: return "\(record.op.op) (verb \(record.op.verb ?? 0))"
             }
         case "rgn":
-            switch record.op.verb ?? 0 {
-            case 0, 1, 2, 4: return "rgn (bounds only)"
-            case 3: return "rgn (invert)"
-            default: return "rgn (verb \(record.op.verb ?? 0))"
+            guard (0...4).contains(record.op.verb ?? 0) else {
+                return "rgn (verb \(record.op.verb ?? 0))"
             }
+            return RegionShape(record.op).undrawnName
         case "state":
             switch record.op.kind {
             case "origin", "clip", "fg", "bg": return nil
