@@ -270,11 +270,31 @@ the record, that disposal frees an address the next allocation reuses,
 and that create-and-destroy is the era's norm because almost nothing
 imports `UpdateGWorld`.
 
-**You could not yet reimplement QuickDraw's drawing itself.** The
-rasterisation, region algebra, colour matching and text imaging are all
-untouched here: the ROM body is compressed and its code exists only
-decompressed in RAM. That is the next static frontier, and it needs the
-live lane plus a disassembler rather than a file on disk.
+**QuickDraw's own code is now REACHABLE**, which was the last frontier
+this arc named and then crossed. `SetStdCProcs` returns routine
+descriptors (`0xAAFE`, version 7, `ISA = kPowerPCISA`); the
+RoutineRecord holds a transition vector at descriptor+20; the vector's
+first word is the PowerPC entry point:
+
+| Proc | Descriptor | TVector | Code |
+|---|---|---|---|
+| `StdText` | `0x000d5a3c` | `0x005825a8` | `0x3f9967c0` |
+| `StdBits` | `0x000d49f0` | `0x0058ab38` | `0x3f8a9b00` |
+| `StdRect` | `0x000454a0` | `0x0058afc0` | — |
+
+Dumped from inside the guest and disassembled as PowerPC BE, these are
+clean function bodies — `mflr`/`stmw`/`stwu` prologues, TOC-relative
+globals, real control flow. **So the ROM being compressed on disk does
+not hide QuickDraw**: it is readable at instruction level from a running
+guest, one routine descriptor at a time.
+
+A first result from actually reading it: **`StdText` maintains its own
+recursion-depth counter** — loads a TOC global, reads a byte, writes
+back `+1`, and restores it on the empty-text early-out path.
+
+What remains genuinely untouched is breadth: region algebra, colour
+matching, the blitter's inner loops. Those are now a matter of reading
+more of the same, not of finding a way in.
 
 ## 9. What is still open
 
