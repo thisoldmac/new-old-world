@@ -4,6 +4,8 @@
       "at": "2026-08-06T01:10:11-0400",
       "branch": "claude/ext-commit-gate",
       "commit": "3a2d434551007831b96f6e996c28404593296ce4",
+      "correctedOn": "2026-08-06",
+      "correction": "THIS RECEIPT DID NOT CERTIFY WHAT IT APPEARED TO. It records `shutdown: guest-clean` and `qemuImgCheck: clean`, and both statements are true \u2014 but neither answers whether the Macintosh volume inside the image was cleanly unmounted. `qemu-img check` validates the qcow2 container and cannot see the filesystem inside it; a guest-clean shutdown means the sequence STARTED, and the Shutdown Manager quits applications before it flushes and unmounts volumes, so the anchor worker fell silent while the volume was still being written. The image this receipt names (kept as now-mirror-stage.qcow2.bak-20260806-pre-transport) was measured by tools/volclean.py on 2026-08-06 and its HFS 'volume unmounted' attribute bit is CLEAR: every clone of it opened with \"Your computer did not shut down properly\" and Disk First Aid. Three bakes that day installed such an image. The general lesson, which is worth more than the fix: a check adjacent to the question reads exactly like an answer to it. The `volumeClean` field and tools/volclean.py exist so this cannot be claimed on the wrong evidence again.",
       "extBuildFingerprint": "bb95520ae51365c053f56d57d86bb10af09629c3",
       "extDigest": "4cb1e7e3c0c48aa02ad984af097e2ccd3932a048",
       "image": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
@@ -15,12 +17,15 @@
       "residentCapabilities": 63,
       "residentLifecycle": "active",
       "shutdown": "guest-clean",
-      "sourceManifest": "41675da7f7c4007c45e3f173923888299321ded0"
+      "sourceManifest": "41675da7f7c4007c45e3f173923888299321ded0",
+      "volumeClean": "dirty"
     },
     {
       "at": "2026-08-06T01:19:02-0400",
       "branch": "claude/mirror-thread-content",
       "commit": "50eb855a22f978fdba1d04d9d85350df52ee2c22",
+      "correctedOn": "2026-08-06",
+      "correction": "THIS RECEIPT DID NOT CERTIFY WHAT IT APPEARED TO. It records `shutdown: guest-clean` and `qemuImgCheck: clean`, and both statements are true \u2014 but neither answers whether the Macintosh volume inside the image was cleanly unmounted. `qemu-img check` validates the qcow2 container and cannot see the filesystem inside it; a guest-clean shutdown means the sequence STARTED, and the Shutdown Manager quits applications before it flushes and unmounts volumes, so the anchor worker fell silent while the volume was still being written. The image this receipt names (kept as now-mirror-stage.qcow2 (the oracle, as installed)) was measured by tools/volclean.py on 2026-08-06 and its HFS 'volume unmounted' attribute bit is CLEAR: every clone of it opened with \"Your computer did not shut down properly\" and Disk First Aid. Three bakes that day installed such an image. The general lesson, which is worth more than the fix: a check adjacent to the question reads exactly like an answer to it. The `volumeClean` field and tools/volclean.py exist so this cannot be claimed on the wrong evidence again.",
       "extBuildFingerprint": "97fb3f546ea169b1bf7d95242eb3c8e89eef9dac",
       "extDigest": "169303d7fe31aea44f909154775a0d99b8a5c524",
       "image": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
@@ -32,7 +37,8 @@
       "residentCapabilities": 127,
       "residentLifecycle": "active",
       "shutdown": "guest-clean",
-      "sourceManifest": "72f0accfe49f6931a784b91a7b32919b2a27bf5c"
+      "sourceManifest": "72f0accfe49f6931a784b91a7b32919b2a27bf5c",
+      "volumeClean": "dirty"
     }
   ]
 }
