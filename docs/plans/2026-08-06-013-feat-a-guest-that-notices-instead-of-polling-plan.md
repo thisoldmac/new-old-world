@@ -118,6 +118,19 @@ something running in that process's context at mutation time does. The
 resident is the only component with that vantage, which is what makes
 this architectural rather than an optimisation.
 
+**And the vantage has a floor, now measured.** The one piece of this idea
+already shipping is the content plane's arm handshake — the application
+writes a request, and it is honoured only when the TARGET process next
+runs the resident's jGNE pass. That is the exact shape § A proposes, so
+its cost is this plan's own thesis with a number on it, and the number
+was taken before any more of it was built. **~116 ms for the frontmost
+application, and the handshake is never the expensive part**: the two
+cases that cost seconds cost them because the target is not being
+scheduled at all, which no notifier can fix. The measurement, the null
+control and the decision not to build on it are in
+[open-issues.md](../open-issues.md). Read it before proposing a
+mechanism here — it also says which conditions were never reached.
+
 ### B — three tiers of technique, and the tier is chosen by METAL RISK
 
 Ranked, and a slice must say which tier it is in:

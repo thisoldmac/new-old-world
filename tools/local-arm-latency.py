@@ -117,13 +117,27 @@ def arm_once(link, psn, addr, a5=None, budget=POLL_BUDGET, mid_run=None):
         hi, lo = psn.split(".")
         args["serialHi"], args["serialLo"] = int(hi), int(lo)
 
+    # THE FLOOR HAS TO BE MEASURED IN THIS CONDITION, not once at startup.
+    # NOW is a process too: when the target is frontmost, NOW is in the
+    # BACKGROUND, and a status round trip then costs whatever it costs NOW
+    # to wake. Timing an arm against a floor taken in a different front
+    # condition compares two numbers that moved for two reasons — the exact
+    # mistake plan 013 records against its own first finding.
+    idle = []
+    for _ in range(5):
+        t = time.time()
+        link.command("qdtrace", {"op": "status"})
+        idle.append((time.time() - t) * 1000)
+    here = statistics.median(idle)
+
     before, _ = refused(link)
     mid = link.send_async("qdtrace", args)
     result = link.read_result(mid)
     t_reply = time.time()
     if not result.get("ok"):
         return {"outcome": "refused:%s" % (
-            (result.get("error") or {}).get("code")), "s": None, "polls": 0}
+            (result.get("error") or {}).get("code")), "s": None, "polls": 0,
+            "floor": here}
     out = (result.get("output") or {}).get("qdtrace") or {}
     generation = out.get("generation")
     want_a5 = out.get("a5")            # the guest's own word for who it resolved
@@ -143,6 +157,7 @@ def arm_once(link, psn, addr, a5=None, budget=POLL_BUDGET, mid_run=None):
                 and active.get("a5") == want_a5):
             after = dict(st.get("refused") or {})
             return {"outcome": "armed", "s": time.time() - t_reply,
+                    "floor": here,
                     "polls": polls, "generation": generation, "a5": want_a5,
                     "sinceFront": None if t_fired is None
                                   else time.time() - t_fired,
@@ -158,7 +173,7 @@ def arm_once(link, psn, addr, a5=None, budget=POLL_BUDGET, mid_run=None):
             fired = True
     after, _ = refused(link)
     return {"outcome": "timeout", "s": None, "polls": polls,
-            "generation": generation,
+            "floor": here, "generation": generation,
             "wrongContext": after.get("wrongContext", 0)
                             - before.get("wrongContext", 0),
             "expired": after.get("expired", 0) - before.get("expired", 0)}
@@ -186,6 +201,10 @@ def report(label, samples, floor):
     print(f"  ms: {ms}")
     print(f"  median={statistics.median(ms)}  min={ms[0]}  max={ms[-1]}  "
           f"polls median={statistics.median(polls)}")
+    fl = sorted(round(s["floor"]) for s in samples if s.get("floor") is not None)
+    if fl:
+        print(f"  IN-CONDITION floor (a bare status round trip, same front "
+              f"process): median={statistics.median(fl)}ms  {fl}")
     since = [round(s["sinceFront"] * 1000) for s in armed
              if s.get("sinceFront") is not None]
     if since:
@@ -250,10 +269,61 @@ def cond_null(link):
     return (None, w["addr"], BOGUS_A5) if w else None
 
 
+def await_launch(link, path, name, settle=0.0, tries=25):
+    """Launch, then wait for the target to be ARMABLE — which is not the
+    same as launched.
+
+    `launched: true` means the Process Manager returned a serial number and
+    is not a claim that a window exists (measurement rule 10). An arm needs
+    the exact window address out of the scene, so a just-launched
+    application cannot be armed until it has already pumped enough to open
+    one. That constraint is a finding, not a nuisance: the product can
+    never request an arm earlier than this.
+    """
+    try:
+        link.command("quit", {"target": name})
+    except nowwire.GuestError:
+        pass
+    try:
+        link.command("launch", {"target": path})
+    except nowwire.GuestError as exc:
+        print(f"    launch refused: {exc}")
+        return None
+    for _ in range(tries):
+        got = find(link, name, tries=1)
+        if got:
+            if settle:
+                time.sleep(settle)
+            return got
+    return None
+
+
+def cond_launched(link):
+    """A control panel, just launched. The condition from the observation
+    that started this: the host's line named Date & Time, and a control
+    panel opens as its OWN application (docs/open-issues.md)."""
+    return await_launch(link, "Macintosh HD:System Folder:Control Panels:"
+                              "Date & Time", "Date & Time")
+
+
+def cond_modal(link):
+    """An application sitting in a modal dialog.
+
+    `tools/guest-wedge` in `modal` mode puts up a real dialog and holds it
+    with a GetNextEvent loop — the same loop ModalDialog runs. So this asks
+    the plane's own question of plan 012's: does a process parked in a
+    modal still pump enough to be armed?
+    """
+    return await_launch(link, "Macintosh HD:TimBotTu:now-dev:NOW Wedge "
+                              "modal 90", "NOW Wedge modal 90", settle=2.0)
+
+
 CONDITIONS = {
     "self": cond_self,
     "front": cond_front,
     "background": cond_background,
+    "launched": cond_launched,
+    "modal": cond_modal,
     "null": cond_null,
 }
 
