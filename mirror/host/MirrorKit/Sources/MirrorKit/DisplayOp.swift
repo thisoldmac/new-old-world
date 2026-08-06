@@ -21,6 +21,21 @@ public struct DisplayOp: Codable, Equatable, Sendable {
     public var font: Int?
     public var size: Int?
     public var face: Int?
+    /// How many bytes of the run this record actually carries — the guest's
+    /// inline cap, not the run's length.
+    public var len: Int?
+    /// The run's TRUE length, which is `len` unless the cap bit.
+    public var fullLen: Int?
+    /// The guest's own declaration that it clipped this run at the cap.
+    ///
+    /// These three ride the wire already and were DROPPED here, which is R2
+    /// of the 2026-08-06 fidelity sweep: the Appearance panel's description
+    /// arrives as `len 64, fullLen 69, trunc true` and rendered as though 64
+    /// bytes were the whole string. A truncation the guest declared became a
+    /// silent one at the glass — the same class of false claim as hatching
+    /// "Bitmap unavailable" over a control that was never missing. They are
+    /// spelled as the wire spells them so the Codable keys match the record.
+    public var trunc: Bool?
 
     // shapes (rect/rrect/oval/arc/poly/rgn)
     public var verb: Int?         // GrafVerb: 0 frame 1 paint 2 erase 3 invert 4 fill
@@ -57,6 +72,9 @@ public struct DisplayOp: Codable, Equatable, Sendable {
         pen = ints("pen"); font = SceneBuilder.intValue(dict["font"])
         size = SceneBuilder.intValue(dict["size"])
         face = SceneBuilder.intValue(dict["face"])
+        len = SceneBuilder.intValue(dict["len"])
+        fullLen = SceneBuilder.intValue(dict["fullLen"])
+        trunc = (dict["trunc"] as? NSNumber)?.boolValue ?? (dict["trunc"] as? Bool)
         verb = SceneBuilder.intValue(dict["verb"])
         rect = ints("rect"); ext = ints("ext")
         from = ints("from"); to = ints("to")

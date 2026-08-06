@@ -56,6 +56,10 @@ public enum DisplayReplay {
            fifteen wells and eight channel icons were clipped away and the
            grid rendered as empty boxes. */
         var clip: [Int]?
+        /// The most recent painted/filled rectangle and the colour it was
+        /// painted in — the evidence `textInk` needs to recognise a
+        /// highlight it is about to write invisible text into.
+        var lastFill: (rect: CGRect, color: Color)?
 
         func pt(_ h: Int, _ v: Int) -> CGPoint {
             CGPoint(x: content.minX + CGFloat(h - originH),
@@ -173,15 +177,19 @@ public enum DisplayReplay {
                 guard let s = op.text, !s.isEmpty, let p = op.pen, p.count == 2
                 else { continue }
                 let font = strike(font: op.font ?? 3, size: op.size ?? 12)
+                let shown = Self.shownText(s, truncated: op.trunc == true,
+                                           in: font)
                 let where0 = pt(p[0], p[1])
                 let draw = drawingContext()
+                let ink = Self.textInk(fg: fg, bg: bg, at: where0,
+                                       lastFill: lastFill)
                 if let font {
-                    font.draw(s, in: draw, x: where0.x, baselineY: where0.y,
-                              color: fg)
+                    font.draw(shown, in: draw, x: where0.x,
+                              baselineY: where0.y, color: ink)
                 } else {
-                    draw.draw(draw.resolve(Text(s)
+                    draw.draw(draw.resolve(Text(shown)
                         .font(.system(size: CGFloat(op.size ?? 12)))
-                        .foregroundColor(fg)),
+                        .foregroundColor(ink)),
                         at: CGPoint(x: where0.x, y: where0.y), anchor: .bottomLeading)
                 }
                 drew = true
@@ -257,6 +265,12 @@ public enum DisplayReplay {
                     drew = true
                 case 1, 4:  // paint / fill
                     draw.fill(Path(rect), with: .color(fg))
+                    /* Remembered for the text that may land on top of it —
+                       see `textInk`. Only the LAST fill is kept: a
+                       highlight is painted immediately before the run it
+                       highlights, and a fill further back in the stream
+                       has had every chance to be covered. */
+                    lastFill = (rect, fg)
                     drew = true
                 case 2:   // erase uses the port's current background colour
                     draw.fill(Path(rect), with: .color(bg))
@@ -304,6 +318,65 @@ public enum DisplayReplay {
         var flip = ctx
         flip.blendMode = .difference
         flip.fill(Path(rect), with: .color(.white))
+    }
+
+    /// What to DRAW for a run the guest declared truncated.
+    ///
+    /// The capture is honest and the render was not: a text record carries
+    /// `len`, `fullLen` and `trunc`, and the Appearance panel's description
+    /// arrives as 64 of its 69 bytes with `trunc: true`. Drawing those 64
+    /// characters unmarked states that they are the whole string — a false
+    /// claim about the machine, and the same class of mistake as hatching
+    /// "Bitmap unavailable" over a control that was never missing.
+    ///
+    /// AN ELLIPSIS, and the argument for it over the alternatives: it is
+    /// what the Mac itself draws for a string that did not fit (`TruncString`
+    /// puts one exactly here), so it reads as truncation to the only
+    /// audience that matters without a legend; it costs the width of one
+    /// glyph rather than a badge's worth of chrome; and it cannot be
+    /// mistaken for content, because no run in this corpus ends in one it
+    /// did not ask for. The rejected alternatives were a marker outside the
+    /// text (invisible at a glance, and the run's own rect is the only place
+    /// a viewer looks) and raising the 64-byte cap (a ring bound that should
+    /// move on a measurement, not to hide its own symptom).
+    ///
+    /// `fullLen` is deliberately NOT rendered. It rides on the op for
+    /// whoever can use it — a tooltip, an accessibility string, a semantic
+    /// join — and painting "69" beside the text would be the mirror talking
+    /// about itself inside a picture of the machine.
+    static func shownText(_ text: String, truncated: Bool,
+                          in font: BitmapFont?) -> String {
+        guard truncated else { return text }
+        return text + (font?.ellipsis ?? "…")
+    }
+
+    /// The colour to draw a run in, given what was just painted under it.
+    ///
+    /// The replay tracks one foreground and one background colour per port
+    /// and drew every run in `fg`. That is right until an application
+    /// highlights: the Finder draws a selected icon's label by painting the
+    /// label's rectangle and writing the text over it in the INVERSE
+    /// colour, and the paint crosses while the inverse does not — so
+    /// "System Folder" rendered as a solid black bar with the label
+    /// swallowed inside it (R8 of the 2026-08-06 sweep), which a viewer
+    /// reads as damage rather than as selection. The machine's own pixels
+    /// for that moment show white text on the black bar.
+    ///
+    /// So: a run whose pen sits inside a rectangle just painted in the
+    /// colour the run itself would use is drawn in the port's BACKGROUND
+    /// colour instead. The rule is narrow on purpose — it fires only when
+    /// the alternative is provably invisible, which is never a rendering
+    /// anyone wanted.
+    ///
+    /// This is NOT the skipped-invert work and fixing invert will not cover
+    /// it: this capture carries eleven paint ops and zero invert ops
+    /// (`testTheFindersSelectionNeverReachesTheCapture`). The label was
+    /// painted, never inverted.
+    static func textInk(fg: Color, bg: Color, at pen: CGPoint,
+                        lastFill: (rect: CGRect, color: Color)?) -> Color {
+        guard let lastFill, lastFill.color == fg,
+              lastFill.rect.contains(pen) else { return fg }
+        return bg
     }
 
     /// A blit the size and shape of an ordinary control.
@@ -406,18 +479,36 @@ public enum DisplayReplay {
         }
     }
 
-    /// Map a guest font id + size to a bundled NFNT strike. Font 3 = Geneva
-    /// (the app/content face) at the nearest bundled size; 0/1 = system
-    /// (Chicago 12). Unknown ids fall back to Geneva.
-    private static func strike(font: Int, size: Int) -> BitmapFont? {
-        if font == 0 || font == 1 {
-            return FontBook.system            // Chicago 12
+    /// Map a guest font id + size to a bundled NFNT strike.
+    ///
+    /// The id is the port's own `txFont`, a QuickDraw font family number,
+    /// and the two small ones are ROLES rather than faces: **0 is the
+    /// system font** and **1 is `applFont`**, which on a US Mac OS 9
+    /// system resolves to Geneva. Everything else is a family id, and
+    /// Geneva is the fallback for the families this pack does not carry.
+    ///
+    /// Both halves of that used to be wrong, and it is R1 of the
+    /// 2026-08-06 fidelity sweep. `applFont` was mapped to the system
+    /// face, and the requested size was thrown away with it — so the
+    /// Memory panel, which draws 251 of its 266 text ops as font 1 at
+    /// size 9, rendered every one of them as Chicago 12: a third too
+    /// large, overrunning its own controls and spilling past the
+    /// window's right edge. The machine's own pixels for that panel are
+    /// Geneva 9 (`memory-guest.ppm`).
+    ///
+    /// `txSize` 0 means "the port's default size", which QuickDraw
+    /// resolves to 12; it is not a request for a zero-height strike.
+    /// What happens when the pack has no strike at the wanted size is
+    /// `FontBook.nearest`'s business, and it is documented there.
+    /// Internal rather than private so the fidelity gate can ask which
+    /// strike a captured op would be drawn in without rendering a pixel.
+    static func strike(font: Int, size: Int) -> BitmapFont? {
+        let wanted = size > 0 ? size : 12
+        switch font {
+        case 0:
+            return FontBook.nearest(face: "chicago", size: wanted)
+        default:
+            return FontBook.nearest(face: "geneva", size: wanted)
         }
-        // Geneva: exact size if bundled, else nearest.
-        let sizes = [9, 10, 12, 14]
-        let exact = "geneva-\(size)"
-        if let f = FontBook.font(exact) { return f }
-        let nearest = sizes.min(by: { abs($0 - size) < abs($1 - size) }) ?? 12
-        return FontBook.font("geneva-\(nearest)") ?? FontBook.app
     }
 }
