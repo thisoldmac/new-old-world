@@ -380,41 +380,78 @@ static void test_blit_source(void)
         rows[i].offscreen = 1;
         rows[i].pixmap = 0x00445500u + (NowContentU32)i * 4u;
         rows[i].pixmap_deref = 0x1e950000u + (NowContentU32)i * 0x1000u;
+        rows[i].port_version = 0xC001u;
+        rows[i].rect_l = 0; rows[i].rect_t = 0;
+        rows[i].rect_r = (NowContentS16)(100 + 10 * i);
+        rows[i].rect_b = 90;
+        rows[i].base = 0x00800000u + (NowContentU32)i * 0x100u;
+        rows[i].row_bytes = (NowContentU16)(0x8000u | (unsigned)(64 + 2 * i));
+        rows[i].pm_l = 0; rows[i].pm_t = 0;
+        rows[i].pm_r = (NowContentS16)(100 + 10 * i);
+        rows[i].pm_b = 90;
     }
 
-    check_eq((long)now_content_blit_source(rows, 3, 0x00123456u, 0x1e951000u),
+    /* Identity route: the deref IS the sighted record. */
+    check_eq((long)now_content_blit_source(rows, 3, 0x00123456u, 0x1e951000u,
+                                           0u, 0u, 0, 0, 0, 0),
              (long)0x1f470100u, "the owning offscreen row names its port");
-    check_eq((long)now_content_blit_source(rows, 3, 0x00123456u, 0x1e953000u),
-             0, "an unhooked source resolves to nothing, not to a guess");
-    check_eq((long)now_content_blit_source(rows, 3, 0x00123456u, 0u),
+    /* Shape route: the sighted record is a COPY (no deref matches), and
+       only row 2's geometry agrees. This is the route the control
+       measured necessary - the bottleneck receives a copied PixMap. */
+    check_eq((long)now_content_blit_source(rows, 3, 0x00123456u, 0x1eb6aaaeu,
+                                           0x00999999u,
+                                           (NowContentU16)(0x8000u | 68u),
+                                           0, 0, 120, 90),
+             (long)0x1f470200u, "a copied record still resolves by shape");
+    check_eq((long)now_content_blit_source(rows, 3, 0x00123456u, 0x1eb6aaaeu,
+                                           0u, (NowContentU16)(0x8000u | 64u),
+                                           0, 0, 401, 90),
+             0, "a shape no row carries resolves to nothing, not a guess");
+    check_eq((long)now_content_blit_source(rows, 3, 0x00123456u, 0u,
+                                           0u, 0u, 0, 0, 100, 90),
              0, "a NULL source pointer matches nothing");
-    check_eq((long)now_content_blit_source(rows, 3, 0u, 0x1e951000u),
+    check_eq((long)now_content_blit_source(rows, 3, 0u, 0x1e951000u,
+                                           0u, 0u, 0, 0, 0, 0),
              0, "no armed context, no join");
-    check_eq((long)now_content_blit_source(NULL, 3, 0x00123456u, 0x1e951000u),
+    check_eq((long)now_content_blit_source(NULL, 3, 0x00123456u, 0x1e951000u,
+                                           0u, 0u, 0, 0, 0, 0),
              0, "a NULL table matches nothing");
-    check_eq((long)now_content_blit_source(rows, 0, 0x00123456u, 0x1e951000u),
+    check_eq((long)now_content_blit_source(rows, 0, 0x00123456u, 0x1e951000u,
+                                           0u, 0u, 0, 0, 0, 0),
              0, "an empty table matches nothing");
 
     rows[1].offscreen = 0;
-    check_eq((long)now_content_blit_source(rows, 3, 0x00123456u, 0x1e951000u),
+    check_eq((long)now_content_blit_source(rows, 3, 0x00123456u, 0x1e951000u,
+                                           0u, 0u, 0, 0, 0, 0),
              0, "a window row never claims a blit source");
     rows[1].offscreen = 1;
 
     rows[1].a5 = 0x00999999u;
-    check_eq((long)now_content_blit_source(rows, 3, 0x00123456u, 0x1e951000u),
+    check_eq((long)now_content_blit_source(rows, 3, 0x00123456u, 0x1e951000u,
+                                           0u, 0u, 0, 0, 0, 0),
              0, "a row from another armed context never claims one");
     rows[1].a5 = 0x00123456u;
 
     rows[1].pixmap = 0;
-    check_eq((long)now_content_blit_source(rows, 3, 0x00123456u, 0x1e951000u),
+    check_eq((long)now_content_blit_source(rows, 3, 0x00123456u, 0x1e951000u,
+                                           0u, 0u, 0, 0, 0, 0),
              0, "a row that lost its handle cannot vouch for a deref");
     rows[1].pixmap = 0x00445504u;
 
     /* Two rows claiming one pixmap is a table defect, and picking either
        is the plan's own stop condition: refuse the join instead. */
     rows[2].pixmap_deref = 0x1e951000u;
-    check_eq((long)now_content_blit_source(rows, 3, 0x00123456u, 0x1e951000u),
+    check_eq((long)now_content_blit_source(rows, 3, 0x00123456u, 0x1e951000u,
+                                           0u, 0u, 0, 0, 0, 0),
              0, "an ambiguous claim refuses rather than picks a window");
+    rows[2].pixmap_deref = 0x1e952000u;
+
+    /* And the same refusal when identity claims one row while shape
+       claims another - the two routes must agree on ONE owner. */
+    check_eq((long)now_content_blit_source(rows, 3, 0x00123456u, 0x1e951000u,
+                                           0u, (NowContentU16)(0x8000u | 68u),
+                                           0, 0, 120, 90),
+             0, "identity and shape claiming different rows refuses");
 }
 
 static void test_arm_expiry(void)

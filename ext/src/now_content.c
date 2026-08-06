@@ -420,9 +420,16 @@ static void content_record_bits(const BitMap *src_bits, const Rect *src_rect,
        is dereferenced HERE, at the same instant the comparison runs -
        never stashed at hook time - because LockPixels relocates the
        PixMap record and a stored deref is a snapshot of a moved block
-       (013 A2.1). A source that resolves to no hooked row emits nothing:
-       absence is the pre-join behaviour, not a zero. */
-    if (gArmedMode == (NowPeekU32)kNowContentModeProbe && src_bits != NULL) {
+       (013 A2.1). The row's shape is read through that same deref in
+       the same moment, because pointer identity alone measured false:
+       the record this hook receives is a COPY of the source PixMap, so
+       the resolve matches by shape the way the chase does. Only a
+       PixMap source (rowBytes flag 0x8000) can be a GWorld's; a plain
+       BitMap resolves to nothing. A source that resolves to no hooked
+       row emits nothing: absence is the pre-join behaviour, not a
+       zero. */
+    if (gArmedMode == (NowPeekU32)kNowContentModeProbe && src_bits != NULL
+        && ((unsigned short)src_bits->rowBytes & 0x8000U) != 0) {
         NowContentBlitSourceRow rows[kNowContentMaxPorts];
         NowContentU32 src_port;
         short i;
@@ -432,12 +439,42 @@ static void content_record_bits(const BitMap *src_bits, const Rect *src_rect,
             rows[i].a5 = gPorts[i].a5;
             rows[i].offscreen = gPorts[i].offscreen;
             rows[i].pixmap = gPorts[i].pixmap;
-            rows[i].pixmap_deref =
-                (gPorts[i].offscreen && gPorts[i].pixmap != 0)
-                    ? (NowPeekU32)*(Handle)gPorts[i].pixmap : 0;
+            rows[i].pixmap_deref = 0;
+            rows[i].port_version = 0;
+            rows[i].rect_l = rows[i].rect_t = 0;
+            rows[i].rect_r = rows[i].rect_b = 0;
+            rows[i].base = 0;
+            rows[i].row_bytes = 0;
+            rows[i].pm_l = rows[i].pm_t = 0;
+            rows[i].pm_r = rows[i].pm_b = 0;
+            if (gPorts[i].offscreen && gPorts[i].pixmap != 0) {
+                CGrafPtr cand = (CGrafPtr)gPorts[i].port;
+                PixMap *pm = (PixMap *)*(Handle)gPorts[i].pixmap;
+
+                rows[i].pixmap_deref = (NowPeekU32)pm;
+                if (pm != NULL) {
+                    rows[i].port_version =
+                        (NowContentU16)(unsigned short)cand->portVersion;
+                    rows[i].rect_l = cand->portRect.left;
+                    rows[i].rect_t = cand->portRect.top;
+                    rows[i].rect_r = cand->portRect.right;
+                    rows[i].rect_b = cand->portRect.bottom;
+                    rows[i].base = (NowPeekU32)pm->baseAddr;
+                    rows[i].row_bytes =
+                        (NowContentU16)(unsigned short)pm->rowBytes;
+                    rows[i].pm_l = pm->bounds.left;
+                    rows[i].pm_t = pm->bounds.top;
+                    rows[i].pm_r = pm->bounds.right;
+                    rows[i].pm_b = pm->bounds.bottom;
+                }
+            }
         }
-        src_port = now_content_blit_source(rows, (int)gPortCount, gArmedA5,
-                                           (NowPeekU32)src_bits);
+        src_port = now_content_blit_source(
+            rows, (int)gPortCount, gArmedA5, (NowPeekU32)src_bits,
+            (NowPeekU32)src_bits->baseAddr,
+            (NowContentU16)(unsigned short)src_bits->rowBytes,
+            src_bits->bounds.left, src_bits->bounds.top,
+            src_bits->bounds.right, src_bits->bounds.bottom);
         if (src_port != 0) {
             NowContentBlitSourcePayload sp;
 

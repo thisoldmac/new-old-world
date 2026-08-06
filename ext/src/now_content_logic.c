@@ -355,18 +355,27 @@ int now_content_probe_pixmap_match(NowContentU16 cand_port_version,
 }
 
 /* Which hooked offscreen port owns the blit's source PixMap. The caller
-   dereferences each row's handle at the same instant it captures
-   `src_bits` (013 A2.1: both sides read NOW, so LockPixels relocation
-   cannot separate them); this only compares. A row qualifies when it is
-   offscreen, in the armed context, holds a handle, and that handle's
-   master pointer IS the sighted source. Exactly one may: a second
-   claimant means the table holds two rows for one pixmap, and a join
-   picked between them draws one window's content inside another - the
-   plan's own stop condition - so ambiguity refuses rather than picks. */
+   dereferences each row's handle - and reads the row's shape through
+   it - at the same instant it captures the src fields (013 A2.1: both
+   sides read NOW, so LockPixels relocation cannot separate them); this
+   only compares. Identity first because it is exact when it fires;
+   shape second because identity measured FALSE on the control - the
+   bottleneck receives a copied record, not the GWorld's own - and
+   shape is what survives both the copy and the relocation. Exactly one
+   row may claim the blit: a second claimant means two rows describe one
+   pixmap, and a join picked between them draws one window's content
+   inside another - the plan's own stop condition - so ambiguity refuses
+   rather than picks. */
 NowContentU32 now_content_blit_source(const NowContentBlitSourceRow *rows,
                                       int count,
                                       NowContentU32 armed_a5,
-                                      NowContentU32 src_bits)
+                                      NowContentU32 src_bits,
+                                      NowContentU32 src_base,
+                                      NowContentU16 src_row_bytes,
+                                      NowContentS16 src_l,
+                                      NowContentS16 src_t,
+                                      NowContentS16 src_r,
+                                      NowContentS16 src_b)
 {
     NowContentU32 found = 0;
     int i;
@@ -375,10 +384,24 @@ NowContentU32 now_content_blit_source(const NowContentBlitSourceRow *rows,
         return 0;
     }
     for (i = 0; i < count; ++i) {
+        int owns;
+
         if (!rows[i].offscreen
             || rows[i].a5 != armed_a5
-            || rows[i].pixmap == 0
-            || rows[i].pixmap_deref != src_bits) {
+            || rows[i].pixmap == 0) {
+            continue;
+        }
+        owns = rows[i].pixmap_deref == src_bits
+            || now_content_probe_pixmap_match(
+                   rows[i].port_version,
+                   rows[i].rect_l, rows[i].rect_t,
+                   rows[i].rect_r, rows[i].rect_b,
+                   rows[i].base, rows[i].row_bytes,
+                   rows[i].pm_l, rows[i].pm_t,
+                   rows[i].pm_r, rows[i].pm_b,
+                   src_base, src_row_bytes,
+                   src_l, src_t, src_r, src_b);
+        if (!owns) {
             continue;
         }
         if (found != 0) {

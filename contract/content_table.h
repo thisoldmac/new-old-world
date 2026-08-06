@@ -594,27 +594,48 @@ int now_content_probe_pixmap_match(NowContentU16 cand_port_version,
 /* ---- the blit's source port (now_content_logic.c) ------------------
    The decision behind the blit-source record: given the port table's
    offscreen rows with each row's PixMapHandle DEREFERENCED at this same
-   instant, and the source pointer the bits hook was handed, which
-   hooked port owns the composite? The deref-now rule is 013 A2.1: a
-   stored deref is a snapshot of a block LockPixels has moved, so the
-   caller reads *(PixMapHandle)row.pixmap in the same moment it compares.
-   Pure so the ambiguity rule is testable: exactly one row may claim the
-   pixmap; zero rows is the ordinary unhooked source, and two rows
-   claiming one pixmap is a table defect that must refuse the join
-   rather than pick a window to draw someone else's content into. */
+   instant, and the source PixMap the bits hook was handed, which hooked
+   port owns the composite? The deref-now rule is 013 A2.1: a stored
+   deref is a snapshot of a block LockPixels has moved, so the caller
+   reads *(PixMapHandle)row.pixmap in the same moment it compares.
+
+   TWO ROUTES, because pointer identity alone measured FALSE on the
+   control (2026-08-06): the record the bits bottleneck receives is not
+   the GWorld's own PixMap record - the control's blit of *pix arrived
+   as a copy at an ODD address (0x1eb6aaae) while the live deref was
+   elsewhere - so `pixmap_deref == src_bits` never fired. This is the
+   same fact that forced the chase's deref route, one hook further in.
+   Identity is kept as the cheap exact first test; SHAPE - the same
+   now_content_probe_pixmap_match the chase trusts - is the route that
+   actually matches, and it needs the row's port and pixmap geometry
+   read at the same instant as the deref. */
 typedef struct {
     NowContentU32 port;         /* gPorts[i].port                        */
     NowContentU32 a5;           /* gPorts[i].a5                          */
     int offscreen;              /* gPorts[i].offscreen                   */
     NowContentU32 pixmap;       /* gPorts[i].pixmap - the handle         */
     NowContentU32 pixmap_deref; /* *(PixMapHandle)pixmap, read NOW       */
+    /* Shape, all read through that same deref in the same moment. */
+    NowContentU16 port_version; /* the port's own discriminator          */
+    NowContentS16 rect_l, rect_t, rect_r, rect_b;   /* port->portRect    */
+    NowContentU32 base;         /* pm->baseAddr                          */
+    NowContentU16 row_bytes;    /* pm->rowBytes, raw with flags          */
+    NowContentS16 pm_l, pm_t, pm_r, pm_b;           /* pm->bounds        */
 } NowContentBlitSourceRow;
 
 /* Returns the owning row's port, or 0: no match, an ambiguous match,
-   or a NULL/zero source. Zero is the record NOT being emitted. */
+   or a NULL/zero source. Zero is the record NOT being emitted. The
+   src_* fields are the sighted record's own, read from the pointer the
+   hook was handed while it is live. */
 NowContentU32 now_content_blit_source(const NowContentBlitSourceRow *rows,
                                       int count,
                                       NowContentU32 armed_a5,
-                                      NowContentU32 src_bits);
+                                      NowContentU32 src_bits,
+                                      NowContentU32 src_base,
+                                      NowContentU16 src_row_bytes,
+                                      NowContentS16 src_l,
+                                      NowContentS16 src_t,
+                                      NowContentS16 src_r,
+                                      NowContentS16 src_b);
 
 #endif /* NOW_CONTENT_TABLE_H */
