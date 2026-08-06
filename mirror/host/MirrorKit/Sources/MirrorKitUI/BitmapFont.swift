@@ -28,9 +28,9 @@ public final class BitmapFont {
     private let space: Glyph
 
     public init?(face: String) {
-        guard let pngURL = Bundle.module.url(
+        guard let pngURL = AssetPack.url(
                 forResource: face, withExtension: "png", subdirectory: "fonts"),
-              let jsonURL = Bundle.module.url(
+              let jsonURL = AssetPack.url(
                 forResource: face, withExtension: "json", subdirectory: "fonts"),
               let data = try? Data(contentsOf: pngURL),
               let src = CGImageSourceCreateWithData(data as CFData, nil),
@@ -138,9 +138,9 @@ public enum FontBook {
 /// The extracted default desktop pattern ('ppat' 16 "Mac OS Default"), tiled.
 public enum DesktopPattern {
     public static let tile: CGImage? = {
-        guard let url = Bundle.module.url(forResource: "desktop",
-                                          withExtension: "png",
-                                          subdirectory: "patterns"),
+        guard let url = AssetPack.url(forResource: "desktop",
+                                      withExtension: "png",
+                                      subdirectory: "patterns"),
               let data = try? Data(contentsOf: url),
               let src = CGImageSourceCreateWithData(data as CFData, nil) else {
             return nil

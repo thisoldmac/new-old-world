@@ -43,8 +43,38 @@ trap cleanup EXIT INT TERM
 
 mkdir -p "$scratch_root"
 
+# See scripts/test-mirrorkit for the reasoning: the Platinum asset pack is
+# a runtime dependency, tests needing its bytes skip by name without one,
+# and a machine that HAS the pack must not let those skips stand.
+if [ -z "${NOW_REQUIRE_ASSET_PACK:-}" ]; then
+    pack=${NOW_MIRROR_ASSETS:-}
+    if [ -z "$pack" ]; then
+        pack=$(ls -d "$HOME"/Lab/Assets/now-mirror-assets/pack-*/Resources \
+               2>/dev/null | sort -r | head -1)
+    fi
+    if [ -n "$pack" ] && [ -f "$pack/manifest.json" ]; then
+        NOW_REQUIRE_ASSET_PACK=1
+        export NOW_REQUIRE_ASSET_PACK
+        echo "==> asset pack found ($pack) — pack gates ENFORCED"
+    else
+        echo "==> asset pack absent — pack gates will SKIP by name"
+        echo "    (tools/extract-assets-offline; docs/asset-pack.md)"
+    fi
+fi
+
 echo "==> swift test"
 swift test --package-path "$repo_root/now-host" \
+    --scratch-path "$scratch_root/swift"
+
+# And again with NO pack — the build is cached, so this costs the test
+# run only. A suite that passes only on a machine which happens to have
+# the dependency says nothing about a fresh clone, and that is the same
+# hole as a gate nothing invokes. It has already earned its keep once:
+# it caught a render assertion whose sample point only meant what it
+# meant with the pack's own font metrics.
+echo "==> swift test again with NOW_MIRROR_ASSETS=none (honest degradation)"
+NOW_MIRROR_ASSETS=none NOW_REQUIRE_ASSET_PACK= \
+    swift test --package-path "$repo_root/now-host" \
     --scratch-path "$scratch_root/swift"
 
 # Debug and Release differ in whole-module optimisation, which has caught

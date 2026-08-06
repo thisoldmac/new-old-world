@@ -71,10 +71,41 @@ trap cleanup EXIT INT TERM
 
 mkdir -p "$scratch_root"
 
+# The Platinum asset pack is a runtime dependency, not repository content
+# (docs/asset-pack.md). Tests needing its bytes skip BY NAME without one,
+# so a fresh clone is honest rather than red — but on a machine that HAS
+# the pack a skip would be a gate quietly declining to run, so this turns
+# them back into failures whenever one resolves. The pack's own resolver
+# prints where it looked; this only decides how hard absence bites.
+if [ -z "${NOW_REQUIRE_ASSET_PACK:-}" ]; then
+    pack=${NOW_MIRROR_ASSETS:-}
+    if [ -z "$pack" ]; then
+        pack=$(ls -d "$HOME"/Lab/Assets/now-mirror-assets/pack-*/Resources \
+               2>/dev/null | sort -r | head -1)
+    fi
+    if [ -n "$pack" ] && [ -f "$pack/manifest.json" ]; then
+        NOW_REQUIRE_ASSET_PACK=1
+        export NOW_REQUIRE_ASSET_PACK
+        echo "==> asset pack found ($pack) — pack gates ENFORCED"
+    else
+        echo "==> asset pack absent — pack gates will SKIP by name."
+        echo "    tools/extract-assets-offline regenerates it; see"
+        echo "    docs/asset-pack.md."
+    fi
+fi
+
 echo "==> swift build (MirrorKit, MirrorKitUI, MirrorApp)"
 swift build --package-path "$package" --scratch-path "$scratch_root/swift"
 
 echo "==> swift test (MirrorKitTests, MirrorKitUITests)"
 swift test --package-path "$package" --scratch-path "$scratch_root/swift"
+
+# And again with NO pack. A suite that only passes on a machine which
+# happens to have the dependency is the silent-skip defect rebuilt: a
+# fresh clone has no pack, and "it works here" would be all anyone could
+# say. The build is already cached, so this costs the test run only.
+echo "==> swift test again with NOW_MIRROR_ASSETS=none (honest degradation)"
+NOW_MIRROR_ASSETS=none NOW_REQUIRE_ASSET_PACK= \
+    swift test --package-path "$package" --scratch-path "$scratch_root/swift"
 
 echo "==> MirrorKit gate passed"

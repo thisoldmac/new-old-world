@@ -5,6 +5,15 @@ import MirrorKit
 
 /// Real OS 9 icons from the extracted pack, keyed by kind/type.
 ///
+/// The pack is resolved at runtime by ``AssetPack`` and is NOT in this
+/// repository — see that type for why and for the recovery procedure.
+/// Every entry point here already returns nil for "the pack has no icon
+/// for this", which a complete pack does for any third-party
+/// application, so an absent pack degrades down the same path rather
+/// than a new one: the caller draws its procedural fallback. What makes
+/// that honest rather than silent is ``AssetPack/bannerText``, which the
+/// UI shows so nobody mistakes a stand-in for the guest's own art.
+///
 /// Two families. The *generic* Finder icons (folder / application /
 /// document / disk / System Folder) are the honest fallback wherever the
 /// mirror does not know which item it is looking at — icons arrive down
@@ -46,9 +55,9 @@ public enum IconAtlas {
         let key = "\(subdir)/\(name)"
         if let cached = cache[key] { return cached }
         let img: CGImage? = {
-            guard let url = Bundle.module.url(forResource: name,
-                                              withExtension: "png",
-                                              subdirectory: subdir),
+            guard let url = AssetPack.url(forResource: name,
+                                          withExtension: "png",
+                                          subdirectory: subdir),
                   let data = try? Data(contentsOf: url),
                   let src = CGImageSourceCreateWithData(data as CFData, nil)
             else { return nil }

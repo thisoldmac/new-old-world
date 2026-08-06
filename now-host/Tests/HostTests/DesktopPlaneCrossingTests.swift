@@ -106,7 +106,14 @@ final class DesktopPlaneCrossingTests: XCTestCase {
     /// `creator__type`; a mangled type missed every one of them and the whole
     /// desktop drew as generic-by-kind. This asserts the join, over the same
     /// machine's own roster — not over a message this test wrote.
+    ///
+    /// The pack itself is a runtime dependency resolved by `AssetPack` and
+    /// is not in this repository, so this skips BY NAME without one — the
+    /// join it asserts is real and untestable at the same time, and a
+    /// silent pass would be the worse of the two. `NOW_REQUIRE_ASSET_PACK=1`
+    /// turns the skip into a failure on a machine that has the pack.
     func testTheRealTypesReachThePerApplicationIconPack() throws {
+        try skipUnlessAssetPack()
         let roster = try JSONDecoder().decode(
             Roster.self, from: try fixture("now-finder-desktop-roster"))
         let items = placedItems(roster)

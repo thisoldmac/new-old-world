@@ -333,7 +333,19 @@ final class IslandRenderTests: XCTestCase {
 
     /// Proven Control Manager kinds are presentation facts, not hints. The
     /// renderer must not collapse a checkbox back into the legacy pill shape.
+    ///
+    /// Pack-dependent for a reason worth naming, because it was found by
+    /// running this suite with `NOW_MIRROR_ASSETS=none` rather than by
+    /// reading it: the sampled pixel is 100pt into the control, and what
+    /// sits there depends on how wide "Reveal system files" is. With the
+    /// Platinum pack that is a Geneva NFNT strike; without it the renderer
+    /// falls back to a different face with different metrics, the label
+    /// reaches the sample, and the test reports a pill border that is not
+    /// there. The subject is the control's SHAPE, so the honest move is to
+    /// run it where the metrics are the guest's — not to move the sample
+    /// until both fonts happen to miss it.
     func testAProvenCheckboxIsNotRenderedAsAPushButton() throws {
+        try skipUnlessAssetPack()
         let r = Rect(l: 100, t: 100, r: 500, b: 400)
         var w = window(title: "Workshop", front: true, z: 0, rect: r,
                        island: nil)

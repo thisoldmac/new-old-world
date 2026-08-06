@@ -15,16 +15,13 @@ let package = Package(
     ],
     targets: [
         .target(name: "MirrorKit"),
-        .target(name: "MirrorKitUI", dependencies: ["MirrorKit"],
-                resources: [.copy("Resources/fonts"),
-                            .copy("Resources/patterns"),
-                            .copy("Resources/icons"),
-                            .copy("Resources/appicons"),
-                            .copy("Resources/cursors"),
-                            // Unconverted QuickDraw pictures: carried, not
-                            // drawn (see tools/extract-assets-offline).
-                            .copy("Resources/pictures"),
-                            .copy("Resources/manifest.json")]),
+        // NO resources. The Platinum asset pack is Apple's bitmaps and is
+        // a runtime DEPENDENCY, not repository content — `Resources/` is
+        // gitignored, resolved at run time by `AssetPack`, and rebuilt by
+        // `tools/extract-assets-offline`. Declaring `.copy("Resources/…")`
+        // here would make the build fail outright on a checkout that has
+        // no pack, which is precisely the state a fresh clone is in.
+        .target(name: "MirrorKitUI", dependencies: ["MirrorKit"]),
         .target(name: "MirrorOracleKit",
                 dependencies: ["MirrorKit", "MirrorKitUI"]),
         .executableTarget(name: "MirrorApp",
