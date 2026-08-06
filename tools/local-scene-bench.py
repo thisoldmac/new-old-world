@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Time one guest's scene walk, N times, in one front-process condition.
 
-Scratch instrument for the self-menu-bar cost. It listens as a host, takes
-ONE dialling guest, asserts the build fingerprint it was told to expect
-(AGENTS.md: every QEMU guest on this Mac sees 10.0.2.2, so any session's VM
-can answer), optionally brings a process to the front, and then reads N
-scenes reporting meta.latencyMs and the temporary meta.dbgUs breakdown.
+Reads the breakdown the scene now carries permanently: `meta.phases`,
+microseconds per phase, plus the measurement's own weight. It listens as a
+host, takes ONE dialling guest, and asserts the build fingerprint it was
+told to expect (AGENTS.md: every QEMU guest on this Mac sees 10.0.2.2, so
+any session's VM can answer), optionally brings a process to the front.
+
+    tools/local-scene-bench.py --port 5410 --build 9ed6e7 --front Finder
 """
 
 import argparse
-import json
 import os
 import statistics
 import sys
@@ -23,8 +24,11 @@ import nowwire  # noqa: E402
 # instrument overriding it would be declaring a revision of its own, which
 # is exactly what WireLimitsAgreementTests bans and how this drifted before.
 
-SLOTS = ["menubar", "acquireRoot", "rootItemsFor", "addOneMenu",
-         "selfWindows", "ctlProbe", "menus", "items"]
+# The guest's own order, which is the order the walk runs in. Sorting by
+# cost would reorder the columns between conditions and make two runs
+# uncomparable at a glance, which is the whole use of the table.
+ORDER = ["enumerate", "bind", "windows", "controls", "menubar",
+         "semantics", "refs", "encode"]
 
 
 def main() -> int:
@@ -49,21 +53,38 @@ def main() -> int:
         print(link.command("front", {"target": args.front}))
 
     lat = []
+    totals = {name: [] for name in ORDER}
     for i in range(args.samples):
         doc, env = link.scene()
         meta = doc.get("meta", {})
-        dbg = meta.get("dbgUs", [])   # absent once the instrumentation is gone
         lat.append(meta.get("latencyMs"))
         procs = doc.get("processes", [])
         front = next((p.get("name") for p in procs if p.get("front")), "?")
         bar = doc.get("menubar") or {}
         menus = bar.get("menus", [])
+        wins = doc.get("windows") or []
+        ctls = sum(len(w.get("controls") or []) for w in wins)
         print(f"[{i}] front={front!r} latencyMs={meta.get('latencyMs')} "
-              f"walkMs={env.get('walkMs')} menus={len(menus)} "
+              f"walkMs={env.get('walkMs')} procs={len(procs)} "
+              f"windows={len(wins)} controls={ctls} menus={len(menus)} "
               f"items={sum(len(m.get('items', [])) for m in menus)}")
-        if dbg:
-            print("     " + "  ".join(f"{n}={v}" for n, v in zip(SLOTS, dbg)))
+        phases = meta.get("phases")
+        if phases is None:
+            print("     (this producer does not report phases)")
+            continue
+        us = phases.get("us", {})
+        for name in ORDER:
+            totals[name].append(us.get(name, 0))
+        print("     " + "  ".join(f"{n}={us.get(n)}" for n in ORDER))
+        print(f"     [cost] clockReads={phases.get('clockReads')} "
+              f"clockUs={phases.get('clockUs')} "
+              f"faults={phases.get('faults')} "
+              f"sum={sum(us.values())}")
     print(f"latencyMs: {sorted(lat)}  median={statistics.median(lat)}")
+    if any(totals[name] for name in ORDER):
+        print("median us: " + "  ".join(
+            f"{n}={statistics.median(totals[n])}" for n in ORDER
+            if totals[n]))
     link.close()
     return 0
 

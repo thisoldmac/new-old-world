@@ -117,6 +117,40 @@ final class SceneWireTests: XCTestCase {
                        + "decode to nil")
     }
 
+    /// **Where the guest's time went, and the two ways to get it wrong.**
+    ///
+    /// `meta.phases` is additive: a guest that emits it must not need a
+    /// new major, and a guest that does not must decode to nil rather
+    /// than to a set of zeroes. The second half is the one worth a test —
+    /// eight zeroes is a measurement, and a host that manufactured it
+    /// would report "the walk did nothing" about every older guest on the
+    /// network.
+    func testPhasesDecodeAdditivelyAndTheirAbsenceIsNotZero() throws {
+        XCTAssertNil(try decodeGuestScene().meta?.phases,
+                     "the fixture predates phases; absent must stay absent")
+
+        let withPhases = Self.guestScene.replacingOccurrences(
+            of: "\"meta\":{",
+            with: "\"meta\":{\"phases\":{\"us\":{\"enumerate\":1200,"
+                + "\"controls\":916000},\"clockReads\":52,"
+                + "\"clockUs\":104,\"faults\":0},")
+        XCTAssertNotEqual(withPhases, Self.guestScene, "the fixture moved")
+
+        let scene = try NOWSceneCodec.decode(irVersion: 1,
+                                             document: Data(withPhases.utf8))
+        let phases = try XCTUnwrap(scene.meta?.phases)
+        XCTAssertEqual(phases.us?["controls"], 916_000)
+        XCTAssertEqual(phases.us?["enumerate"], 1_200)
+        /* An OPEN dictionary, not a closed enum: the producer's phase set
+           is the producer's to grow, and a host that dropped the first
+           phase a newer guest learned to report would lose it at exactly
+           the moment somebody went looking. */
+        XCTAssertEqual(phases.us?.count, 2)
+        XCTAssertEqual(phases.clockUs, 104)
+        XCTAssertEqual(phases.clockReads, 52)
+        XCTAssertEqual(phases.faults, 0)
+    }
+
     /// Absence survives a round trip through this side. A decoder can be
     /// faithful and an encoder still invent the key back, at which point
     /// anything the host forwards has quietly acquired a claim the guest

@@ -24,6 +24,30 @@ enum NOWMirrorSceneDecoder {
         IR.supportedMajors.sorted().map { "v\($0)" }
             .joined(separator: ", ")
     }
+
+    /// **Read straight off the document, beside MirrorKit's decode rather
+    /// than through it.**
+    ///
+    /// `meta.phases` is NOW's producer telling this host where its own
+    /// second went. MirrorKit's `Scene.Meta` is a sibling project's type
+    /// and does not carry it; teaching it to would be a change to the
+    /// sibling for the benefit of one consumer, and this repository's rule
+    /// for crossing that boundary is audited extraction, not convenience.
+    /// So the key is read here, from the same bytes, and never reaches the
+    /// rendered scene - it is a measurement about the walk, not a fact
+    /// about the machine, and it belongs in the measurement record.
+    ///
+    /// Failure is silence. A document that does not carry phases and a
+    /// document whose phases will not parse both mean "no breakdown for
+    /// this cycle", which is the same claim absence already makes.
+    static func phases(from document: Data) -> NOWSceneDocument.Phases? {
+        struct Envelope: Decodable {
+            struct Meta: Decodable { var phases: NOWSceneDocument.Phases? }
+            var meta: Meta?
+        }
+        return try? JSONDecoder().decode(Envelope.self,
+                                         from: document).meta?.phases
+    }
 }
 
 /// The smallest continuity rule needed before the full state engine exists.
@@ -328,6 +352,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     private var cycleAsked: (at: Date, semantics: Bool, interaction: Bool)?
     private var cycleDelivered: Date?
     private var cycleOutcome = "no-reply"
+    /// This cycle's guest-side breakdown, if the producer reported one.
+    /// Cleared with the rest of the cycle so a slow scene's phases can
+    /// never be charged to the next cycle that failed to answer.
+    private var cyclePhases: NOWSceneDocument.Phases?
     private var lastCyclePublishedAt: Date?
     private var mutationWaiting = false
     private var sceneGuestKey: GuestKey?
@@ -532,6 +560,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         do {
             var decoded = try NOWMirrorSceneDecoder.decode(
                 irVersion: delivery.irVersion, document: delivery.document)
+            cyclePhases = NOWMirrorSceneDecoder.phases(
+                from: delivery.document)
             guard isCurrentCycle(generation), let key = pinnedGuestKey else {
                 return
             }
@@ -690,9 +720,11 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             elements: scene?.windows.reduce(0) {
                 $0 + $1.controls.count + ($1.dialogItems?.count ?? 0)
                     + ($1.items?.count ?? 0)
-            }))
+            },
+            phases: cyclePhases))
         lastCyclePublishedAt = published
         cycleAsked = nil
+        cyclePhases = nil
     }
 
     private func rearm() {

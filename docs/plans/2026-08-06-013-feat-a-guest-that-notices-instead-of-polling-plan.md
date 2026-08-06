@@ -186,6 +186,27 @@ Toolbox less".
 **Done when:** a scene reports where its time went, and the 2026-08-06
 numbers above are reproduced with the menu phase named explicitly.
 
+**DONE 2026-08-06** (`claude/scene-phase-timings`). `meta.phases` is on
+the wire, additive and optional, eight non-overlapping phases named for
+what the guest DOES, with the absence rule stated in the contract and the
+breakdown's own cost published beside it. The arithmetic has a native
+test; the host carries the numbers on its `NOWBASE cycle` measurement
+line and deliberately NOT on the ambient status line. Full numbers,
+both conditions, in `docs/open-issues.md`. Three things it settled:
+
+- The menu cost is **Toolbox-shaped, not disk-shaped** — 107 µs with the
+  Finder in front, 1.36 ms with NOW in front. The Apple menu's folder
+  never showed up.
+- **A focus change costs one 1.9-second scene**: the activation
+  invalidates the sweep cache and the whole 3,724-point grid is re-swept
+  in the foreground. The cost moved from every poll to every focus
+  change. That is the target § 2 should aim at first.
+- **The background sweep returns nothing.** `FindControl` refuses an
+  inactive window, so with anything else in front NOW's own window walk
+  spends 5–10 ms and reports ZERO controls. The mirror shows NOW's
+  window empty whenever NOW is not frontmost — a correctness hole, found
+  by a measurement, and it is not a performance question.
+
 ### 2 · Tier-1 wins, taken on evidence
 
 Whatever § 1 names. The candidates already visible: the per-menu root
@@ -245,6 +266,20 @@ frame instead of a document. Contract first, per the house rule.
   something that rarely changes — slices 3–5 are right; if the control
   sweep turns out to be the only one, they are premature and should be
   re-argued rather than executed.
+
+  **ANSWERED 2026-08-06, and it is a qualified yes.** The shape is
+  everywhere: in the steady state NOTHING the guest does is proportional
+  to what changed. `enumerate` re-derives the process list every poll
+  (~1 ms, identical in both conditions), `menubar` re-reads a bar that
+  rarely changes, `windows` re-walks chains, `encode` rebuilds a document
+  mostly identical to the last. The control sweep was the loudest, not
+  the only one. **But** with it fixed a whole walk is 3.0–8.5 ms on an
+  emulated G4, so the case for 3–5 no longer rests on anything measured
+  HERE — it rests entirely on the vintage-hardware multiplier, which is
+  the one number nobody in this plan has. Make that argument with a
+  reading from a 1400c before building a shadow model for it; the two
+  costs § 1 DID find (the 1.9 s focus change, and a background sweep that
+  returns nothing at all) are § 2-shaped and are worth more, sooner.
 
 ## Verification
 

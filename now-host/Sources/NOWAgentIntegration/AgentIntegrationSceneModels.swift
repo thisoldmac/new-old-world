@@ -311,13 +311,48 @@ public struct NOWSceneDocument: Codable, Equatable, Sendable {
         public var plane: String?
         public var latencyMs: Double?
         public var bytes: Int?
+        public var phases: Phases?
 
         public init(errors: [String]? = nil, plane: String? = nil,
-                    latencyMs: Double? = nil, bytes: Int? = nil) {
+                    latencyMs: Double? = nil, bytes: Int? = nil,
+                    phases: Phases? = nil) {
             self.errors = errors
             self.plane = plane
             self.latencyMs = latencyMs
             self.bytes = bytes
+            self.phases = phases
+        }
+    }
+
+    /// **Where the guest's own time went**, in microseconds, keyed by what
+    /// the guest was DOING rather than by the function that implements it.
+    ///
+    /// `us` is an open dictionary on purpose. The producer's phase set is
+    /// the producer's to grow, and a host that decoded a closed enum would
+    /// silently drop the first phase a newer guest learned to report —
+    /// which is exactly the moment the number matters most.
+    ///
+    /// Nil means the producer does not report phases. It never means the
+    /// phases took no time; the guest emits nothing rather than zeroes for
+    /// that reason, and the contract says so.
+    ///
+    /// `clockReads` / `clockUs` are the BREAKDOWN'S OWN COST — how many
+    /// times the guest read its microsecond counter and what that cost at
+    /// a calibrated per-read price. Read them before trusting a small
+    /// phase. `faults` non-zero means a seam was unbalanced and one of the
+    /// numbers is wrong.
+    public struct Phases: Codable, Equatable, Sendable {
+        public var us: [String: Int]?
+        public var clockReads: Int?
+        public var clockUs: Int?
+        public var faults: Int?
+
+        public init(us: [String: Int]? = nil, clockReads: Int? = nil,
+                    clockUs: Int? = nil, faults: Int? = nil) {
+            self.us = us
+            self.clockReads = clockReads
+            self.clockUs = clockUs
+            self.faults = faults
         }
     }
 }

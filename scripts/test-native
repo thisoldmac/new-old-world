@@ -320,7 +320,15 @@ run_py now-guest-ppc qdtrace_arm_order_source_test.py
 # reachable here for the same reason peek_oracle.c is.
 run_c now-guest-ppc scene_build_test.c       ""  src/scene/scene_build.c
 run_c now-guest-ppc scene_json_test.c        ""  src/scene/scene_build.c \
-      src/scene/scene_json.c src/core/json.c
+      src/scene/scene_json.c src/scene/scene_phase.c src/core/json.c
+# Where a scene's time went, and the three properties its honesty rests
+# on: nested phases must not double-count their parents, a producer with
+# no clock must report NOTHING rather than eight zeroes, and a span that
+# straddles the microsecond counter's 71-minute wrap must be short. The
+# breakdown exists because differencing two whole-scene numbers produced
+# a confident wrong answer; arithmetic that quietly double-counted would
+# do the same thing again with more authority.
+run_c now-guest-ppc scene_phase_test.c       ""  src/scene/scene_phase.c
 run_py now-guest-ppc scene_self_menubar_source_test.py
 # The bridge between the ported walk and the scene's rules - the layer
 # the roadmap called "the ported walk has no caller". It is Toolbox-free
@@ -328,7 +336,8 @@ run_py now-guest-ppc scene_self_menubar_source_test.py
 # decisions that turn a parser result into a CLAIM are reachable here,
 # against the same synthetic arena the axwalk tests use.
 run_c now-guest-ppc scene_walk_test.c        ""  src/scene/scene_walk.c \
-      src/scene/scene_build.c src/axwalk/axwalk.c src/axwalk/axmenu.c \
+      src/scene/scene_build.c src/scene/scene_phase.c \
+      src/axwalk/axwalk.c src/axwalk/axmenu.c \
       src/axwalk/axtext.c src/peek/peek_validate.c src/axwalk/axresolve.c \
       src/observe/obsmint.c src/observe/obsref.c src/observe/obsresolve.c \
       tests/semantic_client_stub.c

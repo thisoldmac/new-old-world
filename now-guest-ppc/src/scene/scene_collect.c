@@ -2,6 +2,7 @@
 
 #include <Processes.h>
 #include <Quickdraw.h>
+#include <Timer.h>
 
 #include <string.h>
 
@@ -10,6 +11,7 @@
 #include "observe.h"
 #include "obsref.h"
 #include "peek_read.h"
+#include "scene_phase.h"
 #include "scene_self.h"
 #include "scene_walk.h"
 #include "semantic_client.h"
@@ -44,6 +46,25 @@ enum {
        rather than walking forever inside another process's heap. */
     kSceneCollectMaxWindowHops = 64
 };
+
+/* THE PHASE CLOCK, and the only place a Macintosh appears in the
+   breakdown. scene_phase.c is Toolbox-free so its arithmetic can be
+   tested by a host compiler; the machine's own microsecond counter is
+   handed to it from here.
+
+   `lo` alone is deliberate: the low word wraps about every 71 minutes,
+   and every span the breakdown measures is a fraction of one scene, so
+   unsigned subtraction across a wrap is exact. Carrying the high word
+   would cost a 64-bit add per read to describe an hour nobody measures. */
+static int g_phase_clock_installed;
+
+static unsigned long phase_clock_us(void)
+{
+    UnsignedWide t;
+
+    Microseconds(&t);
+    return t.lo;
+}
 
 static double captured_at_now(void)
 {
@@ -116,8 +137,10 @@ static void collect_process(NowScene *s, int row,
      * from its own context regardless of what the other reader thought.
      * peek_read's verdict stays - as a report, which is what it is good
      * at - but it no longer decides whether the walk happens. */
+    now_scene_phase_enter(kNowScenePhaseBind);
     bound = !is_self
         && now_ax_bind_process(psn, &ctx) == kNowPeekReadOk;
+    now_scene_phase_leave(kNowScenePhaseBind);
 
     /* SELF IS DESCRIBED, NOT WALKED. NOW is Carbon, so its own records
        are not at the classic offsets the walk reads - but an application
@@ -159,6 +182,7 @@ static void collect_process(NowScene *s, int row,
        disagreement. A consumer drawing a frame wants the structure box,
        and closing that is its own change - having the windows at all
        comes first. */
+    now_scene_phase_enter(kNowScenePhaseWindows);
     if (bound && ctx.window_list != 0) {
         unsigned long addr = ctx.window_list;
         int hops;
@@ -248,10 +272,12 @@ static void collect_process(NowScene *s, int row,
     } else {
         now_scene_set_windows_coverage(s, row, kNowSceneCoverageFailed);
     }
+    now_scene_phase_leave(kNowScenePhaseWindows);
     /* One menu bar per machine, and it is the front process's. A back
        process's MenuList is real but is not what the screen shows, so
        reporting it as `menubar` would be a true fact filed under a false
        name. */
+    now_scene_phase_enter(kNowScenePhaseMenubar);
     if (bound && s->procs[row].front) {
         now_scene_walk_menubar(s, row, &ctx.memory, ctx.menu_list);
     } else if (bound) {
@@ -263,6 +289,7 @@ static void collect_process(NowScene *s, int row,
         (void)now_scene_fill_blank_system_apple(
             s, &ctx.memory, ctx.menu_list);
     }
+    now_scene_phase_leave(kNowScenePhaseMenubar);
 }
 
 void now_scene_collect(NowScene *out, long seq,
@@ -286,6 +313,16 @@ void now_scene_collect(NowScene *out, long seq,
     if (out == NULL) {
         return;
     }
+    /* Installed here rather than at startup so that every path which
+       produces a scene - the wire, the console, a test harness - gets a
+       measured one without having to remember. set_clock discards the
+       calibration, so it is done once. */
+    if (!g_phase_clock_installed) {
+        g_phase_clock_installed = 1;
+        now_scene_phase_set_clock(phase_clock_us);
+        now_scene_phase_calibrate();
+    }
+    now_scene_phase_reset();
     screen_size(&w, &h);
     /* ONE epoch for the whole scene, not one per process. What it bounds
        is how much of a SCENE stays addressable, and a scene is what the
@@ -300,6 +337,7 @@ void now_scene_collect(NowScene *out, long seq,
 
     have_front = GetFrontProcess(&front) == noErr;
     have_self = GetCurrentProcess(&self) == noErr;
+    now_scene_phase_enter(kNowScenePhaseEnumerate);
     while (rows < kSceneCollectMaxPsns && GetNextProcess(&psn) == noErr) {
         ProcessInfoRec info;
         Str31 name;
@@ -365,6 +403,7 @@ void now_scene_collect(NowScene *out, long seq,
         selves[row] = is_self;
         ++rows;
     }
+    now_scene_phase_leave(kNowScenePhaseEnumerate);
     now_scene_set_processes_coverage(
         out, (process_info_failed || rows >= kSceneCollectMaxPsns
               || out->procs_truncated)

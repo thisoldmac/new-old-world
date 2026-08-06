@@ -37,6 +37,12 @@ struct MirrorCycleClocks: Equatable {
     /// rather than only its duration.
     var windows: Int?
     var elements: Int?
+    /// **Where the guest spent the `request` half of this cycle**, from
+    /// the scene's own `meta.phases`. The clocks above can only say the
+    /// guest took a second; this says which second. Nil for a producer
+    /// that does not report phases — never zeroes, which would be a
+    /// measurement.
+    var phases: NOWSceneDocument.Phases?
 
     var request: TimeInterval? {
         deliveredAt.map { $0.timeIntervalSince(requestedAt) }
@@ -69,7 +75,43 @@ struct MirrorCycleClocks: Equatable {
             ("total_ms", Self.ms(total)),
             ("windows", windows.map(String.init) ?? "-"),
             ("elements", elements.map(String.init) ?? "-"),
-        ])
+        ] + Self.phaseFields(phases))
+    }
+
+    /// **The phases go HERE and not on the ambient status line.**
+    ///
+    /// The line under the mirror is one line a person reads at a glance
+    /// while watching a machine work, and eight microsecond counts would
+    /// destroy exactly the thing it is good at. This record is the other
+    /// audience: `NOWBASE cycle` is already the project's grammar for a
+    /// measurement that gets copied out of a log into a commit message
+    /// (docs/68k-metal-baseline.md), it is already written once per
+    /// cycle, and a greppable `ph_controls=` is what turns "why was that
+    /// scene slow" into one command.
+    ///
+    /// KEYS ARE SORTED rather than left in dictionary order: a
+    /// measurement grammar whose field order changes between runs cannot
+    /// be diffed, and diffing two runs is the whole point.
+    /// `phcost_us` rides beside them because a breakdown that will not
+    /// state its own weight is asking to be trusted rather than read.
+    private static func phaseFields(_ phases: NOWSceneDocument.Phases?)
+            -> [(String, String)] {
+        guard let phases else { return [] }
+        var fields = (phases.us ?? [:]).sorted { $0.key < $1.key }
+            .map { ("ph_\($0.key)_us", String($0.value)) }
+        if let cost = phases.clockUs {
+            fields.append(("phcost_us", String(cost)))
+        }
+        if let reads = phases.clockReads {
+            fields.append(("phreads", String(reads)))
+        }
+        if let faults = phases.faults, faults != 0 {
+            /* Only when non-zero, and then loudly: a fault means one of
+               the numbers above is wrong, and a field that is always
+               `0` teaches a reader to stop seeing it. */
+            fields.append(("phfaults", String(faults)))
+        }
+        return fields
     }
 
     private static func ms(_ interval: TimeInterval?) -> String {

@@ -4,6 +4,7 @@
 
 #include "control_kind.h"
 #include "observe.h"
+#include "scene_phase.h"
 #include "workshop_window.h"
 #include <MacWindows.h>
 #include <Menus.h>
@@ -185,12 +186,18 @@ static void add_control_tree(NowScene *s, int window, ControlRef control,
                                                          cvalue);
                 }
             }
+            /* Timed per control here where the foreign walk times a whole
+               window's worth at once, because the counts are different in
+               kind: a foreign process can present hundreds and this
+               application presents the widgets it was written with. */
+            now_scene_phase_enter(kNowScenePhaseRefs);
             if (refs != NULL
                     && now_obs_walk_self_control_ref(
                            refs, (unsigned long)owner,
                            (unsigned long)control, token, sizeof token)) {
                 now_scene_set_control_ref(s, window, index, token);
             }
+            now_scene_phase_leave(kNowScenePhaseRefs);
         }
         --*budget;
     }
@@ -579,10 +586,13 @@ void now_scene_collect_self(NowScene *s, int row,
         if (GetFrontProcess(&front) == noErr && psn != NULL
                 && SameProcess(&front, (ProcessSerialNumber *)psn, &same)
                        == noErr && same) {
+            now_scene_phase_enter(kNowScenePhaseMenubar);
             collect_self_menubar(s, row);
+            now_scene_phase_leave(kNowScenePhaseMenubar);
         }
     }
 
+    now_scene_phase_enter(kNowScenePhaseWindows);
     for (; window != NULL && hops < kSelfMaxWindows;
          window = GetNextWindow(window), ++hops) {
         Rect structure;
@@ -619,16 +629,19 @@ void now_scene_collect_self(NowScene *s, int row,
         if (refs != NULL) {
             char token[64];
 
+            now_scene_phase_enter(kNowScenePhaseRefs);
             if (now_obs_walk_self_window_ref(refs, (unsigned long)window,
                                              token, sizeof token)) {
                 now_scene_set_window_ref(s, index, token);
             }
+            now_scene_phase_leave(kNowScenePhaseRefs);
         }
 
         /* Declared even when the walk finds none: "this window has no
            controls" and "nobody looked" are different facts and the
            scene has room to say which. */
         (void)now_scene_open_controls(s, index);
+        now_scene_phase_enter(kNowScenePhaseControls);
         if (GetRootControl(window, &root) == noErr && root != NULL) {
             UInt16 count = 0;
             UInt16 i;
@@ -672,6 +685,7 @@ void now_scene_collect_self(NowScene *s, int row,
             find_controls_by_probe(s, index, window, &content, &budget,
                                    refs);
         }
+        now_scene_phase_leave(kNowScenePhaseControls);
         if (workshop_is(window)) {
             WorkshopWriterContext context = { s, index, 1 };
             WorkshopSceneWriter writer = { &context,
@@ -680,4 +694,5 @@ void now_scene_collect_self(NowScene *s, int row,
             workshop_describe_scene(&writer);
         }
     }
+    now_scene_phase_leave(kNowScenePhaseWindows);
 }
