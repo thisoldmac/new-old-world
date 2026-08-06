@@ -161,6 +161,21 @@ NowActStatus now_act_open(const ProcessSerialNumber *psn, NowActTarget *out)
 
 /* Give up the processor without dequeuing anything. Mask zero: we want
    the scheduler, not the events. */
+/* MEASURED AND NOT FIXED, 2026-08-06: this nested loop does not pump the
+   wire, and AGENTS.md names that as one of the two non-negotiables that
+   bite hardest here. now_act_submit and now_act_await_fired each spin on
+   it for kNowActDeadlineTicks (5 s), so an act the target will not take
+   holds conn_service off for up to ten seconds - and every scene request
+   in that window reads as a ten-second guest. Measured: an act refused
+   `act-not-taken` after 6.6 s and a scene.request issued in the same
+   instant answered in 6634 ms, the same number. It also lapses the very
+   ten-second owner lease 4b972ade made renewal ride host traffic to
+   protect, because that renewal happens in conn_service.
+
+   Left alone deliberately. Pumping inside an armed window means serving
+   requests while an act is armed, which is precisely the re-entrancy the
+   no-hijack work is about, so it needs a guard and a decision rather
+   than a one-line edit. docs/open-issues.md carries the measurement. */
 static void act_yield(void)
 {
     EventRecord ev;

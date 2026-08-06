@@ -14,6 +14,177 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## INVESTIGATED, NOT FIXED: the twelve seconds under a modal is NOT starvation — it is NOW's own act wait, which does not pump the wire (2026-08-06)
+
+Investigation only; nothing product-facing was changed. Michelle's live
+session (host `87960f70`, guest `711abdbd25ec`) with Date & Time's **Set
+Time Zone** modal open: `request_ms=12041 decode_ms=98`, again
+12292/97, 12179/153, 12501/294, while healthy cycles in the same log
+read `total_ms=15–33`. The guest's own walk phases in those slow lines
+total ~2 ms. Her Acts panel: `click "Cancel"` — queued behind 0, waited
+0 ms, **guest 12099 ms, never settled**, plus 9045, 11732, and two
+refusals at 2790 and 11732.
+
+Everything below was measured on 2026-08-06 on a session-private clone
+(VM `/private/tmp/nowvm-starve`, wire 5590, anchor 5591, guest
+`711abdbd25ec 2026-08-06T19:53:53Z` — the same guest source as
+Michelle's), with `tools/local-modal-starve.py` and
+`tools/local-modal-act.py`. Both refuse a guest whose hello build is not
+the one asked for.
+
+### 1. The twelve seconds and the act's twelve seconds are ONE event
+
+`now-guest-ppc/src/act/act_client.c` waits for the target process to
+take an armed act in two phases — `now_act_submit`, then
+`now_act_await_fired` — each bounded by `kNowActDeadlineTicks` = 300
+ticks = **5 seconds**, and each spinning on:
+
+    static void act_yield(void)
+    {
+        EventRecord ev;
+        (void)WaitNextEvent(0, &ev, 2L, NULL);
+    }
+
+**That is a nested Toolbox loop that does not pump the wire**, which
+AGENTS.md names as one of the two non-negotiables that bite hardest.
+While it runs, `conn_service` does not, so every scene request sits in
+the socket for the whole deadline.
+
+Measured, with the Set Time Zone modal up and an act aimed at a control
+*behind* it (which the modal's own `ModalDialog` will never route to):
+
+| | |
+|---|---|
+| the act | **6.6 s**, `act-not-taken: armed, and the application never called TrackControl` |
+| a `scene.request` sent in the same instant | **6634 ms** |
+
+The same number twice. The scene did not become slow; it queued. Two
+phases expiring instead of one, plus the resolver and the reply, is
+where 11.7–12.5 s comes from — so `request_ms=12041` and
+`guest 12099ms` in Michelle's log are **the same twelve seconds seen
+from both ends**, not two independent slownesses.
+
+It also explains the self-sustaining part. The anchor plane's owner
+lease is ten seconds and renewal now rides inbound host traffic
+(`4b972ade`) — but renewal happens in `conn_service`, which is exactly
+what does not run during the act wait. A ~10 s act therefore lapses the
+lease it was supposed to hold, and the next act refuses
+`the anchor plane is absent or not armed`.
+
+### 2. A REAL application's modal does not starve NOW at all
+
+The hypothesis under test was that a modal in a foreign application
+starves the cooperatively scheduled machine. **For a real modal it is
+false**, on this guest, by measurement. Date & Time's Set Time Zone
+raised through the product's own `ctlact` — the application runs its own
+click handler, so what follows is its `ModalDialog` and not an
+instrument's loop:
+
+| | scene round trip, median | max | guest's own `pass max` |
+|---|---|---|---|
+| idle | 21 ms | 67 ms | 906 ms |
+| **Set Time Zone modal up, 145 probes** | **413 ms** | 2280 ms | 1328 ms |
+
+Twenty times slower and never silent. The median `conn_service` pass
+moves one bucket, 66–133 ms to 133 ms+. A real modal is a **tax**, not a
+wedge, and 413 ms is nowhere near twelve seconds.
+
+**And acts work through it.** `ctlact` on the modal's own Cancel
+answered in **0.7 s** and the modal was gone from the next scene —
+twice, on two separate raisings. Michelle's "Cancel refused the first
+time, worked after 12 s the second" is this: an act the modal will take
+is fast, an act it will not take costs the full deadline, and the
+refusals in between are the lapsed lease above.
+
+### 3. So this contradicts the ledger's own entries, and here is which way
+
+Three readings existed and none of them agreed. All three are now
+placed:
+
+- **`guest-wedge modal` does not model a real modal, and plan 012 §5's
+  row is refuted.** That row says *"never starved, 71 s — a modal
+  SITTING there starves nothing; `ModalDialog` pumps and that is
+  enough."* Measured today, `NOW Wedge modal 45` starved NOW for
+  **43,974 ms** of its 45 seconds, and the guest's own histogram says
+  `pass max = 44,939,026 us` — the event loop did not run **once**.
+  `scan` is refuted the same way (43,975 ms; the row says "never
+  starved"). Only the `spin` row survives (44,061 ms, `pass max` 45.0 s).
+- **The arm-latency entry's *"under a modal the wait is the modal,
+  30.023 s"* is confirmed** — for the wedge, which is what it measured.
+- The reason both are true at once is the wedge's own loop.
+  `ModalUntil` calls `GetNextEvent` with no sleep, and a real
+  `ModalDialog` does not behave like that. **The wedge's `modal` mode is
+  `spin` with a dialog drawn over it**, and its three modes are
+  indistinguishable: 43.97 / 44.06 / 43.98 seconds. The header comment in
+  `tools/guest-wedge/src/now_wedge.c` predicting the opposite carries a
+  dated correction now.
+
+### 4. Whether the machine was alive: answered below the application
+
+The decisive instrument is plan 012's resident channel, and it worked
+every time. Under **all three** wedge modes the resident dialled, said
+`role: resident`, and went on pinging its own connection *inside* the
+starvation window (ping at 41.6 s of an 11.4–56.4 s wedge; 54.0 s of a
+19.7–64.7 s one; 42.8 s of an 8.4–53.4 s one) while the session could
+not answer a scene. **The machine was running and NOW was not being
+scheduled** — starvation, measured rather than argued, and the third
+independent confirmation that plan 012 §4 does what it claims.
+
+Under the real modal the resident pinged on its ordinary 30 s cadence
+and so did everything else; there was nothing to distinguish.
+
+### 5. What was NOT measured, and must not be assumed
+
+- **The Finder-owned alert.** One attempt today failed to raise it (the
+  Finder opened the file without complaining), so the run measured a
+  healthy machine and is discarded under measurement rule 1 rather than
+  reported. The existing reading stands unchanged and is consistent with
+  the wedge: `outcome=starved`, `request_ms` 20,008–21,318,
+  `decode_ms=0`, and the anchor worker refusing even `hello`.
+- **A large scene under a modal.** Every scene here is 2–3 windows.
+  Michelle's had more, and a bigger document is more bulk frames, which
+  is more event-loop passes at 413 ms each. That could add to the twelve
+  seconds; nothing here says it does. Attempts to grow the scene by
+  opening Finder windows failed for an unrelated reason — the Finder
+  reported `not-observed`, so its windows never entered the walk.
+- **Metal.** Emulated G4 throughout.
+
+### 6. What could be done, in order of what it buys
+
+None of this was implemented; it is Michelle's call, like the decode
+one.
+
+1. **Make `act_yield` pump the wire** (`pump.h`, the rule that already
+   exists). It does not make an act faster — the machine still will not
+   take it — but it stops one act making the whole Mirror read as a
+   twelve-second machine, and it stops the act wait lapsing the very
+   lease `4b972ade` fixed. This is the whole of the reported symptom and
+   it is the smallest change here. **Its risk is real and is why it is a
+   decision, not a patch:** pumping inside an armed window means serving
+   requests while an act is armed, which is exactly the re-entrancy the
+   no-hijack work is about, and it needs its own guard rather than an
+   assumption.
+2. **State the act ceiling once, where both sides read it.** The guest
+   spends up to ~10 s + overhead; plan 014 gave the host a 20 s
+   watchdog chosen against the *script* ceiling (15 s,
+   `kNowScriptDefaultMs`) and nothing named the act one. Two limits, two
+   files, the shape this project has already paid for.
+3. **Nothing needs adding to the resident for this case.** It already
+   tells starved from gone, and this case is not starvation. Its value
+   here was as an instrument.
+4. **The honest half.** Against a wedge-class starvation — a
+   Finder-owned alert, or any application that stops calling
+   `WaitNextEvent` — NOW cannot be made responsive, because it is not
+   running. The product's correct behaviour is to say so quickly, which
+   plan 012 §2 built and the status line's `expected-stale` vocabulary
+   already speaks. Do not spend anything trying to make that case fast.
+
+The instruments are committed and labelled diagnostic:
+`tools/local-modal-starve.py` (latency distribution, the resident's own
+socket, and the guest's `wirestat` pass histogram, in one run) and
+`tools/local-modal-act.py` (one act, timed, with the scenes queued
+behind it printed against the same wall clock).
+
 ## BROKEN, latent, found in passing: two request families draw ids from separate counters and share one watchdog map (2026-08-06)
 
 Found while reviewing plan 014's watchdog, not by a failure. **Nothing
@@ -302,6 +473,18 @@ belonged to a *foreign* application. A **Finder**-owned modal starves the
 whole cooperative machine including NOW, so the complements never run and
 this repair cannot help — nothing on the host can. Worth knowing before
 someone measures the wrong modal and concludes the fix did nothing.
+
+**2026-08-06, later: the second half of that reading is right and the
+first half is a different defect.** A Finder-owned modal does starve the
+whole machine and nothing on the host can help — unchanged. But the
+`NOW Wedge modal 45` row (`outcome=failed request_ms=20839`) is not a
+modal result at all: the wedge's modal mode is a non-pumping
+`GetNextEvent` loop and starves as completely as `spin`. And Michelle's
+own case, which this entry reads as "NOW answering promptly while the
+Finder was merely busy", has since reversed on her newer host —
+`request_ms=12041 decode_ms=98` — and that twelve seconds is NOW's own
+act wait failing to pump the wire, not the Finder. Entry at the top of
+this file.
 
 ### What plan 014 changed (2026-08-06)
 
@@ -946,6 +1129,13 @@ executing — so it is re-argued and dropped.
   can never request an arm earlier than that.
 - **The modal row is n=1**, and it is the wedge's GetNextEvent loop, not
   a real application's modal.
+
+  **2026-08-06, later: that caveat was exactly right and is now
+  measured.** The wedge's `GetNextEvent` loop starves NOW completely
+  (43,974 ms of a 45 s run, `pass max` 44.9 s) and a real application's
+  `ModalDialog` does not starve it at all (413 ms median, 145 probes).
+  So this row's 30.1 s is a true reading of the wedge and says nothing
+  about a modal. See the entry at the top of this file.
 - **The plane measured is the one on `claude/mirror-thread-content`.** The
   GWorld work on `claude/gworld-probe-grounding-3dcbd4` adds ~600 lines to
   `ext/src/now_content.c`, four hunks of them inside `now_content_gne`

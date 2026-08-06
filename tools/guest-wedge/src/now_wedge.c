@@ -30,6 +30,20 @@
  *           should keep getting time - which would mean a modal merely
  *           SITTING there starves nothing, and the ninety seconds came
  *           from something else. Nobody has checked; this is how.
+ *
+ *           **MEASURED 2026-08-06, and that prediction was wrong. This
+ *           mode is `spin` with a dialog drawn over it.** It starved NOW
+ *           for 43,974 ms of a 45-second run - `spin` scored 44,061 ms
+ *           on the same clone - and the guest's own wirestat histogram
+ *           says its event loop did not run once (pass max 44.9 s). A
+ *           GetNextEvent loop with no sleep yields nothing, whatever is
+ *           drawn on top of it. A REAL application's ModalDialog, raised
+ *           through ctlact so the application runs its own handler,
+ *           costs a background application about 20x and no starvation
+ *           (413 ms median scene against 21 ms idle). **So this mode
+ *           cannot answer a question about modals**, and two plan
+ *           sections rested on it believing that it could;
+ *           docs/open-issues.md carries the correction.
  *   scan  - a long synchronous file-system walk, which is the current
  *           suspect: the alert's "select an alternate program" list has
  *           to enumerate the applications on the volume before it can be
@@ -184,7 +198,11 @@ static void ModalUntil(unsigned long deadline)
        return on the first event and this must hold the dialog for the
        duration. The loop pumps the way ModalDialog does - GetNextEvent -
        so the question this mode exists to answer is whether that is
-       enough for other applications to keep running. */
+       enough for other applications to keep running.
+
+       IT IS NOT, and "the way ModalDialog does" is the wrong claim: this
+       loop calls GetNextEvent back to back with nothing between, which
+       yields nothing at all. Measured 2026-08-06 - see the header. */
     DialogPtr dialog;
     EventRecord event;
 

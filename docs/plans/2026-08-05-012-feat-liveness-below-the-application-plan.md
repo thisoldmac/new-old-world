@@ -302,6 +302,21 @@ results, and the third is why § 3 can proceed:
 | `modal` | **never starved**, 71 s | a modal SITTING there starves nothing; `ModalDialog` pumps and that is enough |
 | `scan` | **never starved**, 71 s | sync File Manager work yields; not the mechanism |
 
+**REFUTED 2026-08-06, on a fresh clone with the same instrument plus two
+better ones.** Two of those three rows are wrong. `NOW Wedge modal 45`
+starved NOW for **43,974 ms** of its 45 seconds and `NOW Wedge scan 45`
+for **43,975 ms**, against `spin`'s 44,061 ms — the three modes are
+indistinguishable, and the guest's own `wirestat` histogram says its
+event loop did not run once (`pass max` 44.9 / 45.0 / 45.0 s). The
+reason is in the instrument: `ModalUntil` loops on `GetNextEvent` with
+no sleep, which yields nothing, so **the `modal` mode is `spin` with a
+dialog drawn over it** and has never measured what its name says. A
+REAL application's `ModalDialog`, raised through `ctlact` so the
+application runs its own handler, costs NOW a 20× slowdown (413 ms
+median scene, 145 probes) and no starvation at all. `docs/open-issues.md`
+carries the numbers and what they cost; the sentence below about the
+hypothesis being dead is the one that has to go.
+
 **The "modal sitting there" hypothesis is dead**, and so is "ordinary
 synchronous file work". The mechanism behind the original 90 s is still
 NOT established: the real Finder alert silenced even `hello`, and a spin
