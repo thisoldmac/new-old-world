@@ -172,10 +172,52 @@
       "provenance": "measured",
       "evidence": "docs/local/toolbox-re/loop-identity.txt",
       "at": "2026-08-06T04:04:10-0400"
+    },
+    {
+      "phase": "P6",
+      "claim": "REFERENCE.md drafted and kept current as findings land: corpus access, structure layouts with offsets, the GWorld surface, dispatch, the Finder's use of GWorlds, the two memory facts that invalidate naive tooling (MemTop is not the address-space ceiling; LockPixels relocates the record), and an explicit open-questions section.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/REFERENCE.md",
+      "at": "2026-08-06T04:05:21-0400"
+    },
+    {
+      "phase": "P6",
+      "claim": "prior-art.md landed from the documentation lane: ~2270 lines with per-claim provenance, confidence, and ASSERTS-vs-DEMONSTRATES, an offsetof table cross-compiled with BOTH Retro68 toolchains (PPC and 68K byte-for-byte identical, so no packing drift between guests), source conflicts reported rather than resolved, and 20 tiered questions for the live lane.",
+      "provenance": "doc",
+      "evidence": "docs/local/toolbox-re/prior-art.md",
+      "at": "2026-08-06T04:05:21-0400"
+    },
+    {
+      "phase": "P2",
+      "claim": "THE CHASE WORKS. Control run with zone-bounded reads: hits 1, offscreenPorts 1, lastMatch 0x1ea59fc0 - EXACTLY the port address the control independently reported for itself, candRect [0,0,200,180] matching its GWorld. A resident can find and hook another process's offscreen port. Every null before this was the instrument; from here a null is evidence.",
+      "provenance": "measured",
+      "evidence": "gwprobe-out/CONTROL-zonefix/summary.json",
+      "at": "2026-08-06T04:07:56-0400"
+    },
+    {
+      "phase": "P2",
+      "claim": "OUTCOME 1, MEASURED: the drawing that BUILDS a composite is visible inside a foreign process's offscreen GWorld. With the chase working, the counters read total 17606 - text 6588, line 1098, rect 7686, bits 2234 - while the only text being drawn on the machine is the control's six strings per rebuild INTO its GWorld (6588/6 = 1098 rebuilds, matching 1098 line ops exactly, one LineTo per rebuild). Text ops, with their strings and pens, are recoverable from an offscreen port that a resident found and hooked from outside. The brief's outcome 1 is achievable in principle.",
+      "provenance": "measured",
+      "evidence": "gwprobe-out/CONTROL-offscreen-ops/summary.json",
+      "at": "2026-08-06T04:10:04-0400"
+    },
+    {
+      "phase": "P4",
+      "claim": "The probe is no longer the limiting factor for the Finder question. The instrument is proven end to end on a control (sight, chase, hook, record), so the Finder's remaining nulls are now evidence about the Finder rather than about the tooling - and the static finding that it imports NewGWorld/DisposeGWorld but NO UpdateGWorld remains the leading explanation to test.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/ledger.json",
+      "at": "2026-08-06T04:10:04-0400"
+    },
+    {
+      "phase": "P6",
+      "claim": "Ring pressure is a real cost of this mode and must be stated: the control redrawing at loop cadence overran the 64 KiB ring within one settle - writeCursor 900946, lostBytes 835410, overrun true. A composite-heavy application will lose records unless the drain keeps up or the arm is short. This is the honest cost the brief asked to be reported.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/ledger.json",
+      "at": "2026-08-06T04:10:04-0400"
     }
   ],
   "blockers": [],
   "handoff": null,
   "done": false,
-  "fruitless_blocks": 1
+  "fruitless_blocks": 0
 }

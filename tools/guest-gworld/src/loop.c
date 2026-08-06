@@ -239,9 +239,14 @@ int main(void)
                 continue;
             }
         }
-        /* Re-blit on a cadence as well, so a probe that arms mid-run
-           always has a fresh composite to sight without needing anyone
-           to poke the window. */
+        /* REBUILD the offscreen content, not merely re-blit it. A
+           chase that hooks the GWorld only sees drawing that happens
+           AFTER the hook goes in, and this applet's world was drawn
+           once at startup - so without this the port is hooked and
+           silent, which reads exactly like a hook that does not work.
+           Rebuilding on a cadence is what makes "can we see the drawing
+           that BUILT the composite" answerable at all. */
+        BuildWorld();
         BlitWorld();
     }
 
