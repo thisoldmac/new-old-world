@@ -319,6 +319,20 @@
       "provenance": "measured",
       "evidence": "docs/local/toolbox-re/anatomy2-report.txt",
       "at": "2026-08-06T04:31:59-0400"
+    },
+    {
+      "phase": "P3",
+      "claim": "QUICKDRAW'S ACTUAL CODE, REACHED AND DISASSEMBLED. A routine descriptor's RoutineRecord holds a transition vector at descriptor+20; for StdText that is 0x005825a8 -> {code 0x3f9967c0, TOC 0x00581c68} and for StdBits 0x0058ab38 -> {0x3f8a9b00, 0x0058aa7c}. Dumped from the guest and disassembled with capstone as PowerPC BE: clean PPC prologues (mflr/stmw/stwu), TOC-relative globals, real bodies. QuickDraw's implementation is reachable and readable at instruction level from inside a running guest, without decompressing the ROM file.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy3-report.txt",
+      "at": "2026-08-06T04:33:33-0400"
+    },
+    {
+      "phase": "P3",
+      "claim": "StdText KEEPS ITS OWN RECURSION DEPTH COUNTER: it loads a global via the TOC (lwz r31,-0xa8(r2)), reads a byte (lbz r9,0(r31)), stores it on the stack, writes back r9+1, and on the early-out path (byteCount <= 0, via extsh./bgt) restores the original byte before returning. QuickDraw tracks its own nesting - which is directly relevant to the content plane's re-entrancy guard, whose stated justification (StdText blitting glyphs through StdBits) this arc has already shown does not hold here.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/anatomy3-report.txt",
+      "at": "2026-08-06T04:33:33-0400"
     }
   ],
   "blockers": [

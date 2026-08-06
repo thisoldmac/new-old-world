@@ -1,0 +1,338 @@
+NOW Toolbox anatomy - docs/local/toolbox-re/PLAN.md
+Emulator run, 68K application on a PowerPC guest. Not metal.
+
+SetStdCProcs textProc = 0x000d5a3c
+SetStdCProcs bitsProc = 0x000d49f0
+
+======== P1: structure layouts (offsetof, this compiler) ========
+  sizeof(GrafPort) = 108
+  sizeof(CGrafPort) = 108
+  sizeof(BitMap) = 14
+  sizeof(PixMap) = 50
+  sizeof(GDevice) = 62
+  sizeof(QDProcs) = 52
+  sizeof(CQDProcs) = 80
+  sizeof(Rect) = 8
+  sizeof(RgnHandle) = 4
+-- GrafPort
+  GrafPort.device @ 0
+  GrafPort.portBits @ 2
+  GrafPort.portRect @ 16
+  GrafPort.visRgn @ 24
+  GrafPort.clipRgn @ 28
+  GrafPort.bkPat @ 32
+  GrafPort.pnLoc @ 48
+  GrafPort.pnSize @ 52
+  GrafPort.pnMode @ 56
+  GrafPort.txFont @ 68
+  GrafPort.txFace @ 70
+  GrafPort.txSize @ 74
+  GrafPort.grafProcs @ 104
+-- CGrafPort (same size, different shape: the discriminator)
+  CGrafPort.device @ 0
+  CGrafPort.portPixMap @ 2
+  CGrafPort.portVersion @ 6
+  CGrafPort.grafVars @ 8
+  CGrafPort.chExtra @ 12
+  CGrafPort.pnLocHFrac @ 14
+  CGrafPort.portRect @ 16
+  CGrafPort.visRgn @ 24
+  CGrafPort.clipRgn @ 28
+  CGrafPort.bkPixPat @ 32
+  CGrafPort.rgbFgColor @ 36
+  CGrafPort.rgbBkColor @ 42
+  CGrafPort.pnLoc @ 48
+  CGrafPort.pnSize @ 52
+  CGrafPort.txFont @ 68
+  CGrafPort.txFace @ 70
+  CGrafPort.txSize @ 74
+  CGrafPort.grafProcs @ 104
+-- PixMap
+  PixMap.baseAddr @ 0
+  PixMap.rowBytes @ 4
+  PixMap.bounds @ 6
+  PixMap.pmVersion @ 14
+  PixMap.packType @ 16
+  PixMap.packSize @ 18
+  PixMap.hRes @ 22
+  PixMap.vRes @ 26
+  PixMap.pixelType @ 30
+  PixMap.pixelSize @ 32
+  PixMap.cmpCount @ 34
+  PixMap.cmpSize @ 36
+  PixMap.planeBytes @ 38
+  PixMap.pmTable @ 42
+-- BitMap
+  BitMap.baseAddr @ 0
+  BitMap.rowBytes @ 4
+  BitMap.bounds @ 6
+-- GDevice
+  GDevice.gdRefNum @ 0
+  GDevice.gdID @ 2
+  GDevice.gdType @ 4
+  GDevice.gdITable @ 6
+  GDevice.gdResPref @ 10
+  GDevice.gdSearchProc @ 12
+  GDevice.gdCompProc @ 16
+  GDevice.gdFlags @ 20
+  GDevice.gdPMap @ 22
+  GDevice.gdRefCon @ 26
+  GDevice.gdNextGD @ 30
+  GDevice.gdRect @ 34
+  GDevice.gdMode @ 42
+-- CQDProcs (the bottleneck table the whole content plane hooks)
+  CQDProcs.textProc @ 0
+  CQDProcs.lineProc @ 4
+  CQDProcs.rectProc @ 8
+  CQDProcs.rRectProc @ 12
+  CQDProcs.ovalProc @ 16
+  CQDProcs.arcProc @ 20
+  CQDProcs.polyProc @ 24
+  CQDProcs.rgnProc @ 28
+  CQDProcs.bitsProc @ 32
+  CQDProcs.commentProc @ 36
+  CQDProcs.txMeasProc @ 40
+  CQDProcs.getPicProc @ 44
+  CQDProcs.putPicProc @ 48
+  CQDProcs.opcodeProc @ 52
+  CQDProcs.newProc1 @ 56
+-- Zone (what a heap walk steps through)
+  sizeof(Zone) = 54
+  Zone.bkLim @ 0
+  Zone.purgePtr @ 4
+  Zone.hFstFree @ 8
+  Zone.zcbFree @ 12
+  Zone.gzProc @ 16
+  Zone.heapData @ 52
+
+======== P1: a live window port, read at the offsets above =====
+  window/port address = 0x1e74e5f0
+  portVersion         = 0x0000c000
+  discriminator: 0xC000 SET - this is a CGrafPort
+  portPixMap          = 0x1e74993c
+  grafProcs (fresh)   = 0x00000000
+  portRect.right      = 300
+  pixmap baseAddr     = 0x81000000
+  pixmap rowBytes&3FFF= 3200
+  pixmap pixelSize    = 32
+
+======== P2: the GWorld surface, flag by flag =================
+
+-- depth=0 (device) flags=none
+   GWorldPtr        = 0x1e74e5f0
+   as CGrafPtr      = 0x1e74e5f0
+   GWorldPtr IS the CGrafPtr (same address)
+   RecoverHandle(port) = 0x1e74e760
+   the port IS a relocatable block (locked handle)
+   portVersion      = 0x0000c001
+   pixmap handle    = 0x1e74e77c
+   pixmap deref     = 0x1e760b10
+   baseAddr         = 0x1e74993c
+   rowBytes & 3FFF  = 272
+   pixelSize        = 32
+   RecoverHandle(pixmap): AGREES
+   GetPixelsState   = 0
+     pixelsLocked clear
+     pixelsPurgeable clear
+   LockPixels: true
+   baseAddr MOVED under LockPixels
+
+-- depth=8 flags=none
+   GWorldPtr        = 0x1e74e5f0
+   as CGrafPtr      = 0x1e74e5f0
+   GWorldPtr IS the CGrafPtr (same address)
+   RecoverHandle(port) = 0x1e74e760
+   the port IS a relocatable block (locked handle)
+   portVersion      = 0x0000c001
+   pixmap handle    = 0x1e74e74c
+   pixmap deref     = 0x1e762510
+   baseAddr         = 0x1e74e740
+   rowBytes & 3FFF  = 80
+   pixelSize        = 8
+   RecoverHandle(pixmap): AGREES
+   GetPixelsState   = 0
+     pixelsLocked clear
+     pixelsPurgeable clear
+   LockPixels: true
+   baseAddr MOVED under LockPixels
+
+-- depth=32 flags=none
+   GWorldPtr        = 0x1e74e5f0
+   as CGrafPtr      = 0x1e74e5f0
+   GWorldPtr IS the CGrafPtr (same address)
+   RecoverHandle(port) = 0x1e74e760
+   the port IS a relocatable block (locked handle)
+   portVersion      = 0x0000c001
+   pixmap handle    = 0x1e74e778
+   pixmap deref     = 0x1e760b10
+   baseAddr         = 0x1e74993c
+   rowBytes & 3FFF  = 272
+   pixelSize        = 32
+   RecoverHandle(pixmap): AGREES
+   GetPixelsState   = 0
+     pixelsLocked clear
+     pixelsPurgeable clear
+   LockPixels: true
+   baseAddr MOVED under LockPixels
+
+-- flags=useTempMem
+   GWorldPtr        = 0x1e74e5f0
+   as CGrafPtr      = 0x1e74e5f0
+   GWorldPtr IS the CGrafPtr (same address)
+   RecoverHandle(port) = 0x1e74e760
+   the port IS a relocatable block (locked handle)
+   portVersion      = 0x0000c001
+   pixmap handle    = 0x1e74e748
+   pixmap deref     = 0x1e74e910
+   baseAddr         = 0x1f805690
+   rowBytes & 3FFF  = 272
+   pixelSize        = 32
+   RecoverHandle(pixmap): AGREES
+   GetPixelsState   = 0
+     pixelsLocked clear
+     pixelsPurgeable clear
+   LockPixels: true
+   baseAddr MOVED under LockPixels
+
+-- flags=keepLocal
+   GWorldPtr        = 0x1e74e5f0
+   as CGrafPtr      = 0x1e74e5f0
+   GWorldPtr IS the CGrafPtr (same address)
+   RecoverHandle(port) = 0x1e74e760
+   the port IS a relocatable block (locked handle)
+   portVersion      = 0x0000c001
+   pixmap handle    = 0x1e74e768
+   pixmap deref     = 0x1e760b10
+   baseAddr         = 0x1e74e76c
+   rowBytes & 3FFF  = 272
+   pixelSize        = 32
+   RecoverHandle(pixmap): AGREES
+   GetPixelsState   = 0
+     pixelsLocked clear
+     pixelsPurgeable clear
+   LockPixels: true
+   baseAddr MOVED under LockPixels
+
+-- flags=pixelsPurgeable
+   GWorldPtr        = 0x1e74e5f0
+   as CGrafPtr      = 0x1e74e5f0
+   GWorldPtr IS the CGrafPtr (same address)
+   RecoverHandle(port) = 0x1e74e760
+   the port IS a relocatable block (locked handle)
+   portVersion      = 0x0000c001
+   pixmap handle    = 0x1e74e740
+   pixmap deref     = 0x1e760b10
+   baseAddr         = 0x1e74993c
+   rowBytes & 3FFF  = 272
+   pixelSize        = 32
+   RecoverHandle(pixmap): AGREES
+   GetPixelsState   = 0
+     pixelsLocked clear
+     pixelsPurgeable clear
+   LockPixels: true
+   baseAddr MOVED under LockPixels
+
+-- flags=noNewDevice
+   GWorldPtr        = 0x1e74e5f0
+   as CGrafPtr      = 0x1e74e5f0
+   GWorldPtr IS the CGrafPtr (same address)
+   RecoverHandle(port) = 0x1e74e760
+   the port IS a relocatable block (locked handle)
+   portVersion      = 0x0000c001
+   pixmap handle    = 0x1e74e740
+   pixmap deref     = 0x1e7609b0
+   baseAddr         = 0x1e74e76c
+   rowBytes & 3FFF  = 272
+   pixelSize        = 32
+   RecoverHandle(pixmap): AGREES
+   GetPixelsState   = 0
+     pixelsLocked clear
+     pixelsPurgeable clear
+   LockPixels: true
+   baseAddr MOVED under LockPixels
+
+======== P2: lifetime - is an address reused after dispose? ====
+  first  GWorld at 0x1e74e5f0
+  disposed
+  second GWorld at 0x1e74e5f0
+  SAME ADDRESS REUSED. An observer polling for a port cannot tell one repaint's world from the next by address alone.
+  disposed port's first word now = 0x00001e74
+  third  GWorld at 0x1e74e7b0
+
+======== P3: is an offscreen port dispatched like a window? ===
+  window   text hooks fired = 1
+  window   bits hooks fired = 0
+  offscreen text hooks fired = 1
+  offscreen bits hooks fired = 0
+  SAME MECHANISM: both ports dispatch text through grafProcs.
+  StdText did NOT nest through StdBits on either port.
+  after a GWorld->window CopyBits, window bits = 1
+  the source we passed  = 0x1e7610d0
+  the GWorld's portPixMap = 0x1e74e6d4
+  the blit's source IS the port's own pixmap record
+
+======== P3: the standard bottlenecks' own code ================
+
+-- StdText
+   address = 0x000d5a3c
+  000d5a3c: aa fe 07 00 00 00 00 00 00 00 00 00 00 00 3f 80
+  000d5a4c: 00 01 00 04 00 58 25 a8 00 00 00 00 00 00 00 00
+  000d5a5c: 00 00 a8 ed aa fe 07 00 00 00 00 00 00 00 00 00
+  000d5a6c: 00 00 ff a0 00 01 00 04 00 58 25 b0 00 00 00 00
+  000d5a7c: 00 00 00 00 00 00 a8 8c aa fe 07 00 00 00 00 00
+  000d5a8c: 00 00 00 00 00 00 00 e0 00 01 00 04 00 58 25 e0
+
+-- StdBits
+   address = 0x000d49f0
+  000d49f0: aa fe 07 00 00 00 00 00 00 00 00 00 00 00 ef c0
+  000d4a00: 00 01 00 04 00 58 ab 38 00 00 00 00 00 00 00 00
+  000d4a10: 00 0d 49 e0 6b 00 00 10 00 00 00 70 00 00 28 00
+  000d4a20: 00 58 b1 e8 00 00 00 00 00 00 00 00 00 58 b2 c8
+  000d4a30: 00 00 00 00 00 00 00 00 00 58 b2 30 00 00 00 00
+  000d4a40: 00 00 00 00 00 58 b2 90 00 00 00 00 00 00 00 00
+
+-- StdRect
+   address = 0x000454a0
+  000454a0: aa fe 07 00 00 00 00 00 00 00 00 00 00 00 03 40
+  000454b0: 00 01 00 04 00 58 af c0 00 00 00 00 00 00 00 00
+  000454c0: 00 04 54 90 6b 00 00 04 00 00 01 a0 00 00 28 00
+  000454d0: 00 01 00 00 00 0b e7 c0 00 00 00 00 00 00 00 00
+
+-- StdRgn
+   address = 0x000d49c0
+  000d49c0: aa fe 07 00 00 00 00 00 00 00 00 00 00 00 03 40
+  000d49d0: 00 01 00 04 00 58 af d0 00 00 00 00 00 00 00 00
+  000d49e0: 00 0d 49 b0 6b 00 00 04 00 00 00 30 00 00 28 00
+  000d49f0: aa fe 07 00 00 00 00 00 00 00 00 00 00 00 ef c0
+
+-- StdText transition vector
+   address = 0x005825a8
+  005825a8: 3f 99 67 c0 00 58 1c 68 3f 99 68 f4 00 58 1c 68
+
+-- StdText PowerPC code
+   address = 0x3f9967c0
+  3f9967c0: 7c 08 02 a6 bf 81 ff f0 90 01 00 08 94 21 fe 70
+  3f9967d0: 90 a1 01 b0 90 c1 01 b4 83 e2 ff 58 7c 63 07 35
+  3f9967e0: 89 3f 00 00 7c 85 23 78 3b 82 13 4c 3b c9 00 01
+  3f9967f0: 99 21 00 96 9b df 00 00 3b c0 00 00 41 81 00 1c
+  3f996800: 99 3f 00 00 38 21 01 90 80 01 00 08 7c 08 03 a6
+  3f996810: bb 81 ff f0 4e 80 00 20 80 c1 01 b0 7c 64 1b 78
+  3f996820: 80 e1 01 b4 38 61 00 38 48 00 f4 f1 80 41 00 14
+  3f996830: 7c 7d 1b 78 2c 1d 00 00 40 82 00 98 38 00 00 01
+
+-- StdBits transition vector
+   address = 0x0058ab38
+  0058ab38: 3f 8a 9b 00 00 58 aa 7c 3f 8a ad 84 00 58 aa 7c
+
+-- StdBits PowerPC code
+   address = 0x3f8a9b00
+  3f8a9b00: 7d 80 00 26 7c 08 02 a6 be 41 ff c8 91 81 00 04
+  3f8a9b10: 90 01 00 08 94 21 fe 40 39 80 00 00 7c 7b 1b 78
+  3f8a9b20: b1 80 0d 6e 2c 1b 00 00 7c f7 3b 78 3a c0 00 00
+  3f8a9b30: 7c da 07 34 7c b9 2b 78 7c 9c 23 78 40 82 00 28
+  3f8a9b40: 39 00 ff ce b1 00 0d 6e 38 21 01 c0 80 01 00 08
+  3f8a9b50: 81 81 00 04 7c 08 03 a6 ba 41 ff c8 7d 83 81 20
+  3f8a9b60: 4e 80 00 20 2c 1c 00 00 41 82 00 0c 2c 19 00 00
+  3f8a9b70: 40 82 00 28 38 60 ff ce b0 60 0d 6e 38 21 01 c0
+
+end of report

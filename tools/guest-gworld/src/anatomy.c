@@ -425,6 +425,35 @@ static void ReportProcCode(void)
     DumpProc("StdBits", (void *)gStd.bitsProc, 96);
     DumpProc("StdRect", (void *)gStd.rectProc, 64);
     DumpProc("StdRgn",  (void *)gStd.rgnProc, 64);
+    /* A routine descriptor's RoutineRecord holds a POINTER at +8 within
+       the record (byte 20 of the descriptor). For a PowerPC routine
+       that is the transition vector: {code address, TOC}. Follow both,
+       so the report carries QuickDraw's actual instructions. */
+    {
+        const unsigned char *rd;
+        unsigned long tvec, code;
+
+        rd = (const unsigned char *)gStd.textProc;
+        if (rd != NULL && rd[0] == 0xAA && rd[1] == 0xFE) {
+            tvec = ((unsigned long)rd[20] << 24) | ((unsigned long)rd[21] << 16)
+                 | ((unsigned long)rd[22] << 8) | rd[23];
+            DumpProc("StdText transition vector", (void *)tvec, 16);
+            if (tvec != 0) {
+                code = *(unsigned long *)tvec;
+                DumpProc("StdText PowerPC code", (void *)code, 128);
+            }
+        }
+        rd = (const unsigned char *)gStd.bitsProc;
+        if (rd != NULL && rd[0] == 0xAA && rd[1] == 0xFE) {
+            tvec = ((unsigned long)rd[20] << 24) | ((unsigned long)rd[21] << 16)
+                 | ((unsigned long)rd[22] << 8) | rd[23];
+            DumpProc("StdBits transition vector", (void *)tvec, 16);
+            if (tvec != 0) {
+                code = *(unsigned long *)tvec;
+                DumpProc("StdBits PowerPC code", (void *)code, 128);
+            }
+        }
+    }
 }
 
 static void WriteReport(void)
