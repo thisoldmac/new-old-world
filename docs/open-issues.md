@@ -99,6 +99,38 @@ interface. The renderer's control-plate placeholder stays as the honest
 answer for the blits that remain, but it is no longer what a panel
 mostly shows.
 
+## FIXED by comparison, and the gap that remains: Sherlock's grid and popup (2026-08-06, plan 015 G2 partial)
+
+Rendering Sherlock 2 beside a QMP screendump of the same run — the
+comparison that should have been happening all along — found a real
+defect and left two honest gaps.
+
+**Fixed: the destination's ORIGIN belongs in the join's translation.**
+Sherlock blits every composed element to a CONSTANT `dst` under a
+shifted port origin (the same SetOrigin idiom its channel grid uses), so
+a join computing only `dst - src` collapsed them onto one corner: the
+volume row rendered at the window's top-left instead of inside the list.
+Live state is now tracked per DESTINATION port, and the prologue origin
+is `src - dst + destination origin`. The row now lands under its column
+headers, as on the machine.
+
+**Still missing, both visible in the comparison and neither yet
+explained:**
+
+- **The channel grid does not render at all.** Its geometry is fully
+  derivable (measured: 8x2, 51x46 cells, 55/50 pitch, selection readable
+  from the sprite source rect) but nothing draws it — the top ~110 px of
+  the render is empty where the guest shows sixteen buttons. Deriving it
+  is a P2 opportunity, per docs/render-composition.md; leaving it in the
+  replay would be drift.
+- **The `Custom…` popup and the magnifier button are absent**, and no
+  measurement yet says whether their drawing is missing or merely
+  unplaced.
+
+So Sherlock's TEXT is complete and its LAYOUT is now right for
+everything that draws; what is absent is absent, and the render no
+longer claims otherwise.
+
 ## MEASURED: the ring is the limit, and one cycle now drains a whole one (2026-08-06, plan 015 G1)
 
 ~12 KB/s into a 64 KiB ring under active repaint is about five seconds
