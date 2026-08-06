@@ -5,6 +5,13 @@
 #     scripts/bake-ext-image
 #     NOW_WIRE_PORT=5311 scripts/bake-ext-image     # pick your own ports
 #
+# From a worktree OUTSIDE the TimBotTu tree (agents often work in
+# /private/tmp, because a deep worktree path overflows the 104-byte UNIX
+# socket cap), two things do not come for free: `.env.lab` is gitignored
+# and must be copied in, and `NOW_LAB_ROOT` must name the TimBotTu clone —
+# spin-up-ppc finds the emulator instruments by walking UP, and there is
+# nothing above /private/tmp. Both fail loudly rather than baking nothing.
+#
 # THE ORACLE IS A FILE ON DISK: ~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2
 # is what every Mirror sweep clones, so the resident code under test is
 # whatever was baked into THAT image — not whatever this checkout last
