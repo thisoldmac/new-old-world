@@ -191,7 +191,7 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 
 PPC handles 39 inbound types; NOW-68K handles 23. **That count
 understates the difference** — see the next two sections, where two of
-these rows open into 41 command verbs and 14 hardware probes.
+these rows open into 42 command verbs and 14 hardware probes.
 
 (An earlier version of this file said 33 for the PowerPC guest and was
 wrong: the number had been hand-counted. It is derived now, and that is
@@ -211,7 +211,7 @@ hides most of what a machine can be asked — the hardware, network, RAM
 and ROM facts do not have message types of their own. They live behind
 `gestalt` and `census`, one row each above and a whole subsystem below.
 
-The registry is `x-commands` in the contract: **41 verbs.** Sixteen of
+The registry is `x-commands` in the contract: **42 verbs.** Sixteen of
 them landed on 2026-07-31 and are grouped at the foot of the table; the
 Dialog Manager act joined that group on 2026-08-03: the
 act plane, the reference layer that mints what it addresses, two verbs
@@ -255,6 +255,7 @@ number here has been found wrong by re-deriving it.
 | `put` | send a file from the guest | console only | ✅ |
 | `cancel` | stop the transfer in flight, either way | via UI / `file.cancel` | ✅ |
 | `putstat` | transfer diagnostics | ✅ | ❌ |
+| `wirestat` | how long this Mac takes to NOTICE a request | ✅ | ❌ |
 | `observe` | walk the elements on screen, minting a reference for each | ✅ | ❌ |
 | `axtree` | the same walk, to look at rather than to act on | ✅ | ❌ |
 | `axsnap` | who is front, and how many references are live | ✅ | ❌ |
@@ -326,16 +327,16 @@ produced the first live sighting of the sampler's own stated limit — a
 backgrounded and its event passes never saw the change. See
 [open-issues.md](open-issues.md).
 
-**PPC serves 38 of 41.** `put` is console-only there and `cancel` is
+**PPC serves 39 of 42.** `put` is console-only there and `cancel` is
 not a verb at all, both deliberately: the host reaches those
 capabilities through the `file.*` families and that guest's own
 Workshop. `shotdiag` is the third, and the newest: it diagnoses a raw
 framebuffer walk the PowerPC guest does not have.
 
-**NOW-68K serves 13 of 41** — `help`, `ls`, `sw`, `census`, `put`,
+**NOW-68K serves 13 of 42** — `help`, `ls`, `sw`, `census`, `put`,
 `cancel`, `vprobe`, `screenshot`, `shotdiag`, `ps`, `launch`, `quit`,
-`front`. The twenty-eight it does not: `gestalt`, `catsearch`, `tail`,
-`reveal`, `vers`, `putstat`, `key`, `net`, `mirror`, `hide`, the eleven of the
+`front`. The twenty-nine it does not: `gestalt`, `catsearch`, `tail`,
+`reveal`, `vers`, `putstat`, `wirestat`, `key`, `net`, `mirror`, `hide`, the eleven of the
 act plane and the reference layer, the six registered on 2026-07-31 —
 `activate`, `actselftest`, `mouseloc`, `script`, `aesend`, `qdtrace` —
 and `transitions`.
@@ -681,7 +682,15 @@ catch, is [source-text-gates.md](source-text-gates.md). It is the reason
 this file's own future gate should be planned as a bounded check with its
 blind spots written down rather than as a guarantee.
 
-Last re-derived: **2026-08-05**, on `claude/transitions-arg-key`, by
+Last re-derived: **2026-08-06**, on `claude/wire-latency`, by running the
+commands at the foot while adding `wirestat`. The counts are **42 / 39 /
+13**: `wirestat` is the new verb, PowerPC-only, and the three the
+PowerPC guest still does not serve are unchanged (`put`, `cancel`,
+`shotdiag`). Nothing else had drifted. The contract declaration was NOT
+written first for this one - `CommandParityTests` caught it, which is
+the gate working and is also worth recording as the mistake it was.
+
+The derivation before that: **2026-08-05**, on `claude/transitions-arg-key`, by
 running all three commands at the foot while fixing two `transitions`
 defects. **The counts were correct: 41 / 38 / 13**, and nothing on
 either side had drifted — the first derivation in four not to find an
