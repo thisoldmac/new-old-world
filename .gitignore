@@ -32,6 +32,20 @@ run/
 # Python bytecode from the asset generators in assets/.
 __pycache__/
 
+# The extracted Platinum asset pack: Apple's own icons, cursors, patterns
+# and NFNT strikes, pulled off a local OS 9 image. It is a DEPENDENCY of
+# proper rendering, not repository content — 1,154 files and 5 MB of
+# somebody else's bitmaps, which reached git as a side effect of wiring
+# the pack up rather than as a decision.
+#
+# It is regenerable, which is what makes this workable: run
+# tools/extract-assets-offline against your own image and it lands right
+# here. MirrorKitUI's `AssetPack` resolves it at run time and says so
+# loudly when it cannot, so an absent pack degrades honestly instead of
+# drawing generic art as though it were the guest's own.
+# docs/asset-pack.md is the whole story.
+mirror/host/MirrorKit/Sources/MirrorKitUI/Resources/
+
 # xcodebuild default output when the app is built from the command line
 # rather than Xcode, which uses DerivedData.
 now-host/build/

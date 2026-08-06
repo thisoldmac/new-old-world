@@ -1,0 +1,333 @@
+#!/usr/bin/env python3
+"""The capture fixtures' shape, size and provenance — one tool.
+
+    tools/fixture-store compact  [--check] [DIR]
+    tools/fixture-store prune    [--check] [--apply] [DIR]
+    tools/fixture-store manifest [--check] [DIR]
+
+A qdtrace drain fixture is a LIVE capture off a guest. It is the best
+gate this project has — the two halves meeting on real bytes — and it
+is also the reason `now-host/Tests/HostTests/Fixtures` reached 9.5 MB
+and 706,249 lines. The three subcommands attack that in the order of
+increasing risk, and none of them may lose a byte of meaning.
+
+**compact** is lossless and mechanical. `tools/fidelity-sweep.py` wrote
+`json.dump(..., indent=1)`, so every op spent ~17 lines saying what fits
+on one. Re-emitting the same object with the envelope readable and one
+op per line changes no value, no key and no order: `json.load` of the
+before and the after compare equal, which `--check` asserts. It is a
+94% line cut for zero risk, and one op per line keeps the file
+greppable and diffable — a single 1 MB line would not be.
+
+**prune** answers "is there dead weight in these captures?" — and on
+2026-08-06 the answer was **no**, which is the point of running it
+rather than assuming.
+
+It does NOT search for "the ops a test happens to assert on". A fixture
+trimmed to its assertions stops being a capture and starts being a
+mock, and a mock cannot exhibit the defect it was recorded for. It
+computes REACHABILITY instead: an op can only affect what the mirror
+composes if it draws into a port that reaches the window under test,
+directly or through a chain of `blitsrc` joins. A port that never
+reaches it is dead by construction — another application's offscreen
+work that happened to be in the ring buffer — and dropping it is
+provable rather than lucky. The window under test is read out of the
+Swift suite, not restated here, because a fixture pruned against the
+wrong window is a fixture pruned to nothing.
+
+The measurement: **39,017 ops in, 38,983 out. 0.09%.** The captures
+carry one to three ports each and every one of them reaches the window,
+because the sweep arms per application and the ring holds only that
+application's drawing. The bulk is not junk, it is repaint passes: the
+same panel drawn two or three times because `displayEpoch` advances per
+ARM and not per pass — which is itself the finding
+`qdtrace-drain-sweep-sound` exists to pin, and cannot be trimmed away
+without deleting it.
+
+So this stays as a GUARD, not a cleanup. The next capture may be taken
+with more of the machine awake, and this says so before it lands.
+`--apply` is required to write; without it every subcommand reports.
+
+**manifest** records path, sha256, size, op count and how each fixture
+identifies itself, for every fixture in git. A capture without
+provenance is a claim about an unidentified machine, so a fixture
+carrying neither a drain's `provenance` block nor a scene's
+`source`/`capturedAt` fails the check outright. Nine scene fixtures
+carry the second and are flagged `provenanceIsWeak`: `source: peek` and
+a unix timestamp name a capture SHAPE, not a build or a VM, so they are
+recorded as the thin claim they are rather than counted as provenance.
+"""
+
+import argparse
+import hashlib
+import json
+import os
+import sys
+
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_DIR = os.path.join(HERE, "now-host/Tests/HostTests/Fixtures")
+MANIFEST = os.path.join(HERE, "now-host/Tests/HostTests/Fixtures/MANIFEST.json")
+
+
+def fixtures(directory):
+    for name in sorted(os.listdir(directory)):
+        if name.endswith(".json") and name != "MANIFEST.json":
+            yield os.path.join(directory, name)
+
+
+def render(doc):
+    """The house format: envelope readable, one op per line.
+
+    Everything except `ops` is emitted with indent=1 exactly as the
+    sweep wrote it, so a provenance block still reads as a block. `ops`
+    becomes one compact object per line — the line count follows the
+    number of ops, which is the honest measure of a capture's size.
+    """
+    ops = doc.get("ops")
+    if not isinstance(ops, list):
+        return None      # not a drain; the caller leaves it alone
+    # Render the whole document normally with a sentinel standing in for
+    # `ops`, then substitute — that keeps key order and the envelope's
+    # own nesting exactly as json.dumps would write it, rather than
+    # trying to re-assemble the braces by hand.
+    sentinel = "OPS"
+    text = json.dumps({k: (sentinel if k == "ops" else v)
+                       for k, v in doc.items()}, indent=1)
+    body = ("[\n%s\n ]" % ",\n".join(
+        "  " + json.dumps(o, separators=(",", ":")) for o in ops)
+        if ops else "[]")
+    return text.replace('"%s"' % sentinel, body) + "\n"
+
+
+def cmd_compact(args):
+    changed, before_l, after_l, before_b, after_b = [], 0, 0, 0, 0
+    for path in fixtures(args.dir):
+        raw = open(path, "rb").read()
+        doc = json.loads(raw)
+        text = render(doc)
+        # A scene fixture is not a drain and is left exactly as written:
+        # the format below is about op lists, and reformatting the
+        # already-compact scene files would only make them bigger.
+        if text is None:
+            continue
+        out = text.encode()
+        # Lossless or nothing: the value must survive the reformat.
+        if json.loads(out) != doc:
+            sys.exit("FAIL: %s did not survive the reformat" % path)
+        before_b += len(raw)
+        after_b += len(out)
+        before_l += raw.count(b"\n")
+        after_l += out.count(b"\n")
+        if out != raw:
+            changed.append(path)
+            if args.apply:
+                open(path, "wb").write(out)
+    print("compact: %d/%d files, lines %d -> %d, bytes %d -> %d"
+          % (len(changed), len(list(fixtures(args.dir))),
+             before_l, after_l, before_b, after_b))
+    if changed and not args.apply:
+        for p in changed[:10]:
+            print("  would rewrite %s" % os.path.basename(p))
+        if args.check:
+            sys.exit("FAIL: fixtures are not in the house format "
+                     "(tools/fixture-store compact --apply)")
+    return 0
+
+
+def ports_reaching(ops, window):
+    """Every port whose drawing can reach `window`.
+
+    A window's own port reaches it. A `blitsrc` names the source port a
+    following `bits` copies from, so the source reaches whatever the
+    destination reaches — transitively, because a compositing
+    application builds a world out of other worlds. The relation is
+    computed backwards over the whole op list until it stops growing,
+    which is cheap (a handful of passes over a few thousand ops) and
+    does not depend on the order joins happen to appear in.
+    """
+    reach = {window}
+    edges = []
+    pending_src = None
+    for op in ops:
+        kind = op.get("op")
+        if kind == "blitsrc":
+            pending_src = op.get("srcPort")
+        elif kind == "bits":
+            if pending_src:
+                edges.append((pending_src, op.get("port")))
+            pending_src = None
+    grew = True
+    while grew:
+        grew = False
+        for src, dst in edges:
+            if dst in reach and src not in reach:
+                reach.add(src)
+                grew = True
+    return reach
+
+
+def prune_doc(doc, window):
+    """Drop ops on ports that cannot reach the window under test.
+
+    World lifecycle ops (`worldborn` / `worlddied`) for a surviving port
+    are kept whatever their own port field says: they are the record of
+    the world existing, and the composer reads them to know a buffer's
+    geometry. Nothing else is special-cased — if a port reaches the
+    window it stays whole, and if it does not it goes.
+    """
+    ops = doc["ops"]
+    reach = ports_reaching(ops, window)
+    kept = []
+    for op in ops:
+        port = op.get("port")
+        world = op.get("world")
+        if port in reach or (world and world in reach):
+            kept.append(op)
+    out = dict(doc)
+    out["ops"] = kept
+    out["records"] = len(kept)
+    prov = dict(out.get("provenance") or {})
+    prov["pruned"] = ("unreachable ports dropped by tools/fixture-store "
+                      "prune; %d of %d ops kept" % (len(kept), len(ops)))
+    out["provenance"] = prov
+    return out, len(ops), len(kept)
+
+
+def windows_under_test():
+    """The window address each fixture is composed at, read out of the
+    Swift suite rather than restated here — a second copy of this table
+    would drift, and a fixture pruned against the wrong window is a
+    fixture pruned to nothing."""
+    import re
+    found = {}
+    for name in ("NOWMirrorContentCoverageTests.swift",
+                 "DrawnCellGridTests.swift",
+                 "NOWMirrorContentPlaneTests.swift"):
+        path = os.path.join(HERE, "now-host/Tests/HostTests", name)
+        if not os.path.exists(path):
+            continue
+        text = open(path).read()
+        for m in re.finditer(
+                r'"(qdtrace-drain-[a-z0-9-]+)"[^)]{0,120}?0x([0-9a-fA-F]{8})',
+                text, re.S):
+            found.setdefault(m.group(1), set()).add(
+                "0x" + m.group(2).lower())
+    return found
+
+
+def cmd_prune(args):
+    table = windows_under_test()
+    total_before = total_after = 0
+    rows = []
+    for path in fixtures(args.dir):
+        name = os.path.basename(path)[:-5]
+        doc = json.loads(open(path).read())
+        if "ops" not in doc or name not in table:
+            continue
+        addrs = table[name]
+        if len(addrs) != 1:
+            rows.append((name, "SKIP: composed at %d windows" % len(addrs)))
+            continue
+        window = next(iter(addrs))
+        out, before, after = prune_doc(doc, window)
+        total_before += before
+        total_after += after
+        rows.append((name, "%d -> %d ops (%.0f%%)"
+                     % (before, after, 100.0 * after / max(before, 1))))
+        if args.apply:
+            open(path, "wb").write(render(out).encode())
+    for n, r in rows:
+        print("  %-45s %s" % (n, r))
+    print("prune: %d -> %d ops%s"
+          % (total_before, total_after, "" if args.apply else " (dry run)"))
+    return 0
+
+
+def sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 16), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def cmd_manifest(args):
+    entries = []
+    missing = []
+    thin = []
+    for path in fixtures(args.dir):
+        doc = json.loads(open(path).read())
+        # A drain carries a `provenance` block; a scene fixture predates
+        # it and identifies itself with `source` + `capturedAt`. Either
+        # answers "which machine, which build, when" — neither does not,
+        # and that is what fails.
+        prov = doc.get("provenance")
+        if prov is None:
+            prov = {k: doc[k] for k in ("source", "capturedAt", "version")
+                    if k in doc} or None
+        rel = os.path.relpath(path, HERE)
+        if prov is None:
+            missing.append(rel)
+            continue
+        # "Which machine" is only answered by a build hash and a VM
+        # name. `source: peek` and a unix timestamp identify a shape of
+        # capture, not a machine — so those are recorded as weak rather
+        # than quietly counted as provenance.
+        weak = not (prov.get("build") and prov.get("vm"))
+        if weak:
+            thin.append(rel)
+        entries.append({
+            "path": rel,
+            "sha256": sha256(path),
+            "bytes": os.path.getsize(path),
+            "ops": len(doc["ops"]) if isinstance(doc.get("ops"), list) else None,
+            "provenanceIsWeak": weak or None,
+            "provenance": prov,
+        })
+    if missing:
+        for m in missing:
+            print("  NO PROVENANCE: %s" % m)
+        sys.exit("FAIL: a capture without provenance is a claim about an "
+                 "unidentified machine")
+    if thin:
+        print("  %d fixture(s) identify a capture SHAPE but not a machine "
+              "(no build/vm): %s" % (len(thin), ", ".join(
+                  os.path.basename(t) for t in thin)))
+    manifest = {
+        "note": "Every fixture in git, with its sha256 and how it "
+                "identifies the machine it came off. Derived - run "
+                "tools/fixture-store manifest --apply, do not hand-edit. "
+                "provenanceIsWeak marks a fixture that names a capture "
+                "shape but no build or VM. See docs/fixture-bulk.md.",
+        "fixtures": entries,
+    }
+    text = json.dumps(manifest, indent=1) + "\n"
+    if args.apply:
+        open(MANIFEST, "w").write(text)
+        print("wrote %s (%d fixtures)" % (MANIFEST, len(entries)))
+    elif args.check:
+        if not os.path.exists(MANIFEST) or open(MANIFEST).read() != text:
+            sys.exit("FAIL: MANIFEST.json is stale "
+                     "(tools/fixture-store manifest --apply)")
+        print("manifest: current (%d fixtures)" % len(entries))
+    else:
+        print("manifest: %d fixtures, all with provenance" % len(entries))
+    return 0
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    sub = p.add_subparsers(dest="cmd", required=True)
+    for name, fn in (("compact", cmd_compact), ("prune", cmd_prune),
+                     ("manifest", cmd_manifest)):
+        s = sub.add_parser(name)
+        s.add_argument("dir", nargs="?", default=DEFAULT_DIR)
+        s.add_argument("--apply", action="store_true")
+        s.add_argument("--check", action="store_true")
+        s.set_defaults(fn=fn)
+    args = p.parse_args()
+    return args.fn(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
