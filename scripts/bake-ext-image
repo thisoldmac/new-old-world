@@ -168,21 +168,31 @@ fi
 
 echo
 echo "== bake: quit the applications and let the guest shut ITSELF down =="
-# shutdown-guest.py quits the front application first and then launches the
-# staged applet, which calls the Shutdown Manager. It waits for the QEMU
-# process to exit on its own. If it will not go, we stop here with the VM
-# intact rather than reaching for `quit` — see rule 4.
+# --wire makes the Finder's own Special > Shut Down the primary route,
+# with the staged applet as the fallback. That order is not a preference:
+# the applet's ShutDwnPower is the path that produced three oracles whose
+# volume was still marked mounted, and the Finder's is the one measured to
+# power the machine off for real. If neither goes, we stop here with the
+# VM intact rather than reaching for `quit` — see rule 4.
 python3 "$NOW/tools/shutdown-guest.py" "$QMP" --port "$ANCHOR" \
-    --timeout "${NOW_SHUTDOWN_WAIT:-180}" || {
+    --wire "$WIRE" --timeout "${NOW_SHUTDOWN_WAIT:-180}" || {
         echo "clean shutdown FAILED; VM left running at $QMP, nothing installed." >&2
         echo "  Do not fall back to a QMP quit: the volume would be dirty and the" >&2
         echo "  resident's writes may never have reached the qcow2." >&2
         exit 1
     }
 SHUTDOWN=guest-clean
+SHUTDOWN_PATH="${NOW_SHUTDOWN_PATH:-finder-menuact-then-applet}"
 
 echo
-echo "== bake: qemu-img check =="
+echo "== bake: qemu-img check — the CONTAINER, and only the container =="
+# Kept, but demoted. It validates the qcow2 wrapper and knows nothing at
+# all about the Macintosh filesystem inside it. Three bakes on 2026-08-06
+# passed this and were installed as the oracle with the volume still
+# marked mounted, so every clone opened with Disk First Aid. The receipts
+# said "qemuImgCheck: clean" and that was TRUE — it was simply an answer
+# to a different question. A check adjacent to the question is not the
+# question.
 CHECK="$RUN/qemu-img-check.txt"
 if ! qemu-img check "$DISK" > "$CHECK" 2>&1; then
     cat "$CHECK"
@@ -194,6 +204,20 @@ grep -q "No errors were found" "$CHECK" || {
     echo "qemu-img check did not say 'No errors were found'; nothing installed." >&2
     exit 1
 }
+
+echo
+echo "== bake: is the VOLUME cleanly unmounted? — the actual question =="
+# The Mac wrote the answer down itself: HFS's "volume unmounted" attribute
+# bit, which is the very flag the startup check reads before offering Disk
+# First Aid. Ask the volume rather than the container.
+if ! python3 "$NOW/tools/volclean.py" "$DISK"; then
+    echo "the volume is DIRTY; nothing installed, candidate left at $DISK." >&2
+    echo "  The guest reported a clean shutdown and the container checks out," >&2
+    echo "  so the shutdown STARTED and did not finish unmounting. Do not" >&2
+    echo "  install this: every clone of it would open in Disk First Aid." >&2
+    exit 1
+fi
+VOLUME_CLEAN=clean
 
 echo
 echo "== bake: preserve the old image, install the new one =="
@@ -213,10 +237,11 @@ echo
 echo "== bake: the receipt =="
 RECEIPT="$RUN/receipt.json"
 python3 - "$RECEIPT" "$NOW" "$STAGE" "$SHA" "$BYTES" "$BAK" "$SHUTDOWN" \
-        "$MIRROR_JSON" "$WANT_BUILD" "$WANT_SOURCE" <<'PY'
+        "$MIRROR_JSON" "$WANT_BUILD" "$WANT_SOURCE" "$VOLUME_CLEAN" \
+        "$SHUTDOWN_PATH" <<'PY'
 import json, subprocess, sys, time, os
 (out, now, image, sha, size, bak, shutdown, mirror_json,
- build, source) = sys.argv[1:11]
+ build, source, volume_clean, shutdown_path) = sys.argv[1:13]
 def git(*a):
     return subprocess.run(["git", "-C", now, *a], capture_output=True,
                           text=True).stdout.strip()
@@ -235,7 +260,13 @@ json.dump({
     "imageBytes": int(size),
     "previousImage": os.path.basename(bak),
     "qemuImgCheck": "clean",
+    # The container check and the FILESYSTEM check are separate fields on
+    # purpose: the first cannot stand in for the second, and three
+    # receipts on 2026-08-06 read as proof of a clean volume because
+    # nothing on them distinguished the two.
+    "volumeClean": volume_clean,
     "shutdown": shutdown,
+    "shutdownPath": shutdown_path,
     "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
     "commit": git("rev-parse", "HEAD"),
 }, open(out, "w"), indent=2)

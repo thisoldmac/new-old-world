@@ -17,7 +17,26 @@ not have that verb, so it stops with "the agent refused the script verb"
 and leaves the machine up. Measured 2026-08-05; its `hello` lists 24
 tools and `script` is not among them.
 
-HOW THIS ONE ASKS. A classic Mac shuts down from inside, so NOW stages a
+HOW THIS ONE ASKS. Two routes, and the order matters.
+
+  1. THE FINDER'S OWN Special > Shut Down, given `--wire <port>`. This is
+     the only route MEASURED to leave a clean volume (2026-08-06): the
+     machine powers off, QEMU exits by itself within ten seconds, and
+     tools/volclean.py reads the HFS "volume unmounted" bit as set. NOW's
+     act plane answers the Finder's own MenuSelect, so no menu is drawn
+     and nothing is clicked. `menuact` REQUIRES serialHi/serialLo from
+     the scene's front process - a menu bar belongs to one exact process
+     and the guest refuses rather than guess - and a probe that omitted
+     them and did not read the reply is why this route spent a day
+     recorded as impossible.
+  2. THE STAGED APPLET, the fallback, for a guest with no act plane. It
+     calls ShutDwnPower and nothing else. It reliably STARTS a shutdown;
+     what it does not do is finish one. Three images preserved after it -
+     including two waited out to full disk quiet - had the volume still
+     marked mounted, so every clone opened in Disk First Aid. Prefer
+     route 1, and check any image you keep with tools/volclean.py.
+
+For route 2 a classic Mac shuts down from inside, so NOW stages a
 small application that does nothing but call the Shutdown Manager
 (tools/guest-shutdown, staged by tools/stage-ext.py) and this launches it
 through the worker's `launch` verb. Every route that goes through the
@@ -49,6 +68,7 @@ import argparse
 import json
 import os
 import socket
+import struct
 import sys
 import time
 
@@ -156,6 +176,156 @@ def wait_for_disk_quiet(sock_path, disk, settle=8.0, cap=120.0):
             f"quiet - quitting anyway, and this image should be checked")
 
 
+# ---------------------------------------------------------------------
+# The Finder's own Special > Shut Down, over NOW's wire.
+#
+# This is not a nicety. It is a DIFFERENT SHUTDOWN from the applet's:
+# the Finder sends quit AppleEvents to every running application and then
+# lets the Shutdown Manager finish, and on mac99 that sequence reaches the
+# power manager - QEMU exits by itself, which is the machine really
+# powering off. The applet's bare ShutDwnPower does not get there, and an
+# image preserved after it has its HFS "volume unmounted" bit still clear.
+# ---------------------------------------------------------------------
+
+CONTROL, END = 0, 1
+
+
+def _frame(payload):
+    return struct.pack(">BBHI", CONTROL, END, 0, len(payload)) + payload
+
+
+class _Wire:
+    """One dialling guest. The guest DIALS, so we listen."""
+
+    def __init__(self, port, wait):
+        srv = socket.socket()
+        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        srv.bind(("127.0.0.1", port))
+        srv.listen(1)
+        srv.settimeout(wait)
+        self.srv = srv
+        self.c, _ = srv.accept()
+        self.c.settimeout(90)
+        self.buf = b""
+        self.id = 900
+        self.read()                       # the guest's hello
+        self.send({"type": "hello", "contract": 1, "side": "host",
+                   "version": "0.0", "name": "shutdown"})
+
+    def send(self, msg):
+        self.c.sendall(_frame(json.dumps(msg).encode()))
+
+    def read(self):
+        while True:
+            if len(self.buf) >= 8:
+                _, _, _, n = struct.unpack(">BBHI", self.buf[:8])
+                if len(self.buf) >= 8 + n:
+                    ch, p = self.buf[0], self.buf[8:8 + n]
+                    self.buf = self.buf[8 + n:]
+                    return ch, p
+            d = self.c.recv(65536)
+            if not d:
+                raise EOFError("the guest hung up")
+            self.buf += d
+
+    def command(self, name, args=None, timeout=60):
+        self.id += 1
+        msg = {"type": "command.request", "id": self.id, "name": name}
+        if args:
+            msg["args"] = args
+        self.send(msg)
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            ch, p = self.read()
+            if ch != CONTROL:
+                continue
+            r = json.loads(p.decode("utf-8", "replace"))
+            if r.get("id") == self.id:
+                return r
+        raise TimeoutError(f"{name} never answered")
+
+    def scene(self):
+        self.id += 1
+        self.send({"type": "scene.request", "id": self.id})
+        doc = b""
+        while True:
+            ch, p = self.read()
+            if ch == CONTROL and json.loads(
+                    p.decode("utf-8", "replace")).get("type") == "scene.end":
+                return json.loads(doc.decode("utf-8", "replace"))
+            if ch != CONTROL:
+                doc += p
+
+
+def shut_down_through_the_finder(sock_path, port, timeout):
+    """0 if QEMU exited on its own; non-zero (and the VM untouched) if not."""
+    try:
+        w = _Wire(port, wait=min(timeout, 300))
+    except (OSError, socket.timeout) as exc:
+        print(f"  no guest dialled port {port} ({exc})", file=sys.stderr)
+        return 1
+    try:
+        w.command("front", {"target": "Finder"})
+        time.sleep(3)
+        w.scene()          # the first scene claims the planes
+        time.sleep(3)
+        scene = w.scene()
+        bar = scene.get("menubar") or {}
+        if bar.get("app") != "Finder":
+            print(f"  the menu bar belongs to {bar.get('app')!r}, not the "
+                  f"Finder", file=sys.stderr)
+            return 1
+        special = next((m for m in bar.get("menus", [])
+                        if (m.get("title") or "").strip().lower()
+                        == "special"), None)
+        item = next((i for i in (special or {}).get("items", [])
+                     if "shut down" in (i.get("title") or "").lower()), None)
+        if item is None:
+            print("  no Special > Shut Down in the Finder's menu bar",
+                  file=sys.stderr)
+            return 1
+        # REQUIRED, and the reason this route was written off once: a menu
+        # bar belongs to one exact process, so menuact refuses without the
+        # serial rather than acting on whichever application is front now.
+        front = next(p for p in scene.get("processes", []) if p.get("front"))
+        hi, lo = (int(x) for x in front["psn"].split("."))
+        print(f"  Finder Special({special['id']}) item {item['index']} "
+              f"{item.get('title', '').strip()!r}, psn {hi}.{lo}")
+        reply = w.command("menuact", {"menu": special["id"],
+                                      "item": item["index"],
+                                      "titleLeft": special["left"],
+                                      "serialHi": hi, "serialLo": lo},
+                          timeout=45)
+        # READ THE REPLY. A refusal here is the finding; throwing it away
+        # is how this route was declared impossible while working.
+        if not reply.get("ok"):
+            print(f"  the guest REFUSED the act: {json.dumps(reply)}",
+                  file=sys.stderr)
+            return 1
+    except (OSError, EOFError, TimeoutError, KeyError, StopIteration,
+            ValueError) as exc:
+        # A hang-up right after the act is the machine going down, not a
+        # failure - fall through to the wait, which is the real oracle.
+        print(f"  (wire ended: {exc!r}) - waiting to see if it powers off")
+    finally:
+        try:
+            w.c.close()
+            w.srv.close()
+        except OSError:
+            pass
+
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if not qmp_alive(sock_path):
+            print(f"  the guest powered OFF and QEMU exited on its own "
+                  f"({int(time.time() - t0)}s) - the real thing, not a quit")
+            return 0
+        time.sleep(2)
+    print(f"  QEMU still resident {timeout}s after Shut Down",
+          file=sys.stderr)
+    return 1
+
+
 def quit_a_shut_down_machine(sock_path):
     """QMP `quit` on a guest that has ALREADY unmounted its volume.
 
@@ -226,6 +396,12 @@ def main():
                     help="seconds to wait for QEMU to exit (default 120)")
     ap.add_argument("--applet", default=f"{DEV}:{APPLET}",
                     help="HFS path of the staged shutdown applet")
+    ap.add_argument("--wire", type=int, default=None,
+                    help="NOW's wire port. Given it, the PRIMARY route is "
+                         "the Finder's own Special > Shut Down, which is "
+                         "the only one measured to leave a clean volume. "
+                         "The applet remains the fallback for a machine "
+                         "with no act plane.")
     ap.add_argument("--disk", default=None,
                     help="the VM's disk image, watched for the writes that "
                          "outlast the worker; defaults to session.qcow2 "
@@ -236,6 +412,26 @@ def main():
         print(f"nothing answering QMP at {a.sock}; no machine to shut down",
               file=sys.stderr)
         return 1
+
+    # THE FINDER FIRST, when the caller can give us NOW's wire. Measured
+    # 2026-08-06 and it is the only route that has produced a verifiably
+    # clean volume: the machine powered off, QEMU exited on its own within
+    # ten seconds, and tools/volclean.py reads the volume as cleanly
+    # unmounted. The applet's ShutDwnPower, waited out to full disk quiet,
+    # does not - three images preserved that way opened in Disk First Aid.
+    #
+    # Why it took so long to find: menuact REQUIRES serialHi/serialLo,
+    # because a menu bar belongs to one exact process and the guest will
+    # not guess. An earlier probe omitted them AND sent the act
+    # fire-and-forget, so the guest's `bad-request` went into the void and
+    # the run was written up as "the Finder cannot be driven to shut
+    # down". It could. Nothing had asked it properly. Read the reply.
+    if a.wire:
+        rc = shut_down_through_the_finder(a.sock, a.wire, a.timeout)
+        if rc == 0:
+            return 0
+        print("  the Finder route did not take; falling back to the applet",
+              file=sys.stderr)
 
     h = Harness(host="127.0.0.1", port=a.port, expect_backing={"worker"})
 
