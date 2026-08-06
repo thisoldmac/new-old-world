@@ -129,17 +129,7 @@ public enum AssetPack {
 
         func accept(_ url: URL, via: String) -> Status? {
             searched.append(url.path)
-            var isDir: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: url.path,
-                                                 isDirectory: &isDir),
-                  isDir.boolValue else { return nil }
-            // A directory alone is not a pack. `manifest.json` is what
-            // the extractor writes last, so its presence is the signal
-            // that an extraction finished rather than died halfway.
-            let manifest = url.appendingPathComponent("manifest.json")
-            guard FileManager.default.fileExists(atPath: manifest.path)
-            else { return nil }
-            return .resolved(url, via: via)
+            return isPack(url) ? .resolved(url, via: via) : nil
         }
 
         // 1. Explicit. Whoever set it meant it, so a bad value is an
@@ -195,6 +185,28 @@ public enum AssetPack {
              + "\(environmentKey), or run tools/extract-assets-offline. "
              + "Looked in: \(searched.joined(separator: ", "))")
         return .absent(searched: searched)
+    }
+
+    /// Whether a directory is a finished pack.
+    ///
+    /// A directory alone is not one. `manifest.json` is what the
+    /// extractor writes LAST, so its presence is the signal that an
+    /// extraction finished rather than died halfway — and a
+    /// half-extracted directory resolving as a present pack would be the
+    /// silent-degradation case wearing a different hat: most of the art
+    /// missing, and nothing saying so.
+    ///
+    /// Separate from `resolve()` so it can be tested against a directory
+    /// made on the spot. `status` is memoised on purpose, so a test that
+    /// could only read it would be testing one machine's filesystem
+    /// rather than the rule.
+    static func isPack(_ url: URL) -> Bool {
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path,
+                                             isDirectory: &isDir),
+              isDir.boolValue else { return false }
+        return FileManager.default.fileExists(
+            atPath: url.appendingPathComponent("manifest.json").path)
     }
 
     private static func warn(_ message: String) {

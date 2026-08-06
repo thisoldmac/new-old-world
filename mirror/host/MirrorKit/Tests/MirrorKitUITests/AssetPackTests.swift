@@ -38,10 +38,20 @@ final class AssetPackTests: XCTestCase {
             at: tmp.appendingPathComponent("icons"),
             withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
-        // Resolution is memoised on purpose, so this exercises the rule
-        // rather than the cached answer: the manifest decides.
-        XCTAssertFalse(FileManager.default.fileExists(
-            atPath: tmp.appendingPathComponent("manifest.json").path))
+
+        XCTAssertFalse(AssetPack.isPack(tmp),
+                       "a directory with art but no manifest resolved as "
+                           + "a finished pack")
+        // The manifest is the only difference between the two verdicts.
+        try Data("{}".utf8).write(
+            to: tmp.appendingPathComponent("manifest.json"))
+        XCTAssertTrue(AssetPack.isPack(tmp))
+
+        // And a file is not a directory, however it is named.
+        let file = tmp.appendingPathComponent("manifest.json")
+        XCTAssertFalse(AssetPack.isPack(file))
+        XCTAssertFalse(AssetPack.isPack(
+            tmp.appendingPathComponent("nope")))
     }
 
     /// The banner exists exactly when the pack does not, and it must
