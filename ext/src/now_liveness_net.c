@@ -99,17 +99,37 @@ enum {
     kDrainBuffLen = 256,
 
     /* Ticks between pings, in units of the vehicle's own 5 s cadence.
-       SIX, so ~30 s - and that number is not chosen here. The contract
+       FIVE, so ~30 s - the countdown is spent on the tick that reaches
+       zero AND on the one that sends, so this is one less than the six
+       an off-by-one reading suggests. Measured on the emulator at 35 s
+       with six, which is the reason the number is written down here
+       rather than reasoned about. And it is not chosen here: The contract
        says the guest pings after 30 s of wire silence and the host
        declares a guest gone after ~75 s; both are stated where both
        sides read them, and a third independently-chosen number is the
        shape of defect AGENTS.md names as this project's costliest. */
-    kPingEveryTicks = 6,
+    kPingEveryTicks = 5,
     /* Ticks to wait after a refused dial. The host may simply not be up
        yet - a Macintosh booted before the Mac it talks to is the normal
        case, not an error - so this backs off and tries again rather than
        latching a failure nobody can clear without a reboot. */
-    kRetryTicks = 12
+    kRetryTicks = 12,
+    /* How many event-loop passes may try to create the stream.
+       ------------------------------------------------------------------
+       This wants to be ONE - a synchronous Toolbox call in the hot path
+       of every application on the machine is the shape of defect this
+       component exists to avoid, and the driver probe beside it is
+       deliberately once-only for exactly that reason.
+       It is not one because of WHEN this first runs: the jGNE filter's
+       first pass is somewhere in the booting Finder, and a stack that has
+       answered `PBOpen` may still not be ready to create a stream. A
+       single failed attempt there would latch "this machine has no
+       transport" for the whole boot, and it would latch it in the one
+       field a person reads to decide whether MacTCP works here.
+       Five is small enough to stay a rounding error - five calls in the
+       life of a boot, not five per pass - and only a FAILED attempt is
+       ever retried. */
+    kPrepareTries = 5
 };
 
 /* What is in flight on the control param block, so the reap knows what
@@ -123,6 +143,7 @@ enum {
 };
 
 static short gRefNum;                 /* the .IPP driver, or 0 */
+static short gPrepareTries;
 static StreamPtr gStream;
 static Boolean gStreamReady;
 static Boolean gConnected;
@@ -474,12 +495,14 @@ void now_liveness_net_prepare(NowPeekTable *table, short refnum)
 {
     OSErr err;
 
-    if (table == NULL || gStreamReady) {
+    if (table == NULL || gStreamReady || gPrepareTries >= kPrepareTries) {
         return;
     }
+    ++gPrepareTries;
     table->channel_format = kNowPeekChannelFormatV1;
     if (refnum == 0) {
         table->channel_state = kNowPeekChannelNoTransport;
+        gPrepareTries = kPrepareTries;    /* no driver: nothing to retry */
         return;
     }
     gRefNum = refnum;
@@ -497,6 +520,10 @@ void now_liveness_net_prepare(NowPeekTable *table, short refnum)
     err = PBControlSync((ParmBlkPtr)&gCtlPB);
     table->channel_result = (NowPeekI32)err;
     if (err != noErr) {
+        /* Reported as no-transport on every failed attempt, including
+           the ones that will be retried: a reader between passes must
+           see the machine's current answer, not an optimistic one held
+           back in case a later try does better. */
         table->channel_state = kNowPeekChannelNoTransport;
         return;
     }

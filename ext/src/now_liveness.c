@@ -30,30 +30,27 @@
  * application-level probe stops answering; this counter must keep
  * climbing. That is the premise of the whole plane, made checkable.
  *
- * WHAT IT DOES NOT DO, AND WHY - THE FINDING THAT STOPPED IT.
- * The plan had this task dial the host itself over Open Transport, so a
- * starved machine could answer for itself. **It cannot, in this
- * component, and the reason is structural rather than a matter of
- * effort.** Linking OT's own client glue into the extension fails at
- * link time on `__SLM11FuncDispatch`, `__SLM11VTableDispatch`,
- * `__SLM11ConstructorDispatch`, `__SLM11ExtblDispatch` and
- * `__gOTClientRecord`: OT's 68K libraries are CFM/Shared Library Manager
- * fragments, and this extension is a FLAT 68K code resource
- * (`-Wl,--mac-flat`). The two linkage models do not meet. Tried against
- * four library combinations, including the application flavour; the
- * fewest unresolved symbols was fifteen.
+ * WHERE THE JOURNEY WENT. This file is the VEHICLE and deliberately
+ * stays only that; the channel it carries is `now_liveness_net.c`, its
+ * own translation unit. The split is not tidiness - this file's recovery
+ * procedure is "put a `return` at the top of now_liveness_install", and
+ * a transport mixed in here would make the one thing that must stay easy
+ * to switch off harder to find.
  *
- * That is the metal question of plan 012 § C answered at link time
- * instead of on a PowerBook, which is much the cheaper place to find it.
- * The routes left are all design forks and none is a small edit: reach
- * TCP through the Device Manager instead (MacTCP's `.ipp` driver, which
- * a flat 68K INIT can drive with PBControl and completion routines, and
- * which OS 9's OT still provides for exactly these callers); or ship the
- * resident as a CFM fragment or an OT module rather than an INIT. That
- * choice is Michelle's and is recorded in docs/open-issues.md.
+ * The route was NOT the one the plan expected, and the reason is worth
+ * keeping where somebody will read it before proposing it again.
+ * **Open Transport is impossible from this component**, and the answer
+ * came from the linker rather than from a machine: OT's 68K libraries
+ * are CFM/Shared Library Manager fragments and this extension is a FLAT
+ * 68K code resource (`-Wl,--mac-flat`), so they do not link
+ * (`__SLM11FuncDispatch`, `__SLM11VTableDispatch`,
+ * `__SLM11ConstructorDispatch`, `__SLM11ExtblDispatch`,
+ * `__gOTClientRecord`; four library combinations, fifteen unresolved
+ * symbols at best). That is plan 012 § C's metal question answered at
+ * link time instead of on a PowerBook, much the cheaper place.
  *
- * So this file is the vehicle, honestly short of the journey - and the
- * vehicle is the part the premise depends on.
+ * MacTCP's `.IPP` driver is the route that survives, because the Device
+ * Manager is TRAPS: `PBOpen` and `PBControl` need no library at all.
  */
 
 #include <Devices.h>
@@ -221,7 +218,18 @@ void now_liveness_probe_transport(NowPeekTable *table)
        reads this contract does not share. */
     static const unsigned char kIPPName[5] = { 4, '.', 'I', 'P', 'P' };
 
-    if (gTransportProbed || table == NULL) return;
+    if (table == NULL) return;
+    if (gTransportProbed) {
+        /* The PROBE is once, whatever it answers. Creating the stream is
+           not, and the difference is which question each asks: whether
+           this machine has the driver at all cannot change during a boot,
+           whereas whether the stack is ready to hand out a stream can and
+           does - the first pass through here is somewhere in the booting
+           Finder. now_liveness_net_prepare() returns immediately once it
+           has succeeded or spent its small allowance. */
+        now_liveness_net_prepare(table, gTransportRefNum);
+        return;
+    }
     gTransportProbed = true;             /* once, whatever it answers */
 
     table->transport_format = kNowPeekTransportFormatV1;
