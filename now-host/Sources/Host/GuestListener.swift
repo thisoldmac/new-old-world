@@ -605,6 +605,44 @@ final class GuestListener: ObservableObject {
                    line: line, completion: completion)
     }
 
+    /// **The bound, and why it is this one.**
+    ///
+    /// Until 2026-08-06 this armed no watchdog at all: every other
+    /// request family here dies of silence and this one, the family the
+    /// Mirror's whole content join and both Finder complements travel on,
+    /// waited on a foreign machine forever. An unbounded wait on a
+    /// cooperatively scheduled Macintosh is a defect on its own terms
+    /// (plan 014 §B) — a wedged guest left a completion stored and the
+    /// caller busy with nothing to report.
+    ///
+    /// Twenty seconds, and deliberately not shorter. The guest's own
+    /// script ceiling is `kNowScriptDefaultMs` — **15 s**
+    /// (`input_args.h`) — and the host does not override it, so anything
+    /// below that would truncate scripts the guest is still working on
+    /// and is about to answer with a typed refusal that says why. This
+    /// bound therefore fires only when the guest has gone silent
+    /// altogether, which is the failure it exists for, and it matches the
+    /// 20 s the other answer-bearing families here already use.
+    ///
+    /// It is not the fix for the slow cycle and was never proposed as
+    /// one: measured live on 2026-08-06, one ordinary cycle's guest
+    /// round-trips were 5–12 ms for the content join, ~340 ms for the
+    /// visibility census and 1.3–1.6 s for a Finder roster read. Three of
+    /// those at any workable bound still exceeds the plane lease. Taking
+    /// them out of the cycle is the fix; this stops a silent machine
+    /// holding a completion.
+    ///
+    /// A timeout is COUNTED as well as reported, because a cycle that
+    /// gave up has to be able to say so — see `commandTimeouts`.
+    static let commandWatchdogSeconds: TimeInterval = 20
+
+    /// How many `command.request`s have died of silence on this listener.
+    /// Monotonic for the listener's life; a caller that wants "did THIS
+    /// cycle give up" samples it either side and reports the difference
+    /// (`MirrorCycleClocks.guestTimeouts`). A truncation nobody can see
+    /// in the record is the thing this whole plan exists to stop.
+    private(set) var commandTimeouts = 0
+
     func runCommand(_ name: String, typed args: [String: CommandArg]?,
                     line: String? = nil,
                     completion: @escaping (CommandResult) -> Void) {
@@ -618,6 +656,20 @@ final class GuestListener: ObservableObject {
         let id = nextCommandId
         nextCommandId += 1
         pendingCommands[id] = completion
+        armWatchdog(id: id, seconds: Self.commandWatchdogSeconds) {
+            [weak self] reason in
+            guard let self,
+                  let waiting = self.pendingCommands
+                      .removeValue(forKey: id) else { return }
+            self.commandTimeouts += 1
+            /* The guest's own vocabulary is not available here — it never
+               said anything — so the code is `timeout` and the message is
+               the listener's account of the silence, the same pair every
+               other family reports. */
+            waiting(CommandResult(id: id, ok: false, output: nil,
+                                  error: .init(code: "timeout",
+                                               message: reason)))
+        }
         session.sendCommand(CommandRequest(id: id, name: name, args: args,
                                            line: line))
     }
@@ -636,8 +688,17 @@ final class GuestListener: ObservableObject {
     /// guest that answers in one shot are indistinguishable from here, which
     /// is what lets the guest gain streaming without this changing.
     ///
-    /// The watchdog is 60s rather than the 15s a command.request gets. The
-    /// reason is `vprobe`: it measures for ~12 seconds by design, and on a
+    /// The watchdog is 60s rather than the 20s a `command.request` gets
+    /// (`commandWatchdogSeconds`). The number in this sentence used to be
+    /// 15, and it described nothing: `command.request` armed no watchdog
+    /// at all until 2026-08-06, and the 15 s belonged to `file.list`,
+    /// `process.list` and `process.drive` — a different message family
+    /// that happens to draw its ids from the same sequence. A comment
+    /// that names a bound the code does not have is worse than none: it
+    /// is what let an unbounded wait sit here unnoticed.
+    ///
+    /// The reason for 60 is `vprobe`: it measures for ~12 seconds by
+    /// design, and on a
     /// PowerBook that is a floor rather than a typical case. A console is
     /// also the one surface where a human is watching and can see that
     /// nothing has come back, so a generous bound costs less here than a
@@ -2151,6 +2212,11 @@ final class GuestListener: ObservableObject {
 
     private func resolveCommand(_ result: CommandResult) {
         if let completion = pendingCommands.removeValue(forKey: result.id) {
+            /* Cleared BEFORE the completion runs. The completion is where
+               the next cycle's work starts, and a watchdog left armed on
+               a settled id is one `nextCommandId` wrap away from expiring
+               somebody else's request. */
+            clearWatchdog(result.id)
             completion(result)
         }
     }

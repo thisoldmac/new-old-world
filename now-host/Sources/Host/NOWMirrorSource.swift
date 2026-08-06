@@ -365,6 +365,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// `MirrorCycleClocks.ownWork`.
     private var cycleOwnWork: TimeInterval?
     private var cycleContentJoin: TimeInterval?
+    /// The listener's lifetime timeout count as this cycle ASKED. The
+    /// difference at publish is how many guest commands this cycle gave
+    /// up on, and it goes on the line: `command.request` gained a bound
+    /// on 2026-08-06 and a bound nobody can see in the record is just a
+    /// truncation (`MirrorCycleClocks.guestTimeouts`).
+    private var cycleTimeoutsAtStart = 0
     private var lastCyclePublishedAt: Date?
     private var mutationWaiting = false
     private var sceneGuestKey: GuestKey?
@@ -511,6 +517,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                       interaction: planes.contains(.interaction))
         cycleDelivered = nil
         cycleOutcome = "no-reply"
+        cycleTimeoutsAtStart = listener.commandTimeouts
         cycleIO.requestScene(
             pinnedGuestKey, planes.contains(.semantics),
             planes.contains(.interaction)) { [weak self] result in
@@ -580,20 +587,34 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// Menu retention already had this vocabulary one line away
     /// (`Apple menu expected-stale`); windows now share it.
     private func observationPhrase(_ count: Int) -> String {
-        Self.observationPhrase(count, replica: shadowEngine?.replica)
+        Self.observationPhrase(count, replica: shadowEngine?.replica,
+                               coverage: shadowEngine?.snapshot?
+                                   .scene.meta.coverage)
     }
 
     /// Nonisolated because it reads only its arguments: the phrase is a
     /// pure function of a replica, and a test that had to hop the main
     /// actor to check a string would be testing the hop.
-    nonisolated static func observationPhrase(_ count: Int,
-                                              replica: MirrorReplica?)
-        -> String {
+    ///
+    /// `awaiting icons` joins it for the same reason `expected-stale` did.
+    /// The scene cycle no longer waits for the Finder roster, so a frame
+    /// can be drawn for a layout whose icons have not been read — and a
+    /// folder window with no items in it reads as an empty folder rather
+    /// than as a question nobody has asked yet. The claim is already in
+    /// `meta.coverage`; this is it in the one line a person reads.
+    nonisolated static func observationPhrase(
+        _ count: Int, replica: MirrorReplica?,
+        coverage: [MirrorKit.Scene.CoverageClaim]? = nil) -> String {
         let stale = replica?.windows.values.filter {
             $0.freshness == .expectedStale
         }.count ?? 0
-        guard stale > 0 else { return "\(count) windows" }
-        return "\(count) windows, \(stale) expected-stale"
+        let iconsPending = coverage?.contains {
+            $0.scope == "finder-items" && $0.status != .complete
+        } ?? false
+        var phrase = "\(count) windows"
+        if stale > 0 { phrase += ", \(stale) expected-stale" }
+        if iconsPending { phrase += ", awaiting icons" }
+        return phrase
     }
 
     private func accept(_ delivery: GuestListener.SceneDelivery,
@@ -785,7 +806,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             },
             phases: cyclePhases,
             ownWork: cycleOwnWork,
-            contentJoin: cycleContentJoin))
+            contentJoin: cycleContentJoin,
+            guestTimeouts: listener.commandTimeouts - cycleTimeoutsAtStart))
         lastCyclePublishedAt = published
         cycleAsked = nil
         cyclePhases = nil
@@ -815,6 +837,16 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// carries no `items` key rather than an empty one, because "no
     /// icons here" and "nobody looked" are different facts.
     private func withIcons(_ scene: MirrorKit.Scene) -> MirrorKit.Scene {
+        /* **Said on the way past, because this is the one place that
+           knows.** The cycle no longer waits for the roster, so a frame
+           can be published for a layout whose icons have not been read —
+           and a folder window drawn with no items is indistinguishable
+           from an empty folder. The layout key is exactly the question
+           "was this roster read for what is on screen", so the claim is
+           made from it rather than from a flag somebody has to remember
+           to clear. */
+        shadowEngine?.noteFinderItems(
+            complete: Self.iconLayoutKey(scene) == iconLayout)
         var out = scene
         if let desktop = icons[Self.desktopKey] { out.desktopItems = desktop }
         out.windows = out.windows.map { win in

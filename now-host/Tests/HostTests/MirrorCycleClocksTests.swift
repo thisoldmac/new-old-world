@@ -155,6 +155,51 @@ final class MirrorCycleClocksTests: XCTestCase {
         XCTAssertEqual(clocks.total, 30, accuracy: 0.001)
     }
 
+    /// **A bound that is not reported is a truncation.**
+    ///
+    /// `command.request` gained a watchdog on 2026-08-06. Before it, a
+    /// wedged Macintosh held a completion forever; after it, a cycle can
+    /// publish a scene whose content join was abandoned — and if the line
+    /// does not say so, the two look identical in the record and the
+    /// second is the more dangerous, because it looks like an answer.
+    func testACycleThatGaveUpOnAGuestCommandSaysSoOnItsLine() {
+        var clocks = MirrorCycleClocks(
+            requestedAt: Date(timeIntervalSince1970: 0),
+            deliveredAt: Date(timeIntervalSince1970: 1),
+            publishedAt: Date(timeIntervalSince1970: 22),
+            idleBefore: 0, semantics: true, interaction: true,
+            outcome: "ok", windows: 3, elements: 12)
+        clocks.guestTimeouts = 1
+        XCTAssertTrue(clocks.baselineLine.contains("timeouts=1"),
+                      clocks.baselineLine)
+
+        /* And absent on the ordinary cycle, for the reason `phfaults` is:
+           a field that reads 0 on every line of a 43,000-cycle log stops
+           being seen by the time it matters. */
+        clocks.guestTimeouts = 0
+        XCTAssertFalse(clocks.baselineLine.contains("timeouts="),
+                       clocks.baselineLine)
+    }
+
+    /// **The bound must sit ABOVE the guest's own script ceiling.**
+    ///
+    /// The guest answers a script it cannot finish with a typed refusal at
+    /// `kNowScriptDefaultMs` — 15 s (`now-guest-ppc/src/input/input_args.h`)
+    /// — and the host never overrides it. A host watchdog below that would
+    /// fire on scripts the guest is still working on and is about to
+    /// explain, replacing the machine's own reason with a bare "timeout":
+    /// the host would be manufacturing the silence it exists to detect.
+    ///
+    /// This is the mutation guard for the tempting change. Plan 014 §B
+    /// contemplates "three seconds"; three seconds would break this, and
+    /// it should.
+    func testTheCommandWatchdogOutlastsTheGuestsOwnScriptCeiling() {
+        XCTAssertGreaterThan(
+            GuestListener.commandWatchdogSeconds, 15,
+            "a bound at or under the guest's kNowScriptDefaultMs turns the "
+            + "guest's typed refusal into a host timeout with no reason")
+    }
+
     func testTimelineIsBounded() {
         let timeline = MirrorCycleTimeline(log: { _ in })
         for _ in 0..<(MirrorCycleTimeline.capacity + 3) {

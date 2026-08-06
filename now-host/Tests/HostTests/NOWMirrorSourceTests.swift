@@ -317,6 +317,104 @@ final class NOWMirrorSourceTests: XCTestCase {
                       record.baselineLine)
     }
 
+    /// **A REGRESSION BOUND ON THE CYCLE, in time and on a real
+    /// document.**
+    ///
+    /// `MirrorDecodeCostTests` bounds this host's own CPU — 4 ms for the
+    /// six-window scene — which is the half that was never the problem.
+    /// This bounds the thing a person actually experiences: delivery to
+    /// publish, with complements that take as long as the Finder really
+    /// does. Each override sleeps 400 ms, which is what the live census
+    /// measured at on a HEALTHY guest on 2026-08-06 (`dc_vis_ms` median
+    /// 338, p90 401); the roster measured 1.3–1.6 s.
+    ///
+    /// The bound is 1 s against ~800 ms of deliberate Finder time, so it
+    /// passes only while the complements are OUTSIDE the cycle. Put them
+    /// back inside and it fails by the whole of that 800 ms — and on a
+    /// starved machine, by the twelve seconds that started this.
+    func testTheCycleIsBoundedEvenWhenTheFinderIsSlow() throws {
+        let key = GuestKey.synthetic("cycle-bound")
+        let harness = MirrorCycleHarness(activeKey: key)
+        let slow: @MainActor (MirrorKit.Scene, Int, @escaping () -> Void)
+            -> Void = { _, _, completion in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                completion()
+            }
+        }
+        let source = NOWMirrorSource(
+            listener: testListener(), engineRegistry: MirrorStateEngineRegistry(),
+            act: testAct(testListener()), interval: 3_600,
+            finderRefreshOverride: slow, visibilityRefreshOverride: slow,
+            cycleIO: harness.io)
+
+        source.start()
+        harness.completeScene(0, with: .success(try fixtureDelivery(for: key)))
+        let joined = try XCTUnwrap(harness.joinedScenes.first)
+        harness.joinCompletions[0](.init(scene: joined, sentence: "joined"))
+
+        /* Waited for rather than read straight off, so the assertion that
+           fails is the one about TIME. Reading it immediately would fail
+           with "nil" the moment the complements moved back inside the
+           cycle, which is a true failure that names the wrong thing. */
+        let deadline = Date().addingTimeInterval(3)
+        while source.cycleTimeline.records.isEmpty, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        let record = try XCTUnwrap(
+            source.cycleTimeline.records.first,
+            "no cycle was recorded within three seconds of the scene being "
+            + "published — the cycle is waiting on the Finder again")
+        XCTAssertLessThan(
+            record.total, 1.0,
+            "the cycle took \(Int(record.total * 1000))ms with 800ms of "
+            + "Finder work beside it. A cycle that waits for the Finder "
+            + "lapses the guest's ten-second plane lease, and every act "
+            + "needing an anchor then refuses element-not-found.")
+    }
+
+    /// **A frame published without its icons must SAY so.**
+    ///
+    /// The cycle no longer waits for the Finder roster, which means a
+    /// folder window can be drawn before anyone has asked what is in it —
+    /// and a window with no items reads as an empty folder rather than as
+    /// an unanswered question. `meta.coverage` already carries typed
+    /// status with a reason for `process-visibility`; `finder-items` uses
+    /// the same words, and the status line says it in English.
+    func testAFramePublishedBeforeItsIconsSaysTheyAreMissing() throws {
+        let key = GuestKey.synthetic("icons-pending")
+        let harness = MirrorCycleHarness(activeKey: key)
+        let registry = MirrorStateEngineRegistry()
+        let source = NOWMirrorSource(
+            listener: testListener(), engineRegistry: registry,
+            act: testAct(testListener()), interval: 3_600,
+            /* Never answers: the roster is still in flight, which is the
+               state this claim exists to describe. */
+            finderRefreshOverride: { _, _, _ in },
+            visibilityRefreshOverride: { _, _, _ in },
+            cycleIO: harness.io)
+
+        source.start()
+        harness.completeScene(0, with: .success(try fixtureDelivery(for: key)))
+        let joined = try XCTUnwrap(harness.joinedScenes.first)
+        harness.joinCompletions[0](.init(scene: joined, sentence: "joined"))
+
+        let coverage = try XCTUnwrap(
+            registry.engine(for: key).snapshot?.scene.meta.coverage)
+        let claim = try XCTUnwrap(
+            coverage.first { $0.scope == "finder-items" },
+            "a frame published without its roster carries no claim at all; "
+            + "absence with nothing said about it is the omission this "
+            + "plan calls a fast lie")
+        XCTAssertNotEqual(claim.status, .complete)
+        XCTAssertNotNil(claim.reason,
+                        "a typed status with no reason cannot be acted on")
+        XCTAssertTrue(
+            NOWMirrorSource.observationPhrase(1, replica: nil,
+                                              coverage: coverage)
+                .contains("awaiting icons"),
+            "the one line a person reads has to carry it too")
+    }
+
     /// The status line is the only thing a person driving the Mirror
     /// reads, so it says when a gesture is waiting on the lane rather than
     /// on the Macintosh — and stays quiet when nothing is.

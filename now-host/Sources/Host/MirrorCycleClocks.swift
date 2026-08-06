@@ -62,6 +62,20 @@ struct MirrorCycleClocks: Equatable {
     var ownWork: TimeInterval?
     var contentJoin: TimeInterval?
 
+    /// **How many guest commands this cycle GAVE UP on.**
+    ///
+    /// `command.request` gained a watchdog on 2026-08-06
+    /// (`GuestListener.commandWatchdogSeconds`), and a bound that is not
+    /// reported is a silent truncation: the cycle would publish a scene
+    /// missing its content join and nothing anywhere would say the answer
+    /// had been abandoned rather than arrived. So a cycle that expired a
+    /// command says `timeouts=N` on its own line.
+    ///
+    /// Emitted only when non-zero, for the reason `phfaults` is: a field
+    /// that reads `0` on every line of a log teaches a reader to stop
+    /// seeing it, and this one has to be visible the one time it appears.
+    var guestTimeouts: Int?
+
     var request: TimeInterval? {
         deliveredAt.map { $0.timeIntervalSince(requestedAt) }
     }
@@ -94,7 +108,7 @@ struct MirrorCycleClocks: Equatable {
             ("total_ms", Self.ms(total)),
             ("windows", windows.map(String.init) ?? "-"),
             ("elements", elements.map(String.init) ?? "-"),
-        ] + Self.phaseFields(phases))
+        ] + Self.timeoutField(guestTimeouts) + Self.phaseFields(phases))
     }
 
     /// **The phases go HERE and not on the ambient status line.**
@@ -123,6 +137,14 @@ struct MirrorCycleClocks: Equatable {
         if let own { fields.append(("dc_own_ms", ms(own))) }
         if let content { fields.append(("dc_content_ms", ms(content))) }
         return fields
+    }
+
+    /// See `guestTimeouts`. Zero is not written: it is the ordinary case,
+    /// and a field present on every line stops being read by the time it
+    /// matters.
+    private static func timeoutField(_ count: Int?) -> [(String, String)] {
+        guard let count, count > 0 else { return [] }
+        return [("timeouts", String(count))]
     }
 
     private static func phaseFields(_ phases: NOWSceneDocument.Phases?)
