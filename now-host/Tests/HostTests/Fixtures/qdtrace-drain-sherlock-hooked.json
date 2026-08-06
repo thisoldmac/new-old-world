@@ -8702,5 +8702,13 @@
  "torn": false,
  "busy": false,
  "lostBytes": 0,
- "dropped": 0
+ "dropped": 0,
+ "provenance": {
+  "build": "2a8e72e1aa72",
+  "vm": "nowvm-ke04",
+  "run": "e3-sherlock continuous drain",
+  "capturedAt": "2026-08-06",
+  "guest": "mac99/OS 9.1 emulated",
+  "note": "live capture; build is the guest hello's src hash. A fixture without provenance is a claim about an unidentified machine."
+ }
 }

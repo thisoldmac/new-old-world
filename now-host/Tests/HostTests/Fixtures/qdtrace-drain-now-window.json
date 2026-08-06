@@ -4529,5 +4529,13 @@
  "torn": false,
  "busy": false,
  "lostBytes": 0,
- "dropped": 0
+ "dropped": 0,
+ "provenance": {
+  "build": "9d3e081ecc09",
+  "vm": "nowvm-kd02",
+  "run": "gwprobe now-window",
+  "capturedAt": "2026-08-06",
+  "guest": "mac99/OS 9.1 emulated",
+  "note": "live capture; build is the guest hello's src hash. A fixture without provenance is a claim about an unidentified machine."
+ }
 }
