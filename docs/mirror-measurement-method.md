@@ -1,8 +1,10 @@
-# How Mirror learned to measure things
+# How this project learned to measure things
 
-**Date:** 2026-07-31 · **Status:** recorded knowledge, carried from the
-parked upstream project `timbottu/mirror`, mostly dug out of its 55 KB
-`STATUS.md`.
+**Date:** 2026-07-31, extended 2026-08-06 · **Status:** recorded
+knowledge. Rules 1–12 are **inherited** from the parked upstream project
+`timbottu/mirror`, mostly dug out of its 55 KB `STATUS.md`. Rules 13–18
+are **NOW's own**, paid for in a single night, and they are the reason
+this file no longer carries Mirror's name in its title.
 
 Upstream retracted at least six findings during its life. Every
 retraction traced to one of the rules below, and every rule was written
@@ -177,10 +179,129 @@ an error. Upstream's version counter moved four times, and one of those
 moves existed only because two parallel branches both numbered their new
 operation `5`.
 
+## The rules NOW paid for itself
+
+Rules 1–12 came in from outside. **13–18 were bought here**, all of them
+on the night of 2026-08-05/06, and all of them the same shape: the
+instrument was wrong, and the wrong answer it gave was plausible enough
+to act on. Between them they cost this project four wrong conclusions,
+two of which were written down and had to be retracted.
+
+They are collected here rather than left in the five ledger entries they
+came from, because the Macintosh detail in each one is the least
+transferable part. Every entry names its evidence in
+[open-issues.md](open-issues.md).
+
+### 13. A differential that moves two variables measures neither
+
+The scene walk cost ~1.1 s with NOW frontmost and almost nothing with a
+foreign app in front, so the menu bar — the obvious thing that changes
+when NOW comes forward — was named as the cost. It is **0.1%** of it.
+
+The two conditions differed by window **activation** as well, and that
+was the variable that mattered: `FindControl` costs **~2.7 µs per point
+on an inactive window and ~240 µs on an active one** — two orders of
+magnitude, and the ledger states that pair three times — because an
+inactive window declines the hit test before doing any work. The real
+cost was a `FindControl` grid sweep of NOW's own window, ~95% of the
+total.
+
+A differential is only an experiment if you can name every difference
+between its two arms. If you cannot, it is an anecdote with numbers.
+
+### 14. A clock cannot measure anything shorter than its own tick
+
+`latencyMs` was derived from `TickCount()` — 60 Hz, **~16.6 ms of
+quantisation** — and was read for years as though it were a measurement.
+Anything faster than a tick reads as 0 or as 16, and *two separate wrong
+answers* were argued from those numbers before anyone asked what the
+clock's resolution was.
+
+The repair was not a better estimate, it was a better instrument:
+`meta.phases`, in **microseconds**, permanently in the message rather
+than bolted on for one investigation. A measurement you have to re-add
+each time you become suspicious is a measurement you will not take when
+it matters.
+
+State a clock's resolution beside its first number, always.
+
+### 15. A bracket is named for what it was for, and contains what it contains
+
+`decode_ms` does not measure decoding. It brackets publish-minus-deliver,
+and inside that bracket the host waits on `joinContent` and **two paged
+AppleScript round trips into the guest's Finder, run every cycle**. Our
+own CPU work in there is **4 ms**.
+
+The number is therefore a measurement of the Finder's mood, not of this
+side's code: **12 windows cost 714 ms; 3 windows cost 12,559 ms.** The
+count of windows is not the variable — the Finder's responsiveness is.
+
+The name was accurate when the bracket was written. Nothing renamed it
+when the waits moved inside. Check what a timer *encloses* before
+quoting it, not what it is called.
+
+### 16. A check next to the question is not the question
+
+Three stage images were preserved **dirty**, and the two receipts that
+certify any of them called them clean, on the strength of `qemu-img
+check` — the third image was baked by hand and has no receipt at all,
+which is its own kind of gap. That command validates
+the **container** — the qcow2 structure — and has no way to see the
+filesystem inside it. It was adjacent to the question and was mistaken
+for it.
+
+The question is answered by reading the HFS volume's **unmounted bit**
+(`tools/volclean.py`), and the only route that actually sets it is the
+Finder's own Special ▸ Shut Down, driven through `menuact` — which needs
+`serialHi`/`serialLo` to name the process.
+
+When a check passes, say what it would have had to see in order to fail.
+`qemu-img check` could not have failed for this reason.
+
+### 17. An instrument that refuses reports an absence
+
+`FindControl` refuses an **inactive** window. An observer that
+enumerates controls by hit-testing therefore reported **zero controls**
+for any backgrounded window — a clean, confident, entirely false
+absence, and one that had never once been observed as a bug, because
+"the background window has no controls" is not a surprising sentence.
+
+Rule 6's counter technique answers "never entered" versus "entered and
+declined" for our own code. This is the same distinction one layer out:
+**a Toolbox call that declines looks exactly like a world with nothing
+in it.** Foreign windows now retract the control plane instead of
+claiming an empty one — though note that the retraction path is **built
+and not yet observed**, so this rule is better learned than the fix is
+trusted.
+
+### 18. A liveness signal renewed by the traffic it is watching for measures the traffic
+
+Two of the night's defects were one mistake at two layers.
+
+- The peek writer's **heartbeat** was renewed only inside peek calls, so
+  it went stale whenever the host was quiet — it was measuring *wire
+  cadence* and reporting it as *liveness*. This is the whole of the
+  "anchor plane is active and binds nothing" entry. `now_peek_idle()`
+  now renews it once per event-loop pass, which is the thing the
+  heartbeat is actually a claim about.
+- The guest's **dead-link clock** counted wall time, including time the
+  guest was not scheduled at all, and so killed its own session for a
+  silence that was its own. Time you were not running is not time the
+  other side was silent.
+
+A heartbeat must be driven by the condition it asserts, and by nothing
+else. If it is renewed by the peer's traffic, it is a traffic detector
+wearing a heartbeat's name.
+
 ## What this looks like in NOW
 
 NOW already holds the same convictions from its own scars — the contract
 is the source of truth, a test you have not watched fail proves nothing,
-verification is a status and not an adjective. The rules above are the
-same lessons learned on a different machine, and the ones NOW does not
-already have written down are **1, 2, 4, 6 and 11.**
+verification is a status and not an adjective. Rules 1–12 are the same
+lessons learned on a different machine, and the ones NOW did not already
+have written down are **1, 2, 4, 6 and 11.**
+
+Rules 13–18 it now has written down because it made them. The
+transferable core of all six, and the sentence worth carrying out of
+this file: **before believing a number, say what the instrument could
+not have seen.**

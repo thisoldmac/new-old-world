@@ -46,7 +46,7 @@ of who serves what, message by message, with *served* and *proven* kept
 as separate columns.
 
 **The headline gaps:** **a dialog on the Macintosh no longer ends the
-session, and that has now been watched rather than argued.** The machine
+session — demonstrated on an emulator, not argued from the code.** The machine
 is cooperatively scheduled, so an application that blocks starves every
 other one — a Finder alert was measured on 2026-08-05 starving the whole
 guest for over 90 seconds, past the silence window after which the host
@@ -74,33 +74,72 @@ there. [docs/status.md](docs/status.md)
 carries the rest, and [docs/open-issues.md](docs/open-issues.md) is the
 ledger.
 
-**The Mirror got much cheaper on 2026-08-06, and the remaining cost is
-now waiting rather than working.** Measured on an emulated Power Mac
-with the guest's own microsecond clock, which the scene now carries
-permanently as `meta.phases` — before that it reported one
-tick-quantised number that could not see anything under 17 ms, and
-reasoning from it produced two confidently wrong answers in one day. A
-scene walk with NOW frontmost cost ~1.1 s and now costs 3–8 ms: almost
-all of it was a `FindControl` grid sweep of NOW's own window, and an
-application does not have to DISCOVER controls it made — the registry
-that already recorded each control's kind now says which exist. The
-same change fixed a lie: with another application in front, the sweep
-probed 3,724 points, found nothing (`FindControl` refuses an inactive
-window), and the mirror reported NOW's window as EMPTY — an absence it
-had never observed. Idle wire traffic fell about 90% with scene deltas,
-whose baseline is named by a digest of what the consumer actually holds
-rather than by a sequence number, so a drifted host repairs itself on
-the next round trip instead of quietly diverging.
+**The Mirror got much cheaper on 2026-08-06, and the cost that is left
+is on the modern side.** Measured on an emulated Power Mac with the
+guest's own microsecond clock, which the scene now carries permanently
+as `meta.phases` — before that it reported one tick-quantised number
+that could not see anything under 17 ms, and reasoning from it produced
+two confidently wrong answers in one day. A scene walk with NOW
+frontmost cost ~1.1 s and now costs 0.7–1.0 ms in the steady state; the
+focus-change scene fell from 886 ms to 0.7 ms. Almost all of it was a
+`FindControl` grid sweep of NOW's own window, and an application does
+not have to DISCOVER controls it made — the registry that already
+recorded each control's kind now says which exist. A separate lie died
+alongside it: `FindControl` refuses an *inactive* window, so with
+another application in front the sweep probed 3,724 points, found
+nothing, and the mirror reported the window as EMPTY — an absence it had
+never observed. The registry cannot speak for a window this application
+did not make, so a foreign window now **retracts** the control plane
+rather than claiming an empty one — that retraction path is built and
+has not itself been watched run. Idle wire traffic fell about 90% with
+scene deltas, whose baseline is named by a digest of what the consumer
+actually holds rather than by a sequence number, so a drifted host
+repairs itself on the next round trip instead of quietly diverging.
 
-**What that leaves is latency.** A round trip still takes ~115 ms even
-when the answer is a zero-byte "nothing changed", because the guest's
-event loop sleeps up to 100 ms before it notices a request. That is
-under investigation and is the honest headline: the Mirror is no longer
-slow because it does too much, it is slow because it waits. Two other
-things measured the same day and not fixed: a background application
-cannot be armed for content capture AT ALL (nothing can make a process
-pump that is not being scheduled), and every number here is from an
-emulator — a PowerBook 1400c is far slower, and for the wire the
+**The waiting was fixed too, and that moved the bottleneck to the
+host.** A round trip took ~115 ms even when the answer was a zero-byte
+"nothing changed", because the guest's event loop slept up to 100 ms
+before noticing a request. An Open Transport notifier now wakes the
+process when its socket has something to say, taking the round trip to
+~10 ms while **keeping** the idle sleep, so the rest of the Macintosh is
+not starved to make NOW quick. That is tested here and **has not run on
+metal**; `wirestat wake off` disables it if it misbehaves there. What it
+exposes is the host's own cycle: `decode_ms` never measured decoding — it
+brackets publish-minus-deliver, and inside that bracket the host waits
+on content joining plus **two paged AppleScript round trips into the
+guest's Finder, run every cycle**. Our own CPU work in there is 4 ms; 12
+windows measured 714 ms and 3 windows measured 12,559 ms, because the
+variable is the Finder's responsiveness, not the window count. It is a
+priority inversion — optional enrichment stalls the frame, and a stalled
+frame lapses the act plane's lease. Being fixed now, in
+[plan 014](docs/plans/2026-08-06-014-feat-a-frame-that-does-not-wait-for-the-finder-plan.md).
+
+**Acts stop binding when the host's cycle runs long.** The anchor
+plane's OWNER lease is 10 seconds and only a `scene.request` renewed it,
+so a cycle longer than the lease disarmed the planes with nothing said.
+That is the whole of two symptoms that looked like guest bugs: a
+quit-time modal that appeared to be missing, and a Cancel button that
+appeared to refuse. Nothing was taking the planes down; the host had
+stopped asking inside the lease. Renewal now rides any inbound host
+frame, and a scene waits briefly for the arm echo instead of walking
+blind and reporting the blindness as an empty screen.
+
+**The guest's console reported its own successes as failures.** Its
+fallback renderer understood only a reply shape that no verb emits on
+success, so six working verbs printed "command failed"; twelve more
+render correctly but cannot take arguments from the console at all.
+`CommandParityTests` could not catch it, and that is a stated limit of
+the gate: a parity table says a verb is PRESENT, never that it WORKS.
+Two more from the same pass: Apple menu items did nothing, because the
+act dispatched correctly and then fell off the end of a switch with no
+Apple case; and Windows ▸ Workshop timed out for a hidden application,
+because hiding NOW does not move the front process and `SelectWindow`
+shows nothing for a hidden app.
+
+Two things measured the same day and **not** fixed: a background
+application cannot be armed for content capture AT ALL (nothing can make
+a process pump that is not being scheduled), and every number above is
+from an emulator — a PowerBook 1400c is far slower, and for the wire the
 emulator likely understates the win rather than flattering it.
 
 ## Try the modern half
