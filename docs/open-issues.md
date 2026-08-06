@@ -2560,6 +2560,9 @@ The corrected local oracle is
 guest shutdown (the exact QEMU PID exited on its own), and passed `qemu-img
 check` before and after preservation. Its SHA-256 at creation was
 `c466baa9a5455c343908e12197d68e57ffc7f07c140276a90c97a5ae2a137d70`.
+(Re-verified 2026-08-06 with `tools/volclean.py`: its volume really is
+cleanly unmounted, which the three images baked that night were not — see
+the correction below. It is once again the installed oracle.)
 Future extension changes must update and cleanly shut down this stage image
 before a Mirror sweep; merely copying a new INIT into a running clone does not
 change the resident code under test.
@@ -2583,10 +2586,15 @@ The gate is now three pieces, and the sequence a resident change follows:
   `buildFingerprint` equal to the local build's, then a guest-clean
   shutdown (`tools/shutdown-guest.py`, never a QMP `quit`), `qemu-img
   check`, `.bak-YYYYMMDD` of the old image, install, receipt. Any failure
-  installs nothing and leaves the VM up.
+  installs nothing and leaves the VM up. **Plus `tools/volclean.py` since
+  the correction below — the container check was never evidence that the
+  volume inside was unmounted, and three images were installed dirty
+  before anything asked.**
 - `ext/stage-receipts.json` — the repo-tracked receipts. Each bake records
   the source digest, the guest-reported fingerprint, the image sha256, the
-  `qemu-img check` result and that the shutdown was guest-clean.
+  `qemu-img check` result, that the shutdown was guest-clean — and, since
+  the correction below, `volumeClean`, which is the only one of them that
+  answers whether the volume was actually unmounted.
 - `tools/ext-bake-gate`, from `.githooks/pre-commit` — refuses any commit
   staging `ext/` or `contract/peek_table.h` unless the newest receipt is a
   bake of exactly that source. `TBT_DEFER_EXT_BAKE=1` with
@@ -2612,6 +2620,127 @@ MacTCP connection and a sixth plane — capability word 127, not 63 — so the
 image above does not contain that resident. The first commit touching
 `ext/` on a branch carrying it will be refused until `scripts/bake-ext-image`
 runs there, which is exactly the warning nobody got on 3–6 August.
+
+### CORRECTION (2026-08-06): every image baked that night was DIRTY, and the receipts could not have known
+
+Read the three paragraphs above with this attached. **All three images
+baked on 6 August were installed with their HFS volume still marked
+mounted**, so every clone of them opened with "Your computer did not shut
+down properly" and a Disk First Aid pass. Measured with
+`tools/volclean.py`, by sha256, on the files still on disk:
+
+| image | sha256 | volume |
+| --- | --- | --- |
+| `.bak-20260806` — the 3 Aug one, human shutdown | `c466baa9…` | **CLEAN** |
+| hand-run bake | `62be7be4…` | DIRTY |
+| first `bake-ext-image` (caps 63) | `46a51dcd…` | DIRTY |
+| second `bake-ext-image` (caps 127) | `0785871a…` | DIRTY |
+
+The last two are the images the two receipts in `ext/stage-receipts.json`
+certify, matched by their own recorded `imageSha256`. Both receipts say
+`shutdown: guest-clean` and `qemuImgCheck: clean`.
+
+**Both statements are true. Neither is the question.** `qemu-img check`
+validates the qcow2 *container* and knows nothing about the Macintosh
+filesystem inside it, so a volume the Mac will greet with Disk First Aid
+passes it without a word. And the guest really did run its own shutdown
+sequence — the Shutdown Manager quits applications *first* and flushes and
+unmounts volumes *after*, so the anchor worker, an application, falls
+silent while the volume is still being written. The rig then took the
+process away five seconds later. Measured that night: **the disk image
+kept changing for 49 seconds after the worker went quiet.** The sentence
+above, "shut itself down in three seconds", was reporting how fast the rig
+stopped watching.
+
+The general lesson is the durable part, and it is bigger than this rig:
+**a check adjacent to the question reads exactly like an answer to it.**
+Two honest, passing checks sat where a third was needed, and nothing in
+the receipt distinguished them — which is why `volumeClean` is a separate
+field rather than a stricter reading of `qemuImgCheck`.
+
+What changed:
+
+- `tools/volclean.py` asks the volume itself: HFS's "volume unmounted"
+  attribute bit, the very flag the Mac's startup check reads. It follows
+  `drEmbedSigWord` into the embedded volume, because the HFS *wrapper*
+  every OS 8.1+ HFS+ disk carries has its own flag that reads dirty on a
+  perfectly clean machine — checking that one reported the human-verified
+  3 August oracle as dirty, which is how the positive control earned its
+  keep.
+- `scripts/bake-ext-image` runs it and installs **nothing** when the
+  volume is dirty. The container check stays, demoted to what it always
+  was.
+- The receipt gains `volumeClean` and `shutdownPath`;
+  `tools/ext-bake-gate` requires the first. The two existing receipts are
+  corrected in place with `volumeClean: dirty` and the reasoning, and the
+  gate refuses a receipt carrying a correction.
+- `tools/shutdown-guest.py` waits for the **disk** to stop changing rather
+  than for the worker to go quiet. Necessary, and not sufficient: a
+  shutdown waited out to full disk quiet still left the volume dirty.
+
+**The oracle is repaired by restoring, not by re-baking.** The dirty image
+was replaced with `.bak-20260806` (sha `c466baa9…`, verified CLEAN), kept
+as `.bak-20260806-4-dirty`. That is the cheap fix and it is the right one,
+because `scripts/spin-up-ppc` stages the current `ext/` and app into
+whatever clone it makes and cold-boots so the INIT loads — **the resident
+under test comes from the staging, not from the base image.** What a base
+image has to be is *clean* and *furnished* (Rumpus, the anchor worker, the
+folder layout), and that one is both.
+
+Which means the framing higher up this section — "the oracle went stale" —
+was itself imprecise, and the note belongs next to the gate: a bake
+receipt proves that a resident was built, loaded by a cold boot, and
+identified itself over the wire. That is a real and valuable proof, and it
+is the one thing no amount of staging gives you. It does **not** prove
+that a later sweep runs that resident, because staging replaces it anyway,
+and it does not prove the base is clean unless `volumeClean` says so. The
+gate is not weakened here — Michelle asked for it deliberately, and
+"someone cold-booted this resident and it answered" is exactly the check
+that was missing on 3–6 August. It is simply worth writing down that its
+value is the *boot-and-answer*, not the *image*.
+
+### The applet's shutdown does not finish; the Finder's does (2026-08-06)
+
+`tools/guest-shutdown`'s applet calls `ShutDwnPower` and nothing else. It
+reliably *starts* a shutdown. It does not finish one: on mac99 QEMU never
+exits, and every image preserved after it — including ones waited out to
+full disk quiet — has the volume still marked mounted.
+
+**The Finder's own Special > Shut Down does finish it.** Driven through
+the act plane's `menuact`, on a guest booted from the stage image: the
+machine powered off, **QEMU exited on its own within 10 s**, and
+`volclean.py` read the resulting image CLEAN. QEMU exiting by itself is
+the machine really cutting power, which is the thing the applet path never
+achieves — and it matches the one image anybody trusted, the 3 August one
+a human shut down from the Finder.
+
+This route had been recorded as impossible, and *why* is the more useful
+finding. `menuact` **requires `serialHi`/`serialLo`** from the scene's
+front process, because a menu bar belongs to one exact process and the
+guest refuses rather than guess at whichever application happens to be
+front. The probe that wrote the route off omitted them **and** sent the
+act fire-and-forget, so the guest's `bad-request` — a perfectly good
+refusal, naming its own cause — went into the void, and a null reading was
+reported as a property of the mechanism. That is drive-loop rule 2e: a
+null reading needs a positive control before the mechanism is blamed.
+Supplying the serial and reading the reply was the entire fix; the machine
+had been answering correctly all along.
+
+`docs/mirror-knowledge.md` records upstream Mirror finding that
+`ShutDwnStart`, `ShutDwnPower`, Finder Apple Events and embedded OSA all
+failed to power off a mac99 OS 9 guest, and that posted clicks cannot
+reproduce the Finder's held `MenuSelect` gesture — logged there as
+"deferred, not solved". **That is now solved, and by a route upstream did
+not have**: NOW's act plane does not post a click, it answers the
+application's own `MenuSelect`, so the held-gesture problem does not
+arise. `tools/shutdown-guest.py --wire <port>` takes the Finder route
+first and keeps the applet as the fallback for a guest with no act plane;
+`tools/guest-shutdown/probe_shutdown.py` is the bench that established it.
+
+Still unverified: this was watched once, on one guest, on QEMU. Nobody has
+run it on the PowerBook, and the applet fallback has no measurement
+showing it *ever* produces a clean volume — only that it starts a
+shutdown.
 
 ## CYCLE 24 RED BASELINE; FIX BUILT, NOT UX-VERIFIED (2026-08-03)
 
