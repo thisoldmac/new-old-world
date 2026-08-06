@@ -284,6 +284,20 @@
       "provenance": "static",
       "evidence": "docs/local/toolbox-re/app-offscreen-table.txt",
       "at": "2026-08-06T04:26:00-0400"
+    },
+    {
+      "phase": "P5",
+      "claim": "PREDICTION FALSIFIED, and the lesson generalises. I predicted Graphing Calculator would be unhookable because it imports SetStdCProcs. It hooked fine: hits 1, offscreenPorts 1, lastMatch 0x1e8a2d00, and skippedPorts 0 - no port was refused at all. A static import is a CAPABILITY, not a behaviour: importing SetStdCProcs says the binary can install bottlenecks somewhere, not that the port we tried to hook has non-NULL grafProcs. The import table's power to say YES (this app makes GWorlds) does not extend to saying NO about runtime state.",
+      "provenance": "measured",
+      "evidence": "docs/local/toolbox-re/app-offscreen-table.txt",
+      "at": "2026-08-06T04:29:05-0400"
+    },
+    {
+      "phase": "P4",
+      "claim": "Graphing Calculator's WINDOW port draws primitives directly - 11 bits, 4 rrect, 28 line, 1 rgn - so it is a HYBRID: it owns a GWorld and also draws straight to its window. The offscreen port was hooked but emitted nothing during the sampled window, consistent with a composite built before the hook went in (the same ordering that hid the Finder's content until the hook was held across a repaint).",
+      "provenance": "measured",
+      "evidence": "spread-gcalc.json",
+      "at": "2026-08-06T04:29:05-0400"
     }
   ],
   "blockers": [

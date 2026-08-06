@@ -188,11 +188,14 @@ Two patterns worth more than the table:
   resize an offscreen world in place; everyone else must dispose and
   recreate, so any hook on such a world has to be re-established. The
   Finder is not unusual here.
-- **Some applications are unhookable by this plane, by design.** Sherlock 2
-  and Graphing Calculator install their own `grafProcs` via
-  `SetStdCProcs`, and the content plane refuses a port whose `grafProcs`
-  is already non-NULL rather than chain onto procs it knows nothing
-  about. That refusal is now a measured limitation.
+- **A static import is a capability, not a behaviour.** I predicted from
+  this table that Sherlock 2 and Graphing Calculator would be
+  unhookable, since they import `SetStdCProcs` and the content plane
+  refuses a port whose `grafProcs` is already set. **Graphing Calculator
+  hooked fine** — `hits 1`, `offscreenPorts 1`, `skippedPorts 0`, no
+  refusal at all. Importing `SetStdCProcs` says the binary *can* install
+  bottlenecks somewhere, not that the port you want has them. The table
+  is strong evidence for YES and no evidence for NO.
 - **The applications that do NOT composite are already fully visible** to
   a plain window-port hook — their content needs no chase at all.
 
