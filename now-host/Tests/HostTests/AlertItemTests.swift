@@ -75,6 +75,37 @@ final class AlertItemTests: XCTestCase {
             + "longer reproduces the defect these tests exist for")
     }
 
+    /// CONTENT, which is a gate. The alert's whole message was missing from
+    /// the mirror because the guest reported item 4 as an empty
+    /// `staticText`: a DITL carries the resource's template, and Internet
+    /// Explorer had written the real line into the item's HANDLE with
+    /// `SetDialogItemText`. The guest now reads it back (see
+    /// `now-guest-ppc/src/scene/dialog_text.h`); this pins that the document
+    /// carries it and that the renderer draws it.
+    func testTheAlertsMessageCrossesAndIsDrawn() throws {
+        let scene = try alert()
+        let win = try alertWindow(scene)
+        let message = try XCTUnwrap(win.dialogItems?.first { $0.number == 4 })
+
+        XCTAssertEqual(message.semantic.kind, "staticText")
+        XCTAssertEqual(message.title,
+                       "Security failure.  The server reply is invalid.",
+                       "the machine's own screen shows this line; a scene "
+                       + "without it renders an alert with no message in it")
+
+        var silent = scene
+        for w in silent.windows.indices where silent.windows[w].id == win.id {
+            for i in silent.windows[w].dialogItems?.indices ?? (0..<0)
+            where silent.windows[w].dialogItems?[i].number == 4 {
+                silent.windows[w].dialogItems?[i].title = ""
+            }
+        }
+        XCTAssertNotEqual(try RenderShot.png(scene: scene),
+                          try RenderShot.png(scene: silent),
+                          "the message text reached the frame and changed "
+                          + "nothing — it is not being drawn")
+    }
+
     /// FIDELITY. Rendering the alert must be identical to rendering it with
     /// the two user items deleted: whatever the mirror knows about an
     /// application-drawn slot, it is not permission to paint over the button

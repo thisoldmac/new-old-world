@@ -111,6 +111,7 @@ add_application(now-guest-ppc
     src/scene/scene_self.c
     src/workshop/control_kind.c
     src/scene/scene_walk.c
+    src/scene/dialog_text.c
     # The foreign-memory walk, ported from this project's own prototype
     # (timbottu/mirror). Pure parsers plus one Toolbox binding; see
     # src/axwalk/axwalk.h for why its constants are evidence.

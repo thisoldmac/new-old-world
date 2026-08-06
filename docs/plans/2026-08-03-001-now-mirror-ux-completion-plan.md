@@ -94,7 +94,7 @@ The remaining failures share three causes:
 - A sent request is sometimes shown as a successful mutation even when the guest state did not change. Other real mutations remain `outcome-unknown` because the operation has no settlement model.
 - Human and MCP paths do not yet consume one canonical scene and one serialized action broker. Independent pollers or action controls can duplicate cooperative guest work and cross-fire against the guest's single act cell.
 
-Cycle 18 makes these defects visible. Date & Time fields render as scroll bars. A popup renders as a button and invokes the wrong Toolbox part. The Mail alert shows the wrong default button. Background-window activation and Hide Others report success without changing the guest. Text focus works, but the value and selection do not.
+Cycle 18 makes these defects visible. Date & Time fields render as scroll bars. A popup renders as a button and invokes the wrong Toolbox part. The Mail alert shows the wrong default button. *(2026-08-06: that last row understated it and is corrected — an alert rendered the wrong buttonS, which did nothing when clicked, and dropped its message text entirely. Re-observed on Internet Explorer rather than Mail, so it is the alert path. See the acceptance row in U6 and docs/open-issues.md.)* Background-window activation and Hide Others report success without changing the guest. Text focus works, but the value and selection do not.
 
 ## Product Contract
 
@@ -591,7 +591,22 @@ and focused settlement proof.
 **Test scenarios:**
 
 - Date & Time and Appearance fixtures render every label, value, kind, default ring, and focus state.
-- The Mail alert renders its full content and actual default button.
+- An alert renders its full content and actual default button. **Partly
+  done, 2026-08-06, and the recorded row understated it.** Michelle's
+  report was "the wrong buttonS, and they dont work", and Internet
+  Explorer's Error alert — a THIRD application, so this is the alert path
+  and not one app's quirk — showed why: the Dialog Manager's
+  default-outline USER ITEM wraps the button and is declared after it, so
+  the renderer's placeholder hatched over the only button in the alert
+  and the hit tester handed every click to an item with no action. The
+  message text was missing too, because a DITL carries the resource's
+  template while the application had written the line into the item's
+  handle. All three are fixed and captured as
+  `Fixtures/scene-ie-error-alert.json`. What is NOT done: the "actual
+  default button" when the reported default is disabled — `aDefItem` goes
+  stale, the ring is now withheld rather than misplaced, and the
+  authoritative fact is the control's `kControlPushButtonDefaultTag`,
+  which no plane carries yet. Details in docs/open-issues.md.
 - A present-but-unknown control does not become a button or scroll bar.
 - Finder selection changes only when a newer guest snapshot reports it; local pointer state cannot confirm selection.
 - Finder applications, documents, folders, and disks use correct art and remain selectable/openable.

@@ -1,12 +1,6 @@
 {
  "apps": [
   {
-   "front": false,
-   "incarnation": "process-1832a4a9",
-   "name": "New Old World",
-   "psn": "0.29360131"
-  },
-  {
    "error": "ax_oracle_not_found",
    "front": false,
    "incarnation": "process-7b999040",
@@ -56,13 +50,19 @@
    "psn": "0.30736386"
   },
   {
+   "front": false,
+   "incarnation": "process-1235273a",
+   "name": "New Old World",
+   "psn": "0.36765698"
+  },
+  {
    "front": true,
-   "incarnation": "process-91bba06f",
+   "incarnation": "process-399a0923",
    "name": "Internet Explorer",
-   "psn": "0.35520514"
+   "psn": "0.37224449"
   }
  ],
- "capturedAt": 1786032875.0,
+ "capturedAt": 1786034248.0,
  "menubar": {
   "app": "Internet Explorer",
   "menus": [
@@ -920,11 +920,6 @@
     "status": "complete"
    },
    {
-    "owner": "process-1832a4a9",
-    "scope": "windows",
-    "status": "complete"
-   },
-   {
     "owner": "process-7b999040",
     "reason": "not-observed",
     "scope": "windows",
@@ -967,12 +962,17 @@
     "status": "unavailable"
    },
    {
-    "owner": "process-91bba06f",
+    "owner": "process-1235273a",
     "scope": "windows",
     "status": "complete"
    },
    {
-    "owner": "process-91bba06f",
+    "owner": "process-399a0923",
+    "scope": "windows",
+    "status": "complete"
+   },
+   {
+    "owner": "process-399a0923",
     "reason": "bounded",
     "scope": "menubar",
     "status": "partial"
@@ -988,32 +988,25 @@
    "tbt-worker: ax_oracle_not_found",
    "menu items omitted: a menu's item list hit a bound or failed validation, so that menu reports no items rather than some of them"
   ],
-  "latencyMs": 0,
+  "latencyMs": 16,
   "phases": {
    "clockReads": 80,
-   "clockUs": 268,
+   "clockUs": 260,
    "faults": 0,
    "us": {
-    "bind": 418,
-    "controls": 2031,
-    "encode": 1303,
-    "enumerate": 1562,
-    "menubar": 659,
-    "refs": 1563,
-    "semantics": 461,
-    "windows": 2499
+    "bind": 379,
+    "controls": 4211,
+    "encode": 3840,
+    "enumerate": 2239,
+    "menubar": 863,
+    "refs": 2851,
+    "semantics": 438,
+    "windows": 4152
    }
   },
   "plane": "peek anchors: processes, windows, controls, dialog text, and th"
  },
  "processes": [
-  {
-   "front": false,
-   "incarnation": "process-1832a4a9",
-   "name": "New Old World",
-   "psn": "0.29360131",
-   "signature": "NOWo"
-  },
   {
    "front": false,
    "incarnation": "process-7b999040",
@@ -1064,10 +1057,17 @@
    "signature": "TbNW"
   },
   {
+   "front": false,
+   "incarnation": "process-1235273a",
+   "name": "New Old World",
+   "psn": "0.36765698",
+   "signature": "NOWo"
+  },
+  {
    "front": true,
-   "incarnation": "process-91bba06f",
+   "incarnation": "process-399a0923",
    "name": "Internet Explorer",
-   "psn": "0.35520514",
+   "psn": "0.37224449",
    "signature": "MSIE"
   }
  ],
@@ -1075,12 +1075,12 @@
   "h": 600,
   "w": 800
  },
- "seq": 2,
+ "seq": 1,
  "source": "peek",
  "version": 2,
  "windows": [
   {
-   "addr": 506147520,
+   "addr": 506147536,
    "app": "Internet Explorer",
    "controls": [
     {
@@ -1093,7 +1093,7 @@
       "r": 16489,
       "t": 84
      },
-     "ref": "now-element-ca3b169b-50f8-4382-0354-4d99315b5e78",
+     "ref": "now-element-08f5cdea-f45a-4037-e88d-48d8e2464a4d",
      "role": "unknown",
      "semantic": {
       "completeness": "complete",
@@ -1115,7 +1115,7 @@
       "r": 16581,
       "t": 84
      },
-     "ref": "now-element-1d2c7106-3528-3c4b-c22c-900cf9942589",
+     "ref": "now-element-9db1959a-a99f-eb57-f85d-5690a5068d85",
      "role": "unknown",
      "semantic": {
       "completeness": "complete",
@@ -1137,7 +1137,7 @@
       "r": 404,
       "t": 84
      },
-     "ref": "now-element-341d6867-e53a-cc7e-89d5-1715a65188e4",
+     "ref": "now-element-c9770b24-8f1b-09a9-445d-07a607925c43",
      "role": "unknown",
      "semantic": {
       "completeness": "complete",
@@ -1160,7 +1160,7 @@
       "r": 404,
       "t": 84
      },
-     "ref": "now-element-341d6867-e53a-cc7e-89d5-1715a65188e4",
+     "ref": "now-element-c9770b24-8f1b-09a9-445d-07a607925c43",
      "semantic": {
       "action": "press",
       "completeness": "complete",
@@ -1181,7 +1181,7 @@
       "r": 16581,
       "t": 84
      },
-     "ref": "now-element-1d2c7106-3528-3c4b-c22c-900cf9942589",
+     "ref": "now-element-9db1959a-a99f-eb57-f85d-5690a5068d85",
      "semantic": {
       "action": "press",
       "completeness": "complete",
@@ -1202,7 +1202,7 @@
       "r": 16489,
       "t": 84
      },
-     "ref": "now-element-ca3b169b-50f8-4382-0354-4d99315b5e78",
+     "ref": "now-element-08f5cdea-f45a-4037-e88d-48d8e2464a4d",
      "semantic": {
       "action": "press",
       "completeness": "complete",
@@ -1229,7 +1229,7 @@
       "knowledge": "known",
       "provenance": "guest-ditl"
      },
-     "title": "",
+     "title": "Security failure.  The server reply is invalid.",
      "visible": true
     },
     {
@@ -1306,17 +1306,17 @@
     }
    ],
    "front": true,
-   "id": "0.35520514/Error#0",
-   "incarnation": "process-91bba06f/window-1e2b32c0",
+   "id": "0.37224449/Error#0",
+   "incarnation": "process-399a0923/window-1e2b32d0",
    "kind": 2,
-   "psn": "0.35520514",
+   "psn": "0.37224449",
    "rect": {
     "b": 247,
     "l": 191,
     "r": 607,
     "t": 113
    },
-   "ref": "now-window-3ed38161-cd03-b9ec-851d-eaafd34422f2",
+   "ref": "now-window-a48e9f6f-58a7-b03a-0afe-dbd5fa8b43d0",
    "text": {
     "active": false,
     "content": ""
@@ -1326,7 +1326,7 @@
    "z": 0
   },
   {
-   "addr": 504547896,
+   "addr": 504557272,
    "app": "Internet Explorer",
    "controls": [
     {
@@ -1339,7 +1339,7 @@
       "r": 0,
       "t": 0
      },
-     "ref": "now-element-e45ef761-0478-cc64-c7e0-839b647617a6",
+     "ref": "now-element-8866f5e2-b942-e99b-11d7-6530cd3b5ee9",
      "role": "unknown",
      "semantic": {
       "completeness": "complete",
@@ -1361,7 +1361,7 @@
       "r": 0,
       "t": 0
      },
-     "ref": "now-element-7e79520a-ec7f-3587-3e2f-a148ef9d753d",
+     "ref": "now-element-b17bcfc6-340c-d9b3-c15f-1210f2dac93d",
      "role": "unknown",
      "semantic": {
       "completeness": "complete",
@@ -1375,23 +1375,23 @@
     }
    ],
    "front": false,
-   "id": "0.35520514/Microsoft Internet Explorer#1",
-   "incarnation": "process-91bba06f/window-1e12ca38",
+   "id": "0.37224449/Microsoft Internet Explorer#1",
+   "incarnation": "process-399a0923/window-1e12eed8",
    "kind": 8,
-   "psn": "0.35520514",
+   "psn": "0.37224449",
    "rect": {
     "b": 571,
     "l": 7,
     "r": 712,
     "t": 23
    },
-   "ref": "now-window-f0a1bddd-b083-dff8-2635-9883b25bc24e",
+   "ref": "now-window-7b7a36e2-da17-bde7-837d-3eac4b614f51",
    "title": "Microsoft Internet Explorer",
    "visible": true,
    "z": 1
   },
   {
-   "addr": 504563696,
+   "addr": 504573072,
    "app": "Internet Explorer",
    "controls": [
     {
@@ -1404,7 +1404,7 @@
       "r": 531,
       "t": 19
      },
-     "ref": "now-element-92b21f45-f5fa-400c-7580-ee47b7a51e5e",
+     "ref": "now-element-8d33e08a-8d56-9c63-87d1-d6bcf98937a5",
      "role": "unknown",
      "semantic": {
       "completeness": "complete",
@@ -1426,7 +1426,7 @@
       "r": 516,
       "t": 235
      },
-     "ref": "now-element-f0e8ed43-c76b-2386-a7fd-b8f115f5bb34",
+     "ref": "now-element-afb4ad34-7d3c-92ed-8b8a-f892045a2493",
      "role": "unknown",
      "semantic": {
       "completeness": "complete",
@@ -1440,23 +1440,23 @@
     }
    ],
    "front": false,
-   "id": "0.35520514/Download Manager#2",
-   "incarnation": "process-91bba06f/window-1e1307f0",
+   "id": "0.37224449/Download Manager#2",
+   "incarnation": "process-399a0923/window-1e132c90",
    "kind": 8,
-   "psn": "0.35520514",
+   "psn": "0.37224449",
    "rect": {
     "b": 315,
     "l": 20,
     "r": 550,
     "t": 45
    },
-   "ref": "now-window-4d089ae3-1404-d60e-227f-33cdb2d1aee8",
+   "ref": "now-window-f0edf626-c35e-b493-20ba-4df04a4f6b2d",
    "title": "Download Manager",
    "visible": true,
    "z": 2
   },
   {
-   "addr": 517010928,
+   "addr": 517011008,
    "app": "New Old World",
    "controls": [
     {
@@ -1469,7 +1469,7 @@
       "r": 151,
       "t": 10
      },
-     "ref": "now-element-803b937d-10dd-7648-b6ea-b6fffc7ed0da",
+     "ref": "now-element-caccdfe1-a19f-5bf4-637b-13d371d3c1d6",
      "role": "scrollbar",
      "semantic": {
       "action": "scroll",
@@ -1493,7 +1493,7 @@
       "r": 720,
       "t": 64
      },
-     "ref": "now-element-e5f1e3df-ebe9-3256-85fa-dd695e6c9c80",
+     "ref": "now-element-7db3ce7b-6677-ffae-8d92-be552de1e088",
      "role": "popup",
      "semantic": {
       "action": "choose",
@@ -1517,7 +1517,7 @@
       "r": 720,
       "t": 92
      },
-     "ref": "now-element-c572ec83-ee60-87ea-1903-50bde089a324",
+     "ref": "now-element-8d35a364-500b-9325-c821-e806b16aec57",
      "role": "checkbox",
      "semantic": {
       "action": "press",
@@ -1541,7 +1541,7 @@
       "r": 720,
       "t": 134
      },
-     "ref": "now-element-9260cec5-2418-9e6c-845d-79f7887a57de",
+     "ref": "now-element-95cc37b1-6741-c1a4-2fc2-18bb5f3eb89e",
      "role": "checkbox",
      "semantic": {
       "action": "press",
@@ -1565,7 +1565,7 @@
       "r": 720,
       "t": 154
      },
-     "ref": "now-element-c6b275bf-23fe-a47e-e2b7-b159c7098c50",
+     "ref": "now-element-c2aae4ff-740a-3856-a2e3-c3a100e4be00",
      "role": "checkbox",
      "semantic": {
       "action": "press",
@@ -1589,7 +1589,7 @@
       "r": 520,
       "t": 226
      },
-     "ref": "now-element-ee6b6c33-9b0f-7cea-f230-20c5f11ce0a4",
+     "ref": "now-element-38785233-4f2d-b64e-ccdf-b6012a4a12f4",
      "role": "triangle",
      "semantic": {
       "action": "press",
@@ -1613,7 +1613,7 @@
       "r": 302,
       "t": 423
      },
-     "ref": "now-element-b78432bb-b8f0-5c96-8ca2-1a29e21df6cc",
+     "ref": "now-element-72ef6954-68ec-ad7d-83ed-124694a55437",
      "role": "button",
      "semantic": {
       "action": "press",
@@ -1636,7 +1636,7 @@
       "r": 462,
       "t": 423
      },
-     "ref": "now-element-eab3615f-98ec-9132-a509-94f5faf8add8",
+     "ref": "now-element-fde590cb-6ceb-00fe-a812-3aad4154ecf0",
      "role": "button",
      "semantic": {
       "action": "press",
@@ -1659,7 +1659,7 @@
       "r": 622,
       "t": 423
      },
-     "ref": "now-element-dc390be1-77d6-3a8c-c1cc-a6cb7eff4ff6",
+     "ref": "now-element-13df4cb6-2b61-fd5f-490c-7a9c786cc3c5",
      "role": "button",
      "semantic": {
       "action": "press",
@@ -2738,17 +2738,17 @@
     }
    ],
    "front": false,
-   "id": "0.29360131/New Old World#0",
-   "incarnation": "process-1832a4a9/window-1ed0f5f0",
+   "id": "0.36765698/New Old World#0",
+   "incarnation": "process-1235273a/window-1ed0f640",
    "kind": 8,
-   "psn": "0.29360131",
+   "psn": "0.36765698",
    "rect": {
     "b": 555,
     "l": 22,
     "r": 779,
     "t": 48
    },
-   "ref": "now-window-5a8e257e-220b-a797-2dd2-ec28a15ebac9",
+   "ref": "now-window-596b84b6-8e75-c80b-5b36-9964a7856aa1",
    "title": "New Old World",
    "visible": true,
    "z": 0
