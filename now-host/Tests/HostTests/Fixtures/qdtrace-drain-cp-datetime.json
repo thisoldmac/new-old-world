@@ -1,0 +1,5497 @@
+{
+ "cmd": "drain",
+ "ops": [
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23479,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    107,
+    297,
+    147,
+    315
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23479,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    40,
+    18
+   ],
+   "dst": [
+    107,
+    297,
+    147,
+    315
+   ],
+   "mode": 0,
+   "srcRowBytes": 176
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23479,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    222,
+    296,
+    341,
+    316
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23479,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    119,
+    20
+   ],
+   "dst": [
+    222,
+    296,
+    341,
+    316
+   ],
+   "mode": 0,
+   "srcRowBytes": 480
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23479,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23479,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1f6fd220",
+   "ticks": 23479,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    222,
+    296,
+    341,
+    316
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23513,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    210,
+    29,
+    335,
+    58
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23513,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23513,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    210,
+    29,
+    335,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23573,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    210,
+    29,
+    335,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23633,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    210,
+    29,
+    335,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23693,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    210,
+    29,
+    335,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23725,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23725,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    -1,
+    -1,
+    365,
+    342
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23725,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1f6fd220",
+   "ticks": 23725,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "from": [
+    0,
+    339
+   ],
+   "to": [
+    0,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1f6fd220",
+   "ticks": 23725,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "from": [
+    0,
+    0
+   ],
+   "to": [
+    362,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23725,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    43690,
+    43690,
+    43690
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1f6fd220",
+   "ticks": 23725,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "from": [
+    363,
+    1
+   ],
+   "to": [
+    363,
+    340
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1f6fd220",
+   "ticks": 23725,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "from": [
+    363,
+    340
+   ],
+   "to": [
+    1,
+    340
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    10,
+    311,
+    31,
+    331
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    21,
+    20
+   ],
+   "dst": [
+    10,
+    311,
+    31,
+    331
+   ],
+   "mode": 0,
+   "srcRowBytes": 96
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    12,
+    6,
+    177,
+    97
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    13,
+    18,
+    177,
+    97
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    34952,
+    34952,
+    34952
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    12,
+    17,
+    176,
+    96
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    21,
+    6,
+    107,
+    21
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    24,
+    6,
+    104,
+    21
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    24,
+    6,
+    104,
+    21
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "pen": [
+    24,
+    18
+   ],
+   "font": 0,
+   "size": 0,
+   "face": 0,
+   "len": 12,
+   "fullLen": 12,
+   "trunc": false,
+   "text": "Current Date"
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    33,
+    29,
+    158,
+    58
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    33,
+    29,
+    158,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    36,
+    63,
+    155,
+    83
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    119,
+    20
+   ],
+   "dst": [
+    36,
+    63,
+    155,
+    83
+   ],
+   "mode": 0,
+   "srcRowBytes": 480
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    12,
+    6,
+    177,
+    97
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    36,
+    63,
+    155,
+    83
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    188,
+    6,
+    353,
+    97
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    189,
+    18,
+    353,
+    97
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    34952,
+    34952,
+    34952
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    188,
+    17,
+    352,
+    96
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    197,
+    6,
+    284,
+    21
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    200,
+    6,
+    281,
+    21
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    200,
+    6,
+    281,
+    21
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "pen": [
+    200,
+    18
+   ],
+   "font": 0,
+   "size": 0,
+   "face": 0,
+   "len": 12,
+   "fullLen": 12,
+   "trunc": false,
+   "text": "Current Time"
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    210,
+    29,
+    335,
+    58
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    210,
+    29,
+    335,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    213,
+    63,
+    332,
+    83
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    119,
+    20
+   ],
+   "dst": [
+    213,
+    63,
+    332,
+    83
+   ],
+   "mode": 0,
+   "srcRowBytes": 480
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    188,
+    6,
+    353,
+    97
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    213,
+    63,
+    332,
+    83
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    12,
+    100,
+    353,
+    194
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    13,
+    112,
+    353,
+    194
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    34952,
+    34952,
+    34952
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    12,
+    111,
+    352,
+    193
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    21,
+    100,
+    91,
+    115
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    24,
+    100,
+    88,
+    115
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    24,
+    100,
+    88,
+    115
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "pen": [
+    24,
+    112
+   ],
+   "font": 0,
+   "size": 0,
+   "face": 0,
+   "len": 9,
+   "fullLen": 9,
+   "trunc": false,
+   "text": "Time Zone"
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    22,
+    118,
+    340,
+    138
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    318,
+    20
+   ],
+   "dst": [
+    22,
+    118,
+    340,
+    138
+   ],
+   "mode": 0,
+   "srcRowBytes": 1280
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    22,
+    136,
+    340,
+    156
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23726,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    318,
+    20
+   ],
+   "dst": [
+    22,
+    136,
+    340,
+    156
+   ],
+   "mode": 0,
+   "srcRowBytes": 1280
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    39,
+    158,
+    203,
+    188
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    164,
+    30
+   ],
+   "dst": [
+    39,
+    158,
+    203,
+    188
+   ],
+   "mode": 0,
+   "srcRowBytes": 672
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    223,
+    160,
+    342,
+    180
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    119,
+    20
+   ],
+   "dst": [
+    223,
+    160,
+    342,
+    180
+   ],
+   "mode": 0,
+   "srcRowBytes": 480
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    12,
+    100,
+    353,
+    194
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    223,
+    160,
+    342,
+    180
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    12,
+    195,
+    353,
+    274
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    13,
+    210,
+    353,
+    274
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    34952,
+    34952,
+    34952
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    12,
+    209,
+    352,
+    273
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    21,
+    195,
+    211,
+    217
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    22,
+    195,
+    210,
+    217
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    188,
+    22
+   ],
+   "dst": [
+    22,
+    195,
+    210,
+    217
+   ],
+   "mode": 0,
+   "srcRowBytes": 768
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    39,
+    218,
+    203,
+    233
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    164,
+    15
+   ],
+   "dst": [
+    39,
+    218,
+    203,
+    233
+   ],
+   "mode": 0,
+   "srcRowBytes": 672
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    39,
+    238,
+    203,
+    268
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    164,
+    30
+   ],
+   "dst": [
+    39,
+    238,
+    203,
+    268
+   ],
+   "mode": 0,
+   "srcRowBytes": 672
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    222,
+    226,
+    341,
+    246
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    119,
+    20
+   ],
+   "dst": [
+    222,
+    226,
+    341,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 480
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    12,
+    195,
+    353,
+    274
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    222,
+    226,
+    341,
+    246
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    21,
+    278,
+    126,
+    298
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    105,
+    20
+   ],
+   "dst": [
+    21,
+    278,
+    126,
+    298
+   ],
+   "mode": 0,
+   "srcRowBytes": 432
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    58,
+    297,
+    98,
+    315
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    40,
+    18
+   ],
+   "dst": [
+    58,
+    297,
+    98,
+    315
+   ],
+   "mode": 0,
+   "srcRowBytes": 176
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    107,
+    297,
+    147,
+    315
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23727,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    40,
+    18
+   ],
+   "dst": [
+    107,
+    297,
+    147,
+    315
+   ],
+   "mode": 0,
+   "srcRowBytes": 176
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    222,
+    296,
+    341,
+    316
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    119,
+    20
+   ],
+   "dst": [
+    222,
+    296,
+    341,
+    316
+   ],
+   "mode": 0,
+   "srcRowBytes": 480
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    222,
+    296,
+    341,
+    316
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    -1,
+    -1,
+    365,
+    342
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "from": [
+    0,
+    339
+   ],
+   "to": [
+    0,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "from": [
+    0,
+    0
+   ],
+   "to": [
+    362,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    43690,
+    43690,
+    43690
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "from": [
+    363,
+    1
+   ],
+   "to": [
+    363,
+    340
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "from": [
+    363,
+    340
+   ],
+   "to": [
+    1,
+    340
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    10,
+    311,
+    31,
+    331
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    21,
+    20
+   ],
+   "dst": [
+    10,
+    311,
+    31,
+    331
+   ],
+   "mode": 0,
+   "srcRowBytes": 96
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    12,
+    6,
+    177,
+    97
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    13,
+    18,
+    177,
+    97
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    34952,
+    34952,
+    34952
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    12,
+    17,
+    176,
+    96
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    21,
+    6,
+    107,
+    21
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    24,
+    6,
+    104,
+    21
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    24,
+    6,
+    104,
+    21
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "pen": [
+    24,
+    18
+   ],
+   "font": 0,
+   "size": 0,
+   "face": 0,
+   "len": 12,
+   "fullLen": 12,
+   "trunc": false,
+   "text": "Current Date"
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    33,
+    29,
+    158,
+    58
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    33,
+    29,
+    158,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    36,
+    63,
+    155,
+    83
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    119,
+    20
+   ],
+   "dst": [
+    36,
+    63,
+    155,
+    83
+   ],
+   "mode": 0,
+   "srcRowBytes": 480
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    12,
+    6,
+    177,
+    97
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    36,
+    63,
+    155,
+    83
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    188,
+    6,
+    353,
+    97
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    189,
+    18,
+    353,
+    97
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    34952,
+    34952,
+    34952
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    188,
+    17,
+    352,
+    96
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    197,
+    6,
+    284,
+    21
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    200,
+    6,
+    281,
+    21
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    200,
+    6,
+    281,
+    21
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "pen": [
+    200,
+    18
+   ],
+   "font": 0,
+   "size": 0,
+   "face": 0,
+   "len": 12,
+   "fullLen": 12,
+   "trunc": false,
+   "text": "Current Time"
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    210,
+    29,
+    335,
+    58
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    210,
+    29,
+    335,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    213,
+    63,
+    332,
+    83
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    119,
+    20
+   ],
+   "dst": [
+    213,
+    63,
+    332,
+    83
+   ],
+   "mode": 0,
+   "srcRowBytes": 480
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    188,
+    6,
+    353,
+    97
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    213,
+    63,
+    332,
+    83
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    12,
+    100,
+    353,
+    194
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    13,
+    112,
+    353,
+    194
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    34952,
+    34952,
+    34952
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    12,
+    111,
+    352,
+    193
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    21,
+    100,
+    91,
+    115
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    24,
+    100,
+    88,
+    115
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    24,
+    100,
+    88,
+    115
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "pen": [
+    24,
+    112
+   ],
+   "font": 0,
+   "size": 0,
+   "face": 0,
+   "len": 9,
+   "fullLen": 9,
+   "trunc": false,
+   "text": "Time Zone"
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    22,
+    118,
+    340,
+    138
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    318,
+    20
+   ],
+   "dst": [
+    22,
+    118,
+    340,
+    138
+   ],
+   "mode": 0,
+   "srcRowBytes": 1280
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    22,
+    136,
+    340,
+    156
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23728,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    318,
+    20
+   ],
+   "dst": [
+    22,
+    136,
+    340,
+    156
+   ],
+   "mode": 0,
+   "srcRowBytes": 1280
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    39,
+    158,
+    203,
+    188
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    164,
+    30
+   ],
+   "dst": [
+    39,
+    158,
+    203,
+    188
+   ],
+   "mode": 0,
+   "srcRowBytes": 672
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    223,
+    160,
+    342,
+    180
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    119,
+    20
+   ],
+   "dst": [
+    223,
+    160,
+    342,
+    180
+   ],
+   "mode": 0,
+   "srcRowBytes": 480
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    12,
+    100,
+    353,
+    194
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    223,
+    160,
+    342,
+    180
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    12,
+    195,
+    353,
+    274
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    13,
+    210,
+    353,
+    274
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    34952,
+    34952,
+    34952
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    12,
+    209,
+    352,
+    273
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    21,
+    195,
+    211,
+    217
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    22,
+    195,
+    210,
+    217
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    188,
+    22
+   ],
+   "dst": [
+    22,
+    195,
+    210,
+    217
+   ],
+   "mode": 0,
+   "srcRowBytes": 768
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    39,
+    218,
+    203,
+    233
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    164,
+    15
+   ],
+   "dst": [
+    39,
+    218,
+    203,
+    233
+   ],
+   "mode": 0,
+   "srcRowBytes": 672
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    39,
+    238,
+    203,
+    268
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    164,
+    30
+   ],
+   "dst": [
+    39,
+    238,
+    203,
+    268
+   ],
+   "mode": 0,
+   "srcRowBytes": 672
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    222,
+    226,
+    341,
+    246
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    119,
+    20
+   ],
+   "dst": [
+    222,
+    226,
+    341,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 480
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    12,
+    195,
+    353,
+    274
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    222,
+    226,
+    341,
+    246
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    21,
+    278,
+    126,
+    298
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    105,
+    20
+   ],
+   "dst": [
+    21,
+    278,
+    126,
+    298
+   ],
+   "mode": 0,
+   "srcRowBytes": 432
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    58,
+    297,
+    98,
+    315
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    40,
+    18
+   ],
+   "dst": [
+    58,
+    297,
+    98,
+    315
+   ],
+   "mode": 0,
+   "srcRowBytes": 176
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    107,
+    297,
+    147,
+    315
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    40,
+    18
+   ],
+   "dst": [
+    107,
+    297,
+    147,
+    315
+   ],
+   "mode": 0,
+   "srcRowBytes": 176
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    222,
+    296,
+    341,
+    316
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    119,
+    20
+   ],
+   "dst": [
+    222,
+    296,
+    341,
+    316
+   ],
+   "mode": 0,
+   "srcRowBytes": 480
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1f6fd220",
+   "ticks": 23729,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    222,
+    296,
+    341,
+    316
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23730,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23730,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    -1,
+    -1,
+    365,
+    342
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23730,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1f6fd220",
+   "ticks": 23730,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "from": [
+    0,
+    339
+   ],
+   "to": [
+    0,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1f6fd220",
+   "ticks": 23730,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "from": [
+    0,
+    0
+   ],
+   "to": [
+    362,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23730,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    43690,
+    43690,
+    43690
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1f6fd220",
+   "ticks": 23730,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "from": [
+    363,
+    1
+   ],
+   "to": [
+    363,
+    340
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1f6fd220",
+   "ticks": 23730,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "from": [
+    363,
+    340
+   ],
+   "to": [
+    1,
+    340
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23730,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    12,
+    6,
+    177,
+    97
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23730,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23730,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1f6fd220",
+   "ticks": 23730,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    36,
+    63,
+    155,
+    83
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23730,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    188,
+    6,
+    353,
+    97
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1f6fd220",
+   "ticks": 23730,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    213,
+    63,
+    332,
+    83
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23730,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    12,
+    100,
+    353,
+    194
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1f6fd220",
+   "ticks": 23730,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    223,
+    160,
+    342,
+    180
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23730,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    12,
+    195,
+    353,
+    274
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1f6fd220",
+   "ticks": 23730,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    222,
+    226,
+    341,
+    246
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23730,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1f6fd220",
+   "ticks": 23730,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    222,
+    296,
+    341,
+    316
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23730,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    39,
+    158,
+    203,
+    188
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23730,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23730,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    164,
+    30
+   ],
+   "dst": [
+    39,
+    158,
+    203,
+    188
+   ],
+   "mode": 0,
+   "srcRowBytes": 672
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23732,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    22,
+    118,
+    340,
+    138
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23732,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    318,
+    20
+   ],
+   "dst": [
+    22,
+    118,
+    340,
+    138
+   ],
+   "mode": 0,
+   "srcRowBytes": 1280
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23732,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    12,
+    195,
+    353,
+    274
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23732,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23732,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    13,
+    210,
+    353,
+    274
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23732,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    34952,
+    34952,
+    34952
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23732,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    12,
+    209,
+    352,
+    273
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23732,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23732,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1f6fd220",
+   "ticks": 23732,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    21,
+    195,
+    211,
+    217
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23732,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    22,
+    195,
+    210,
+    217
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23732,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23732,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    188,
+    22
+   ],
+   "dst": [
+    22,
+    195,
+    210,
+    217
+   ],
+   "mode": 0,
+   "srcRowBytes": 768
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23732,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    39,
+    218,
+    203,
+    233
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23732,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    164,
+    15
+   ],
+   "dst": [
+    39,
+    218,
+    203,
+    233
+   ],
+   "mode": 0,
+   "srcRowBytes": 672
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23732,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    39,
+    238,
+    203,
+    268
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23732,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    164,
+    30
+   ],
+   "dst": [
+    39,
+    238,
+    203,
+    268
+   ],
+   "mode": 0,
+   "srcRowBytes": 672
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23732,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    222,
+    226,
+    341,
+    246
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23732,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    119,
+    20
+   ],
+   "dst": [
+    222,
+    226,
+    341,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 480
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23732,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    12,
+    195,
+    353,
+    274
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23732,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1f6fd220",
+   "ticks": 23732,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    222,
+    226,
+    341,
+    246
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23733,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    22,
+    136,
+    340,
+    156
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23733,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23733,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    318,
+    20
+   ],
+   "dst": [
+    22,
+    136,
+    340,
+    156
+   ],
+   "mode": 0,
+   "srcRowBytes": 1280
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23733,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    222,
+    226,
+    341,
+    246
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23733,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    119,
+    20
+   ],
+   "dst": [
+    222,
+    226,
+    341,
+    246
+   ],
+   "mode": 0,
+   "srcRowBytes": 480
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23733,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23733,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1f6fd220",
+   "ticks": 23733,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    222,
+    226,
+    341,
+    246
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23754,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    210,
+    29,
+    335,
+    58
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1f6fd220",
+   "ticks": 23754,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23754,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    210,
+    29,
+    335,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23814,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    210,
+    29,
+    335,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23874,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    210,
+    29,
+    335,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23934,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    210,
+    29,
+    335,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 23994,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    210,
+    29,
+    335,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 24054,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    210,
+    29,
+    335,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 24115,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    210,
+    29,
+    335,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 24175,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    210,
+    29,
+    335,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 24235,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    210,
+    29,
+    335,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 24295,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    210,
+    29,
+    335,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 24355,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    210,
+    29,
+    335,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 24415,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    210,
+    29,
+    335,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 24476,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    210,
+    29,
+    335,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 24536,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    210,
+    29,
+    335,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 24596,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    210,
+    29,
+    335,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 24656,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    210,
+    29,
+    335,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 24716,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    210,
+    29,
+    335,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  },
+  {
+   "op": "bits",
+   "port": "0x1f6fd220",
+   "ticks": 24776,
+   "a5": "0x1f743840",
+   "psn": "0.35520514",
+   "displayEpoch": 4,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    125,
+    29
+   ],
+   "dst": [
+    210,
+    29,
+    335,
+    58
+   ],
+   "mode": 0,
+   "srcRowBytes": 512
+  }
+ ],
+ "cursor": 0,
+ "nextCursor": 8192,
+ "writeCursor": 8192,
+ "pending": 0,
+ "records": 300,
+ "wraps": 0,
+ "more": false,
+ "resync": false,
+ "torn": false,
+ "busy": false,
+ "lostBytes": 0,
+ "dropped": 0
+}

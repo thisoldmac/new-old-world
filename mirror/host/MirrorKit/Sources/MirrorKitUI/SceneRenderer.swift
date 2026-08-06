@@ -700,7 +700,8 @@ public struct SceneRenderer {
         }
         for control in win.controls where control.visible
                 && !dialogRefs.contains(control.ref)
-                && (!displayOwnsVisuals || Self.semanticOwnsDisplay(control)) {
+                && (!displayOwnsVisuals || Self.semanticOwnsDisplay(control)
+                    || Self.isWindowFurniture(control)) {
             drawControl(contentCtx, control, contentOrigin: content.origin,
                         isDefault: control.semantic?.isDefault == true)
         }
@@ -842,6 +843,15 @@ public struct SceneRenderer {
               }) else { return false }
         guard let r = ctl.rect else { return false }
         return (r.b - r.t) <= 26 && (r.r - r.l) > 20
+    }
+
+    /// Window furniture the Control Manager draws OVER application content
+    /// on the real machine. A scrollbar is chrome, not app drawing: a
+    /// display-owned window must still show it, or the bar appears only as
+    /// whatever fragments of it the app's own stream happened to carry —
+    /// which is exactly the missing-arrows render this line fixed.
+    static func isWindowFurniture(_ ctl: MirrorKit.Scene.Control) -> Bool {
+        ctl.semantic?.kind == "scrollBar" || ctl.role == "scrollbar"
     }
 
     /// Whether P2 carries enough visual facts to replace P3 inside the whole
@@ -1339,27 +1349,87 @@ public struct SceneRenderer {
         bevel(ctx, frame.insetBy(dx: 1, dy: 1),
               light: Platinum.g4, shadow: Platinum.g0)
 
+        /* The arrow buttons. A Platinum scrollbar is arrows-track-arrows,
+           and the CDEF draws the arrows whether or not the control has a
+           range — an empty document still shows them, dimmed. One square
+           button per end, sized by the bar's narrow dimension, and the
+           thumb's travel is the TRACK between them, which is why the
+           track rect is computed here and shared below. */
+        let vertical = frame.height > frame.width
+        let narrow = Swift.min(frame.width, frame.height)
+        let long = Swift.max(frame.width, frame.height)
+        var track = frame
+        if long >= 3 * narrow {
+            let a: CGRect
+            let b: CGRect
+            if vertical {
+                a = CGRect(x: frame.minX, y: frame.minY,
+                           width: frame.width, height: narrow)
+                b = CGRect(x: frame.minX, y: frame.maxY - narrow,
+                           width: frame.width, height: narrow)
+                track = frame.insetBy(dx: 0, dy: narrow)
+            } else {
+                a = CGRect(x: frame.minX, y: frame.minY,
+                           width: narrow, height: frame.height)
+                b = CGRect(x: frame.maxX - narrow, y: frame.minY,
+                           width: narrow, height: frame.height)
+                track = frame.insetBy(dx: narrow, dy: 0)
+            }
+            drawScrollArrow(ctx, a, vertical: vertical, towardMin: true,
+                            enabled: enabled)
+            drawScrollArrow(ctx, b, vertical: vertical, towardMin: false,
+                            enabled: enabled)
+        }
+
         guard max > min else { return }   // unranged: empty track, no thumb
         let frac = CGFloat(value - min) / CGFloat(max - min)
-        let vertical = frame.height > frame.width
         var thumb: CGRect
-        let tw = Swift.max(frame.width * 0.16, 10)
-        let th = Swift.max(frame.height * 0.16, 10)
+        let tw = Swift.max(track.width * 0.16, 10)
+        let th = Swift.max(track.height * 0.16, 10)
         if vertical {
-            thumb = CGRect(x: frame.minX + 1,
-                           y: frame.minY + frac * 0.82 * frame.height,
-                           width: frame.width - 2, height: th)
+            thumb = CGRect(x: track.minX + 1,
+                           y: track.minY + frac * (track.height - th),
+                           width: track.width - 2, height: th)
         } else {
-            thumb = CGRect(x: frame.minX + frac * 0.82 * frame.width,
-                           y: frame.minY + 1,
-                           width: tw, height: frame.height - 2)
+            thumb = CGRect(x: track.minX + frac * (track.width - tw),
+                           y: track.minY + 1,
+                           width: tw, height: track.height - 2)
         }
-        thumb = thumb.intersection(frame.insetBy(dx: 1, dy: 1))
+        thumb = thumb.intersection(track.insetBy(dx: 1, dy: 1))
         guard !thumb.isNull, thumb.width > 2, thumb.height > 2 else { return }
         ctx.fill(Path(thumb), with: .color(Platinum.g2))
         ctx.stroke(Path(thumb), with: .color(Platinum.g6), lineWidth: 1)
         bevel(ctx, thumb.insetBy(dx: 1, dy: 1),
               light: Platinum.g0, shadow: Platinum.g4)
+    }
+
+    /// One scrollbar arrow button: raised square, black triangle pointing
+    /// out of the track.
+    private func drawScrollArrow(_ ctx: GraphicsContext, _ box: CGRect,
+                                 vertical: Bool, towardMin: Bool,
+                                 enabled: Bool) {
+        ctx.fill(Path(box), with: .color(Platinum.g1))
+        ctx.stroke(Path(box), with: .color(enabled ? Platinum.g6 : Platinum.g3),
+                   lineWidth: 1)
+        bevel(ctx, box.insetBy(dx: 1, dy: 1),
+              light: Platinum.g0, shadow: Platinum.g4)
+        let inset = box.insetBy(dx: box.width * 0.28, dy: box.height * 0.28)
+        var tri = Path()
+        if vertical {
+            let tipY = towardMin ? inset.minY : inset.maxY
+            let baseY = towardMin ? inset.maxY : inset.minY
+            tri.move(to: CGPoint(x: inset.midX, y: tipY))
+            tri.addLine(to: CGPoint(x: inset.minX, y: baseY))
+            tri.addLine(to: CGPoint(x: inset.maxX, y: baseY))
+        } else {
+            let tipX = towardMin ? inset.minX : inset.maxX
+            let baseX = towardMin ? inset.maxX : inset.minX
+            tri.move(to: CGPoint(x: tipX, y: inset.midY))
+            tri.addLine(to: CGPoint(x: baseX, y: inset.minY))
+            tri.addLine(to: CGPoint(x: baseX, y: inset.maxY))
+        }
+        tri.closeSubpath()
+        ctx.fill(tri, with: .color(enabled ? Platinum.g6 : Platinum.g3))
     }
 
     // MARK: - Helpers

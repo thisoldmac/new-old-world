@@ -1,0 +1,4533 @@
+{
+ "cmd": "drain",
+ "ops": [
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "origin",
+   "origin": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    160,
+    38,
+    744,
+    455
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "rgn",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    0,
+    0,
+    160,
+    478
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    160,
+    0,
+    744,
+    38
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    161,
+    1,
+    743,
+    37
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "from": [
+    161,
+    35
+   ],
+   "to": [
+    161,
+    1
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "from": [
+    161,
+    1
+   ],
+   "to": [
+    741,
+    1
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    43690,
+    43690,
+    43690
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "from": [
+    162,
+    36
+   ],
+   "to": [
+    742,
+    36
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "from": [
+    742,
+    36
+   ],
+   "to": [
+    742,
+    2
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    167,
+    7,
+    191,
+    31
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    18,
+    18
+   ],
+   "dst": [
+    170,
+    10,
+    188,
+    28
+   ],
+   "mode": 0,
+   "srcRowBytes": 80
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    175,
+    22
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 0,
+   "len": 1,
+   "fullLen": 1,
+   "trunc": false,
+   "text": "\u00ab"
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    196,
+    16
+   ],
+   "font": 2002,
+   "size": 12,
+   "face": 0,
+   "len": 11,
+   "fullLen": 11,
+   "trunc": false,
+   "text": "Screenshots"
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    196,
+    31
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 0,
+   "len": 53,
+   "fullLen": 53,
+   "trunc": false,
+   "text": "Capture this Mac, send a still, or stream its screen."
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    691,
+    16
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 0,
+   "len": 7,
+   "fullLen": 7,
+   "trunc": false,
+   "text": "gwprobe"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    160,
+    455,
+    744,
+    478
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    161,
+    456,
+    743,
+    477
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "from": [
+    161,
+    475
+   ],
+   "to": [
+    161,
+    456
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "from": [
+    161,
+    456
+   ],
+   "to": [
+    741,
+    456
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    43690,
+    43690,
+    43690
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "from": [
+    162,
+    476
+   ],
+   "to": [
+    742,
+    476
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "from": [
+    742,
+    476
+   ],
+   "to": [
+    742,
+    457
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    170,
+    470
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 0,
+   "len": 6,
+   "fullLen": 6,
+   "trunc": false,
+   "text": "Ready."
+  },
+  {
+   "op": "rrect",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    472,
+    423,
+    622,
+    443
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    472,
+    423,
+    622,
+    443
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    150,
+    20
+   ],
+   "dst": [
+    472,
+    423,
+    622,
+    443
+   ],
+   "mode": 0,
+   "srcRowBytes": 608
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    312,
+    423,
+    462,
+    443
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    312,
+    423,
+    462,
+    443
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    150,
+    20
+   ],
+   "dst": [
+    312,
+    423,
+    462,
+    443
+   ],
+   "mode": 0,
+   "srcRowBytes": 608
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    172,
+    423,
+    302,
+    443
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    172,
+    423,
+    302,
+    443
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    130,
+    20
+   ],
+   "dst": [
+    172,
+    423,
+    302,
+    443
+   ],
+   "mode": 0,
+   "srcRowBytes": 528
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    508,
+    226,
+    520,
+    238
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    12,
+    12
+   ],
+   "dst": [
+    508,
+    226,
+    520,
+    238
+   ],
+   "mode": 0,
+   "srcRowBytes": 64
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    520,
+    154,
+    720,
+    170
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7927,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    200,
+    16
+   ],
+   "dst": [
+    520,
+    154,
+    720,
+    170
+   ],
+   "mode": 0,
+   "srcRowBytes": 816
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    520,
+    134,
+    720,
+    150
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    200,
+    16
+   ],
+   "dst": [
+    520,
+    134,
+    720,
+    150
+   ],
+   "mode": 0,
+   "srcRowBytes": 816
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    520,
+    92,
+    720,
+    108
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    200,
+    16
+   ],
+   "dst": [
+    520,
+    92,
+    720,
+    108
+   ],
+   "mode": 0,
+   "srcRowBytes": 816
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    518,
+    64,
+    720,
+    84
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    518,
+    66,
+    566,
+    81
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    521,
+    66,
+    563,
+    81
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    521,
+    66,
+    563,
+    81
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    -32766,
+    66,
+    32766,
+    82
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    522,
+    78
+   ],
+   "font": 0,
+   "size": 0,
+   "face": 0,
+   "len": 6,
+   "fullLen": 6,
+   "trunc": false,
+   "text": "Depth:"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    566,
+    64,
+    657,
+    84
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    91,
+    20
+   ],
+   "dst": [
+    566,
+    64,
+    657,
+    84
+   ],
+   "mode": 0,
+   "srcRowBytes": 368
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    135,
+    10,
+    151,
+    340
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    135,
+    309,
+    151,
+    325
+   ],
+   "mode": 0,
+   "srcRowBytes": 8
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    135,
+    324,
+    151,
+    340
+   ],
+   "mode": 0,
+   "srcRowBytes": 8
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    135,
+    10,
+    151,
+    310
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    275
+   ],
+   "dst": [
+    135,
+    10,
+    151,
+    285
+   ],
+   "mode": 0,
+   "srcRowBytes": 80
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    43690,
+    43690,
+    43690
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "verb": 1,
+   "rect": [
+    138,
+    287,
+    148,
+    309
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    30583,
+    30583,
+    30583
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "from": [
+    136,
+    308
+   ],
+   "to": [
+    136,
+    285
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "from": [
+    136,
+    285
+   ],
+   "to": [
+    149,
+    285
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    34952,
+    34952,
+    34952
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "from": [
+    137,
+    308
+   ],
+   "to": [
+    137,
+    286
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "from": [
+    137,
+    286
+   ],
+   "to": [
+    149,
+    286
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    52428,
+    52428,
+    52428
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "from": [
+    149,
+    285
+   ],
+   "to": [
+    149,
+    308
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    48059,
+    48059,
+    48059
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "from": [
+    148,
+    286
+   ],
+   "to": [
+    148,
+    308
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    135,
+    10,
+    151,
+    310
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    172,
+    46,
+    492,
+    286
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    173,
+    47,
+    491,
+    285
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    188,
+    166
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 0,
+   "len": 18,
+   "fullLen": 18,
+   "trunc": false,
+   "text": "No screenshot yet."
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    520,
+    127
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 1,
+   "len": 9,
+   "fullLen": 9,
+   "trunc": false,
+   "text": "Streaming"
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    526,
+    236
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 1,
+   "len": 18,
+   "fullLen": 18,
+   "trunc": false,
+   "text": "Advanced Transport"
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    520,
+    189
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 0,
+   "len": 15,
+   "fullLen": 15,
+   "trunc": false,
+   "text": "Rate: Automatic"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rgn",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    8,
+    8,
+    152,
+    470
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    8,
+    8,
+    152,
+    470
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    9,
+    10,
+    135,
+    340
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    38665,
+    41287,
+    57015
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "verb": 1,
+   "rect": [
+    9,
+    10,
+    135,
+    40
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    17,
+    33,
+    33
+   ],
+   "mode": 3,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    17,
+    33,
+    33
+   ],
+   "mode": 1,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    23
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 1,
+   "len": 11,
+   "fullLen": 11,
+   "trunc": false,
+   "text": "Screenshots"
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    35
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 0,
+   "len": 17,
+   "fullLen": 17,
+   "trunc": false,
+   "text": "Capture and stre\u2026"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    47,
+    33,
+    63
+   ],
+   "mode": 3,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    47,
+    33,
+    63
+   ],
+   "mode": 1,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    53
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 1,
+   "len": 5,
+   "fullLen": 5,
+   "trunc": false,
+   "text": "Files"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    21845,
+    21845,
+    21845
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    65
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 0,
+   "len": 16,
+   "fullLen": 16,
+   "trunc": false,
+   "text": "Browse and exch\u2026"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    77,
+    33,
+    93
+   ],
+   "mode": 3,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    77,
+    33,
+    93
+   ],
+   "mode": 1,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    83
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 1,
+   "len": 7,
+   "fullLen": 7,
+   "trunc": false,
+   "text": "Console"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    21845,
+    21845,
+    21845
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    95
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 0,
+   "len": 14,
+   "fullLen": 14,
+   "trunc": false,
+   "text": "Local commands"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    107,
+    33,
+    123
+   ],
+   "mode": 3,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    107,
+    33,
+    123
+   ],
+   "mode": 1,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    113
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 1,
+   "len": 9,
+   "fullLen": 9,
+   "trunc": false,
+   "text": "Processes"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    21845,
+    21845,
+    21845
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    125
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 0,
+   "len": 17,
+   "fullLen": 17,
+   "trunc": false,
+   "text": "Running applicat\u2026"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    137,
+    33,
+    153
+   ],
+   "mode": 3,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    137,
+    33,
+    153
+   ],
+   "mode": 1,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    143
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 1,
+   "len": 8,
+   "fullLen": 8,
+   "trunc": false,
+   "text": "Hardware"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    21845,
+    21845,
+    21845
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    155
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 0,
+   "len": 17,
+   "fullLen": 17,
+   "trunc": false,
+   "text": "Census and probes"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    167,
+    33,
+    183
+   ],
+   "mode": 3,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    167,
+    33,
+    183
+   ],
+   "mode": 1,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    173
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 1,
+   "len": 8,
+   "fullLen": 8,
+   "trunc": false,
+   "text": "Software"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    21845,
+    21845,
+    21845
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    185
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 0,
+   "len": 17,
+   "fullLen": 17,
+   "trunc": false,
+   "text": "What is installed"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    197,
+    33,
+    213
+   ],
+   "mode": 3,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    197,
+    33,
+    213
+   ],
+   "mode": 1,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    203
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 1,
+   "len": 3,
+   "fullLen": 3,
+   "trunc": false,
+   "text": "MCP"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    21845,
+    21845,
+    21845
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    215
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 0,
+   "len": 16,
+   "fullLen": 16,
+   "trunc": false,
+   "text": "Who may drive t\u2026"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    227,
+    33,
+    243
+   ],
+   "mode": 3,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    227,
+    33,
+    243
+   ],
+   "mode": 1,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    233
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 1,
+   "len": 11,
+   "fullLen": 11,
+   "trunc": false,
+   "text": "Diagnostics"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    21845,
+    21845,
+    21845
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    245
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 0,
+   "len": 16,
+   "fullLen": 16,
+   "trunc": false,
+   "text": "Measure this Mac"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    257,
+    33,
+    273
+   ],
+   "mode": 3,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    257,
+    33,
+    273
+   ],
+   "mode": 1,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    263
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 1,
+   "len": 10,
+   "fullLen": 10,
+   "trunc": false,
+   "text": "Networking"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    21845,
+    21845,
+    21845
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    275
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 0,
+   "len": 17,
+   "fullLen": 17,
+   "trunc": false,
+   "text": "Link, address an\u2026"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    287,
+    33,
+    303
+   ],
+   "mode": 3,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    287,
+    33,
+    303
+   ],
+   "mode": 1,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    293
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 1,
+   "len": 6,
+   "fullLen": 6,
+   "trunc": false,
+   "text": "iCloud"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    21845,
+    21845,
+    21845
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    305
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 0,
+   "len": 17,
+   "fullLen": 17,
+   "trunc": false,
+   "text": "The other Mac's \u2026"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    317,
+    33,
+    333
+   ],
+   "mode": 3,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    317,
+    33,
+    333
+   ],
+   "mode": 1,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    323
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 1,
+   "len": 4,
+   "fullLen": 4,
+   "trunc": false,
+   "text": "Chat"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    21845,
+    21845,
+    21845
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    335
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 0,
+   "len": 17,
+   "fullLen": 17,
+   "trunc": false,
+   "text": "Ask the other Ma\u2026"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    386,
+    33,
+    402
+   ],
+   "mode": 3,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    386,
+    33,
+    402
+   ],
+   "mode": 1,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    392
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 1,
+   "len": 11,
+   "fullLen": 11,
+   "trunc": false,
+   "text": "Preferences"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    21845,
+    21845,
+    21845
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    404
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 0,
+   "len": 19,
+   "fullLen": 19,
+   "trunc": false,
+   "text": "How this window be\u2026"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    416,
+    33,
+    432
+   ],
+   "mode": 3,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    416,
+    33,
+    432
+   ],
+   "mode": 1,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    422
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 1,
+   "len": 4,
+   "fullLen": 4,
+   "trunc": false,
+   "text": "Logs"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    21845,
+    21845,
+    21845
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    434
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 0,
+   "len": 20,
+   "fullLen": 20,
+   "trunc": false,
+   "text": "This launch's events"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    446,
+    33,
+    462
+   ],
+   "mode": 3,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    17,
+    446,
+    33,
+    462
+   ],
+   "mode": 1,
+   "srcRowBytes": 2
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    452
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 1,
+   "len": 10,
+   "fullLen": 10,
+   "trunc": false,
+   "text": "Connection"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    43690,
+    8738
+   ]
+  },
+  {
+   "op": "oval",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "verb": 1,
+   "rect": [
+    137,
+    450,
+    145,
+    458
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "oval",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    137,
+    450,
+    145,
+    458
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    21845,
+    21845,
+    21845
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "pen": [
+    39,
+    464
+   ],
+   "font": 3,
+   "size": 10,
+   "face": 0,
+   "len": 7,
+   "fullLen": 7,
+   "trunc": false,
+   "text": "gwprobe"
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "verb": 1,
+   "rect": [
+    9,
+    374,
+    151,
+    375
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    135,
+    10,
+    151,
+    340
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    135,
+    309,
+    151,
+    325
+   ],
+   "mode": 0,
+   "srcRowBytes": 8
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    16
+   ],
+   "dst": [
+    135,
+    324,
+    151,
+    340
+   ],
+   "mode": 0,
+   "srcRowBytes": 8
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    135,
+    10,
+    151,
+    310
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    16,
+    275
+   ],
+   "dst": [
+    135,
+    10,
+    151,
+    285
+   ],
+   "mode": 0,
+   "srcRowBytes": 80
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    43690,
+    43690,
+    43690
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "verb": 1,
+   "rect": [
+    138,
+    287,
+    148,
+    309
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    30583,
+    30583,
+    30583
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "from": [
+    136,
+    308
+   ],
+   "to": [
+    136,
+    285
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "from": [
+    136,
+    285
+   ],
+   "to": [
+    149,
+    285
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    34952,
+    34952,
+    34952
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "from": [
+    137,
+    308
+   ],
+   "to": [
+    137,
+    286
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "from": [
+    137,
+    286
+   ],
+   "to": [
+    149,
+    286
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    52428,
+    52428,
+    52428
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "from": [
+    149,
+    285
+   ],
+   "to": [
+    149,
+    308
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    48059,
+    48059,
+    48059
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "from": [
+    148,
+    286
+   ],
+   "to": [
+    148,
+    308
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    135,
+    10,
+    151,
+    310
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    729,
+    463,
+    744,
+    478
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "from": [
+    0,
+    463
+   ],
+   "to": [
+    744,
+    463
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1ecb4550",
+   "ticks": 7928,
+   "a5": "0x1f1c5d70",
+   "psn": "0.29360131",
+   "displayEpoch": 1,
+   "generation": 1,
+   "from": [
+    729,
+    0
+   ],
+   "to": [
+    729,
+    463
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  }
+ ],
+ "cursor": 0,
+ "nextCursor": 8192,
+ "writeCursor": 8192,
+ "pending": 0,
+ "records": 247,
+ "wraps": 0,
+ "more": false,
+ "resync": false,
+ "torn": false,
+ "busy": false,
+ "lostBytes": 0,
+ "dropped": 0
+}

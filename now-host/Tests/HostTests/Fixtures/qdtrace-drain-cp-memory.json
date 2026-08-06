@@ -1,0 +1,5555 @@
+{
+ "cmd": "drain",
+ "ops": [
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34612,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34612,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34612,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    32,
+    24
+   ],
+   "dst": [
+    328,
+    133,
+    360,
+    157
+   ],
+   "mode": 0,
+   "srcRowBytes": 144
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34612,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    171,
+    106,
+    342,
+    117
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34612,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    171,
+    11
+   ],
+   "dst": [
+    171,
+    106,
+    342,
+    117
+   ],
+   "mode": 0,
+   "srcRowBytes": 688
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34612,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    171,
+    118,
+    342,
+    130
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34612,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    171,
+    12
+   ],
+   "dst": [
+    171,
+    118,
+    342,
+    130
+   ],
+   "mode": 0,
+   "srcRowBytes": 688
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34612,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    277,
+    133,
+    328,
+    156
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34612,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    51,
+    23
+   ],
+   "dst": [
+    277,
+    133,
+    328,
+    156
+   ],
+   "mode": 0,
+   "srcRowBytes": 208
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34612,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    64,
+    5,
+    166,
+    15
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34612,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    102,
+    10
+   ],
+   "dst": [
+    64,
+    5,
+    166,
+    15
+   ],
+   "mode": 0,
+   "srcRowBytes": 416
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    14,
+    15,
+    46,
+    47
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    32,
+    32
+   ],
+   "dst": [
+    14,
+    15,
+    46,
+    47
+   ],
+   "mode": 0,
+   "srcRowBytes": 144
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    16573,
+    26,
+    16660,
+    38
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    16573,
+    26,
+    16660,
+    38
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    30583,
+    30583,
+    30583
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    16573,
+    26,
+    16660,
+    38
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "pen": [
+    16574,
+    36
+   ],
+   "font": 1,
+   "size": 9,
+   "face": 0,
+   "len": 18,
+   "fullLen": 18,
+   "trunc": false,
+   "text": "Size after restart"
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    16660,
+    22,
+    16708,
+    43
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    16660,
+    22,
+    16708,
+    43
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    16663,
+    25,
+    16705,
+    40
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    64,
+    24,
+    161,
+    36
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    97,
+    12
+   ],
+   "dst": [
+    64,
+    24,
+    161,
+    36
+   ],
+   "mode": 0,
+   "srcRowBytes": 400
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    64,
+    38,
+    161,
+    50
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    97,
+    12
+   ],
+   "dst": [
+    64,
+    38,
+    161,
+    50
+   ],
+   "mode": 0,
+   "srcRowBytes": 400
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    171,
+    15,
+    342,
+    55
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    171,
+    40
+   ],
+   "dst": [
+    171,
+    15,
+    342,
+    55
+   ],
+   "mode": 0,
+   "srcRowBytes": 688
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    48059,
+    48059,
+    48059
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    -2,
+    264
+   ],
+   "to": [
+    351,
+    264
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    -1,
+    265
+   ],
+   "to": [
+    352,
+    265
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    191,
+    272,
+    291,
+    292
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    100,
+    20
+   ],
+   "dst": [
+    191,
+    272,
+    291,
+    292
+   ],
+   "mode": 0,
+   "srcRowBytes": 416
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    191,
+    272,
+    291,
+    292
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    11,
+    278,
+    91,
+    290
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    80,
+    12
+   ],
+   "dst": [
+    11,
+    278,
+    91,
+    290
+   ],
+   "mode": 0,
+   "srcRowBytes": 336
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    48059,
+    48059,
+    48059
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    6,
+    159
+   ],
+   "to": [
+    343,
+    159
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    7,
+    160
+   ],
+   "to": [
+    344,
+    160
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    64,
+    170,
+    141,
+    182
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    77,
+    12
+   ],
+   "dst": [
+    64,
+    170,
+    141,
+    182
+   ],
+   "mode": 0,
+   "srcRowBytes": 320
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    11,
+    184,
+    43,
+    216
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    32,
+    32
+   ],
+   "dst": [
+    11,
+    184,
+    43,
+    216
+   ],
+   "mode": 0,
+   "srcRowBytes": 144
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    64,
+    190,
+    101,
+    202
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    37,
+    12
+   ],
+   "dst": [
+    64,
+    190,
+    101,
+    202
+   ],
+   "mode": 0,
+   "srcRowBytes": 160
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    64,
+    204,
+    101,
+    216
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    37,
+    12
+   ],
+   "dst": [
+    64,
+    204,
+    101,
+    216
+   ],
+   "mode": 0,
+   "srcRowBytes": 160
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    64,
+    224,
+    176,
+    236
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    112,
+    12
+   ],
+   "dst": [
+    64,
+    224,
+    176,
+    236
+   ],
+   "mode": 0,
+   "srcRowBytes": 464
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    171,
+    166,
+    341,
+    190
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    170,
+    24
+   ],
+   "dst": [
+    171,
+    166,
+    341,
+    190
+   ],
+   "mode": 0,
+   "srcRowBytes": 688
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    186,
+    215,
+    207,
+    229
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    21,
+    14
+   ],
+   "dst": [
+    186,
+    215,
+    207,
+    229
+   ],
+   "mode": 0,
+   "srcRowBytes": 96
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    244,
+    215,
+    274,
+    229
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    30,
+    14
+   ],
+   "dst": [
+    244,
+    215,
+    274,
+    229
+   ],
+   "mode": 0,
+   "srcRowBytes": 128
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    304,
+    215,
+    334,
+    229
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    30,
+    14
+   ],
+   "dst": [
+    304,
+    215,
+    334,
+    229
+   ],
+   "mode": 0,
+   "srcRowBytes": 128
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    189,
+    238,
+    261,
+    249
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    72,
+    11
+   ],
+   "dst": [
+    189,
+    238,
+    261,
+    249
+   ],
+   "mode": 0,
+   "srcRowBytes": 304
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    264,
+    233,
+    316,
+    256
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    52,
+    23
+   ],
+   "dst": [
+    264,
+    233,
+    316,
+    256
+   ],
+   "mode": 0,
+   "srcRowBytes": 224
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    183,
+    196,
+    327,
+    212
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    144,
+    16
+   ],
+   "dst": [
+    183,
+    196,
+    327,
+    212
+   ],
+   "mode": 0,
+   "srcRowBytes": 592
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    16448,
+    279,
+    16574,
+    291
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    16448,
+    279,
+    16574,
+    291
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    30583,
+    30583,
+    30583
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    16448,
+    279,
+    16574,
+    291
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "pen": [
+    16449,
+    289
+   ],
+   "font": 1,
+   "size": 9,
+   "face": 0,
+   "len": 20,
+   "fullLen": 20,
+   "trunc": false,
+   "text": "Startup Memory Tests"
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    16395,
+    291,
+    16427,
+    323
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    16395,
+    291,
+    16427,
+    323
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    32,
+    32
+   ],
+   "dst": [
+    16395,
+    291,
+    16427,
+    323
+   ],
+   "mode": 0,
+   "srcRowBytes": 16
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    82,
+    236,
+    176,
+    248
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    94,
+    12
+   ],
+   "dst": [
+    82,
+    236,
+    176,
+    248
+   ],
+   "mode": 0,
+   "srcRowBytes": 384
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    82,
+    248,
+    176,
+    260
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34613,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    94,
+    12
+   ],
+   "dst": [
+    82,
+    248,
+    176,
+    260
+   ],
+   "mode": 0,
+   "srcRowBytes": 384
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    171,
+    106,
+    342,
+    117
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    171,
+    11
+   ],
+   "dst": [
+    171,
+    106,
+    342,
+    117
+   ],
+   "mode": 0,
+   "srcRowBytes": 688
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    -1,
+    -1,
+    353,
+    299
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    0,
+    296
+   ],
+   "to": [
+    0,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    0,
+    0
+   ],
+   "to": [
+    350,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    43690,
+    43690,
+    43690
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    351,
+    1
+   ],
+   "to": [
+    351,
+    297
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    351,
+    297
+   ],
+   "to": [
+    1,
+    297
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    171,
+    106,
+    342,
+    117
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    171,
+    11
+   ],
+   "dst": [
+    171,
+    106,
+    342,
+    117
+   ],
+   "mode": 0,
+   "srcRowBytes": 688
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    191,
+    272,
+    291,
+    292
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    277,
+    133,
+    328,
+    156
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    51,
+    23
+   ],
+   "dst": [
+    277,
+    133,
+    328,
+    156
+   ],
+   "mode": 0,
+   "srcRowBytes": 208
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    -1,
+    -1,
+    353,
+    299
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    0,
+    296
+   ],
+   "to": [
+    0,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    0,
+    0
+   ],
+   "to": [
+    350,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    43690,
+    43690,
+    43690
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    351,
+    1
+   ],
+   "to": [
+    351,
+    297
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    351,
+    297
+   ],
+   "to": [
+    1,
+    297
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    16555,
+    139,
+    16712,
+    153
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    16555,
+    139,
+    16712,
+    153
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    30583,
+    30583,
+    30583
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    16555,
+    139,
+    16712,
+    153
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "pen": [
+    16556,
+    149
+   ],
+   "font": 1,
+   "size": 9,
+   "face": 0,
+   "len": 13,
+   "fullLen": 13,
+   "trunc": false,
+   "text": "After restart"
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    191,
+    272,
+    291,
+    292
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    -1,
+    -1,
+    353,
+    299
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    0,
+    296
+   ],
+   "to": [
+    0,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    0,
+    0
+   ],
+   "to": [
+    350,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    43690,
+    43690,
+    43690
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    351,
+    1
+   ],
+   "to": [
+    351,
+    297
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    351,
+    297
+   ],
+   "to": [
+    1,
+    297
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    34952,
+    34952,
+    34952
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    6,
+    64
+   ],
+   "to": [
+    343,
+    64
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    7,
+    65
+   ],
+   "to": [
+    344,
+    65
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    64,
+    90,
+    169,
+    102
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    105,
+    12
+   ],
+   "dst": [
+    64,
+    90,
+    169,
+    102
+   ],
+   "mode": 0,
+   "srcRowBytes": 432
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    11,
+    94,
+    43,
+    126
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    32,
+    32
+   ],
+   "dst": [
+    11,
+    94,
+    43,
+    126
+   ],
+   "mode": 0,
+   "srcRowBytes": 144
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    64,
+    110,
+    101,
+    122
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    37,
+    12
+   ],
+   "dst": [
+    64,
+    110,
+    101,
+    122
+   ],
+   "mode": 0,
+   "srcRowBytes": 160
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    64,
+    124,
+    101,
+    136
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    37,
+    12
+   ],
+   "dst": [
+    64,
+    124,
+    101,
+    136
+   ],
+   "mode": 0,
+   "srcRowBytes": 160
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    171,
+    68,
+    311,
+    82
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    140,
+    14
+   ],
+   "dst": [
+    171,
+    68,
+    311,
+    82
+   ],
+   "mode": 0,
+   "srcRowBytes": 576
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    171,
+    85,
+    342,
+    105
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    171,
+    20
+   ],
+   "dst": [
+    171,
+    85,
+    342,
+    105
+   ],
+   "mode": 0,
+   "srcRowBytes": 688
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    16555,
+    139,
+    16712,
+    153
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    16555,
+    139,
+    16712,
+    153
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    16555,
+    139,
+    16712,
+    153
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "pen": [
+    16556,
+    149
+   ],
+   "font": 1,
+   "size": 9,
+   "face": 0,
+   "len": 13,
+   "fullLen": 13,
+   "trunc": false,
+   "text": "After restart"
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    328,
+    133,
+    360,
+    157
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    32,
+    24
+   ],
+   "dst": [
+    328,
+    133,
+    360,
+    157
+   ],
+   "mode": 0,
+   "srcRowBytes": 144
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    171,
+    106,
+    342,
+    117
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    171,
+    11
+   ],
+   "dst": [
+    171,
+    106,
+    342,
+    117
+   ],
+   "mode": 0,
+   "srcRowBytes": 688
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    171,
+    118,
+    342,
+    130
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    171,
+    12
+   ],
+   "dst": [
+    171,
+    118,
+    342,
+    130
+   ],
+   "mode": 0,
+   "srcRowBytes": 688
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    277,
+    133,
+    328,
+    156
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    51,
+    23
+   ],
+   "dst": [
+    277,
+    133,
+    328,
+    156
+   ],
+   "mode": 0,
+   "srcRowBytes": 208
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    64,
+    5,
+    166,
+    15
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34859,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    102,
+    10
+   ],
+   "dst": [
+    64,
+    5,
+    166,
+    15
+   ],
+   "mode": 0,
+   "srcRowBytes": 416
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    14,
+    15,
+    46,
+    47
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    32,
+    32
+   ],
+   "dst": [
+    14,
+    15,
+    46,
+    47
+   ],
+   "mode": 0,
+   "srcRowBytes": 144
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    16573,
+    26,
+    16660,
+    38
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    16573,
+    26,
+    16660,
+    38
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    16573,
+    26,
+    16660,
+    38
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "pen": [
+    16574,
+    36
+   ],
+   "font": 1,
+   "size": 9,
+   "face": 0,
+   "len": 18,
+   "fullLen": 18,
+   "trunc": false,
+   "text": "Size after restart"
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    16660,
+    22,
+    16708,
+    43
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    16660,
+    22,
+    16708,
+    43
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    16663,
+    25,
+    16705,
+    40
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    64,
+    24,
+    161,
+    36
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    97,
+    12
+   ],
+   "dst": [
+    64,
+    24,
+    161,
+    36
+   ],
+   "mode": 0,
+   "srcRowBytes": 400
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    64,
+    38,
+    161,
+    50
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    97,
+    12
+   ],
+   "dst": [
+    64,
+    38,
+    161,
+    50
+   ],
+   "mode": 0,
+   "srcRowBytes": 400
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    171,
+    15,
+    342,
+    55
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    171,
+    40
+   ],
+   "dst": [
+    171,
+    15,
+    342,
+    55
+   ],
+   "mode": 0,
+   "srcRowBytes": 688
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    34952,
+    34952,
+    34952
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    -2,
+    264
+   ],
+   "to": [
+    351,
+    264
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    -1,
+    265
+   ],
+   "to": [
+    352,
+    265
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    191,
+    272,
+    291,
+    292
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    100,
+    20
+   ],
+   "dst": [
+    191,
+    272,
+    291,
+    292
+   ],
+   "mode": 0,
+   "srcRowBytes": 416
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    191,
+    272,
+    291,
+    292
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    11,
+    278,
+    91,
+    290
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    80,
+    12
+   ],
+   "dst": [
+    11,
+    278,
+    91,
+    290
+   ],
+   "mode": 0,
+   "srcRowBytes": 336
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    34952,
+    34952,
+    34952
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    6,
+    159
+   ],
+   "to": [
+    343,
+    159
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    7,
+    160
+   ],
+   "to": [
+    344,
+    160
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    64,
+    170,
+    141,
+    182
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    77,
+    12
+   ],
+   "dst": [
+    64,
+    170,
+    141,
+    182
+   ],
+   "mode": 0,
+   "srcRowBytes": 320
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    11,
+    184,
+    43,
+    216
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    32,
+    32
+   ],
+   "dst": [
+    11,
+    184,
+    43,
+    216
+   ],
+   "mode": 0,
+   "srcRowBytes": 144
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    64,
+    190,
+    101,
+    202
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    37,
+    12
+   ],
+   "dst": [
+    64,
+    190,
+    101,
+    202
+   ],
+   "mode": 0,
+   "srcRowBytes": 160
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    64,
+    204,
+    101,
+    216
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    37,
+    12
+   ],
+   "dst": [
+    64,
+    204,
+    101,
+    216
+   ],
+   "mode": 0,
+   "srcRowBytes": 160
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    64,
+    224,
+    176,
+    236
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    112,
+    12
+   ],
+   "dst": [
+    64,
+    224,
+    176,
+    236
+   ],
+   "mode": 0,
+   "srcRowBytes": 464
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    171,
+    166,
+    341,
+    190
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    170,
+    24
+   ],
+   "dst": [
+    171,
+    166,
+    341,
+    190
+   ],
+   "mode": 0,
+   "srcRowBytes": 688
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    186,
+    215,
+    207,
+    229
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    21,
+    14
+   ],
+   "dst": [
+    186,
+    215,
+    207,
+    229
+   ],
+   "mode": 0,
+   "srcRowBytes": 96
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    244,
+    215,
+    274,
+    229
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    30,
+    14
+   ],
+   "dst": [
+    244,
+    215,
+    274,
+    229
+   ],
+   "mode": 0,
+   "srcRowBytes": 128
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    304,
+    215,
+    334,
+    229
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    30,
+    14
+   ],
+   "dst": [
+    304,
+    215,
+    334,
+    229
+   ],
+   "mode": 0,
+   "srcRowBytes": 128
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    189,
+    238,
+    261,
+    249
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    72,
+    11
+   ],
+   "dst": [
+    189,
+    238,
+    261,
+    249
+   ],
+   "mode": 0,
+   "srcRowBytes": 304
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    264,
+    233,
+    316,
+    256
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    52,
+    23
+   ],
+   "dst": [
+    264,
+    233,
+    316,
+    256
+   ],
+   "mode": 0,
+   "srcRowBytes": 224
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    183,
+    196,
+    327,
+    212
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    144,
+    16
+   ],
+   "dst": [
+    183,
+    196,
+    327,
+    212
+   ],
+   "mode": 0,
+   "srcRowBytes": 592
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    16448,
+    279,
+    16574,
+    291
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    16448,
+    279,
+    16574,
+    291
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    16448,
+    279,
+    16574,
+    291
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "pen": [
+    16449,
+    289
+   ],
+   "font": 1,
+   "size": 9,
+   "face": 0,
+   "len": 20,
+   "fullLen": 20,
+   "trunc": false,
+   "text": "Startup Memory Tests"
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    16395,
+    291,
+    16427,
+    323
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    16395,
+    291,
+    16427,
+    323
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    82,
+    236,
+    176,
+    248
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    94,
+    12
+   ],
+   "dst": [
+    82,
+    236,
+    176,
+    248
+   ],
+   "mode": 0,
+   "srcRowBytes": 384
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    82,
+    248,
+    176,
+    260
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34860,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    94,
+    12
+   ],
+   "dst": [
+    82,
+    248,
+    176,
+    260
+   ],
+   "mode": 0,
+   "srcRowBytes": 384
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    171,
+    15,
+    342,
+    55
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    171,
+    40
+   ],
+   "dst": [
+    171,
+    15,
+    342,
+    55
+   ],
+   "mode": 0,
+   "srcRowBytes": 688
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    -1,
+    -1,
+    353,
+    299
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    0,
+    296
+   ],
+   "to": [
+    0,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    0,
+    0
+   ],
+   "to": [
+    350,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    43690,
+    43690,
+    43690
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    351,
+    1
+   ],
+   "to": [
+    351,
+    297
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    351,
+    297
+   ],
+   "to": [
+    1,
+    297
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    171,
+    15,
+    342,
+    55
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    171,
+    40
+   ],
+   "dst": [
+    171,
+    15,
+    342,
+    55
+   ],
+   "mode": 0,
+   "srcRowBytes": 688
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    191,
+    272,
+    291,
+    292
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    -1,
+    -1,
+    353,
+    299
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    0,
+    296
+   ],
+   "to": [
+    0,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    0,
+    0
+   ],
+   "to": [
+    350,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    43690,
+    43690,
+    43690
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    351,
+    1
+   ],
+   "to": [
+    351,
+    297
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    351,
+    297
+   ],
+   "to": [
+    1,
+    297
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    171,
+    106,
+    342,
+    117
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    171,
+    11
+   ],
+   "dst": [
+    171,
+    106,
+    342,
+    117
+   ],
+   "mode": 0,
+   "srcRowBytes": 688
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    191,
+    272,
+    291,
+    292
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    277,
+    133,
+    328,
+    156
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "bits",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "src": [
+    0,
+    0,
+    51,
+    23
+   ],
+   "dst": [
+    277,
+    133,
+    328,
+    156
+   ],
+   "mode": 0,
+   "srcRowBytes": 208
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    -1,
+    -1,
+    353,
+    299
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    0,
+    296
+   ],
+   "to": [
+    0,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    0,
+    0
+   ],
+   "to": [
+    350,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    43690,
+    43690,
+    43690
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    351,
+    1
+   ],
+   "to": [
+    351,
+    297
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    351,
+    297
+   ],
+   "to": [
+    1,
+    297
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    16555,
+    139,
+    16712,
+    153
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    16555,
+    139,
+    16712,
+    153
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 2,
+   "rect": [
+    16555,
+    139,
+    16712,
+    153
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "text",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "pen": [
+    16556,
+    149
+   ],
+   "font": 1,
+   "size": 9,
+   "face": 0,
+   "len": 13,
+   "fullLen": 13,
+   "trunc": false,
+   "text": "After restart"
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "clip",
+   "rect": [
+    -32767,
+    -32767,
+    32767,
+    32767
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    191,
+    272,
+    291,
+    292
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "rect",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    -1,
+    -1,
+    353,
+    299
+   ],
+   "ext": [
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    65535,
+    65535,
+    65535
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    0,
+    296
+   ],
+   "to": [
+    0,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    0,
+    0
+   ],
+   "to": [
+    350,
+    0
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    43690,
+    43690,
+    43690
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    351,
+    1
+   ],
+   "to": [
+    351,
+    297
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "line",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "from": [
+    351,
+    297
+   ],
+   "to": [
+    1,
+    297
+   ],
+   "pen": [
+    1,
+    1
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "fg",
+   "rgb": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "op": "state",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "kind": "bg",
+   "rgb": [
+    56797,
+    56797,
+    56797
+   ]
+  },
+  {
+   "op": "rrect",
+   "port": "0x1e9dffa0",
+   "ticks": 34861,
+   "a5": "0x1ea0dcc0",
+   "psn": "0.36438017",
+   "displayEpoch": 24,
+   "generation": 1,
+   "verb": 0,
+   "rect": [
+    191,
+    272,
+    291,
+    292
+   ],
+   "ext": [
+    8,
+    8
+   ]
+  }
+ ],
+ "cursor": 0,
+ "nextCursor": 8192,
+ "writeCursor": 8192,
+ "pending": 0,
+ "records": 300,
+ "wraps": 0,
+ "more": false,
+ "resync": false,
+ "torn": false,
+ "busy": false,
+ "lostBytes": 0,
+ "dropped": 0
+}
