@@ -197,6 +197,42 @@ guesses:
   is the design — but it means a source's ops must be retained, bounded,
   and dropped when its world goes.
 
+### D0 — discovery, promoted from "deferred" (and why that was wrong)
+
+**This was deferred item 2. It is a slice, and the deferral was a
+mistake with a specific cause**: it assumed discovery is a one-off
+setup cost — arm once, scan once, hook the world. True in a probe.
+
+But this arc measured that **a world is replaced, not updated**, and
+that only 1 of 9 surveyed OS 9 binaries imports `UpdateGWorld`. Under
+continuous composition the Finder therefore destroys and recreates its
+offscreen world as it repaints, so discovery runs *again* every time —
+and what runs is an unbounded two-heap scan, at draw time, inside the
+Finder. The probe's risk profile does not transfer to continuous use,
+and the plan carried it across without noticing.
+
+**A trap patch is also the better mechanism, not merely the safer one.**
+Patching `NewGWorld` / `DisposeGWorld` in the armed process hands us the
+port *at creation*, which is precisely the world-replacement signal
+slice C would otherwise have to infer from ops going stale. One
+mechanism answers two questions.
+
+**Measure this before building it.** The Finder imports `NewGWorld` from
+CarbonLib as a **CFM** call, and native PowerPC callers do not dispatch
+through the 68K trap table. The act plane's `MenuSelect` patch does
+reach the PPC Finder, so some glue honours patches — but whether
+`NewGWorld` does is unknown and decides whether this approach exists at
+all. One boot answers it: patch the trap, open a Finder window, see
+whether the patch fires. **Do that before writing the resident**, and if
+it does not fire, say so and fall back to the scan with a bounded
+re-discovery budget rather than building on a mechanism that cannot see
+the caller.
+
+Resident discipline applies (`classic-mac-init-platform`), including
+this project's paid lesson that a callback's ABI is not a formality —
+a register-based callback written as a plain C function hung a cold
+boot, and the cure was an assembly shim.
+
 ### D — the payoff, on screen
 
 One Finder icon-view window, rendered host-side with **real labels at
@@ -231,16 +267,12 @@ These are all real and none of them are in the slices above.
    observed, and the experiment must be designed around that rather than
    into it.
 
-2. **A shippable discovery mechanism.** What exists is an unbounded heap
-   scan running at draw time inside foreign processes, which crashed the
-   Finder once. It is an experiment and `docs/gworld-probe-brief.md` says
-   it must not ship armed. The likely production route is a trap patch on
-   `NewGWorld`/`DisposeGWorld` in the armed process — bounded, no scan —
-   which is its own slice with resident discipline and an ABI check
-   (`classic-mac-init-platform`, and the Time Manager lesson about
-   register-based callbacks). **The composition work above deliberately
-   does not depend on this**, so the payoff can be proven before the
-   mechanism is hardened.
+2. ~~A shippable discovery mechanism.~~ **PROMOTED to slice D0** — see
+   above. Deferring it was wrong: world replacement makes discovery a hot
+   path rather than a setup cost, and a `NewGWorld` patch also supplies
+   the replacement signal slice C needs. The join still goes first,
+   because it is cheap and de-risks the coordinate model; it is no longer
+   the only thing in this plan.
 
 3. **The spread is thin.** Finder icon view is measured. Finder *list*
    view, a control panel, and a double-buffered application are not. A
