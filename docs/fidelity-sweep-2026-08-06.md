@@ -11,7 +11,7 @@ meaningful against the exact tree named here.
 | **Renderer tree** | branch `claude/fidelity-sweep-2026-08-06`, forked from `claude/gworld-interior-host-render-98ddd5` at `eb952325`. Every render in this document was produced from a working tree whose only differences from that fork point are `tools/fidelity-*.py`, this file, the new fixtures, and the render-list entries that name them. |
 | **Asset pack** | the **OLD** one: `MirrorKitUI/Resources/appicons` carries **186** per-app icons and `Resources/icons` carries **5** generic System-file icons (`application`, `disk`, `document`, `folder`, `system-folder`), one size only. |
 | **Guest build** | `1bff0bd2ca39 2026-08-06T20:04:32Z`, asserted by `--expect-build auto` on **every** capture — no foreign guest answered this listener. |
-| **Guest machine** | QEMU `mac99`, Mac OS 9.1, 800×600, run `nowvm-fsw1`. Nothing here touched metal. |
+| **Guest machine** | QEMU `mac99`, Mac OS 9.1, 800×600. Two session-private clones: `nowvm-fsw1` (the control panels, Note Pad, Stickies, Scrapbook) and `nowvm-fsw2` (Sherlock 2, Key Caps, the Finder), rebooted between because the scene walk goes stale. Each capture names its own in `provenance.vm`. Anchor 1760, wire 5361 — **never** the defaults, both checked free with `lsof` before either boot, and both released afterwards. Nothing here touched metal. |
 
 **The asset pack changed on another branch while this sweep was running**
 — 186 → 914 per-app icons, 5 → 127+10 System-file icons, and 16×16 art
