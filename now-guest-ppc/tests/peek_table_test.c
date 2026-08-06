@@ -206,11 +206,27 @@ int main(void)
     check(t.endpoint.guest_name[0] == 4,
           "the guest name is a Pascal string with its own length");
 
-    /* Old residents are SHORTER, which is how they say they lack this
-       plane; the application must gate on length before reading here. */
-    check(offsetof(NowPeekTable, liveness_ticks) + sizeof(NowPeekU32)
+    /* Old residents are SHORTER, which is how they say they lack a
+       plane; the application must gate on length before reading here.
+       U9 appended the transport probe behind the counter, so the counter
+       is no longer the tail — and the two cells are gated SEPARATELY in
+       mirror_probe.c, because an extension with one and not the other is
+       a build that exists. */
+    check(offsetof(NowPeekTable, transport_format)
+              == offsetof(NowPeekTable, liveness_ticks) + sizeof(NowPeekU32),
+          "the transport probe appends directly behind the tick counter");
+    check(offsetof(NowPeekTable, transport_result) + sizeof(NowPeekI32)
               == sizeof(NowPeekTable),
-          "the tick counter is the tail, so shorter means absent");
+          "the transport result is the tail, so shorter means absent");
+
+    /* Reachability is not a dial, and the values are the contract rather
+       than an ordering — a refusal carries the driver's own OSErr so that
+       "no MacTCP here" and "MacTCP said no" are different answers. */
+    t.transport_probe = kNowPeekTransportRefused;
+    t.transport_result = -192;
+    check(t.transport_probe != kNowPeekTransportOpen
+              && t.transport_result != 0,
+          "a refusal arrives with its reason attached");
 
     /* The vehicle's own proof-of-life. A COUNT, not a timestamp: a
        stopped clock and a stopped task are indistinguishable in a

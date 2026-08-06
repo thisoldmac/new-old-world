@@ -65,8 +65,13 @@ extern void now_ext_act_apply(NowPeekTable *table);
    and never to each other. */
 extern void now_content_boot(NowPeekTable *table);
 extern void now_content_gne(NowPeekTable *table);
-/* P6: the liveness channel's Time Manager task (now_liveness.c). */
+/* P6: the liveness channel's Time Manager task (now_liveness.c), and the
+   transport reachability probe. Two entry points for the same reason P3
+   has two: one may only happen at INIT time, and the other may only
+   happen anywhere BUT — MacTCP is not loaded at _start, and PBOpen is a
+   blocking call no interrupt-time context may make. */
 extern void now_liveness_install(NowPeekTable *table);
+extern void now_liveness_probe_transport(NowPeekTable *table);
 /* P5, the transition tail (now_event.c). Same two-entry shape, and the
    pass takes the words this filter has ALREADY read: two reads of
    LMGetWindowList in one pass could disagree, and a record that did not
@@ -253,6 +258,11 @@ void now_ext_gne_apply(void)
     }
     ticks = (NowPeekU32)LMGetTicks();
     table->heartbeat = ticks;
+    /* P6's transport probe, once in the life of the machine. This is the
+       only non-interrupt, post-boot context this component has, which is
+       what the probe needs and cannot get anywhere else; it returns
+       immediately on every pass after the first. */
+    now_liveness_probe_transport(table);
     if (now_ext_writer_lease_valid(table, ticks)) {
         if (table->writer.resident_owner_epoch != table->writer.owner_epoch) {
             /* One dark pass separates writers. Patches consult the echoed

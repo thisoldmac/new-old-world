@@ -78,6 +78,14 @@ typedef struct MirrorFacts {
        application did. Zero means a resident without the vehicle — which
        an older one reports simply by being shorter. */
     unsigned long liveness_ticks;
+    /* § 4's reachability answer, and the ONLY thing it claims: whether
+       the resident could open MacTCP's `.ipp` driver. Nothing has been
+       dialled. `transport_result` carries the driver's own OSErr, so a
+       refusal arrives with its reason rather than as a bare false. An
+       extension too old to have looked reports untried by being shorter,
+       which is the accretive rule every other cell here follows. */
+    unsigned long transport_probe;
+    long transport_result;
     Boolean has_build_identity;
     unsigned long source_manifest[kMirrorIdentityWords];
     unsigned long build_fingerprint[kMirrorIdentityWords];

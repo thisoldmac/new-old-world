@@ -981,7 +981,44 @@ typedef struct {
        and a stopped task look identical in a timestamp, and this must be
        able to distinguish them. */
     NowPeekU32 liveness_ticks;
+    /* U9 P6 append. **Whether a transport is REACHABLE from this
+       component at all**, written by the resident and by nothing else.
+
+       It exists because the last transport question was answered by the
+       linker rather than by a machine, and cost four library
+       combinations to ask: Open Transport's 68K libraries are CFM/Shared
+       Library Manager fragments and this extension is a flat 68K code
+       resource, so they do not link. MacTCP's `.ipp` driver is the route
+       left that keeps the resident an INIT, because the Device Manager
+       is TRAPS — `PBOpen` and `PBControl` need no library at all.
+
+       That claim deserves the same cheap refutation the OT one got, and
+       this field is it: open the driver, record what happened, and dial
+       nothing at all. A route that cannot be opened is dead before a
+       single frame is framed, and finding that out costs one boot rather
+       than a transport.
+
+       `transport_result` carries the driver's own OSErr, so a refusal
+       arrives with its reason attached rather than as a bare false. The
+       difference between "no MacTCP on this machine" and "MacTCP said
+       no" is the whole value of asking. */
+    NowPeekU16 transport_format;
+    NowPeekU16 transport_probe;
+    NowPeekI32 transport_result;
 } NowPeekTable;
+
+/* What the resident found when it reached for a transport. The values
+   are the contract and are never inferred from an ordering, so a later
+   probe state appends rather than renumbers — the same rule the
+   capability bits follow. */
+enum {
+    kNowPeekTransportFormatV1 = 1
+};
+enum {
+    kNowPeekTransportUntried = 0,   /* nothing has looked yet */
+    kNowPeekTransportOpen    = 1,   /* the .ipp driver opened */
+    kNowPeekTransportRefused = 2    /* it answered, and said no */
+};
 
 /* The offsets ARE the contract; a drift here is a defect on the other
    side of a compiler, not a build detail. */
@@ -1078,8 +1115,8 @@ _Static_assert(sizeof(NowPeekActV2Cell) == 32 * 4,
    this line, and that is the point: it is the one assert that notices a
    field added anywhere but the tail. */
 _Static_assert(sizeof(NowPeekTable)
-                   == offsetof(NowPeekTable, liveness_ticks)
-                    + sizeof(NowPeekU32),
+                   == offsetof(NowPeekTable, transport_result)
+                    + sizeof(NowPeekI32),
                "table size");
 _Static_assert(sizeof(NowPeekSemanticRecord) == 48,
                "semantic record size");
@@ -1144,5 +1181,18 @@ _Static_assert(offsetof(NowPeekTable, liveness_ticks)
                    == offsetof(NowPeekTable, endpoint)
                     + sizeof(NowPeekLivenessEndpoint),
                "liveness tick counter is the tail");
+/* U9's append, pinned the same way and for the same reason: the probe
+   pair must sit immediately after the counter, or an application built
+   against U8 and an extension built against U9 disagree about where the
+   counter it DOES understand ends. */
+_Static_assert(offsetof(NowPeekTable, transport_format)
+                   == offsetof(NowPeekTable, liveness_ticks) + 4,
+               "transport probe appends behind the tick counter");
+_Static_assert(offsetof(NowPeekTable, transport_result)
+                   == offsetof(NowPeekTable, transport_format) + 4,
+               "transport result offset");
+_Static_assert(sizeof(NowPeekTable)
+                   == offsetof(NowPeekTable, transport_result) + 4,
+               "the transport result is the new tail");
 
 #endif /* NOW_PEEK_TABLE_H */

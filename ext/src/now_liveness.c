@@ -56,6 +56,7 @@
  * vehicle is the part the premise depends on.
  */
 
+#include <Devices.h>
 #include <Gestalt.h>
 #include <LowMem.h>
 #include <MacTypes.h>
@@ -101,6 +102,8 @@ typedef struct {
 
 static LivenessTask gLivenessTask;
 static Boolean gTaskInstalled = false;
+static Boolean gTransportProbed = false;
+static short gTransportRefNum = 0;
 
 /* The assembly shim (now_liveness_tm.S) the Time Manager actually calls. */
 extern void now_liveness_tm_entry(void);
@@ -156,6 +159,63 @@ void now_liveness_tick(TMTaskPtr task)
         self->visible_epoch = (want != NULL) ? want->endpoint_epoch : 0;
     }
     PrimeTime((QElemPtr)task, kLivenessTickMs);
+}
+
+/* § 4's first question, and deliberately ONLY the first one: can this
+   component reach a transport at all?
+
+   **Why this is a probe and not a dial.** The previous transport attempt
+   was killed by the linker after four library combinations, which was
+   much the cheapest place to find it. MacTCP's `.ipp` driver is the route
+   that survives that argument — the Device Manager is traps, so `PBOpen`
+   needs no library and a flat 68K code resource can call it — but
+   "survives an argument" is not a status this project accepts. So: open
+   the driver, write down what it said, dial nothing. If a machine cannot
+   even open it, the whole transport is dead for one boot's cost rather
+   than for a transport's.
+
+   **Why it runs HERE and not in the tick.** Two reasons, and either alone
+   would settle it. `PBOpen` is a synchronous Device Manager call that can
+   move memory and block, which is exactly what an interrupt-time context
+   may never do. And MacTCP is not loaded at INIT time, so asking at
+   `_start` would answer a question about boot ordering rather than about
+   the machine. The jGNE filter's first pass is after boot, in an
+   application's context, at non-interrupt time — the one place in this
+   component where a call like this is legal.
+
+   Once only, whatever the answer. A driver that refused is not retried
+   on every event-loop pass: that would be a synchronous Toolbox call in
+   the hot path of every application on the machine, which is the shape of
+   defect this component exists to avoid. */
+void now_liveness_probe_transport(NowPeekTable *table)
+{
+    ParamBlockRec pb;
+    OSErr err;
+    /* The driver name is a Pascal string and is built as bytes rather
+       than written as "\p.IPP": this file compiles under -Wall -Wextra
+       -Werror and a Pascal string literal is a dialect the host cc that
+       reads this contract does not share. */
+    static const unsigned char kIPPName[5] = { 4, '.', 'I', 'P', 'P' };
+
+    if (gTransportProbed || table == NULL) return;
+    gTransportProbed = true;             /* once, whatever it answers */
+
+    table->transport_format = kNowPeekTransportFormatV1;
+
+    pb.ioParam.ioCompletion = NULL;
+    pb.ioParam.ioNamePtr = (StringPtr)kIPPName;
+    pb.ioParam.ioVRefNum = 0;
+    pb.ioParam.ioPermssn = fsCurPerm;
+    err = PBOpenSync(&pb);
+    /* Committed LAST, like every other publish in this table: a reader
+       that sees a probe state has the result that goes with it. */
+    table->transport_result = (NowPeekI32)err;
+    if (err == noErr) {
+        gTransportRefNum = pb.ioParam.ioRefNum;
+        table->transport_probe = kNowPeekTransportOpen;
+    } else {
+        table->transport_probe = kNowPeekTransportRefused;
+    }
 }
 
 /* Installed LAST by now_ext.c, after everything else is in place, per

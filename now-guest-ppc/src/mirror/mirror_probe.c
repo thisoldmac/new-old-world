@@ -295,6 +295,18 @@ void now_mirror_probe(MirrorFacts *facts)
         (table->length >= (unsigned long)(offsetof(NowPeekTable, liveness_ticks)
                                           + sizeof(NowPeekU32)))
             ? table->liveness_ticks : 0;
+    /* Gated on the same accretive rule and INDEPENDENTLY of the counter
+       above: the two cells arrived in different versions, so an extension
+       that has one and not the other is a build that exists. */
+    if (table->length >= (unsigned long)(offsetof(NowPeekTable,
+                                                  transport_result)
+                                         + sizeof(NowPeekI32))) {
+        facts->transport_probe = table->transport_probe;
+        facts->transport_result = (long)table->transport_result;
+    } else {
+        facts->transport_probe = kNowPeekTransportUntried;
+        facts->transport_result = 0;
+    }
     {
         NowPeekBuildIdentity identity;
         if (now_peek_build_identity(&identity)) {
