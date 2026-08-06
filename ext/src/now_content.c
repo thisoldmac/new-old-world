@@ -121,6 +121,9 @@ static short gPortCount = 0;
 #define kNowContentProbeSeenMax 16
 static NowPeekU32 gProbeSeen[kNowContentProbeSeenMax];
 static short gProbeSeenCount = 0;
+/* The pending sighting's dst area, so a later, bigger blit can take the
+   slot from it. Reset when the slot is serviced or the identity changes. */
+static long gProbePendingArea = 0;
 
 /* Cheap change-detect for the repair sweep, so a 33 MHz machine is not
    charged a WindowList walk on every single event-loop pass. */
@@ -430,34 +433,33 @@ static void content_record_bits(const BitMap *src_bits, const Rect *src_rect,
    allocated, and nothing happens at all outside probe mode. The 0x8000
    rowBytes bit is Color QuickDraw's own "this BitMap is a PixMap"
    discriminator; a plain BitMap has no owning port to find. */
-/* A COMPOSITE IS CONTENT-SIZED, and that is the whole filter. An armed
-   window emits many blits per repaint - scroll arrows, grow boxes,
-   cached widgets - and the chase can only hold one pending sighting at
-   a time, so on 2026-08-06 the first small blit of every repaint took
-   the slot and 122 of 148 offers were dropped busy, the content-sized
-   one among them. Requiring a quarter of the window's area reserves the
-   slot for the thing we are hunting; anything refused here is counted,
-   never silently skipped. */
-static Boolean content_probe_big_enough(GrafPtr port, const Rect *dst)
-{
-    long dst_area;
-    long port_area;
+/* LARGEST WINS, and the two thresholds this replaces were both wrong.
+   The chase holds ONE pending sighting; a repaint emits many blits. Take
+   the first and a scroll arrow wins every time (122 of 148 offers
+   dropped busy, 2026-08-06). Require a quarter of the window and a
+   full-content composite qualifies while a PANE-sized one never can -
+   NOW's own preview well is a small pane in a large window, and that
+   rule refused all 19 of its blits, so the control tested nothing for a
+   second time.
 
-    if (port == NULL || dst == NULL) {
-        return false;
+   So the pending cell holds the BIGGEST blit offered since it was last
+   serviced, and there is no fraction to guess: whatever the largest
+   thing blitted into this window was, that is what gets chased. The
+   floor below is only to skip cursor-sized noise. */
+enum { kNowContentProbeMinArea = 32 * 32 };
+
+static long content_probe_area(const Rect *r)
+{
+    if (r == NULL) {
+        return 0;
     }
-    dst_area = (long)(dst->right - dst->left) * (dst->bottom - dst->top);
-    port_area = (long)(port->portRect.right - port->portRect.left)
-        * (port->portRect.bottom - port->portRect.top);
-    if (dst_area <= 0 || port_area <= 0) {
-        return false;
-    }
-    return dst_area >= port_area / 4;
+    return (long)(r->right - r->left) * (r->bottom - r->top);
 }
 
 static void content_probe_sight(const BitMap *src_bits, const Rect *dst_rect)
 {
     GrafPtr port = NULL;
+    long area;
     short i;
 
     if (gArmedMode != (NowPeekU32)kNowContentModeProbe
@@ -473,7 +475,8 @@ static void content_probe_sight(const BitMap *src_bits, const Rect *dst_rect)
     if (port == NULL || (NowPeekU32)port != gBlock->active_window) {
         return;
     }
-    if (!content_probe_big_enough(port, dst_rect)) {
+    area = content_probe_area(dst_rect);
+    if (area < (long)kNowContentProbeMinArea) {
         gBlock->probe_sight_small++;
         return;
     }
@@ -489,10 +492,11 @@ static void content_probe_sight(const BitMap *src_bits, const Rect *dst_rect)
             return;
         }
     }
-    if (gBlock->probe_pending_pixmap != 0) {
+    if (gBlock->probe_pending_pixmap != 0 && area <= gProbePendingArea) {
         gBlock->probe_sight_busy++;
-        return;               /* one chase in flight; a later blit re-offers */
+        return;               /* something bigger is already waiting */
     }
+    gProbePendingArea = area;
     gBlock->probe_pending_pixmap = (NowPeekU32)src_bits;
     gBlock->probe_pending_l = src_bits->bounds.left;
     gBlock->probe_pending_t = src_bits->bounds.top;
@@ -1030,6 +1034,7 @@ static void content_probe_service(NowPeekU32 a5, NowPeekU32 generation)
     wbase = gBlock->probe_pending_base;
     wrow = gBlock->probe_pending_row_bytes;
     gBlock->probe_pending_pixmap = 0;
+    gProbePendingArea = 0;
     /* Remembered hit OR miss: a pixmap that failed to resolve once will
        fail the same way sixty times a second, and the scan is the cost
        being avoided. A full seen table stops chasing new pixmaps rather
@@ -1259,6 +1264,7 @@ void now_content_gne(NowPeekTable *table)
             gProbeSeenCount = 0;      /* a new identity owes every pixmap
                                          a fresh chase */
             gBlock->probe_pending_pixmap = 0;
+            gProbePendingArea = 0;
             gBlock->display_epoch++;
             if (gBlock->display_epoch == 0) {
                 gBlock->display_epoch = 1;
