@@ -71,6 +71,50 @@ uncover repaint is total, and typing (`key`) gives only direct window
 drawing — selection redraw worlds are too transient for the chase
 (sighted, chased, gone: measured `misses`).
 
+## ANSWERED: worlds hooked at BIRTH, and Sherlock's interior crosses (2026-08-06, plan 014 complete)
+
+Plan 014 ran end to end the same day it was written, and every slice
+answered:
+
+- **E0** (static): Sherlock 2 and Appearance both resolve `NewGWorld`
+  against **InterfaceLib**, read from their own PEF import tables
+  (`tools/pef.py --imports`, extended to map symbols to libraries). Only
+  NOW's own binary links CarbonLib, so the CarbonLib hole never stood
+  between the resident and a target.
+- **E1** (one boot): a resident-installed 68K patch on `$AB1D` fired for
+  the CFM Finder — `qdext {installed 0x0058e61c, calls 6509, newGWorld
+  2, foreign 0}`. **A native PowerPC caller reaches a 68K trap patch**
+  through InterfaceLib's glue, exactly as the documentation says.
+- **E2/E3**: the shim gained a tail wrap for selector 0 and a head
+  action for selector 4, so each world is hooked at creation and
+  released at disposal. Against Sherlock 2 — which the chase hooked 0
+  of 8 times — **77 born, 77 died, 0 missed**, and its interior
+  crossed: the radio labels, the column headers, and the volume row
+  with its real index date.
+
+**The host join had to learn to nest.** Sherlock composites two levels
+deep — the list is its own world, blitted into the world holding the
+interior, which is blitted into the window. Pending claims are now
+keyed by destination port, and a `blitsrc` on an offscreen port is a
+real join rather than noise. Gated by
+`testSherlockInteriorComposesFromWorldsHookedAtBirth`.
+
+**THE RING IS NOW THE LIMIT, and it is measured**: a hooked Sherlock
+overran 64 KiB inside one settle (`lostBytes 114018`), and the first
+run's interior text was lost to the overrun rather than to the
+mechanism. Draining continuously *during* the stimulus recovered it
+(3030 records, all nine strings) but still reported `lostBytes 343204`
+across the run. So deferred item 4 of plan 013 is no longer
+theoretical: continuous composition needs a drain cadence, a shorter
+arm, or a bigger ring, and the decision now has numbers behind it.
+
+**Also measured, and it corrects the applet's scope claim**: `foreign`
+counts dispatches the patch saw outside the armed context, and it is
+NOT zero under load (139–327). The trap table reaches further than one
+process; the note function declines those, so the plane's behaviour is
+unchanged, but "an application's trap patch is process-local" was the
+applet's own failure and is not a general fact.
+
 ## The coverage spread, and the one application that beat the chase (2026-08-06, later)
 
 Deferred item 3's thin spread is thin no longer. Live captures, each a
@@ -82,6 +126,10 @@ the static table said, so the plain window hook reads their interiors
 whole; and **NOW's own window** composes its Workshop, with a retarget
 test pinning that a captured window stays composed as expected-stale
 when the plane moves on — the hatch behind the Finder is gone.
+
+**SUPERSEDED by plan 014 — see the entry above; the mechanism that
+closes this now exists and Sherlock is proven through it. Appearance
+itself has not been re-run.** The original finding:
 
 **BROKEN in exactly the predicted way: Appearance.** It builds a
 transient offscreen world per widget blit, and the sight→chase→hook
