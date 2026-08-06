@@ -14,6 +14,76 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED: MirrorKit's own 165-test suite was never in the gate — five days ungated, three of them red (2026-08-06)
+
+`mirror/host/MirrorKit` is a full SwiftPM package, vendored into this tree
+as tracked files on **2026-08-01** (`0443ab2b`), carrying its own suite of
+165 tests: the scene IR, the captured fixture corpus, hit-testing, the
+wire resync, the pixel islands. `scripts/test-all` never ran a line of it.
+
+Nothing did, and the reason is worth stating plainly because it is not an
+oversight anyone would spot by reading the gate. Every stage of `test-all`
+looks like it covers the host: `test-host` runs `swift test` — against
+`now-host`. `test-native` compiles C. `build-guests` runs cross-compilers.
+Three green stages, none of which had any reason to walk into `mirror/`.
+This is the same hole AGENTS.md already names about the cross-compilers —
+"every other gate can be green while neither guest compiles, because none
+of them invokes a cross-compiler" — arrived at a second time, from a
+different direction, four days after the sentence warning about it was
+written down. **A gate is only as wide as the tools it invokes**, and
+adding a whole vendored package to a repository does not widen it.
+
+What that bought: on **2026-08-03** (`19dcab89`, the semantic IR v2 layer)
+the scene IR's major moved 1 → 2. That commit updated `IRFreezeTests` and
+did not re-stamp the captured corpus. From that moment `FixtureTests`
+reported **seven failures**, and `scripts/test-all` reported all-green,
+for three days — until another agent ran the package's suite by hand today
+and noticed.
+
+The failures themselves were trivial, and that is the least interesting
+part of this entry. Diffed field by field, produced against expected,
+every one of the seven fixtures differed in **exactly one place**:
+`version: 2` produced, `version: 1` expected. Every other byte of every
+scene matched. Nothing in MirrorKit had regressed. They were re-stamped,
+not re-captured — mirror/AGENTS.md is explicit that the corpus
+deliberately carries a real garbage menu, `ax_oracle_not_found` rows and
+stale samples, so a regeneration that "cleaned" it would have destroyed
+the thing it exists to be.
+
+Fixed:
+
+- **The gate.** New stage 2 of 4, `scripts/test-mirrorkit`, after the ~2 s
+  native tests and before the guest cross-builds; ~15 s cold. It runs
+  `swift build` beside `swift test`, for the reason `test-host` runs
+  xcodebuild beside `swift test`: the suites depend on `MirrorKit` and
+  `MirrorKitUI`, so a break in `MirrorApp` compiles nowhere the suite can
+  see it. A missing `mirror/` or a missing `swift` exits 0 with a loud
+  `==> SKIP` and the reason, which `test-all` greps back out of the log
+  and echoes — "did not run" must never again read as "passed".
+- **The diagnosis.** `FixtureTests` now compares the version stamp first
+  and alone, then compares the scene body with the stamp removed from both
+  sides. `Scene.version` is a compile-time constant, so pinning it inside
+  each fixture pinned one fact seven times; the next major bump will say
+  "the corpus predates IR v*N* — this is a STALE FIXTURE, not a scene
+  regression" once per fixture instead of printing seven scene diffs.
+
+Both watched failing under mutation before being trusted, and committed
+before mutating. `IR.version = 3` reddened the stamp check with the stale-
+fixture message and no body diff; reversing the z-order in `SceneBuilder`
+(`backdrops + foreground`) reddened three fixtures with a real scene
+mismatch and left the stamp alone. In both cases `test-all` stopped at
+`==> FAILED at: MirrorKit gate` and ran nothing after it. Renaming
+`Package.swift` away produced the loud SKIP and let the run continue.
+
+**What is still not gated.** This closes `mirror/host/MirrorKit`.
+`mirror/tests/` is a directory of Python probes that drive a live guest —
+`nohijack-probe.py`, `winact-probe.py`, `trials.py` and the rest — so it
+belongs outside a general gate for the same reason the metal suites do,
+and no attempt was made to wire it in. `mirror/guest/` was not audited
+here at all; whether anything cross-compiles it is an open question, not a
+claim. The general form of the defect — a subdirectory arriving with tests
+nobody wired up — is not fixed by fixing one instance of it.
+
 ## The `desktopItems` entry below had no evidence because this side threw it away (2026-08-06)
 
 A dated line under **"FIRST LIVE ANSWERS from the 2026-08-05 drive"**, and

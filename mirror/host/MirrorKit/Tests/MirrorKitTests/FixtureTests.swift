@@ -75,9 +75,11 @@ final class FixtureTests: XCTestCase {
             XCTFail("""
             \(name): the corpus predates IR v\(IR.version) \
             (this fixture is stamped v\(expectedVersion.map(String.init) ?? "?")).
-            This is a STALE FIXTURE, not a scene regression — check the scene \
-            body below before touching MirrorKit. Re-stamp the fixture if the \
-            body still matches; re-capture off a live guest if it does not.
+            This is a STALE FIXTURE, not a scene regression. The scene body is \
+            compared separately: if no "scene mismatch" is also reported for \
+            this fixture, the stamp is the ONLY thing that moved and nothing \
+            in MirrorKit has changed shape. Re-stamp the fixture then; \
+            re-capture off a live guest only if the body really did move.
             """)
         }
         produced = withoutVersion(produced)
