@@ -74,6 +74,35 @@ there. [docs/status.md](docs/status.md)
 carries the rest, and [docs/open-issues.md](docs/open-issues.md) is the
 ledger.
 
+**The Mirror got much cheaper on 2026-08-06, and the remaining cost is
+now waiting rather than working.** Measured on an emulated Power Mac
+with the guest's own microsecond clock, which the scene now carries
+permanently as `meta.phases` — before that it reported one
+tick-quantised number that could not see anything under 17 ms, and
+reasoning from it produced two confidently wrong answers in one day. A
+scene walk with NOW frontmost cost ~1.1 s and now costs 3–8 ms: almost
+all of it was a `FindControl` grid sweep of NOW's own window, and an
+application does not have to DISCOVER controls it made — the registry
+that already recorded each control's kind now says which exist. The
+same change fixed a lie: with another application in front, the sweep
+probed 3,724 points, found nothing (`FindControl` refuses an inactive
+window), and the mirror reported NOW's window as EMPTY — an absence it
+had never observed. Idle wire traffic fell about 90% with scene deltas,
+whose baseline is named by a digest of what the consumer actually holds
+rather than by a sequence number, so a drifted host repairs itself on
+the next round trip instead of quietly diverging.
+
+**What that leaves is latency.** A round trip still takes ~115 ms even
+when the answer is a zero-byte "nothing changed", because the guest's
+event loop sleeps up to 100 ms before it notices a request. That is
+under investigation and is the honest headline: the Mirror is no longer
+slow because it does too much, it is slow because it waits. Two other
+things measured the same day and not fixed: a background application
+cannot be armed for content capture AT ALL (nothing can make a process
+pump that is not being scheduled), and every number here is from an
+emulator — a PowerBook 1400c is far slower, and for the wire the
+emulator likely understates the win rather than flattering it.
+
 ## Try the modern half
 
 The host application needs no vintage hardware, and most of this

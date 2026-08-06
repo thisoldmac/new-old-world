@@ -29,6 +29,26 @@ nothing about behaviour, **tested** means the suites pass, and
 
 ## What works today
 
+- **The scene says where its own time went** (2026-08-06). Every scene
+  carries `meta.phases`: eight non-overlapping phases in MICROSECONDS,
+  plus the measurement's own weight so "cheap enough to leave on" is
+  published rather than claimed. It replaced a single tick-quantised
+  number that could not resolve anything under 17 ms — from which two
+  confidently wrong answers were derived in one day, each blaming the
+  wrong subsystem. Every performance claim in this file now comes from
+  it.
+- **The Mirror's guest-side cost is small and its lies are fewer**
+  (2026-08-06, emulator only). A scene walk with NOW frontmost fell from
+  ~1.1 s to 3–8 ms. Almost all of it was a `FindControl` grid sweep of
+  NOW's own window; the fix was to stop discovering controls the
+  application itself created, since the registry that records each
+  control's kind already knows which exist. The same change ended a
+  false claim: with another application in front, `FindControl` refuses
+  an inactive window, so the sweep probed 3,724 points, found nothing,
+  and the mirror reported NOW's window as empty — an absence it had
+  never observed. Idle wire traffic fell about 90% with scene deltas,
+  whose baseline is a digest of what the consumer actually holds, so a
+  drifted host repairs itself on the next round trip.
 - **The Workshop** — the guest is one window: a sidebar rail of pages
   with Logs and Connection pinned at the bottom behind a divider and a
   status lamp, a header placard per page, a status placard below, and
@@ -436,6 +456,20 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
 
 ## What does not work
 
+- **A Mirror round trip waits ~115 ms before it works for 3–8 ms**
+  (2026-08-06, emulator). The guest's event loop sleeps up to 100 ms
+  before it notices a request, so a zero-byte "nothing changed" answer
+  costs the same as a whole document. Every other cost on this path was
+  measured and reduced the same day — the scene walk from ~1.1 s to
+  3–8 ms, idle wire bytes by about 90% — which is precisely why the
+  wait is now what a person feels. Under investigation.
+- **A backgrounded application cannot be armed for content capture at
+  all** (2026-08-06). Not slowly — never: the arm completes when the
+  target next pumps its event loop, and a process the Process Manager is
+  not scheduling never does. Proven by fronting the target mid-wait
+  without re-requesting, which armed it in 40 ms, six times of six. The
+  handshake itself is ~15 ms once the target is frontmost, so there is
+  nothing in the handshake to fix.
 - **Ten of the twelve capabilities added on this arc have never crossed a
   real wire.** They are `now_hardware_census`, `now_machine_facts`,
   `now_software_inventory`, `now_catalog_search`, `now_guest_log_tail`,
