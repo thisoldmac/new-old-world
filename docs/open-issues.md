@@ -17552,3 +17552,55 @@ General Controls' "Insertion Point Slider" and "Menu Blink Slider" are
 Up/Down Controls" and "VM Up/Down Control" are `cdef: 6` (little arrows).
 All are ids this product deliberately has no role for — so they stay
 `unknown`, and are now countable rather than anonymous.
+
+## 2026-08-07 — a shared worktree was checked out from under a running lane, and its commits landed on other lanes' branches
+
+Recorded because it is invisible while it happens and expensive
+afterwards, and because nothing in this repository warns about it.
+
+`now/.claude/worktrees/keen-clarke-4988fc` was being used by several
+sessions at once. This lane branched correctly (`git checkout -b
+claude/019-cdef-memory-radios`, 13:02) and then made three commits. Its
+`HEAD` reflog:
+
+```
+13:02  checkout: ... to claude/019-cdef-memory-radios
+13:14  checkout: moving from claude/019-cdef-memory-radios
+                 to claude/019-ctlact-settlement      <- not this lane
+13:17  commit: diag(observe): ...                     <- this lane's
+13:22  commit: fix(scene): ...                        <- this lane's
+13:22  checkout: ... to claude/019-asset-packs         <- not this lane
+13:28  commit: test+docs: ...                          <- this lane's
+```
+
+Two commits landed on `claude/019-ctlact-settlement` and one on
+`claude/019-asset-packs`, and `claude/019-cdef-memory-radios` stayed at
+the commit it was cut from. **Nothing failed.** `git log --oneline -1`
+after each commit showed the expected hash; the branch guard was
+satisfied, because the branch really was not `main`.
+
+The visible damage was a RED branch that nobody had broken:
+`claude/019-ctlact-settlement` received an emitter change without the
+test update that belonged with it, because the two were split across a
+checkout that happened between them. It reads exactly like a careless
+commit and was not one.
+
+Three things follow, and the first is the one that costs nothing:
+
+- **A lane's own worktree is not a nicety, it is the isolation.** `git
+  worktree add -b <branch> <path> <base>` and then `git -C <path>` for
+  everything. Branch-per-thread does not isolate anything if the
+  worktree is shared, because a branch is a property of the worktree and
+  a neighbour can move it.
+- **Check the branch immediately before every commit, not once at the
+  start.** `git -C <path> branch --show-current` is free and is the only
+  thing that would have caught this at 13:17 instead of at 13:35.
+- **`git stash` is repo-global and is not safe here.** A `stash push`
+  followed by a `pop` can return a NEIGHBOUR's stash into your tree if
+  one arrived between them. Save a patch to a file instead.
+
+Recovery was clean because every commit still existed: a private
+worktree, a branch off the intended base, and `git cherry-pick -x` of
+the three by hash. The other lanes' branches were left alone —
+rewriting a branch another session is actively committing to is worse
+than the mess it would tidy.
