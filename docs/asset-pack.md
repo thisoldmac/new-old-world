@@ -45,8 +45,14 @@ and is wrong on screen. It now extracts the `NFNT` strikes from
 come out **byte-identical** to the wire route's) and carries each
 suitcase's `sfnt` verbatim as `fonts/ttf/<face>.ttf`. **Charcoal, the
 system font, has no bitmap strike on the image to extract** — it is
-TrueType-only, which is why the render substitutes Chicago; see
-[asset-extraction-offline.md](asset-extraction-offline.md).
+TrueType-only, and Mac OS rasterises it at run time. Since 2026-08-07 so
+does the extractor: 16 strikes at ppem 9–24, one per row of Apple's own
+`hdmx` device-metrics table, which is where their advances come from.
+Before that the render substituted Chicago and every menu, title, button
+and group-box label was drawn in the wrong face. See
+[charcoal-strike.md](charcoal-strike.md) for the measured deltas and
+[asset-extraction-offline.md](asset-extraction-offline.md) for the
+route.
 Anyone with their own image can produce their own pack; nobody has to
 be given Apple's bitmaps to build or run this.
 
@@ -153,6 +159,20 @@ by sha256, against a copy taken first:
 
 1,154 files, 0 missing, 0 mismatched, 0 extra. Nothing left git that
 does not demonstrably exist somewhere durable with hashes.
+
+## What the store holds now
+
+`AssetPack` resolves `pack-*` newest-name-first, so the latest is the one
+a build sees. Each has its own `.sha256` beside it.
+
+| pack | files | what changed |
+|---|---|---|
+| `pack-2026-08-06` | 1,154 | the first offline extraction; no fonts |
+| `pack-2026-08-07` | 1,203 | the `NFNT` strikes and the three `.ttf`s |
+| `pack-2026-08-07b` | 1,242 | **Charcoal**, 16 strikes rasterised from its own `sfnt` at ppem 9–24 ([charcoal-strike.md](charcoal-strike.md)) |
+
+None of them is in git, and regenerating any of them is still one
+command.
 
 ### It has been superseded — read the newest `pack-`, not this one
 

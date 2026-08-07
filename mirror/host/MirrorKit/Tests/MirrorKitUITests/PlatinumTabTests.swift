@@ -422,13 +422,27 @@ final class PlatinumTabTests: XCTestCase {
             let bottom = panel.origin.y + 34
             let left = panel.origin.x, right = panel.origin.x + panel.paneWidth
 
-            var all: [Int] = [], chrome: [Int] = []
+            var all: [Int] = [], chrome: [Int] = [], labels: [Int] = []
             /* What is INSIDE a label box is the FONT's fidelity, not the
-               tab's — the pack carries no Charcoal strike, so every title
-               renders in Chicago, which is wider
-               (docs/render-composition.md). Mixing the two would let a font
-               gap be read as a chrome one, and the font gap is the larger
-               of the two by a distance. */
+               tab's, so the two are reported apart: mixing them would let a
+               font gap be read as a chrome one.
+               This split used to EXCLUDE the label boxes and stop there,
+               because the pack had no Charcoal strike and every title
+               rendered in Chicago — the test measured around the largest
+               defect on the strip. It is measured now, but READ THE NUMBER
+               CAREFULLY: `labels-only` compares this scene's pixels to the
+               guest's at the same coordinates, and this scene sits about
+               one pixel left of the machine (the chrome does too — row 114
+               of energy-saver starts at guest x 206, ours at 204). A
+               whole-region delta at a fixed offset is dominated by that
+               shift, so it moves only 1.2 points between the two faces and
+               is NOT a face discriminator. It went from 81.4% exact
+               (Chicago) to 80.4% (Charcoal) on 2026-08-07 for that reason
+               and not because the titles got worse.
+               The face comparison that IS controlled locates each run by
+               its own ink before differencing, which removes the offset:
+               docs/charcoal-strike.md, where "Sleep Setup" is 1.9% of ink
+               pixels disagreeing in Charcoal against 70.7% in Chicago. */
             let boxes = panel.tabs.map {
                 (panel.origin.x + $0.l, panel.origin.x + $0.r)
             }
@@ -436,13 +450,16 @@ final class PlatinumTabTests: XCTestCase {
                 for x in left..<right {
                     let d = delta(x, y)
                     all.append(d)
-                    if !boxes.contains(where: { x >= $0.0 && x < $0.1 }) {
+                    if boxes.contains(where: { x >= $0.0 && x < $0.1 }) {
+                        labels.append(d)
+                    } else {
                         chrome.append(d)
                     }
                 }
             }
             report("strip", all)
             report("chrome-only", chrome)
+            report("labels-only", labels)
 
             /* PER TAB, BY POSITION AND STATE, because a rule fitted to the
                front tab could be wrong for every other one and a whole-strip

@@ -125,6 +125,7 @@ Measured on `now-mirror-stage.qcow2`, 2026-08-06:
 | Per-app icons by `(creator, type)` | **914**, 185 creators, from 186 bundles |
 | Font strikes (`NFNT` sheets + metrics) | 9 — Chicago 12, Geneva 9/9-italic/10/12/14/18/20/24 |
 | TrueType faces (`sfnt`, carried verbatim) | 3 — Chicago, Charcoal, Geneva |
+| Strikes rasterised from a `sfnt` (no `NFNT` to lift) | 16 — Charcoal 9–24, one per `hdmx` row |
 
 The app-icon number is where mounting pays. Over the wire each
 application's fork was a separate pull; here every app on the volume is
@@ -339,14 +340,25 @@ it, the System file included, and its `sfnt` carries no embedded bitmap
 tables either (no `bdat`/`bloc`, no `EBDT`/`EBLC` — the table list is
 `OS/2 VDMX bsln cmap cvt fdsc feat fmtx fpgm glyf hdmx head hhea hmtx
 just loca maxp mort name post prep prop umif`). Mac OS rasterises
-Charcoal from TrueType at run time, with `hdmx`/`VDMX` supplying the
-device metrics. So the renderer substituting Chicago is not a missing
-extraction; closing it means rasterising the TTF, which is a different
-job with a different fidelity claim.
+Charcoal from TrueType at run time, with `hdmx` supplying the device
+metrics.
+
+**So the extractor rasterises it too, since 2026-08-07** — a face with no
+`NFNT` is rendered from its own `sfnt` by `fonts.render_truetype_strike`
+at every ppem its `hdmx` table carries device metrics for, and at no
+other size. For Charcoal that is 9–24: 16 strikes, 223 glyphs each. The
+advances are `hdmx`'s, not the rasteriser's, and a ppem with no `hdmx`
+row raises rather than being filled in, because a strike whose widths are
+a guess is worse than the substitution it replaces. The shapes are
+FreeType's and OS 9's interpreter is not FreeType, so that half is
+measured against the guest's own screendumps rather than claimed:
+**5.86% of ink pixels disagree, against Chicago's 72.81%**, and the eight
+group-box title widths the guest itself measured come out exact. The
+numbers, the residual and what still substitutes are in
+[charcoal-strike.md](charcoal-strike.md).
 
 The three `sfnt`s are carried out verbatim as `fonts/ttf/<face>.ttf` (an
-`sfnt` resource *is* the TrueType file image), which is where a Charcoal
-rasteriser would start. Nothing reads them today.
+`sfnt` resource *is* the TrueType file image); Charcoal's is now read.
 
 ## The honest split for a host-side asset pack
 

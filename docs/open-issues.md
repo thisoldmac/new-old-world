@@ -1850,7 +1850,21 @@ Evidence: `/private/tmp/fsweepB/memory-scene.json`, guest build
 `59dce8562ad4`. See [fidelity sweep B](fidelity-sweep-2026-08-06-b.md)
 R-B2.
 
-## OPEN: the system font is Charcoal and the pack has no Charcoal (2026-08-06, evening)
+## FIXED: the system font is Charcoal and the pack has no Charcoal (2026-08-06, evening; closed 2026-08-07)
+
+**Closed by rasterising it.** Charcoal has no bitmap strike anywhere on
+the image, so there was nothing to lift; the extractor now renders it
+from its own `sfnt` at the 16 ppem sizes Apple's `hdmx` table carries
+device metrics for, and `font 0` answers Charcoal. The widths are
+`hdmx`'s and reproduce all eight group-box bands the guest measured for
+itself, exactly; the shapes are FreeType's and disagree with the guest's
+own pixels on 5.86% of ink, against Chicago's 72.81%. Both symptoms
+below are gated in `RendererTextFidelityTests`, watched failing by
+putting the substitution back. Bold Charcoal and font id 2002 still
+substitute and are named in [charcoal-strike.md](charcoal-strike.md).
+Not metal-verified.
+
+The diagnosis as it stood:
 
 Font id 0 means "the system font", which under the Appearance Manager on
 Mac OS 8.5+ is **Charcoal**. The pack carries no Charcoal strike, so
@@ -1862,9 +1876,11 @@ last glyph of two group titles the same way. The captured bytes are
 complete (`len 25 fullLen 25 trunc false`), so this is not truncation and
 not a renderer defect.
 
-`tools/extract-assets-offline` does not extract fonts at all — the
-strikes in `Resources/fonts` predate it — so the fix is an extraction
-path for Charcoal 12, after which one line in `strike` changes.
+It also read as a second, unrelated defect: group-box frames appeared
+"stroked through their own labels". That was the same substitution seen
+from the other end — the CDEF erases a band out of its own frame to put
+the title in, Chicago overran the band, and the overrun landed on the
+frame line the guest had deliberately left standing.
 
 ## OPEN: the desktop pattern is a plausible wrong answer (2026-08-06, evening)
 

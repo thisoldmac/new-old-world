@@ -294,10 +294,13 @@ count one.
   while their labels arrive as text. `PlotIconSuite`/`IconRef` interception
   is the standing item; until it lands, rung 3 can only be reached through
   the semantic plane.
-- **The system font is a substitution.** Font id 0 is the system font, which
-  under Appearance on 8.5+ is Charcoal; where the pack carries no Charcoal
-  strike, Chicago answers and is wider, so an application's own clip cuts
-  the last glyph. A pack gap, not a renderer bug.
+- **The system font is Charcoal, and since 2026-08-07 the pack has one.**
+  Font id 0 is the system font, which under Appearance on 8.5+ is
+  Charcoal. It ships no bitmap strike on the guest, so the pack had none
+  and Chicago answered — wider, so an application's own clip cut the last
+  glyph. The pack now rasterises Charcoal from its own outlines with
+  Apple's `hdmx` advances ([charcoal-strike.md](charcoal-strike.md)).
+  Bold Charcoal and font id 2002 still substitute.
 
 ---
 
@@ -396,16 +399,18 @@ sidebar rows rendered as fifteen hatches until this was separated.
   check what the renderer did with it before concluding the data is not
   there.
 
-- **The system font is a substitution, and the guest's own clip exposes
+- **The system font was a substitution, and the guest's own clip exposed
   it.** Font id 0 means "the system font", which under the Appearance
-  Manager on Mac OS 8.5+ is **Charcoal**; the pack carries no Charcoal
-  strike, so `DisplayReplay.strike` answers Chicago, which is wider.
+  Manager on Mac OS 8.5+ is **Charcoal**; the pack carried no Charcoal
+  strike, so `DisplayReplay.strike` answered Chicago, which is wider.
   Where the application clips its own text — Date & Time sets
   `clip [40,195,210,217]` around a group-box title and then draws
-  "Use a Network Time Server" — the extra width pushes the last glyph
-  past the guest's own clip and the mirror renders "…Time Serve". The
-  machine's pixels have the whole word. It is a pack gap, not a renderer
-  bug, and the fix is an extractor run for Charcoal.
+  "Use a Network Time Server" — the extra width pushed the last glyph
+  past the guest's own clip and the mirror rendered "…Time Serve". The
+  machine's pixels have the whole word. FIXED 2026-08-07 by rasterising
+  Charcoal from its `sfnt` with `hdmx` advances; that string is 168 px in
+  Charcoal inside the 170 the guest allowed
+  ([charcoal-strike.md](charcoal-strike.md)).
 ## P2 derived from P3's own evidence (2026-08-06, later)
 
 Sherlock's channel grid was the first case where one plane could answer

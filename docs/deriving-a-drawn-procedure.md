@@ -229,11 +229,15 @@ percentage cannot:
   the corpus contains many copies of each. It is also the strongest thing
   in the table — the error is position-independent and panel-independent,
   so nothing here is fitted to one tab.
-- **Inside the label boxes it is the FONT, not the tab.** The pack has no
-  Charcoal strike, so titles render in Chicago, which is wider — that is
-  the whole gap between the "whole strip" and "chrome only" rows, and it
-  is also exactly the "Notificatio" / "Advanced Setting" clipping sweep A
-  reported on Energy Saver. It is a pack gap; it is not this.
+- **Inside the label boxes it is the FONT, not the tab.** The pack had no
+  Charcoal strike, so titles rendered in Chicago, which is wider — that
+  was the gap between the "whole strip" and "chrome only" rows, and it is
+  also exactly the "Notificatio" / "Advanced Setting" clipping sweep A
+  reported on Energy Saver. A pack gap; not this. **Closed 2026-08-07**
+  ([charcoal-strike.md](charcoal-strike.md)); note that the whole-strip
+  number barely moved, because this scene sits a pixel left of the
+  machine and a fixed-offset region delta prices that shift rather than
+  the face — the controlled comparison is in that page.
 
 **Where it still fails, stated plainly:**
 

@@ -108,6 +108,9 @@ installed) and `fondu` for converting the classic font resources to BDF.
 | 2 | Per-glyph sprite sheets plus a metrics file rendered exactly from the bitmap resources | **required for pixel-honest text** — the tier the renders were made with |
 
 Minimum set for tier 2: Chicago 12, Charcoal 12, Geneva 9 / 10 / 12.
+Charcoal is the one with no `NFNT` to lift on this image at all — it is
+rasterised from its own `sfnt` with `hdmx` advances instead
+([charcoal-strike.md](charcoal-strike.md)).
 
 ## Platinum chrome is not an asset
 
