@@ -492,6 +492,56 @@ Drawing code slots into the ladder as **rung 3, art addressed by
 identity** — not as a new arbitration path. Where a thing cannot be
 drawn faithfully, it renders the marked unknown.
 
+### Slice 12 — Staged image discipline (added 2026-08-07)
+
+Michelle, after the arc spent real time on a false alarm about the
+oracle:
+
+> we need to be more deliberate with the use of those staged imaged,
+> especially where ext work is involved like, loud provenance, commit
+> gates, instructions to get agents to be able to bake their own tmp
+> imaged and have hooks to force resolution if anyone tries merging it in
+
+**Four facts from today are the evidence base:**
+
+1. **The shared oracle is uncertified.** `now-mirror-stage.qcow2` is
+   sha `c466baa9…`; the newest receipt records `0785871a…`. The image
+   was written at 01:58, **after** the 01:19 receipt, displacing a
+   backup named `.bak-20260806-4-dirty`. AGENTS.md already tells the
+   reader to check sha against receipt, and **nothing enforces it** —
+   which is how it went stale in silence.
+2. **The provenance is quiet enough that a careful reader got it
+   wrong.** The coordinating session told Michelle the arc's
+   measurements were suspect because the oracle was stale. A lane
+   corrected it: `spin-up-ppc:82` defaults to `os91-runner.qcow2`, not
+   the stage image, and stages this checkout's ext and app into the
+   clone before cold-booting — so the resident under test is the tree's
+   build. Both facts are discoverable; neither is loud. **Sweep A's rig
+   table is the standard**: base, sha256, resident `sourceManifest` and
+   `buildFingerprint`, and the sentence "was not used and is not the
+   oracle for this sweep."
+3. **The last bake wins while lanes run concurrently.** A bake mid-arc
+   silently replaces the base under everyone else.
+4. **A receipt can certify less than it appears to** — the 01:19 one
+   carries its own correction saying so: `qemu-img check` cannot see the
+   Macintosh filesystem inside the container, and a "guest-clean"
+   shutdown means the sequence *started*.
+
+**The four builds:** loud provenance on every run and in its artifacts;
+the sha-vs-receipt check **enforced rather than remembered**; a
+**per-agent throwaway bake** made the default for lane work, so
+installing over the shared oracle becomes the deliberate announced act
+rather than the easy one; and **merge-time forced resolution**, because
+a clean textual merge of a receipt is no evidence at all — the same
+defect as the derived tables in AGENTS.md that merged cleanly and
+produced a lie.
+
+**The binding constraint:** six lanes are committing right now. A gate
+that refuses correct in-flight work would strand it, and uncommitted
+work lost is this repository's most expensive lesson. Warn loudly where
+the failure is informational; refuse only where a quiet pass lets a real
+lie through; prove the in-flight branches still commit, by name.
+
 ### Not taken: window chrome — VETOED to plan 016 (2026-08-07)
 
 Michelle proposed polishing title bars and their buttons. Declined as a
