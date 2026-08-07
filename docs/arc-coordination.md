@@ -140,6 +140,38 @@ from a measurement rather than a story.
 running on their branches. That satisfies "do not measure a tree moving
 underneath you" without stalling anything.
 
+## The wake rule — the one the stop rule does not cover
+
+**Every rule below is reactive.** They tell a coordinator what to do
+*while it is running*. **None of them make it run.**
+
+A coordinator acts when something arrives: a message, or an agent
+finishing. So the state that ends an overnight is not a missed
+finding — it is **an empty agent pool with no alarm set.** The last lane
+reports, its findings get written up, and then nothing arrives, ever.
+That happened on 2026-08-07: the last report landed at 04:34, the
+handoff was written, and **seven and a half hours passed with the machine
+idle and three merge triggers lit.**
+
+Michelle had stayed up specifically to put the guardrails in place. The
+guardrails were fine. Nothing was turning the crank.
+
+**So, before ending any turn:**
+
+1. **Is anything running?** If the pool is about to hit zero and the work
+   is not finished, either **dispatch** or **schedule a wakeup**. Both is
+   better.
+2. **A self-scheduled wakeup is not optional overnight.** Re-arm it every
+   turn; a loop that lapses is indistinguishable from a decision to stop.
+3. **The tool that answers "what now" must survive an idle machine.**
+   `tools/arc-status` died under `set -e` when `pgrep` matched nothing —
+   so with no VMs and no host apps, the VERDICT section never printed. It
+   was written while twelve VMs were up and broke in the one state you
+   reach for it. Instruments are written in the state their author is in.
+
+**The test: if every agent finished right now, what would happen next?**
+If the answer is "nothing", the turn is not over.
+
 ## The stop rule
 
 **Never stop with a live finding undispatched.** A blocker, a half-landed
