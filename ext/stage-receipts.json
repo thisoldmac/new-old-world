@@ -67,6 +67,17 @@
         "ext/src/now_liveness.c"
       ],
       "reason": "Round-6 integration merge of claude/019-ext-rests-when-unused. The bake is OWED and scheduled in this same session's phase 5, after the guest prune frees the Mac (scripts/bake-ext-image --shared refuses while other guests run). Baking before the merge would have baked a pre-merge resident; the peek table's U11/U13 append collision was resolved here (P7 drag + P8 cursor keep their offsets, the rest-state trio re-sequenced to the tail) and the static asserts + peek_table native test pass against the merged header."
+    },
+    {
+      "at": "2026-08-07T15:57:55-0400",
+      "branch": "claude/019-cursor-follows-act",
+      "extDigest": "6ffd9d3c5777b3090697154d8f9f2ff3e7a27e00",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_act.c",
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "Baked and driven as a PRIVATE image (agent-stage/now-stage-cursor-follows-act.qcow2, sha256 e4dc794d9d61, ext fingerprint 1292d1c57887) - the mode the script documents for in-flight lane work. The shared oracle is deliberately untouched: other lanes are cloning it right now, the last bake wins, and replacing the base under them mid-arc is the exact collision --throwaway exists to remove. Bake --shared at the merge, as an announced act."
     }
   ]
 }
