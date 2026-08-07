@@ -605,6 +605,32 @@ The oracle's job therefore changes from *"find windows, or fail"* to
 process is reported as **unclassified with a reason**, never silently
 folded into a normal state.
 
+**The discriminator, from Michelle:**
+
+> well importantly, truly headless apps dont appear in app switcher
+
+The Application Switcher's membership list **is** the "has a face" set,
+maintained by the OS itself — a truly headless app never appears there,
+while SimpleText with every document closed still does. So it separates
+state 1 from states 2-and-3 **directly**, from the system's own
+bookkeeping rather than from an inference about window counts. And the
+guest walk already traverses that menu: slice 4 was fixing the
+app-switcher menu's own title the same day.
+
+Used as a **second** signal beside `modeOnlyBackground`, not a
+replacement. Where they agree, two independent sources corroborate — the
+process's `SIZE` declaration and the OS's live UI bookkeeping. **Where
+they disagree, that is a FINDING**, reported rather than averaged; the
+same day already produced one case of two walks honestly disagreeing
+because they described different moments.
+
+One case is in the data already: **Application Switcher is itself a
+process**, and it was among the eight reporting `ax_oracle_not_found` on
+the bad boot. A classifier resting on the switcher's menu must say
+honestly what it does when the switcher is the thing that cannot be read
+— a state-3 answer about the instrument itself, degrading to
+"unclassified, with a reason", never to a guess.
+
 Rendering anything for headless processes is explicitly out of scope;
 so is any change to the ladder.
 
