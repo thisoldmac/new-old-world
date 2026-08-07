@@ -251,6 +251,33 @@ static void act_yield(void)
     EventRecord ev;
 
     now_wire_pump();
+    /* AND THE WRITER LEASE, which is the SHORTEST clock in this loop.
+     *
+     * Three leases govern an armed plane: the writer's is 180 ticks, the
+     * owner's 600, and this wait runs for 300. Pumping the wire (above)
+     * was added for the OWNER lease - see the header - and it renews it
+     * only as a side effect of a message ARRIVING (wire.c ::
+     * renew_scene_planes, on the dispatch path). Nothing arrives during
+     * an act: the host is waiting for this reply. So the WRITER
+     * heartbeat, renewed nowhere but the main loop's now_peek_idle(),
+     * goes stale THREE SECONDS into a wait this file allows to run for
+     * five - and the resident, reading a lapsed writer, disarms EVERY
+     * plane underneath the act still in flight (ext/src/now_ext.c sets
+     * `request = 0`).
+     *
+     * Measured on the emulator 2026-08-07: a 5.1-second `ctlact part 0`
+     * that genuinely switched Appearance's tab - confirmed in the
+     * guest's own pixels - came back with `Re-read value: the anchor
+     * plane is absent or not armed`. The act worked and the machinery
+     * that was to report on it had gone dark mid-flight. Every act
+     * longer than three seconds was being judged by an instrument it had
+     * itself switched off, which is why this is fixed BEFORE any
+     * settlement check is written on top of it.
+     *
+     * Renewing here is not a lie: the heartbeat's meaning is "this
+     * application is pumping its event loop", and the line below is that
+     * pump. */
+    now_peek_idle();
     (void)WaitNextEvent(0, &ev, 2L, NULL);
 }
 
@@ -374,6 +401,35 @@ static void act_v2_describe(NowPeekTable *table, const NowActTarget *target,
     g_last_correlation_lo = spec.correlation_lo;
     g_last_correlation_valid = 1;
     g_menu_post_armed = 0;            /* consumed; never inherited */
+}
+
+void now_act_yield_once(void)
+{
+    act_yield();
+}
+
+void now_act_note_observed(int confirmed)
+{
+    if (!g_last_correlation_valid) {
+        return;
+    }
+    /* THE APPLICATION'S OWN OBSERVATION, which act_settlement.h has
+       always allowed beside a later scene ("or an explicit application
+       observation") and which nothing had ever recorded. A verb that
+       re-read the very control it aimed at, either side of one request,
+       holds evidence no later scene improves on; leaving it unrecorded
+       is what left every control act at `dispatched-but-unconfirmed` -
+       or, worse, at `timed-out` - on presses that demonstrably worked.
+
+       Only ever called with a comparison the caller could actually make.
+       A control with no live range proves nothing by its position and
+       passes 0, which says "dispatched, and I could not tell" rather
+       than inventing a failure. */
+    now_act_settlement_note(&g_settlements, g_last_correlation_hi,
+                            g_last_correlation_lo,
+                            confirmed ? kNowActSettleConfirmed
+                                      : kNowActSettleDispatchedUnconfirmed,
+                            (NowPeekU32)TickCount());
 }
 
 void now_act_arm_menu_postcondition(long menu, long item)
