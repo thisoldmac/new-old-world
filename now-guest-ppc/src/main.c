@@ -8,6 +8,8 @@
 #include "nowlog.h"
 #include "fileshare.h"
 #include "product_identity.h"
+#include "proc_actions.h"
+#include "proc_roster.h"
 #include "files_module.h"
 #include "files_browser_view.h"
 #include "files_share_view.h"
@@ -17,6 +19,7 @@
 #include "wire.h"
 #include "observe.h"
 #include "peek.h"
+#include "scene_collect.h"
 #include "act_cmds.h"
 #include "workshop_layout.h"
 #include "workshop_window.h"
@@ -193,33 +196,17 @@ static void create_menu_bar(void)
 static Boolean another_instance_is_running(void)
 {
     ProcessSerialNumber self;
-    ProcessSerialNumber psn;
-    ProcessInfoRec info;
-    Str31 name;
-    Str31 self_name;
+    NowProcRosterIter it;
+    NowProcRosterRow row;
+    NowProcRosterRow me;
     Boolean same = false;
 
-    if (GetCurrentProcess(&self) != noErr) {
+    if (GetCurrentProcess(&self) != noErr || !now_proc_roster_read(&self, &me)) {
         return false;
     }
-    memset(&info, 0, sizeof info);
-    info.processInfoLength = sizeof info;
-    info.processName = self_name;
-    self_name[0] = 0;
-    if (GetProcessInformation(&self, &info) != noErr) {
-        return false;
-    }
-    psn.highLongOfPSN = 0;
-    psn.lowLongOfPSN = kNoProcess;
-    while (GetNextProcess(&psn) == noErr) {
-        memset(&info, 0, sizeof info);
-        info.processInfoLength = sizeof info;
-        info.processName = name;
-        name[0] = 0;
-        if (GetProcessInformation(&psn, &info) != noErr) {
-            continue;
-        }
-        if (info.processSignature != PRODUCT_CREATOR_CODE) {
+    now_proc_roster_begin(&it);
+    while (now_proc_roster_next(&it, &row)) {
+        if (row.creator != (unsigned long)PRODUCT_CREATOR_CODE) {
             continue;
         }
         /* Match by NAME, not merely by creator. The stale instance a
@@ -228,13 +215,17 @@ static Boolean another_instance_is_running(void)
            deliberately duplicated copy (a second guest, on another
            port, for another host) is a different name and is allowed
            to run alongside. */
-        if (!EqualString(name, self_name, false, false)) {
+        if (!EqualString(row.pname, me.pname, false, false)) {
             continue;
         }
-        if (SameProcess(&psn, &self, &same) == noErr && same) {
+        if (row.is_self) {
             continue;
         }
-        SetFrontProcess(&psn);
+        (void)same;
+        /* Ask and re-read, through the one fronting answer: this launch
+           is about to end quietly, so the last thing it does had better
+           be something that happened rather than something dispatched. */
+        (void)now_proc_front_confirm(&row.psn, 0);
         return true;
     }
     return false;
@@ -510,6 +501,16 @@ int main(void)
     }
 
     while (g_running) {
+        /* WATCHED, NOT READ. Cross-application stacking order exists
+           nowhere to be asked for on this machine - each application has
+           its own WindowList - so it is reconstructed from the order
+           applications came to the front, and that is only observable by
+           an application that was running at the time. One trap per
+           pass, here rather than at scene time, because a scene collected
+           after the fact sees only where the machine ended up.
+           front_order.h carries the argument; scene_collect.c does the
+           ordering. */
+        now_scene_note_front_process();
         conn_service();
         dispatch_pending_menu_choice();
         workshop_idle();

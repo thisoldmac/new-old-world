@@ -36,8 +36,15 @@
 #   3. SESSION-PRIVATE CLONE, ALWAYS. tbt_clone_disk (APFS cp -c) is
 #      instant and free, and it is what lets parallel sessions run without
 #      image-lock collisions. The shared base stays pristine.
-#   4. COLLISION-SAFE PORTS. Another session may hold any given one, so
-#      probe and advance rather than attach to whatever answers.
+#   4. COLLISION-SAFE PORTS, AND THEY ARE DERIVED RATHER THAN ASSIGNED.
+#      tools/lane-ports hashes this worktree's path to a block of eight
+#      ports nobody else can pick, and claims it; probe-and-advance
+#      remains as the floor. It replaces a coordinating session handing
+#      out 1700/5250, 1710/5260, ... by hand, which on 2026-08-06 lost a
+#      lane's run to a port held by a VM nobody owned any more and put
+#      HostMachineGuardTests red for lane after lane over a NEIGHBOUR's
+#      QEMU. An explicit NOW_ANCHOR_PORT/NOW_WIRE_PORT still wins.
+#      docs/lane-ports.md.
 #   5. TEAR DOWN WHAT YOU STARTED, BY PATH - NOT WITH tools/stop.
 #      Rule 3 makes the run directory session-private via NOW_SPIN_RUN.
 #      The lab's tools/stop DOES NOT KNOW THAT VARIABLE: it derives its
@@ -64,15 +71,36 @@ NOW="$(cd "$HERE/.." && pwd)"
 # "tools/lib.sh: No such file or directory", which reads like a broken lab
 # install rather than the wrong starting point. So walk up to the checkout
 # that actually has the instruments.
+# ...and a worktree under /private/tmp has no shared ancestor with the lab
+# AT ALL, so that walk reaches / and finds nothing. That is the common case
+# for an agent lane, and it cost this scheme's first real user a manual
+# NOW_LAB_ROOT. When the walk comes up empty, ask git: a worktree's
+# --git-common-dir points at the MAIN clone's .git wherever it lives, and
+# the lab checkout is above that.
 LAB="${NOW_LAB_ROOT:-}"
-if [ -z "$LAB" ]; then
-    LAB="$NOW"
-    while [ "$LAB" != / ] && [ ! -f "$LAB/tools/lib.sh" ]; do
-        LAB="$(dirname "$LAB")"
+walk_up_to_lab() {
+    d="$1"
+    while [ "$d" != / ] && [ ! -f "$d/tools/lib.sh" ]; do
+        d="$(dirname "$d")"
     done
+    [ -f "$d/tools/lib.sh" ] && printf '%s' "$d"
+}
+if [ -z "$LAB" ]; then
+    LAB="$(walk_up_to_lab "$NOW" || true)"
 fi
-[ -f "$LAB/tools/lib.sh" ] || {
-    echo "no lab checkout above $NOW (set NOW_LAB_ROOT to the TimBotTu clone)"
+if [ -z "$LAB" ]; then
+    common="$(git -C "$NOW" rev-parse --path-format=absolute \
+                  --git-common-dir 2>/dev/null || true)"
+    [ -n "$common" ] && LAB="$(walk_up_to_lab "$(dirname "$common")" || true)"
+fi
+[ -n "$LAB" ] && [ -f "$LAB/tools/lib.sh" ] || {
+    echo "spin-up-ppc: no lab checkout found, and it is needed for the"
+    echo "  emulator, tools/qmp and the anchor-worker client."
+    echo "    started from: $NOW"
+    echo "    walked up to / and asked git for the main worktree; neither"
+    echo "    reached a directory containing tools/lib.sh."
+    echo "  Set NOW_LAB_ROOT to the TimBotTu clone, e.g."
+    echo "    NOW_LAB_ROOT=\$HOME/Lab/Code/timbottu scripts/spin-up-ppc"
     exit 1
 }
 cd "$LAB"                                  # lib.sh and tools/qmp are lab-relative
@@ -134,24 +162,110 @@ export TBT_MACHINE_PROFILE=mac99
 tbt_select_machine_profile mac99
 mkdir -p "$RUN"
 
+# --- WHICH RIG IS THIS? Said out loud, before anything boots -------------
+# On 2026-08-06 a coordinating session told the human an arc's measurements
+# were suspect because the shared stage image was stale. Two things were
+# wrong with that and BOTH were visible in this file:
+#
+#   * BASE above defaults to os91-runner.qcow2, NOT now-mirror-stage.qcow2.
+#     This script does not use the stage image unless asked to.
+#   * It stages THIS CHECKOUT's ext and app into the clone and cold-boots,
+#     so the resident under test is the tree's build either way.
+#
+# Neither fact was hidden; both were quiet — one line defaulting a shell
+# variable. The cure for a quiet fact that a careful reader got wrong is
+# not more care, it is volume. So every run now prints its provenance and
+# writes it into the run directory, and any document quoting a result from
+# this rig can name it by copying $RUN/provenance.md rather than by
+# remembering. The sweep that got this right did it by hand
+# (docs/fidelity-sweep-2026-08-07-a.md); the next one should not have to.
+STAGED_JSON="$RUN/staged.json"
+python3 - "$STAGED_JSON" "$NOW" "$EXT_BIN" "$APP_BIN" "$OUT" <<'PY'
+import json, os, re, subprocess, sys
+out_path, now, ext_bin, app_bin, out = sys.argv[1:6]
+def git(*a):
+    try:
+        return subprocess.run(["git", "-C", now, *a], capture_output=True,
+                              text=True, check=True).stdout.strip()
+    except Exception:
+        return None
+ident = os.path.join(out, "ext", "now_ext_identity.r")
+source = build = None
+try:
+    hexes = re.search(r'\$"([0-9a-f]+)"', open(ident).read().replace("\r", "\n"))
+    if hexes:
+        source, build = hexes.group(1)[:40], hexes.group(1)[40:80]
+except Exception:
+    pass
+json.dump({
+    "tree": now,
+    "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
+    "commit": git("rev-parse", "HEAD"),
+    "dirty": bool(git("status", "--porcelain")),
+    "extBin": ext_bin,
+    "appBin": app_bin,
+    "localSourceManifest": source,
+    "localBuildFingerprint": build,
+}, open(out_path, "w"), indent=2)
+PY
+"$NOW/tools/image-provenance" "$BASE" --label "spin-up-ppc base" \
+    --staged-json "$STAGED_JSON" \
+    --json "$RUN/provenance.json" --md "$RUN/provenance.md" || true
+
 # --- free ports, not assumed ones ---------------------------------------
 # ANCHOR forwards to the base image's baked worker on guest 1400 (the
 # deploy channel). WIRE is where NOW's own wire lands: the guest DIALS
 # 10.0.2.2:5250 by default (prefs.c set_defaults, contract 5250), and
 # 10.0.2.2 under user-mode networking IS this Mac's loopback, so the
 # listener binds it directly and no forward is involved.
+#
+# THE DEFAULTS ARE DERIVED, NOT ASSIGNED. tools/lane-ports hashes this
+# worktree's path to a block of 8 ports in 12000-19999 and claims it, so
+# two lanes that never talk cannot pick the same pair and no coordinating
+# session has to hold the allocations in its head. That is what 1700+2n /
+# 5250+10n was, by hand, on 2026-08-06 — and it lost a lane's run to a
+# port held by a VM nobody owned any more. See docs/lane-ports.md.
+#
+# An explicitly-passed NOW_ANCHOR_PORT / NOW_WIRE_PORT still wins,
+# unchanged: a lane already in flight on a hand-assigned pair is not
+# disturbed by this, and neither is a machine already booted.
 port_free () { ! lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
-ANCHOR="${NOW_ANCHOR_PORT:-1700}"
-if [ -z "${NOW_ANCHOR_PORT:-}" ]; then
+#
+# The caller's own values are read BEFORE the derivation runs, because
+# `--env` sets NOW_ANCHOR_PORT and NOW_WIRE_PORT itself — a derivation
+# that overwrote them would silently move a lane that had asked for a
+# specific pair, which is the one thing this change must not do.
+ASKED_ANCHOR="${NOW_ANCHOR_PORT:-}"
+ASKED_WIRE="${NOW_WIRE_PORT:-}"
+LANE_ANCHOR=1700; LANE_WIRE=5250; LANE_BLOCK=""
+if [ -x "$NOW/tools/lane-ports" ] \
+   && lane_env="$("$NOW/tools/lane-ports" --lane "$NOW" --env 2>/dev/null)"; then
+    eval "$lane_env"
+    LANE_ANCHOR="$NOW_LANE_ANCHOR"; LANE_WIRE="$NOW_LANE_WIRE"
+    LANE_BLOCK="$NOW_LANE_BLOCK"
+    echo "lane block $LANE_BLOCK: anchor $LANE_ANCHOR wire $LANE_WIRE \
+(tools/lane-ports)"
+fi
+ANCHOR="${ASKED_ANCHOR:-$LANE_ANCHOR}"
+if [ -z "$ASKED_ANCHOR" ]; then
     tries=0
     while ! port_free "$ANCHOR"; do
         ANCHOR=$((ANCHOR + 2)); tries=$((tries + 1))
         [ "$tries" -gt 30 ] && { echo "no free anchor port"; exit 1; }
     done
+    # Advancing out of the derived block means something is running in
+    # this lane's own ports, which is almost always this lane's own
+    # orphaned VM — the case that lost a run on 2026-08-06. Say whose it
+    # is rather than sliding quietly onto a neighbour's block.
+    if [ -n "$LANE_BLOCK" ] && [ "$ANCHOR" != "$LANE_ANCHOR" ]; then
+        echo "note: lane anchor $LANE_ANCHOR was busy; advanced to $ANCHOR" >&2
+        "$NOW/tools/lane-ports" whose --port "$LANE_ANCHOR" >&2 || true
+        echo "  \`tools/lane-ports reclaim\` stops your own orphan cleanly" >&2
+    fi
 elif ! port_free "$ANCHOR"; then
     echo "requested anchor port $ANCHOR is in use (another session?)"; exit 1
 fi
-WIRE="${NOW_WIRE_PORT:-5250}"
+WIRE="${ASKED_WIRE:-$LANE_WIRE}"
 # NOW_SPIN_RESTRICT=1 isolates the guest from every host listener
 # (slirp restrict=on): its dial to 10.0.2.2:5250 fails exactly as it
 # does on hardware with no host up, while the anchor hostfwd still
@@ -170,6 +284,15 @@ HOSTFWD="hostfwd=tcp:127.0.0.1:${ANCHOR}-:1400"
 [ "$RESTRICT" = "1" ] && HOSTFWD="restrict=on,$HOSTFWD"
 printf '%s %s\n' "$ANCHOR" "$WIRE" > "$RUN/ports"
 echo "ports: anchor=$ANCHOR wire=$WIRE"
+
+# Record the machine against this lane's block, BEFORE it boots. The QMP
+# socket path is the load-bearing field: it is the only safe handle on a
+# VM, because the process holding a wire port is qemu itself and killing
+# by port kills the machine. Written first so a boot that dies halfway
+# still leaves something `tools/lane-ports reclaim` can find — an orphan
+# nobody recorded is exactly what cost a lane its run on 2026-08-06.
+[ -n "$LANE_BLOCK" ] && "$NOW/tools/lane-ports" attach --lane "$NOW" \
+    --qmp "$QMP" --run "$RUN" >/dev/null || true
 
 # A window a person will look at comes from tbt_human_display, not from a
 # backend spelled here: cocoa shears under the pointer and SDL is what fixed
@@ -224,7 +347,14 @@ echo "== boot a fresh, session-private clone =="
 boot fresh; wait_anchor
 
 echo "== stage the extension, the app and the shutdown applet =="
-NOW_ANCHOR_PORT="$ANCHOR" NOW_EXT_BIN="$EXT_BIN" NOW_APP_BIN="$APP_BIN" \
+# NOW_WIRE_PORT is passed EXPLICITLY, not left to the environment. The
+# guest's dialling book is written at stage time from this variable
+# (tools/stage-ext.py step 2b); without it the clone keeps the image's
+# saved 5250 and would dial whatever host session holds that — which is
+# the collision this whole scheme removes, arriving through the one path
+# that does not go over a port we chose.
+NOW_ANCHOR_PORT="$ANCHOR" NOW_WIRE_PORT="$WIRE" \
+    NOW_EXT_BIN="$EXT_BIN" NOW_APP_BIN="$APP_BIN" \
     NOW_SHUTDOWN_BIN="$SHUTDOWN_BIN" \
     python3 "$NOW/tools/stage-ext.py"
 
@@ -300,11 +430,47 @@ if [ "$RESTRICT" = "1" ]; then
     rc=0
 else
     set +e
+    # Tee'd rather than just printed: the guest's OWN account of the
+    # resident is the strongest line in a rig table, and it was being
+    # written to a terminal and lost. It goes into the run's provenance so
+    # a report can quote it from a file.
     python3 "$NOW/tools/askguest.py" --port "$WIRE" --wait "${NOW_DIAL_WAIT:-180}" \
         --retries 3 --retry-delay 6 \
-        mirror qdtrace:op=status
-    rc=$?
+        mirror qdtrace:op=status 2>&1 | tee "$RUN/mirror.txt"
+    rc=${PIPESTATUS[0]}
     set -e
+fi
+
+# Re-write the provenance now that the guest has spoken. Before this point
+# the block says what we STAGED; after it, what the machine says it is
+# running — which is the only claim worth quoting, and the difference
+# between the two is a staging failure this rig exists to catch.
+if [ -f "$RUN/mirror.txt" ]; then
+    python3 - "$RUN/mirror.txt" "$RUN/staged.json" <<'PY' || true
+import json, sys
+raw, staged_path = sys.argv[1:3]
+found = None
+for line in open(raw, errors="replace"):
+    line = line.strip()
+    if line[:3] in ("-> ", "<- "):
+        line = line[3:]
+    if not line.startswith("{"):
+        continue
+    try:
+        msg = json.loads(line)
+    except ValueError:
+        continue
+    ext = msg.get("output", {}).get("mirror", {}).get("extension")
+    if ext:
+        found = ext
+if found:
+    staged = json.load(open(staged_path))
+    staged["residentReported"] = found
+    json.dump(staged, open(staged_path, "w"), indent=2)
+PY
+    "$NOW/tools/image-provenance" "$BASE" --label "spin-up-ppc base" \
+        --staged-json "$RUN/staged.json" \
+        --json "$RUN/provenance.json" --md "$RUN/provenance.md" || true
 fi
 
 # NOT the gate, deliberately, and this is the honest half of the run.
@@ -325,7 +491,18 @@ python3 "$NOW/tools/askguest.py" --port "$WIRE" --wait "${NOW_PROBE_WAIT:-90}" \
 docs/open-issues.md, the anchor-bind entry. The run's verdict is above."
 
 echo
+echo "== the rig, for whatever report quotes this run =="
+echo "   $RUN/provenance.md    (paste-ready rig table)"
+echo "   $RUN/provenance.json  (the same facts, machine-readable)"
+echo "A measurement with no rig table beside it is a number nobody can"
+echo "attribute later — this run's is written, so copy it rather than"
+echo "remembering which image was involved."
+echo
+
 echo "anchor=127.0.0.1:$ANCHOR  wire=127.0.0.1:$WIRE  qmp=$QMP"
+[ -n "$LANE_BLOCK" ] && \
+    echo "stop:  $NOW/tools/lane-ports reclaim   # lane block $LANE_BLOCK; \
+guest-clean, then frees the run dir"
 echo "stop:  $NOW/tools/shutdown-guest.py $QMP --port $ANCHOR"
 echo "       # quits the front application, then launches the staged"
 echo "       # applet so the guest shuts ITSELF down. Leaves the VM up on"

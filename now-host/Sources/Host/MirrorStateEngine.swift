@@ -158,8 +158,31 @@ final class MirrorStateEngine: ObservableObject {
             next[record.identity] = value
             matched.insert(record.identity)
         }
-        let authoritative = complete && !ambiguous
-            && matched == Set(replica.applications.keys)
+        // A DENOMINATOR THAT CANNOT BE FILLED PINS A HEALTH SIGNAL AT
+        // `partial` FOREVER, and a signal that can never read green says
+        // nothing at all.
+        //
+        // The census is the Finder's `every application process`, and a
+        // faceless background application is not one — the Process Manager
+        // omits a `modeOnlyBackground` process from the Application menu
+        // and the Finder's roster alike. Six were running on a good boot
+        // (Control Strip Extension, DVD AutoLauncher, FBC Indexing
+        // Scheduler, Folder Actions, tbt-appe, tbt-worker), so requiring a
+        // visibility row for every application in the replica required six
+        // rows that could not exist. The claim then said the census "did
+        // not uniquely cover every application" on a machine where it had
+        // covered everything there was to cover.
+        //
+        // Excluded by the process's OWN declaration, never because we
+        // failed to see a row for it: a name the census skipped for any
+        // other reason still keeps this partial, which is the whole point.
+        // An application with a face and nothing open right now is NOT
+        // excluded — it has a visibility answer and the census returns it.
+        let required = Set(replica.applications.filter {
+            $0.value.app.backgroundOnly != true
+        }.keys)
+        let uncovered = required.subtracting(matched)
+        let authoritative = complete && !ambiguous && uncovered.isEmpty
         let coverage = Scene.CoverageClaim(
             scope: "process-visibility",
             status: authoritative ? .complete : .partial,

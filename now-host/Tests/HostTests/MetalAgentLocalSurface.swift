@@ -257,6 +257,11 @@ final class MetalAgentLocalSurface {
              .bringToFront, .guestFileMutation, .transferCancel,
              .guestLogTail, .machineFacts, .catalogSearch, .revealItem,
              .diagnostics, .mirrorRead, .mirrorDrive,
+             /* And opening the Mirror, refused here for a reason unlike
+                every neighbour's: this rig has no window layer at all, so
+                there is nothing for it to open. On the real host it is
+                served; here the honest answer is that this surface cannot. */
+             .mirrorOpen,
              /* And the bracket, refused for a reason of its own on TOP of
                 those: it is the one operation that would not end when the
                 gate did. A rig that opened a stream on the person's
@@ -275,7 +280,15 @@ final class MetalAgentLocalSurface {
                 exemption would be a fourth reading of "which acts are
                 safe", and this rig is not where that question is
                 answered. */
-             .windowAct, .controlAct, .menuAct, .textGet, .textSet:
+             .windowAct, .controlAct, .menuAct, .textGet, .textSet,
+             /* And the walk that mints what those five address. It changes
+                nothing — so it is here for the OTHER reason in this list
+                rather than the safety one: it is unserved by this rig, and
+                a gate that let it through would be measuring nothing. It
+                also costs the machine real work, binding a process through
+                the anchor oracle and reading foreign memory window by
+                window, which is not what a capture/addressing rig is for. */
+             .observeElements:
             /* Every operation that could CHANGE the machine, refused by
                this rig rather than served. A capture gate has no business
                being able to move a file on somebody's PowerBook, and the

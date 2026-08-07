@@ -89,6 +89,42 @@ enum ControlMessage: Equatable, Sendable {
     case chatReset(ChatReset)
     case previewBegin(PreviewBegin)
     case previewEnd(PreviewEnd)
+    case hostShow(HostShow)
+    case hostShown(HostShown)
+}
+
+// MARK: - The host-surface family
+
+/* The guest asking this Mac to bring one of its OWN windows to the
+   front. One direction by definition, the cloud and chat rule: the
+   subject is a surface on the modern machine.
+
+   It exists because the Mirror is the host's rendering of the GUEST's
+   screen, and the person who wants it open is usually sitting at the
+   classic Mac. Before this the only ways to open one in an
+   already-running host were a click on this Mac's own window and
+   `--open-mirror` at launch — so an agent driving the host over the
+   socket, and a person at the PowerBook, both had to reach the other
+   machine's desktop to get a window that shows them the machine they
+   were already at. */
+
+/// Bring one of the host's surfaces forward. `surface` is closed
+/// (`mirror` today) and a host that does not know the name answers
+/// rather than going quiet.
+struct HostShow: Codable, Equatable, Sendable {
+    var id: Int
+    var surface: String
+}
+
+/// Exactly one per `host.show`. `ok` is true when the surface is
+/// showing — newly opened or already open and raised, deliberately the
+/// same answer, because the guest asked for it to be showing and it is.
+struct HostShown: Codable, Equatable, Sendable {
+    var id: Int
+    var surface: String
+    var ok: Bool
+    var code: String?
+    var reason: String?
 }
 
 // MARK: - The cloud family
@@ -894,6 +930,21 @@ struct ProcessShot: Codable, Equatable, Sendable {
 struct ProcessResult: Codable, Equatable, Sendable {
     var id: Int
     var ok: Bool
+    /// What the guest ESTABLISHED about the machine, in
+    /// `ActSettlement.status`'s vocabulary — `confirmed`,
+    /// `dispatched-but-unconfirmed`, `refused`, and the rest.
+    ///
+    /// `ok` alone cannot tell "refused" from "accepted and never landed",
+    /// and those want different responses: one is a wrong request, the
+    /// other is a machine that did not comply. Three places in this
+    /// package worked around its absence by re-listing — see
+    /// `BringToFrontProjection`, whose comment says outright that
+    /// `process.result` "has no field that could carry 'and it landed'".
+    ///
+    /// **Optional, and nil is not `unknown`** — it means the sender does
+    /// not report outcomes. NOW-68K does not emit it, so the confirming
+    /// re-list stays the fallback rather than being deleted as redundant.
+    var outcome: String?
     var reason: String?
 }
 
@@ -1385,6 +1436,10 @@ enum ControlMessageCodec {
         case "preview.end":
             return .previewEnd(
                 try decoder.decode(PreviewEnd.self, from: data))
+        case "host.show":
+            return .hostShow(try decoder.decode(HostShow.self, from: data))
+        case "host.shown":
+            return .hostShown(try decoder.decode(HostShown.self, from: data))
         case "stream.request":
             return .streamRequest(
                 try decoder.decode(StreamRequest.self, from: data))
@@ -1526,6 +1581,8 @@ enum ControlMessageCodec {
         case .chatReset(let m): return try tagged("chat.reset", m)
         case .previewBegin(let m): return try tagged("preview.begin", m)
         case .previewEnd(let m): return try tagged("preview.end", m)
+        case .hostShow(let m): return try tagged("host.show", m)
+        case .hostShown(let m): return try tagged("host.shown", m)
         case .streamRequest(let m): return try tagged("stream.request", m)
         case .streamStart(let m): return try tagged("stream.start", m)
         case .streamStop(let m): return try tagged("stream.stop", m)

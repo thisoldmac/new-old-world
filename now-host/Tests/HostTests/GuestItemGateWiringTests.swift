@@ -306,9 +306,9 @@ final class GuestItemGateWiringTests: XCTestCase {
         XCTAssertTrue(reason.contains("no such command"))
     }
 
-    /// The card's own `notServedSentence` is richer — it names the sibling
-    /// guest that answers the verb — so the gate's line stands down there and
-    /// only covers the states the card has no sentence for.
+    /// The page's own `notServedSentence` is richer — it names the sibling
+    /// guest that answers the verb — so it is what a verb absent from the
+    /// command table carries, and the gate's line stands down there.
     func testTheCardKeepsItsOwnWordsForAVerbAbsentFromTheCommandTable() {
         let record = GuestCapabilityRecord()
         let model = diagnosticsModel(record)
@@ -319,14 +319,16 @@ final class GuestItemGateWiringTests: XCTestCase {
         let notServed = DiagnosticState(diagnostic: vprobe,
                                         serving: .notServed)
         XCTAssertFalse(model.gate(for: notServed.diagnostic).isEnabled)
-        XCTAssertNil(model.unavailableNote(for: notServed),
-                     "the card writes this case itself; two sentences for one "
-                     + "dark button is one too many")
+        XCTAssertEqual(model.availability(for: notServed).reason,
+                       model.notServedSentence(vprobe),
+                       "the page writes this case itself; two sentences for "
+                       + "one dark button is one too many")
 
-        // Any OTHER dark state does get the gate's sentence, so no greyed
-        // button on the page is left standing beside nothing.
+        // Any OTHER dark state carries the gate's sentence instead, so no
+        // greyed button on the page is left standing beside nothing.
         let unknown = DiagnosticState(diagnostic: vprobe, serving: .unknown)
-        XCTAssertNotNil(model.unavailableNote(for: unknown))
+        XCTAssertEqual(model.availability(for: unknown).reason,
+                       model.gate(for: vprobe).explanation)
     }
 
     func testWithNoMacAttachedTheDiagnosticBlamesNoMachine() {
@@ -337,8 +339,8 @@ final class GuestItemGateWiringTests: XCTestCase {
         }
         XCTAssertFalse(decision.isEnabled)
         XCTAssertFalse(reason.contains("does not serve"))
-        XCTAssertEqual(model.unavailableNote(
-            for: DiagnosticState(diagnostic: vprobe)), reason)
+        XCTAssertEqual(model.availability(
+            for: DiagnosticState(diagnostic: vprobe)).reason, reason)
     }
 
     // MARK: - the controls actually spend the answer
@@ -381,16 +383,27 @@ final class GuestItemGateWiringTests: XCTestCase {
         XCTAssertFalse(view.contains("screenshotAppGate"))
     }
 
+    /// The Diagnostics page spends ONE decision — the same one for the row's
+    /// dimming, the button's state and the sentence — and keeps its button.
+    ///
+    /// The page is a list and a detail pane now rather than three cards, and
+    /// the gate reaches it through `availability(for:)`: the model asks the
+    /// gate and folds in the one case it can word better (a verb absent from
+    /// the command table). Two separate asks would let the greyed row and the
+    /// dark button disagree about the same machine.
     func testTheDiagnosticsCardsSpendTheirDecisionAndKeepTheirButton() throws {
         let view = try pane("DiagnosticsModuleView.swift")
-        XCTAssertTrue(view.contains("model.gate(for: state.diagnostic)"))
-        XCTAssertTrue(view.contains("!decision.isEnabled"))
-        XCTAssertTrue(view.contains("model.unavailableNote(for: state)"))
+        XCTAssertTrue(view.contains("model.availability(for: state)"))
+        XCTAssertTrue(view.contains("!availability.isRunnable"),
+                      "the Run button no longer disables on the gate")
+        XCTAssertTrue(view.contains("availability.reason"),
+                      "a dark Run button with nothing beside it reads as a "
+                      + "bug")
         /* Present-and-dark, not absent. The button used to be replaced by an
            `EmptyView()` on a verb the machine does not serve, which moved
-           every card below it as machines came and went. */
+           everything below it as machines came and went. */
         XCTAssertFalse(view.contains("EmptyView()"),
-                       "the Run button is missing again on some card")
+                       "the Run button is missing again on some row")
     }
 
     /// **The gate is handed the command table this page already asked for.**

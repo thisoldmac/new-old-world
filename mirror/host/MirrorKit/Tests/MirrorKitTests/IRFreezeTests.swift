@@ -32,9 +32,17 @@ final class IRFreezeTests: XCTestCase {
         op.kind = "origin"; op.origin = [0, 0]; op.rgb = [0, 0, 0]
         op.src = [1, 2, 3, 4]; op.dst = [1, 2, 3, 4]
 
+        /* `alias: true` with a resolved target, because the freeze is
+           taken off a MAXIMAL scene: an item with no alias target
+           encodes no `aliasTarget` key and would freeze the field out of
+           the wire shape it is supposed to pin. */
         let item = Scene.DesktopItem(
             name: "n", kind: "file", type: "TEXT", creator: "ttxt",
-            x: 10, y: 20, placed: true, alias: false, invisible: false)
+            x: 10, y: 20, placed: true, alias: true, invisible: false,
+            aliasTarget: .init(name: "t", kind: "application",
+                               type: "APPL", creator: "aplt"),
+            w: 16, h: 16,   // a list row: MAXIMAL means the box too
+            origin: .drawn) // …and where that box came from
 
         let control = Scene.Control(
             ref: "r", role: "scrollbar", title: "t", rect: rect,
@@ -79,10 +87,12 @@ final class IRFreezeTests: XCTestCase {
             version: IR.version, seq: 1, source: "axtree", capturedAt: 1,
             screen: .init(w: 800, h: 600),
             apps: [.init(psn: "0.1", name: "A", front: true,
-                         incarnation: "process-12345678", error: "e")],
+                         incarnation: "process-12345678",
+                         backgroundOnly: true, error: "e")],
             processes: [.init(psn: "0.1", name: "A", front: true,
                               signature: "MACS",
-                              incarnation: "process-12345678")],
+                              incarnation: "process-12345678",
+                              backgroundOnly: true)],
             menubar: .init(app: "A", menus: [
                 .init(title: "File", apple: false, left: 40, id: 128, items: [
                     .init(title: "New", index: 1, separator: false,
@@ -99,7 +109,17 @@ final class IRFreezeTests: XCTestCase {
                           status: .complete),
                     .init(scope: "menubar", owner: "process-12345678",
                           status: .retracted, reason: "validation"),
-                ]))
+                    .init(scope: "depth", status: .partial,
+                          reason: "bounded", evicted: 3),
+                ],
+                /* Every key filled, because MAXIMAL is what makes the
+                   freeze mean anything: a theme with a refused brush
+                   encodes no key for it and would freeze that field out
+                   of the shape this test exists to pin. */
+                theme: .init(dialogBackground: "#DDDDDD",
+                             alertBackground: "#DDDDDD",
+                             documentBackground: "#FFFFFF",
+                             highlight: "#97A1DE", depth: 32)))
     }
 
     // MARK: - 1. The shape does not drift
@@ -135,6 +155,22 @@ final class IRFreezeTests: XCTestCase {
         // …and it is still declared, so the renderer keeps its shelf.
         let props = IRSchema.declaredProperties(of: Self.maximalScene())
         XCTAssertTrue(props.contains("Scene.Window.island"))
+    }
+
+    /// `displayEpoch` is the same decision one shelf later (plan 018): the
+    /// content plane's own clock, host-internal, declared so it cannot be
+    /// put on the wire by accident.
+    func testTheDisplayEpochIsNotOnTheWire() throws {
+        var scene = Self.maximalScene()
+        scene.windows[0].displayEpoch = DisplayEpoch(
+            generation: 1, epoch: 12, sceneSequence: 3, stale: false)
+        let paths = try IRSchema.wirePaths(
+            ofEncoded: try JSONEncoder().encode(scene))
+        XCTAssertFalse(paths.contains("windows[].displayEpoch"),
+                       "the content plane's clock is host render state; "
+                       + "every number in it already crosses on the drain")
+        XCTAssertTrue(IRSchema.declaredProperties(of: scene)
+            .contains("Scene.Window.displayEpoch"))
     }
 
     /// `windows[].items` came back ADDITIVELY (lane H2, 2026-07-31): on the

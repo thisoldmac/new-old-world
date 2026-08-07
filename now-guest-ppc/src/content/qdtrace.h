@@ -273,6 +273,24 @@ typedef struct {
     NowContentU32 qdext_born;
     NowContentU32 qdext_died;
     NowContentU32 qdext_born_missed;
+
+    /* The arm-time census (plan 018). Same length gate as the two above,
+       and for the same reason: an older resident's block simply stops
+       before these fields and `has_census` says so, rather than the
+       reader inventing zeroes that read as "the census ran and found
+       nothing". */
+    int has_census;
+    NowContentU32 census_runs;
+    NowContentU32 census_bytes;
+    NowContentU32 census_usecs;
+    NowContentU32 census_examined;
+    NowContentU32 census_found;
+    NowContentU32 census_hooked;
+    NowContentU32 census_windows;
+    NowContentU32 census_already;
+    NowContentU32 census_unrecoverable;
+    NowContentU32 census_refused;
+    NowContentU32 census_truncated;
 } NowQDStatus;
 
 void now_qdtrace_status(const NowContentBlock *block,

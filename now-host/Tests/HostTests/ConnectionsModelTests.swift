@@ -249,7 +249,7 @@ final class ConnectionsModelTests: XCTestCase {
             resolve: resolver(driving: nil, connected: []))
         XCTAssertTrue(listening.isIdle)
         XCTAssertEqual(listening.headline,
-                       "Listening on 1400 — no Mac connected")
+                       "Listening on 1400 — no old world mac connected")
 
         let stopped = ConnectionsSnapshot.make(
             state: .idle, guests: [], known: [], ended: [:],
@@ -278,7 +278,7 @@ final class ConnectionsModelTests: XCTestCase {
             resolve: resolver(driving: nil, connected: []))
 
         XCTAssertTrue(snapshot.isIdle)
-        XCTAssertEqual(snapshot.headline, "No Mac connected")
+        XCTAssertEqual(snapshot.headline, "No old world mac connected")
     }
 
     /// One Mac is the common case, and it must not be dressed up as a
@@ -289,7 +289,7 @@ final class ConnectionsModelTests: XCTestCase {
             guests: [guest("pb1400c", active: true)], known: [], ended: [:],
             resolve: resolver(driving: "pb1400c", connected: ["pb1400c"]))
 
-        XCTAssertEqual(snapshot.headline, "1 Mac connected")
+        XCTAssertEqual(snapshot.headline, "1 old world mac connected")
         XCTAssertFalse(snapshot.isIdle)
     }
 
@@ -308,7 +308,7 @@ final class ConnectionsModelTests: XCTestCase {
                               connected: ["pb1400c", "q950"]))
 
         XCTAssertEqual(snapshot.headline,
-                       "2 Macs connected — driving pb1400c")
+                       "2 old world macs connected — driving pb1400c")
         XCTAssertEqual(snapshot.rows.first?.machineID, "pb1400c",
                        "the machine being driven leads, and does not move "
                        + "when another Mac dials in")
@@ -383,7 +383,7 @@ final class ConnectionsModelTests: XCTestCase {
            that was typed, so quoting the name back would send a person
            looking for a fault in their typing. */
         XCTAssertEqual(ConnectionsModel.explain(.notFound, proposed: "pb180c"),
-                       "That Mac is no longer connected.")
+                       "That machine is no longer connected.")
     }
 
     /// Renaming a machine that is not connected is refused with a reason

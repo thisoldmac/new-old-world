@@ -39,7 +39,23 @@ enum {
        halfway and reported success would be resolving to whatever it
        happened to have seen. */
     kNowAxResolveMaxWindows = 16,
-    kNowAxResolveMaxControls = 32
+    /* 32 UNTIL 2026-08-07, AND IT WAS THE WHOLE OF WHY A TAB COULD NOT
+       BE DRIVEN. A control past this bound cannot be resolved, so
+       `now_obs_walk_control_ref` refuses to mint for it and the scene
+       reports it with no `ref` - correctly, because a token that cannot
+       resolve is decoration. Measured on the emulator: the Appearance
+       control panel's chain is 73 controls long and the TAB STRIP is
+       number 71, so the one control a person most wants to click was the
+       far side of this number. 41 of that desktop's 82 controls carried
+       a reference and the rest were addressable by nothing.
+
+       It is now `kNowSceneMaxControls`, and stating it as the same
+       number is the point rather than a coincidence: what a scene can
+       CARRY and what an act can REACH were two independent constants,
+       and the smaller one silently decided the product's drivability
+       without appearing in any claim. This is the same defect shape as
+       the control-frame cap that lived in three places. */
+    kNowAxResolveMaxControls = 96
 };
 
 typedef enum {

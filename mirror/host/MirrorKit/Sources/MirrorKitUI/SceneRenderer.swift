@@ -13,6 +13,27 @@ import MirrorKit
 /// This is a pure draw function: the live Canvas view and the offscreen
 /// render-screenshot both call it, so what a human sees and what an agent
 /// inspects are the same pixels.
+///
+/// ## Every bitmap is sampled nearest-neighbour, and it must stay that way
+///
+/// `GraphicsContext` has no context-wide interpolation setting, so this is
+/// stated per image — `.interpolation(.none)` at every `ctx.draw` of an
+/// `Image`, here and in `DisplayReplay`, `BitmapFont` and `UnknownVisual`.
+/// The `shouldInterpolate: false` flags scattered through this package are
+/// **not** the same rule and do not cover it: they are set on hand-built
+/// `CGImage`s only, while everything loaded from the asset pack through
+/// `CGImageSourceCreateImageAtIndex` — the icon atlas, the desktop
+/// picture, and the glyph sheet through which every character of text is
+/// drawn — arrives with it defaulting to true.
+///
+/// Why it matters more than it sounds: the mirror's zoom stops are 50,
+/// 100, 200 and 400 percent, all powers of two, so nearest-neighbour maps
+/// each guest pixel onto a whole number of host pixels and a 1-pixel
+/// Platinum rule becomes a crisp 2-pixel rule at 200%. With smoothing it
+/// becomes a grey smear — and **a similarity score cannot see that**, so
+/// no pixel gate in this package would fail. That is why the rule is
+/// defended by a gate that reads the source instead:
+/// `NearestNeighbourSamplingTests`.
 public struct SceneRenderer {
     public let scene: MirrorKit.Scene
     /// Mirror-local UI state: the open menubar menu (drawn as a Platinum
@@ -26,15 +47,48 @@ public struct SceneRenderer {
     /// A live drag/resize outline (guest coords), drawn on top — the classic
     /// Mac dotted-gray tracking rectangle. nil = not dragging.
     public let dragOutline: Rect?
+    /// An item travelling under the pointer, drawn over everything. nil = no
+    /// item drag in flight.
+    public let itemDrag: ProvisionalDrag?
+
+    /// **An item in flight, and whether the guest has confirmed it yet.**
+    ///
+    /// The presentation contract's rule 1 is that the item moves with the
+    /// pointer *immediately* — before any response — so this is view state,
+    /// not scene state, and it must never be folded back into the scene. A
+    /// scene is what the guest said; this is what a person is doing.
+    public struct ProvisionalDrag: Equatable {
+        /// The art: the item's own icon and name, so a person can see WHICH
+        /// file is in flight.
+        public var item: MirrorKit.Scene.DesktopItem
+        /// Where it is now, in global guest coords.
+        public var frame: Rect
+        /// The guest has answered and the select is real. Until then the
+        /// drawing says so — never the other way round.
+        public var confirmed: Bool
+
+        public init(item: MirrorKit.Scene.DesktopItem, frame: Rect,
+                    confirmed: Bool) {
+            self.item = item; self.frame = frame; self.confirmed = confirmed
+        }
+    }
+
+    /// The colours the guest said it draws with, resolved against this
+    /// side's fallbacks. Derived from the scene, so nothing has to remember
+    /// to pass it — and `theme.provenance` says per colour which of the two
+    /// each one came from.
+    public var theme: SceneTheme { SceneTheme(scene) }
 
     public init(scene: MirrorKit.Scene, openMenu: Int? = nil,
                 hoveredItem: Int? = nil, selectedItem: String? = nil,
-                dragOutline: Rect? = nil) {
+                dragOutline: Rect? = nil,
+                itemDrag: ProvisionalDrag? = nil) {
         self.scene = scene
         self.openMenu = openMenu
         self.hoveredItem = hoveredItem
         self.selectedItem = selectedItem
         self.dragOutline = dragOutline
+        self.itemDrag = itemDrag
     }
 
     /// The guest screen: the scene's own dimensions, falling back to the
@@ -51,13 +105,13 @@ public struct SceneRenderer {
     }
 
     private static func nextOrdinaryMenuLeft(
-        _ menus: [MirrorKit.Scene.Menu], after index: Int
+        _ menus: [MirrorKit.Scene.Menu], after index: Int, from left: Int
     ) -> Int {
-        let current = menus[index]
-        return menus.dropFirst(index + 1)
-            .filter { $0.id != ObjectResolver.applicationMenuID
-                && $0.left > current.left }
-            .map(\.left).min() ?? (current.left + 60)
+        menus.dropFirst(index + 1)
+            .filter { $0.id != ObjectResolver.applicationMenuID }
+            .compactMap(\.left)
+            .filter { $0 > left }
+            .min() ?? (left + 60)
     }
 
     public func draw(in ctx: GraphicsContext, size: CGSize) {
@@ -96,6 +150,41 @@ public struct SceneRenderer {
         if let dragOutline {
             drawDragOutline(ctx, dragOutline)
         }
+        if let itemDrag {
+            drawItemDrag(ctx, itemDrag)
+        }
+    }
+
+    /// The dragged item, over everything, marked provisional until the guest
+    /// has confirmed the select.
+    ///
+    /// The style is `ProvisionalVisual`'s and only `ProvisionalVisual`'s —
+    /// this function decides WHEN and WHERE, never what it looks like. A
+    /// second place deciding that is how the marked unknown ended up with two
+    /// copies of its fill, identical by coincidence and free to drift.
+    private func drawItemDrag(_ ctx: GraphicsContext,
+                              _ drag: ProvisionalDrag) {
+        let f = drag.frame
+        let frame = CGRect(x: CGFloat(f.l), y: CGFloat(f.t),
+                           width: CGFloat(max(0, f.r - f.l)),
+                           height: CGFloat(max(0, f.b - f.t)))
+        guard drag.confirmed else {
+            ProvisionalVisual.drawPlate(in: ctx, frame: frame)
+            var ghost = ctx
+            ghost.opacity = ProvisionalVisual.itemOpacity
+            drawIcon(ghost, drag.item,
+                     at: CGPoint(x: frame.minX + ProvisionalVisual.inset,
+                                 y: frame.minY + ProvisionalVisual.inset))
+            ProvisionalVisual.drawMark(in: ctx, frame: frame)
+            return
+        }
+        /* Confirmed: the guest said yes, so the item is drawn as an item.
+           Nothing PROMOTES a provisional drag to this on its own — the only
+           way here is a real response, which is rule 2 of the contract and
+           the whole reason the two drawings differ. */
+        drawIcon(ctx, drag.item,
+                 at: CGPoint(x: frame.minX + ProvisionalVisual.inset,
+                             y: frame.minY + ProvisionalVisual.inset))
     }
 
     /// The classic Mac drag/resize tracking rectangle: a 2px dotted gray
@@ -156,22 +245,48 @@ public struct SceneRenderer {
 
     // MARK: - Desktop
 
+    /// The desktop, through the same ladder as every other rectangle.
+    ///
+    /// It used to tile `ppat` 16 unconditionally and fill
+    /// `Platinum.desktopBlue` when the pack had none — two guesses, on the
+    /// largest rectangle in the picture. Lane C measured the first as wrong
+    /// on the image we run (the guest's desktop is an 800×600 picture, not
+    /// a tiled pattern) and the second was never evidence of anything.
+    ///
+    /// Rung 3 draws art the pack IDENTIFIED; rung 4 marks the rest. A
+    /// plausible wrong purple is exactly what rule 1 forbids.
     private func drawDesktop(_ ctx: GraphicsContext, _ bounds: CGRect) {
-        guard let tile = DesktopPattern.tile else {
-            ctx.fill(Path(bounds), with: .color(Platinum.desktopBlue))
-            return
-        }
-        // Tile the real 128×128 "Mac OS Default" ppat across the surface.
-        let tw = CGFloat(tile.width), th = CGFloat(tile.height)
-        let image = Image(decorative: tile, scale: 1)
-        var y: CGFloat = 0
-        while y < bounds.height {
-            var x: CGFloat = 0
-            while x < bounds.width {
-                ctx.draw(image, in: CGRect(x: x, y: y, width: tw, height: th))
-                x += tw
+        switch DesktopPattern.answer(screen: bounds.size) {
+        case .picture(let art):
+            /* ONCE, AT THE ORIGIN, UNSCALED — the operation the machine
+               performs. `answer` has already refused any picture whose
+               size is not the screen's, so this cannot crop or stretch. */
+            ctx.draw(Image(decorative: art, scale: 1)
+                        .interpolation(.none),
+                     in: CGRect(x: bounds.minX, y: bounds.minY,
+                                width: CGFloat(art.width),
+                                height: CGFloat(art.height)))
+        case .pattern(let tile):
+            let tw = CGFloat(tile.width), th = CGFloat(tile.height)
+            guard tw > 0, th > 0 else { break }
+            let image = Image(decorative: tile, scale: 1)
+                .interpolation(.none)
+            var y = bounds.minY
+            while y < bounds.maxY {
+                var x = bounds.minX
+                while x < bounds.maxX {
+                    ctx.draw(image, in: CGRect(x: x, y: y, width: tw, height: th))
+                    x += tw
+                }
+                y += th
             }
-            y += th
+        case .unknown(let why):
+            /* The marked unknown, at desktop scale. `why` is deliberately
+               NOT drawn — the mirror talking about itself inside a picture
+               of the machine — but it is the sentence a diagnostic asks
+               for, and it is why this is an enum rather than an optional. */
+            _ = why
+            drawUnavailableVisual(ctx, bounds, "")
         }
     }
 
@@ -236,7 +351,8 @@ public struct SceneRenderer {
                                  item: MirrorKit.Scene.DesktopItem) {
         if let bitmap = IconAtlas.icon(for: item,
                                        size: IconAtlas.Size.fitting(box)) {
-            ctx.draw(Image(decorative: bitmap, scale: 1), in: box)
+            ctx.draw(Image(decorative: bitmap, scale: 1)
+                        .interpolation(.none), in: box)
             drawAliasBadge(ctx, box, item: item)
             return
         }
@@ -364,14 +480,20 @@ public struct SceneRenderer {
                Manager's, not ours - which is precisely why it must not
                be drawn from this loop, where left is the position. */
             if menu.id == ObjectResolver.applicationMenuID { continue }
+            /* A menu bar is a positional surface, so a menu the producer
+               never placed cannot be drawn in it. Skipped rather than
+               drawn at 0, which is where an absent `left` used to land -
+               on top of the Apple menu, and hit-testable there. */
+            guard let left = menu.left else { continue }
             if i == openMenu {
-                let next = Self.nextOrdinaryMenuLeft(menus, after: i)
-                ctx.fill(Path(CGRect(x: CGFloat(menu.left) - 6, y: 0,
-                                     width: CGFloat(next - menu.left), height: 19)),
+                let next = Self.nextOrdinaryMenuLeft(menus, after: i,
+                                                     from: left)
+                ctx.fill(Path(CGRect(x: CGFloat(left) - 6, y: 0,
+                                     width: CGFloat(next - left), height: 19)),
                          with: .color(Platinum.selection))
             }
             drawMenuTitle(ctx, menu.apple ? "\u{F8FF}" : menu.title,
-                          apple: menu.apple, left: CGFloat(menu.left),
+                          apple: menu.apple, left: CGFloat(left),
                           highlighted: i == openMenu)
         }
         if Self.shouldSynthesizeAppleMenu(menus) {
@@ -409,7 +531,8 @@ public struct SceneRenderer {
                 .first(where: { $0.psn == front.psn })?.signature
             if let img = IconAtlas.processIcon(signature: signature, size: small)
                 ?? IconAtlas.namedIcon("application", size: small) {
-                ctx.draw(Image(decorative: img, scale: 1), in: iconBox)
+                ctx.draw(Image(decorative: img, scale: 1)
+                            .interpolation(.none), in: iconBox)
             } else {
                 ctx.fill(Path(roundedRect: iconBox, cornerRadius: 2),
                          with: .color(Platinum.g3))
@@ -459,7 +582,12 @@ public struct SceneRenderer {
                                      screenWidth: Int = 0) -> CGRect {
         let maxLen = menu.items.map(\.title.count).max() ?? 8
         let width = CGFloat(min(max(120, maxLen * 8 + 56), 320))
-        var x = CGFloat(menu.left) - 6
+        /* UNREACHABLE WITH A nil LEFT, and stated rather than defaulted:
+           an unplaced menu is not drawn in the strip above and the hit
+           tester returns no index for one, so nothing can open its
+           dropdown. The zero is a total function's tail, not a position
+           anything is placed by. */
+        var x = CGFloat(menu.left ?? 0) - 6
         if menu.id == ObjectResolver.applicationMenuID, screenWidth > 0 {
             /* The Menu Manager reports no useful left edge for the
                right-aligned application menu. Its title geometry comes
@@ -590,6 +718,41 @@ public struct SceneRenderer {
            titled thing is not the untitled kind. */
         let isDialog = win.kind == 2 && win.title.isEmpty
 
+        /* TWO DECISIONS, NOT ONE, and collapsing them was a defect.
+         *
+           THIRD REVISION, 2026-08-07: the COLOUR is no longer decided
+           here at all. `theme.face(forWindowKind:)` answers it from what
+           the guest's own Appearance Manager reported in `meta.theme`,
+           falling back to the Platinum constants for a scene that
+           carries none. What stays here is the kind→brush MAPPING, which
+           is a fact about the Window Manager rather than about a theme.
+         *
+           It also fixed a case the comment below could not: a
+           kind-2000 (application-defined) panel such as Appearance's own
+           was hardcoded to literal white, so no theme could ever move
+           it. It now gets kThemeBrushDocumentWindowBackground, which is
+           the brush that actually names that face.
+         *
+           `isDialog` above answers "does this window have a title bar",
+           and it is right to key that on the title. It was ALSO being
+           used to answer "what colour is the content face", and those two
+           questions have different answers for the same window: the Date
+           & Time control panel is windowKind 2 with a title, so it drew
+           chrome correctly and then filled its whole body white.
+         *
+           The face follows the WINDOW MANAGER'S OWNER, not the chrome. A
+           Dialog Manager window is erased with the Appearance Manager's
+           `kThemeBrushDialogBackgroundActive` whether or not it has a
+           title bar - one brush, and the guest itself asks for it by that
+           name in three places (workshop_window.c, confirm.c,
+           census_module.c). So `kind == 2` alone decides the face.
+         *
+           `kind` is the WindowRecord's own `windowKind`, read out of the
+           machine - not something this side inferred. Anything else keeps
+           white, which is what a document window's content really is. */
+        let windowFace = theme.face(forWindowKind: win.kind,
+                                    untitled: win.title.isEmpty)
+
         // Drop shadow, frame, face, raised bevel.
         ctx.fill(Path(frame.offsetBy(dx: 2, dy: 2)),
                  with: .color(.black.opacity(0.35)))
@@ -622,8 +785,7 @@ public struct SceneRenderer {
                              width: frame.width - (isDialog ? 12 : 2),
                              height: max(0, frame.height - contentTop
                                             - (isDialog ? 6 : 1)))
-        ctx.fill(Path(content),
-                 with: .color(isDialog ? Platinum.g1 : Platinum.g0))
+        ctx.fill(Path(content), with: .color(windowFace))
         if !isDialog {
             ctx.fill(Path(CGRect(x: content.minX, y: content.minY,
                                  width: content.width, height: 1)),
@@ -665,7 +827,8 @@ public struct SceneRenderer {
         // answer.
         if win.items == nil,
            let island = win.island, let image = Self.cgImage(island) {
-            contentCtx.draw(Image(decorative: image, scale: 1),
+            contentCtx.draw(Image(decorative: image, scale: 1)
+                                .interpolation(.none),
                             in: CGRect(x: content.minX, y: content.minY,
                                        width: CGFloat(island.width),
                                        height: CGFloat(island.height)))
@@ -682,9 +845,32 @@ public struct SceneRenderer {
            prove that exact control is a list or another drawable control.
            Prefer the more specific guest fact; the old unconditional DITL
            precedence painted a hatch over Date & Time's real list payload. */
+        /* THE TWO ROWS THAT SHARE A REF ARE ONE THING, AND WHICHEVER
+           KNOWS MORE ABOUT IT DRAWS. A DITL row and its live
+           ControlRecord are the same object seen through two windows,
+           so exactly one of them may draw and the other must stand
+           down. Until 2026-08-07 the tie was broken by asking the
+           CONTROL alone for `knowledge == .known`, and the CDEF route
+           answers `derived` — so twenty of Date & Time's twenty-one
+           controls lost to dialog items carrying `knowledge: unknown,
+           kind: null`, which is nothing at all. That is why the panel
+           has had no group boxes in any sweep, and why the Charcoal
+           strike could not be seen in its titles even after the string
+           began arriving whole: the row that would have drawn them was
+           being skipped in favour of a row that knew less.
+           Asked as a comparison, the alert case that motivated the old
+           rule keeps working and for the right reason:
+           `scene-ie-error-alert` has the OPPOSITE shape — its three
+           buttons are `unknown` controls beside `known` pushButton
+           items — so the item still wins there. */
+        let itemsByRef: [String: MirrorKit.Scene.DialogItem] =
+            (win.dialogItems ?? []).reduce(into: [:]) { table, item in
+                if let ref = item.ref { table[ref] = item }
+            }
         let semanticControlRefs: Set<String> = Set(win.controls.compactMap {
             control -> String? in
-            Self.semanticSupersedesResource(control) ? control.ref : nil
+            Self.semanticOutranks(control, itemsByRef[control.ref])
+                ? control.ref : nil
         })
         let dialogRefs: Set<String> = Set((win.dialogItems ?? []).compactMap {
             item -> String? in
@@ -719,9 +905,54 @@ public struct SceneRenderer {
            docs/render-composition.md > "the rule for anyone adding a
            placeholder". */
         let replayCoverage = DisplayReplay.Coverage()
+        /* A BACKGROUND IS GROUND, SO IT GOES DOWN FIRST. `panel`,
+           `placard`, `selectionBand` and `separator` are the four DITL
+           kinds that fill a rectangle and say nothing about what is in
+           it — which is why `dialogItemOwnsDisplay` already refuses to
+           let them silence the drawing under them. They were still drawn
+           AFTER the replay, and that was invisible only for as long as
+           the first gate silenced every drawn run inside them: the
+           moment rung 1 stopped yielding, NOW's Workshop sidebar
+           replayed all fifteen of its rows and then had its own `panel`
+           painted flat white over the lot.
+
+           Order, not another exclusion. The machine paints its ground
+           and then draws on it, and so does this: backgrounds under the
+           replay, the Control Manager's furniture over it. A coverage
+           test could not stand in for that — `covers` intersects, so one
+           inked pixel anywhere would suppress a whole panel. */
+        for item in win.dialogItems ?? [] where item.visible
+                && Self.dialogItemIsBackground(item.semantic.kind)
+                && (item.ref.map { !semanticControlRefs.contains($0) }
+                    ?? true) {
+            drawDialogItem(contentCtx, item, contentOrigin: content.origin,
+                           windowFace: windowFace)
+        }
+        /* AND SO DOES A GROUND CONTROL — but only where there is no
+           drawing for it to be ground UNDER. See `controlIsGround`: the
+           chain's order is the application's, not a stacking order, and
+           a pane that happens to arrive last must not bury what came
+           before it.
+           The condition is the same one every other control answers a
+           few lines below, and it has to be: a window whose interior
+           the replay owns has already been answered by rung 1, and a
+           pane drawn ahead of it would put "Structured content
+           unavailable" under Date & Time's own Time Zone group for the
+           length of one repaint. Ground marks an absence; where there
+           is no absence it draws nothing at all. */
+        for control in win.controls where control.visible
+                && Self.controlIsGround(control)
+                && !displayOwnsVisuals
+                && !Self.groundWrapsTheChain(control, in: win)
+                && !dialogRefs.contains(control.ref) {
+            drawControl(contentCtx, control, contentOrigin: content.origin,
+                        isDefault: false, windowFace: windowFace)
+        }
         if let display = win.display {
             DisplayReplay.draw(display, in: contentCtx, content: content,
                                excluding: semanticFrames,
+                               ladder: Self.ladder(for: win, content: content,
+                                                   owning: semanticFrames),
                                coverage: replayCoverage)
         }
         if !displayOwnsVisuals, let text = win.text {
@@ -729,10 +960,13 @@ public struct SceneRenderer {
         }
         for control in win.controls where control.visible
                 && !dialogRefs.contains(control.ref)
+                && !Self.controlIsGround(control)
                 && (!displayOwnsVisuals || Self.semanticOwnsDisplay(control)
                     || Self.isWindowFurniture(control)) {
             drawControl(contentCtx, control, contentOrigin: content.origin,
-                        isDefault: control.semantic?.isDefault == true)
+                        isDefault: control.semantic?.isDefault == true,
+                        replayed: replayCoverage,
+                        windowFace: windowFace)
         }
         /* An alert's default-outline slot is a DITL user item laid OVER the
            button it outlines, and it is drawn after it. Painting a
@@ -747,11 +981,13 @@ public struct SceneRenderer {
             rect($0.rect).offsetBy(dx: content.minX, dy: content.minY)
         } ?? []
         for item in win.dialogItems ?? [] where item.visible
+                && !Self.dialogItemIsBackground(item.semantic.kind)
                 && (item.ref.map { !semanticControlRefs.contains($0) }
                     ?? true) {
             drawDialogItem(contentCtx, item, contentOrigin: content.origin,
                            covering: drawnItems,
-                           replayed: replayCoverage)
+                           replayed: replayCoverage,
+                           windowFace: windowFace)
         }
         // Finder icon-view items, in window-local content coords — the
         // Finder's own live positions, so what is drawn is where the guest
@@ -888,6 +1124,63 @@ public struct SceneRenderer {
         return (r.b - r.t) <= 26 && (r.r - r.l) > 20
     }
 
+    /// **Rung 3's identities, gathered from the semantic plane.**
+    ///
+    /// The one rule: a rectangle is NAMED only because P2 said what is at
+    /// it. Never because of its size, never because of its shape. See
+    /// ``ProvenanceLadder`` and docs/render-composition.md.
+    ///
+    /// Two exclusions carry the weight, and both were paid for by sweep A:
+    ///
+    /// - **A derived cell names nothing.** `DrawnCellGrid` derives Sherlock
+    ///   2's channel grid from the drawing itself, so a cell's evidence IS
+    ///   the pixels — it can say where the cell is and which is selected,
+    ///   and nothing at all about the art inside it. Sweep A found nine
+    ///   page icons in that grid. They are unknowns.
+    /// - **An untyped control names nothing.** A Finder window's scroll
+    ///   bars arrive with `role: "unknown"` and no semantic kind, so their
+    ///   16×16 arrow blits get no name and draw as marked unknowns rather
+    ///   than as documents. That is the whole of Michelle's complaint #5,
+    ///   and "arrows or a marked unknown, never a page" is the exit
+    ///   criterion it became.
+    public static func ladder(for win: MirrorKit.Scene.Window,
+                              content: CGRect,
+                              owning: [CGRect]) -> ProvenanceLadder {
+        func place(_ r: MirrorKit.Rect) -> CGRect {
+            CGRect(x: content.minX + CGFloat(r.l), y: content.minY + CGFloat(r.t),
+                   width: CGFloat(max(0, r.r - r.l)),
+                   height: CGFloat(max(0, r.b - r.t)))
+        }
+        var named: [(rect: CGRect, art: ProvenanceLadder.NamedArt)] = []
+        for control in win.controls where control.visible {
+            guard let rect = control.rect,
+                  control.semantic?.knowledge == .known,
+                  let kind = control.semantic?.kind,
+                  kind != MirrorKit.DrawnCellGrid.cellKind,
+                  !Self.isBackgroundKind(kind) else { continue }
+            named.append((place(rect), .control))
+        }
+        for item in win.dialogItems ?? [] where item.visible {
+            let kind = item.semantic.kind
+            if kind == "icon" {
+                named.append((place(item.rect), .icon))
+            } else if item.semantic.knowledge == .known,
+                      !Self.isBackgroundKind(kind ?? "") {
+                named.append((place(item.rect), .control))
+            }
+        }
+        return .init(owning: owning, named: named,
+                     inkIsCurrent: win.displayEpoch?.stale != true)
+    }
+
+    /// Backgrounds name nothing: they routinely wrap most of a dialog, and
+    /// a background that claimed every blit inside it would be the
+    /// `dialogItemOwnsDisplay` defect wearing a third hat.
+    static func isBackgroundKind(_ kind: String) -> Bool {
+        kind == "panel" || kind == "placard" || kind == "selectionBand"
+            || kind == "groupBox" || kind == "userItem"
+    }
+
     /// Window furniture the Control Manager draws OVER application content
     /// on the real machine. A scrollbar is chrome, not app drawing: a
     /// display-owned window must still show it, or the bar appears only as
@@ -910,12 +1203,42 @@ public struct SceneRenderer {
     /// control rectangle. Containers, partial lists, and value-less popups do
     /// not: clipping their rectangle erased the Date & Time labels and list
     /// rows that only the guest's drawing stream knew.
+    /// **The TEXT a control's semantics carry, or nil — and `derived`
+    /// carries none.**
+    ///
+    /// `semantic.value` is read by this renderer as the string a control
+    /// DISPLAYS: a static label's words, a field's contents, a popup's
+    /// chosen item. The CDEF route cannot supply that. It names the code
+    /// that draws a control by its resource id and then reports
+    /// `GetControlValue` in the same key — so every one of Memory's
+    /// twelve reachable static labels arrived carrying the string "0",
+    /// and the renderer drew a `0` hard against the machine's own first
+    /// glyph: "Ⅱirtual Memory", "Ⅱurrent Theme" (sweep B, R2). The popup
+    /// was worse — it drew the menu INDEX, "1", over the machine's
+    /// "Macintosh HD".
+    ///
+    /// The producer is being fixed in the same change
+    /// (`now-guest-ppc/src/scene/scene_json.c`, which no longer emits
+    /// `value` for a derived control at all, the number already riding
+    /// in the control's own `value`). This gate is the receiver's half
+    /// and is not redundant: every committed capture in this tree still
+    /// carries the old field, the 68K guest is a separate producer, and
+    /// the rule is true independently of who is sending — **the claim
+    /// must be no stronger than the evidence, and a CDEF id is not
+    /// evidence about a string.**
+    public static func semanticText(_ semantic: MirrorKit.Scene.Semantics?)
+        -> String? {
+        guard let semantic, semantic.knowledge == .known,
+              let value = semantic.value, !value.isEmpty else { return nil }
+        return value
+    }
+
     static func semanticOwnsDisplay(_ ctl: MirrorKit.Scene.Control) -> Bool {
         switch ctl.semantic?.kind {
         case "pushButton", "checkBox", "radioButton":
             return !ctl.title.isEmpty
         case "popupMenu":
-            return ctl.semantic?.value != nil
+            return Self.semanticText(ctl.semantic) != nil
         case "progressIndicator":
             return ctl.value != nil
         case "disclosureTriangle":
@@ -925,7 +1248,8 @@ public struct SceneRenderer {
         case "listBox":
             return !(ctl.semantic?.listCells?.isEmpty ?? true)
         case "staticText", "editText":
-            return ctl.semantic?.value != nil
+            return Self.semanticText(ctl.semantic) != nil
+                || !ctl.title.isEmpty
         case "columnHeader":
             return !ctl.title.isEmpty
         case "groupBox":
@@ -939,6 +1263,26 @@ public struct SceneRenderer {
     /// without claiming the whole rectangle against P3. Group boxes are the
     /// important distinction: their border/title are complete structured
     /// facts, but their interior may still contain application drawing.
+    /// Whether `ctl` should draw INSTEAD OF the dialog item that shares
+    /// its reference — the two being one object reported twice.
+    ///
+    /// `semanticSupersedesResource` is the `known` half and is
+    /// unchanged. What is added is the `derived` half, and it is stated
+    /// as a comparison rather than as a second threshold: a control the
+    /// CDEF route classified outranks an item that carries **no kind at
+    /// all**, and outranks nothing else. An item that knows what it is
+    /// keeps the rectangle.
+    public static func semanticOutranks(_ ctl: MirrorKit.Scene.Control,
+                                 _ item: MirrorKit.Scene.DialogItem?)
+        -> Bool {
+        if Self.semanticSupersedesResource(ctl) { return true }
+        guard ctl.semantic?.knowledge == .derived,
+              ctl.semantic?.kind != nil else { return false }
+        guard let item else { return true }
+        return item.semantic.knowledge == .unknown
+            || item.semantic.kind == nil
+    }
+
     static func semanticSupersedesResource(
         _ ctl: MirrorKit.Scene.Control
     ) -> Bool {
@@ -957,31 +1301,88 @@ public struct SceneRenderer {
         }
     }
 
+    /// `windowFace` is the colour THIS window's content was erased with —
+    /// see `Platinum.dialogFace`. A control that knocks a hole in the face
+    /// to sit in (a group box's title band) must fill that hole with the
+    /// face, not with a constant, or the hole becomes a visible plate on
+    /// every window whose face is not white.
     private func drawControl(_ ctx: GraphicsContext, _ ctl: MirrorKit.Scene.Control,
-                             contentOrigin: CGPoint, isDefault: Bool) {
+                             contentOrigin: CGPoint, isDefault: Bool,
+                             replayed: DisplayReplay.Coverage? = nil,
+                             windowFace: Color = Platinum.g0) {
         guard let local = ctl.rect else { return }   // rect is content-local
         let frame = rect(local).offsetBy(dx: contentOrigin.x,
                                          dy: contentOrigin.y)
         guard frame.width > 0, frame.height > 0 else { return }
+        /* RUNG 1 BEATS RUNG 2 HERE TOO, and until sweep B nothing on
+           this path asked. `drawDialogItem` has consulted `Coverage`
+           since 2026-08-06 and its twin did not, so the two planes
+           answered the same question differently — which is the drift
+           the ladder exists to stop. See `Coverage.textCovers`. */
+        func replayedWords(_ piece: CGRect) -> Bool {
+            replayed?.textCovers(piece) == true
+        }
+        /* AND A WHOLE WIDGET YIELDS WHERE THE MACHINE DREW ONE. These
+           branches do not annotate a rectangle, they REPLACE it — a
+           filled Platinum pill, a mark box, a popup face — so drawing
+           one over a rectangle the replay already answered is rung 2
+           painting over rung 1, which is the defect this whole change
+           is about. Memory measured it the moment the classification
+           reached the renderer: OS 9 builds its radio buttons from a
+           CDEF the guest reports as the button FAMILY, so six of the
+           panel's radios arrived as `pushButton` and six Platinum pills
+           landed on top of the machine's own radios and labels.
+           `mostlyCovers`, not `covers`: the panel's own face paint is
+           swept-over ground and must not count, which is the bound that
+           predicate already carries. */
+        func replayedWidget(_ piece: CGRect) -> Bool {
+            /* WORDS COUNT, and they are usually the only thing that
+               fits. `mostlyCovers` asks about the RECTANGLE, and a
+               control rect is a slack box: Memory's "On" radio is 37
+               points holding a 16-point run, so the area test said no
+               and a pill landed on the machine's own radio anyway.
+               A run of the machine's own text inside a control's
+               rectangle is as good evidence that the machine drew that
+               control as anything this side will ever have. */
+            replayed?.mostlyCovers(piece) == true || replayedWords(piece)
+        }
 
         // Guest-proven semantics win. These are the CDEF procIDs NOW recorded
         // when it created its own controls; collapsing them all to buttons is
         // what made Workshop popups and checkboxes appear as pills.
         switch ctl.semantic?.kind {
         case "pushButton":
+            guard !replayedWidget(frame) else { return }
             drawButton(ctx, ctl, frame, isDefault: isDefault)
             return
         case "checkBox":
-            drawChoice(ctx, ctl, frame, radio: false)
+            /* PER PIECE, NOT PER ROW, and this is the second time that
+               distinction has cost check boxes. A choice control's
+               LABEL arrives as a text op and its little mark box does
+               not, so a row-wide yield takes both: NOW's own Workshop
+               lost the tick beside "Compress on wire (PackBits)" the
+               first time this gate was written whole. Same split
+               `drawDialogItem` has made since 2026-08-06. */
+            drawChoice(ctx, ctl, frame, radio: false,
+                       markIsDrawn: { replayedWidget($0) },
+                       labelIsDrawn: { replayedWords($0) })
             return
         case "radioButton":
-            drawChoice(ctx, ctl, frame, radio: true)
+            drawChoice(ctx, ctl, frame, radio: true,
+                       markIsDrawn: { replayedWidget($0) },
+                       labelIsDrawn: { replayedWords($0) })
             return
         case "popupMenu":
+            guard !replayedWords(frame) else { return }
             drawPopup(ctx, ctl, frame)
             return
         case "groupBox":
-            drawGroup(ctx, ctl, frame)
+            /* A group box is a frame and a label, and the label half
+               yields on its own terms: the band it knocks out of its
+               own rule is the machine's if the machine drew the title
+               there. */
+            drawGroup(ctx, ctl, frame, windowFace: windowFace,
+                      titleIsDrawn: { replayedWords($0) })
             return
         case "progressIndicator":
             drawProgress(ctx, ctl, frame)
@@ -993,16 +1394,18 @@ public struct SceneRenderer {
             drawListSelection(ctx, ctl, frame)
             return
         case "staticText":
-            appText(ctl.semantic?.value ?? ctl.title, ctx,
+            guard !replayedWords(frame) else { return }
+            appText(Self.semanticText(ctl.semantic) ?? ctl.title, ctx,
                     x: frame.minX,
                     baselineY: frame.minY
                         + CGFloat(FontBook.app?.ascent ?? 10),
                     color: ctl.enabled ? Platinum.g6 : Platinum.g3)
             return
         case "editText":
+            guard !replayedWords(frame) else { return }
             ctx.fill(Path(frame), with: .color(Platinum.g0))
             ctx.stroke(Path(frame), with: .color(Platinum.g6), lineWidth: 1)
-            appText(ctl.semantic?.value ?? ctl.title, ctx,
+            appText(Self.semanticText(ctl.semantic) ?? ctl.title, ctx,
                     x: frame.minX + 3, baselineY: frame.midY + 4,
                     color: ctl.enabled ? Platinum.g6 : Platinum.g3)
             return
@@ -1020,8 +1423,23 @@ public struct SceneRenderer {
             /* These are real guest-proven regions, but this semantic slice
                does not yet carry their private rows or drawing. Never turn
                that bounded absence back into an empty application surface. */
+            /* GROUND IS NOT CONTENT, AND GROUND THAT ARRIVES LAST MUST
+               NOT PAINT OVER WHAT CAME BEFORE IT. A `userPane` is the
+               control-plane spelling of a DITL `userItem`, and that
+               branch settled this question one plane over: a user pane
+               has no content of its OWN, so whatever appears inside it
+               was drawn by the application — P3's business, not a
+               semantic fact. Appearance's outermost control is a user
+               pane covering the whole content rect and LAST in the
+               chain, so the plate erased all six tabs the replay had
+               just drawn (integration round 4). The absence is still
+               marked wherever the machine drew nothing; what it may no
+               longer do is claim a rectangle the replay already
+               answered. Same rule as slice 16's backgrounds-under-the-
+               replay, arriving at a control instead of a dialog item. */
+            guard !(replayed?.covers(frame) ?? false) else { return }
             drawUnavailableVisual(ctx, frame,
-                                  ctl.semantic?.value
+                                  Self.semanticText(ctl.semantic)
                                     ?? (ctl.title.isEmpty
                                         ? "Structured content unavailable"
                                         : ctl.title))
@@ -1061,15 +1479,18 @@ public struct SceneRenderer {
 
     private func drawChoice(_ ctx: GraphicsContext,
                             _ ctl: MirrorKit.Scene.Control,
-                            _ frame: CGRect, radio: Bool) {
+                            _ frame: CGRect, radio: Bool,
+                            markIsDrawn: (CGRect) -> Bool = { _ in false },
+                            labelIsDrawn: (CGRect) -> Bool = { _ in false }) {
         let mark = CGRect(x: frame.minX, y: frame.midY - 6,
                           width: 12, height: 12)
         let shape = radio ? Path(ellipseIn: mark) : Path(mark)
+        let on = ctl.semantic?.state == "on" || ctl.checked
+        if !markIsDrawn(mark) {
         ctx.fill(shape, with: .color(Platinum.g0))
         ctx.stroke(shape,
                    with: .color(ctl.enabled ? Platinum.g6 : Platinum.g3),
                    lineWidth: 1)
-        let on = ctl.semantic?.state == "on" || ctl.checked
         if on {
             if radio {
                 ctx.fill(Path(ellipseIn: mark.insetBy(dx: 3, dy: 3)),
@@ -1084,6 +1505,11 @@ public struct SceneRenderer {
                 ctx.stroke(tick, with: .color(Platinum.g6), lineWidth: 2)
             }
         }
+        }
+        let label = CGRect(x: frame.minX + 16, y: frame.minY,
+                           width: max(0, frame.width - 16),
+                           height: frame.height)
+        guard !labelIsDrawn(label) else { return }
         appText(ctl.title, ctx, x: frame.minX + 16,
                 baselineY: frame.midY + 4,
                 color: ctl.enabled ? Platinum.g6 : Platinum.g3)
@@ -1092,7 +1518,10 @@ public struct SceneRenderer {
     private func drawPopup(_ ctx: GraphicsContext,
                            _ ctl: MirrorKit.Scene.Control,
                            _ frame: CGRect) {
-        let value = ctl.semantic?.value
+        /* NOT `semantic.value` RAW: the CDEF route reports the menu
+           INDEX there, and Memory's disk popup drew "1" over the
+           machine's "Macintosh HD". See `semanticText`. */
+        let value = Self.semanticText(ctl.semantic)
         let labelWidth: CGFloat = if value != nil && !ctl.title.isEmpty {
             min(frame.width * 0.45,
                 CGFloat(FontBook.app?.width(ctl.title) ?? 0) + 12)
@@ -1123,7 +1552,9 @@ public struct SceneRenderer {
 
     private func drawGroup(_ ctx: GraphicsContext,
                            _ ctl: MirrorKit.Scene.Control,
-                           _ frame: CGRect) {
+                           _ frame: CGRect,
+                           windowFace: Color = Platinum.g0,
+                           titleIsDrawn: (CGRect) -> Bool = { _ in false }) {
         ctx.stroke(Path(frame.insetBy(dx: 0.5, dy: 0.5)),
                    with: .color(ctl.enabled ? Platinum.g4 : Platinum.g3),
                    lineWidth: 1)
@@ -1131,7 +1562,10 @@ public struct SceneRenderer {
         let titleWidth = CGFloat(FontBook.app?.width(ctl.title) ?? 0)
         let patch = CGRect(x: frame.minX + 8, y: frame.minY - 1,
                            width: titleWidth + 8, height: 14)
-        ctx.fill(Path(patch), with: .color(Platinum.g0))
+        guard !titleIsDrawn(patch) else { return }
+        // Knock the box's own rule out from behind the title, in the face
+        // the window was erased with.
+        ctx.fill(Path(patch), with: .color(windowFace))
         appText(ctl.title, ctx, x: patch.minX + 4,
                 baselineY: patch.minY + 10,
                 color: ctl.enabled ? Platinum.g6 : Platinum.g3)
@@ -1223,12 +1657,106 @@ public struct SceneRenderer {
     /// contains one, and a corrupted read reliably does. This is a
     /// renderer-side defence, not a fix: the walk reporting an address as
     /// a string is a guest defect and belongs in docs/open-issues.md.
-    static func displayableTitle(_ title: String) -> String? {
+    public static func displayableTitle(_ title: String) -> String? {
         guard !title.isEmpty,
               !title.unicodeScalars.contains(where: {
                   $0.value < 0x20 || $0.value == 0x7f
-              }) else { return nil }
+              }), !Self.holdsParamText(title) else { return nil }
         return title
+    }
+
+    /// **A `^1` IS A TEMPLATE, AND ONLY THE MACHINE HOLDS THE
+    /// SUBSTITUTION.**
+    ///
+    /// `ParamText` fills `^0`–`^3` at draw time from four strings the
+    /// Dialog Manager holds; the DITL resource keeps the template
+    /// forever, so a walk of the item list reads the template and never
+    /// the sentence a person saw. Memory's own paragraph is the case:
+    /// the resource says "The current estimated size is ^1K." and the
+    /// machine drew "…is 8160K." (sweep B).
+    ///
+    /// Drawn, that row asserts a sentence nobody ever displayed. So it
+    /// is not a displayable title at all, for the same reason and
+    /// through the same gate as a title that came back as a pointer:
+    /// both are strings this host was handed and neither is a string
+    /// the machine put on screen. Refusing it here refuses it twice
+    /// over — the row may no longer SILENCE the drawing beneath it
+    /// (`dialogItemOwnsDisplay`), and it may no longer draw itself —
+    /// which leaves the guest's own run, the only producer that has the
+    /// substituted value.
+    ///
+    /// Deliberately not "substitute something plausible": a value this
+    /// side invents is the confident wrong answer rung 4 exists to
+    /// forbid, and the `^` is at least legibly broken.
+    public static func holdsParamText(_ title: String) -> Bool {
+        var previous: Character?
+        for character in title {
+            if previous == "^", character.isNumber { return true }
+            previous = character
+        }
+        return false
+    }
+
+    /// The DITL kinds that are GROUND — they fill a rectangle and say
+    /// nothing about what is inside it. Named once because two rules read
+    /// it: they may never silence the drawing under them
+    /// (`dialogItemOwnsDisplay`), and they are drawn BEFORE the replay
+    /// rather than after it, because that is where ground goes.
+    /// The control-plane spelling of ``dialogItemIsBackground``.
+    ///
+    /// A `userPane` is a REGION an application draws into. It fills a
+    /// rectangle and says nothing about what is in it, which is the
+    /// whole definition of ground — `isBackgroundKind` has listed it as
+    /// naming nothing since the ladder was written, and the DITL twin
+    /// `userItem` has declined to draw over its contents for as long.
+    ///
+    /// What was missing was the ORDER. Appearance's outermost control is
+    /// a user pane covering the entire content rect and it is LAST in
+    /// the chain, so its marked-unknown plate was painted after the six
+    /// tabs and erased every one of them (integration round 4, watched
+    /// on the emulator). The coverage guard in `drawControl` answers the
+    /// armed case; it cannot answer the unarmed one, where there is no
+    /// ink to yield to and the pane still buries the controls before it.
+    ///
+    /// Same fix as slice 16 made for the four background DITL kinds:
+    /// ground goes down FIRST, and the machine draws on it afterwards.
+    /// Not another exclusion — the plate still marks an honest absence
+    /// where nothing else reaches that rectangle.
+    public static func controlIsGround(_ ctl: MirrorKit.Scene.Control) -> Bool {
+        ctl.semantic?.kind == "userPane"
+    }
+
+    /// **A PANE THAT WRAPS THE CHAIN IS NOT AN UNKNOWN — the chain is
+    /// what is inside it.**
+    ///
+    /// Ground still marks an honest absence, and that rule outranks any
+    /// panel looking tidier. But rung 4 is "nobody can account for it",
+    /// and a root user pane holding eighteen classified controls is
+    /// accounted for by those eighteen. Marking it says the whole
+    /// window's interior is unreachable while the renderer is about to
+    /// draw most of it — which is `isBackgroundKind`'s own rule, that a
+    /// background names nothing, arriving at the marker instead of at
+    /// the blit.
+    ///
+    /// A pane with nothing inside it still marks, because then nobody
+    /// really can account for it. Monitors has one of each.
+    static func groundWrapsTheChain(_ ground: MirrorKit.Scene.Control,
+                                    in win: MirrorKit.Scene.Window) -> Bool {
+        guard let outer = ground.rect else { return false }
+        return win.controls.contains { other in
+            guard other.visible, other.ref != ground.ref,
+                  !Self.controlIsGround(other), let inner = other.rect,
+                  inner.r > inner.l, inner.b > inner.t else { return false }
+            return inner.l >= outer.l && inner.t >= outer.t
+                && inner.r <= outer.r && inner.b <= outer.b
+        }
+    }
+
+    static func dialogItemIsBackground(_ kind: String?) -> Bool {
+        switch kind {
+        case "panel", "placard", "selectionBand", "separator": return true
+        default: return false
+        }
     }
 
     static func dialogItemOwnsDisplay(_ item: MirrorKit.Scene.DialogItem)
@@ -1250,13 +1778,45 @@ public struct SceneRenderer {
                                 _ item: MirrorKit.Scene.DialogItem,
                                 contentOrigin: CGPoint,
                                 covering drawn: [CGRect] = [],
-                                replayed: DisplayReplay.Coverage? = nil) {
+                                replayed: DisplayReplay.Coverage? = nil,
+                                windowFace: Color = Platinum.g0) {
         let frame = rect(item.rect).offsetBy(dx: contentOrigin.x,
                                              dy: contentOrigin.y)
         guard frame.width > 0, frame.height > 0 else { return }
+        /* RUNG 1 BEATS RUNG 2, PIECE BY PIECE. Two branches — `icon` and
+           the placeholder default — already yielded to what the replay
+           had inked; the rest drew their own label over the machine's,
+           and Date & Time printed "Set Daylight-Saving Time
+           Automatically" twice, one string over the other, the moment
+           the replay stopped being silenced (`DisplayReplay.semanticOwns`).
+
+           It is asked PER PIECE and not once for the whole row, and the
+           difference is visible: a check box's LABEL arrives as a text
+           op and its little box does not, so a row-wide test drew
+           neither and Date & Time lost both of its check boxes. `covers`
+           intersects, so the question has to be put about the rectangle
+           the piece is about to fill. */
+        func inked(_ piece: CGRect) -> Bool {
+            replayed?.mostlyCovers(piece) == true
+        }
+        /* AND A LABEL ASKS A DIFFERENT QUESTION FROM A MARK BOX. A DITL
+           row is a slack box sized by whoever wrote the resource and the
+           run inside it is as wide as the words, so "does the ink fill
+           half this rectangle" is the rectangle's question and not the
+           text's — Memory's 102-point "Disk Cache" row holds a 48-point
+           run and drew its own copy four points off the machine's, on
+           every string in the panel (sweep B, R1). See
+           `Coverage.textCovers`. */
+        func words(_ piece: CGRect) -> Bool {
+            replayed?.textCovers(piece) == true || inked(piece)
+        }
         switch item.semantic.kind {
         case "panel":
-            ctx.fill(Path(frame), with: .color(Platinum.g0))
+            // A DITL group box's interior is the window's own face - the
+            // application never painted it a different colour, it simply
+            // did not paint it. Filling white made a white plate on any
+            // window whose face is the dialog grey.
+            ctx.fill(Path(frame), with: .color(windowFace))
             ctx.stroke(Path(frame), with: .color(Platinum.g5), lineWidth: 1)
         case "placard":
             ctx.fill(Path(frame), with: .color(Platinum.g2))
@@ -1266,6 +1826,20 @@ public struct SceneRenderer {
         case "separator":
             ctx.fill(Path(frame), with: .color(Platinum.g4))
         case "staticText":
+            /* AND THE MACHINE'S OWN RUN OUTRANKS THE LABEL. The two
+               gates are separate — whether a row may SILENCE P3, and
+               whether it may DRAW OVER it — and this branch answered the
+               first and never the second. It did not show while the
+               first gate silenced every drawn run inside a DITL
+               rectangle; the moment rung 1 stopped yielding (see
+               `DisplayReplay.semanticOwns`) both strings would land in
+               the same place.
+               The drawn run is the better answer wherever it exists: it
+               is what the application actually put on screen, truncation
+               and all. NOW's Workshop sidebar is the case — the guest
+               drew "Capture and stre…" and this row says "Capture and
+               stream". */
+            guard !words(frame) else { break }
             appText(item.semantic.value
                     ?? Self.displayableTitle(item.title) ?? "",
                     ctx, x: frame.minX,
@@ -1273,6 +1847,7 @@ public struct SceneRenderer {
                         + CGFloat(FontBook.app?.ascent ?? 10),
                     color: item.enabled ? Platinum.g6 : Platinum.g3)
         case "editText":
+            guard !words(frame) else { break }
             ctx.fill(Path(frame), with: .color(Platinum.g0))
             ctx.stroke(Path(frame), with: .color(Platinum.g6), lineWidth: 1)
             appText(item.semantic.value
@@ -1288,18 +1863,26 @@ public struct SceneRenderer {
                                  width: 12, height: 12)
             let shape = item.semantic.kind == "radioButton"
                 ? Path(ellipseIn: markBox) : Path(markBox)
-            ctx.fill(shape, with: .color(Platinum.g0))
-            ctx.stroke(shape, with: .color(Platinum.g6), lineWidth: 1)
-            if item.semantic.state == "on" {
-                let dot = markBox.insetBy(dx: 3, dy: 3)
-                ctx.fill(item.semantic.kind == "radioButton"
-                         ? Path(ellipseIn: dot) : Path(dot),
-                         with: .color(Platinum.g6))
+            if !inked(markBox) {
+                ctx.fill(shape, with: .color(Platinum.g0))
+                ctx.stroke(shape, with: .color(Platinum.g6), lineWidth: 1)
+                if item.semantic.state == "on" {
+                    let dot = markBox.insetBy(dx: 3, dy: 3)
+                    ctx.fill(item.semantic.kind == "radioButton"
+                             ? Path(ellipseIn: dot) : Path(dot),
+                             with: .color(Platinum.g6))
+                }
             }
-            appText(item.title, ctx, x: frame.minX + 16,
-                    baselineY: frame.midY + 4,
-                    color: item.enabled ? Platinum.g6 : Platinum.g3)
+            let label = CGRect(x: frame.minX + 16, y: frame.minY,
+                               width: max(0, frame.width - 16),
+                               height: frame.height)
+            if !words(label) {
+                appText(item.title, ctx, x: frame.minX + 16,
+                        baselineY: frame.midY + 4,
+                        color: item.enabled ? Platinum.g6 : Platinum.g3)
+            }
         case "popupMenu":
+            guard !words(frame) else { break }
             ctx.fill(Path(frame), with: .color(Platinum.g1))
             ctx.stroke(Path(frame), with: .color(Platinum.g6), lineWidth: 1)
             appText(item.semantic.value ?? item.title, ctx,
@@ -1308,6 +1891,24 @@ public struct SceneRenderer {
             sysCentered("▼", ctx, centerX: frame.maxX - 10,
                         centerY: frame.midY, color: Platinum.g6)
         case "pushButton":
+            /* THE ONE BRANCH ON THIS PLANE THAT NEVER ASKED. Every other
+               case here has yielded to the replay since 2026-08-06 and
+               this one did not, so a dialog item classified `pushButton`
+               painted a filled Platinum pill over the machine's own ink
+               unconditionally — the same defect `019-sweepb-regressions`
+               fixed in `drawControl`, surviving in its twin. It is the
+               same question and it gets the same answer: a button
+               REPLACES its rectangle rather than annotating it, so where
+               the machine already drew there, rung 2 has nothing to add.
+
+               `words`, not `inked`: a DITL row is a slack box and a
+               button's rectangle holds a short run, so the area test
+               alone says no on exactly the rows this is about — the
+               `mostlyCovers`-is-the-rectangle's-question lesson, one
+               plane over. It also covers the radio-CDEF case that
+               reaches this plane, where OS 9 hands a radio back in the
+               button family. */
+            guard !words(frame) else { break }
             let ctl = MirrorKit.Scene.Control(
                 ref: item.ref ?? "", role: "button", title: item.title,
                 rect: item.rect, enabled: item.enabled, visible: item.visible,
@@ -1331,7 +1932,8 @@ public struct SceneRenderer {
             guard !(replayed?.covers(frame) ?? false) else { break }
             if let icon = IconAtlas.namedIcon(
                 "document", size: IconAtlas.Size.fitting(frame)) {
-                ctx.draw(Image(decorative: icon, scale: 1), in: frame)
+                ctx.draw(Image(decorative: icon, scale: 1)
+                            .interpolation(.none), in: frame)
             }
         case "userItem":
             /* A user item has no content of its OWN — whatever appears there
@@ -1414,22 +2016,17 @@ public struct SceneRenderer {
         guard frame.width > 1, frame.height > 1 else { return }
         var clipped = ctx
         clipped.clip(to: Path(frame))
-        clipped.fill(Path(frame), with: .color(Platinum.g1))
-        var x = frame.minX - frame.height
-        while x < frame.maxX {
-            var hatch = Path()
-            hatch.move(to: CGPoint(x: x, y: frame.maxY))
-            hatch.addLine(to: CGPoint(x: x + frame.height,
-                                      y: frame.minY))
-            clipped.stroke(hatch, with: .color(Platinum.g2), lineWidth: 1)
-            x += 6
-        }
-        clipped.stroke(Path(frame), with: .color(Platinum.g3),
-                       style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
-        guard frame.width >= 60, frame.height >= 14 else { return }
+        /* The look lives in UnknownVisual and nowhere else — see its
+           header for why it is quiet and how the pick was made. This site
+           and DisplayReplay's used to hold two identical copies of the
+           fill, free to drift apart with nothing to notice. */
+        UnknownVisual.drawGround(in: clipped, frame: frame)
+        let ascent = CGFloat(FontBook.small?.ascent ?? 8)
+        guard let at = UnknownVisual.captionOrigin(in: frame,
+                                                   ascent: ascent) else { return }
         let caption = label.isEmpty ? "Visual unavailable" : label
-        appText(caption, clipped, x: frame.minX + 4,
-                baselineY: frame.midY + 4, color: Platinum.g4, small: true)
+        appText(caption, clipped, x: at.x, baselineY: at.y,
+                color: UnknownVisual.caption, small: true)
     }
 
     private func drawButton(_ ctx: GraphicsContext, _ ctl: MirrorKit.Scene.Control,
@@ -1510,7 +2107,11 @@ public struct SceneRenderer {
             ctx.fill(Path(first), with: .color(Platinum.g2))
             var clipped = ctx
             clipped.clip(to: Path(body))
-            appText(ctl.semantic?.value ?? "Selected value unavailable",
+            /* Not the raw field: a list classified by CDEF id reports
+               `GetControlValue` there, and Monitors printed a bare "0"
+               inside both of its empty wells. See `semanticText`. */
+            appText(Self.semanticText(ctl.semantic)
+                    ?? "Selected value unavailable",
                     clipped, x: body.minX + 3, baselineY: body.minY + 12,
                     color: ctl.enabled ? Platinum.g6 : Platinum.g3,
                     small: true)
@@ -1530,12 +2131,15 @@ public struct SceneRenderer {
             let rowFrame = CGRect(x: body.minX,
                                   y: body.minY + CGFloat(rowIndex) * rowHeight,
                                   width: body.width, height: rowHeight)
-            /* The selected row is filled with the MEASURED highlight, not
-               with the chrome grey it used to borrow. 0xCCCCCC was the
-               Gray Space theme's answer; this machine's default scene
-               writes 0xCCCCFF. */
+            /* The selected row is filled with the highlight the GUEST
+               reported, not with the chrome grey it used to borrow.
+               0xCCCCCC was the Gray Space theme's answer; the extracted
+               Platinum constant that replaced it was 0xCCCCFF, read once
+               out of a theme FILE. `theme.highlight` is the live
+               low-memory colour, so a theme switched while this guest
+               runs moves it. The constant remains the fallback. */
             if rowCells.contains(where: \.selected) {
-                clipped.fill(Path(rowFrame), with: .color(Platinum.highlight))
+                clipped.fill(Path(rowFrame), with: .color(theme.highlight))
             }
             for column in 0..<columnCount {
                 let cellWidth = body.width / CGFloat(columnCount)

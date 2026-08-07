@@ -3,8 +3,10 @@
 #include "loopstat.h"
 #include "wirestat_cmd.h"
 
+#include "anchor_cycle.h"
 #include "mirror_layout.h"
 #include "mirror_probe.h"
+#include "mirror_show.h"
 #include "net_layout.h"
 #include "net_probe.h"
 
@@ -18,6 +20,7 @@
 #include "capture.h"
 #include "census.h"
 #include "cmd_help.h"
+#include "cmd_line.h"
 #include "commands.h"
 #include "fileshare.h"
 #include "json.h"
@@ -498,6 +501,58 @@ static void chat_verb_wait(void)
     }
 }
 
+/* --- showmirror ---------------------------------------------------------
+   The typed face on the Mirror page's button. One implementation below
+   both — `now_wire_host_show`, with mirror_show.h's words — because a
+   second copy would be a second thing to be wrong about an act whose
+   whole effect is on the other machine.
+
+   Console-only on this guest, and deliberately: the HOST reaches its
+   own Mirror through its Window menu and the `mirror_open` agent verb,
+   so there is nothing for it to type at us. Recorded as an asymmetry
+   beside `chat`, which is console-only for exactly this shape of
+   reason. */
+
+static Boolean g_show_done;
+static char g_show_reply[128];
+
+static void show_verb_note(Boolean ok, const char *reason)
+{
+    snprintf(g_show_reply, sizeof g_show_reply, "%s%.100s",
+             ok ? "" : "refused: ", reason);
+    g_show_done = true;
+}
+
+static void run_show_mirror_verb(void)
+{
+    char line[kMaxCols];
+    char err[96];
+    ConnHostShowNote previous;
+    unsigned long deadline;
+
+    previous = conn_set_host_show_note(show_verb_note);
+    g_show_done = false;
+    g_show_reply[0] = '\0';
+    if (now_wire_host_show(kMirrorHostSurface, err, sizeof err) != 0) {
+        snprintf(line, sizeof line, "showmirror: %.80s", err);
+        console_model_append(line);
+        conn_set_host_show_note(previous);
+        return;
+    }
+    console_model_append(now_mirror_show_waiting_text());
+    /* The wire's own deadline is what ends an ask nobody answers; this
+       loop only has to outlive it, and pumping is what lets the answer
+       arrive at all. */
+    deadline = TickCount() + 60UL * 20UL;
+    while (!g_show_done && (unsigned long)TickCount() < deadline) {
+        now_wire_pump();
+    }
+    snprintf(line, sizeof line, "showmirror: %.100s",
+             g_show_done ? g_show_reply : "gave up waiting");
+    console_model_append(line);
+    conn_set_host_show_note(previous);
+}
+
 static void run_chat_verb(const char *raw_args)
 {
     char line[kMaxCols];
@@ -664,6 +719,7 @@ static void console_model_dispatch(const char *input)
     char target[48];
     char target2[48];
     char result[kNowCommandResultCap];
+    char request[kMaxCols + 24];
     const char *p;
     const char *raw_args;
     const char *group = NULL;
@@ -797,6 +853,10 @@ static void console_model_dispatch(const char *input)
         } else if (more) {
             console_model_append("  ... more items follow");
         }
+        return;
+    }
+    if (strcmp(name, "showmirror") == 0) {
+        run_show_mirror_verb();
         return;
     }
     if (strcmp(name, "chat") == 0) {
@@ -1156,6 +1216,79 @@ static void console_model_dispatch(const char *input)
         }
         return;
     }
+    if (strcmp(name, "cycle") == 0) {
+        /* The acquisition cycle's console face. Same producer as the wire
+           verb (now_peek_anchor_cycle), same numbers, same order - a
+           console that computed its own account of what a cycle achieved
+           would be a second answer to drift against.
+
+           It ANNOUNCES ITSELF before it runs, because this is the one
+           control in the guest that deliberately disturbs the machine: a
+           person is about to watch applications come forward in turn and
+           should have been told why. */
+        NowAnchorCycleReport rep;
+
+        console_model_append("Cycling applications so the anchor plane can "
+                             "see them.");
+        console_model_append("Windows will come forward in turn; the front "
+                             "application is restored after.");
+        if (!now_peek_anchor_cycle(&rep)) {
+            snprintf(line, sizeof line, "Refused: %.70s", rep.note);
+            console_model_append(line);
+            return;
+        }
+        snprintf(line, sizeof line,
+                 "Considered %d  anchored already %d  woken %d  "
+                 "fronted %d  acquired %d",
+                 (int)rep.considered, (int)rep.already, (int)rep.woken,
+                 (int)rep.fronted, (int)rep.acquired);
+        console_model_append(line);
+        snprintf(line, sizeof line,
+                 "  refused %d  vanished %d  background-only %d (no window "
+                 "to bring forward)",
+                 (int)rep.refused, (int)rep.vanished,
+                 (int)rep.background_only);
+        console_model_append(line);
+        /* The evidence, before and after, in the order mirror's Anchors
+           line prints it: passes first, because it is what separates
+           "the filter never ran while armed" from "it ran and captured
+           nothing". */
+        snprintf(line, sizeof line,
+                 "Anchors  passes %lu -> %lu  scans %lu -> %lu  "
+                 "count %lu -> %lu",
+                 rep.before_event_passes, rep.after_event_passes,
+                 rep.before_slot_scans, rep.after_slot_scans,
+                 rep.before_count, rep.after_count);
+        console_model_append(line);
+        snprintf(line, sizeof line, "%s front application %s",
+                 rep.complete ? "Complete." : "PARTIAL -",
+                 rep.restored ? "restored." : "NOT restored.");
+        console_model_append(line);
+        if (rep.unreached_count > 0 || rep.unreached_omitted > 0) {
+            int ui;
+
+            /* NAMED, not just counted. These read UNKNOWN to whoever
+               consumes the scene next - never empty - and a person
+               deciding whether to trust what the Mirror shows needs the
+               names rather than the number. */
+            console_model_append("Could not reach (their state is UNKNOWN, "
+                                 "not empty):");
+            for (ui = 0; ui < (int)rep.unreached_count; ++ui) {
+                snprintf(line, sizeof line, "  %.40s", rep.unreached[ui]);
+                console_model_append(line);
+            }
+            if (rep.unreached_omitted > 0) {
+                snprintf(line, sizeof line, "  ...and %d more",
+                         (int)rep.unreached_omitted);
+                console_model_append(line);
+            }
+        }
+        if (rep.note[0] != '\0') {
+            snprintf(line, sizeof line, "  %.70s", rep.note);
+            console_model_append(line);
+        }
+        return;
+    }
     if (strcmp(name, "mirror") == 0) {
         MirrorFacts facts;
         char value[64];
@@ -1177,6 +1310,45 @@ static void console_model_dispatch(const char *input)
             snprintf(line, sizeof line, "  %-12.12s %.60s",
                      now_mirror_plane_name((MirrorPlane)mi), value);
             console_model_append(line);
+        }
+        /* P1's own evidence, at the console because the wire has it and
+           command parity is not a preference (docs/command-parity.md).
+           `passes` first, deliberately: it is what separates "the filter
+           never ran while armed" from "it ran and captured nothing", and
+           a person looking at an empty anchor table needs that line
+           before any of the others. */
+        if (facts.anchors.present || facts.anchors.count > 0) {
+            int ai;
+
+            snprintf(line, sizeof line,
+                     "Anchors  passes %lu  publishes %lu (%lu changed, "
+                     "%lu cadence)  scans %lu",
+                     facts.anchors.event_passes,
+                     facts.anchors.full_publishes,
+                     facts.anchors.change_publishes,
+                     facts.anchors.cadence_publishes,
+                     facts.anchors.slot_scans);
+            console_model_append(line);
+            snprintf(line, sizeof line,
+                     "  slots %lu captured, %d readable%s",
+                     facts.anchors.count, facts.anchors.slot_count,
+                     facts.anchors.present ? ""
+                         : " (resident predates the counters)");
+            console_model_append(line);
+            for (ai = 0; ai < facts.anchors.slot_count; ++ai) {
+                const MirrorAnchorSlotFact *sl = &facts.anchors.slots[ai];
+                snprintf(line, sizeof line,
+                         "  %2d %-31.31s a5 0x%08lx  %lu ticks ago",
+                         sl->slot, sl->name[0] != '\0' ? sl->name : "?",
+                         sl->a5, sl->age_ticks);
+                console_model_append(line);
+            }
+            if (facts.anchors.slots_omitted > 0) {
+                snprintf(line, sizeof line,
+                         "  %d further slot(s) omitted",
+                         facts.anchors.slots_omitted);
+                console_model_append(line);
+            }
         }
         console_model_append("Policy belongs to the host; this view is read-only.");
         return;
@@ -1381,7 +1553,34 @@ static void console_model_dispatch(const char *input)
         console_model_append("  offered; the File Sharing panel reports the rest");
         return;
     }
-    now_command_run(name, NULL, 0, result, sizeof result);
+    /* THE ARGUMENTS A PERSON TYPED, handed on rather than dropped.
+     *
+     * This call passed NULL for as long as it has existed, so every verb
+     * that reaches it with arguments got none: `script tell application
+     * "Finder" to activate` answered "script requires source" and
+     * `ctlact <element> <part>` answered "ctlact requires part" - both
+     * exactly as printed by their own `help`, and both working over the
+     * wire. That is the asymmetry docs/command-parity.md is about, and
+     * `CommandParityTests` cannot see it because the verb is present on
+     * both faces and merely broken on one.
+     *
+     * `line` is the field the contract already declares for it
+     * (CommandRequest.line, and each verb's `x-line`), and cmd_line.h is
+     * already the one place every argument grammar is implemented. So
+     * this is not a second parser: it hands the raw rest-of-line to the
+     * grammar that was always waiting for it.
+     *
+     * ONLY WHEN THERE ARE ARGUMENTS. An absent line and an empty one are
+     * different requests - that distinction is the whole of gestalt's
+     * console behaviour - and a bare verb typed here has always meant
+     * the absent one. */
+    if (raw_args != NULL && *raw_args != '\0'
+        && now_console_line_request(raw_args, request,
+                                    (long)sizeof request)) {
+        now_command_run(name, request, 0, result, sizeof result);
+    } else {
+        now_command_run(name, NULL, 0, result, sizeof result);
+    }
     {
         /* The one place this Mac can say "no such verb", so it is the one
            place the exec plane can learn it. Read from the reply's own

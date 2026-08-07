@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Before tightening a commit gate: does it refuse work that is ALREADY IN
+# FLIGHT on somebody else's branch?
+#
+#     tools/gate-impact-sweep claude/018-lane-a claude/018-arm-census …
+#     tools/gate-impact-sweep --all-matching 'claude/018-'
+#
+# For each branch it checks out a detached worktree, stages that branch's
+# own last commit as if it were about to be made, and runs the gate TWICE:
+# once as it stands in this working tree (the proposed version) and once as
+# the branch itself carries it (the baseline). The only answer that matters
+# is the DIFFERENCE — a branch the old gate already refused is not one this
+# change strands, and a branch the old gate passed and the new one refuses
+# is an agent blocked at 2am with nobody to ask.
+#
+# WHY THIS IS A TOOL AND NOT A ONE-OFF. This repository's most expensive
+# lesson is uncommitted work lost: on 2026-07-30 an arc lost six agents to
+# crashes and every one died with work uncommitted. A gate that refuses a
+# correct commit converts a crash-shaped risk into a certainty, for a
+# reason its author usually cannot act on. So a gate change is not "done"
+# because its own tests pass; it is done when the branches that exist right
+# now are shown to still commit.
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NOW="$(cd "$HERE/.." && pwd)"
+SCRATCH="${TMPDIR:-/tmp}/now-gate-impact-$$"
+GATE="${NOW_GATE_UNDER_TEST:-tools/ext-bake-gate}"
+
+branches=()
+if [ "${1:-}" = "--all-matching" ]; then
+    while IFS= read -r b; do branches+=("$b"); done < <(
+        git -C "$NOW" for-each-ref --format='%(refname:short)' refs/heads \
+            | grep -- "$2")
+else
+    branches=("$@")
+fi
+[ "${#branches[@]}" -gt 0 ] || { sed -n '2,20p' "${BASH_SOURCE[0]}"; exit 64; }
+
+mkdir -p "$SCRATCH"
+trap 'rm -rf "$SCRATCH"' EXIT
+worse=0
+
+for b in "${branches[@]}"; do
+    d="$SCRATCH/$(printf '%s' "$b" | tr '/' '-')"
+    git -C "$NOW" worktree add -q --detach "$d" "$b" 2>/dev/null || {
+        printf 'SKIP     %s (cannot check out)\n' "$b"; continue; }
+
+    # Stage the branch's own last commit: the closest thing to "the commit
+    # this lane is about to make" that can be reconstructed from outside.
+    git -C "$d" rev-parse -q --verify HEAD~1 >/dev/null 2>&1 \
+        && git -C "$d" reset -q --soft HEAD~1
+    staged=$(git -C "$d" diff --cached --name-only | wc -l | tr -d ' ')
+
+    # A gate the branch does not carry AT ALL has a baseline of pass: the
+    # world the branch was written in had no such refusal. Without this a
+    # NEW gate reports 127 for every branch and every row reads "same",
+    # which is the sweep answering a question nobody asked.
+    if [ -x "$d/$GATE" ]; then
+        base_out=$(cd "$d" && TBT_GATE_ROOT="$d" "./$GATE" check 2>&1); base_rc=$?
+    else
+        base_out="(the branch does not carry $GATE)"; base_rc=0
+    fi
+    mkdir -p "$d/$(dirname "$GATE")"
+    cp "$NOW/$GATE" "$d/$GATE" 2>/dev/null; chmod +x "$d/$GATE" 2>/dev/null
+    cp "$NOW/tools/ext-bake-gate" "$NOW/tools/image-provenance" "$d/tools/" 2>/dev/null
+    chmod +x "$d/tools/ext-bake-gate" "$d/tools/image-provenance" 2>/dev/null
+    new_out=$(cd "$d" && TBT_GATE_ROOT="$d" "./$GATE" check 2>&1); new_rc=$?
+    git -C "$NOW" worktree remove --force "$d" >/dev/null 2>&1
+
+    if [ "$base_rc" = 0 ] && [ "$new_rc" != 0 ]; then
+        printf 'STRANDED %s  — the proposed gate refuses what the old one passed\n' "$b"
+        printf '%s\n' "$new_out" | sed 's/^/         /'
+        worse=1
+    elif [ "$base_rc" != 0 ] && [ "$new_rc" != 0 ]; then
+        printf 'same     %s  (%s staged) — refused by BOTH; not this change\n' \
+            "$b" "$staged"
+    elif [ "$base_rc" != 0 ] && [ "$new_rc" = 0 ]; then
+        printf 'loosened %s  (%s staged) — the proposed gate now passes it\n' \
+            "$b" "$staged"
+    else
+        printf 'pass     %s  (%s staged)\n' "$b" "$staged"
+    fi
+done
+
+echo
+if [ "$worse" = 0 ]; then
+    echo "No branch is refused by the proposed gate that the old one accepted."
+    echo "(That is the ONLY claim here. A branch listed 'same' was already"
+    echo " refused before this change and its author has the same cure they"
+    echo " had yesterday.)"
+else
+    echo "AT LEAST ONE BRANCH WOULD BE STRANDED. Do not land this until the"
+    echo "refusal is either removed or reduced to a warning."
+fi
+exit "$worse"

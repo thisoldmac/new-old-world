@@ -115,6 +115,21 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         /// addresses a published scene entity and settles the way a click
         /// does. Two mutation paths would be two products.
         case mirrorDrive = "mirror_drive"
+        /// Open the native Mirror window on an ALREADY-RUNNING host, and
+        /// raise it if it is already open.
+        ///
+        /// The only operation on this surface whose whole effect is on
+        /// the modern machine — `reveal_item` is the closest relative and
+        /// still crosses the wire. It takes no arguments for the same
+        /// reason the diagnostics do not: there is exactly one Mirror,
+        /// and which Mac it shows is the one this host is driving.
+        ///
+        /// Not folded into `mirror_read` or `mirror_drive`. Those two
+        /// address a published scene and are meaningless before a window
+        /// exists; this one is what makes a window exist, and a caller
+        /// that had to ask for a reading to get one would be opening a
+        /// window as a side effect of observing.
+        case mirrorOpen = "mirror_open"
         /// Open the live-stream bracket, read a frame off it, or close it.
         ///
         /// One operation for the same reason `capture` folded take, page and
@@ -154,6 +169,33 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         case textGet = "text_get"
         /// Replace one addressed text element's whole contents.
         case textSet = "text_set"
+
+        /* THE WALK THAT MINTS WHAT THE FIVE ABOVE TAKE, added 2026-08-07
+           and six days late.
+
+           Every one of the five acts addresses a `now-element-…` or
+           `now-window-…` reference, and `elements` is the only thing that
+           produces one. The five landed here without it, so this surface
+           spent six days serving five operations no caller could compose a
+           legal argument for — a lane whose door was on the other side of
+           the wall. `ObserveElementsProjection` was registered the same
+           week and answered a protocol default, which is how it stayed
+           unnoticed: the MCP row existed, listed, described, and refused.
+
+           NO VERSION BUMP, and that is a decision rather than an oversight.
+           The version moves when the SHAPE changes in a way that would let
+           an older peer misread an answer — v10 grew the snapshot DTO, v7
+           made every reply name its machine. A new operation is additive:
+           an older host fails the strict decode of an operation string it
+           has never heard of and answers `invalid-request`, which is the
+           honest sentence, and a bump would instead refuse every existing
+           companion for a lane it never asks about. */
+
+        /// Walk one process's on-screen elements and mint a reference for
+        /// each. An observation and not an act: it changes nothing, and the
+        /// `serialHi`/`serialLo` pair aims the WALK — there is no spelling
+        /// anywhere downstream for "whatever is frontmost".
+        case observeElements = "observe_elements"
     }
 
     public let version: Int
@@ -299,6 +341,13 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
     /// there — an absent text is not an empty one. Emptying a field is a
     /// legal act and is spelled with an empty string.
     public var actText: String? = nil
+    /// Which process the walk aims at, on `observe_elements`. **Absent is a
+    /// COMPLETE request** and means the frontmost application — the
+    /// contract's own default for `elements`. The pair rule (both halves or
+    /// neither) is enforced where a caller's keys are first read, in
+    /// `AgentIntegrationProcessSerial.decode`; by the time a value reaches
+    /// this field it is a whole serial number or nothing.
+    public var observeProcess: AgentIntegrationProcessSerial? = nil
 
     private init(requestID: UUID,
                  operation: Operation,
@@ -744,6 +793,12 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         return request
     }
 
+    /// Open the Mirror on this host. No arguments — there is one Mirror,
+    /// and it shows the Mac this host is driving.
+    public static func mirrorOpen(requestID: UUID = UUID()) -> Self {
+        projected(.mirrorOpen, requestID: requestID)
+    }
+
     // MARK: - The live-stream bracket
 
     /// Open the bracket. The pace is not optional here even though the
@@ -840,6 +895,22 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         request.actText = text
         return request
     }
+
+    /// Walk one process's elements, or the frontmost application's.
+    ///
+    /// The parameter has no default value on purpose, even though nil is
+    /// legal: "observe the frontmost" is a choice a caller makes, and a
+    /// defaulted argument would let a call that meant to name a process
+    /// compile into one that asks about whichever application happens to be
+    /// in front.
+    public static func observeElements(
+        process: AgentIntegrationProcessSerial?,
+        requestID: UUID = UUID()
+    ) -> Self {
+        var request = projected(.observeElements, requestID: requestID)
+        request.observeProcess = process
+        return request
+    }
 }
 
 public enum AgentIntegrationLocalResult: Equatable, Sendable {
@@ -889,6 +960,7 @@ public enum AgentIntegrationLocalResult: Equatable, Sendable {
     case diagnostics(AgentIntegrationGuestRowReportResult)
     case mirrorRead(AgentIntegrationMirrorReadResult)
     case mirrorDrive(AgentIntegrationMirrorDriveResult)
+    case mirrorOpen(AgentIntegrationMirrorOpenResult)
     /// The bracket's state, or one page of one frame off it.
     case stream(AgentIntegrationStreamResult)
     /* The act lane's five, one case each — for the reason the five
@@ -900,6 +972,10 @@ public enum AgentIntegrationLocalResult: Equatable, Sendable {
     case menuAct(AgentIntegrationMenuActResult)
     case textGet(AgentIntegrationTextReadingResult)
     case textSet(AgentIntegrationTextSetResult)
+    /// The walk's whole tree. Its own case rather than a row report: this
+    /// answer is navigated and then addressed, and flattening it would
+    /// destroy the containment that makes a reference mean anything.
+    case observeElements(AgentIntegrationElementObservationResult)
 
     /// The operation is carried by this protocol and NOTHING SERVES IT YET.
     ///
@@ -978,6 +1054,7 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         AgentIntegrationGuestRowReportResult? = nil
     public var mirrorReadResult: AgentIntegrationMirrorReadResult? = nil
     public var mirrorDriveResult: AgentIntegrationMirrorDriveResult? = nil
+    public var mirrorOpenResult: AgentIntegrationMirrorOpenResult? = nil
     /// The bracket, or one page of a frame off it. Sized like the capture
     /// field beside it, and for the same reason — a frame IS a capture, so
     /// a full page still leaves the response inside the 16 KiB cap.
@@ -992,6 +1069,11 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
     public var menuActResult: AgentIntegrationMenuActResult? = nil
     public var textGetResult: AgentIntegrationTextReadingResult? = nil
     public var textSetResult: AgentIntegrationTextSetResult? = nil
+    /// The observation's tree. Named in `projectedResultKeys` with the
+    /// rest, so a response carrying a walk AND an act is malformed rather
+    /// than ambiguous.
+    public var observeElementsResult:
+        AgentIntegrationElementObservationResult? = nil
     /// The operation exists here and no capability serves it yet. Set
     /// INSTEAD of any result, and counted with them: a response carrying
     /// both would be claiming to have answered a call it also says it
@@ -1360,6 +1442,12 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
     }
 
     public init(requestID: UUID,
+                mirrorOpenResult: AgentIntegrationMirrorOpenResult) {
+        self.init(empty: requestID)
+        self.mirrorOpenResult = mirrorOpenResult
+    }
+
+    public init(requestID: UUID,
                 streamResult: AgentIntegrationStreamResult) {
         self.init(empty: requestID)
         self.streamResult = streamResult
@@ -1393,6 +1481,14 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
                 textSetResult: AgentIntegrationTextSetResult) {
         self.init(empty: requestID)
         self.textSetResult = textSetResult
+    }
+
+    public init(
+        requestID: UUID,
+        observeElementsResult: AgentIntegrationElementObservationResult
+    ) {
+        self.init(empty: requestID)
+        self.observeElementsResult = observeElementsResult
     }
 
     public init(requestID: UUID,
@@ -1432,10 +1528,13 @@ public enum AgentIntegrationLocalCodec {
         "guestLogTailResult", "machineFactsResult",
         "catalogSearchResult", "revealItemResult",
         "diagnosticsResult", "mirrorReadResult", "mirrorDriveResult",
+        "mirrorOpenResult",
         "streamResult",
         // The act lane's five, in both gates from the day they landed.
         "windowActResult", "controlActResult", "menuActResult",
         "textGetResult", "textSetResult",
+        // The walk that mints what those five address.
+        "observeElementsResult",
         // Set INSTEAD of any of them, so it is counted with them.
         "notImplemented",
     ]
@@ -1487,6 +1586,8 @@ public enum AgentIntegrationLocalCodec {
             // The act lane's fields, clearing the same two gates.
             "windowActRequest", "controlActRequest", "menuActRequest",
             "actElement", "actText",
+            // The observation's aim, clearing the same two gates.
+            "observeProcess",
             // Orthogonal to every operation, so it clears BOTH gates:
             // this allowlist, and the per-operation key set below.
             "guestSelector",
@@ -1936,6 +2037,13 @@ public enum AgentIntegrationLocalCodec {
                 throw AgentIntegrationLocalTransportError.invalidMessage(
                     "Mirror drive request does not match its gesture")
             }
+        case .mirrorOpen:
+            /* Says only its own name, like the three grouped above — but
+               its own branch rather than joining them, because it is the
+               one operation here that never reaches a guest and a reader
+               scanning for "what does this send to the Mac" should not
+               find it in a group whose other members do. */
+            expectedKeys = ["version", "requestID", "operation"]
         case .mirrorRead:
             expectedKeys = [
                 "version", "requestID", "operation", "mirrorReadRequest",
@@ -2076,6 +2184,27 @@ public enum AgentIntegrationLocalCodec {
                     "Text write does not name one element reference and a "
                         + "bounded replacement")
             }
+        case .observeElements:
+            /* The ONE operation on this surface whose key set is
+               conditional on an ABSENCE being legal, and the reason is the
+               contract's: `elements` with no serial observes the frontmost
+               application, which is a complete request rather than an
+               under-specified one. So an absent aim admits no key, and a
+               present one admits exactly `observeProcess` — a request
+               carrying the key with a null in it is refused by the decoder
+               above before reaching here.
+
+               Nothing else to check. The pair rule that makes half a serial
+               number unspellable was enforced where the caller's keys were
+               first read; there is no shape left here that a Macintosh
+               would have to refuse. */
+            var observeKeys: Set<String> = [
+                "version", "requestID", "operation",
+            ]
+            if request.observeProcess != nil {
+                observeKeys.insert("observeProcess")
+            }
+            expectedKeys = observeKeys
         }
         /* Addressing belongs to no operation, so it is admitted for all of
            them rather than repeated in twelve key sets — and only when the

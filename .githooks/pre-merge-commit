@@ -1,0 +1,38 @@
+#!/bin/sh
+# The backstop for a merge that went through WITHOUT anybody deciding.
+#
+# Git runs THIS hook for a merge it is about to commit automatically. A
+# merge with conflicts, resolved by hand, is committed by `git commit` and
+# runs pre-commit instead — so a refusal that is about merges has to live
+# in both, and the pair is the unit. Neither half catches the other's case.
+#
+# Two refusals live here, for the two things a merge can produce that
+# nobody decided.
+
+root=$(git rev-parse --show-toplevel)
+
+# ext-bake receipts. This is exactly the case the receipts merge driver
+# exists to prevent and cannot, because the driver lives in per-clone git
+# config and a clone that never ran tools/setup-hooks has none. Non-zero
+# here aborts the merge commit.
+#
+# It refuses only on evidence that the merge itself produced something
+# incoherent — receipts out of time order, a private lane's receipt in the
+# shared file, unparseable JSON. It does NOT refuse because the image on
+# disk has moved on; that is not something a merge can be wrong about.
+if [ -x "$root/tools/ext-bake-gate" ]; then
+    "$root/tools/ext-bake-gate" merge-check || {
+        echo "  (aborting the merge COMMIT, not the merge: your working tree" >&2
+        echo "   still holds it. Resolve, then \`git commit\`.)" >&2
+        exit 1
+    }
+fi
+
+# derived-doc-gate — BUILT, TESTED, AND DELIBERATELY NOT ARMED. It is
+# inert until NOW_DERIVED_DOC_GATE=1 is set; the arming procedure and the
+# reason it ships unarmed are in .githooks/pre-commit, stated once.
+if [ -n "${NOW_DERIVED_DOC_GATE:-}" ] && [ -x "$root/tools/derived-doc-gate" ]; then
+    "$root/tools/derived-doc-gate" check || exit 1
+fi
+
+exit 0

@@ -112,7 +112,8 @@ enum {
        control can have the same thickness. */
     kNowScrollBarThickness = 16,
 
-    /* THE TITLE BAR THE IR'S TWO RECTANGLES ARE RELATED BY.
+    /* THE TITLE BAR THE IR'S TWO RECTANGLES ARE RELATED BY, AND THE ONE
+     * PLACE ANY WINDOW RECT IS DERIVED.
      *
      * IR v1's `windows[].rect` is a BOX: the content region grown upward
      * by this much. Mirror's own producer constructs it that way, and its
@@ -125,14 +126,37 @@ enum {
      * region instead would be more honest about this Macintosh and would
      * break the arithmetic on the other side, which is the wrong trade:
      * the number's job is to let a consumer recover the content origin
-     * exactly.
+     * exactly. `windows[].rect` is a JOIN KEY between two sides that
+     * decompose it the same way, and a join key's value is that both
+     * sides spell it identically.
      *
      * Measured on a live Finder, 2026-08-02, before this existed: NOW
      * emitted the content region here, so a real hardware click at the
      * point a renderer computes from the document landed twenty pixels
      * below the scroll arrow and the machine did not move. Clicking
      * twenty pixels higher moved it (-4 to 60). The document was wrong
-     * and both of its own gates agreed with it. */
+     * and both of its own gates agreed with it.
+     *
+     * WHAT CHANGED 2026-08-07. That convention was applied on ONE of the
+     * three branches that add a window. A bound foreign process went
+     * through it; an unbound one published peek_read's STRUCTURE region
+     * raw, and NOW's own windows published Carbon's structure region -
+     * so one field carried three meanings in one document, and which one
+     * a row held depended on whether a bind had happened. That is the
+     * surface answering one question three ways, and a consumer had no
+     * way to ask which it was holding.
+     *
+     * Both foreign readers now return BOTH regions from the machine
+     * (peek_read.h, axwalk.h), so every branch adds a window as
+     * `content grown up by this constant` and there is one derivation.
+     * The constant is still an approximation of a real title bar - they
+     * are not one height across window kinds and the Appearance Manager
+     * draws them procedurally - but it is now an approximation of ONE
+     * thing in ONE place, checkable against the structure region the
+     * same walk read, instead of a third answer competing with two
+     * measurements. Publishing the true region under `rect` needs the
+     * consumer to change with it and an IR version to carry it; it is
+     * not something one side may do alone. */
     kNowSceneIRTitleBarHeight = 20,
 
     /* The walk's caps. Each is a BOUND on a scene, not a belief about a
@@ -216,6 +240,33 @@ typedef struct {
     NowSceneAnchor anchor;        /* the verdict for this partition */
     unsigned long stamp_ticks;    /* the anchor's capture tick */
     int stale;                    /* Ok, but older than the caller's window */
+    /* THE PROCESS'S OWN DECLARATION that it has no user interface: the
+       `modeOnlyBackground` bit of its 'SIZE' resource, as the Process
+       Manager reports it in ProcessInfoRec.processMode. A faceless
+       background application - Control Strip Extension, Folder Actions,
+       an 'appe' worker - sets it, and for such a process having no
+       windows is a NORMAL, EXPECTED state rather than an unobserved one.
+       "Headless" and "faceless" are the same fact in prose; the wire
+       word is `backgroundOnly` everywhere, matching the OS bit, and
+       ProcessListing's `kind: "background"` is the enum spelling of the
+       same declaration.
+
+       THE APPLICATION MENU IS NOT A SECOND SIGNAL. Its membership is
+       this same bit, one remove away: the Process Manager omits a
+       `modeOnlyBackground` application from the Application menu, which
+       is why the mirror's own SYNTHESISED switcher listing background
+       processes read as wrong beside the real one (open-issues,
+       Cycle 20). Reading that menu back to learn what a process IS would
+       put a walked UI artifact in the path of a fact the Process Manager
+       hands over directly - and would fail for the very processes it is
+       asked about. There is one source here, and it is this field.
+
+       Never inferred from an empty window list. That inference cannot
+       tell "has no UI by design" from "we failed to look", and asserting
+       the first from the second is what made six healthy processes read
+       as `ax_oracle_not_found` errors on a good boot. 0 means the
+       process did not declare it - not that we know it has a face. */
+    int background_only;
     short window_count;           /* windows admitted for this process */
     NowSceneCoverage windows_coverage;
 } NowSceneProc;
@@ -263,6 +314,17 @@ typedef struct {
        nothing-to-say value, and self-observed controls leave it there -
        they already have a procID-derived role, which is strictly more. */
     short definition;
+    /* WHICH definition function, when the Resource Manager could name it
+       - a `NowCdefState` and, for `Named`, the `CDEF` resource id and the
+       variation code the machine confirmed. This is one step stronger
+       than `definition` (which heap) and one step weaker than `role`
+       (what the control itself said it is), and it must stay in the
+       middle: the emitter reports it under its own knowledge level, and
+       nothing here promotes it. Zero (`Unattempted`) is the
+       nothing-to-say value. */
+    short cdef_state;
+    short cdef_id;
+    short cdef_variant;
     int semantic_value_known;
     char semantic_value[kNowSceneTextMax];
     int list_cells_present;
@@ -308,6 +370,30 @@ enum {
     kNowSceneSemanticPlacard = 11,
     kNowSceneSemanticSelectionBand = 12,
     kNowSceneSemanticSeparator = 13
+};
+
+/* A window's walk verdict. Only the ones a reader can act on differently
+   are separate values: "the record would not validate" sends someone to
+   the anchor plane, "the control chain broke" sends them to the control
+   walk, and they are not the same errand. */
+enum {
+    kNowSceneWalkOk = 0,
+    kNowSceneWalkRecordUnreadable = 1,  /* the WindowRecord failed validation */
+    kNowSceneWalkControlsRetracted = 2, /* the chain broke or hit its bound */
+    kNowSceneWalkDialogItemsRetracted = 3,
+    kNowSceneWalkControlsAndItemsRetracted = 4,
+    /* The two causes of a control retraction, kept apart because they
+       are different errands: a chain longer than the scene carries is
+       OUR bound, and a chain that failed validation is the machine
+       being unreadable where we looked. Lumping them sends whoever
+       reads the note to raise a cap that was never the problem. */
+    kNowSceneWalkControlsBound = 5,
+    kNowSceneWalkControlsInvalid = 6,
+    /* A third cause, split off for the same reason the first two were:
+       a chain that does not terminate within the diagnostic probe bound
+       is cyclic or corrupt, and no cap raise reaches it. Reported as
+       "bound" it would argue forever for a bigger number. */
+    kNowSceneWalkControlsCyclic = 7
 };
 
 typedef struct {
@@ -364,6 +450,42 @@ typedef struct {
     short first_dialog_item;
     short dialog_item_count;
 
+    /* WHY THIS WINDOW IS SILENT, per window rather than per scene.
+     *
+     * `controls: []` is emitted for a window whose controls were never
+     * read as well as for one that genuinely has none, because the IR
+     * declares the key required. The distinction used to live only in a
+     * scene-wide `controls omitted` sentence in meta.errors - true, and
+     * it names no window, so a driving agent meeting an empty list could
+     * not tell "this panel has no controls" from "this panel's controls
+     * failed to read". Measured 2026-08-07: the Appearance control panel
+     * publishes zero controls and zero dialog items, its walk having
+     * been retracted, and nothing in the scene said which window that
+     * sentence was about. That is the same disease as an act reporting
+     * success it cannot verify - a confident answer where the honest one
+     * is "unknown". */
+    short walk_verdict;           /* kNowSceneWalk*; 0 = nothing to report */
+
+    /* HOW LONG THE CHAIN ACTUALLY WAS, which is the number the verdict
+       above could not say.
+     *
+       "The bound is ours, not the machine's" is the right answer and
+       still leaves the next question unanswered: ours by how much? The
+       Appearance control panel cost a whole investigation to establish
+       that its chain is 73 and the bound was 48, and every fact in that
+       sentence was already in the guest's hand at the moment it gave
+       up. A cap raised without it is a cap fitted to one panel.
+     *
+       Counted by hopping the rest of the chain WITHOUT recording it, so
+       it costs pointer reads and no pool slots. 0 = not measured.
+       `control_chain_len_exact` distinguishes a completed count from one
+       that hit the diagnostic probe bound in turn, because "at least
+       512" and "exactly 512" argue for different caps - and a cyclic
+       chain, which is the other thing this bound catches, argues for
+       neither. */
+    short control_chain_len;
+    int control_chain_len_exact;
+
     short text;                   /* index into NowScene.texts; -1 = absent */
 
     char ref[kNowSceneRefMax];    /* "" = not minted, key stays absent */
@@ -403,12 +525,48 @@ typedef struct {
     short item_count;
 } NowSceneMenu;
 
+/* THE THEME'S OWN COLOURS, ASKED RATHER THAN GUESSED.
+ *
+ * Every one of these is a fill the MACHINE makes: the Appearance
+ * Manager erases a Dialog Manager window with a brush, and a renderer
+ * that wants to redraw that window has to know which colour came out.
+ * Until this struct existed the host side carried the answer as a
+ * constant COUNTED OFF A SCREENDUMP (0xDDDDDD, 10149 of 11724 interior
+ * pixels of one control panel, 2026-08-07) - right for the shipped
+ * Platinum theme and silently wrong for any other, which is the exact
+ * failure `ppat` 16 had on the desktop: a shipped default nobody
+ * updates, plausible for years.
+ *
+ * WHERE THE LINE IS. These four are brushes and low-memory colours the
+ * Toolbox itself hands out, so the theme is their author. The renderer's
+ * bevel ramp (its light/shadow greys) is NOT here and deliberately: no
+ * guest source asks for a bevel brush, those greys are this side's
+ * drawing of the Platinum 3D idiom rather than a fill the machine made,
+ * and a field with no producer on the machine is a guess wearing a
+ * wire format. See docs/theme-colours.md.
+ *
+ * Each is 0xRRGGBB, 8 bits per channel, or -1 when the ask FAILED - and
+ * -1 means "this machine would not say", never "black". A producer that
+ * never asks leaves all four at -1 and the key never reaches the wire,
+ * which is scene.h's absent-means-unknown rule applied to colour. */
+typedef struct {
+    long dialog_background;       /* kThemeBrushDialogBackgroundActive */
+    long alert_background;        /* kThemeBrushAlertBackgroundActive */
+    long document_background;     /* kThemeBrushDocumentWindowBackground */
+    long highlight;               /* LMGetHiliteRGB - the selection fill */
+    /* The depth the brushes were asked AT. A brush answers differently
+       on a 256-colour screen than on millions, so a colour with no depth
+       beside it cannot be checked against a screendump taken later. */
+    short depth;                  /* < 0 = not recorded */
+} NowSceneTheme;
+
 typedef struct {
     long version;
     long seq;
     double captured_at;           /* Unix epoch seconds, guest clock */
     char source[kNowSceneSourceMax];
     short screen_w, screen_h;
+    NowSceneTheme theme;
     char plane[kNowScenePlaneMax];        /* meta.plane, a freeform note */
     long latency_ms;                      /* < 0 = absent */
 
@@ -419,6 +577,59 @@ typedef struct {
     short proc_count;
     int procs_truncated;
     NowSceneCoverage processes_coverage;
+    /* DID THIS PRODUCER ESTABLISH WHAT EACH PROCESS IS?
+       `backgroundOnly` rides the wire only when true, because 40 process
+       rows times two arrays of `,"backgroundOnly":false` is 1.8 KB
+       against a 64 KB ceiling this scene already nearly touches. That
+       makes a missing key ambiguous by itself - "has a face" and "this
+       producer never heard of the question" look identical - and a
+       consumer needs them apart or it can never report the middle state
+       (a face with nothing open) at all.
+       So the answer is given ONCE, in the vocabulary the IR already has
+       for exactly this: a `process-kind` coverage claim. `complete` means
+       every row's kind was read, so an absent key on a row means that row
+       has a face. `partial` means at least one process could not be read.
+       `unavailable` - the value a producer that never sets this leaves
+       behind - means the question was not asked, and a consumer must then
+       treat every absent key as unknown rather than as a face.
+       This is scene.h's own `_present` idiom: the looked-at-all bit lives
+       beside the data rather than being guessed from it. */
+    NowSceneCoverage process_kind_coverage;
+
+    /* DOES THE WINDOW ORDER IN THIS SCENE MEAN ANYTHING ACROSS
+       APPLICATIONS?
+       The array's order IS the stacking order - front first - and within
+       a process it is exact, because the process's own WindowList chain
+       is exactly that and `z` says so. Across processes there is no
+       chain to read: WindowList is a per-process low-memory global, so
+       no application's chain reaches another's, and the Process
+       Manager's enumeration is launch order rather than layer order
+       (measured: four captures of one run put the same four background
+       applications in the same order regardless of which had just been
+       fronted). See front_order.h.
+       So this claim says which it is. `complete` - every application
+       contributing a window had been watched coming to the front, and
+       the order across them is a fact. `partial` - at least one had not,
+       and its position among the others is a fallback rather than a
+       claim. `unavailable`, the value a producer that never sets this
+       leaves behind, means the question was not asked at all, and a
+       consumer must read the cross-application order as unknown.
+       A renderer that draws this array back-to-front is right to; what
+       it has never been able to do is tell a known order from a guessed
+       one, and this is that bit. */
+    NowSceneCoverage depth_coverage;
+
+    /* HOW MANY APPLICATIONS THE ORDER LEDGER HAS FORGOTTEN.
+       front_order.h keeps 32 slots and counts what it evicts, precisely
+       because "this process has no rank because we forgot it" and "this
+       process has no rank because we never saw it come forward" are
+       different facts. That count stayed inside the guest, so the second
+       was the only one a consumer could read - the empty/unknown
+       conflation this IR spends most of its vocabulary preventing,
+       arriving in the one plane whose whole subject is order.
+       0 means nothing was forgotten, which is the ordinary case and is
+       why it rides the wire only when nonzero. */
+    unsigned long depth_evicted;
 
     NowSceneWindow windows[kNowSceneMaxWindows];
     short window_count;
@@ -487,6 +698,55 @@ void now_scene_set_process_incarnation(NowScene *s, int proc,
 void now_scene_set_windows_coverage(NowScene *s, int proc,
                                     NowSceneCoverage coverage);
 
+/* --- what the scene refuses to say (scene_build.c) ---------------------
+ *
+ * Every title in a scene was read out of foreign memory at a literal byte
+ * offset, and when the record is not what the walk believed, the same
+ * bytes are a 68K address. Both predicates below are the guest's answer
+ * to that, stated ONCE and applied by the assembly functions themselves,
+ * so no caller can forget them.
+ *
+ * `now_scene_title_is_publishable` - 1 when a title is bytes a person
+ * could read (printable, MacRoman's high half included), or is absent.
+ * The single documented exception is the Apple menu's 0x14. A title that
+ * fails is OMITTED by the add functions, never shipped: an element with
+ * no name is honest, an element wearing an address is not.
+ *
+ * `now_scene_rect_is_sane` - 1 when a rect is ordered and every
+ * coordinate is inside the plausible QuickDraw range for a machine of
+ * this era. A rect that fails is clamped into its window's content box
+ * (a degenerate rect at an edge: draws as nothing, hit-tests as
+ * nothing) rather than shipped as `l = 16555`, which hit-tests as
+ * somewhere and actuates a neighbour.
+ *
+ * Both are exported for the tests, which drive them directly as well as
+ * through the add functions. */
+int now_scene_title_is_publishable(const char *title);
+int now_scene_rect_is_sane(short t, short l, short b, short r);
+/* The process's own `modeOnlyBackground` declaration (see
+   NowSceneProc.background_only). The caller passes the bit it read from
+   ProcessInfoRec.processMode; this side never derives it from window
+   counts, and there is deliberately no way to set it from a walk result.
+   No-op for an out-of-range row. */
+void now_scene_set_process_background_only(NowScene *s, int proc,
+                                           int background_only);
+
+/* Whether this producer established what each process IS - see
+   NowScene.process_kind_coverage. A producer that reads processMode for
+   every row says `complete`; one that could not read some says `partial`;
+   one that never calls this leaves `unavailable`, and its absent
+   `backgroundOnly` keys mean unknown rather than "has a face". */
+void now_scene_set_process_kind_coverage(NowScene *s,
+                                         NowSceneCoverage coverage);
+
+/* Records whether the cross-application order of `windows` is a claim or
+   a fallback. See NowScene.depth_coverage. */
+void now_scene_set_depth_coverage(NowScene *s, NowSceneCoverage coverage);
+
+/* How many processes the front-order ledger has evicted since this
+   launch. Absent from the wire when zero. */
+void now_scene_set_depth_evicted(NowScene *s, unsigned long evicted);
+
 /* Adds a window to a process already added. Returns 1 on success, 0 when
    the scene is full (sets windows_truncated) or when `proc` is out of
    range - and 0, deliberately, when that process's verdict does not
@@ -509,6 +769,11 @@ void now_scene_set_process_stamp(NowScene *s, int proc,
    may branch on it; what it is for is saying which planes a scene had
    available at all. Bounded copy; a longer note is truncated. */
 void now_scene_set_plane(NowScene *s, const char *plane);
+
+/* meta.theme - the colours above. Copies whole; a channel outside
+   0..0xFFFFFF is rejected to -1 rather than truncated, because a
+   half-copied colour would ride the wire looking measured. */
+void now_scene_set_theme(NowScene *s, const NowSceneTheme *theme);
 
 /* The row index of the most recently admitted window, or -1 when the
    scene has none. The walk needs it: it fills a window's sub-planes
@@ -569,6 +834,12 @@ void now_scene_set_control_role(NowScene *s, int window, int index,
 /* `origin` is a NowAxDefProcOrigin. Setting it never implies a kind. */
 void now_scene_set_control_definition(NowScene *s, int window, int index,
                                       short origin);
+/* `state` is a NowCdefState; `id` and `variant` matter only for Named.
+   Like the origin above, setting it never implies a kind - it records
+   what the Resource Manager answered, and the emitter decides what that
+   is worth. */
+void now_scene_set_control_cdef(NowScene *s, int window, int index,
+                                short state, short id, short variant);
 void now_scene_set_control_semantic_value(NowScene *s, int window, int index,
                                           const char *value);
 /* Attaches a bounded guest-provided list payload to one control. `complete`
@@ -607,6 +878,21 @@ int now_scene_add_dialog_item(NowScene *s, int window, short number,
 void now_scene_set_dialog_item_provenance(NowScene *s, int window, int index,
                                           const char *provenance);
 void now_scene_retract_dialog_items(NowScene *s, int window);
+
+/* The window's own record would not validate, so NO sub-plane was even
+   attempted. Distinct from a retraction: nothing was walked, rather than
+   walked and dropped, and the two send a reader to different places. */
+void now_scene_note_window_unreadable(NowScene *s, int window);
+
+/* Refine a verdict a retraction has already set. Only ever narrows -
+   the retraction says a plane was dropped, this says why. */
+void now_scene_set_walk_verdict(NowScene *s, int window, short verdict);
+
+/* Records how long a window's control chain was, independent of how much
+   of it this scene could carry. `exact` distinguishes a completed count
+   from one that stopped at the diagnostic probe bound. See the field. */
+void now_scene_set_control_chain_len(NowScene *s, int window, short len,
+                                     int exact);
 
 /* A window's TextEdit content. `truncated` says the TERec was longer
    than what is carried. No-op for an out-of-range row; sets

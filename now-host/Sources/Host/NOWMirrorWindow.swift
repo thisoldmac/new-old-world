@@ -3,19 +3,23 @@ import SwiftUI
 import MirrorKit
 import MirrorKitUI
 
-/// The mirror's own window, drawn by NOW.
+/// **The mirror's detached container.** One of two; the other is
+/// `MirrorPaneView` inside the main window, and they draw the same view
+/// over the same source.
 ///
-/// A separate window rather than a Workshop pane, and that is a decision
-/// rather than an inheritance: a mirror is a whole other Macintosh's
-/// screen, and putting it in a detail pane beside a sidebar means every
-/// coordinate a person aims at is scaled into a box a third the size.
-/// `FitTransform` letterboxes to preserve the guest's aspect, so the
-/// mapping stays exact at any size — but only a window can be given the
-/// size that makes the target big enough to hit.
+/// This used to argue that a window was the *only* right container,
+/// because a detail pane beside a sidebar scales every coordinate a
+/// person aims at into a box a third the size. The objection was real and
+/// the answer is the zoom stops: `FitTransform` keeps the mapping exact
+/// at any size, so what a pane was missing was never accuracy but room,
+/// and a person who needs room can pick 200% — or take the whole thing
+/// out into this window, which is what detaching is for.
 ///
-/// It is deliberately thin. Everything a person does lives in
-/// `LiveMirrorView`, and everything the machine answers lives in
-/// `NOWMirrorSource`; this owns a window and its lifetime.
+/// It is deliberately thin, and thinner than it was. Everything a person
+/// does lives in `LiveMirrorView`, everything the machine answers lives
+/// in `NOWMirrorSource`, and **the poll is no longer this object's
+/// business at all** — `MirrorRunControl` owns it. This owns a window and
+/// its lifetime.
 @MainActor
 final class NOWMirrorWindow: NSObject, ObservableObject, NSWindowDelegate {
 
@@ -23,52 +27,27 @@ final class NOWMirrorWindow: NSObject, ObservableObject, NSWindowDelegate {
     @Published private(set) var isOpen = false
     private var didFit = false
     private let source: NOWMirrorSource
+    private let presentation: MirrorPresentation
     private let screen: MirrorKit.Scene.ScreenSize
     private let requestedScale: CGFloat?
 
     init(source: NOWMirrorSource,
+         presentation: MirrorPresentation,
          screen: MirrorKit.Scene.ScreenSize = .init(w: 800, h: 600),
          launchOptions: MirrorLaunchOptions = .parse(
             ProcessInfo.processInfo.arguments)) {
         self.source = source
+        self.presentation = presentation
         self.screen = screen
         requestedScale = launchOptions.scale
-        openAtLaunch = launchOptions.openAtLaunch
-    }
-
-    private let openAtLaunch: Bool
-
-    /// Opens the Mirror once a Mac is connected, when the launch asked for
-    /// it. Called on every connection state change and guarded by `isOpen`,
-    /// because a guest that dials in, drops and redials must not stack
-    /// windows — and because the request arrives before any guest does.
-    func openIfLaunchAsked(title: String) {
-        guard openAtLaunch else { return }
-        guard !isOpen else {
-            /* **AN OPEN WINDOW IS NOT A RUNNING POLL.** `show` calls
-               `source.start()`, and start REFUSES when no Mac is active
-               yet — it has nothing to poll. At launch that is the
-               ordinary order of events: the window request arrives with
-               the first connection change, before the listener has an
-               active key. The guard used to end here, so the window
-               stood open over a source that never ran: scenes frozen at
-               whatever the connect walk produced, `mirror_drive`
-               refusing with "no pinned Mac", and nothing on the window
-               saying why. Watched 2026-08-06.
-
-               Every later connection change comes through this same
-               door, so asking again costs nothing and is the only place
-               that can. `start()` is idempotent while running. */
-            if !source.running { source.start() }
-            return
-        }
-        show(title: title)
     }
 
     func show(title: String) {
         if window == nil {
             let controller = NSHostingController(
-                rootView: LiveMirrorView(controller: source))
+                rootView: MirrorPaneView(source: source,
+                                         presentation: presentation,
+                                         container: .detachedWindow))
             /* The WINDOW owns its size, not the scene inside it. Without
                this an arriving scene republishes its own ideal size as a
                window constraint, so the window jumps every time the guest
@@ -97,21 +76,16 @@ final class NOWMirrorWindow: NSObject, ObservableObject, NSWindowDelegate {
            on a just-booted guest is many seconds of "Open Mirror did
            nothing". */
         if let w = window { Self.ensureOnScreen(w) }
-        source.start()
-        /* **AND AGAIN UNTIL IT TAKES.** `start()` REFUSES when no Mac is
-           active yet — it has nothing to poll — and at launch that is the
-           ordinary order of events: `--open-mirror` fires on the first
-           connection change, before the listener has an active key. The
-           window then stood open over a source that never ran: scenes
-           frozen at whatever the connect walk produced, `mirror_drive`
-           refusing with "no pinned Mac", and nothing on the window saying
-           why. Watched 2026-08-06 while relaunching a live session.
-
-           Bounded and cheap, like `fitToGuestScreen` beside it: a poll
-           that has already started returns immediately, and a launch with
-           no Mac at all gives up after ten seconds exactly as before. */
-        if !source.running { retryStart() }
+        /* **NO `source.start()` HERE, and that is the point of the whole
+           change rather than an omission.** An open window is not a
+           running poll and never was — the two were merely welded
+           together, and the weld is what let `--open-mirror` leave a
+           window standing over a source that never ran (2026-08-06).
+           `MirrorRunControl` owns starting, every face goes through
+           `HostAppState.showMirror()`, and that function starts first and
+           shows second. */
         isOpen = true
+        presentation.isDetached = true
         /* NO NSApp.activate HERE, and that is the fix rather than an
            omission. Activating trips `applicationShouldHandleReopen`,
            whose job is to bring the MAIN window up - so asking for the
@@ -130,17 +104,6 @@ final class NOWMirrorWindow: NSObject, ObservableObject, NSWindowDelegate {
             self?.window?.makeKeyAndOrderFront(nil)
         }
         fitToGuestScreen()
-    }
-
-    private func retryStart() {
-        Task { @MainActor [weak self] in
-            for _ in 0..<40 {                          // ~10s
-                try? await Task.sleep(nanoseconds: 250_000_000)
-                guard let self, self.isOpen else { return }
-                if self.source.running { return }
-                self.source.start()
-            }
-        }
     }
 
     /// **Size to the guest's own screen, once it says what that is.**
@@ -202,15 +165,41 @@ final class NOWMirrorWindow: NSObject, ObservableObject, NSWindowDelegate {
         if !reachable { w.center() }
     }
 
+    /// **Closing re-attaches. It does not stop the machine.**
+    ///
+    /// This used to call `source.stop()` and the docstring below argued
+    /// for it convincingly: a mirror nobody is looking at should not keep
+    /// taking the guest's one transfer lane. The argument was right about
+    /// cost and wrong about who was looking — an agent on the MCP socket
+    /// is looking, and it never opens a window. Under two axes, closing
+    /// this window says something about this Mac's screen and nothing
+    /// about the classic Mac, so the Mirror simply comes back into the
+    /// module's pane. Stopping is `MirrorRunControl.stop()`, and it has
+    /// its own control on that page.
     func close() {
-        source.stop()
         window?.orderOut(nil)
         isOpen = false
+        presentation.isDetached = false
     }
 
     /// Captures only the pixels NOW drew for the Mirror, paired with the exact
     /// immutable engine snapshot. It refuses while shadow and visible paths
     /// disagree or if either changes during AppKit's display capture.
+    ///
+    /// **Through `RenderShot`, not through the window's content view.**
+    /// It used to call `bitmapImageRepForCachingDisplay` on
+    /// `window?.contentView`, which was correct while a window was the
+    /// only container and silently wrong the moment there were two: with
+    /// the Mirror attached, `window` is nil and the export threw
+    /// `emptyFrame` — an error naming a blank capture rather than a
+    /// missing window, which is exactly the kind of misattributed failure
+    /// this project keeps paying for.
+    ///
+    /// `RenderShot` is the better source anyway and by construction, not
+    /// by luck: `SceneView.swift:5-6` states that the drawn pixels are
+    /// exactly `RenderShot`'s, it takes its size as a parameter and sets
+    /// `scale = 1`, so the evidence is 1:1 guest pixels whatever container
+    /// or zoom stop a person happens to be looking at.
     func exportEvidence(to directory: URL) throws
         -> MirrorEvidenceExporter.Export {
         guard let engine = source.shadowEngine else {
@@ -218,24 +207,21 @@ final class NOWMirrorWindow: NSObject, ObservableObject, NSWindowDelegate {
         }
         return try MirrorEvidenceExporter(
             engine: engine, visibleScene: { [weak source] in source?.scene })
-            .export(to: directory) { [weak self] in
-                guard let view = self?.window?.contentView,
-                      let rep = view.bitmapImageRepForCachingDisplay(
-                        in: view.bounds) else {
+            .export(to: directory) { [weak source] in
+                guard let scene = source?.scene else {
                     throw MirrorEvidenceExporter.ExportError.emptyFrame
                 }
-                view.cacheDisplay(in: view.bounds, to: rep)
-                return rep.representation(using: .png,
-                                          properties: [:]) ?? Data()
+                return try RenderShot.png(scene: scene)
             }
     }
 
-    /// Closing the window stops the poll. A mirror nobody is looking at
-    /// should not keep taking the guest's one transfer lane — the machine
-    /// is cooperatively scheduled and every walk is time it is not doing
-    /// what its user asked.
+    /// The red button and `close()` mean the same thing, so they do the
+    /// same thing: re-attach. **Emphatically no `source.stop()` here** —
+    /// see `close()`. This is the single edit in the whole change most
+    /// likely to be reverted by a reader who finds the old docstring
+    /// persuasive, so the reason lives beside both.
     func windowWillClose(_ notification: Notification) {
-        source.stop()
         isOpen = false
+        presentation.isDetached = false
     }
 }

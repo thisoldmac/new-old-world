@@ -19,8 +19,15 @@
 #      carries the reasoning and the failure text.
 #      Deliberate deferral: TBT_DEFER_EXT_BAKE=1 with a written reason.
 #
-# Merges are exempt from pre-commit by git's own design: it runs
-# pre-merge-commit for those.
+#   3. derived-doc-gate — NOT ARMED. See the block at the foot of this
+#      file and .githooks/pre-merge-commit.
+#
+# Merges are NOT exempt from pre-commit, and the previous version of this
+# comment said they were. Git runs pre-merge-commit for a merge that
+# auto-resolves; a CONFLICTED merge, resolved by hand, is committed by
+# `git commit` and runs THIS hook with MERGE_HEAD present. That is the
+# path every keep-both defect in this repository took, so anything that
+# refuses a merge has to sit in both hooks.
 
 if [ -z "${TBT_ALLOW_MAIN:-}" ]; then
     branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || echo "")
@@ -38,6 +45,34 @@ fi
 root=$(git rev-parse --show-toplevel)
 if [ -x "$root/tools/ext-bake-gate" ]; then
     "$root/tools/ext-bake-gate" check || exit 1
+fi
+
+# ---------------------------------------------------------------------
+# derived-doc-gate — BUILT, TESTED, AND DELIBERATELY NOT ARMED.
+#
+# It refuses a merge commit that touches a derived document whose
+# derivation was not re-run (tools/derived-doc-gate carries the reasoning;
+# tools/derived-doc-gate-selftest is the mutation evidence). It is inert
+# until NOW_DERIVED_DOC_GATE=1 is in the environment.
+#
+# WHY IT SHIPS UNARMED. Arming a gate into a live fleet is a change to
+# every branch at once, made by somebody who is not on any of them. On the
+# night this was written there were forty-odd live lane branches, one of
+# them still running, and `.githooks` did not exist on `main` at all — so
+# nothing here was armed for anyone and arming it would have been a
+# unilateral change to work in flight.
+#
+# HOW TO ARM IT, when the fleet is quiet and .githooks is on main:
+#   1. tools/gate-impact-sweep --all-matching 'claude/'  with
+#      NOW_GATE_UNDER_TEST=tools/derived-doc-gate — no branch may be
+#      STRANDED. (Run 2026-08-07; the result is in the commit that added
+#      this block.)
+#   2. Delete the NOW_DERIVED_DOC_GATE test on the next two lines, and the
+#      matching one in .githooks/pre-merge-commit. That is the whole
+#      arming step; nothing else changes.
+#   3. tools/setup-hooks in each clone, as before.
+if [ -n "${NOW_DERIVED_DOC_GATE:-}" ] && [ -x "$root/tools/derived-doc-gate" ]; then
+    "$root/tools/derived-doc-gate" check || exit 1
 fi
 
 exit 0

@@ -194,7 +194,10 @@ final class GuestStatusTests: XCTestCase {
         let line = delegate.statusHeaderLine(
             status: .waiting(port: 5252),
             readiness: .init(isEnabled: false, reason: "No Mac is connected"))
-        XCTAssertEqual(line, "Listening on 5252 — no Mac connected")
+        XCTAssertEqual(line,
+                       "Listening on 5252 — no old world mac connected",
+                       "read from the menu bar of the listening Mac, so "
+                       + "\"no Mac connected\" named the wrong machine")
     }
 
     /// End to end over a real loopback connection: a guest saying hello must
@@ -235,7 +238,7 @@ final class GuestStatusTests: XCTestCase {
         XCTAssertFalse(state.quickCapture.readiness.isEnabled,
                        "no guest — the command must be greyed out")
         XCTAssertEqual(state.quickCapture.readiness.reason,
-                       "No Mac is connected")
+                       "No \(MachineNaming.commonNoun) is connected")
 
         let guest = FakeGuest(port: try XCTUnwrap(state.listener.boundPort))
         defer { guest.connection.cancel() }

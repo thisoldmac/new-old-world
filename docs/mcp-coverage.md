@@ -70,6 +70,47 @@ about the Macintosh. No projection test fails, because the projection is fine.
 It was proven by removing `process.front`'s row: twenty-five tests across the
 three most closely related suites stayed green and only this one spoke.
 
+**A second check is not about this document either, and it exists because
+every table below was true while seven of the tools they describe could not
+reach a Macintosh.** On 2026-08-07 a surface audit found that
+`SocketAgentIntegrationClient` — the client every MCP call travels through —
+never overrode `observeElements`, `mirrorDrive` or `tailGuestLog`. All three
+landed on the protocol default in `AgentIntegrationClient`, so
+`now_observe_elements`, `now_mirror_drive` and `now_guest_log_tail` answered
+"no lane" from a healthy host; and because the observation is the **only**
+producer of the `now-element-…` references the act rows take,
+`now_window_act`, `now_control_act`, `now_text_get` and `now_text_set` were
+unreachable for want of a legal argument.
+
+Nothing here could see it, and that is the point worth keeping. This file
+derives what a projection **declares** — its `capability`, its `requires`,
+its `exposes` — and all seven declarations were correct. What was missing was
+four lines one layer below the projection, in a file this document does not
+read. So the gate is
+[`SocketClientForwardingTests`](../now-host/Tests/NOWAgentCompanionTests/SocketClientForwardingTests.swift),
+which derives two sets from source — every `client.<method>(` the projections
+call, and every requirement the client protocol declares — and fails when
+either contains a name `SocketAgentIntegrationClient` does not declare a
+`func` for. Neither set is maintained by hand, for the reason AGENTS.md gives
+about enumerations: the same day this was found, three separate hand-kept
+lists in this repository were wrong, and none of them by carelessness.
+
+**The drive that verified the fix found a larger defect than the one it was
+sent for**, and it belongs beside this one because it has the same shape.
+The MCP stdio loop read `FileHandle.standardInput.readData(ofLength: 4096)`,
+which on Darwin blocks until it has the full count or the pipe closes — so a
+client holding stdio open and sending one small line at a time was answered
+by **nothing at all**, on every one of the tools in this file. It survived
+because every driver this surface has ever had wrote its whole script and
+closed stdin, which is a batch rather than a client.
+[`StdioTransportLivenessTests`](../now-host/Tests/NOWAgentCompanionTests/StdioTransportLivenessTests.swift)
+spawns the real executable, writes one small line and holds stdin open — the
+one condition every previous driver removed.
+
+Both are the same lesson in different places: **a table of what a surface
+declares is not evidence that the surface answers.** Neither gate changes a
+row below; they are what makes the rows mean something.
+
 The guest-side greps are `contract-coverage.md`'s, unchanged:
 
 ```
@@ -103,6 +144,7 @@ The test compares both against the code literally.
 | `now_machine_facts` | `gestalt` | `gestalt` | command |
 | `now_list_processes` | `process.list` | `process.list` | message family |
 | `now_observe_elements` | `elements` | `elements` | command |
+| `now_mirror_open` | — | — | none; starts the host's own Mirror and brings it into view, asking the Mac nothing. The row every other `now_mirror_*` assumed away: they read a state engine that only runs while the Mirror is RUNNING, and until this landed the only ways to start one in a running host were a click on the host's own screen and `--open-mirror` at launch. Since 019 running and where-it-is-shown are separate axes, so this starts the poll first and then shows it — in the Mirror module's pane, or in the detached window if that is where the person left it |
 | `now_mirror_status` | — | — | none; reads the native Mirror state engine without another guest request |
 | `now_mirror_snapshot` | — | — | none; reads the native Mirror state engine without another guest request |
 | `now_mirror_find` | — | — | none; queries the native Mirror state engine without another guest request |
@@ -564,6 +606,7 @@ to exist:
 | `capture.accept` | message | ppc | deliberate | Answering a guest-initiated capture offer is the paired host's own handshake obligation, not a capability an agent asks for — [command-parity.md](command-parity.md) ("the MCP is a client, not a face"). |
 | `capture.cancel` | message | ppc | deliberate | Abandoning a capture in flight, and the caller-facing half of it **is** reachable: `now_capture_screen`'s `abandon` releases the connection's one transfer lane. What a caller directs there is the host's WAIT, not this message — `GuestListener.cancelCapture` settles the request locally whether or not the guest honours the wire message, and the answer never reports which happened. Requiring it would also make a capability both guests serve read as PowerPC-only, which rule 4 of the [parity slice plan](plans/2026-07-29-004-feat-now-tbt-classic-parity-slice-plan.md) refuses: degrade the answer, not the message. |
 | `capture.refuse` | message | ppc | deliberate | The refusal half of the same handshake, and the same reason — [command-parity.md](command-parity.md). |
+| `host.shown` | message | ppc | deliberate | The host's answer to a guest-initiated `host.show` — the PPC guest's dispatch RECEIVES it as the asker, which is what the Served column's derivation sees; no guest serves one. The host-surface family runs guest-to-host by definition — its subject is a WINDOW on the modern machine, which no classic Mac has — so no guest will ever serve one and there is nothing here for a projection to ask a guest for ([command-parity.md](command-parity.md), and the `guestAsksHostSurface` / `hostServesHostSurface` operations in the contract). The agent-facing reading of the same act is `now_mirror_open`, which is a projection over the HOST rather than over a guest. |
 | `chat.catalog` | message | ppc | deliberate | The host's answer to a guest-initiated `chat.models` — the PPC guest's dispatch RECEIVES it as the asker, which is what the Served column's derivation sees; no guest serves one. The chat family runs guest-to-host by definition — its subject is the host's own model harness, which no classic Mac has — so no guest will ever serve one and there is nothing here for a projection to ask a guest for; the MCP is a client of guests, not of the host's own services ([command-parity.md](command-parity.md), and the `guestAsksChat` / `hostServesChat` operations in the contract). The agent-facing reading of the same harness is the chat face itself, not a projection. |
 | `chat.delta` | message | ppc | deliberate | The streamed half of the host's answer to `chat.send` — same definitional direction as `chat.catalog`, same citation ([command-parity.md](command-parity.md)). |
 | `chat.result` | message | ppc | deliberate | The terminal half of the same turn, same reason ([command-parity.md](command-parity.md)). |
@@ -596,8 +639,12 @@ to exist:
 | `activate` | command | ppc | deliberate | The same capability as `front`, addressed by process serial instead of by name — and `now_bring_to_front` already needs the `process.front` **family** for the reason that row gives. One capability, one route per face ([command-parity.md](command-parity.md)). What `activate` adds over `front` is real but is a GUEST-side property: it takes the identity an observation minted, so a driver that has just walked the machine does not have to go back to a name that may match twice. The host's own action dispatcher sends it directly for exactly that reason. That is a second route for one capability, which is what this column exists to refuse. |
 | `actselftest` | command | ppc | unnoticed | Proves the act plane's trap calling convention from inside one process, and it is the only instrument that reads the CALLER's side of the call — every other one reads ours. It matters more than its size, because a patch whose result lands in the wrong slot **does not crash, it lies**: every counter the plane owns reports success while the application reads a value we never wrote. Nobody has decided either way. What a row would have to settle first: whether an agent about to drive the act plane should be able to ask "is this machine's ABI the one you were built against" before it acts — the case for is that a silent wrong answer is the failure mode this plane actually has; the case against is that a host could simply call it once per session itself and never expose it. |
 | `ditemact` | command | ppc | planned | U5/KTD11 of the [NOW Mirror UX completion plan](plans/2026-08-03-001-now-mirror-ux-completion-plan.md): prove the keyboard-and-mouse Mirror path first, then add MCP parity as a thin adapter over the same typed operation. The command selects one observation-minted, revalidated 1-based DITL item through the application's Dialog Manager path; projecting it before the direct UI is watched would invert that acceptance order. |
+| `dragpress` | command | ppc | unnoticed | Presses the mouse button on an element and LEAVES IT DOWN, handing the gesture to the resident's Time Manager drag vehicle. Landed 2026-08-07 with the vehicle itself; nobody has decided whether an agent should be able to ask for it. **What a row would have to settle first, and it is not the usual question:** every other capability on this surface either reads a machine or asks an application to do something it already knows how to do. This one moves a PHYSICAL POINTER on somebody's Macintosh and holds its button down — so the question is not whether it is useful but whether a caller who is not looking at the screen should be able to start a gesture a person at that machine will be fighting. The resident's dead-man bounds the damage in TIME (it releases whether or not anyone asks, and clamps its own deadlines so a caller cannot switch it off), which is exactly the property that would make a row defensible; it does not bound it in SPACE. Deciding this means deciding all three drag verbs together, not one. |
+| `dragmove` | command | ppc | unnoticed | Publishes a new pointer position for a held drag. Same landing, same undecided status, and it cannot be decided separately from `dragpress` — a press with no move is not a gesture. Its own distinguishing question is a smaller one: this verb is also what relays caller liveness, so a projection would be taking on the obligation to keep talking, and a tool that stopped mid-gesture would produce a dead-man release rather than an error. That is the honest failure and it is still a failure a caller has to be told about in advance. |
+| `dragrelease` | command | ppc | unnoticed | Asks the resident to release a held drag. Same landing and same coupling to the other two. The one thing it adds to the decision: it reports that it ASKED and never that it released, because the resident's own deadline may have got there first — so a projection would have to carry a four-valued outcome (released-as-asked, dead-man-idle, dead-man-cap, session-lost) rather than a boolean, and a tool that flattened it would be asserting an outcome nobody observed. |
 | `aesend` | command | ppc | unnoticed | One of four core Apple Events — quit, oapp, odoc, pdoc — to a process named by its serial. A closed vocabulary, not a class/id pipe, which is what makes it a candidate at all. Nobody has decided. What a row would have to settle first: `quit` overlaps `now_request_quit` outright, so a row would either drop that op or be a second route to a capability already projected; and the two document ops are the only way this product can open or print a file on the guest, which is a capability no tool has and nobody has asked for. Deciding it means deciding those two questions separately, not deciding one verb. |
 | `key` | command | ppc | planned | **W3** of the parity slice. **The pane face landed 2026-08-01; this row tracks the MCP face, which has not.** One keystroke, posted through the Event Manager — the ground `now_text_set` cannot cover: a dialog that answers only keystrokes, and keys that carry no text (Return, Escape, the arrows). **The row that landed is the human-facing one, and it is `mods`-gated rather than blanket.** `ActionModel.availability(.key)` is now a function of `mods`: `mods == 0` answers `.available(command: "key")` and routes through `AgentIntegrationHostAdapter.key` → `AgentIntegrationActControl.key` (reads the input plane's own lower-case `posted` row, not the act plane's `Dispatch`); `mods != 0` still answers `.unavailable`, refused before a request is built. `MirrorModuleView`'s drawing captures a `keyDown` (`MirrorKeyCaptureView`, an AppKit view because `.onKeyPress` needs macOS 14 and this app supports 13) and `ActionModel.paneKeystroke` translates it, folding Shift into the character rather than into `mods` — the guest's own key table is case-sensitive on the char, not on a bit. **Not landed:** the *agent*-facing row — no `KeyProjection.swift`, no `AgentIntegrationClient.key` on the protocol, no MCP/`appIntents` face — so an MCP caller still gets no `key` tool. **Not verified:** the capture view's AppKit/SwiftUI integration has not been run in the built app (no display attached to this work); `docs/pane-keys-audit.md` names the specific risk and the check that would retire it. What a row must still decide for the modified half is the honest limit stated here since: an event's modifiers live on the Event Manager's queue element, and the only call that returns it is `PPostEvent`, which is `CALL_NOT_IN_CARBON` — so this verb refuses `mods != 0` outright rather than posting a bare key and reporting success ([input-plane-decisions.md](input-plane-decisions.md)). |
+| `cycle` | command | ppc | unnoticed | Brings each faced application forward in turn with the anchor plane held armed, so each executes its own event loop once and the resident captures its anchor, then restores the previously frontmost application. Landed 2026-08-07 (plan 018 slice 15) as the guest half only. **The gap is honest rather than argued: nobody has decided whether an agent should be able to ask for it.** **What a row would have to settle first:** this verb DISTURBS THE MACHINE on purpose — windows come forward and flash past — so exposing it to an agent is a question about consent and surprise rather than about plumbing. It is the one verb on this surface whose whole point is a visible side effect, and the argument against a tool is that an agent could invoke it while a person is working; the argument for is that an agent facing a freshly booted Mac currently sees one window and has no way to fix it, which is exactly the hole that drove agents to macOS accessibility scripting. The capability itself is not in doubt. |
 | `mirror` | command | ppc | unnoticed | What this Mac can say about MIRROR - whether each of its three resident extensions is loaded, whether its agent is running, and which port the file beside the agent names. Landed 2026-08-02 as the guest half only, and the gap is honest rather than argued: nobody has decided whether an agent should be able to ask it. **What a row would have to settle first:** Mirror is a SEPARATE application that happens to run on the same Macintosh, so a tool here would be NOW reporting on a neighbour - which is defensible (the host's own Mirror page does exactly that, one step less truthfully, off a folder listing) but is a boundary question rather than a plumbing one. The capability itself is not in doubt: residency is a Gestalt answer and the guest is the only side that can give it, which is why the verb exists at all ([contract-coverage.md](contract-coverage.md)). The pane face is owed the same upgrade and has not had it either - the host page still lists the Extensions folder, so today NEITHER face reads this verb. |
 | `mouseloc` | command | ppc | deliberate | Where the pointer IS — an instrument, not a capability. It exists because an emulator's relative mouse is acceleration-distorted, so the host's own drag plane positions by reading this and correcting; every hop calibration closes its loop against it. A caller that is not driving a pointer has nothing to do with the answer, and a caller that IS driving one is the host, which calls it directly rather than through a tool. Projecting it would put a calibration read on a surface whose other rows are capabilities. The closed loop it is the far end of is described in [emu-readiness.md](emu-readiness.md), which is also where the probes that depend on it are listed. |
 | `net` | command | ppc | unnoticed | What a Mac says about its own networking: the link it holds to this host, its TCP/IP configuration, its network ports, and — last — why a list of that machine's connections is not among them. **Landed 2026-08-01 as a spike, guest page and host pane, with no projection deliberately.** Nobody has decided whether an agent should get it. What a row would have to settle first: nearly all of it is *read-only and harmless*, which argues for a plain row — but the fourth group is a statement about an API rather than about a machine, and a capability report that says "this Mac cannot list its connections" would be the wrong shape of true. A tool would have to carry that distinction into typed unavailability, or drop the group and answer three. There is also a real question of whether `now_hardware_census` already covers the hardware half, which would make a `net` row a second route to a capability already projected — the thing this column exists to refuse. PowerPC only: it is built on Open Transport, and the 68K guest speaks MacTCP ([ot-networking-surface.md](ot-networking-surface.md)). |
@@ -612,6 +659,7 @@ to exist:
 | `cancel` | command | 68k | deliberate | The 68K guest's console spelling of transfer cancel, and `now_transfer_cancel` needs the `file.cancel` **message** rather than this verb: the message is what both guests dispatch, and requiring the verb would make a capability both guests serve read as 68K-only — rule 4 of the [parity slice plan](plans/2026-07-29-004-feat-now-tbt-classic-parity-slice-plan.md). The verb exists so a person at a PowerBook whose host has stopped answering can still end a transfer, which is a reason for the GUEST to have two faces, not a second mechanism for the host to pick between — [command-parity.md](command-parity.md). |
 | `census` | command | both | deliberate | The console spelling of `census.request`, which is projected as `now_hardware_census`. `now_hardware_census` needs the **family** and not this verb, for the reason `front` and `quit` give: the verb is the flat single-page read a person types at the machine, and the family is the one that paginates and carries a per-probe outcome — which is the whole capability. One capability, one route per face — [command-parity.md](command-parity.md). |
 | `front` | command | both | deliberate | `now_bring_to_front` needs the `process.front` **family**, not this command, for the reason `quit` gives below: the command takes a NAME, and the opaque-reference and PSN-revalidation model the tool stands on has nothing to stand on without the message. The name form is the console's, by contract — one capability, one route per face ([command-parity.md](command-parity.md)). |
+| `desktop` | command | ppc | unnoticed | What the guest's desktop is actually drawn from — the Appearance Manager's theme collection rather than the `ppat` resource nobody updates. It landed 2026-08-07 for the RENDERER's benefit, under [plan 018](plans/2026-08-06-018-feat-stable-honest-render-plan.md) slice 5, and no projection was written either way; nobody has decided whether an agent should get it. What a row would have to settle first: **it is a fact about the machine's appearance, and this surface has no other row of that kind** — every neighbour is either a capability with an effect or an inventory of hardware, and "what does this Mac look like" sits with neither. It is also the first row whose most useful answer may not be a tool at all: the host already consumes it internally to draw the mirror, which is a projection of a different sort, and a second route to it would need an argument that a caller wants the pattern's identity for something the render does not already do. Read-only and harmless, so the risk questions `script` and `hide` carry do not apply here — this one is purely about shape. PowerPC only, and the 68K answer would have to come through the opposite mechanism ([contract-coverage.md](contract-coverage.md)). |
 | `hide` | command | ppc | unnoticed | Hide or show a running application, and read back whether it is visible — the Application menu's own effect, through the Process Manager's `ShowHideProcess`. It landed 2026-08-05 with no projection, deliberately: the arc that built it stops at the guest's two faces. Nobody has decided whether an agent should get it. What a row would have to settle first, and none of it is settled by the verb existing: **the target is a NAME**, so a row would face `front`'s and `quit`'s question — the opaque-reference and PSN-revalidation model has nothing to stand on without a `process.*` family message, and there is no `process.hide` on the wire, so a row here means either relaxing that model or adding the family first. **Availability is per-machine rather than per-guest**: the call needs CarbonLib 1.5, and a guest whose CarbonLib is older answers `unavailable` at runtime — which a capability report built from `help` cannot see, because `help` lists the verb either way. And **the read half may be the more useful one**: `--status` is the only route on a classic Mac to whether an application is hidden at all, since `ProcessInfoRec` carries no visibility field, so a row might reasonably project the read and refuse the write. Three questions, one verb; deciding it means deciding them separately. |
 | `help` | command | both | deliberate | Already sent, once per connection, to build the capability report — its answer *is* `now_session_capabilities` ([agent-integration.md](agent-integration.md)). A second route would be the same answer twice. |
 | `ls` | command | both | deliberate | The console spelling of `file.list`, which is projected. One capability, one route — [command-parity.md](command-parity.md) ("two ways to name a target is not two faces"). |
@@ -624,9 +672,41 @@ to exist:
 
 ### The unnoticed rows, named together
 
-**`axsnap`, `handle`, `actselftest`, `aesend`, `hide`, `net`, `script`
-and `mirror`** — all served by the PowerPC guest, none decided either
-way. Their rows above say what a decision would have to settle.
+**`actselftest`, `aesend`, `axsnap`, `cycle`, `desktop`, `dragmove`,
+`dragpress`, `dragrelease`, `handle`, `hide`, `mirror`, `net` and
+`script`** — thirteen rows, all served by the PowerPC guest, none decided
+either way. Their rows above say what a decision would have to settle.
+
+*(This list was **two** lists for the length of one merge. The
+`018-desktop-pattern` and `018-anchor-acquisition` lanes each added a
+verb and each honestly rewrote this paragraph; a clean textual merge
+kept both, and the result named `desktop` in one and `cycle` in the
+other with neither naming both — the exact 2026-08-05 defect the
+[AGENTS.md](../AGENTS.md) section "Enumerated lists rot at merges" was
+written about, reproduced two days later by two authors who did nothing
+careless. It happened a THIRD time at the 019 integration, where the
+drag lane's rewrite of this paragraph named the three `drag*` verbs and
+dropped `cycle` and `desktop`; the list below is derived from the
+Disposition column above rather than retyped:*
+`awk -F'|' '/^\| `[a-z]/ && $5 ~ /unnoticed/ {gsub(/[ `]/,"",$2); print $2}' docs/mcp-coverage.md | sort -u`*.)*
+
+The three `drag*` verbs joined on 2026-08-07, the day the vehicle landed,
+and they are the first rows here whose undecidedness is about **physical
+effect on somebody else's desk** rather than about risk, shape or whose
+machine. Every other capability on this surface reads a Macintosh or asks
+an application to do something it already knows how to do; these move a
+pointer and hold its button down, and a person sitting at that machine
+would be fighting them. They must also be decided **together** — a press
+with no move is not a gesture — which is why there are three rows and one
+question.
+
+`desktop` joined on 2026-08-07, and it is the only one here whose
+undecidedness is about **what kind of thing this surface is for**: every
+other row is a capability with an effect or an inventory of hardware, and
+"what does this Mac look like" is neither. It also arrived already
+consumed — the host reads it to draw the mirror — so unlike the rest, the
+question is not whether the capability is safe to expose but whether a
+caller wants it for anything the render does not already do.
 
 `mirror` joined on 2026-08-02, the day its verb landed, and it is the only
 one here whose undecidedness is about WHOSE MACHINE rather than about risk
@@ -635,6 +715,14 @@ same Macintosh, so the question a row must answer first is whether NOW
 should describe a neighbour to a caller at all. Its pane face is owed the
 same decision and has not had it either — the host's Mirror page still
 reads a folder listing — so this is currently a verb both faces ignore.
+
+`cycle` joined on 2026-08-07, the day its verb landed, and it is the only
+one here whose undecidedness is about SURPRISE rather than risk, shape or
+whose machine: it works by visibly disturbing the Mac, bringing each
+application forward in turn. Every other verb on this surface answers a
+question; this one rearranges the room to make the answer possible. So the
+question a row must settle is not whether an agent may know something but
+whether it may interrupt someone.
 
 `hide` joined on 2026-08-05, the day the verb landed, and it is the one here
 whose undecidedness is partly about the MACHINE rather than about the
@@ -823,13 +911,114 @@ host ask.
 |---|---|---|
 | `census.request` | `censusExchange` (`action: send`) | Symmetric by definition; in practice the host asks and the guest — the machine with hardware worth asking about — serves. |
 
+## Declared versus exercised
+
+Everything above this line is **declared**: what the registry says a
+projection reaches, derived from source and gated by a test. That column
+was correct on every row while seven tools were dead and all forty-one
+were unreachable to any real client, and it is worth saying plainly why
+it could not have been otherwise — *a declaration is a claim about the
+catalog, and a dead lane is a fact about the machine.*
+
+**Exercised** is the second column, and it is filled by running the
+surface rather than reading it:
+
+```
+# The gate. No host is reached: the companion is pointed at an endpoint
+# nothing binds, which is CI's shape.
+swift test --filter MCPClientConformanceTests
+
+# The measurement. Needs a host and a guest, and asserts WHICH guest
+# before believing a row.
+NOW_AGENT_SOCKET_SUFFIX=<yours> NOW_MCP_CONFORMANCE_LIVE=1 \
+  NOW_MCP_CONFORMANCE_BUILD=<build prefix> \
+  swift test --filter MCPClientConformanceTests
+```
+
+Both print the table. Four verdicts, and the fourth is the one a
+three-verdict table would have hidden:
+
+| Verdict | Means |
+| --- | --- |
+| `served` | the tool answered with its own success |
+| `refused` | this host, the guest or the machine said no, **and said why** |
+| `failed` | no answer, an unreadable one, or an answer a healthy host contradicts |
+| `uncovered` | advertised, and this surface can construct no legal argument for it |
+
+A second column says whether the argument was `real` — built from this
+run's own earlier answers — or `synthetic`, a syntactically valid
+reference deliberately never minted. It decides what a refusal proves: a
+synthetic row exercises the lane and the guest's revalidation, and says
+nothing about the capability. Several rows are synthetic **on purpose**
+and not for want of trying — `now_text_set` replaces a field with no undo,
+`now_control_act` presses whatever control it was handed, `now_request_quit`
+would end a process the rest of the run reads.
+
+### Exercised, 2026-08-07
+
+Two runs of the same driver, on `claude/019-conformance`.
+
+| Condition | served | refused | failed | uncovered |
+| --- | --- | --- | --- | --- |
+| No host (the gate) | 0 | 40 | 0 | 1 |
+| Live, Mac OS 9 under QEMU, guest build `20ba2e29bff1` | 19 | 21 | 0 | 1 |
+
+**`now_transfer_approved_artifact` is the uncovered row, and the only
+one.** An approval receipt is minted by a person approving a transfer in
+the host's own UI; no MCP tool produces one, so a headless caller cannot
+reach that capability at all. Sending it a receipt nobody issued would
+have exercised a regular expression and scored a refusal, which is why
+the fourth verdict exists.
+
+Three answers the live run surfaced that no derivation over declarations
+could have, recorded here and in `open-issues.md`:
+
+- `now_mirror_lifecycle` refused with *"No Mac is connected, so no
+  resident has answered"* **while a Mac was connected** — a false
+  sentence from a healthy host, which is the class of defect this plan is
+  named for.
+- `now_guest_files_upload_begin` refused a **four-byte** upload with
+  *"Private staging cannot reserve the declared upload"*.
+- `now_reveal_item` refused *"nothing named System Folder to reveal"* on
+  a Mac OS 9 volume that has one.
+
+None was chased here.
+
 ## Status
 
-**Tested, not metal-verified.** Nothing in this file has been read against a
-Macintosh; it is a derivation over source and a contract, and the guest-side
-`Served` column claims only what a guest's dispatch answers — never that any
-of it has run. `contract-coverage.md`'s "how far each served thing is
-proven" is the axis for that and is not duplicated here.
+**Tested, not metal-verified.** The tables are a derivation over source and a
+contract, and the guest-side `Served` column claims only what a guest's
+dispatch answers — never that any of it has run. `contract-coverage.md`'s
+"how far each served thing is proven" is the axis for that and is not
+duplicated here.
+
+**Seven rows are now emulator-verified, and they are the only ones.** On
+2026-08-07, against Mac OS 9 under QEMU, each of `now_guest_log_tail`,
+`now_observe_elements`, `now_mirror_drive`, `now_window_act`,
+`now_control_act`, `now_text_get` and `now_text_set` was called through the
+MCP transport — the companion executable over JSON-RPC, not a test seam —
+and four of them were watched taking effect on the machine: the walk minted
+`now-element-…` references for a Finder window's scrollbars, `now_window_act`
+moved that window to exactly the coordinates it was given, `now_control_act`
+was dispatched against one of those scrollbars, and `now_mirror_drive`
+zoomed the window. `now_text_get` and `now_text_set` reached the guest and
+were refused **by the guest, in its own words** — *"that reference names a
+control, not a text element"* — which proves the reference vocabulary is
+shared but is not a completed reading; a window carrying a discoverable
+`TEHandle` was not open on that machine. Nothing here has run on real
+hardware.
+
+**The completed text reading was taken later the same day**, on
+`claude/019-conformance`, through the companion binary over JSON-RPC. A
+window with a discoverable `TEHandle` is a *dialog's*, not a document's —
+the contract says so — so SimpleText's Find dialog was opened, and
+`now_observe_elements` minted the text reference the walk carries under
+`windows[].text.ref`. `now_text_get` answered `completed` with
+`text: "New Old World"` and `truncated: false`; `now_text_set` wrote
+`"read through MCP"`; a second walk and a second `now_text_get` read that
+back. So the pair is now emulator-verified as a round trip rather than as
+reachability, and the earlier refusal is exactly what it said it was — a
+control reference, not a text one.
 
 The test is proven by mutation: adding a registry row without a table entry,
 and declaring a gap for a capability a projection exposes, both fail naming the
@@ -844,7 +1033,48 @@ real defect in its own first draft — reading the whole section rather than its
 first paragraph collected the two names the explanation mentions *because* they
 are not on the list.
 
-Last derived: 2026-07-30, on `claude/tbt-parity-slice` with the phase
+Last derived: 2026-08-07, on `claude/019-integration-4`, by running
+`swift test --filter MCPCoverage` against the five-lane merge
+(`018-render-defects`, `018-cdef-classify`, `019-charcoal`,
+`019-cursor-follow`, `019-depth-and-face`) as part of a green
+`scripts/test-all`. **No row moved and no list rotted** — the unnoticed
+paragraph's thirteen names still match the `awk` over the Disposition
+column exactly, which is the first round since that list was written
+where the check found nothing to fix. Two of the merged lanes widened
+verbs the surface already exposes rather than adding rows: `ctlact`
+gained a click point and `mouseloc` gained prose. **A projection that
+does not pass `h`/`v` through cannot aim a click at a tab or a list
+row**, and nothing in these tables can see that, because they count rows
+and this is an argument — the same blind spot `contract-coverage.md`
+recorded at round 4 for the same pair of lanes.
+
+Before that, **2026-08-07**, on `claude/019-integration-3`, by running
+`swift test --filter MCPClientConformance` and `--filter MCPCoverage`
+against the merged tree of seven lanes. **No row moved**, and the run's
+own line is `served 0, refused 41, failed 0, uncovered 1` — 42 advertised
+tools, every one of which answered a real client, with no host running
+so a named refusal is the right answer for all of them. The one
+`uncovered` is `now_transfer_approved_artifact`, unchanged and for the
+reason its recipe states.
+
+Two things had to be fixed before that line could be produced, and both
+were merge artefacts rather than defects in either lane: `now_mirror_open`
+had no conformance recipe (`018-open-mirror` landed the row before
+`019-conformance` forked), and its reply is a **fourth** spelling of
+availability — `showing` beside `available`, `hostAvailable` and `ok`.
+Consolidating those four is the open item; see
+[open-issues.md](open-issues.md).
+
+Before that, 2026-08-07, on `claude/018-mcp-revival`, by running
+`swift test --filter MCPCoverage` — which reads the registry in process, so
+the tables below are what the running catalog says today. **No row moved**,
+and that is the finding rather than the absence of one: the seven tools this
+branch brought back to life were declared correctly the whole time, so a
+derivation over declarations could not tell they were dead. The two gates
+named in "Derived, and gated by a test" are the answer, and the drive that
+proved the fix is recorded in Status above.
+
+Before that, 2026-07-30, on `claude/tbt-parity-slice` with the phase
 complete — twelve capabilities wired across twenty-six registry rows. The last
 was diagnostics, where one plan item and one wire operation became **three**
 registry rows on purpose, because availability is per row and `vprobe`,
@@ -864,3 +1094,58 @@ Its predecessor integrated `now_reveal_item`,
 integration is what the tables actually describe. Re-derive by
 running `swift test --filter MCPCoverage` rather than by reading — if the
 tables and the code disagree, the code is right and the test says so.
+
+## The machine half: this file declares itself derived
+
+`MCPCoverageTests` is the deep check and stays the deliverable. This
+section is the shallow one a **hook** can run in a second, and it exists
+because the failures it catches all happened at a merge, where nobody
+runs a four-minute Swift suite before typing `git commit`.
+
+The `derived-doc` block below carries runnable derivations, the sha256 of
+each answer, and a digest of the sources they read.
+`tools/derived-doc-gate` refuses a merge commit touching this file, or
+any of those sources, unless they were re-run.
+
+**The prose list is gated as part of the table.** "The unnoticed rows,
+named together" restates the table's own `unnoticed` column in a
+sentence, and on 2026-08-05 that sentence rotted three times in one
+night — once becoming *two* lists, one naming `desktop` and one naming
+`cycle`, neither naming both. So there are two derivations here and they
+are asserted `equal`: one reads the column, the other reads every bold
+name-run in that section. Two lists make the second one longer than the
+first, and the gate names the difference.
+
+<!-- derived-doc v1
+sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
+sources-sha1: 1d7ed22aeedbddb6f6a79964ca925cf8c3b71fe6
+derive ppc-inbound-types sha256=c15c9c82d3460aa5288ca67ace049e5cbf47d7bf305be82c85e3a07cfe0ae5e2 lines=49 published
+    grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
+      | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
+derive 68k-inbound-types sha256=17315f30f1d8e258d705add272b55c2aa1635ebc4d1ec9f5dd9de67e5e149047 lines=23 published
+    grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
+      | sed 's/.*"\(.*\)".*/\1/' | sort -u
+derive disposition-census sha256=307e511d3de26faab3dcd6c48e1fb8ce78f5f5349ea406d4c5c3cecbc0de830c lines=3
+    awk -F'|' '/^\| *`[a-z0-9._]+` *\|/ {s=$5; gsub(/ /,"",s); \
+        if (s ~ /^(deliberate|planned|unnoticed)$/) print s}' \
+        docs/mcp-coverage.md | sort | uniq -c
+derive unnoticed-from-table sha256=f02459c7b08ea7eb3926b9c5867761042bb300ba3cb38b9ecb18caab24a99814 lines=14
+    echo "name-lists: 1"
+    awk -F'|' '/^\| *`[a-z0-9._]+` *\|/ {t=$2; gsub(/[ `]/,"",t); \
+        s=$5; gsub(/ /,"",s); if (s=="unnoticed") print t}' \
+        docs/mcp-coverage.md | sort -u
+derive unnoticed-from-prose sha256=f02459c7b08ea7eb3926b9c5867761042bb300ba3cb38b9ecb18caab24a99814 lines=14
+    runs() { awk '/^### The unnoticed rows, named together/{s=1;next} \
+        s&&/^#/{s=0} s' docs/mcp-coverage.md \
+      | tr '\n' ' ' | grep -oE '\*\*[^*]+\*\*' \
+      | grep -E '^\*\*(`[a-z0-9._]+`,? ?(and )?)+\*\*$'; }
+    echo "name-lists: $(runs | wc -l | tr -d ' ')"
+    runs | tr -d '*`' | tr ',' '\n' | sed 's/ and /\n/g' \
+      | sed 's/^ *//;s/ *$//' | grep -v '^$' | sort -u
+equal: unnoticed-from-table unnoticed-from-prose
+rederived: 2026-08-07T03:50:12-0400 8c1e3d94 sources, ppc-inbound-types 0->48, 68k-inbound-types 0->23, disposition-census 0->3, unnoticed-from-table 0->8, unnoticed-from-prose 0->8 (first declaration)
+rederived: 2026-08-07T03:52:39-0400 d17ca9eb unchanged (count the lists, not just their union)
+rederived: 2026-08-07T03:52:58-0400 d17ca9eb unnoticed-from-table 8->9, unnoticed-from-prose 8->9 (the prose derivation now counts the LISTS, because two lists whose union matches the table is the 2026-08-05 rot)
+rederived: 2026-08-07T04:05:51-0400 dd520b71 unchanged
+rederived: 2026-08-07T12:06:16-0400 c76fea99 sources, ppc-inbound-types 48->49, disposition-census 3->3, unnoticed-from-table 9->14, unnoticed-from-prose 9->14
+-->

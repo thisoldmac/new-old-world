@@ -1,0 +1,423 @@
+#!/usr/bin/env python3
+"""Say, unmissably, WHICH disk image a run is about to test — and whether
+anybody can account for what is inside it.
+
+    tools/image-provenance <image>                    # the block, on stdout
+    tools/image-provenance <image> --json p.json --md p.md
+    tools/image-provenance --oracle                   # the shared oracle
+    tools/image-provenance --oracle --require-match   # exit 3 if unaccounted
+
+WHY THIS EXISTS, and it is a specific mistake rather than a general worry.
+On 2026-08-06 a coordinating session told the human that an arc's
+measurements were suspect because the shared stage image was stale. That
+was wrong twice over, and both halves were discoverable:
+
+  * `scripts/spin-up-ppc` does not clone the stage image at all. Its BASE
+    defaults to `os91-runner.qcow2`, and it stages THIS checkout's ext and
+    app into the clone and cold-boots — so the resident under test is the
+    tree's build, not the image's.
+  * The stage image was not merely stale, it was UNACCOUNTED FOR: its
+    sha256 matched no receipt in ext/stage-receipts.json, because
+    something wrote it at 01:58 after the newest receipt was written at
+    01:19.
+
+Neither fact was hidden. Both were quiet — one line of shell defaulting a
+variable, and a hash nobody had compared. A careful reader got it wrong,
+so the cure is not more care, it is volume: every run that boots a guest
+prints this block and writes it into its run directory, and any artifact
+that quotes a measurement can name its rig by copying a file instead of
+by remembering.
+
+WHAT THIS CAN HONESTLY ASSERT: the bytes on disk right now hash to X, and
+a receipt in this branch's ext/stage-receipts.json does (or does not) claim
+X. WHAT IT CANNOT: that the receipt is TRUE — the receipt is a record
+another session wrote about a bake it ran, and this tool only checks that
+the record and the file agree about which file. Nor can it say the image
+will still be that file in a minute; the oracle is shared and the last
+bake wins.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import time
+
+DEFAULT_ORACLE = os.path.expanduser(
+    os.environ.get("NOW_STAGE_IMAGE",
+                   "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2"))
+RECEIPTS = "ext/stage-receipts.json"
+
+
+# --- the expensive part, cached ------------------------------------------
+# These images are 600 MB and gates want the hash on every commit, so the
+# answer is cached beside the file, keyed on (size, mtime_ns). A cache that
+# were keyed on the path alone would be worse than none: it would answer
+# confidently about a file that had since been replaced, which is the exact
+# defect class this whole tool exists for.
+def sha256(path: str) -> str:
+    st = os.stat(path)
+    key = f"{st.st_size}:{st.st_mtime_ns}"
+    for cache in (path + ".sha256",
+                  os.path.join(os.environ.get("TMPDIR", "/tmp"),
+                               "now-image-sha-"
+                               + hashlib.sha1(path.encode()).hexdigest())):
+        try:
+            with open(cache) as fh:
+                got = json.load(fh)
+            if got.get("key") == key:
+                return got["sha256"]
+        except Exception:
+            pass
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 22), b""):
+            h.update(chunk)
+    digest = h.hexdigest()
+    for cache in (path + ".sha256",
+                  os.path.join(os.environ.get("TMPDIR", "/tmp"),
+                               "now-image-sha-"
+                               + hashlib.sha1(path.encode()).hexdigest())):
+        try:
+            with open(cache, "w") as fh:
+                json.dump({"key": key, "sha256": digest}, fh)
+            break
+        except Exception:
+            continue
+    return digest
+
+
+def repo_root(start: str | None = None) -> str | None:
+    try:
+        return subprocess.run(
+            ["git", "-C", start or os.path.dirname(os.path.abspath(__file__)),
+             "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, check=True).stdout.strip()
+    except Exception:
+        return None
+
+
+def receipts(root: str | None) -> list[dict]:
+    if not root:
+        return []
+    path = os.path.join(root, RECEIPTS)
+    try:
+        with open(path) as fh:
+            return json.load(fh).get("receipts", [])
+    except Exception:
+        return []
+
+
+def bakes(root: str | None) -> list[dict]:
+    return [r for r in receipts(root) if r.get("kind") == "bake"]
+
+
+def sidecar(image: str) -> dict | None:
+    """A throwaway bake writes <image>.provenance.json beside itself.
+
+    Private images are deliberately NOT recorded in the tracked receipts
+    file — a receipt there is a claim about the SHARED oracle, and a
+    lane's own image is nobody else's business. So their account of
+    themselves travels with the file.
+    """
+    try:
+        with open(image + ".provenance.json") as fh:
+            return json.load(fh)
+    except Exception:
+        return None
+
+
+def describe(image: str, root: str | None, staged: dict | None = None,
+             label: str | None = None) -> dict:
+    image = os.path.abspath(os.path.expanduser(image))
+    out: dict = {
+        "at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "label": label,
+        "image": image.replace(os.path.expanduser("~"), "~"),
+        "imageExists": os.path.exists(image),
+        "isSharedOracle": os.path.realpath(image) == os.path.realpath(DEFAULT_ORACLE),
+        "sharedOracle": DEFAULT_ORACLE.replace(os.path.expanduser("~"), "~"),
+    }
+    if not out["imageExists"]:
+        out["verdict"] = "missing"
+        return out
+
+    st = os.stat(image)
+    out["imageBytes"] = st.st_size
+    out["imageMtime"] = time.strftime("%Y-%m-%dT%H:%M:%S%z",
+                                      time.localtime(st.st_mtime))
+    # BOTH times, because on APFS they answer different questions and the
+    # difference is what unmasked the 2026-08-06 rollback. `cp -c` clones a
+    # file and PRESERVES its mtime, so the oracle read "written 2026-08-03"
+    # while ctime said it had been installed at 01:58 on the 6th — a
+    # three-day-old image put back in place after the newest receipt was
+    # written, which is not a thing any receipt can describe. mtime is when
+    # the content was authored; ctime is when this path started carrying it.
+    out["imageCtime"] = time.strftime("%Y-%m-%dT%H:%M:%S%z",
+                                      time.localtime(st.st_ctime))
+    out["imageSha256"] = sha256(image)
+
+    side = sidecar(image)
+    if side:
+        out["sidecar"] = side
+
+    notes = [r for r in receipts(root)
+             if r.get("kind") == "image-note"
+             and r.get("imageSha256") == out["imageSha256"]]
+    if notes:
+        out["imageNote"] = notes[-1]
+    matched = [r for r in bakes(root) if r.get("imageSha256") == out["imageSha256"]]
+    newest = bakes(root)[-1] if bakes(root) else None
+    out["newestReceipt"] = _slim(newest) if newest else None
+    out["matchedReceipt"] = _slim(matched[-1]) if matched else None
+
+    if matched:
+        entry = matched[-1]
+        if entry.get("correctedOn"):
+            out["verdict"] = "receipt-corrected"
+        elif entry.get("volumeClean") not in (None, "clean"):
+            out["verdict"] = "receipt-dirty-volume"
+        else:
+            out["verdict"] = "receipt-matched"
+    elif side:
+        out["verdict"] = "private-image"
+    elif notes:
+        # Weaker than a bake ON PURPOSE, and the verdict text says which
+        # question it leaves open. Somebody put these bytes here and wrote
+        # down why; nobody asked a guest what resident is inside them.
+        out["verdict"] = "noted-not-baked"
+    elif out["isSharedOracle"]:
+        out["verdict"] = "UNACCOUNTED"
+    else:
+        # A plain base like os91-runner.qcow2 was never baked and is not
+        # meant to be. Saying "unaccounted" about it would be noise, and a
+        # gate that cries wolf about the normal case stops being read.
+        out["verdict"] = "unbaked-base"
+
+    # What the RUN puts on top of the image is half the answer and it is
+    # the half that got misread: spin-up-ppc stages this checkout's ext and
+    # app into the clone, so the resident under test is the tree's.
+    if staged:
+        out["staged"] = staged
+    return out
+
+
+def _slim(entry: dict) -> dict:
+    keep = ("at", "branch", "commit", "extDigest", "extBuildFingerprint",
+            "sourceManifest", "imageSha256", "imageBytes", "volumeClean",
+            "qemuImgCheck", "shutdown", "residentCapabilities",
+            "residentLifecycle", "correctedOn", "scope")
+    return {k: entry[k] for k in keep if k in entry}
+
+
+VERDICT_LINE = {
+    "receipt-matched":
+        "ACCOUNTED FOR — a bake receipt on this branch claims exactly these bytes.",
+    "receipt-corrected":
+        "MATCHED A CORRECTED RECEIPT — the receipt naming these bytes has been "
+        "retracted and certifies NOTHING.",
+    "receipt-dirty-volume":
+        "MATCHED A RECEIPT THAT RECORDS A DIRTY VOLUME — every clone of this "
+        "image opens in Disk First Aid.",
+    "private-image":
+        "PRIVATE THROWAWAY — baked by one lane for itself; it is not the "
+        "shared oracle and no other session should be reading it.",
+    "noted-not-baked":
+        "PLACED BY HAND AND RECORDED — a note says how these bytes got here "
+        "and why. NO BAKE: nobody asked a guest what resident is inside.",
+    "UNACCOUNTED":
+        "UNACCOUNTED FOR — this is the SHARED ORACLE and no receipt on this "
+        "branch claims these bytes. Nobody can say what resident is in it.",
+    "unbaked-base":
+        "PLAIN BASE — never baked, no receipt expected. What is resident here "
+        "is whatever the run stages into the clone.",
+    "missing": "MISSING — there is no file at this path.",
+}
+
+
+def render(p: dict) -> str:
+    bar = "=" * 72
+    L = [bar, "IMAGE PROVENANCE" + (f" — {p['label']}" if p.get("label") else ""),
+         bar]
+    L.append(f"  image        {p['image']}")
+    if not p["imageExists"]:
+        L += [f"  VERDICT      {VERDICT_LINE['missing']}", bar]
+        return "\n".join(L)
+    L.append(f"  sha256       {p['imageSha256']}")
+    L.append(f"  bytes        {p['imageBytes']}")
+    L.append(f"  content from {p['imageMtime']}  (mtime — survives an APFS clone)")
+    L.append(f"  installed    {p['imageCtime']}  (ctime — when this path got it)")
+    L.append(f"  role         " + ("THE SHARED ORACLE (now-mirror-stage.qcow2)"
+                                   if p["isSharedOracle"] else
+                                   "not the shared oracle"))
+    L.append(f"  VERDICT      {VERDICT_LINE[p['verdict']]}")
+
+    m = p.get("matchedReceipt")
+    if m:
+        L.append(f"  receipt      baked {m.get('at')} on {m.get('branch')}"
+                 f" @ {str(m.get('commit'))[:12]}")
+        L.append(f"               extDigest {str(m.get('extDigest'))[:12]}"
+                 f"  buildFingerprint {str(m.get('extBuildFingerprint'))[:12]}")
+        L.append(f"               volumeClean={m.get('volumeClean')}"
+                 f" shutdown={m.get('shutdown')}"
+                 f" capabilities={m.get('residentCapabilities')}")
+        if m.get("correctedOn"):
+            L.append(f"               CORRECTED {m['correctedOn']} — see "
+                     f"{RECEIPTS} for the retraction in full.")
+    elif p["verdict"] == "UNACCOUNTED":
+        n = p.get("newestReceipt")
+        L.append("               The newest bake receipt on this branch describes")
+        if n:
+            L.append(f"               a DIFFERENT file: {str(n.get('imageSha256'))[:16]}…"
+                     f" baked {n.get('at')} on {n.get('branch')}.")
+        else:
+            L.append("               nothing at all — there are no bake receipts.")
+        L.append("               Something wrote this image without leaving a receipt,")
+        L.append("               or a receipt landed on another branch. Until it is")
+        L.append("               re-baked, no result from a clone of it is attributable.")
+    note = p.get("imageNote")
+    if note:
+        import textwrap
+        L.append(f"  note         {note.get('at')} on {note.get('branch')}")
+        for chunk in textwrap.wrap(note.get("reason", ""), 56):
+            L.append(f"               {chunk}")
+        L.append("               A NOTE IS NOT A BAKE. It says how the file got")
+        L.append("               here. What resident is inside it is whatever was")
+        L.append("               inside when it was made — only a bake asks a guest.")
+    side = p.get("sidecar")
+    if side:
+        L.append(f"  private bake {side.get('at')} by {side.get('branch')}"
+                 f" (lane {side.get('lane')})")
+        L.append(f"               extDigest {str(side.get('extDigest'))[:12]}"
+                 f"  buildFingerprint {str(side.get('extBuildFingerprint'))[:12]}")
+
+    s = p.get("staged")
+    if s:
+        L.append("  ---- and what this RUN puts on top of the image ----")
+        L.append(f"  staged from  {s.get('tree', '?')}"
+                 + (f" @ {str(s.get('commit'))[:12]}" if s.get("commit") else ""))
+        for k, v in (("extBin", "ext"), ("appBin", "app")):
+            if s.get(k):
+                L.append(f"  staged {v:<4}  {s[k]}")
+        if s.get("localBuildFingerprint"):
+            L.append(f"  local build  sourceManifest "
+                     f"{str(s.get('localSourceManifest'))[:12]}"
+                     f"  buildFingerprint {str(s['localBuildFingerprint'])[:12]}")
+        if s.get("residentReported"):
+            r = s["residentReported"]
+            L.append(f"  GUEST SAID   lifecycle={r.get('lifecycle')}"
+                     f" capabilities={r.get('capabilities')}")
+            L.append(f"               sourceManifest {str(r.get('sourceManifest'))[:12]}"
+                     f"  buildFingerprint {str(r.get('buildFingerprint'))[:12]}")
+        L.append("  So the resident under test is THIS TREE'S BUILD, staged into a")
+        L.append("  clone — not whatever was baked into the base image.")
+    L.append(bar)
+    return "\n".join(L)
+
+
+def markdown(p: dict) -> str:
+    """The rig table, in the shape docs/fidelity-sweep-2026-08-07-a.md uses.
+
+    Paste-ready on purpose: an artifact that quotes a measurement should be
+    able to name its rig by copying a generated file, because the sweep
+    that got this right did it by hand and the next one will not.
+    """
+    rows = [("Base image",
+             f"`{p['image']}`, sha256 `{p.get('imageSha256','—')}`"
+             f" ({p.get('imageBytes','?')} bytes; content mtime "
+             f"{p.get('imageMtime','?')}, installed at this path "
+             f"{p.get('imageCtime','?')})"),
+            ("Provenance", VERDICT_LINE[p["verdict"]])]
+    m = p.get("matchedReceipt")
+    if m:
+        rows.append(("Receipt",
+                     f"baked {m.get('at')} on `{m.get('branch')}` @ "
+                     f"`{str(m.get('commit'))[:12]}`; extDigest "
+                     f"`{str(m.get('extDigest'))[:12]}`, volumeClean "
+                     f"`{m.get('volumeClean')}`"))
+    if p.get("imageNote"):
+        n = p["imageNote"]
+        rows.append(("Provenance note",
+                     f"{n.get('at')} on `{n.get('branch')}` — {n.get('reason')} "
+                     "**Not a bake:** no guest was asked what resident is in it."))
+    if p["verdict"] == "UNACCOUNTED":
+        n = p.get("newestReceipt") or {}
+        rows.append(("Receipt", "**none matches these bytes.** Newest receipt "
+                     f"describes `{str(n.get('imageSha256','—'))[:16]}…`. "
+                     "Nothing here is attributable to a known resident."))
+    rows.append(("Shared oracle used?",
+                 "**yes — this run's base IS the shared stage image**"
+                 if p["isSharedOracle"] else
+                 f"**no.** The shared stage image (`{p['sharedOracle']}`) was "
+                 "not used and is not the oracle for this run."))
+    s = p.get("staged") or {}
+    if s:
+        rows.append(("Staged resident",
+                     f"this checkout's build, staged into the clone and "
+                     f"cold-booted: sourceManifest "
+                     f"`{str(s.get('localSourceManifest','—'))[:12]}`, "
+                     f"buildFingerprint "
+                     f"`{str(s.get('localBuildFingerprint','—'))[:12]}`"))
+        r = s.get("residentReported")
+        if r:
+            rows.append(("Resident (guest's own `mirror`)",
+                         f"lifecycle `{r.get('lifecycle')}`, capabilities "
+                         f"`{r.get('capabilities')}`, sourceManifest "
+                         f"`{str(r.get('sourceManifest'))[:12]}…`, "
+                         f"buildFingerprint "
+                         f"`{str(r.get('buildFingerprint'))[:12]}…`"))
+    body = "\n".join(f"| **{k}** | {v} |" for k, v in rows)
+    return ("### Which rig this describes — read before quoting a result\n\n"
+            "| | |\n|---|---|\n" + body + "\n")
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("image", nargs="?")
+    ap.add_argument("--oracle", action="store_true",
+                    help="describe the shared stage image")
+    ap.add_argument("--label")
+    ap.add_argument("--json")
+    ap.add_argument("--md")
+    ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--staged-json",
+                    help="JSON file of what the run staged onto the clone")
+    ap.add_argument("--require-match", action="store_true",
+                    help="exit 3 unless the image is accounted for by a "
+                         "receipt (or is a private/unbaked base)")
+    ap.add_argument("--repo")
+    args = ap.parse_args(argv[1:])
+
+    image = args.image or (DEFAULT_ORACLE if args.oracle else None)
+    if not image:
+        ap.error("name an image, or pass --oracle")
+
+    staged = None
+    if args.staged_json and os.path.exists(args.staged_json):
+        with open(args.staged_json) as fh:
+            staged = json.load(fh)
+
+    p = describe(image, args.repo or repo_root(), staged, args.label)
+    if not args.quiet:
+        print(render(p))
+    if args.json:
+        os.makedirs(os.path.dirname(os.path.abspath(args.json)), exist_ok=True)
+        with open(args.json, "w") as fh:
+            json.dump(p, fh, indent=2)
+    if args.md:
+        os.makedirs(os.path.dirname(os.path.abspath(args.md)), exist_ok=True)
+        with open(args.md, "w") as fh:
+            fh.write(markdown(p))
+    if args.require_match and p["verdict"] in ("UNACCOUNTED", "missing",
+                                               "receipt-corrected",
+                                               "receipt-dirty-volume"):
+        return 3
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

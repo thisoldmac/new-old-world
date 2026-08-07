@@ -326,6 +326,10 @@ public final class AgentIntegrationLocalServer {
                 response = .init(
                     requestID: request.requestID,
                     mirrorDriveResult: result)
+            case .mirrorOpen(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    mirrorOpenResult: result)
             case .stream(let result):
                 response = .init(
                     requestID: request.requestID,
@@ -350,6 +354,10 @@ public final class AgentIntegrationLocalServer {
                 response = .init(
                     requestID: request.requestID,
                     textSetResult: result)
+            case .observeElements(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    observeElementsResult: result)
             case .notImplemented(let unavailable):
                 response = .init(
                     requestID: request.requestID,

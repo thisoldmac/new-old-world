@@ -39,4 +39,21 @@
 void now_scene_collect(NowScene *out, long seq,
                        unsigned long stale_after_ticks);
 
+/* Notes who is in front, for the cross-application layer ledger
+   (front_order.h). ONE front sample — the processes family's, through
+   `now_proc_roster_front` — and idempotent while nothing changes.
+
+   Called from the main event loop rather than from now_scene_collect,
+   and that is the whole point: layer order is a sequence of TRANSITIONS
+   and no API hands one back, so it exists only for an application that
+   was watching when it happened. Sampling it at collection time would
+   see the machine as it is at that instant and miss every application
+   that came forward and went back between two scenes - which, on a
+   mirror the host is driving, is most of them.
+
+   Costs a trap per pass. Deliberate: this loop already sleeps a tick to
+   yield, and the alternative is a scene that reports a stacking order it
+   guessed. */
+void now_scene_note_front_process(void);
+
 #endif /* NOW_SCENE_COLLECT_H */

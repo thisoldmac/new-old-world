@@ -294,6 +294,11 @@ public struct AgentIntegrationLocalClient: Sendable {
             preconditionFailure("A Mirror read names its intention")
         case .mirrorDrive:
             preconditionFailure("A Mirror drive names its gesture")
+        case .mirrorOpen:
+            /* Beside `transferCancel` and `machineFacts` above: the
+               operation says only its own name, so a bare one IS the
+               whole request. */
+            return try await send(.mirrorOpen())
         case .stream:
             preconditionFailure(
                 "A stream request says which of its three intentions it is")
@@ -302,6 +307,16 @@ public struct AgentIntegrationLocalClient: Sendable {
                shaped to make unspellable, so there is no bare form of any
                of the five to fall through to here. */
             preconditionFailure("An act names what it acts on")
+        case .observeElements:
+            /* The walk HAS a bare form — no serial means the frontmost
+               application — and it is deliberately not spelled here. This
+               switch is the sender for operations that take nothing at all;
+               routing the observation through it would make "the frontmost"
+               the shape a caller gets by not thinking, when it is the one
+               choice on this lane that should be typed out. */
+            preconditionFailure(
+                "An observation says which process it walks, or says "
+                    + "frontmost by passing nil")
         }
     }
 
@@ -504,6 +519,16 @@ public struct AgentIntegrationLocalClient: Sendable {
         return result
     }
 
+    public func mirrorOpen() async throws
+        -> AgentIntegrationMirrorOpenResult {
+        let response = try await send(.mirrorOpen())
+        guard let result = response.mirrorOpenResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no Mirror open result")
+        }
+        return result
+    }
+
     // MARK: - The act lane
 
     public func windowAct(_ act: AgentIntegrationWindowActRequest)
@@ -553,6 +578,19 @@ public struct AgentIntegrationLocalClient: Sendable {
         guard let result = response.textSetResult else {
             throw AgentIntegrationLocalTransportError.invalidMessage(
                 "Local response had no text set result")
+        }
+        return result
+    }
+
+    /// The walk that mints what the five acts above address. Nil aims it at
+    /// the frontmost application — a default for the WALK, never for an act.
+    public func observeElements(
+        process: AgentIntegrationProcessSerial?
+    ) async throws -> AgentIntegrationElementObservationResult {
+        let response = try await send(.observeElements(process: process))
+        guard let result = response.observeElementsResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no element observation")
         }
         return result
     }
@@ -617,6 +655,20 @@ public struct AgentIntegrationLocalClient: Sendable {
                    15 s bound, so the caller reads a typed refusal rather
                    than a broken socket. */
                 timeout = launchReceiveTimeout
+            case .observeElements:
+                /* THE WALK, and it gets the act lane's window rather than
+                   the read-only one — for a different reason than the acts
+                   next door, which is why it is its own case.
+                   An act waits on the target application to pump; a walk
+                   waits on nothing and returns from the guest's own code.
+                   What it spends instead is WORK: it binds a process
+                   through the anchor oracle and reads foreign memory
+                   window by window, control by control, minting a
+                   reference for each, and `all` scope does that for every
+                   process on the machine. On a 68030 that is seconds of a
+                   guest working exactly as intended, and the two-second
+                   idle bound would report it as a broken socket. */
+                timeout = launchReceiveTimeout
             case .bringToFront, .guestFileMutation,
                  .transferCancel, .guestLogTail, .machineFacts,
                  .revealItem:
@@ -624,6 +676,13 @@ public struct AgentIntegrationLocalClient: Sendable {
                    and back inside its own watchdog: a `file.result` is one
                    reply, and a front is a couple of seconds of the guest
                    yielding. */
+                timeout = readOnlyReceiveTimeout
+            case .mirrorOpen:
+                /* The read-only window, but for the opposite reason to
+                   the branch above: this one reaches NO guest. It opens a
+                   window on THIS Mac and answers immediately — a longer
+                   bound could only hide a host that had stopped answering
+                   its own socket. */
                 timeout = readOnlyReceiveTimeout
             case .census:
                 /* A census PAGE is bounded at 16 rows and the page is not

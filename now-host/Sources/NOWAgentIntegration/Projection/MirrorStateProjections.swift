@@ -34,8 +34,13 @@ private enum MirrorStateProjectionSchema {
 
 private enum MirrorStateProjectionReach {
     static let faces: [HostCapabilityFace: HostFaceReach] = [
-        .appUI: .reached(file: "NOWMirrorWindow.swift",
-                         symbol: "LiveMirrorView(controller: source)"),
+        /* **The pane, not the window.** These rows read the state engine
+           the Mirror's poll fills, and the app's face on it is now the
+           Mirror module's own surface — one view drawn in two containers,
+           so naming the container would name the lesser half. The window
+           hosts this same view; the view is the face. */
+        .appUI: .reached(file: "MirrorPaneView.swift",
+                         symbol: "LiveMirrorView(controller: source"),
         .mcp: .reachedByRegistry,
         .appIntents: .appIntentsFaceNotBuiltYet,
     ]
@@ -249,6 +254,62 @@ public enum MirrorDriveProjection: HostProjection {
     }
 }
 
+/// **Opening the Mirror on an already-running host.**
+///
+/// The row that closes the gap every other Mirror row assumed away: the
+/// four reads and the drive all address a window that already exists,
+/// and until this landed the only ways to make one exist were a click on
+/// this Mac and `--open-mirror` at launch. A headless caller had neither,
+/// and the gap was closed in practice by scripting macOS accessibility to
+/// press the button on somebody's desktop — a missing affordance that
+/// became a documented habit.
+///
+/// It sends the classic Mac NOTHING. The only row on this surface whose
+/// whole effect is on the modern machine; `now_reveal_item` is the
+/// closest relative and still crosses the wire.
+///
+/// Not read-only, and not destructive either: opening a window loses no
+/// work. Idempotent because asking twice leaves exactly one Mirror in
+/// front of you — the already-open case raises it and says so.
+public enum MirrorOpenProjection: HostProjection {
+    public static let capability = HostCapabilityID("now_mirror_open")
+    public static let requires: [String] = []
+    public static let exposes: [String] = []
+    public static let acceptedArguments: Set<String> = []
+    public static let faces: [HostCapabilityFace: HostFaceReach] = [
+        .appUI: .reached(file: "MainMenu.swift",
+                         symbol: "item(\"Show Mirror\", actions.showMirror"),
+        .mcp: .reachedByRegistry,
+        .appIntents: .appIntentsFaceNotBuiltYet,
+    ]
+    public static let availabilityNote =
+        "Opens the native Mirror window on the host, or raises it if it "
+        + "is already open. Sends the guest nothing; refused when no Mac "
+        + "is connected, because a Mirror with nothing behind it "
+        + "publishes an empty state no call can get out of."
+    public static var mcpDescriptor: [String: Any] {
+        MirrorStateProjectionSchema.descriptor(
+            title: "New Old World Open Mirror",
+            description: "Opens the native Mirror window on the running New Old World host, or raises it if it is already open, and starts its poll. Call this before the other now_mirror_* rows on a host that was launched without --open-mirror: they read a state engine that only runs while the window is open. Takes no arguments and sends the classic Mac nothing.",
+            properties: [:],
+            annotations: [
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": false,
+            ])
+    }
+    public static func invoke(_ arguments: HostProjectionArguments,
+                              through client: AgentIntegrationClient) async
+        -> HostProjectionOutcome {
+        if let refusal = arguments.refusalForUnknownMembers(
+            tool: capability, accepting: acceptedArguments) {
+            return .invalidArguments(refusal)
+        }
+        return .value(.init(await client.mirrorOpen()))
+    }
+}
+
 public enum MirrorSnapshotProjection: HostProjection {
     public static let capability = HostCapabilityID("now_mirror_snapshot")
     public static let requires: [String] = []
@@ -259,7 +320,7 @@ public enum MirrorSnapshotProjection: HostProjection {
     public static var mcpDescriptor: [String: Any] {
         MirrorStateProjectionSchema.descriptor(
             title: "New Old World Mirror Snapshot",
-            description: "Returns the immutable state projection the native Mirror reads: snapshot and session identity, digest, coverage, freshness, stable process/window entities, guest-provided menubar rows, and per-window surfaces — geometry, controls, dialog items, Finder items, and the content plane's QuickDraw draw ops for replay. Bounded lists always report their true total (itemTotal, displayTotal, contentTotal) beside what was returned.",
+            description: "Returns the immutable state projection the native Mirror reads: snapshot and session identity, digest, coverage, freshness, stable process/window entities (each process carrying `presence`: `headless` for a process that declares it has no user interface, `windowed`, `empty` when we looked and it has no windows open right now, and `unknown` — with `presenceReason` — when we did not or could not establish it), guest-provided menubar rows, and per-window surfaces — geometry, controls, dialog items, Finder items, and the content plane's QuickDraw draw ops for replay. Bounded lists always report their true total (itemTotal, displayTotal, contentTotal) beside what was returned.",
             properties: [:])
     }
     public static func invoke(_ arguments: HostProjectionArguments,

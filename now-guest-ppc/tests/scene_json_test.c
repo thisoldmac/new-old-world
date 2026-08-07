@@ -40,6 +40,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "control_cdef.h"
 #include "scene.h"
 
 static int g_failures;
@@ -67,6 +68,23 @@ static void check_present(const char *json, const char *fragment)
         fprintf(stderr, "FAIL: missing %s\n", fragment);
         ++g_failures;
     }
+}
+
+/* How many times a fragment appears. Presence is not enough where the
+   claim is "exactly one of these controls reached that word": a test
+   that only asked whether `known` appeared would pass with all five
+   promoted. */
+static int count_of(const char *json, const char *fragment)
+{
+    int n = 0;
+    const char *p = json;
+    size_t len = strlen(fragment);
+
+    while ((p = strstr(p, fragment)) != NULL) {
+        ++n;
+        p += len;
+    }
+    return n;
 }
 
 /* Brackets balance outside strings, and no string is left open. Not a
@@ -414,6 +432,78 @@ static void test_verdicts_reach_the_wire(void)
     (void)now_scene_encode(&s, out, sizeof out, NULL);
     check_present(out, "\"error\":\"ax_oracle_stale\"");
     check_present(out, "\"title\":\"Doc\"");
+}
+
+/* The declaration reaches the wire, and the error word it replaces does
+   not. `backgroundOnly` is present only when TRUE - absence means the
+   process declared nothing, which is NOT the same claim as "we know it
+   has a face", and an emitted `false` would make it one. */
+static void test_headless_reaches_the_wire(void)
+{
+    NowScene s;
+    char out[8192];
+    int p;
+
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    p = now_scene_add_process(&s, 0, 31, "Folder Actions", 0, 0,
+                              kNowSceneAnchorNotFound, 0);
+    (void)now_scene_add_process(&s, 0, 32, "SimpleText", 0, 0,
+                                kNowSceneAnchorNotFound, 0);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_present(out, "\"error\":\"ax_oracle_not_found\"");
+    check_absent(out, "backgroundOnly");
+    check_present(out, "\"reason\":\"not-observed\"");
+
+    now_scene_set_process_background_only(&s, p, 1);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_present(out, "\"backgroundOnly\":true");
+    check_absent(out, "\"backgroundOnly\":false");
+    /* The row that declared it drops the error; the row beside it, which
+       has a face and the same verdict, keeps it. One scene, both states,
+       so a mutation that suppresses the token globally is visible here. */
+    check_present(out, "\"error\":\"ax_oracle_not_found\"");
+    check_present(out, "\"SimpleText: ax_oracle_not_found\"");
+    check_absent(out, "Folder Actions: ");
+    /* Same coverage STATUS - we did not enumerate either - and a
+       different reason, because one gap is the machine working. */
+    check_present(out, "\"reason\":\"no-ui\"");
+    check_present(out, "\"reason\":\"not-observed\"");
+    check(well_formed(out), "still valid JSON");
+
+    /* STATE 2, and the one claim that makes it reportable at all.
+     *
+     * `backgroundOnly` is true-only on the wire - 40 rows across two
+     * arrays of `,"backgroundOnly":false` is 1.8 KB against a 64 KB
+     * ceiling this scene already nearly touches - so an absent key
+     * cannot, by itself, tell "this process has a face" from "this
+     * producer never heard of the question". A consumer that cannot tell
+     * those apart can never report EMPTY (we looked, there are none) and
+     * must say UNKNOWN forever, which loses exactly the middle state.
+     *
+     * The `process-kind` coverage claim answers it once for the whole
+     * roster: complete means every row's kind was read, so an absent key
+     * means a face. Its default is `unavailable` - a producer that never
+     * establishes kinds says so, and absence stays unknown. */
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    (void)now_scene_add_process(&s, 0, 33, "SimpleText", 0, 0,
+                                kNowSceneAnchorNoWindows, 0);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_absent(out, "backgroundOnly");
+    check_absent(out, "ax_oracle_not_found");
+    check_present(out, "\"scope\":\"process-kind\",\"status\":\"unavailable\"");
+
+    now_scene_set_process_kind_coverage(&s, kNowSceneCoverageComplete);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_present(out, "\"scope\":\"process-kind\",\"status\":\"complete\"");
+    check_absent(out, "backgroundOnly");
+
+    /* A roster with an unreadable process is PARTIAL: the rows that are
+       here had their kinds read, and a consumer is told the roster is
+       not the whole story rather than being handed a silent gap. */
+    now_scene_set_process_kind_coverage(&s, kNowSceneCoveragePartial);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_present(out, "\"scope\":\"process-kind\",\"status\":\"partial\"");
+    check(well_formed(out), "still valid JSON");
 }
 
 static void test_truncation_shows_up_in_meta(void)
@@ -859,7 +949,13 @@ static void test_proven_control_roles_keep_their_semantics(void)
                        "\"value\":\"8-bit\"");
     check_present(out, "\"kind\":\"progressIndicator\","
                        "\"value\":\"35\"");
-    check_present(out, "\"kind\":\"listBox\",\"value\":\"Rome\","
+    /* `action` is here as of 2026-08-07 and its absence was most of why
+       a list "rendered and could not be used": with no action,
+       `authorizesAction` is false and every driver declines before it
+       ever reaches the act plane. A list row answers to a click at a
+       POINT, which is what `ctlact`'s h and v now carry. */
+    check_present(out, "\"kind\":\"listBox\",\"action\":\"press\","
+                       "\"value\":\"Rome\","
                        "\"listCells\":[{\"row\":1,\"column\":0,"
                        "\"text\":\"Rome\",\"selected\":true},"
                        "{\"row\":1,\"column\":1,\"text\":\"Italy\","
@@ -924,6 +1020,185 @@ static void test_unproven_controls_are_unknown_and_unactionable(void)
     check_present(out, "\"semantic\":{\"knowledge\":\"unknown\"");
     check_absent(out, "\"action\":\"press\"");
     check_absent(out, "\"action\":\"scroll\"");
+}
+
+/* An unclassified control says WHY nobody could classify it.
+ *
+ * Measured on the emulator, 2026-08-07, OS 9.1 with the resident active:
+ * of the Appearance control panel's 73 controls, 62 came back
+ * "Unsupported custom control" (the resident asked the Control Manager
+ * for kControlKindTag and it declined), 5 "Semantic classification
+ * unavailable", 4 were never reached by the batch drain at all, and 2
+ * classified as list boxes. Before this, all 71 of the first three
+ * groups reached the host as an identical bare `unknown` - so a refusal
+ * by the machine, a miss by the drain and a question never asked were
+ * indistinguishable, and the guest's own diagnosis of its own gap was
+ * computed and then dropped by the encoder.
+ *
+ * Two things are pinned, and the second is the one that matters. The
+ * reason is EMITTED beside an unknown kind. And it never promotes that
+ * kind: `knowledge` stays "unknown" and no `action` appears, because a
+ * control we can now describe the failure of is still a control nobody
+ * has identified. */
+static void test_an_unknown_kind_carries_the_reason_it_is_unknown(void)
+{
+    NowScene s;
+    char out[8192];
+    int p;
+
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    p = now_scene_add_process(&s, 0, 9, "Appearance", 0x61706370UL, 1,
+                              kNowSceneAnchorOk, 0);
+    (void)now_scene_add_window(&s, p, "Appearance", 30, 40, 200, 400, 1);
+
+    /* 0 refused by the Control Manager, 1 refused for another reason,
+       2 never reached by the drain, 3 refused AND later identified. */
+    (void)now_scene_add_control(&s, 0, "", 85, 70, 101, 152, 1, 1, 0, 0, 1);
+    (void)now_scene_add_control(&s, 0, "", 105, 70, 121, 152, 1, 1, 0, 0, 1);
+    (void)now_scene_add_control(&s, 0, "", 125, 70, 141, 152, 1, 1, 0, 0, 1);
+    (void)now_scene_add_control(&s, 0, "Set Desktop", 145, 70, 161, 152,
+                                1, 1, 0, 0, 1);
+    now_scene_set_control_definition(&s, 0, 0, 1);   /* System */
+    now_scene_set_control_definition(&s, 0, 1, 1);
+    now_scene_set_control_definition(&s, 0, 2, 1);
+    now_scene_set_control_semantic_value(&s, 0, 0,
+                                         "Unsupported custom control");
+    now_scene_set_control_semantic_value(&s, 0, 1,
+                                         "Semantic classification "
+                                         "unavailable");
+    /* Index 2 gets nothing at all: the drain never reached it, and that
+       is a THIRD state, not a spelling of either refusal. It must stay
+       distinguishable, so no reason key may be invented for it. */
+    now_scene_set_control_semantic_value(&s, 0, 3,
+                                         "Unsupported custom control");
+    now_scene_set_control_role(&s, 0, 3, "button");  /* ...then identified */
+
+    check(now_scene_encode(&s, out, sizeof out, NULL) == kNowSceneEncodeOk,
+          "the panel encodes");
+
+    check_present(out, "\"knowledge\":\"unknown\",\"definition\":\"system\","
+                       "\"value\":\"Unsupported custom control\"");
+    check_present(out, "\"knowledge\":\"unknown\",\"definition\":\"system\","
+                       "\"value\":\"Semantic classification unavailable\"");
+    /* The never-asked control keeps its definition and gains no reason -
+       an absent key, not an empty string, per the absent-key rule. */
+    check_present(out, "\"knowledge\":\"unknown\",\"definition\":\"system\","
+                       "\"provenance\"");
+
+    /* THE CLAIM THAT MUST NOT SLIP. A reason is not a kind: nothing here
+       may become known, and nothing here may become actionable. */
+    check_absent(out, "\"knowledge\":\"unknown\",\"kind\"");
+    check(strstr(out, "\"knowledge\":\"unknown\",\"definition\":\"system\","
+                      "\"action\"") == NULL,
+          "a reason for an unknown kind never produces an action");
+
+    /* The identified control took the role path instead, so its reason
+       rides beside a real kind exactly as it did before. */
+    check_present(out, "\"knowledge\":\"known\",\"kind\":\"pushButton\"");
+}
+
+/* THE CDEF ROUTE, and the three states it must keep apart.
+ *
+ * The Control Manager will not name a control it did not build through a
+ * Create*Control call, which is every control in every OS 9 control
+ * panel: measured 2026-08-07, Appearance answered 2 of 73 and Date &
+ * Time 0 of 21. The Resource Manager will still name the CDEF that draws
+ * one, and that is a THIRD thing - stronger than "the definition came
+ * from the system heap", weaker than the control's own word.
+ *
+ * What is pinned here:
+ *
+ * - A named, attributable CDEF produces `knowledge":"derived` with its
+ *   own provenance, an action, and a kind. Not `known`: laundering it
+ *   would leave a reader unable to tell which of the two it received,
+ *   and the whole point of the split is that a caller can decline.
+ * - A named CDEF this guest will not attribute produces NOTHING - the
+ *   control stays unknown, exactly as if the lookup had failed. This is
+ *   the "it is probably the scroll bar one" line, and it is the one a
+ *   future edit is most likely to cross.
+ * - An unattempted lookup and a failed one both stay unknown, and the
+ *   reason plane is untouched by any of it.
+ *
+ * `role` outranks all of it: a control that told us what it is is not
+ * re-decided from the identity of the code that draws it. */
+static void test_a_cdef_id_is_derived_and_not_known(void)
+{
+    NowScene s;
+    char out[8192];
+    int p;
+
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    p = now_scene_add_process(&s, 0, 9, "Appearance", 0x61706370UL, 1,
+                              kNowSceneAnchorOk, 0);
+    (void)now_scene_add_window(&s, p, "Appearance", 30, 40, 200, 400, 1);
+
+    (void)now_scene_add_control(&s, 0, "", 85, 70, 101, 152, 1, 1, 7, 0, 100);
+    (void)now_scene_add_control(&s, 0, "", 105, 70, 121, 152, 1, 1, 2, 0, 8);
+    (void)now_scene_add_control(&s, 0, "", 125, 70, 141, 152, 1, 1, 0, 0, 1);
+    (void)now_scene_add_control(&s, 0, "", 145, 70, 161, 152, 1, 1, 0, 0, 1);
+    (void)now_scene_add_control(&s, 0, "Set Desktop", 165, 70, 181, 152,
+                                1, 1, 0, 0, 1);
+    now_scene_set_control_definition(&s, 0, 0, 1);   /* System, all five */
+    now_scene_set_control_definition(&s, 0, 1, 1);
+    now_scene_set_control_definition(&s, 0, 2, 1);
+    now_scene_set_control_definition(&s, 0, 3, 1);
+    now_scene_set_control_definition(&s, 0, 4, 1);
+
+    /* 0: CDEF 24 variant 0 - kControlScrollBarProc, procID 384. */
+    now_scene_set_control_cdef(&s, 0, 0, kNowCdefNamed, 24, 0);
+    /* 1: CDEF 8 variant 1 - kControlTabSmallProc, procID 129. */
+    now_scene_set_control_cdef(&s, 0, 1, kNowCdefNamed, 8, 1);
+    /* 2: CDEF 15 - the clock. DOCUMENTED, and deliberately unmapped:
+       this product has no honest role for it, so the answer is nothing
+       rather than something nearby. */
+    now_scene_set_control_cdef(&s, 0, 2, kNowCdefNamed, 15, 0);
+    /* 3: asked, and the handle is in no resource map. */
+    now_scene_set_control_cdef(&s, 0, 3, kNowCdefUnnamed, 0, 0);
+    now_scene_set_control_semantic_value(&s, 0, 3,
+                                         "Unsupported custom control");
+    /* 4: a CDEF id AND a role. The role wins, whole. */
+    now_scene_set_control_cdef(&s, 0, 4, kNowCdefNamed, 24, 0);
+    now_scene_set_control_role(&s, 0, 4, "button");
+
+    check(now_scene_encode(&s, out, sizeof out, NULL) == kNowSceneEncodeOk,
+          "the panel encodes");
+
+    check_present(out, "\"knowledge\":\"derived\",\"kind\":\"scrollBar\","
+                       "\"action\":\"scroll\","
+                       "\"provenance\":\"guest-cdef-resource\","
+                       "\"completeness\":\"complete\"");
+    /* THE NUMBER RIDES `value`, NEVER `semantic.value`. A CDEF id names a
+       KIND and reads nothing of a control's contents, so this branch has
+       nothing to say about them - and `semantic.value` is the control's
+       own WORDS, which every consumer draws as text. Emitting
+       GetControlValue into it published the integer 0 as the text of
+       every static field and every user pane; Appearance's root pane came
+       back captioned "0" and, being last in the chain, painted an
+       unavailable plate over all six tabs. Watched on the emulator
+       2026-08-07 before this line existed. */
+    check_present(out, "\"value\":7");
+    check_absent(out, "\"value\":\"7\"");
+    check_present(out, "\"knowledge\":\"derived\",\"kind\":\"tab\","
+                       "\"action\":\"press\"");
+    /* The legacy role field carries it too - it is documented as the
+       approximation a v1 renderer draws from, and "the Toolbox runs the
+       scroll bar CDEF for this" is a better approximation than the word
+       unknown. */
+    check_present(out, "{\"role\":\"scrollbar\"");
+    check_present(out, "{\"role\":\"tab\"");
+
+    /* THE LINE. A documented id with no honest role says nothing, and it
+       must not quietly become the nearest thing. */
+    check_absent(out, "\"kind\":\"clock\"");
+    check_present(out, "\"knowledge\":\"unknown\",\"definition\":\"system\","
+                       "\"provenance\"");
+    /* And a derived kind is never spelled `known`: exactly one control
+       here reached that word, and it is the one that carried a role. */
+    check(count_of(out, "\"knowledge\":\"known\"") == 1,
+          "only the control with a role is known");
+    check_present(out, "\"knowledge\":\"known\",\"kind\":\"pushButton\"");
+    /* The unnamed lookup keeps the reason plane exactly as it was. */
+    check_present(out, "\"value\":\"Unsupported custom control\"");
 }
 
 /* `definition` says WHERE a control's definition function came from, and
@@ -1112,11 +1387,164 @@ static void test_dialog_items_carry_v2_semantics(void)
     }
 }
 
+/* A SILENT WINDOW MUST NAME ITSELF.
+ *
+ * `controls: []` is required by the IR and is emitted both for a window
+ * with no controls and for one whose walk was dropped. The scene-wide
+ * "controls omitted" note above says a plane was lost SOMEWHERE; it
+ * names no window, so a driving agent meeting an empty list on a panel
+ * it can see six tabs in cannot tell an empty window from an unread one.
+ * Measured on the Appearance control panel, 2026-08-07: zero controls,
+ * zero dialog items, and nothing in the scene naming it. */
+static void test_a_dropped_window_plane_names_its_window(void)
+{
+    NowScene s;
+    char out[16384];
+    int p;
+
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    p = now_scene_add_process(&s, 0, 1, "Appearance", 0, 1,
+                              kNowSceneAnchorOk, 0);
+    (void)now_scene_add_window(&s, p, "Appearance", 0, 0, 10, 10, 1);
+    (void)now_scene_add_window(&s, p, "Empty By Nature", 0, 0, 10, 10, 1);
+    (void)now_scene_open_controls(&s, 1);      /* walked, and has none */
+
+    (void)now_scene_add_control(&s, 0, "Themes", 0, 0, 5, 5, 1, 1, 0, 0, 1);
+    now_scene_retract_controls(&s, 0);
+
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_present(out, "Appearance: control chain hit a bound");
+    check(well_formed(out), "a named retraction is still valid JSON");
+
+    /* ...and the window that was walked and legitimately has none must
+       NOT be accused of anything. Two empty arrays, one note. */
+    check_absent(out, "Empty By Nature:");
+
+    /* A window whose RECORD would not validate is a different errand
+       from one whose control chain broke, and says so. */
+    now_scene_note_window_unreadable(&s, 1);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_present(out, "Empty By Nature: window record failed validation");
+}
+
+/* meta.theme, and the three states a colour has: measured, refused,
+ * never asked. The last two used to be the same state - a constant - and
+ * the whole point of the key is that they are not.
+ *
+ * Watched failing by mutation 2026-08-07: setting `dialog_background`
+ * back to a literal in put_theme fails the alert assertion; removing the
+ * `< 0` guard in put_theme_key makes the refused-key case emit
+ * `#FFFFFF`; dropping the all-negative early return in put_theme makes
+ * the never-asked case emit `"theme":{}`. */
+static void test_theme_colours_reach_the_wire(void)
+{
+    NowScene s;
+    NowSceneTheme t;
+    char out[16384];
+
+    /* NEVER ASKED. A producer that does not call now_scene_set_theme
+       emits no `theme` at all - not an empty object, which would say
+       "asked, and this machine names no colours". */
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_absent(out, "\"theme\"");
+
+    /* ASKED AND ANSWERED. Four distinct colours, so a test that passed
+       by emitting the same one four times cannot. */
+    t.dialog_background = 0xDDDDDDL;
+    t.alert_background = 0xEEEEEEL;
+    t.document_background = 0xFFFFFFL;
+    t.highlight = 0xCCCCFFL;
+    t.depth = 16;
+    now_scene_set_theme(&s, &t);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_present(out, "\"theme\":{");
+    check_present(out, "\"dialogBackground\":\"#DDDDDD\"");
+    check_present(out, "\"alertBackground\":\"#EEEEEE\"");
+    check_present(out, "\"documentBackground\":\"#FFFFFF\"");
+    check_present(out, "\"highlight\":\"#CCCCFF\"");
+    check_present(out, "\"depth\":16");
+    check(well_formed(out), "a scene carrying theme colours is valid JSON");
+
+    /* BLACK IS A COLOUR, and it is the one that must survive the round
+       trip, because 0 is what an uninitialised struct holds. If black
+       ever reads as absent then "the machine said black" and "nobody
+       asked" have collapsed back into one state. */
+    t.dialog_background = 0x000000L;
+    t.alert_background = -1;
+    t.document_background = -1;
+    t.highlight = -1;
+    t.depth = -1;
+    now_scene_set_theme(&s, &t);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_present(out, "\"dialogBackground\":\"#000000\"");
+
+    /* A REFUSED ASK IS AN ABSENT KEY, never a substituted colour. */
+    check_absent(out, "alertBackground");
+    check_absent(out, "documentBackground");
+    /* `"depth":` with the colon, because meta.coverage carries a SCOPE
+       spelled "depth" - the cross-application ordering claim - and a
+       bare substring search finds that instead. */
+    check_absent(out, "\"depth\":");
+    check(well_formed(out), "a partly-refused theme is valid JSON");
+
+    /* A VALUE THAT CANNOT HAVE COME FROM THE NARROWING is rejected to
+       absent rather than masked into a plausible colour. */
+    t.dialog_background = 0x1FFFFFFL;
+    now_scene_set_theme(&s, &t);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_absent(out, "\"theme\"");
+}
+
+/* THE ORDER LEDGER'S EVICTIONS, on the wire.
+ *
+ * front_order.c has counted them since it was written, for a reason it
+ * states in its own header: an absent rank because we FORGOT a process
+ * and an absent rank because we never SAW it are different facts. The
+ * count stayed inside the guest, so only the second one was readable -
+ * the empty/unknown conflation, in the one plane whose subject is order.
+ *
+ * Watched failing by mutation 2026-08-07: passing 0 instead of
+ * `s->depth_evicted` at the `depth` call site drops the key; dropping
+ * the `evicted != 0` guard puts it on every claim in every scene. */
+static void test_the_order_ledger_says_what_it_forgot(void)
+{
+    NowScene s;
+    char out[16384];
+
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    now_scene_set_depth_coverage(&s, kNowSceneCoveragePartial);
+
+    /* NOTHING FORGOTTEN is the ordinary case, and it costs no key. */
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_absent(out, "evicted");
+
+    now_scene_set_depth_evicted(&s, 3);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_present(out, "\"scope\":\"depth\",\"status\":\"partial\","
+                  "\"reason\":\"bounded\",\"evicted\":3");
+    check(well_formed(out), "an evicting scene is still valid JSON");
+
+    /* AND ONLY THE `depth` CLAIM CARRIES ONE. It is the only scope with
+       a bounded ledger behind it; a count on `processes` would be a
+       number nothing produced. */
+    {
+        const char *p = strstr(out, "\"evicted\"");
+
+        check(p != NULL && strstr(p + 1, "\"evicted\"") == NULL,
+              "exactly one coverage claim carries an eviction count");
+    }
+}
+
 int main(void)
 {
+    test_the_order_ledger_says_what_it_forgot();
+    test_theme_colours_reach_the_wire();
     test_coverage_and_incarnation_reach_the_wire();
     test_proven_control_roles_keep_their_semantics();
     test_unproven_controls_are_unknown_and_unactionable();
+    test_an_unknown_kind_carries_the_reason_it_is_unknown();
+    test_a_cdef_id_is_derived_and_not_known();
     test_definition_is_not_a_kind();
     test_dialog_items_carry_v2_semantics();
     test_a_control_without_a_reference_still_carries_the_key();
@@ -1125,7 +1553,9 @@ int main(void)
     test_conditional_planes();
     test_reference_plane();
     test_retractions_are_reported();
+    test_a_dropped_window_plane_names_its_window();
     test_verdicts_reach_the_wire();
+    test_headless_reaches_the_wire();
     test_truncation_shows_up_in_meta();
     test_overflow_fails_closed();
     test_escaping();

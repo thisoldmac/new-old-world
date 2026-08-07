@@ -73,13 +73,11 @@ NOW = os.path.abspath(os.path.join(HERE, ".."))
 # Normally NOW's parent — but not from a git worktree, which sits several
 # levels deeper and whose parent has no tools/ in it at all. Walk up to the
 # checkout that has the instruments.
-LAB = os.environ.get("NOW_LAB_ROOT")
-if not LAB:
-    LAB = NOW
-    while LAB != "/" and not os.path.isdir(os.path.join(LAB, "mcp-classic")):
-        LAB = os.path.dirname(LAB)
-sys.path.insert(0, os.path.join(LAB, "mcp-classic"))
-from timbottu_mcp_classic.harness import Harness, HarnessError  # noqa: E402
+sys.path.insert(0, HERE)
+from lab_root import find_lab, import_harness  # noqa: E402
+
+LAB = find_lab() or NOW
+Harness, HarnessError = import_harness("have anything staged onto it")
 
 EXTENSIONS = "Macintosh HD:System Folder:Extensions"
 DEV = os.environ.get("NOW_GUEST_DIR", "Macintosh HD:TimBotTu:now-dev")

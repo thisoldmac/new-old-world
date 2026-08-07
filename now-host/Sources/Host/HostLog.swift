@@ -20,7 +20,9 @@ final class HostLog: ObservableObject {
     /// The scrollback the Logs page reads, oldest first, capped so a busy
     /// run cannot grow it without bound. Mirrors the guest's ring size.
     @Published private(set) var lines: [Line] = []
-    private static let ringCap = 2000
+    /// Readable by tests, which otherwise have to assert the ring's
+    /// behaviour against a number they have hardcoded a second time.
+    static let ringCapacity = 2000
 
     /// Whether a line also reaches the file. Reflects the ACTUAL state — a
     /// failed open leaves it false — so the Logs switch cannot claim a
@@ -59,8 +61,8 @@ final class HostLog: ObservableObject {
 
         lines.append(Line(id: nextID, text: body))
         nextID += 1
-        if lines.count > Self.ringCap {
-            lines.removeFirst(lines.count - Self.ringCap)
+        if lines.count > Self.ringCapacity {
+            lines.removeFirst(lines.count - Self.ringCapacity)
         }
 
         if let handle {

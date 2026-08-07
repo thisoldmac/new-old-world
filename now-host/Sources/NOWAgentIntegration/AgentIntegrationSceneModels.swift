@@ -101,13 +101,24 @@ public struct NOWSceneDocument: Codable, Equatable, Sendable {
         public var psn: String
         public var name: String
         public var front: Bool
+        /// The process's own declaration that it has no user interface
+        /// (`modeOnlyBackground`). `nil` means the producer did not say —
+        /// which is NOT the same claim as "this process has a face".
+        ///
+        /// It is here because an agent driving the machine needs the
+        /// distinction as much as a renderer does: "this process has no UI
+        /// by design" is the difference between a normal machine and a
+        /// broken one, and it used to arrive as `ax_oracle_not_found`.
+        public var backgroundOnly: Bool?
         public var error: String?
 
         public init(psn: String, name: String, front: Bool,
+                    backgroundOnly: Bool? = nil,
                     error: String? = nil) {
             self.psn = psn
             self.name = name
             self.front = front
+            self.backgroundOnly = backgroundOnly
             self.error = error
         }
     }
@@ -121,13 +132,17 @@ public struct NOWSceneDocument: Codable, Equatable, Sendable {
         /// inventing four characters — and is not the same as the key being
         /// absent, which would mean this producer does not report it.
         public var signature: String?
+        /// See `AppRef.backgroundOnly`.
+        public var backgroundOnly: Bool?
 
         public init(psn: String, name: String, front: Bool,
-                    signature: String? = nil) {
+                    signature: String? = nil,
+                    backgroundOnly: Bool? = nil) {
             self.psn = psn
             self.name = name
             self.front = front
             self.signature = signature
+            self.backgroundOnly = backgroundOnly
         }
     }
 

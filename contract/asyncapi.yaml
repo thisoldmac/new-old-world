@@ -302,6 +302,8 @@ channels:
       chatReset: { $ref: "#/components/messages/chatReset" }
       previewBegin: { $ref: "#/components/messages/previewBegin" }
       previewEnd: { $ref: "#/components/messages/previewEnd" }
+      hostShow: { $ref: "#/components/messages/hostShow" }
+      hostShown: { $ref: "#/components/messages/hostShown" }
   bulk:
     address: "1"
     description: >
@@ -453,6 +455,100 @@ operations:
       everywhere else in this document, and the reason the guest emits
       nothing rather than zeroes when it has no clock. Eight zeroes are a
       measurement, and would be a false one.
+      WHAT COLOUR THE MACHINE DRAWS WITH, added 2026-08-07 as meta.theme
+      and additive under the accretive rule: an older host ignores the
+      key and nothing about the scene changes. Four values, each a
+      `#RRGGBB` string, each read from the LIVE Toolbox at capture time:
+      `dialogBackground` (kThemeBrushDialogBackgroundActive),
+      `alertBackground` (kThemeBrushAlertBackgroundActive),
+      `documentBackground` (kThemeBrushDocumentWindowBackground) and
+      `highlight` (the low-memory selection colour the Appearance Manager
+      keeps in step with the theme). Beside them `depth` is the screen
+      depth the brushes were ASKED AT, because a brush answers
+      differently at 8 bits than at 32 and a colour with no depth beside
+      it cannot be checked against a screendump of the same screen.
+      WHY IT IS ON THE WIRE AT ALL. A renderer redrawing these windows
+      has to fill the same faces the guest's Appearance Manager filled.
+      Until this key existed the host carried them as constants — one of
+      them COUNTED OFF A SCREENDUMP (0xDDDDDD, 10149 of 11724 interior
+      pixels of one control panel) — which is correct for the shipped
+      Platinum theme and silently wrong for every other, the same defect
+      as a factory `ppat` tiled in place of the real desktop. A colour is
+      the easiest thing in this document to be confidently wrong about,
+      because nothing ever looks broken.
+      WHAT IT IS NOT. It is not the theme's whole palette and must not
+      grow into one. These four are fills the MACHINE makes and hands
+      out on request; a renderer's bevel greys, insets and hairlines are
+      that renderer's drawing of the Platinum idiom, have no producer on
+      the machine to ask, and would arrive here as guesses wearing a wire
+      format. A key belongs in meta.theme only when a Toolbox call
+      answers it.
+      AN ABSENT KEY MEANS THE ASK FAILED; AN ABSENT meta.theme MEANS THE
+      PRODUCER DID NOT ASK. Those are different facts and a consumer
+      needs them apart: the first says this machine would not name that
+      brush, the second says nobody looked. Neither is ever sent as
+      black — 0x000000 is a legal colour and so is the one value that
+      cannot double as "unknown".
+      WHAT A BOUNDED LEDGER FORGOT, added 2026-08-07 as
+      meta.coverage[].evicted and additive: an older consumer reads the
+      claim exactly as it did before. It is carried ONLY by the `depth`
+      scope, and only when nonzero.
+      The front-order ledger that makes cross-application order a fact
+      keeps a bounded number of slots, and has counted its evictions since
+      it was written — because "this process has no rank because we FORGOT
+      it" and "this process has no rank because we never SAW it come
+      forward" are different facts. That count never left the guest, so
+      only the second was readable: past the ledger's capacity a forgotten
+      process reported as never-observed. That is the empty-versus-unknown
+      conflation stated above, arriving in the one plane whose whole
+      subject is order.
+      A ZERO IS AN ABSENT KEY, not a sent zero, because nothing forgotten
+      is the ordinary case on every machine and a key on every claim in
+      every scene would cost more than it says.
+      WHAT A PROCESS IS, versus what we managed to see of it. Added
+      2026-08-07 as apps[].backgroundOnly and processes[].backgroundOnly,
+      additive: an older consumer ignores the key and nothing else moves.
+      It is the process's OWN declaration that it has no user interface -
+      modeOnlyBackground in its 'SIZE' resource, as
+      ProcessInfoRec.processMode reports it - and it is the same fact
+      ProcessListing spells `kind: "background"`. Headless, faceless and
+      background-only are one thing; `backgroundOnly` is its name here.
+      SENT ONLY WHEN TRUE. Absent means the producer did not declare it,
+      which is NOT the claim that the process has a face; a consumer that
+      needs the difference must treat absence as unknown.
+      IT IS NEVER DERIVED FROM AN EMPTY WINDOW LIST, and a consumer must
+      not derive it either. That inference cannot tell "has no user
+      interface by design" from "we failed to look", and asserting the
+      first from the second is the same defect as a confidently wrong
+      pixel. The Application menu's membership is NOT a second, independent
+      signal to cross-check it against: the Process Manager populates that
+      menu from this same bit, so agreement between them is arithmetic
+      rather than evidence.
+      THREE STATES, NOT TWO, and they used to share one error word. A
+      faceless process has no windows permanently and by design
+      (backgroundOnly). An application with a face and nothing open right
+      now has none transiently, and that is an enumeration that SUCCEEDED
+      - it arrives as no error and no windows, with this process's
+      `windows` coverage claim complete. An application whose windows we
+      could not read arrives with an apps[].error token saying which
+      failure it was. Only the third is a defect. `ax_oracle_not_found`
+      answered all three until this key existed, and a producer must no
+      longer send it for a process that declared backgroundOnly: for such
+      a process there was never an anchor to find, so its absence is the
+      machine working.
+      EMPTY AND UNKNOWN ARE DIFFERENT WORDS FOR DIFFERENT FACTS, and
+      every plane in this IR says the difference the same way. EMPTY - we
+      looked, there are none - is a fact about the MACHINE, and it is a
+      coverage claim of status `complete` over a list with nothing in it.
+      UNKNOWN - we did not, or could not, establish it - is a fact about
+      US, and it is status `unavailable` with a `reason`: `no-ui` when the
+      owning process declared backgroundOnly and there was nothing there
+      to enumerate, `not-observed` when we simply did not look. A plane
+      that can be delivered late is UNKNOWN until it arrives, not empty,
+      and it says so with these same two words rather than a third that
+      names its own mechanism. HEADLESS IS NEITHER: it is a KIND, what the
+      process is, and it is carried by backgroundOnly rather than by a
+      coverage claim.
       IR V2 COLLECTION AUTHORITY. meta.coverage[] carries a typed scope,
       optional process-incarnation owner, status, and optional reason.
       Status is complete, partial, retracted, failed, stale, or unavailable.
@@ -970,6 +1066,57 @@ operations:
       transfer. A service that cannot render one refuses not-listable —
       the same well-formed refusal an older host's silence approximates,
       which is what keeps the ask additive.
+  guestAsksHostSurface:
+    action: send
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/hostShow"
+    description: >
+      The guest asks the HOST to bring one of its own surfaces to the
+      front. One direction by DEFINITION, the cloud and chat rule: the
+      subject is a window on the modern machine, which the classic
+      machine does not have and cannot be asked for. A host never sends
+      host.show; a side that receives one it does not serve ignores it
+      like any control message it cannot decode.
+
+      ADDITIVE family, no revision bump — the cloud.services precedent.
+      Discovery is by asking: the guest sends host.show and treats
+      silence past its own deadline as a host that predates the family.
+      That is a status line, not an error.
+
+      ONE SURFACE TODAY, `mirror`, and the family is named for the
+      question rather than the answer because the question is "show me
+      something of yours" and the Mirror is only the first thing worth
+      asking for. `surface` is a closed string a host may refuse by name
+      (unknown-surface), which is what lets a newer guest ask an older
+      host for something and be told plainly.
+
+      WHY IT EXISTS AT ALL. The Mirror is the host's rendering of the
+      GUEST's screen: the person who wants it open is often sitting at
+      the classic Mac, and until this family the only way to open one in
+      an already-running host was to walk to the other machine. There is
+      no symmetric verb going the other way and there should not be —
+      the host drives the guest's windows through the act plane, which
+      is a different and much larger capability, and a `guest.show`
+      would be a second, weaker route into it.
+  hostServesHostSurface:
+    action: receive
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/hostShown"
+    description: >
+      The host's answer, exactly one per host.show, correlated by id.
+      ALWAYS answered — the unanswered-ask wedge chat.cancel was
+      hardened against, inherited here: a guest that gets no reply can
+      only guess between an old host and a lost frame, and a person who
+      pressed a button deserves a sentence either way.
+
+      ok:true means the host acted — the window is open and frontmost,
+      or was already open and has been raised. The two are deliberately
+      the same answer: the guest asked for the Mirror to be showing, and
+      it is. `reason` carries the host's own words for the human-facing
+      status line and is MacRoman-expressible, the hostServesCloud rule
+      verbatim.
 
 components:
   messages:
@@ -1198,6 +1345,12 @@ components:
     previewEnd:
       name: preview.end
       payload: { $ref: "#/components/schemas/PreviewEnd" }
+    hostShow:
+      name: host.show
+      payload: { $ref: "#/components/schemas/HostShow" }
+    hostShown:
+      name: host.shown
+      payload: { $ref: "#/components/schemas/HostShown" }
 
   schemas:
     Hello:
@@ -1653,6 +1806,49 @@ components:
         id: { type: integer }
         transfer: { type: integer }
         ok: { type: boolean }
+    HostShow:
+      type: object
+      required: [type, id, surface]
+      additionalProperties: false
+      properties:
+        type: { const: host.show }
+        id: { type: integer }
+        surface:
+          enum: [mirror]
+          description: >
+            Which of the host's own surfaces to bring to the front. A
+            closed enum with one member today; a host that does not know
+            a name answers host.shown ok:false unknown-surface rather
+            than going quiet, so a newer guest asking an older host gets
+            a sentence instead of a timeout.
+    HostShown:
+      type: object
+      required: [type, id, surface, ok]
+      additionalProperties: false
+      properties:
+        type: { const: host.shown }
+        id: { type: integer }
+        surface: { type: string }
+        ok:
+          type: boolean
+          description: >
+            true when the surface is now showing — newly opened OR
+            already open and raised. The guest asked for it to be
+            showing, and it is; distinguishing the two would make the
+            button's answer depend on something the person cannot see.
+        code:
+          enum: [unknown-surface, unavailable]
+          description: >
+            Present only when ok is false. unknown-surface is the
+            additive-registry answer, never a protocol error;
+            unavailable is the host declining for a reason of its own
+            (no Mac connected to mirror, shutting down).
+        reason:
+          type: string
+          maxLength: 120
+          description: >
+            The host's own words, converted MacRoman-expressible, for
+            the guest's status line. Shown, not swallowed.
     CloudRefuse:
       type: object
       required: [type, id, code]
@@ -2410,9 +2606,22 @@ components:
               kind:
                 enum: [application, background, finder]
                 description: >
-                  The responder's classification. background is a faceless
-                  process (no user windows or menu bar); finder is that
-                  machine's Finder/desktop.
+                  The responder's classification, from the process's OWN
+                  DECLARATION and never from a window count. `background`
+                  is a faceless (headless) process: it set
+                  modeOnlyBackground in its 'SIZE' resource, which is the
+                  Process Manager's record that it has no user interface,
+                  so it has no menu bar, does not appear in the
+                  Application menu, and is EXPECTED to own no windows.
+                  `finder` is that machine's Finder/desktop.
+                  It does not mean "not frontmost" - `front` is a separate
+                  field, and an ordinary application is background in that
+                  sense most of the time. And it is not the same claim as
+                  "we saw no windows for it": an application with a face
+                  and every document closed is `application`, because it
+                  can put a window up the moment someone asks, and a
+                  faceless process never will. Conflating those two is
+                  what once reported six healthy processes as errors.
               code:
                 type: string
                 description: >
@@ -2516,7 +2725,49 @@ components:
       properties:
         type: { const: process.result }
         id: { type: integer }
-        ok: { type: boolean }
+        ok:
+          type: boolean
+          description: >
+            THE EFFECT THIS VERB CAN ESTABLISH, never a receipt for a
+            request that was accepted. What each verb can establish
+            differs, and the difference is declared in `outcome` rather
+            than hidden here:
+
+            process.front CAN be told more, by re-reading
+            GetFrontProcess, so ok is true only when the target is
+            actually frontmost. It answered ok on SetFrontProcess
+            returning noErr until 2026-08-07 - which means the switch
+            was SCHEDULED and nothing more - so a caller that fronts a
+            process and then addresses its windows was acting on a
+            receipt.
+
+            process.quit stops at "the request was sent", because
+            nothing on this platform can tell it more: a 'quit' Apple
+            Event is one an application is free to decline or to sit on
+            behind a Save dialog. Its ok therefore means the event was
+            delivered, and its `outcome` says
+            dispatched-but-unconfirmed so that a caller reading
+            `outcome` alone is never misled.
+        outcome:
+          enum: [confirmed, dispatched-but-unconfirmed, refused,
+                 timed-out, session-changed, unknown]
+          description: >
+            What was established about the machine - THE SAME
+            VOCABULARY ActSettlement.status uses, deliberately. ok
+            cannot distinguish "refused" from "accepted and never
+            landed", and those want different responses from a caller:
+            one is a wrong request, the other is a machine that did not
+            comply. Two honest-but-different vocabularies for "did it
+            happen" would be a fresh instance of the defect this field
+            exists to close, so this one is borrowed rather than
+            invented.
+
+            OPTIONAL, and its absence is not "unknown": it means the
+            sender does not report outcomes. NOW-68K does not emit it
+            (wire68.c :: handle_process_drive) and that asymmetry is
+            declared here rather than left to be discovered - a caller
+            that needs the distinction from a 68K guest must still
+            confirm by re-listing.
         reason:
           type: string
           description: Present when ok is false; why the verb did not apply.
@@ -3520,6 +3771,94 @@ components:
         type: object
         properties:
           putstat: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    desktop:
+      description: >
+        What the guest's desktop is actually drawn from, asked of the
+        running machine rather than read out of a resource.
+
+        The renderer used to tile the System file's `ppat` 16
+        unconditionally. Under Appearance the desktop is chosen
+        elsewhere, so that resource sits at its factory value forever —
+        purple Mac faces beside whatever the person actually picked. It
+        was a confident wrong answer, which is the one thing a mirror of
+        another machine must never produce.
+
+        `LMGetDeskCPat` and `SetDeskCPat` are not in Carbon, and there
+        is no Carbon replacement that hands back the bits. The route
+        that exists is the Appearance Manager's theme collection —
+        `GetTheme` into a Collection, then the desktop tags in it. Those
+        tags are in the headers' second group, documented as Mac OS 9
+        only, so every one is read as may-be-absent rather than assumed.
+
+        A PICTURE is drawn OVER the pattern layer, so a machine showing
+        a picture still has a pattern, and that layer is what shows
+        wherever the picture does not reach. Both are reported; `source`
+        says which one a person is looking at.
+
+        Raw before decoded, throughout. Each row carries what the
+        machine said — a four-char tag, a byte count, a hex run — beside
+        what it means, and a value nothing here can decode keeps its raw
+        form and says so. A decoded OSType has been shipped as a fact
+        and been wrong before; a byte count survives being
+        misunderstood.
+      args: {}
+      x-line: Empty. It takes no arguments.
+      output:
+        type: object
+        description: >
+          Rows for a person, and four typed facts beside them for a
+          renderer — which must not have to parse prose to learn whether
+          a pattern is even visible.
+
+          The row labels are the guest's own vocabulary and a caller
+          must not require any particular one to exist; the four fields
+          below are the structural promise.
+        properties:
+          desktop: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+          source:
+            type: string
+            enum: [pattern, picture, unknown]
+            description: >
+              What the person at that machine is looking at. `unknown`
+              is a first-class answer and not an error: a desktop that
+              cannot be attributed renders as the marked unknown, never
+              as a guessed pattern.
+          hasPattern:
+            type: boolean
+            description: >
+              Whether a pattern could be read at all. True beside
+              `source: picture` is the normal case, and means the
+              pattern layer under the picture is known.
+          hasPicture:
+            type: boolean
+            description: >
+              Whether a desktop picture is configured. Read from the
+              picture ALIAS tag, not the picture NAME tag, and the
+              difference is measured rather than assumed: on an OS 9.1
+              image showing a full-screen picture the name tag was
+              ABSENT while the alias carried 154 bytes. A guest that
+              keyed on the name would report `pattern` for a machine
+              with a picture on its screen.
+
+              Independent of hasPattern. Both layers exist at once, and
+              a reader that derives one from the other has thrown away
+              the fact this field was added to carry.
+          patternBytes:
+            type: integer
+            description: >
+              The TRUE length of the flattened pattern, or -1 when there
+              is none. Never the amount that fitted — a length that
+              means "what we could carry" is the same defect as a
+              truncated frame, one field over.
+          patternCarried:
+            type: integer
+            description: >
+              How many of those bytes the rows actually carry as hex.
+              Less than patternBytes means the rest was not sent, not
+              that it does not exist.
+          note:
+            type: string
+            description: One sentence about the answer itself, when there is one.
     wirestat:
       description: >
         How long the guest takes to NOTICE a request, as two
@@ -4259,13 +4598,192 @@ components:
               A Control Manager part code. The button parts are 10 and
               11; a scroll bar's are 20 up, 21 down, 22 page-up, 23
               page-down; 129 is the indicator.
+
+              ZERO IS A REAL REQUEST, and it is the one a tab or a list
+              row needs. It means "do not answer TrackControl at all" -
+              the press is still posted, the plane still proves it
+              reached the machine, and the application's own tracking
+              runs unmodified. A tab switches and a list row selects
+              because the real control definition function decided, from
+              WHERE the click landed. Answering a part code instead would
+              short-circuit exactly the code that makes those two work.
+          h:
+            type: integer
+            description: >
+              WHERE the press lands, in GLOBAL screen coordinates. Both
+              h and v must be sent together, and the point must lie
+              inside the control the reference names as this Mac has just
+              revalidated it - a point outside is refused rather than
+              clamped, because a click that silently moved is a click
+              that actuated something the caller did not name.
+
+              Omit both to press the CENTRE of that same control, which
+              is what every request did before 2026-08-07 and is still
+              right for a button, a checkbox, or a scroll bar arrow whose
+              part code carries the whole of the intent.
+
+              It is here because the centre is WRONG for the two things
+              that most needed driving: a tab strip's centre is one
+              particular tab, and a list's centre is one particular row.
+              For those the point IS the request.
+          v:
+            type: integer
+            description: >
+              The vertical half of h, in the same global coordinates.
+              Sending one without the other is a bad-request: a half-
+              specified point would silently mean "centre" in one axis.
       x-line: >
-        NOT TYPEABLE. Same reason as winact: the argument is a
-        reference no human has.
+        `ctlact <element> <part> [h v]`. It was declared NOT TYPEABLE
+        until 2026-08-07 on the grounds that a reference is not something
+        a human has — but `elements` PRINTS them, and a reference is
+        copyable even though it is not inventable. What actually existed
+        was worse than an honest asymmetry: a help row, a usage string,
+        and no grammar, so a person who typed exactly what `help ctlact`
+        printed was told the command requires an element. The console
+        line is now parsed into the same named args a typed caller sends,
+        so there is one implementation behind both faces.
       output:
         type: object
         properties:
           ctlact: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    dragpress:
+      description: >
+        Press the mouse button on ONE element and LEAVE IT DOWN, handing
+        the gesture to the resident's drag vehicle. Returns a session
+        nonce that dragmove and dragrelease must name.
+
+        This is the only one of the three drag verbs that is an act
+        request, and the asymmetry is the plane's central fact rather
+        than an interface wart. The press needs the target's own context,
+        its identity check and its A5 world, so it goes through the act
+        cell like every other act. From the instant the button is down
+        the target is inside its own tracking loop - DragGrayRgn,
+        TrackControl - and has STOPPED calling GetNextEvent, so the
+        filter that serves act requests is never entered again until the
+        gesture ends. Motion and release therefore cannot be act
+        requests, and are served by a Time Manager task instead.
+
+        THE RESIDENT CARRIES ITS OWN DEADLINE AND RELEASES THE BUTTON
+        WHETHER OR NOT ANYONE ASKS. A guest left holding the button sits
+        in that tracking loop forever, and the caller cannot rescue it -
+        the only channel is the same cell the wedged application has
+        stopped reading. So the release is not something a caller is
+        trusted to send. Two deadlines apply, either of which fires:
+        idle, refreshed by any sign of life from the caller, and cap,
+        refreshed by nothing at all. THE RESIDENT CLAMPS BOTH, so a
+        caller that sends 0 or omits them cannot switch the dead-man off.
+
+        An ok reply means the button was put down. Whether the target
+        noticed is a separate observation.
+      args:
+        type: object
+        required: [element]
+        properties:
+          element:
+            type: string
+            description: >
+              The opaque reference, "now-element-" and a UUID, minted by
+              the observation that saw the element.
+          h:
+            type: integer
+            description: >
+              Global horizontal point to press at. Optional, and the
+              caller SHOULD send it: without it the press falls back to
+              the rectangle the guest's own resolver has for the element,
+              which is not always populated - and where it is not, the
+              request is refused rather than pressed at a guessed point.
+              For ctlact a wrong point is harmless, because its patch
+              answers for the handle the request names; for a drag the
+              point is the entire operation.
+          v:
+            type: integer
+            description: Global vertical point to press at. See h.
+          idle:
+            type: integer
+            description: >
+              Ticks of caller silence tolerated before the resident
+              releases the button itself. Advisory: the resident clamps
+              it, and reports the value actually in force.
+          cap:
+            type: integer
+            description: >
+              The whole gesture's ceiling in ticks, refreshed by nothing.
+              It exists because a timer the measured thing can refresh
+              measures nothing. Advisory and clamped, as idle is.
+      x-line: >
+        NOT TYPEABLE. The element is a reference no human has.
+      output:
+        type: object
+        properties:
+          dragpress: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    dragmove:
+      description: >
+        Publish a new pointer position for a drag already holding the
+        button, and relay that the caller is still alive.
+
+        NOT an act request, and it could not be one: the target is inside
+        its own tracking loop and is not reading events at all. This
+        writes the resident's drag cell and returns; the resident's Time
+        Manager task, which fires regardless of what is scheduled, is
+        what applies it.
+
+        The point is a WANT, not a promise. The vehicle samples it at its
+        own cadence, so a caller moving faster than the vehicle fires
+        will see positions skipped - which is the honest shape, because
+        the gesture is being sampled rather than replayed.
+
+        This also refreshes the resident's idle deadline, and is the
+        principal way it stays open. It does NOT refresh the cap.
+      args:
+        type: object
+        required: [session, h, v]
+        properties:
+          session:
+            type: integer
+            description: The nonce dragpress returned.
+          h:
+            type: integer
+            description: Global horizontal position for the pointer.
+          v:
+            type: integer
+            description: Global vertical position for the pointer.
+      x-line: >
+        NOT TYPEABLE. The session nonce is minted by dragpress and held
+        by the caller that began the gesture.
+      output:
+        type: object
+        properties:
+          dragmove: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    dragrelease:
+      description: >
+        Ask the resident to release a drag it is holding.
+
+        It reports that it ASKED, never that it released, and the
+        distinction is not pedantry. The resident performs the release on
+        its next tick, through exactly the same code path its own
+        deadline uses - and that deadline may already have got there
+        first. A reply claiming "released" would be asserting an outcome
+        the caller did not observe, which is the failure this plane's
+        whole design is shaped against.
+
+        The ended reason in the reply is what settles it, and it keeps
+        four values apart on purpose: released-as-asked, dead-man-idle,
+        dead-man-cap, and session-lost. A caller that cannot tell a
+        gesture it completed from one the machine took back has been told
+        nothing useful.
+      args:
+        type: object
+        required: [session]
+        properties:
+          session:
+            type: integer
+            description: The nonce dragpress returned.
+      x-line: >
+        NOT TYPEABLE. The session nonce is minted by dragpress.
+      output:
+        type: object
+        properties:
+          dragrelease: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
     ditemact:
       description: >
         Select ONE live Dialog Manager item through the owning
@@ -4325,6 +4843,20 @@ components:
         belongs to the person at the machine and is passed through
         untouched.
 
+        AND THE MACHINE IS ASKED WHETHER IT IS RIGHT. A required
+        coordinate is not a checked one. A caller holding a scene a
+        second out of date supplies the number in perfect good faith
+        and names one menu while describing a press on another, so the
+        guest reads the target application's own menu bar and refuses
+        `menu-title-moved` where the two disagree - before anything is
+        armed, because an armed press answers whoever makes it. Where
+        that bar cannot be read there is no second opinion to have: the
+        press is armed where the caller said, and the reply's Identity
+        row says so rather than implying a check that did not happen.
+        Three answers, three sentences: checked, unchecked, and - for
+        NOW's own menu bar, which is dispatched through its event loop
+        and arms no press at all - not applicable.
+
         An ok reply means the application's MenuSelect returned this
         item. What its command handler then did is the caller's to
         verify against this Mac's own state.
@@ -4348,7 +4880,8 @@ components:
             description: >
               The x of that menu's title in the menu bar. Required,
               not derived: without it there is no way to tell this
-              act's press from the user's.
+              act's press from the user's. Checked against the menu
+              bar itself wherever that bar can be read.
           serialHi:
             type: integer
             description: The application. Omit for the frontmost.
@@ -4444,8 +4977,23 @@ components:
     # of four core Apple Events. See now-guest-ppc/src/input/input_cmds.h.
     mouseloc:
       description: >
-        Where this Mac's pointer IS — which is not where anything asked
-        it to go.
+        Where this Mac's pointer IS, and — since P8 — where its PICTURE
+        was last put. Two answers, and until 2026-08-07 they could differ
+        by hundreds of pixels with nothing on either face able to say so.
+
+        The first is not where anything asked it to go, and the second is
+        not always where the first is: the resident writes the pointer's
+        position on every act and every drag, and moving the DRAWN cursor
+        is a separate act that can be declined. The extra rows say which
+        route drew it (`device`, `lowmem`, `quickdraw`, `yielded`),
+        whether the Cursor Device Manager gave this Mac a device at all,
+        and the counters. `route` is the row that matters: a cursor plane
+        that is present, armed and silently taking the low-memory route
+        reports a position, raises no error, and does not move the
+        picture — which is the exact defect P8 was built to fix. They are
+        absent, rather than zero, on a guest with no resident or no
+        plane: a row saying `asked 0` would claim something that is not
+        there. See docs/cursor-follow.md.
 
         The instrument the act plane is measured WITH rather than a part
         of it. An emulator's relative mouse is acceleration-distorted, so
@@ -5385,6 +5933,125 @@ components:
                   minted: { type: integer }
                   evicted: { type: integer }
                   capacity: { type: integer }
+    cycle:
+      description: >
+        Brings each application on the guest forward in turn, with the anchor
+        plane armed, so that it executes its own event loop once and the
+        resident captures its anchor — then restores the application that was
+        frontmost.
+
+        WHY IT EXISTS. The anchor plane captures a process only while THAT
+        process is executing GetNextEvent with the anchors bit set, and on a
+        cooperatively scheduled Macintosh nobody has driven, nothing else is
+        ever scheduled inside an armed window. So a freshly booted machine
+        mirrors as one window — NOW's own — with an honest "not observed" for
+        everything else, and nothing recovers on its own (open-issues.md,
+        2026-08-07). This is the deliberate workaround; the deep fix is
+        recorded there as future work.
+
+        IT DISTURBS THE MACHINE, ON PURPOSE, and is therefore never automatic
+        and never implied by any other verb. Windows come forward and flash
+        past. It is for two moments: once on a fresh boot, and on demand when
+        what the Mirror shows has gone stale.
+
+        Processes it can reach WITHOUT fronting them are woken invisibly
+        first (WakeUpProcess), and those never flash. Faceless background
+        processes have no window to bring forward and are counted as
+        `backgroundOnly` rather than as failures — they are outside what this
+        verb can reach, and the scene must not be read as claiming otherwise.
+      args: {}
+      x-line: >
+        Takes nothing. Disturbs the machine deliberately: applications come
+        forward in turn and the previous front application is restored
+        afterwards. Believe the before/after counters rather than the
+        flashing — `eventPasses` rising while `slotScans` does not means it
+        fronted applications and captured none of them.
+      output:
+        type: object
+        required: [cycle]
+        properties:
+          cycle:
+            type: object
+            required: [armed, complete, restored, before, after]
+            properties:
+              armed:
+                type: boolean
+                description: >
+                  The plane was armed for the whole cycle. False is never
+                  reported with any application fronted: a cycle that cannot
+                  arm refuses before disturbing anything.
+              complete:
+                type: boolean
+                description: >
+                  Every candidate got its turn. False means the cycle ran out
+                  of time partway; the state it left is partial and must not
+                  be presented as a whole machine.
+              restored:
+                type: boolean
+                description: >
+                  The application that was frontmost is frontmost again. When
+                  it quit mid-cycle there is nothing to restore to, this is
+                  false, and `note` says so in words.
+              considered:
+                type: integer
+                description: Processes enumerated, excluding the guest itself.
+              alreadyAnchored:
+                type: integer
+                description: Held an anchor before the cycle began.
+              woken:
+                type: integer
+                description: >
+                  Reached invisibly with WakeUpProcess and never brought
+                  forward. Cumulative for the session, not per cycle.
+              fronted:
+                type: integer
+                description: Applications actually brought forward.
+              acquired:
+                type: integer
+                description: Of those, the ones that then held an anchor.
+              refused:
+                type: integer
+                description: >
+                  Would not come forward, or came forward and never pumped
+                  inside its turn. The two are one fact from here: it did not
+                  answer.
+              vanished:
+                type: integer
+                description: Quit between enumeration and its turn.
+              backgroundOnly:
+                type: integer
+                description: >
+                  Faceless: no window to bring forward. Out of scope, not a
+                  failure.
+              before:
+                $ref: "#/components/x-commands/cycle/x-anchorCounters"
+              after:
+                $ref: "#/components/x-commands/cycle/x-anchorCounters"
+              note:
+                type: string
+                description: >
+                  One sentence a person can read. Carries the reason on a
+                  refusal, and the restore caveat when there is one.
+      x-anchorCounters:
+        type: object
+        required: [count, slotScans, eventPasses]
+        description: >
+          The resident's own anchor counters, the same three
+          `mirror.extension.anchors` reports. Sampled before and after
+          because a control that reports its own success is not evidence.
+        properties:
+          count:
+            type: integer
+            description: Occupied anchor slots.
+          slotScans:
+            type: integer
+            description: >
+              Slot-table scans, which is a count of CONTEXT CHANGES the
+              resident's filter noticed. This is the load-bearing number: it
+              rising is the proof the filter ran inside foreign processes.
+          eventPasses:
+            type: integer
+            description: Armed passes of the resident's jGNE filter.
     mirror:
       description: >
         The guest's read-only lifecycle view of the ONE optional NOW
@@ -5443,6 +6110,131 @@ components:
                   reason:
                     type: string
                     description: Present only when the guest can prove degradation.
+                  anchors:
+                    type: object
+                    description: >
+                      The structure plane's hot path, reporting on itself.
+
+                      A scene says `ax_oracle_not_found` about a process
+                      when no anchor slot claims that process's
+                      partition, and that one word covers three
+                      different defects: the resident never ran inside
+                      that process, or it ran and the partition read
+                      disagreed, or there was no partition to read. The
+                      resident has counted every one of these words
+                      since the plane shipped and no face could say
+                      them, so on 2026-08-07 two careful runs on the
+                      same commit reported ten windows and one window
+                      and neither could be advanced.
+
+                      Absent from a guest that predates this field, and
+                      absent from one whose resident is too short to
+                      carry the counters — `present` distinguishes those
+                      two, because a resident with slots and without
+                      counters is a build that exists.
+
+                      Observation only. Nothing here is policy, nothing
+                      here is settable, and a host that cannot read it
+                      loses a diagnosis and no capability.
+                    required: [present, count, slots]
+                    properties:
+                      present:
+                        type: boolean
+                        description: >
+                          Whether the resident is long enough to carry
+                          the six counters below. False means they are
+                          reported as zero because they do not exist,
+                          not because nothing happened.
+                      eventPasses:
+                        type: integer
+                        description: >
+                          Armed passes of the resident's event filter, in
+                          ANY process's context. The load-bearing
+                          number, and first for that reason: zero here
+                          with the plane armed means the filter never
+                          ran while armed, which is a different fault
+                          from running and capturing nothing.
+                      slotScans:
+                        type: integer
+                        description: >
+                          Times the filter missed its A5 fast path and
+                          scanned the slot table — in practice, a count
+                          of context changes it noticed.
+                      fullPublishes:
+                        type: integer
+                      changePublishes:
+                        type: integer
+                        description: Publishes where the captured world differed.
+                      cadencePublishes:
+                        type: integer
+                        description: Publishes made only because the slot had aged.
+                      lastPublishTicks:
+                        type: integer
+                      nowTicks:
+                        type: integer
+                        description: >
+                          The guest's TickCount at the moment the whole
+                          of this object was read. Present so that
+                          `lastPublishTicks` and every slot's
+                          `stampTicks` can be aged against the same
+                          instant — the object is ONE read of the shared
+                          table, which is what makes it usable against a
+                          plane that flaps.
+                      count:
+                        type: integer
+                        description: >
+                          Slots the resident says it maintains. Reported
+                          beside `slots` rather than derived from it,
+                          because the two disagreeing is itself a fact.
+                      slotsOmitted:
+                        type: integer
+                        description: >
+                          Occupied slots that did not fit this reply. A
+                          short list that says it is whole is the error
+                          this contract exists to prevent, so the count
+                          travels with the list.
+                      slots:
+                        type: array
+                        description: >
+                          The OCCUPIED slots only. An empty array with a
+                          nonzero `eventPasses` is a real answer about
+                          the machine — the filter ran and anchored
+                          nothing — and is not the same as an absent
+                          field.
+
+                          No length is stated here on purpose. The bound
+                          is the resident's own `kNowPeekMaxAnchors` in
+                          contract/peek_table.h, which is where both
+                          sides read it; a second number here would be a
+                          second place to be wrong, and a smaller one
+                          would refuse a longer resident's honest
+                          answer.
+                        items:
+                          type: object
+                          required: [slot, a5, stampTicks]
+                          properties:
+                            slot:
+                              type: integer
+                            name:
+                              type: string
+                              description: >
+                                The application name the resident read
+                                out of the captured context's own low
+                                memory. THE decisive field: A5 and the
+                                stack base only bound an address space
+                                and a partition can be recycled, so this
+                                is the one value that says which
+                                application the filter was inside. Empty
+                                when the resident's anchor format
+                                predates the name.
+                            a5:
+                              type: integer
+                            windowList:
+                              type: integer
+                            stampTicks:
+                              type: integer
+                            ageTicks:
+                              type: integer
               planes:
                 type: array
                 description: >

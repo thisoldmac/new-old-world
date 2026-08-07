@@ -1,0 +1,601 @@
+#!/usr/bin/env python3
+"""The staged-image gates, each watched FAILING for the reason it exists.
+
+    tools/image-discipline-tests            # everything, ~3 seconds
+    tools/image-discipline-tests merge      # only tests matching "merge"
+
+Every case here builds a throwaway git repository in TMPDIR, reintroduces
+one specific defect, and asserts that the gate names it — and, just as
+importantly, asserts the NEGATIVE cases: the commits that must still go
+through. Six lanes were committing to their own branches while this was
+written, and a gate that refuses correct work at 2am with nobody to ask is
+worse than the drift it prevents.
+
+A test you have not watched fail proves nothing (AGENTS.md > Testing), and
+this is precisely the class of gate that has read green while missing
+things: scripts/test-mirrorkit was absent for three days while test-all
+read green, because a gate is only as wide as the tools it invokes.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FILTER = sys.argv[1] if len(sys.argv) > 1 else ""
+
+RESULTS: list[tuple[str, bool, str]] = []
+
+
+def sh(*args, cwd=None, env=None, check=False, input=None):
+    e = dict(os.environ)
+    e.update(env or {})
+    return subprocess.run(args, cwd=cwd, env=e, capture_output=True, text=True,
+                          check=check, input=input)
+
+
+def fake_image(path: str, body: bytes) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as fh:
+        fh.write(body)
+    # Kill any cached hash for a path we are about to reuse with new bytes.
+    for extra in (path + ".sha256",):
+        if os.path.exists(extra):
+            os.remove(extra)
+
+
+def sha_of(path: str) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        h.update(fh.read())
+    return h.hexdigest()
+
+
+class Repo:
+    """A miniature of this repository: the gated paths and the two tools."""
+
+    def __init__(self, tmp: str, name: str):
+        self.path = os.path.join(tmp, name)
+        os.makedirs(os.path.join(self.path, "ext", "src"))
+        os.makedirs(os.path.join(self.path, "tools"))
+        os.makedirs(os.path.join(self.path, "contract"))
+        for tool in ("ext-bake-gate", "image-provenance",
+                     "receipts-merge-driver"):
+            shutil.copy(os.path.join(ROOT, "tools", tool),
+                        os.path.join(self.path, "tools", tool))
+            os.chmod(os.path.join(self.path, "tools", tool), 0o755)
+        shutil.copy(os.path.join(ROOT, ".gitattributes"),
+                    os.path.join(self.path, ".gitattributes"))
+        self.write("ext/src/now_ext.c", "int resident(void) { return 1; }\n")
+        self.write("contract/peek_table.h", "enum { kNowPeekTableCapA = 1u << 0 };\n")
+        self.receipts([])
+        sh("git", "init", "-q", "-b", "main", cwd=self.path)
+        sh("git", "config", "user.email", "t@example.com", cwd=self.path)
+        sh("git", "config", "user.name", "Test", cwd=self.path)
+        self.git("add", "-A")
+        self.git("commit", "-qm", "base")
+
+    def write(self, rel: str, body: str) -> None:
+        full = os.path.join(self.path, rel)
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "w") as fh:
+            fh.write(body)
+
+    def receipts(self, entries: list[dict]) -> None:
+        self.write("ext/stage-receipts.json",
+                   json.dumps({"receipts": entries}, indent=2, sort_keys=True)
+                   + "\n")
+
+    def read_receipts(self) -> dict:
+        with open(os.path.join(self.path, "ext/stage-receipts.json")) as fh:
+            return json.load(fh)
+
+    def git(self, *args, env=None):
+        return sh("git", "-C", self.path, *args, env=env)
+
+    def gate(self, *args, env=None):
+        return sh(sys.executable, os.path.join(self.path, "tools/ext-bake-gate"),
+                  *args, cwd=self.path, env=env)
+
+    def digest(self) -> str:
+        return self.gate("digest", "--worktree").stdout.strip()
+
+    def enable_driver(self):
+        sh("git", "-C", self.path, "config", "merge.nowreceipts.driver",
+           f"{self.path}/tools/receipts-merge-driver %O %A %B %L %P")
+
+
+def receipt(digest: str, image: str, sha: str, **over) -> dict:
+    entry = {
+        "kind": "bake",
+        "at": over.pop("at", "2026-08-06T01:00:00-0400"),
+        "branch": over.pop("branch", "claude/whoever"),
+        "commit": "0" * 40,
+        "extDigest": digest,
+        "extBuildFingerprint": "b" * 40,
+        "sourceManifest": "s" * 40,
+        "image": image,
+        "imageSha256": sha,
+        "imageBytes": 4,
+        "qemuImgCheck": "clean",
+        "shutdown": "guest-clean",
+        "volumeClean": "clean",
+        "scope": "shared",
+    }
+    entry.update(over)
+    return entry
+
+
+def case(name: str):
+    def deco(fn):
+        if FILTER and FILTER not in name:
+            return fn
+        with tempfile.TemporaryDirectory(prefix="now-imgdisc-") as tmp:
+            try:
+                fn(tmp)
+                RESULTS.append((name, True, ""))
+                print(f"  ok    {name}")
+            except AssertionError as exc:
+                RESULTS.append((name, False, str(exc)))
+                print(f"  FAIL  {name}\n        {exc}")
+        return fn
+    return deco
+
+
+def must(cond, msg):
+    if not cond:
+        raise AssertionError(msg)
+
+
+# --------------------------------------------------------------------------
+# 1. The image-on-disk check: MUTATION — a receipt that no longer describes
+#    the file. This is the rule AGENTS.md carried in prose and nothing ran.
+# --------------------------------------------------------------------------
+
+@case("verify-image names a receipt that does not describe the file")
+def _(tmp):
+    r = Repo(tmp, "a")
+    img = os.path.join(tmp, "stage.qcow2")
+    fake_image(img, b"ORIGINAL")
+    r.receipts([receipt(r.digest(), img, sha_of(img))])
+    env = {"NOW_STAGE_IMAGE": img}
+    ok = r.gate("verify-image", env=env)
+    must("MATCH" in ok.stdout and ok.returncode == 0,
+         f"a matching image should verify; got {ok.returncode}\n{ok.stdout}")
+
+    # THE MUTATION: somebody bakes over the shared file.
+    fake_image(img, b"SOMEBODY ELSE'S BAKE")
+    bad = r.gate("verify-image", env=env)
+    must("MISMATCH" in bad.stdout, f"mismatch not named:\n{bad.stdout}")
+    must("matches NO receipt" in bad.stdout,
+         f"should say nothing accounts for the file:\n{bad.stdout}")
+    must(r.gate("verify-image", "--require", env=env).returncode == 3,
+         "--require should exit 3 on a mismatch")
+
+
+@case("verify-image is silent-safe where there is no image at all")
+def _(tmp):
+    r = Repo(tmp, "b")
+    r.receipts([receipt(r.digest(), "~/nope.qcow2", "f" * 64)])
+    out = r.gate("verify-image", env={"NOW_STAGE_IMAGE": f"{tmp}/absent.qcow2"})
+    must(out.returncode == 0, "a machine with no oracle must not be failed")
+    must("nothing to verify" in out.stdout, out.stdout)
+
+
+# --------------------------------------------------------------------------
+# 2. The commit path. What may refuse, and — the constraint that binds
+#    hardest — what must NOT.
+# --------------------------------------------------------------------------
+
+@case("commit gate WARNS but does not refuse when the oracle moved on")
+def _(tmp):
+    r = Repo(tmp, "c")
+    img = os.path.join(tmp, "stage.qcow2")
+    fake_image(img, b"ORIGINAL")
+    r.write("ext/src/now_ext.c", "int resident(void) { return 2; }\n")
+    r.git("add", "--", "ext/src/now_ext.c")
+    r.receipts([receipt(r.digest(), img, sha_of(img))])
+    r.git("add", "--", "ext/stage-receipts.json")
+    fake_image(img, b"ANOTHER LANE BAKED OVER IT")   # THE MUTATION
+    out = r.gate("check", env={"NOW_STAGE_IMAGE": img})
+    must(out.returncode == 0,
+         f"a correct resident commit must not be refused because a SHARED file "
+         f"moved:\n{out.stdout}\n{out.stderr}")
+    must("THE ORACLE ON DISK IS NOT THE ONE THIS RECEIPT DESCRIBES" in out.stdout,
+         f"the warning must be unmissable:\n{out.stdout}")
+
+
+@case("commit gate REFUSES a receipt that could never have been true")
+def _(tmp):
+    # The discriminator between this case and the one above is the image's
+    # ctime. Here the receipt claims to have installed the file at a time
+    # AFTER the file was last written — so that bake did not install it, and
+    # no elapsed time can make the claim true.
+    r = Repo(tmp, "d")
+    img = os.path.join(tmp, "stage.qcow2")
+    fake_image(img, b"WHAT IS ACTUALLY THERE")
+    r.receipts([receipt(r.digest(), img, "d" * 64,
+                        at="2027-12-31T00:00:00-0400")])   # THE MUTATION
+    r.git("add", "--", "ext/stage-receipts.json")
+    out = r.gate("check", env={"NOW_STAGE_IMAGE": img})
+    must(out.returncode == 1, f"should refuse; got {out.returncode}\n{out.stdout}")
+    must("CANNOT be true" in out.stderr, out.stderr)
+
+
+@case("commit gate does NOT refuse a receipt another lane merely overtook")
+def _(tmp):
+    # Same mismatch, opposite cause: the file was written AFTER the bake.
+    # Six lanes were live when this was written and this is the likely one;
+    # refusing it would strand correct work for a reason nobody can act on.
+    r = Repo(tmp, "d2")
+    img = os.path.join(tmp, "stage.qcow2")
+    fake_image(img, b"SOMEBODY ELSE GOT THERE SECOND")
+    r.receipts([receipt(r.digest(), img, "d" * 64,
+                        at="2026-08-06T01:00:00-0400")])
+    r.git("add", "--", "ext/stage-receipts.json")
+    out = r.gate("check", env={"NOW_STAGE_IMAGE": img})
+    must(out.returncode == 0, f"must not refuse:\n{out.stdout}\n{out.stderr}")
+    must("has\n  been replaced since your bake" in out.stdout, out.stdout)
+
+
+@case("commit gate REFUSES a throwaway receipt in the shared file")
+def _(tmp):
+    r = Repo(tmp, "e")
+    img = os.path.join(tmp, "mine.qcow2")
+    fake_image(img, b"MY PRIVATE IMAGE")
+    # THE MUTATION: a lane's private bake pasted into the tracked receipts.
+    r.receipts([receipt(r.digest(), img, sha_of(img), scope="throwaway",
+                        imageName="claude-018-lane-a")])
+    r.git("add", "--", "ext/stage-receipts.json")
+    out = r.gate("check", env={"NOW_STAGE_IMAGE": img})
+    must(out.returncode == 1, f"should refuse; got {out.returncode}")
+    must("THROWAWAY bake receipt" in out.stderr, out.stderr)
+    must("claim about the SHARED file" in out.stderr
+         or "SHARED oracle contains this" in out.stderr, out.stderr)
+
+
+@case("commit gate lets an ordinary non-resident commit straight through")
+def _(tmp):
+    r = Repo(tmp, "f")
+    img = os.path.join(tmp, "stage.qcow2")
+    fake_image(img, b"WHATEVER")
+    r.write("README.md", "a lane editing something that is not the resident\n")
+    r.git("add", "--", "README.md")
+    out = r.gate("check", env={"NOW_STAGE_IMAGE": img})
+    must(out.returncode == 0, f"non-resident commits must never be gated:\n"
+                              f"{out.stdout}{out.stderr}")
+    must(out.stdout.strip() == "", f"and must not even be spoken to:\n{out.stdout}")
+
+
+@case("commit gate refuses receipts JSON that does not parse")
+def _(tmp):
+    r = Repo(tmp, "g")
+    r.write("ext/stage-receipts.json", "{oh dear")     # THE MUTATION
+    r.git("add", "--", "ext/stage-receipts.json")
+    out = r.gate("check")
+    must(out.returncode == 1, "unparseable receipts must refuse")
+    must("does not parse" in out.stderr, out.stderr)
+
+
+# --------------------------------------------------------------------------
+# 3. Merge-time forced resolution.
+# --------------------------------------------------------------------------
+
+@case("merge driver conflicts when two branches each bake")
+def _(tmp):
+    r = Repo(tmp, "h")
+    r.enable_driver()
+    img = os.path.join(tmp, "stage.qcow2")
+    fake_image(img, b"BASE")
+    base_digest = r.digest()
+
+    r.git("checkout", "-qb", "lane-a")
+    r.receipts([receipt(base_digest, img, "a" * 64, at="2026-08-06T01:00:00-0400",
+                        branch="claude/018-lane-a")])
+    r.git("add", "--", "ext/stage-receipts.json")
+    r.git("commit", "-qm", "lane a bakes")
+
+    r.git("checkout", "-q", "main")
+    r.git("checkout", "-qb", "lane-b")
+    r.receipts([receipt(base_digest, img, "b" * 64, at="2026-08-06T02:00:00-0400",
+                        branch="claude/018-lane-b")])
+    r.git("add", "--", "ext/stage-receipts.json")
+    r.git("commit", "-qm", "lane b bakes")
+
+    out = r.git("merge", "--no-edit", "lane-a")
+    must(out.returncode != 0, f"the merge must NOT succeed quietly:\n{out.stdout}")
+    must("CONFLICTS BY DESIGN" in out.stderr + out.stdout,
+         f"the driver must say why:\n{out.stderr}\n{out.stdout}")
+    proposal = os.path.join(r.path, ".git", "nowreceipts-proposal.json")
+    must(os.path.exists(proposal), "a time-ordered proposal must be written")
+    with open(proposal) as fh:
+        merged = json.load(fh)["receipts"]
+    must([m["imageSha256"][:1] for m in merged] == ["a", "b"],
+         f"the proposal must be in time order: {merged}")
+
+
+@case("merge-check catches receipts left out of time order")
+def _(tmp):
+    r = Repo(tmp, "i")
+    # On a lane branch: ordering is what this case is about, and on `main`
+    # the separate "a deferral comes due" check would also fire and muddy
+    # which gate spoke.
+    r.git("checkout", "-qb", "claude/018-whoever")
+    d = r.digest()
+    must(r.gate("merge-check").returncode == 0, "an ordered file must pass")
+    # THE MUTATION: the result of a textual merge that git was happy with.
+    r.receipts([receipt(d, "~/s.qcow2", "b" * 64, at="2026-08-06T02:00:00-0400"),
+                receipt(d, "~/s.qcow2", "a" * 64, at="2026-08-06T01:00:00-0400")])
+    out = r.gate("merge-check")
+    must(out.returncode == 1, "out-of-order receipts must force a decision")
+    must("NOT in time order" in out.stderr, out.stderr)
+    must("reads the LAST entry as the newest bake" in out.stderr, out.stderr)
+
+
+@case("merge-check catches conflict markers committed by accident")
+def _(tmp):
+    r = Repo(tmp, "j")
+    r.write("ext/stage-receipts.json", '<<<<<<< ours\n{}\n=======\n{}\n>>>>>>> theirs\n')
+    out = r.gate("merge-check")
+    must(out.returncode == 1, "markers must not pass")
+    must("conflict markers" in out.stderr, out.stderr)
+
+
+# --------------------------------------------------------------------------
+# 4. Provenance: the verdict a run prints, including the one today's oracle
+#    earns.
+# --------------------------------------------------------------------------
+
+@case("provenance calls an unaccounted shared oracle exactly that")
+def _(tmp):
+    r = Repo(tmp, "k")
+    img = os.path.join(tmp, "stage.qcow2")
+    fake_image(img, b"NOBODY KNOWS")
+    r.receipts([receipt(r.digest(), img, "e" * 64)])
+    out = sh(sys.executable, os.path.join(r.path, "tools/image-provenance"),
+             img, "--repo", r.path, env={"NOW_STAGE_IMAGE": img})
+    must("UNACCOUNTED FOR" in out.stdout, out.stdout)
+    must("THE SHARED ORACLE" in out.stdout, out.stdout)
+    must(sh(sys.executable, os.path.join(r.path, "tools/image-provenance"),
+            img, "--quiet", "--require-match", "--repo", r.path,
+            env={"NOW_STAGE_IMAGE": img}).returncode == 3,
+         "--require-match must exit 3")
+
+
+@case("provenance does not cry wolf about a plain unbaked base")
+def _(tmp):
+    r = Repo(tmp, "l")
+    stage = os.path.join(tmp, "stage.qcow2")
+    runner = os.path.join(tmp, "os91-runner.qcow2")
+    fake_image(stage, b"THE ORACLE")
+    fake_image(runner, b"THE RUNNER")
+    r.receipts([receipt(r.digest(), stage, sha_of(stage))])
+    out = sh(sys.executable, os.path.join(r.path, "tools/image-provenance"),
+             runner, "--repo", r.path, env={"NOW_STAGE_IMAGE": stage})
+    must("PLAIN BASE" in out.stdout, out.stdout)
+    must("not the shared oracle" in out.stdout, out.stdout)
+
+
+@case("provenance rig table names the guest's own account of the resident")
+def _(tmp):
+    r = Repo(tmp, "m")
+    stage = os.path.join(tmp, "stage.qcow2")
+    runner = os.path.join(tmp, "os91-runner.qcow2")
+    fake_image(stage, b"THE ORACLE")
+    fake_image(runner, b"THE RUNNER")
+    staged = os.path.join(tmp, "staged.json")
+    with open(staged, "w") as fh:
+        json.dump({"tree": "/w/t", "commit": "c" * 40,
+                   "localSourceManifest": "1" * 40,
+                   "localBuildFingerprint": "2" * 40,
+                   "residentReported": {"lifecycle": "active",
+                                        "capabilities": 127,
+                                        "sourceManifest": "1" * 40,
+                                        "buildFingerprint": "2" * 40}}, fh)
+    md = os.path.join(tmp, "rig.md")
+    sh(sys.executable, os.path.join(r.path, "tools/image-provenance"), runner,
+       "--quiet", "--staged-json", staged, "--md", md, "--repo", r.path,
+       env={"NOW_STAGE_IMAGE": stage})
+    body = open(md).read()
+    for want in ("Which rig this describes", "Base image", "Shared oracle used?",
+                 "was not used and is not the oracle for this run",
+                 "Resident (guest's own `mirror`)", "capabilities `127`"):
+        must(want in body, f"rig table is missing {want!r}:\n{body}")
+
+
+@case("merge-check: a deferral comes due on main and nowhere else")
+def _(tmp):
+    r = Repo(tmp, "dd")
+    img = os.path.join(tmp, "stage.qcow2")
+    fake_image(img, b"THE ORACLE")
+    r.receipts([receipt(r.digest(), img, sha_of(img))])
+    r.git("add", "--", "ext/stage-receipts.json")
+    r.git("commit", "-qm", "baked")
+    must(r.gate("merge-check").returncode == 0, "a baked main must pass")
+
+    # THE MUTATION: resident source that no bake covers, exactly as an
+    # honest TBT_DEFER_EXT_BAKE commit leaves it.
+    r.write("ext/src/now_ext.c", "int resident(void) { return 9; }\n")
+    doc = r.read_receipts()
+    doc["receipts"].append({"kind": "deferral", "at": "2026-08-06T20:00:00-0400",
+                            "branch": "claude/018-arm-census",
+                            "reason": "sequenced behind the census work; "
+                                      "baking once the arc settles"})
+    r.receipts(doc["receipts"])
+
+    on_lane = r.git("checkout", "-qb", "claude/018-arm-census")
+    must(on_lane.returncode == 0, on_lane.stderr)
+    must(r.gate("merge-check").returncode == 0,
+         "a lane-to-lane merge must NOT be gated on a bake")
+
+    r.git("checkout", "-q", "main")
+    out = r.gate("merge-check")
+    must(out.returncode == 1, "landing unbaked resident work must stop")
+    must("no bake receipt covers" in out.stderr, out.stderr)
+    must("good enough to COMMIT on a branch" in out.stderr, out.stderr)
+    must("sequenced behind the census work" in out.stderr,
+         "the deferral's own reason must be quoted back:\n" + out.stderr)
+    must(r.gate("merge-check", env={"TBT_DEFER_EXT_BAKE": "1"}).returncode == 0,
+         "the written override must still work")
+
+
+# --------------------------------------------------------------------------
+# 5. A hand-installed image can be accounted for — but a note is not a bake,
+#    and the gates must keep saying so.
+# --------------------------------------------------------------------------
+
+@case("note-image accounts for a hand-installed oracle without certifying it")
+def _(tmp):
+    r = Repo(tmp, "n")
+    img = os.path.join(tmp, "stage.qcow2")
+    fake_image(img, b"ROLLED BACK BY HAND")
+    r.receipts([receipt(r.digest(), img, "f" * 64)])
+    env = {"NOW_STAGE_IMAGE": img}
+    prov = os.path.join(r.path, "tools/image-provenance")
+
+    before = sh(sys.executable, prov, img, "--repo", r.path, env=env)
+    must("UNACCOUNTED FOR" in before.stdout, before.stdout)
+
+    thin = r.gate("note-image", "--reason", "rolled back", env=env)
+    must(thin.returncode == 1, "a one-word reason must be refused")
+    must("needs a --reason" in thin.stderr, thin.stderr)
+
+    ok = r.gate("note-image", "--reason",
+                "rolled back to the last volume-clean image; see "
+                "docs/open-issues.md 2026-08-06", env=env)
+    must(ok.returncode == 0, ok.stderr)
+
+    after = sh(sys.executable, prov, img, "--repo", r.path, env=env)
+    must("PLACED BY HAND AND RECORDED" in after.stdout, after.stdout)
+    must("NO BAKE" in after.stdout, after.stdout)
+
+    # THE POINT: it must NOT let a resident commit through. A note says who
+    # put the file there, not what is in it, and the 01:19 receipt is the
+    # standing reminder that a check adjacent to the question reads exactly
+    # like an answer to it.
+    r.write("ext/src/now_ext.c", "int resident(void) { return 3; }\n")
+    r.git("add", "--", "ext/src/now_ext.c")
+    gated = r.gate("check", env=env)
+    must(gated.returncode == 1,
+         "a note must never satisfy the bake gate:\n" + gated.stdout)
+    must("DIFFERENT resident source" in gated.stderr, gated.stderr)
+
+
+# --------------------------------------------------------------------------
+# 6. The gates are only gates if git actually runs them. Watched end to end
+#    through a REAL `git commit`, because for weeks nothing did.
+# --------------------------------------------------------------------------
+
+@case("hooks: a real git commit is refused by the wired pre-commit hook")
+def _(tmp):
+    r = Repo(tmp, "hk")
+    os.makedirs(os.path.join(r.path, ".githooks"))
+    shutil.copy(os.path.join(ROOT, ".githooks", "pre-commit"),
+                os.path.join(r.path, ".githooks", "pre-commit"))
+    os.chmod(os.path.join(r.path, ".githooks", "pre-commit"), 0o755)
+    img = os.path.join(tmp, "stage.qcow2")
+    fake_image(img, b"THE ORACLE")
+    env = {"NOW_STAGE_IMAGE": img}
+
+    # UNWIRED — the state this repository was actually in. The commit goes
+    # through and nothing says a word.
+    r.write("ext/src/now_ext.c", "int resident(void) { return 4; }\n")
+    r.git("add", "--", "ext/src/now_ext.c")
+    unwired = r.git("commit", "-qm", "resident change, no gate", env=env)
+    must(unwired.returncode == 0,
+         "with no hooksPath the commit must succeed — that IS the bug")
+
+    # WIRED, relative, the way tools/setup-hooks sets it.
+    sh("git", "-C", r.path, "config", "core.hooksPath", ".githooks")
+    # On a branch, because the OTHER half of that hook is the main
+    # guardrail and it fires first — which this test watched happen.
+    r.git("checkout", "-qb", "claude/whoever")
+    r.write("ext/src/now_ext.c", "int resident(void) { return 5; }\n")
+    r.git("add", "--", "ext/src/now_ext.c")
+    wired = r.git("commit", "-qm", "resident change, gated", env=env)
+    must(wired.returncode != 0,
+         "the wired hook must refuse a resident commit with no bake:\n"
+         + wired.stdout + wired.stderr)
+    must("ext-bake-gate" in wired.stderr, wired.stderr)
+
+    # And the deferral, through the same hook, must LEAVE A RECORD — the
+    # thing that silently did not happen for the at-arm census lane.
+    env2 = dict(env)
+    env2["TBT_DEFER_EXT_BAKE"] = "1"
+    env2["TBT_DEFER_EXT_BAKE_REASON"] = "sequenced behind the census work"
+    ok = r.git("commit", "-qm", "resident change, deferred", env=env2)
+    must(ok.returncode == 0, ok.stdout + ok.stderr)
+    defers = [x for x in r.read_receipts()["receipts"]
+              if x.get("kind") == "deferral"]
+    must(len(defers) == 1, f"the deferral must be written down: {defers}")
+    must("census" in defers[0]["reason"], defers[0])
+
+
+@case("hooks-doctor names an absolute hooksPath and repairs it")
+def _(tmp):
+    r = Repo(tmp, "hd")
+    shutil.copy(os.path.join(ROOT, "tools", "hooks-doctor"),
+                os.path.join(r.path, "tools", "hooks-doctor"))
+    os.chmod(os.path.join(r.path, "tools", "hooks-doctor"), 0o755)
+    os.makedirs(os.path.join(r.path, ".githooks"))
+    for hook in ("pre-commit", "pre-merge-commit", "post-merge"):
+        shutil.copy(os.path.join(ROOT, ".githooks", hook),
+                    os.path.join(r.path, ".githooks", hook))
+        os.chmod(os.path.join(r.path, ".githooks", hook), 0o755)
+    doctor = os.path.join(r.path, "tools/hooks-doctor")
+
+    unset = sh(sys.executable, doctor, cwd=r.path)
+    must(unset.returncode == 1, "an unset hooksPath must not read as armed")
+    must("NOT ARMED" in unset.stdout, unset.stdout)
+
+    # THE MUTATION: the exact live defect — absolute, pointing nowhere.
+    sh("git", "-C", r.path, "config", "core.hooksPath",
+       "/nowhere/that/exists/.githooks")
+    bad = sh(sys.executable, doctor, cwd=r.path)
+    must(bad.returncode == 1, bad.stdout)
+    must("ABSOLUTE" in bad.stdout, bad.stdout)
+    must("does not exist" in bad.stdout, bad.stdout)
+
+    fixed = sh(sys.executable, doctor, "--fix", cwd=r.path)
+    must(fixed.returncode == 0, fixed.stdout + fixed.stderr)
+    good = sh(sys.executable, doctor, cwd=r.path)
+    must(good.returncode == 0, good.stdout)
+    must("armed" in good.stdout, good.stdout)
+
+    # A hook that exists but cannot execute is skipped by git in silence —
+    # so the doctor must not call that armed either.
+    os.chmod(os.path.join(r.path, ".githooks", "pre-commit"), 0o644)
+    chmod = sh(sys.executable, doctor, cwd=r.path)
+    must(chmod.returncode == 1, "a non-executable hook must not read as armed")
+    must("not executable" in chmod.stdout, chmod.stdout)
+
+
+@case("defer can be recorded directly, without a working hook")
+def _(tmp):
+    r = Repo(tmp, "df")
+    out = r.gate("defer", "--reason",
+                 "the PowerBook is off; baking tomorrow morning")
+    must(out.returncode == 0, out.stdout + out.stderr)
+    defers = [x for x in r.read_receipts()["receipts"]
+              if x.get("kind") == "deferral"]
+    must(len(defers) == 1, f"{defers}")
+    must("PowerBook" in defers[0]["reason"], defers[0])
+
+
+# --------------------------------------------------------------------------
+
+def main() -> int:
+    print("==> staged-image discipline gates")
+    failed = [r for r in RESULTS if not r[1]]
+    print(f"    {len(RESULTS) - len(failed)} passed, {len(failed)} failed")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

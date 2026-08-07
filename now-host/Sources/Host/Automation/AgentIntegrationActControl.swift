@@ -209,6 +209,12 @@ final class AgentIntegrationActControl {
             .init(menu: request.menu,
                   item: request.item,
                   titleLeft: request.titleLeft,
+                  /* The guest's own sentence, forwarded rather than
+                     re-derived here: this side cannot see a menu bar and
+                     has nothing to decide it from. Absent is absent — a
+                     guest too old to answer the row must not read as a
+                     checked press. */
+                  identity: claim.rows["Identity"],
                   dispatch: claim.dispatch,
                   dispatchedAt: claim.at, correlation: claim.correlation,
                   settlement: claim.settlement)
@@ -283,7 +289,10 @@ final class AgentIntegrationActControl {
             return .refused(Self.failure(
                 "now-key-refused",
                 Self.bounded(result.error?.message
-                    ?? "The paired guest refused the keystroke")))
+                    ?? "The paired guest refused the keystroke"),
+                correlation: result.error?.correlation,
+                settlement: result.error?.settlement,
+                reach: Self.reach(ofGuestRefusal: result.error)))
         case .result(let result):
             /* The `key` verb's own rows are lower-case (`code`, `char`,
                `posted`, …) — the input plane's convention, distinct from
@@ -345,7 +354,10 @@ final class AgentIntegrationActControl {
             return .refused(Self.failure(
                 "now-text-get-refused",
                 Self.bounded(result.error?.message
-                    ?? "The paired guest refused the text read")))
+                    ?? "The paired guest refused the text read"),
+                correlation: result.error?.correlation,
+                settlement: result.error?.settlement,
+                reach: Self.reach(ofGuestRefusal: result.error)))
         case .result(let result):
             let rows = Self.rows(from: result, verb: "textget")
             /* `Text` may legitimately be empty — an empty field is a real
@@ -412,6 +424,103 @@ final class AgentIntegrationActControl {
         }
     }
 
+    // MARK: - elements
+
+    /// **The walk that mints what everything above addresses.**
+    ///
+    /// It is NOT an act — it arms nothing, dispatches nothing, and its
+    /// answer carries no `Dispatch` row — and it lives in this file anyway.
+    /// The reason is the one this repository keeps paying for: a sibling
+    /// class would copy `run`, the 15 s window, the session-change guard and
+    /// the audit seam verbatim, and four copies of a dispatch path is the
+    /// same defect shape as five copies of `GetNextProcess`. What it shares
+    /// with the five is the LANE — one bounded `command.request` out of the
+    /// guest's ordinary command dispatch, taking no transfer lane — and the
+    /// lane is what this class owns. `getElementText` above already sits
+    /// here on the same argument.
+    ///
+    /// **Its answer is an object, not rows.** `elements` replies under
+    /// `output.elements` as the contract's `x-axTree`, so it is read out of
+    /// `outputObjects` and decoded whole into the model the projection
+    /// publishes. Nothing here reshapes it: the containment — which control
+    /// is in which window of which process — is the entire meaning of a
+    /// reference, and a host that flattened or re-derived any of it would be
+    /// composing an observation instead of forwarding one.
+    ///
+    /// **Nil is the frontmost application and is sent as an absence.** The
+    /// guest's own default; a host that resolved "frontmost" itself and sent
+    /// a serial would be naming a process from a sample taken at a different
+    /// moment than the walk.
+    func observeElements(process: AgentIntegrationProcessSerial?) async
+        -> AgentIntegrationElementObservationResult {
+        guard let sessionID = currentSessionID() else {
+            return .unavailable(.guest)
+        }
+        var args: [String: CommandArg] = [:]
+        if let process {
+            /* Numbers as NUMBERS, for the reason `winact` states above at
+               length: `String(left)` sent `"left": "40"` and the classic
+               guest's strtol stopped at the quote, so every window act this
+               host ever sent moved a window to (0,0) and was told
+               `dispatched`. A quoted serial would aim every walk at process
+               zero and be answered about the wrong application. */
+            args["serialHi"] = .number(process.high)
+            args["serialLo"] = .number(process.low)
+        }
+        let outcome = await run(verb: "elements", args: args)
+        guard currentSessionID() == sessionID else {
+            return .unavailable(Self.failure(
+                "now-observe-elements-outcome-unknown",
+                "The paired guest changed while the observation was in "
+                    + "progress").asUnavailable)
+        }
+        switch outcome {
+        case .timedOut:
+            return .refused(Self.failure(
+                "now-observe-elements-outcome-unknown",
+                "The paired guest did not answer the observation in time"))
+        case .result(let result) where !result.ok:
+            return .refused(Self.failure(
+                "now-observe-elements-refused",
+                Self.bounded(result.error?.message
+                    ?? "The paired guest refused the observation"),
+                reach: Self.reach(ofGuestRefusal: result.error)))
+        case .result(let result):
+            /* The verb's own group and not "whichever object came back",
+               matching `rows(from:verb:)` next door: a reply carrying
+               `observe`'s or `axtree`'s tree is an answer to a question this
+               call did not ask — the guest answers each of the three under
+               its own command's name precisely so a caller need not know
+               they share an emitter. */
+            guard let tree = result.outputObjects?["elements"] else {
+                return .refused(Self.failure(
+                    "now-observe-elements-outcome-unknown",
+                    "The paired guest answered the observation without a "
+                        + "tree"))
+            }
+            do {
+                let observation = try JSONDecoder().decode(
+                    AgentIntegrationElementObservation.self,
+                    from: try JSONEncoder().encode(tree))
+                audit(.info, "elements walked "
+                          + "\(observation.processes.count) process(es), "
+                          + "\(observation.count) reference(s)"
+                          + (observation.truncated ? ", truncated" : ""))
+                return .completed(observation)
+            } catch {
+                /* A tree this side cannot decode is NOT an empty walk. An
+                   empty observation would say a Macintosh was asked and had
+                   no windows, which is a claim about the machine; what
+                   actually happened is that two halves disagree about a
+                   shape, and the caller is owed that sentence instead. */
+                return .refused(Self.failure(
+                    "now-observe-elements-outcome-unknown",
+                    "The paired guest answered the observation with a tree "
+                        + "this host could not read"))
+            }
+        }
+    }
+
     // MARK: - The shared dispatch
 
     /// What a `Dispatch` row was found to say, and when this side read it.
@@ -420,6 +529,14 @@ final class AgentIntegrationActControl {
         let at: Date
         let correlation: String?
         let settlement: String
+        /// Every row the guest answered with, so an act that says
+        /// something the other three do not can read it WITHOUT a second
+        /// dispatch path to read it on. `menuact` is the one that does:
+        /// its `Identity` row says whether the coordinate that is its
+        /// safety check was verified against the machine or trusted, and
+        /// a receipt that omitted the difference would let a trusted
+        /// press read as a verified one.
+        let rows: [String: String]
     }
 
     /// The four dispatching acts, as one path.
@@ -506,7 +623,8 @@ final class AgentIntegrationActControl {
                       + " (dispatch is not guest-visible effect)")
             return .completed(make(
                 .init(dispatch: dispatch, at: clock(),
-                      correlation: correlation, settlement: settlement)))
+                      correlation: correlation, settlement: settlement,
+                      rows: rows)))
         }
     }
 

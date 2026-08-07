@@ -139,6 +139,82 @@ static void test_ambiguous_is_not_empty(void)
 
 /* Stale is REPORTED, not refused: the windows are carried and the age is
    declared beside them (peek_oracle.h's own rule for the verdict). */
+/* THREE STATES WEARING ONE ERROR'S NAME.
+ *
+ * `ax_oracle_not_found` used to be the answer to all of:
+ *   1. a faceless background application, which has no user interface by
+ *      declaration and never could have had an anchor;
+ *   2. an application with a face and nothing open right now - normal,
+ *      and different from moment to moment on a healthy machine;
+ *   3. an application whose windows exist and which we failed to read.
+ *
+ * Only the third is a failure. The first is separated by the process's
+ * OWN declaration (`backgroundOnly`), never by an empty window list; the
+ * second by the reader reporting NoWindows, which is a SUCCESS and has
+ * never been an error token here. This pins all three apart, and the
+ * suppression is deliberately narrow: it applies to NotFound alone. */
+static void test_headless_is_not_an_error(void)
+{
+    NowScene s;
+    int p;
+    int i;
+    static const NowSceneAnchor real_failures[] = {
+        kNowSceneAnchorAmbiguous, kNowSceneAnchorMismatch,
+        kNowSceneAnchorUnreadable, kNowSceneAnchorNoPlane,
+        kNowSceneAnchorStub
+    };
+
+    /* State 3: a face, no anchor. Still the failure it always was. */
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    p = now_scene_add_process(&s, 0, 21, "SimpleText", 0, 0,
+                              kNowSceneAnchorNotFound, 0);
+    check(!s.procs[p].background_only,
+          "a process that declared nothing is not background-only");
+    check_str(now_scene_proc_error(&s.procs[p]), "ax_oracle_not_found",
+              "an application we could not read still says so");
+
+    /* State 1: the same verdict, on a process that declared it has no
+       user interface. Nothing failed; there was nothing to find. */
+    now_scene_set_process_background_only(&s, p, 1);
+    check(s.procs[p].background_only, "the declaration is carried");
+    check(now_scene_proc_error(&s.procs[p]) == NULL,
+          "a faceless process with no anchor is normal, not an error");
+
+    /* State 2: a face, enumerated, nothing open. Already not an error -
+       pinned here so the three sit together in one place. */
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    p = now_scene_add_process(&s, 0, 22, "SimpleText", 0, 0,
+                              kNowSceneAnchorNoWindows, 0);
+    check(now_scene_proc_error(&s.procs[p]) == NULL,
+          "enumerated-and-empty is a success, not a failure");
+
+    /* The suppression is NotFound only. A faceless process is owed every
+       other verdict exactly as an application is - NoPlane above all,
+       which says we could not look at ANY process. */
+    for (i = 0; i < (int)(sizeof real_failures / sizeof real_failures[0]);
+         ++i) {
+        now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+        p = now_scene_add_process(&s, 0, 23, "Faceless", 0, 0,
+                                  real_failures[i], 0);
+        now_scene_set_process_background_only(&s, p, 1);
+        check(now_scene_proc_error(&s.procs[p]) != NULL,
+              "a real failure is reported on a faceless process too");
+    }
+
+    /* Staleness survives the suppression: a headless row that is also
+       stale reports its age rather than nothing at all. */
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 10000, 600);
+    p = now_scene_add_process(&s, 0, 24, "Faceless", 0, 0,
+                              kNowSceneAnchorOk, 9000);
+    now_scene_set_process_background_only(&s, p, 1);
+    check_str(now_scene_proc_error(&s.procs[p]), "ax_oracle_stale",
+              "an old stamp still reports its age on a faceless row");
+
+    /* Out-of-range setters are no-ops, like every other setter here. */
+    now_scene_set_process_background_only(&s, 99, 1);
+    now_scene_set_process_background_only(NULL, 0, 1);
+}
+
 static void test_stale_is_reported_not_refused(void)
 {
     NowScene s;
@@ -443,6 +519,7 @@ int main(void)
     test_verdict_tokens();
     test_refused_anchors_admit_no_windows();
     test_ambiguous_is_not_empty();
+    test_headless_is_not_an_error();
     test_stale_is_reported_not_refused();
     test_plane_note();
     test_z_and_front();

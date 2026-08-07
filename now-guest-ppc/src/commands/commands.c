@@ -1,6 +1,7 @@
 #include "commands.h"
 
 #include "act_cmds.h"
+#include "desktop.h"
 #include "input_cmds.h"
 #include "mach_verbs.h"
 #include "nowlog.h"
@@ -25,6 +26,7 @@
 #include "fileshare.h"
 #include "wire.h"
 #include "wirestat_cmd.h"
+#include "anchor_cycle.h"
 #include "mirror_json.h"
 #include "mirror_probe.h"
 #include "net_layout.h"
@@ -34,6 +36,7 @@
 #include "catsearch.h"
 #include "software.h"
 #include "proc_actions.h"
+#include "proc_roster.h"
 
 const char *const kGestaltFullGroups[] = {
     "cpu", "memory", "os", "network", "hw", NULL
@@ -319,58 +322,28 @@ int now_gestalt_gather(GestaltRow *rows, int max)
 
 int now_process_gather(ProcRow *rows, int max)
 {
-    /* Spelled-out 4CCs: multi-character char constants warn under -Werror.
-       These classify a process's kind, the same test serve_process_list
-       makes. */
-    const unsigned long kTypeFinder = 0x464E4452UL;   /* 'FNDR' */
-    const unsigned long kSigFinder = 0x4D414353UL;    /* 'MACS' */
-    ProcessSerialNumber psn = { 0, kNoProcess };
-    ProcessSerialNumber front;
-    ProcessSerialNumber me;
-    Boolean have_front = GetFrontProcess(&front) == noErr;
-    /* The same fact the wire's isSelf carries, in the sentence a person
+    /* THE SAME WALK AND THE SAME CLASSIFIER `process.list` READS
+       (proc_roster.h). This function used to carry a comment saying it
+       made "the same test serve_process_list makes" - a claim of
+       parallel code, which is what command-parity rule 2 forbids. It is
+       now the same code, so the two faces cannot answer differently.
+
+       isSelf is the fact the wire carries, in the sentence a person
        reads: which of these rows is the application answering you. Both
        guests' ps say "self", because the host console renders both with
        one renderer. */
-    Boolean have_self = GetCurrentProcess(&me) == noErr;
+    NowProcRosterIter it;
+    NowProcRosterRow proc;
     int n = 0;
 
-    while (n < max && GetNextProcess(&psn) == noErr) {
-        ProcessInfoRec info;
-        Str31 name;
-        const char *kind;
-        Boolean is_front = false;
-        Boolean is_self = false;
-        long sz;
-
-        memset(&info, 0, sizeof info);
-        info.processInfoLength = sizeof info;
-        info.processName = name;
-        info.processAppSpec = NULL;
-        name[0] = 0;
-        if (GetProcessInformation(&psn, &info) != noErr) {
-            continue;                 /* unreadable: skip, as the wire does */
-        }
-        if ((unsigned long)info.processType == kTypeFinder
-            || (unsigned long)info.processSignature == kSigFinder) {
-            kind = "finder";
-        } else if ((info.processMode & modeOnlyBackground) != 0) {
-            kind = "background";
-        } else {
-            kind = "application";
-        }
-        if (have_front) {
-            (void)SameProcess(&psn, &front, &is_front);
-        }
-        if (have_self) {
-            (void)SameProcess(&psn, &me, &is_self);
-        }
-        memcpy(rows[n].name, name + 1, name[0]);
-        rows[n].name[name[0]] = '\0';
-        sz = (long)(info.processSize / 1024);
+    now_proc_roster_begin(&it);
+    while (n < max && now_proc_roster_next(&it, &proc)) {
+        memcpy(rows[n].name, proc.name, sizeof rows[n].name - 1);
+        rows[n].name[sizeof rows[n].name - 1] = '\0';
         snprintf(rows[n].detail, sizeof rows[n].detail, "%s, %ld KB%s%s",
-                 kind, sz, is_front ? ", front" : "",
-                 is_self ? ", self" : "");
+                 now_proc_kind_name(proc.kind), proc.size_kb,
+                 proc.is_front ? ", front" : "",
+                 proc.is_self ? ", self" : "");
         ++n;
     }
     return n;
@@ -796,6 +769,74 @@ static void run_wirestat(const char *request_json, long id,
    `note` is left alone deliberately. It is the last button-press's
    outcome and belongs to the page a person is looking at; a caller over
    the wire pressed nothing, so there is nothing for it to say. */
+/* `cycle` - the acquisition cycle's wire face. One implementation
+   (now_peek_anchor_cycle), two renderers; the console's is in
+   console_model.c and prints the same numbers in the same order.
+
+   THE COUNTERS ARE THE RESULT, not decoration. A cycle reports its own
+   before/after `count`, `slotScans` and `eventPasses` because a control
+   that says "done" is not evidence: a cycle that raised eventPasses and
+   not slotScans fronted every application on the machine and captured
+   none of them, which is exactly the failure this whole slice exists
+   because of. An agent reading this can tell the two apart. */
+static void run_cycle(long id, char *out, long cap)
+{
+    NowAnchorCycleReport rep;
+    int ran = now_peek_anchor_cycle(&rep);
+
+    if (!ran) {
+        snprintf(out, cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                 "\"error\":{\"code\":\"cycle-refused\","
+                 "\"message\":\"%s\"}}",
+                 id, rep.note);
+        return;
+    }
+    snprintf(out, cap,
+             "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+             "\"output\":{\"cycle\":{"
+             "\"armed\":%s,\"complete\":%s,\"restored\":%s,"
+             "\"considered\":%d,\"alreadyAnchored\":%d,\"woken\":%d,"
+             "\"fronted\":%d,\"acquired\":%d,\"refused\":%d,"
+             "\"vanished\":%d,\"backgroundOnly\":%d,"
+             "\"before\":{\"count\":%lu,\"slotScans\":%lu,"
+             "\"eventPasses\":%lu},"
+             "\"after\":{\"count\":%lu,\"slotScans\":%lu,"
+             "\"eventPasses\":%lu},"
+             "\"unreachedOmitted\":%d,"
+             "\"note\":\"%s\"}}}",
+             id,
+             rep.armed ? "true" : "false",
+             rep.complete ? "true" : "false",
+             rep.restored ? "true" : "false",
+             (int)rep.considered, (int)rep.already, (int)rep.woken,
+             (int)rep.fronted, (int)rep.acquired, (int)rep.refused,
+             (int)rep.vanished, (int)rep.background_only,
+             rep.before_count, rep.before_slot_scans, rep.before_event_passes,
+             rep.after_count, rep.after_slot_scans, rep.after_event_passes,
+             (int)rep.unreached_omitted,
+             rep.note);
+    /* The names, appended rather than interpolated, because the list is
+       variable-length and one snprintf that both counts and writes it is
+       how a reply comes back truncated mid-array. Written only while it
+       fits; anything that does not is already counted in
+       `unreachedOmitted`, which the object above carries. */
+    {
+        long n = (long)strlen(out);
+        long i;
+        const char *sep = "";
+
+        n -= 3;                       /* reopen "}}}" */
+        n += snprintf(out + n, cap - n, ",\"unreached\":[");
+        for (i = 0; i < (long)rep.unreached_count && n < cap - 8; ++i) {
+            n += snprintf(out + n, cap - n, "%s\"%s\"", sep,
+                          rep.unreached[i]);
+            sep = ",";
+        }
+        (void)snprintf(out + n, cap - n, "]}}}");
+    }
+}
+
 static void run_mirror(long id, char *out, long cap)
 {
     MirrorFacts facts;
@@ -1522,12 +1563,24 @@ void now_command_run(const char *name, const char *request_json, long id,
         run_mirror(id, out, cap);
         return;
     }
+    if (strcmp(name, "cycle") == 0) {
+        run_cycle(id, out, cap);
+        return;
+    }
     if (strcmp(name, "wirestat") == 0) {
         run_wirestat(request_json, id, out, cap);
         return;
     }
     if (strcmp(name, "putstat") == 0) {
         run_putstat(id, out, cap);
+        return;
+    }
+    /* What the desktop is drawn from, from the Appearance Manager rather
+       than from a resource nobody updates - see desktop.h. Takes no
+       arguments, so the console reaches it through console_model.c's
+       fallback and renders it with the same row renderer. */
+    if (strcmp(name, "desktop") == 0) {
+        now_desktop_command(request_json, id, out, cap);
         return;
     }
     if (strcmp(name, "ls") == 0) {
@@ -1606,6 +1659,18 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "ctlact") == 0) {
         now_act_run_ctlact(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "dragpress") == 0) {
+        now_act_run_dragpress(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "dragmove") == 0) {
+        now_act_run_dragmove(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "dragrelease") == 0) {
+        now_act_run_dragrelease(request_json, id, out, cap);
         return;
     }
     if (strcmp(name, "ditemact") == 0) {

@@ -114,6 +114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                            screenshotGuest: #selector(screenshotGuest),
                            askGuestForHelp: #selector(askGuestForHelp),
                            toggleListening: #selector(toggleListening),
+                           showMirror: #selector(showMirror),
                            revealSharedFolder: #selector(revealSharedFolder),
                            revealLogFolder: #selector(revealLogFolder),
                            quit: #selector(quit)))
@@ -169,6 +170,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         case .listening, .connected:
             state.stopListening()
         }
+    }
+
+    /// **The Window menu's face on `showMirror`.**
+    ///
+    /// One implementation, four faces — this, the Mirror page's button,
+    /// the `mirror_open` agent verb and the guest's `host.show`. When it
+    /// refuses (no Mac connected) the reason goes to the log and the
+    /// Mirror page comes up, because a menu item that silently does
+    /// nothing is indistinguishable from a broken one.
+    @objc func showMirror() {
+        let outcome = state.showMirror()
+        guard !outcome.ok else { return }
+        state.listener.note("Show Mirror: \(outcome.reason)", area: "host")
+        show(moduleID: "mirror")
     }
 
     @objc func revealSharedFolder() {
@@ -270,7 +285,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                               keyEquivalent: "o")
         open.target = self
         menu.addItem(open)
-        let shoot = NSMenuItem(title: "Screenshot Guest",
+        // The same words as the main menu's item: one command, one name.
+        let shoot = NSMenuItem(title: "Capture Screen",
                                action: #selector(screenshotGuest),
                                keyEquivalent: "s")
         shoot.target = self
@@ -719,6 +735,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     return .textSet(
                         await agentIntegration.setElementText(
                             element: element, text: text))
+                case .observeElements:
+                    /* THE SHORTEST BRANCH ON THE ACT PLANE, and the only
+                       one with no refusal this side can compose: an
+                       observation that names no process is a COMPLETE
+                       request meaning the frontmost application, and the
+                       pair rule that makes half a serial number unspellable
+                       was enforced where the caller's keys were first read.
+                       So the field is forwarded exactly as it arrived,
+                       absence included — a host that resolved "frontmost"
+                       itself would be naming a process from a sample taken
+                       at a different moment than the walk. */
+                    return .observeElements(
+                        await agentIntegration.observeElements(
+                            process: request.observeProcess))
                 case .transferCancel:
                     /* Says only its own name, and the codec has already
                        refused a request carrying anything else. There is
@@ -857,6 +887,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     }
                     return .mirrorDrive(
                         agentIntegration.driveMirror(drive))
+                case .mirrorOpen:
+                    /* No shape to check: the operation says only its own
+                       name, and the codec has already refused a request
+                       that carried anything else. The one branch here
+                       that sends the classic Mac nothing. */
+                    return .mirrorOpen(agentIntegration.openMirror())
                 case .stream:
                     /* The bracket. The codec has already refused every
                        crossed shape — a stop carrying a depth, a page

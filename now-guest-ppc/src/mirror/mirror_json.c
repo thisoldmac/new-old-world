@@ -1,6 +1,7 @@
 #include "mirror_json.h"
 
 #include "json.h"
+#include "mirror_anchor.h"
 #include "peek_table.h"
 
 #include <stdio.h>
@@ -131,6 +132,62 @@ long now_mirror_json(const MirrorFacts *facts, long id, char *out, long cap)
         now_json_escape(facts->reason, escaped, (long)sizeof escaped);
         n += snprintf(out + n, (size_t)(cap - n),
                       ",\"reason\":\"%s\"", escaped);
+    }
+    /* P1's own evidence. Emitted LAST inside `extension` and bounded by
+       what is left of the reply, because it is the only variable-length
+       thing in this object: the fields above are a fixed cost and this
+       one grows with the machine. A slot that does not fit is counted
+       into `slotsOmitted` rather than dropped, and the array is closed
+       properly either way - a truncated reply is not a short answer, it
+       is not JSON. */
+    if (facts->anchors.present || facts->anchors.slot_count > 0
+        || facts->anchors.slots_omitted > 0) {
+        int si;
+        /* Budgeted HERE, against the reply actually written so far,
+           rather than guessed when the facts were gathered: the fields
+           above are conditional, so how much room is left is not knowable
+           until this point. */
+        int budget = now_mirror_anchor_slot_budget(cap, n);
+        int emit = facts->anchors.slot_count;
+        int omitted = facts->anchors.slots_omitted;
+
+        if (emit > budget) {
+            omitted += emit - budget;
+            emit = budget;
+        }
+        if (n < cap) {
+            n += snprintf(out + n, (size_t)(cap - n),
+                          ",\"anchors\":{\"present\":%s,"
+                          "\"count\":%lu,\"eventPasses\":%lu,"
+                          "\"slotScans\":%lu,\"fullPublishes\":%lu,"
+                          "\"changePublishes\":%lu,"
+                          "\"cadencePublishes\":%lu,"
+                          "\"lastPublishTicks\":%lu,"
+                          "\"nowTicks\":%lu,\"slotsOmitted\":%d,"
+                          "\"slots\":[",
+                          facts->anchors.present ? "true" : "false",
+                          facts->anchors.count,
+                          facts->anchors.event_passes,
+                          facts->anchors.slot_scans,
+                          facts->anchors.full_publishes,
+                          facts->anchors.change_publishes,
+                          facts->anchors.cadence_publishes,
+                          facts->anchors.last_publish_ticks,
+                          facts->anchors.now_ticks, omitted);
+        }
+        for (si = 0; si < emit && n < cap; ++si) {
+            const MirrorAnchorSlotFact *s = &facts->anchors.slots[si];
+            now_json_escape(s->name, escaped, (long)sizeof escaped);
+            n += snprintf(out + n, (size_t)(cap - n),
+                          "%s{\"slot\":%d,\"name\":\"%s\",\"a5\":%lu,"
+                          "\"windowList\":%lu,\"stampTicks\":%lu,"
+                          "\"ageTicks\":%lu}",
+                          si == 0 ? "" : ",", s->slot, escaped, s->a5,
+                          s->window_list, s->stamp_ticks, s->age_ticks);
+        }
+        if (n < cap) {
+            n += snprintf(out + n, (size_t)(cap - n), "]}");
+        }
     }
     if (n < cap) {
         n += snprintf(out + n, (size_t)(cap - n), "},\"planes\":[");

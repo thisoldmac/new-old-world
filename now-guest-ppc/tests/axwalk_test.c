@@ -48,12 +48,19 @@ enum {
     kCtl = 0x00103100,            /* the ControlRecord */
     kCtl2H = 0x00104000,
     kCtl2 = 0x00104100,
-    kWin2 = 0x00105000
+    kWin2 = 0x00105000,
+    kStrucH = 0x00102300,         /* the OTHER region's handle */
+    kStruc = 0x00402300           /* and the Region itself */
 };
 
 /* One window whose content region is (50,80)-(250,480) and whose
    portRect origin is (0,0), so a control's local rect and its global
-   rect differ by exactly the content origin. */
+   rect differ by exactly the content origin.
+ *
+ * Its STRUCTURE region is deliberately not the content region grown by
+ * any round number: (31,77)-(252,483). A fixture where one could be
+ * computed from the other would pass against a reader that returned the
+ * same rectangle twice, which is the merge's whole failure mode. */
 static void build_window(AxFixture *f, unsigned long win, const char *title,
                          unsigned long controls, unsigned long next)
 {
@@ -61,6 +68,7 @@ static void build_window(AxFixture *f, unsigned long win, const char *title,
     axfix_put16(f, win + 18, 0);          /* portRect.left (local) */
     axfix_put16(f, win + 108, 8);         /* windowKind: a document window */
     axfix_put8(f, win + 110, 1);          /* visible */
+    axfix_put32(f, win + 114, kStrucH);   /* strucRgn */
     axfix_put32(f, win + 118, kRgnH);     /* contRgn */
     axfix_put32(f, win + 134, kWinTitleH);
     axfix_put32(f, win + 140, controls);
@@ -68,6 +76,8 @@ static void build_window(AxFixture *f, unsigned long win, const char *title,
 
     axfix_put_handle(f, kRgnH, kRgn);
     axfix_put_region(f, kRgn, 50, 80, 250, 480);
+    axfix_put_handle(f, kStrucH, kStruc);
+    axfix_put_region(f, kStruc, 31, 77, 252, 483);
     axfix_put_handle(f, kWinTitleH, kWinTitleP);
     axfix_put_pstr(f, kWinTitleP, title);
 }
@@ -109,31 +119,72 @@ static void window_fields(void)
           "titleHandle @134 -> Pascal string");
     check(w.top == 50 && w.left == 80 && w.bottom == 250 && w.right == 480,
           "contRgn @118 -> rgnBBox");
+    check(w.struc_top == 31 && w.struc_left == 77
+              && w.struc_bottom == 252 && w.struc_right == 483,
+          "strucRgn @114 -> rgnBBox");
     check(w.origin_top == 50 && w.origin_left == 80,
           "content origin = rgnBBox - portRect origin");
 }
 
-/* The content region is at 118, NOT at 114. 114 is strucRgn, which
-   peek_read.c reads for a different question. Putting a DIFFERENT
-   region handle at 114 must not change the answer - that is what
-   distinguishes the two fields from a lucky coincidence. */
-static void content_region_not_structure(void)
+/* BOTH REGIONS, NEITHER UNDER THE OTHER'S NAME.
+ *
+ * Until 2026-08-07 this reader returned the content region and
+ * peek_read.c returned the structure region, and the scene consumed
+ * both under one field - so `windows[].rect` meant different things on
+ * different rows and no consumer could ask which. One reader now returns
+ * both, and what pins it is that the two rectangles here CANNOT be
+ * derived from each other: a reader that read one handle twice, or read
+ * the wrong offset, produces two identical rects or two swapped ones and
+ * this fails either way.
+ *
+ * The offsets are the point too: 114 is strucRgn and 118 is contRgn, and
+ * a reader that transposed them would still answer plausibly-shaped
+ * rectangles for every window on the machine. */
+static void both_regions_read_and_not_confused(void)
 {
     AxFixture f;
     NowAxMemory m;
     NowAxWindow w;
-    const unsigned long struc_h = 0x00102400UL;
-    const unsigned long struc = 0x00402400UL;
 
     axfix_init(&f, &m);
     build_window(&f, kWin, "W", 0, 0);
-    axfix_put32(&f, kWin + 114, struc_h);
-    axfix_put_handle(&f, struc_h, struc);
-    axfix_put_region(&f, struc, 30, 70, 260, 490);   /* the frame */
 
     check(now_ax_read_window(&m, kWin, &w) == kNowAxOk, "window reads");
     check(w.top == 50 && w.left == 80,
-          "the walk reads contRgn @118, not strucRgn @114");
+          "the content rect comes from contRgn @118");
+    check(w.struc_top == 31 && w.struc_left == 77,
+          "the structure rect comes from strucRgn @114");
+    check(!(w.top == w.struc_top && w.left == w.struc_left),
+          "the two regions are two readings, not one read twice");
+    /* And the structure region is NOT the content region shifted by any
+       one constant, which is what the scene used to substitute for
+       reading it. */
+    check((w.top - w.struc_top) != (w.left - w.struc_left),
+          "no single constant relates the two regions");
+}
+
+/* A window whose STRUCTURE region cannot be read is refused whole, the
+   same policy this file already applied to an unreadable content
+   region. The alternative - reporting the window with the content rect
+   in both fields - is a plausible rectangle about twenty pixels out,
+   which is the class of defect that survives every gate. */
+static void an_unreadable_structure_region_refuses_the_window(void)
+{
+    AxFixture f;
+    NowAxMemory m;
+    NowAxWindow w;
+
+    axfix_init(&f, &m);
+    build_window(&f, kWin, "W", 0, 0);
+    axfix_put32(&f, kWin + 114, 0);       /* no structure region */
+    check(now_ax_read_window(&m, kWin, &w) != kNowAxOk,
+          "a window with no strucRgn is refused");
+
+    axfix_init(&f, &m);
+    build_window(&f, kWin, "W", 0, 0);
+    axfix_put32(&f, kWin + 114, 0x00900000UL);   /* outside both arenas */
+    check(now_ax_read_window(&m, kWin, &w) != kNowAxOk,
+          "a strucRgn outside the readable zones is refused");
 }
 
 static void window_no_title(void)
@@ -281,6 +332,7 @@ static void chains_link_up(void)
     /* kWin2 must be a real window or the link check refuses kWin. */
     axfix_put16(&f, kWin2 + 108, 8);
     axfix_put8(&f, kWin2 + 110, 1);
+    axfix_put32(&f, kWin2 + 114, kStrucH);
     axfix_put32(&f, kWin2 + 118, kRgnH);
     axfix_put32(&f, kWin2 + 134, 0);
     axfix_put32(&f, kWin2 + 140, 0);
@@ -341,7 +393,8 @@ static void record_widths(void)
 int main(void)
 {
     window_fields();
-    content_region_not_structure();
+    both_regions_read_and_not_confused();
+    an_unreadable_structure_region_refuses_the_window();
     window_no_title();
     window_refusals();
     control_fields();

@@ -292,10 +292,73 @@ Controls arrive **global** and are converted to content-local. Upstream's
 renderer used a fixed 20 px title-bar height, **not read from the
 wire** — an approximation it flagged as such.
 
+### `windows[].rect` is a join key, and that is why the title-bar constant stays
+
+Read this before "fixing" `kNowSceneIRTitleBarHeight`
+(`now-guest-ppc/src/scene/scene.h`) into a real measurement. It looks
+exactly like the kind of guess this project deletes on sight, and on
+2026-08-07 an audit of the surface recommended deleting it. It was kept
+deliberately, and here is the argument, so the next person does not have
+to reconstruct it from a diff.
+
+**What the field is.** IR v1's `windows[].rect` is not a rectangle the
+machine has. It is a **box both sides construct and decompose the same
+way**: the producer sends the content region grown upward by the
+constant, and the consumer recovers the content origin at
+`rect.t + titleBarHeight` before it compares a click to a control's
+content-local rect (`MirrorKit`'s `HitTester`, `FinderItems`,
+`InteractionPolicy`). Its value is that the two spellings match — which
+is what a join key is for, and what a measurement cannot be.
+
+**Why the true structure region is the wrong answer here.** It is the
+more faithful rectangle and it is *undecomposable*: a consumer holding
+one cannot recover the content origin from it, because the difference
+between the two regions is not a constant. Title bars are not one height
+across window kinds and the Appearance Manager draws them procedurally —
+which is precisely the objection to the constant, and it applies with
+equal force to any consumer trying to undo it. A producer that started
+sending the structure region alone would be sending something no
+consumer on the other side can use, and IR v1's key set is frozen, so it
+cannot send both under this name either. **That is a version's work, not
+a producer's.**
+
+**What DID change on 2026-08-07**, and this is the part worth keeping:
+the constant used to be a *substitute for reading the region*. Three
+branches of the scene's window walk each answered `rect` differently —
+content grown by the constant for a bound foreign process, `peek_read`'s
+structure region raw for an unbound one, Carbon's structure region for
+NOW's own — because the two window readers each returned one region and
+a different one. Both readers now return **both** regions from the
+machine, and every branch derives `rect` the one way. So the constant is
+now an approximation that sits **beside** the measurement and can be
+checked against it, rather than a third answer competing with two.
+
+**What that was worth, measured.** NOW's own window reported
+`{l:22, t:48, r:779, b:555}` — the true structure region — while its
+content top was 70. A consumer decomposing that got 68. **The render was
+two pixels out on every control in that window**, on every frame, and
+nothing could see it, because both halves were internally consistent and
+neither was wrong about anything it could state. The same window now
+reports `{l:28, t:50, r:772, b:548}` and decomposes exactly.
+
+**What is still owed.** A caller holding a rectangle cannot ask which
+region it is. `elements`/`axtree` publish the raw **content** rect under
+`bounds` while the scene publishes the **box**, and nothing distinguishes
+them. That wants a provenance field, and it should land once, in the same
+vocabulary as the other rectangle provenance rather than as a second
+scheme of its own.
+
 Two more stated approximations, both hypotheses upstream never closed:
 
-- **Cross-app z-order is reconstructed**, not read: front app first, then
-  process order. True global order needs the window list's cross-links.
+- **Cross-app z-order is reconstructed**, not read — and there are no
+  cross-links to find. `WindowList` is a per-process low-memory global,
+  so no application's chain reaches another's. Since 2026-08-07 the
+  reconstruction is the order applications were last watched coming to
+  the front (`now-guest-ppc/src/scene/front_order.h`), which on a machine
+  that layers by application IS the layer order, rather than Process
+  Manager enumeration, which is launch order. A process never watched
+  coming forward has no rank and the scene's `depth` coverage claim says
+  so.
 - **Default button** — the wire does not carry defaultness, so the first
   button in a dialog is assumed to be it.
 

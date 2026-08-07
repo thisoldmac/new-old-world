@@ -36,6 +36,7 @@ look is this page, and the second is the upstream repository.
 | [mirror-journaling.md](mirror-journaling.md) | the Event Manager journal: measured, and closed |
 | [toolbox-and-gworld.md](toolbox-and-gworld.md) | the Toolbox measured — structure layouts, GWorld internals and lifetime, bottleneck dispatch, and how a composite is read from an offscreen port |
 | [mirror-assets.md](mirror-assets.md) | extracting the guest's own fonts, icons, cursors and patterns |
+| [cursor-follow.md](cursor-follow.md) | the guest's DRAWN cursor — why Inside Macintosh's redraw recipe does not work on Mac OS 9, which of three routes actually blits, and the measured fact that the cursor's **shape** already tracks a position the resident sets |
 | [mirror-renders.md](mirror-renders.md) | rendered scenes, and what each proves — including the one before/after pair beside the machine's own screen |
 | [mirror-measurement-method.md](mirror-measurement-method.md) | how to measure things here — **twenty-two** rules, each bought with a retraction. Rules 1–12 are upstream's inheritance; **13–22 are NOW's own**, all paid for on 2026-08-05/06, and they are why that file is no longer titled for Mirror alone. 19 is the one that bit the session that had just written it: the end of a shared append-only log is not your run. 20–22 are the ones about an instrument that *substitutes* rather than misses — one blocking call reported as two slownesses, a wedge mode named `modal` that never raised one, and heap arithmetic that failed in silence |
 | [mirror-foldin-inventory.md](mirror-foldin-inventory.md) | what has crossed from upstream and what has not |
@@ -137,7 +138,7 @@ work.
 | **Finder list and column views** | Nothing detects the view type; live positions there were never measured |
 | **An application's own document text** | The door exists; discovering a private text handle is not implemented, and no documented route to it was found |
 | **Precise control kind** | Button versus checkbox versus radio — the definition procedure's id is not in the record |
-| **True cross-app z-order** | Reconstructed, not read |
+| **True cross-app z-order** | Reconstructed, not read, and there is nothing to read: `WindowList` is a per-process low-memory global, so no application's chain reaches another's. Since 2026-08-07 the reconstruction is the order applications were last WATCHED coming to the front (`front_order.h`) rather than Process Manager enumeration, which is launch order |
 | **Scale** | All folder-item trials used one folder, in one window, with fifteen items |
 | **Content-plane record mode** | Only counting was built; the ring and the text records were never reached |
 | **A fixture for the content plane** | Its contract was frozen on design and live use, not on captured evidence |

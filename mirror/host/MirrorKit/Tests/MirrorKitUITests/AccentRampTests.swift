@@ -100,7 +100,7 @@ final class AccentRampTests: XCTestCase {
 @MainActor
 final class AccentHighlightRenderTests: XCTestCase {
 
-    func testASelectedListRowIsFilledWithTheMeasuredHighlight() throws {
+    static func oneSelectedRow() -> Scene {
         let r = Rect(l: 100, t: 100, r: 500, b: 400)
         var w = Scene.Window(id: "1.0/List#0", app: "Finder", psn: "1.0",
                              title: "List", kind: 0, rect: r, front: true,
@@ -123,24 +123,61 @@ final class AccentHighlightRenderTests: XCTestCase {
                           screen: .init(w: 800, h: 600), apps: [],
                           processes: nil, menubar: nil, windows: [w],
                           desktopItems: nil, meta: .init(errors: []))
+        return scene
+    }
 
+    func testASelectedListRowIsFilledWithTheMeasuredHighlight() throws {
+        let scene = Self.oneSelectedRow()
+        try assertSomePixel(of: scene, is: Platinum.highlightFallbackRGB,
+                            "no pixel of the selected row carries the "
+                            + "fallback highlight - it never reached the "
+                            + "canvas")
+    }
+
+    /// **And a guest that names its own highlight beats the fallback.**
+    ///
+    /// This is the assertion the old version of this file could not make,
+    /// because there was nowhere for the guest to say. The constant it
+    /// pinned - 0xCCCCFF, out of the theme FILE - turned out never to have
+    /// been on a screen: the live machine answers 0x97A1DE and its own
+    /// screendump agrees. A renderer keyed to a constant is wrong in
+    /// exactly that way, silently, so what is pinned here is that the WIRE
+    /// wins.
+    func testADeclaredHighlightBeatsTheFallback() throws {
+        var scene = Self.oneSelectedRow()
+        scene.meta.theme = .init(highlight: "#FF00FF", depth: 32)
+        try assertSomePixel(of: scene, is: 0xFF00FF,
+                            "the guest named its highlight and no pixel "
+                            + "carries it")
+        try assertNoPixel(of: scene, is: Platinum.highlightFallbackRGB,
+                          "the fallback still reached the canvas over a "
+                          + "colour the guest had named")
+    }
+
+    private func assertSomePixel(of scene: Scene, is rgb: UInt32,
+                                 _ message: String) throws {
+        XCTAssertTrue(try pixelPresent(scene, rgb), message)
+    }
+
+    private func assertNoPixel(of scene: Scene, is rgb: UInt32,
+                               _ message: String) throws {
+        XCTAssertFalse(try pixelPresent(scene, rgb), message)
+    }
+
+    private func pixelPresent(_ scene: Scene, _ rgb: UInt32) throws -> Bool {
         let png = try RenderShot.png(scene: scene)
         let rep = try XCTUnwrap(NSBitmapImageRep(data: png))
-        let want = (Int((PlatinumAccent.activeHighlight >> 16) & 0xFF),
-                    Int((PlatinumAccent.activeHighlight >> 8) & 0xFF),
-                    Int(PlatinumAccent.activeHighlight & 0xFF))
-
-        var found = false
-        for y in 0..<rep.pixelsHigh where !found {
+        let want = (Int((rgb >> 16) & 0xFF), Int((rgb >> 8) & 0xFF),
+                    Int(rgb & 0xFF))
+        for y in 0..<rep.pixelsHigh {
             for x in 0..<rep.pixelsWide {
                 guard let c = rep.colorAt(x: x, y: y) else { continue }
                 let px = (Int((c.redComponent * 255).rounded()),
                           Int((c.greenComponent * 255).rounded()),
                           Int((c.blueComponent * 255).rounded()))
-                if px == want { found = true; break }
+                if px == want { return true }
             }
         }
-        XCTAssertTrue(found, "no pixel of the selected row carries the "
-                      + "measured highlight — it never reached the canvas")
+        return false
     }
 }

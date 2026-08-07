@@ -28,6 +28,12 @@ struct Options {
     var json = false
     var snapshot: String?
     var renderFixture: String?
+    /// An IR v2 scene BODY, exactly as `scene.request` delivers it on the
+    /// bulk channel. `--render-fixture` predates that family and speaks the
+    /// older axtree/observe envelope, so an integration look that captures
+    /// a live scene has nothing to rasterize it with. Same renderer, same
+    /// `writeRenderShot`; only the decode differs.
+    var renderScene: String?
     var out: String?
     var renderMenu: Int?        // open this menu index in the offscreen render
     var hoverItem: Int?         // highlight this row — proves hover offscreen
@@ -86,6 +92,7 @@ func parseArgs() -> Options? {
         case "--serve": o.serve = value()
         case "--managed-serve": o.managedServe = true
         case "--render-fixture": o.renderFixture = value()
+        case "--render-scene": o.renderScene = value()
         case "--render-menu": o.renderMenu = value().flatMap(Int.init)
         case "--hover-item": o.hoverItem = value().flatMap(Int.init)
         case "--select-item": o.selectItem = value()
@@ -124,11 +131,12 @@ func parseArgs() -> Options? {
     if o.managedServe {
         return o
     }
-    if o.target == nil && o.renderFixture == nil {
+    if o.target == nil && o.renderFixture == nil && o.renderScene == nil {
         let usage = "usage: MirrorApp --host H --port P --machine M "
             + "[--scope all] [--qmp SOCK] [--plane axtree|observe] "
             + "[--poll N] [--interval S] [--json] [--snapshot out.png]\n"
             + "       MirrorApp --render-fixture raw.json --out out.png\n"
+            + "       MirrorApp --render-scene ir.json --out out.png\n"
         FileHandle.standardError.write(Data(usage.utf8))
         return nil
     }
@@ -322,6 +330,27 @@ if let spec = options.island, let target = options.target {
 
 
 // Offscreen fixture render: no guest, no window.
+if let sceneFile = options.renderScene {
+    guard let out = options.out else {
+        FileHandle.standardError.write(
+            Data("--render-scene needs --out\n".utf8))
+        exit(2)
+    }
+    do {
+        let data = try Data(contentsOf: URL(fileURLWithPath: sceneFile))
+        let scene = try JSONDecoder().decode(MirrorKit.Scene.self, from: data)
+        try MainActor.assumeIsolated {
+            try writeRenderShot(scene, to: out, openMenu: options.renderMenu,
+                                hoveredItem: options.hoverItem)
+        }
+        exit(0)
+    } catch {
+        FileHandle.standardError.write(
+            Data("render failed: \(error)\n".utf8))
+        exit(1)
+    }
+}
+
 if let fixture = options.renderFixture {
     guard let out = options.out else {
         FileHandle.standardError.write(Data("--render-fixture needs --out\n".utf8))

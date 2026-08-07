@@ -145,6 +145,16 @@ Both: comments say **why**, not what. Match the surrounding density.
   the build, machine and port beside every number and
   `NOW_METAL_REPEATS` samples the large rungs more than once
   ([docs/68k-metal-baseline.md](docs/68k-metal-baseline.md)).
+- **Your ports are derived, not asked for.** `tools/lane-ports` hashes
+  your worktree path to a block of eight ports nobody else can pick, and
+  `scripts/spin-up-ppc` already defaults to them — so no coordinating
+  session hands out `--port N` and no lane has to ask. It replaces
+  exactly that, and the hand-assigned scheme it replaces lost a lane's
+  run on 2026-08-06 to a port held by a VM nobody owned any more. The
+  guards now answer *whose* a held port is, and a block whose owner died
+  is reclaimable by its owner alone (`tools/lane-ports reclaim` — through
+  QMP by socket path, never `kill` on what `lsof` named).
+  [docs/lane-ports.md](docs/lane-ports.md).
 - `GuestWireConformanceTests` reads `now-guest-ppc/src/**/*.c` and checks every
   message the guest can emit against this side's decoder and the
   contract's required fields. **If you add a message built across
@@ -216,47 +226,82 @@ quietly went to whatever machine a stale default named.
 
 ## The stage image is the resident under test
 
-`~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2` is the local oracle: every
-Mirror sweep and every `scripts/spin-up-ppc` clones it. So the resident
-code under test is **whatever was baked into that image**, not whatever
-this checkout last compiled — and staging a fresh INIT into a throwaway
-clone changes the clone, never the image.
+`~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2` is the local oracle for
+**resident (`ext/`) work**: it is the image with the NOW Extension baked
+in, so the resident it holds is whatever was baked — not whatever this
+checkout last compiled, and staging a fresh INIT into a throwaway clone
+changes the clone, never the image.
 
+**It is not what an ordinary run uses, and believing otherwise has already
+produced a wrong conclusion.** `scripts/spin-up-ppc` clones
+`os91-runner.qcow2`, stages *this checkout's* ext and app into the clone
+and cold-boots, so the resident under test there is the tree's build. This
+paragraph used to say the opposite ("every Mirror sweep and every
+`scripts/spin-up-ppc` clones it"), and on 2026-08-06 a coordinating session
+read it, told the human an arc's measurements were suspect because the
+stage image was stale, and had to be corrected by a lane that read the
+script.
+
+[docs/staged-images.md](docs/staged-images.md) is the page: which mode to
+bake in, what each gate can honestly assert versus imply, and how to hand
+a shared bake over. The rules that must not be restated anywhere else:
+
+- **Bake your own by default.** `scripts/bake-ext-image` installs into
+  `~/Lab/Assets/os91-qemu/agent-stage/` under your branch's name and
+  touches nothing shared. `--shared` is the deliberate, announced act that
+  replaces the oracle everybody clones; it refuses while other guests are
+  running on this Mac. Nothing in flight should be baking `--shared`.
 - **A commit that touches `ext/` or `contract/peek_table.h` must be baked
-  first**, and this is enforced: `tools/ext-bake-gate`, run from
-  `.githooks/pre-commit`, refuses the commit unless the newest receipt in
-  `ext/stage-receipts.json` records a bake of exactly this source. The
-  receipt carries the four facts that make a bake believable — the build
-  fingerprint the **guest itself** reported, the image sha256, a passing
-  `qemu-img check`, and that the shutdown was guest-clean.
-- **`scripts/bake-ext-image` is the one command.** It clones the oracle,
-  stages this checkout's ext and app, cold-boots so the INIT loads, asks
-  the guest `mirror` and checks its answer against the local build, lets
-  the guest shut *itself* down, checks the image, keeps the old one as
-  `.bak-YYYYMMDD`, installs the new one and writes the receipt. On any
-  failure it installs **nothing** and leaves the VM running to be looked
-  at.
-- **Deferring is a written decision, never silence.** `TBT_DEFER_EXT_BAKE=1`
-  with `TBT_DEFER_EXT_BAKE_REASON="…"` allows the commit and writes the
-  reason into `ext/stage-receipts.json`, so it lands in the same commit as
-  the work it excuses. As with `TBT_ALLOW_MAIN=1`, the enforcement is the
-  floor and not the rule.
+  first**, enforced by `tools/ext-bake-gate` from `.githooks/pre-commit`:
+  the newest receipt in `ext/stage-receipts.json` must record a bake of
+  exactly this source, with the five facts that make a bake believable —
+  the fingerprint the **guest itself** reported, the image sha256, a
+  passing `qemu-img check`, a guest-clean shutdown, and a cleanly
+  unmounted **volume**, which is a different question from the other four.
+- **Deferring is a written decision, never silence — and it comes due at
+  `main`.** `TBT_DEFER_EXT_BAKE=1` with `TBT_DEFER_EXT_BAKE_REASON="…"`
+  allows the *commit* and writes the reason into `ext/stage-receipts.json`,
+  so it lands in the same commit as the work it excuses. It does not allow
+  the *landing*: `merge-check` refuses on `main` when the resident source
+  arriving is covered by no bake, quoting the deferral's own reason back.
+  Lane-to-lane merges are untouched. As with `TBT_ALLOW_MAIN=1`, the
+  enforcement is the floor and not the rule.
+- **A note is not a bake.** An image can reach the oracle's path by hand —
+  that is how the current one got there. `tools/ext-bake-gate note-image
+  --reason "…"` records who put it there and why, and says in its own
+  verdict that it certifies provenance only: nobody asked a guest what
+  resident is inside. It never satisfies the commit gate.
+- **The image is shared and the last bake wins**, so a receipt cannot say
+  the file still holds what it describes. That check is no longer yours to
+  remember: `tools/ext-bake-gate verify-image` runs the `shasum`, the
+  commit gate warns when they differ, and `tools/image-provenance` prints
+  the verdict at the top of every guest run. It **warns rather than
+  refuses**, deliberately — whether another lane has baked over your image
+  is not a property of your commit and not something you can act on.
+- **Every guest run writes its own rig table.** `$NOW_SPIN_RUN/provenance.md`
+  names the base, its sha256, whether a receipt accounts for it, what was
+  staged on top, and what the guest said it was running. Quote a
+  measurement by copying that file, not by remembering.
+- **Receipts conflict on purpose at a merge.** A clean textual merge of
+  `ext/stage-receipts.json` is no evidence at all — the same class as the
+  derived tables below, made worse by the fact that the thing described can
+  change without any branch touching a file. `.gitattributes` +
+  `tools/receipts-merge-driver` force a decision;
+  `.githooks/pre-merge-commit` and `post-merge` catch the clones whose git
+  config lacks the driver. Resolve by asking the file, never by picking a
+  side to clear the conflict.
 
-- **The image is shared and the last bake wins.** A receipt says this
-  source was baked, verified and installed; it cannot say the file still
-  holds it, because another branch may bake over it an hour later. Before
-  believing a sweep, check the image's sha256 against the receipt's
-  `imageSha256` — and if they differ, bake again. That is one `shasum`,
-  and it is the difference between a result and a guess.
-
-Why it is enforced rather than remembered: on 2026-08-06 the newest stage
-image was from 3 August while **six** extension commits had landed that
-day — the re-armed liveness Time Manager vehicle, its ABI shim, the MacTCP
-`.IPP` probe. Every session cloned the stale image, staged a fresh build
-into a clone and discarded the clone. The rule was already written down in
-[docs/open-issues.md](docs/open-issues.md) and nothing checked it, so the
-verified oracle went stale in silence and any sweep started from an old
-resident with no warning.
+Why it is enforced rather than remembered — twice over. On 2026-08-06 the
+newest stage image was from 3 August while **six** extension commits had
+landed that day; every session cloned the stale image, staged a build into
+a clone and discarded the clone. The rule was written down in
+[docs/open-issues.md](docs/open-issues.md) and nothing checked it. Then the
+same evening the image was rolled back **by hand** to that 3 August file
+after three bakes installed dirty volumes — leaving an oracle whose sha256
+matched no receipt at all, with nothing anywhere saying so. A shared
+mutable file with quiet provenance goes stale in silence in both
+directions: forward, because nobody baked, and backward, because somebody
+did something reasonable and left no trace.
 
 ## Git
 
@@ -397,6 +442,32 @@ Two things follow, and the second is the one that costs something:
   list appears twice — once as a table and once in a sentence — either
   gate the pair or delete one. A sentence naming seven of eight rows is
   not a smaller error than a wrong number; it is a more convincing one.
+
+**A derived document now declares itself, and the declaration is
+machine-readable.** `docs/contract-coverage.md` and `docs/mcp-coverage.md`
+each carry a `derived-doc` block beside their published commands: the
+runnable derivations, the sha256 of each answer, and a digest of the
+source files they read. `tools/derived-doc-gate` re-runs them —
+`rederive` rewrites the block and logs what moved, `check` refuses a
+**merge** commit whose derivations were not re-run. Three properties are
+the point rather than the hashing:
+
+- **The source digest is checked separately from the answers**, because a
+  count is blind to a change of shape: two lanes added new *arguments* to
+  existing verbs and every count held.
+- **The prose list is derived too.** `mcp-coverage.md`'s "unnoticed rows,
+  named together" is asserted equal to the table's own column, and both
+  sides emit how many lists there are — two lists whose union matches the
+  table is exactly the rot that shipped.
+- **A confirmation is worth its line.** A re-run that finds nothing
+  writes `unchanged` with the sha it ran at, because a derived table
+  unmoved by 99 commits looks exactly like a derivation nobody ran.
+
+It is **built and not armed** — `NOW_DERIVED_DOC_GATE=1` switches the
+hooks on, and the arming procedure is in `.githooks/pre-commit`. Arming a
+gate into a live fleet is a change to every branch at once.
+`tools/derived-doc-gate-selftest` is the mutation evidence, in a
+throwaway repository with two lanes and a real merge.
 
 Durable technical claims that outlive this repository go to the parent's
 corpus as findings (`data/findings/`), validated with `tools/data check`.

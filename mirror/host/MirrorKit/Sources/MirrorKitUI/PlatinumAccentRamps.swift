@@ -142,7 +142,15 @@ public enum PlatinumAccent {
     public static let active = lavender
 
     /// The highlight colour the default scene writes literally, as its
-    /// own RGBColor rather than as a ramp index. Text and list-row
-    /// selection are filled with THIS.
+    /// own RGBColor rather than as a ramp index.
+    ///
+    /// IT IS NOT WHAT THE RUNNING MACHINE FILLS A SELECTION WITH, and the
+    /// sentence that used to say so here was wrong. On 2026-08-07 the seam
+    /// named above was finally crossed: `LMGetHiliteRGB` on a stock 9.1
+    /// guest answers 0x97A1DE, and that guest's own screendump agrees at
+    /// the pixels. This constant remains correct as a statement about the
+    /// FILE — two slots in it do agree — which is all it ever was.
+    /// `Platinum.highlightFallbackRGB` is what the renderer uses, and
+    /// `meta.theme.highlight` beats them both.
     public static let activeHighlight: UInt32 = 0xCCCCFF
 }

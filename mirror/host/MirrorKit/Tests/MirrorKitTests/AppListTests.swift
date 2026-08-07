@@ -154,6 +154,54 @@ final class AppListTests: XCTestCase {
                      "a clean app must not carry an empty error key")
     }
 
+    // MARK: - The declaration, not the window count
+
+    /// THE BUG THIS ARC EXISTS FOR, on the agent surface.
+    ///
+    /// `background` used to be `!(windows > 0 || front)` — which says
+    /// "faceless" about SimpleText with every document closed. An agent
+    /// asking what it can talk to was handed a list that dropped a running
+    /// application because it happened to have nothing open, and kept the
+    /// mistake invisible by calling it a background process.
+    ///
+    /// The declaration decides now. Same observable shape — no windows, not
+    /// frontmost — and opposite answers.
+    func testAnApplicationWithNothingOpenIsNotFiledAsFaceless() {
+        let s = scene(apps: [
+            Scene.AppRef(psn: "0.1", name: "Finder", front: true,
+                         backgroundOnly: false),
+            Scene.AppRef(psn: "0.2", name: "SimpleText", front: false,
+                         backgroundOnly: false),
+            Scene.AppRef(psn: "0.3", name: "tbt-worker", front: false,
+                         backgroundOnly: true),
+        ], windows: [win("0.1", "Macintosh HD", app: "Finder")])
+
+        let rows = AppList.rows(s)
+        XCTAssertEqual(rows.map(\.name), ["Finder", "SimpleText"],
+                       "an application with nothing open is still an "
+                       + "application an agent can talk to")
+        XCTAssertEqual(rows.first { $0.name == "SimpleText" }?.presence, .empty)
+        XCTAssertEqual(rows.first { $0.name == "Finder" }?.presence, .windowed)
+
+        let all = AppList.rows(s, includeBackground: true)
+        XCTAssertEqual(all.first { $0.name == "tbt-worker" }?.presence,
+                       .headless)
+        XCTAssertEqual(all.first { $0.name == "tbt-worker" }?.background, true)
+    }
+
+    /// A guest that never sent the declaration keeps the old predicate — the
+    /// fallback is explicit, so nobody reads a nil as a `false`.
+    func testAGuestWithoutTheDeclarationFallsBackToTheSwitchablePredicate() {
+        let rows = AppList.rows(realisticScene(), includeBackground: true)
+        XCTAssertEqual(rows.first { $0.name == "tbt-worker" }?.background, true)
+        XCTAssertEqual(rows.first { $0.name == "tbt-worker" }?.presence,
+                       .unknown,
+                       "without a declaration we say we do not know, rather "
+                       + "than dressing the guess up as an answer")
+        XCTAssertEqual(rows.first { $0.name == "tbt-worker" }?.presenceReason,
+                       ProcessPresence.noDeclarationReason)
+    }
+
     func testEmptySceneListsNothingRatherThanFailing() {
         XCTAssertTrue(AppList.rows(scene(apps: [])).isEmpty)
         XCTAssertTrue(AppList.rows(scene(apps: []),

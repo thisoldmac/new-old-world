@@ -459,6 +459,22 @@ void now_qdtrace_status(const NowContentBlock *block,
         out->qdext_died = block->qdext_died;
         out->qdext_born_missed = block->qdext_born_missed;
     }
+    if (block->length >= (NowContentU32)(offsetof(NowContentBlock,
+                                                  census_truncated)
+                                         + sizeof(NowContentU32))) {
+        out->has_census = 1;
+        out->census_runs = block->census_runs;
+        out->census_bytes = block->census_bytes;
+        out->census_usecs = block->census_usecs;
+        out->census_examined = block->census_examined;
+        out->census_found = block->census_found;
+        out->census_hooked = block->census_hooked;
+        out->census_windows = block->census_windows;
+        out->census_already = block->census_already;
+        out->census_unrecoverable = block->census_unrecoverable;
+        out->census_refused = block->census_refused;
+        out->census_truncated = block->census_truncated;
+    }
 }
 
 /* ---- arming --------------------------------------------------------- */

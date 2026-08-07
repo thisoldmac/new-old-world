@@ -22,9 +22,11 @@
 #include "contract.h"
 #include "ot_carbon.h"
 #include "peek.h"
+#include "anchor_acquire.h"
 #include "peek_read.h"
 #include "prefs.h"
 #include "proc_actions.h"
+#include "proc_roster.h"
 #include "product_identity.h"
 #include "scene_collect.h"
 #include "scene_phase.h"
@@ -145,6 +147,7 @@ static void shot_drop(void);
 static void note_shot(const char *line);
 static void get_cleanup(Boolean keep_file);
 static void chat_drop(void);
+static void host_show_drop(void);
 static void preview_fail(const char *reason);
 
 /* --- the wake plane ------------------------------------------------------
@@ -456,6 +459,7 @@ static void link_drop_transfers(void)
     put_drop();                       /* no half-written file left behind */
     get_cleanup(false);               /* nor half a file coming the other way */
     chat_drop();                      /* a streaming turn dies with the link */
+    host_show_drop();                 /* nobody is going to answer now */
     preview_fail("Connection lost");  /* local hook only; no wire touched */
     ctlq_clear();
     g_scene_plane_caps = 0;            /* no consumer, nothing to renew */
@@ -2014,6 +2018,22 @@ static void serve_scene(const char *request)
     (void)now_peek_settle((unsigned long)kNowPeekCapAnchors,
                           kNowSceneArmSettleTicks);
 
+    /* AND NOTHING MORE, ON THIS PATH. A wake sweep was tried here and
+     * REMOVED after it was measured: on a freshly booted machine
+     * WakeUpProcess made eight processes eligible, every call returned
+     * noErr, and half a second later not one of them had executed a
+     * GetNextEvent - `slotScans` did not move. Making a process eligible
+     * is not making it pump, and a recurring cost on the scene path with
+     * no measured acquisition is exactly the trade this slice was told
+     * not to make.
+     *
+     * What DOES acquire is the process being brought forward, and that
+     * visibly disturbs the machine - so it belongs in a control a person
+     * or an agent invokes deliberately (`cycle`, anchor_cycle.h) and
+     * never on a path that runs whenever a host polls. A scene of a
+     * machine nobody has cycled still says "not observed", honestly, for
+     * the processes it has never been inside. */
+
     now_scene_collect(scene, ++g_scene_seq, stale_ticks);
     /* Correlate subsequent acts with the normal-context observation a
        person actually saw. This is evidence only; resident guards do not
@@ -2284,7 +2304,7 @@ static void service_shot(void)
     /* Pixels grabbed; NOW comes back to the front to send them (it pumps
        the wire either way, but this leaves the human's machine where they
        left it). */
-    SetFrontProcess(&g_shot.self);
+    (void)now_proc_front_confirm(&g_shot.self, 0);
     if (!ok) {
         capture_fail(g_shot.id);
         return;
@@ -3458,6 +3478,111 @@ static void chat_drop(void)
     if (g_chatask.pending) {
         g_chatask.pending = false;
         chat_note(kChatAnswerError, "connection lost");
+    }
+}
+
+/* --- asking the HOST to show one of its own windows ---------------------
+   One direction by definition, the cloud and chat rule: the subject is
+   a surface on the modern machine, which this one does not have.
+
+   One ask at a time and no queue. A second press while one is in
+   flight is refused locally rather than stacking, because the answer a
+   person is waiting for is "did the window come up", and two asks can
+   only produce one useful answer. The deadline is short: the host does
+   no work worth waiting on — it opens a window and replies — so
+   silence past it means a host that predates the family, which is a
+   status line rather than an error. */
+
+enum { kHostShowTimeoutTicks = 60 * 8 };
+
+static struct {
+    Boolean pending;
+    long id;
+    unsigned long deadline;
+} g_hostshow;
+
+static ConnHostShowNote g_hostshow_hook;
+
+ConnHostShowNote conn_set_host_show_note(ConnHostShowNote fn)
+{
+    ConnHostShowNote previous = g_hostshow_hook;
+
+    g_hostshow_hook = fn;
+    return previous;
+}
+
+Boolean now_wire_host_show_pending(void)
+{
+    return g_hostshow.pending;
+}
+
+/* Settles the ask exactly once. Every path out of the family comes
+   through here — the answer, the deadline and the dropped link — so
+   there is one place that can clear `pending`, and no path that
+   forgets to. */
+static void host_show_settle(Boolean ok, const char *reason)
+{
+    if (!g_hostshow.pending) {
+        return;
+    }
+    g_hostshow.pending = false;
+    if (g_hostshow_hook != NULL) {
+        g_hostshow_hook(ok, reason);
+    }
+}
+
+static void host_show_drop(void)
+{
+    host_show_settle(false, "Connection lost.");
+}
+
+int now_wire_host_show(const char *surface, char *err, long cap)
+{
+    char json[128];
+    char esc[48];
+
+    if (g_hostshow.pending) {
+        snprintf(err, (size_t)cap, "Already asking");
+        return -1;
+    }
+    now_json_escape(surface, esc, sizeof esc);
+    ++g.offer_seq;
+    snprintf(json, sizeof json,
+             "{\"type\":\"host.show\",\"id\":%ld,\"surface\":\"%s\"}",
+             g.offer_seq, esc);
+    if (cloud_send(json, err, cap) != 0) {
+        return -1;
+    }
+    g_hostshow.pending = true;
+    g_hostshow.id = g.offer_seq;
+    g_hostshow.deadline = TickCount() + kHostShowTimeoutTicks;
+    return 0;
+}
+
+/* The host's answer. `reason` is the host's own sentence and is shown
+   whichever way `ok` went — a refusal a person cannot read is a button
+   that did nothing. */
+static void host_shown_answer(const char *reply)
+{
+    char reason[128];
+    Boolean ok;
+
+    if (!g_hostshow.pending
+        || now_json_find_int(reply, "id", -1) != g_hostshow.id) {
+        return;
+    }
+    ok = json_find_flag(reply, "ok", 0) != 0;
+    if (!now_json_find_string(reply, "reason", reason, sizeof reason)) {
+        snprintf(reason, sizeof reason,
+                 ok ? "The host showed it." : "The host refused.");
+    }
+    host_show_settle(ok, reason);
+}
+
+static void service_host_show(void)
+{
+    if (g_hostshow.pending && TickCount() > g_hostshow.deadline) {
+        host_show_settle(false, "No answer - that Mac may be too old.");
     }
 }
 
@@ -5093,24 +5218,18 @@ static void serve_process_list(const char *request)
        a row never truncates mid-JSON - a truncated frame decodes to
        nothing and the send silently does nothing. */
     enum { kEntryMargin = 320 };
-    /* Spelled-out 4CCs: multi-character char constants warn under
-       -Werror, and these classify the process's kind. */
-    const unsigned long kTypeFinder = 0x464E4452UL;   /* 'FNDR' */
-    const unsigned long kSigFinder = 0x4D414353UL;    /* 'MACS' */
     char json[kNowMaxControl];
     long id = now_json_find_int(request, "id", 0);
     long cursor = now_json_find_int(request, "cursor", 1);
-    ProcessSerialNumber psn = { 0, kNoProcess };
-    ProcessSerialNumber front;
-    ProcessSerialNumber me;
-    Boolean have_front = GetFrontProcess(&front) == noErr;
-    /* isSelf marks the one row that is NOW - the only identity a caller
+    /* The roster is the one walk and the one classifier (proc_roster.h).
+       isSelf marks the one row that is NOW - the only identity a caller
        can trust for "the process on the other end of this connection".
        serve_process_act already computes it to refuse a self-quit; this
        reports the same fact instead of only acting on it, so a caller can
        name this process without deriving a file name from a version
        string (contract: ProcessListing.isSelf). */
-    Boolean have_self = GetCurrentProcess(&me) == noErr;
+    NowProcRosterIter it;
+    NowProcRosterRow proc;
     long pos;
     long index = 0;                   /* readable-process position, 1-based */
     int emitted = 0;
@@ -5122,24 +5241,14 @@ static void serve_process_list(const char *request)
     pos = snprintf(json, sizeof json,
                    "{\"type\":\"process.listing\",\"id\":%ld,"
                    "\"processes\":[", id);
-    while (GetNextProcess(&psn) == noErr) {
-        ProcessInfoRec info;
-        Str31 name;
-        char cname[32];
+    now_proc_roster_begin(&it);
+    while (now_proc_roster_next(&it, &proc)) {
         char code[8], creator[8];
         char esc_name[64], esc_code[40], esc_creator[40];
-        const char *kind;
-        Boolean is_front = false;
-        Boolean is_self = false;
 
-        memset(&info, 0, sizeof info);
-        info.processInfoLength = sizeof info;
-        info.processName = name;
-        info.processAppSpec = NULL;
-        name[0] = 0;
-        if (GetProcessInformation(&psn, &info) != noErr) {
-            continue;                 /* unreadable: not a position */
-        }
+        /* Unreadable rows never arrive here at all - the roster skips
+           and counts them, so "not a position" stays one rule in one
+           place rather than a `continue` every walk has to remember. */
         ++index;
         if (index < cursor) {
             continue;                 /* before this page */
@@ -5149,27 +5258,11 @@ static void serve_process_list(const char *request)
             more = true;              /* this one starts the next page */
             break;
         }
-        memcpy(cname, name + 1, name[0]);
-        cname[name[0]] = '\0';
-        memcpy(code, &info.processType, 4);
+        memcpy(code, &proc.type, 4);
         code[4] = '\0';
-        memcpy(creator, &info.processSignature, 4);
+        memcpy(creator, &proc.creator, 4);
         creator[4] = '\0';
-        if ((unsigned long)info.processType == kTypeFinder
-            || (unsigned long)info.processSignature == kSigFinder) {
-            kind = "finder";
-        } else if ((info.processMode & modeOnlyBackground) != 0) {
-            kind = "background";
-        } else {
-            kind = "application";
-        }
-        if (have_front) {
-            (void)SameProcess(&psn, &front, &is_front);
-        }
-        if (have_self) {
-            (void)SameProcess(&psn, &me, &is_self);
-        }
-        now_json_escape(cname, esc_name, sizeof esc_name);
+        now_json_escape(proc.name, esc_name, sizeof esc_name);
         now_json_escape(code, esc_code, sizeof esc_code);
         now_json_escape(creator, esc_creator, sizeof esc_creator);
         /* isSelf only when true: the contract makes it optional and
@@ -5179,12 +5272,13 @@ static void serve_process_list(const char *request)
                         "%s{\"name\":\"%s\",\"kind\":\"%s\",\"code\":\"%s\","
                         "\"creator\":\"%s\",\"sizeKB\":%ld,\"front\":%s,"
                         "\"psnHigh\":%lu,\"psnLow\":%lu%s}",
-                        emitted > 0 ? "," : "", esc_name, kind, esc_code,
-                        esc_creator, (long)(info.processSize / 1024),
-                        is_front ? "true" : "false",
-                        (unsigned long)psn.highLongOfPSN,
-                        (unsigned long)psn.lowLongOfPSN,
-                        is_self ? ",\"isSelf\":true" : "");
+                        emitted > 0 ? "," : "", esc_name,
+                        now_proc_kind_name(proc.kind), esc_code,
+                        esc_creator, proc.size_kb,
+                        proc.is_front ? "true" : "false",
+                        (unsigned long)proc.psn.highLongOfPSN,
+                        (unsigned long)proc.psn.lowLongOfPSN,
+                        proc.is_self ? ",\"isSelf\":true" : "");
         ++emitted;
     }
     snprintf(json + pos, sizeof json - (size_t)pos,
@@ -5312,13 +5406,18 @@ static void serve_software_list(const char *request)
    serial. Both verbs answer with the one process.result shape. */
 static void serve_process_act(const char *request, Boolean quit)
 {
-    char json[192];
+    char json[256];   /* + outcome; the longest reason is 57 bytes */
     long id = now_json_find_int(request, "id", 0);
     ProcessSerialNumber psn;
     ProcessInfoRec info;
     Str31 name;
     OSErr err = noErr;
     const char *reason = NULL;
+    /* ActSettlement.status's vocabulary, borrowed rather than invented -
+       see ProcessResult.outcome in the contract. Refusals that never
+       reached the machine stay "refused"; only the two verbs' own
+       terminal states are set below. */
+    const char *outcome = "refused";
 
     psn.highLongOfPSN =
         (unsigned long)now_json_find_int(request, "psnHigh", 0);
@@ -5347,12 +5446,50 @@ static void serve_process_act(const char *request, Boolean quit)
             err = now_proc_ask_quit(&psn);
             if (err != noErr) {
                 reason = "the Mac would not deliver the quit request";
+            } else {
+                /* QUIT CANNOT BE TOLD MORE THAN THIS, and that is a fact
+                   about the platform rather than a gap here: a 'quit'
+                   Apple Event is one an application may decline or sit
+                   on behind a Save dialog. `ok` says the event was
+                   delivered; `outcome` says plainly that delivery is all
+                   that was established, so a caller reading `outcome`
+                   alone is never misled into thinking it has gone. */
+                outcome = "dispatched-but-unconfirmed";
             }
         }
     } else {
-        err = now_proc_bring_to_front(&psn);
-        if (err != noErr) {
+        /* THE SAME ASK-AND-CONFIRM the console's `front` and `mach
+           activate` make (proc_actions.h). This used to answer ok:true
+           on SetFrontProcess returning noErr, which means the switch was
+           SCHEDULED and nothing more - so `now_bring_to_front` over MCP,
+           which rides this exact path, got the weakest of three claims
+           and no way to tell. A verb reports what happened; an accepted
+           request that never landed is not a switch. */
+        switch (now_proc_front_confirm(&psn,
+                                       (unsigned long)kProcFrontWaitSecs
+                                       * 60)) {
+        case kProcFrontConfirmed:
+            outcome = "confirmed";
+            break;
+        case kProcFrontAccepted:
+            /* NEVER OBSERVED. Driven on 2026-08-07 against an emulated
+               OS 9.1 guest: fronting a faceless process took the
+               refusal branch below instead, and a switch that is
+               accepted and then does not land could not be staged
+               deliberately. This branch compiles and reads correctly
+               and has never run - which is a different thing from
+               tested, and the next person should not have to infer
+               that from its absence in a log. */
+            err = -1;
+            outcome = "dispatched-but-unconfirmed";
+            reason = "the Mac accepted the request and it is still not "
+                     "frontmost";
+            break;
+        case kProcFrontSetRefused:
+            err = -1;
+            outcome = "refused";
             reason = "the Mac would not bring it to the front";
+            break;
         }
     }
 
@@ -5379,11 +5516,13 @@ static void serve_process_act(const char *request, Boolean quit)
 
     if (reason == NULL) {
         snprintf(json, sizeof json,
-                 "{\"type\":\"process.result\",\"id\":%ld,\"ok\":true}", id);
+                 "{\"type\":\"process.result\",\"id\":%ld,\"ok\":true,"
+                 "\"outcome\":\"%s\"}", id, outcome);
     } else {
         snprintf(json, sizeof json,
                  "{\"type\":\"process.result\",\"id\":%ld,\"ok\":false,"
-                 "\"reason\":\"%s\"}", id, reason);
+                 "\"outcome\":\"%s\",\"reason\":\"%s\"}",
+                 id, outcome, reason);
     }
     send_control(json);
 }
@@ -6309,6 +6448,10 @@ static int handle_frame(const char *reply)
         chat_status_answer(reply);
         return 1;
     }
+    if (now_json_type_is(reply, "host.shown")) {
+        host_shown_answer(reply);
+        return 1;
+    }
     if (now_json_type_is(reply, "chat.result")) {
         chat_result_answer(reply);
         return 1;
@@ -6701,6 +6844,7 @@ void conn_service(void)
     service_get();
     service_cloud();
     service_chat();
+    service_host_show();
         }
         if (g.phase == kConnConnected) {
             service_stream();

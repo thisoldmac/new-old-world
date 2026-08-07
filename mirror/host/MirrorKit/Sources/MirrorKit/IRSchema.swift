@@ -123,6 +123,11 @@ public enum IRSchema {
         "desktopItems[].type",
         "desktopItems[].x",
         "desktopItems[].y",
+        /* The box the Finder DREW. Absent from a producer that
+           asked only for a position, which is why both are
+           optional; see FinderItems on the list view. */
+        "desktopItems[].w",
+        "desktopItems[].h",
 
         "meta",
         "meta.bytes",
@@ -174,6 +179,7 @@ public enum IRSchema {
         "Scene.DesktopItem.name", "Scene.DesktopItem.kind",
         "Scene.DesktopItem.type", "Scene.DesktopItem.creator",
         "Scene.DesktopItem.x", "Scene.DesktopItem.y",
+        "Scene.DesktopItem.w", "Scene.DesktopItem.h",
         "Scene.DesktopItem.placed", "Scene.DesktopItem.alias",
         "Scene.DesktopItem.invisible",
 
@@ -229,6 +235,21 @@ public enum IRSchema {
         "windows[].items[].type",
         "windows[].items[].x",
         "windows[].items[].y",
+        "windows[].items[].w",
+        "windows[].items[].h",
+
+        /* 2026-08-07. WHERE a position came from — `drawn`, `saved` or
+           `unknown`. Optional, and absent means the producer did not say,
+           which reads as untrustworthy.
+
+           It is on the wire because `placed` was three provenances wearing
+           one boolean: set from the box the Finder drew, from the saved
+           `fdLocation` grid, and from a layout rule the HOST invented for
+           volumes. A consumer that must decide whether it may return an
+           item to a position was being told "yes, we know where this is"
+           by the one producer that had made the answer up. */
+        "desktopItems[].origin",
+        "windows[].items[].origin",
     ]
 
     /// Declared properties added after the freeze (wire-bearing or not).
@@ -249,11 +270,26 @@ public enum IRSchema {
            sense: nothing changes shape, and a reader that has never
            heard of them is exactly as correct as it was yesterday. */
         "DisplayOp.len", "DisplayOp.fullLen", "DisplayOp.trunc",
+
+        /* 2026-08-07. See desktopItems[].origin in v1Additions. */
+        "Scene.DesktopItem.origin",
     ]
 
     // MARK: - IR v2 semantic evidence
 
     public static let v2Additions: Set<String> = [
+        /* 2026-08-07. The process's own `modeOnlyBackground` declaration:
+           it has no user interface by design, so having no windows is its
+           normal state rather than an unobserved one. Additive, and
+           deliberately three-valued on this side — absent means the
+           producer did not say, which is NOT a claim that the process has
+           a face. It replaces an inference from window counts that could
+           not tell a faceless process from an application with nothing
+           open, and an `ax_oracle_not_found` that was an error word for a
+           normal condition. */
+        "apps[].backgroundOnly",
+        "processes[].backgroundOnly",
+
         "apps[].incarnation",
         "processes[].incarnation",
         "windows[].incarnation",
@@ -268,6 +304,19 @@ public enum IRSchema {
         "windows[].controls[].semantic.definition",
         "windows[].controls[].semantic.action",
         "windows[].controls[].semantic.state",
+        /* 2026-08-07. See Scene.DesktopItem.aliasTarget below: the target
+           an alias resolves to, on both the desktop's items and a
+           window's, because a container's items are the same shape. */
+        "desktopItems[].aliasTarget",
+        "desktopItems[].aliasTarget.name",
+        "desktopItems[].aliasTarget.kind",
+        "desktopItems[].aliasTarget.type",
+        "desktopItems[].aliasTarget.creator",
+        "windows[].items[].aliasTarget",
+        "windows[].items[].aliasTarget.name",
+        "windows[].items[].aliasTarget.kind",
+        "windows[].items[].aliasTarget.type",
+        "windows[].items[].aliasTarget.creator",
         "windows[].controls[].semantic.value",
         "windows[].controls[].semantic.listCells",
         "windows[].controls[].semantic.listCells[].row",
@@ -307,15 +356,48 @@ public enum IRSchema {
         "windows[].dialogItems[].semantic.isDefault",
         "windows[].dialogItems[].semantic.provenance",
         "windows[].dialogItems[].semantic.completeness",
+
+        /* 2026-08-07. What colour the machine draws with, read from the
+           live Appearance Manager rather than assumed by the renderer.
+           Additive: a reader that has never heard of it falls back to the
+           constants it was already using, which is exactly as correct as
+           yesterday - and no more, which was the problem. An absent KEY
+           means the guest asked and the brush refused; an absent `theme`
+           means the producer did not ask. */
+        "meta.theme",
+        "meta.theme.dialogBackground",
+        "meta.theme.alertBackground",
+        "meta.theme.documentBackground",
+        "meta.theme.highlight",
+        "meta.theme.depth",
+
+        /* 2026-08-07. What a bounded ledger had to forget. Carried only
+           by the `depth` claim, and only when nonzero. Additive; a reader
+           that has never heard of it reads the claim exactly as before,
+           which was the problem: `partial` said the order was incomplete
+           and could not say that a named process's rank was LOST rather
+           than never taken. */
+        "meta.coverage[].evicted",
     ]
 
     public static let v2AdditionalProperties: Set<String> = [
+        // See meta.theme in v2Additions.
+        "Scene.Meta.theme",
+        "Scene.Theme.dialogBackground", "Scene.Theme.alertBackground",
+        "Scene.Theme.documentBackground", "Scene.Theme.highlight",
+        "Scene.Theme.depth",
+
+        // See apps[].backgroundOnly in v2Additions.
+        "Scene.AppRef.backgroundOnly",
+        "Scene.ProcessRef.backgroundOnly",
+
         "Scene.AppRef.incarnation",
         "Scene.ProcessRef.incarnation",
         "Scene.Window.incarnation",
         "Scene.Meta.coverage",
         "Scene.CoverageClaim.scope", "Scene.CoverageClaim.owner",
         "Scene.CoverageClaim.status", "Scene.CoverageClaim.reason",
+        "Scene.CoverageClaim.evicted",
         "Scene.Window.dialogItems",
         "Scene.Control.semantic",
         "Scene.DialogItem.number", "Scene.DialogItem.title",
@@ -332,6 +414,28 @@ public enum IRSchema {
         "Scene.Semantics.focused", "Scene.Semantics.isDefault",
         "Scene.Semantics.provenance", "Scene.Semantics.completeness",
         "Scene.Selection.start", "Scene.Selection.end",
+
+        /* THE THIRD HOST-INTERNAL SHELF (plan 018 slice 1), declared here
+           for the same reason `Scene.Window.island` is: it must never
+           reach the wire, and the way to keep it off is to freeze the
+           DECLARATION so that quietly adding it to `CodingKeys` shows up
+           as a wire-path change rather than as nothing. Every number in it
+           already crosses on the drain records; no contract field was
+           added for any of it. */
+        "Scene.Window.displayEpoch",
+        /* 2026-08-07. What an alias POINTS AT. Additive in the ordinary
+           sense — absent when the producer did not ask, and a consumer
+           that has never heard of it keeps the answer it had. It exists
+           because an alias file's own kind and type describe the alias
+           and never its target, so every alias was unclassifiable and
+           opening one predicted a Finder window that no Finder makes:
+           `open "Mail"` reported timedOut after 18 s having worked
+           (fidelity sweep A). */
+        "Scene.DesktopItem.aliasTarget",
+        "Scene.DesktopItem.AliasTarget.name",
+        "Scene.DesktopItem.AliasTarget.kind",
+        "Scene.DesktopItem.AliasTarget.type",
+        "Scene.DesktopItem.AliasTarget.creator",
     ]
 
     // MARK: - What the gate compares against

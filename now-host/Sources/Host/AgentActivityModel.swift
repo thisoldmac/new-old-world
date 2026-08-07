@@ -282,19 +282,31 @@ struct AgentConsentReading: Equatable {
 
     init(machine: String, access: AgentIntegrationGuestAccess?) {
         self.machine = machine
+        /* Every sentence below is about the machine being driven, and this
+           page shows them under the host's own window — so none of them may
+           reach for "this Mac", which here means the reader's machine and
+           not the one that answered. */
+        let plain = MachineNaming.sentence(machine)
+        /* `title` and not `startingSentence(sentence(_:))` for a sentence
+           that OPENS on the machine: capitalising the first character
+           would turn "pb1400c" into "Pb1400c", and a machine spells its
+           own name. Only the nameless fallback needs the capital, which
+           is exactly what `title` gives it. */
+        let opens = MachineNaming.title(machine)
         switch access {
         case nil:
             title = "Has not said"
-            detail = "This Mac's build predates the question, so it has "
-                + "neither agreed nor refused. Silence is not consent: it "
+            detail = "\(opens) has a build that predates the question, so "
+                + "it has neither agreed nor refused. Silence is not "
+                + "consent: it "
                 + "is a build that was never asked. Agent calls still "
-                + "reach it for now, and that is a host decision, not this "
-                + "machine's answer."
+                + "reach it for now, and that is a decision made on "
+                + "\(MachineNaming.thisMac), not an answer from \(plain)."
             symbol = "questionmark.circle"
             isConsent = false
         case .disabled:
             title = "Refuses"
-            detail = "This Mac says no to being driven by an agent — "
+            detail = "\(opens) says no to being driven by an agent — "
                 + "either its installer left the agent features out or "
                 + "somebody flipped the switch on the machine itself. "
                 + "Changing it is done there, not here."
@@ -302,21 +314,20 @@ struct AgentConsentReading: Equatable {
             isConsent = false
         case .readOnly:
             title = "Read Only"
-            detail = "This Mac consents to calls that change nothing on "
-                + "it: reading its screen, its files, its processes, what "
-                + "it is."
+            detail = "\(opens) consents to calls that change nothing on it: "
+                + "reading its screen, its files, its processes, what it is."
             symbol = "eye"
             isConsent = true
         case .fullAccess:
             title = "Full Access"
-            detail = "This Mac consents to everything the product can do "
+            detail = "\(opens) consents to everything the product can do "
                 + "to it, including changing its files and what is on its "
                 + "screen."
             symbol = "checkmark.shield"
             isConsent = true
         case .unrecognized(let raw):
             title = "Answered “\(raw)”"
-            detail = "This Mac named a limit this copy of New Old World "
+            detail = "\(opens) named a limit this copy of New Old World "
                 + "has never heard of, so it is a newer build rather than "
                 + "a broken one. A ceiling that cannot be named cannot be "
                 + "claimed to be under, so it does not read as consent "

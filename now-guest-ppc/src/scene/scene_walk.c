@@ -7,6 +7,7 @@
 
 #include "axmenu.h"
 #include "axtext.h"
+#include "cdef_resolver.h"
 #include "dialog_text.h"
 #include "scene_phase.h"
 #include "semantic_client.h"
@@ -85,6 +86,42 @@ static void name_control(NowScene *s, int window, int index,
    three things interleaved 300 times, which is the difference between a
    breakdown that costs six clock reads per window and one that costs
    four per control. */
+/* How long is the rest of this chain? Called only when the bound above
+   has already bitten, so it costs nothing on the ordinary path.
+ *
+   It records NOTHING - no pool slots, no references, no semantics - it
+   only follows `next_control` and counts, which is why it can afford a
+   bound an order of magnitude larger than the one a scene carries. That
+   larger bound is still a bound, because the other thing this path
+   catches is a cyclic chain, and a cycle would otherwise hang the guest
+   inside the event loop.
+
+   Returns the total length from the head; sets *exact to 0 if the probe
+   bound stopped the count, in which case the answer is a floor. */
+static short measure_chain(const NowAxMemory *memory, const NowAxWindow *win,
+                           int *exact)
+{
+    NowAxControl control;
+    unsigned long handle = win->control_list;
+    int hops;
+
+    *exact = 1;
+    for (hops = 0; handle != 0; ++hops) {
+        if (hops >= kNowSceneWalkChainProbeMax) {
+            *exact = 0;
+            break;
+        }
+        if (now_ax_read_control(memory, win, handle, &control) != kNowAxOk) {
+            /* The count is a floor for a different reason: the chain is
+               longer than `hops`, we simply cannot see past here. */
+            *exact = 0;
+            break;
+        }
+        handle = control.next_control;
+    }
+    return (short)hops;
+}
+
 static void read_controls(NowScene *s, int window, const NowAxMemory *memory,
                           const NowAxWindow *win)
 {
@@ -97,8 +134,25 @@ static void read_controls(NowScene *s, int window, const NowAxMemory *memory,
         if (hops >= kNowSceneWalkMaxControls) {
             /* Longer than a scene carries, or cyclic. Either way what
                has been collected is a PREFIX of this window's controls
-               with nothing beside it to say so. */
+               with nothing beside it to say so.
+
+               Say HOW LONG before dropping it. The bound being ours is
+               only half an answer; a reader deciding whether to raise it
+               needs the other half, and this is the one moment the chain
+               is in front of us. */
+            int exact;
+            short len = measure_chain(memory, win, &exact);
+
             now_scene_retract_controls(s, window);
+            /* A chain that ran past the probe bound is not a long chain,
+               it is a broken one, and the two argue for opposite
+               responses. Distinguished here, where the evidence is. */
+            now_scene_set_walk_verdict(
+                s, window,
+                (!exact && len >= kNowSceneWalkChainProbeMax)
+                    ? kNowSceneWalkControlsCyclic
+                    : kNowSceneWalkControlsBound);
+            now_scene_set_control_chain_len(s, window, len, exact);
             return;
         }
         if (now_ax_read_control(memory, win, handle, &control) != kNowAxOk) {
@@ -106,6 +160,12 @@ static void read_controls(NowScene *s, int window, const NowAxMemory *memory,
                refusal rather than a bound, and it drops the plane for
                the same reason: what stands is a prefix. */
             now_scene_retract_controls(s, window);
+            now_scene_set_walk_verdict(s, window,
+                                       kNowSceneWalkControlsInvalid);
+            /* A FLOOR, not a length: the chain is at least this long and
+               we cannot see past the record that failed. Marked inexact
+               so nobody sizes a cap from it. */
+            now_scene_set_control_chain_len(s, window, (short)hops, 0);
             return;
         }
         /* BACK TO CONTENT-RELATIVE, which is what the IR names.
@@ -148,8 +208,27 @@ static void read_controls(NowScene *s, int window, const NowAxMemory *memory,
            resident that does answer overwrites nothing. */
         now_scene_set_control_definition(s, window, hops,
                                          control.def_proc_origin);
+        /* And WHICH definition, when the Resource Manager can say. Asked
+           only for a definition function in the system heap: that is the
+           zone the read above validated, and the only one whose CDEFs
+           are in this process's resource chain. An application's own
+           CDEF is in a resource file we never opened, so there is no
+           lookup to make and the resolver is not asked to make one. */
+        if (control.def_proc_origin == (short)kNowAxDefProcSystem) {
+            short state, cdef_id = 0, cdef_variant = 0;
+
+            state = now_cdef_resolve(control.def_proc,
+                                     memory->system_lo, memory->system_hi,
+                                     &cdef_id, &cdef_variant);
+            now_scene_set_control_cdef(s, window, hops, state,
+                                       cdef_id, cdef_variant);
+        }
         handle = control.next_control;
     }
+    /* The chain ended on its own sentinel: the count is exact and equals
+       what the scene carries. Recorded on the ordinary path too so a
+       reader never has to infer the length from the absence of a note. */
+    now_scene_set_control_chain_len(s, window, (short)hops, 1);
 }
 
 /* The three passes, in the order their claims depend on each other.
@@ -281,9 +360,13 @@ static void walk_dialog_items(NowScene *s, int window,
                        == kNowAxOk) {
                 char live[kNowSceneDialogTitleMax];
 
+                /* Validated on the way in, like every other title: this
+                   path writes into the row directly and so is the one
+                   place the assembly function's own gate cannot see. */
                 if (now_scene_dialog_item_text(
                         source.handle, live,
-                        (short)sizeof live) > 0) {
+                        (short)sizeof live) > 0
+                    && now_scene_title_is_publishable(live)) {
                     strcpy(item->title, live);
                 }
             }
@@ -299,12 +382,36 @@ static void walk_dialog_items(NowScene *s, int window,
             if (control->ref[0] != '\0') {
                 strcpy(item->ref, control->ref);
             }
-            if (control->title[0] != '\0'
-                && (item->kind == kNowSceneSemanticPopupMenu
-                    || item->title[0] == '\0')) {
+            /* THE LIVE CONTROL WINS, ALWAYS, and this used to be an
+               "only if the DITL said nothing" rule.
+             *
+             * A DITL item's text is the RESOURCE's title, frozen at the
+             * moment the dialog was built; SetControlTitle and ParamText
+             * write to the ControlRecord and never back to the item list.
+             * So the two walks describe the same ref from two different
+             * moments, and sweep A caught exactly that on Mail's
+             * Internet-setup alert: the control walk said Yes / No /
+             * Set Up Now, the dialog-item walk said OK / Cancel /
+             * Don't Save, same three refs, same three rects.
+             *
+             * That is the worst shape a defect can take here - an agent
+             * reads one label and clicks another control - and it cannot
+             * be fixed by making the host prefer one walk, because the
+             * host cannot tell which one is stale. It is fixed by there
+             * being one answer: after creation the ControlRecord is
+             * authoritative for a control-backed item, the same rule the
+             * `enabled` flag two lines above already follows. */
+            if (control->title[0] != '\0') {
                 strncpy(item->title, control->title,
                         sizeof item->title - 1);
                 item->title[sizeof item->title - 1] = '\0';
+            } else if (item->kind == kNowSceneSemanticPushButton
+                       || item->kind == kNowSceneSemanticCheckBox
+                       || item->kind == kNowSceneSemanticRadioButton) {
+                /* The control is live and genuinely unnamed. Keeping the
+                   resource's old text here would reinstate the same
+                   contradiction from the other side. */
+                item->title[0] = '\0';
             }
             if (item->kind == kNowSceneSemanticCheckBox
                 || item->kind == kNowSceneSemanticRadioButton) {
@@ -328,8 +435,10 @@ static void walk_dialog_items(NowScene *s, int window,
             item->focused = source.number == cursor.edit_item;
             if (item->focused && text != NULL) {
                 item->value_known = 1;
-                strncpy(item->value, text->text, sizeof item->value - 1);
-                item->value[sizeof item->value - 1] = '\0';
+                if (now_scene_title_is_publishable(text->text)) {
+                    strncpy(item->value, text->text, sizeof item->value - 1);
+                    item->value[sizeof item->value - 1] = '\0';
+                }
                 item->selection_known = 1;
                 item->selection_start = (short)text->selection_start;
                 item->selection_end = (short)text->selection_end;
@@ -349,7 +458,12 @@ void now_scene_walk_window(NowScene *s, int window,
         return;
     }
     if (now_ax_read_window(memory, address, &win) != kNowAxOk) {
-        return;                       /* every sub-plane stays absent */
+        /* Every sub-plane stays absent - and SAYS SO. This used to be a
+           bare return, so a window whose record failed validation
+           published `controls: []` and no dialogItems key, which reads
+           exactly like a window that has neither. */
+        now_scene_note_window_unreadable(s, window);
+        return;
     }
     now_scene_set_window_kind(s, window, win.kind);
     now_scene_phase_enter(kNowScenePhaseRefs);
@@ -506,7 +620,11 @@ int now_scene_fill_blank_system_apple(NowScene *s,
             const NowAxMenuItem *src = &rows[start + j];
 
             memset(dst->title, 0, sizeof dst->title);
-            strncpy(dst->title, src->title, sizeof dst->title - 1);
+            /* Same gate as every other title. This copy writes into the
+               row directly, so the assembly function never sees it. */
+            if (now_scene_title_is_publishable(src->title)) {
+                strncpy(dst->title, src->title, sizeof dst->title - 1);
+            }
             dst->separator = item_is_separator(src);
             dst->enabled = src->enabled ? 1 : 0;
             dst->mark = src->mark != 0;

@@ -47,15 +47,16 @@ enum GuestConnectionState: Equatable, Sendable {
     }
 
     /// What to call the machine on the other end, for anything a human
-    /// reads. It is the name that machine sent in its hello; before a
-    /// connection there is no name to use, so it degrades to a plain
-    /// description. Never "the guest" — guest and host are words for
-    /// the code, not for the person using it. And never "the Mac":
-    /// both of them are Macs.
-    var peerLabel: String {
-        if case .connected(let name, _) = self, !name.isEmpty { return name }
-        return "the classic Mac"
-    }
+    /// reads — the name it sent in its hello, or the plain reference when
+    /// there is none yet.
+    ///
+    /// The rule is not here: it is `MachineNaming`, which is the one place
+    /// that decides what an unnamed machine is called. This property is
+    /// where most of the app happens to ask, so it delegates rather than
+    /// keeping a fallback of its own — the old literal "the classic Mac"
+    /// was a second answer to a question that must only have one, and it
+    /// reached roughly two dozen call sites unchallenged.
+    var peerLabel: String { MachineNaming.sentence(self) }
 }
 
 /// Rolling numbers for the live stream — the tuning surface: watch fps
@@ -151,11 +152,12 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
     /// What `stream.start` carries: the minimum interval between frames.
     var minIntervalMs: Int { maxFps > 0 ? 1000 / maxFps : 0 }
 
-    /// Whether the tuning row is disclosed; plumbing most sessions never
-    /// touch stays folded away.
-    @Published var showSettings: Bool {
-        didSet { defaults.set(showSettings, forKey: Keys.showSettings) }
-    }
+    /* The tuning knobs used to be a disclosure row on the page, and whether
+       it was open was PERSISTED. They are a sheet now, and a sheet's
+       presentation is not a preference: restoring it would open the app with
+       a modal already up over a page nobody had asked to configure. So it is
+       the view's own state, and `screenshots.showSettings` is left on disk
+       unread rather than migrated — there is nothing to carry over. */
 
     var tuning: GuestListener.CaptureTuning {
         .init(chunkKb: chunkKB, paceMs: paceMs, pack: compress,
@@ -260,7 +262,10 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
     var streamOwnerNote: String? {
         switch streamOwner {
         case .agent:
-            return "An agent is streaming this Mac's screen. Capture is "
+            /* The screen an agent is watching is the DRIVEN machine's. This
+               said "this Mac's", which named the wrong one outright. */
+            return "An agent is streaming "
+                + "\(MachineNaming.possessive(connection)) screen. Capture is "
                 + "unavailable while it runs — the machine has one transfer "
                 + "lane. Stop Streaming ends it."
         case .guest:
@@ -288,7 +293,10 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
     var latest: ScreenshotRecord? { history.first }
 
     private enum Keys {
-        static let showSettings = "screenshots.showSettings"
+        /* These keep their `screenshots.` prefix after the module was
+           renamed to Screen: the module id is what a person navigates by,
+           these are where their tuning lives, and renaming them would silently
+           reset every install's settings to defaults. */
         static let chunkKB = "screenshots.chunkKB"
         static let paceMs = "screenshots.paceMs"
         static let compress = "screenshots.compress"
@@ -312,11 +320,15 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
     /// Macs; injectable, so a test gets its own.
     let capabilities: GuestCapabilityRecord
     private let defaults: UserDefaults
-    private var progressWatch: AnyCancellable?
-    private var pushWatch: AnyCancellable?
-    private var streamWatch: AnyCancellable?
-    private var streamStateWatch: AnyCancellable?
-    private var errorWatch: AnyCancellable?
+    /// Everything the wire tells this page, on one subscription.
+    ///
+    /// **Deliberately NOT guest-scoped.** Four of the five things it hears
+    /// are about the Mac being driven, but a pushed capture is not: a
+    /// background Mac may take a screenshot unasked, and this page files it
+    /// under the machine that sent it (`receivePushed`) rather than showing
+    /// it as the focused Mac's. Scoping the subscription would drop those on
+    /// the floor, which is the bug MultiGuestFocusTests names.
+    private var busWatch: HostEventSubscription?
     private var capabilityWatch: AnyCancellable?
     /// The id of a bracket this page opened and has not seen a frame from.
     /// It is what lets a guest's `error` be attributed to `stream.start`
@@ -347,33 +359,35 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
         let fps = defaults.integer(forKey: Keys.maxFps)
         self.maxFps = ScreenshotModuleModel.fpsChoices.contains(fps)
             ? fps : ScreenshotModuleModel.defaultMaxFps
-        self.showSettings = defaults.bool(forKey: Keys.showSettings)
         let stored = defaults.string(forKey: Keys.saveDirectory)
         self.saveDirectory = stored.map { URL(fileURLWithPath: $0) }
             ?? FileManager.default.urls(for: .picturesDirectory,
                                         in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory())
-        progressWatch = listener.$captureProgress
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] in self?.progress = $0 }
-        pushWatch = listener.pushedCaptures
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] in self?.receivePushed($0) }
-        streamWatch = listener.streamFrames
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] in self?.receiveStreamFrame($0) }
-        streamStateWatch = listener.$activeStreamId
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] id in self?.streamStateChanged(id) }
-        /* The one place a stream refusal can be heard. `stream.start` takes
-           an id no pending map holds, so a guest that does not implement the
-           bracket answers `error` into `lastGuestError` and nothing else on
-           this side is listening. Without this the button would offer the
-           same dead click every time, forever. */
-        errorWatch = listener.$lastGuestError
-            .compactMap { $0 }
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] in self?.guestReportedError($0) }
+        busWatch = listener.events.subscribe { [weak self] event in
+            guard let self else { return }
+            switch event {
+            case .transferProgressed(_, let received, let expected):
+                self.progress = .init(received: received, expected: expected)
+            case .transferEnded:
+                self.progress = nil
+            case .captureArrived(_, let delivery):
+                self.receivePushed(delivery)
+            case .streamFrame(_, let delivery):
+                self.receiveStreamFrame(delivery)
+            case .streamStateChanged(_, let id):
+                self.streamStateChanged(id)
+            /* The one place a stream refusal can be heard. `stream.start`
+               takes an id no pending map holds, so a guest that does not
+               implement the bracket answers `error` and nothing else on this
+               side is waiting on it. Without this the button would offer the
+               same dead click every time, forever. */
+            case .guestReportedError(_, let problem):
+                self.guestReportedError(problem)
+            default:
+                break
+            }
+        }
         // The gate is computed, so a recorded refusal has to nudge the view.
         capabilityWatch = capabilities.$revision
             .receive(on: DispatchQueue.main)

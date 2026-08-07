@@ -44,6 +44,12 @@ public protocol MirrorSceneSource: ObservableObject {
     /// ones queued behind it. Zero for a driver with no lane, which is
     /// also the default.
     var waitingActs: Int { get }
+
+    /// **Who can hold the mouse button down**, or nil for a driver that
+    /// cannot. nil is the default and the honest one: dragging an ITEM needs
+    /// a sustained press the semantic act plane has no way to express, and a
+    /// driver without one refuses in words rather than dropping the gesture.
+    var itemDragDriver: ItemDragDriver? { get }
     /// Abandon the in-flight act and everything queued behind it,
     /// answering how many acts were ended. The default does nothing, for
     /// a driver with no lane to free.
@@ -65,6 +71,7 @@ public extension MirrorSceneSource {
     var planes: ActionPlanes { .deviceDriven }
 
     var waitingActs: Int { 0 }
+    var itemDragDriver: ItemDragDriver? { nil }
     @discardableResult
     func cancelPendingActs() -> Int { 0 }
 
@@ -91,7 +98,26 @@ public extension MirrorSceneSource {
 /// (HitTester / ActionModel), Platinum-drawn menus, and a status footer.
 /// The drawn pixels are exactly RenderShot's.
 public struct LiveMirrorView<Source: MirrorSceneSource>: View {
+
+    /// **Whose window this mirror is in.**
+    ///
+    /// A mirror in its own window may take the keyboard and keep it; a
+    /// mirror drawn as one pane of a larger application may not, because
+    /// `KeyCaptureView` forwards nearly every ⌘ combination to the other
+    /// Macintosh and would silently disable the host's own menu bar.
+    /// `sharesWindow` names the characters the host keeps and makes focus
+    /// click-to-enter.
+    public enum Keyboard: Equatable, Sendable {
+        case ownsWindow
+        case sharesWindow(hostReserved: Set<String>)
+    }
+
     @ObservedObject var controller: Source
+    let keyboard: Keyboard
+    /// Whether a person has clicked into the mirror, in `sharesWindow`.
+    /// Meaningless in `ownsWindow`, where the keyboard is always the
+    /// mirror's.
+    @State private var keyboardEngaged = false
     @State private var openMenu: Int?
     /// The row under the pointer in the open menu, 1-based. Menus are a
     /// selectable surface: this is what inverts, and what acts.
@@ -114,11 +140,27 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
     /// feel driveable rather than watched.
     @State private var hovered: String = ""
 
-    /// A live drag in progress, carrying the dragged window's original rect.
-    private enum DragMode { case move(Rect), resize(Rect), thumb }
+    /// An item travelling under the pointer. The transitions belong to
+    /// `ItemDragSession` in the core; this view feeds it a pointer and draws
+    /// what it says.
+    @State private var itemDrag: ItemDragSession?
 
-    public init(controller: Source) {
+    /// A live drag in progress, carrying the dragged window's original rect.
+    ///
+    /// `item` and `refusedItem` are the two ends of the same decision: the
+    /// gesture began on a Finder item, and either the mirror could vouch for
+    /// where that item lives or it could not. `refusedItem` is a MODE rather
+    /// than an early return so the refusal is decided once, on the first move,
+    /// instead of being re-derived and re-announced sixty times a second.
+    private enum DragMode { case move(Rect), resize(Rect), thumb
+                            case item, refusedItem }
+
+    /// `keyboard` defaults to `.ownsWindow`, which is what every caller
+    /// meant before there was a second container — so the dedicated
+    /// window and `MirrorApp` are unchanged by this parameter existing.
+    public init(controller: Source, keyboard: Keyboard = .ownsWindow) {
         self.controller = controller
+        self.keyboard = keyboard
     }
 
     public var body: some View {
@@ -143,11 +185,19 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                         onReserved: { combo in
                             controller.note("\(combo) is the host's; the "
                                             + "guest did not get it")
-                        })
+                        },
+                        focus: keyCaptureFocus,
+                        hostReserved: keyCaptureReserved,
+                        onFocusLost: { keyboardEngaged = false })
                     SceneView(scene: scene, openMenu: openMenu,
                               hoveredItem: hoveredItem,
                               selectedItem: selectedItem,
-                              dragOutline: dragOutline)
+                              dragOutline: dragOutline,
+                              itemDrag: itemDrag.map {
+                                  SceneRenderer.ProvisionalDrag(
+                                      item: $0.subject.item, frame: $0.frame,
+                                      confirmed: $0.confirmed)
+                              })
                         .gesture(mouseGesture(scene: scene, size: geo.size))
                         .onContinuousHover { phase in
                             /* Name what is under the pointer, and shape
@@ -186,8 +236,17 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                             }
                         }
                 } else {
+                    /* Decoration, and it must not take the pointer. A
+                       SwiftUI Text installs a TEXT CURSOR RECT through
+                       its hosting view, and this one is full-frame - so
+                       the I-beam a person sees over the mirror is the
+                       host OS answering a question we never asked. Every
+                       purely-informational overlay in this stack is
+                       marked the same way, so that `cursor(for:)` above
+                       is the only thing deciding. */
                     Text("waiting for the first scene…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .allowsHitTesting(false)
                 }
                 /* The Platinum asset pack is a dependency, not repository
                    content (docs/asset-pack.md), and without it the icons,
@@ -206,6 +265,7 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(Color.yellow.opacity(0.25))
+                        .allowsHitTesting(false)
                 }
                 /* The hover names what a click WOULD do; the status says
                    what one DID. The second is the answer to a question a
@@ -216,6 +276,7 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                          : "\(controller.status)   ·   over \(hovered)")
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .allowsHitTesting(false)
                     /* The way out of a wait. A stuck act used to be
                        unabandonnable — the 87-second queue of 2026-08-05
                        had a person watching with nothing to do — so
@@ -226,6 +287,17 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                             .buttonStyle(.plain)
                             .foregroundStyle(.secondary)
                             .underline()
+                    }
+                    /* Sharing a window makes the keyboard's owner a thing
+                       a person cannot see, and an invisible mode is the
+                       failure this project keeps paying for. So it is
+                       said, and only while it is true. */
+                    if case .sharesWindow = keyboard {
+                        Text(keyboardEngaged ? "keyboard ↦" : "click to type")
+                            .lineLimit(1)
+                            .fixedSize()
+                            .foregroundStyle(.secondary)
+                            .allowsHitTesting(false)
                     }
                 }
                 .font(.system(size: 11, design: .monospaced))
@@ -245,10 +317,31 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
         return FitTransform(logical: logical, view: size).toGuest(p)
     }
 
+    /// What the capture view is told about focus. In `ownsWindow` this is
+    /// a constant, so the dedicated window behaves exactly as it did.
+    private var keyCaptureFocus: KeyCaptureView.Focus {
+        switch keyboard {
+        case .ownsWindow: return .ownsWindow
+        case .sharesWindow: return .sharesWindow(engaged: keyboardEngaged)
+        }
+    }
+
+    private var keyCaptureReserved: Set<String> {
+        switch keyboard {
+        case .ownsWindow: return KeyCaptureView.hostReserved
+        case .sharesWindow(let reserved): return reserved
+        }
+    }
+
     private func mouseGesture(scene: MirrorKit.Scene,
                               size: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
+                /* Click-to-enter, and this is the only place that can say
+                   so: the capture view sits UNDER the scene, so the press
+                   a person makes to aim at the other Macintosh is caught
+                   here and never reaches the NSView. */
+                if case .sharesWindow = keyboard { keyboardEngaged = true }
                 let start = guestPoint(value.startLocation, scene: scene,
                                        size: size)
                 let cur = guestPoint(value.location, scene: scene, size: size)
@@ -270,6 +363,16 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                         // we just hold the button and move (no outline — the
                         // content itself follows).
                         dragMode = .thumb
+                    case .desktopItem, .windowItem:
+                        /* Not on the first pixel: a CLICK also arrives here,
+                           and taking hold of an item on one would send the
+                           guest a press it then has to have released for it.
+                           The same 6-px threshold `onEnded` uses to tell a
+                           click from a drag decides it, in one place. */
+                        if abs(cur.x - start.x) + abs(cur.y - start.y) >= 6 {
+                            dragMode = beginItemDrag(scene, at: start,
+                                                     now: cur)
+                        }
                     default:
                         break
                     }
@@ -288,7 +391,11 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                     // No outline: a scrollbar has no drag ghost — the guest
                     // live-scrolls the content under the thumb instead.
                     break
-                case .none:
+                case .item:
+                    /* RULE 1: no waiting. The ghost is under the pointer on
+                       this frame, whatever the guest has or has not said. */
+                    moveItemDrag(to: cur)
+                case .refusedItem, .none:
                     break
                 }
             }
@@ -340,8 +447,139 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                     controller.perform(
                         ActionModel.thumbTracking(from: start, to: end),
                         label: "scroll thumb \(start) → \(end)")
+                } else if case .item = mode {
+                    endItemDrag(scene, from: start, to: end)
                 }
             }
+    }
+
+    // MARK: - Dragging an item
+
+    /// Take hold of the item under `start`, or say why not.
+    ///
+    /// **The refusal is the interesting half.** `DragTargeting.subject`
+    /// declines an item whose position this side cannot vouch for, and until
+    /// 2026-08-07 that was every item on the desktop: the icons came from the
+    /// saved `fdLocation` grid and the disks from a layout rule the host
+    /// invented, both flying `placed = true`. Picking one of those up would
+    /// have meant promising to put it back somewhere nobody had measured.
+    private func beginItemDrag(_ scene: MirrorKit.Scene,
+                               at start: (x: Int, y: Int),
+                               now: (x: Int, y: Int)) -> DragMode {
+        switch DragTargeting.subject(scene, x: start.x, y: start.y) {
+        case .failure(let refusal):
+            controller.note(refusal.message)
+            return .refusedItem
+        case .success(let subject):
+            guard let home = DragTargeting.home(of: subject, in: scene) else {
+                controller.note("the mirror lost track of where "
+                                + "\(subject.name) is — nothing was dragged")
+                return .refusedItem
+            }
+            guard let driver = controller.itemDragDriver else {
+                /* Honest, and specific. "Nothing happened" is what this used
+                   to look like, and a person cannot tell it from a mirror
+                   that is broken. */
+                controller.note("this mirror cannot hold the mouse button "
+                                + "down — \(subject.name) was not dragged")
+                return .refusedItem
+            }
+            var session = ItemDragSession(
+                subject: subject, home: home,
+                grabbedAt: Point(x: start.x, y: start.y))
+            session.move(to: Point(x: now.x, y: now.y))
+            itemDrag = session
+            driver.dragPress(subject, at: Point(x: start.x, y: start.y)) {
+                answer in
+                /* THE ONLY DOOR TO CONFIRMED. A `.confirmed` this side made
+                   up would be exactly the plausible wrong answer the arc is
+                   about — and the session type has no other way in. */
+                guard var live = itemDrag, live.subject == subject else {
+                    return
+                }
+                switch answer {
+                case .confirmed:
+                    live.confirm()
+                    itemDrag = live
+                case .refused(let why):          // RULE 4
+                    finish(live.refused(why))
+                }
+            }
+            return .item
+        }
+    }
+
+    private func moveItemDrag(to p: (x: Int, y: Int)) {
+        guard var live = itemDrag else { return }
+        live.move(to: Point(x: p.x, y: p.y))
+        itemDrag = live
+        controller.itemDragDriver?.dragMove(to: Point(x: p.x, y: p.y))
+    }
+
+    /// Carry out an ending the session decided.
+    ///
+    /// One function for both unhappy endings because they are one behaviour —
+    /// the mirror showed something it could not vouch for and takes it back —
+    /// and two implementations would be two chances to leave a ghost on screen
+    /// after a failure, which reads as the drag having worked.
+    private func finish(_ ending: ItemDragSession.Ending) {
+        switch ending {
+        case .snapBack(let why):
+            itemDrag = nil
+            controller.note(why)
+        case .drop(let plan):
+            controller.note(describe(plan))
+            controller.itemDragDriver?.dragRelease(plan) { answer in
+                switch answer {
+                case .confirmed:
+                    /* The guest has it. Drop the ghost and let the next scene
+                       draw the item where it now lives — a ghost kept past
+                       this point would be the mirror asserting a position
+                       nobody has reported yet. */
+                    itemDrag = nil
+                case .refused(let why):
+                    guard let live = itemDrag else { return }
+                    finish(live.refused(why))
+                }
+            }
+        }
+    }
+
+    /// The release. The DECISION is `ItemDragSession.release` — see the four
+    /// rules there; this is the part that talks to the driver.
+    private func endItemDrag(_ scene: MirrorKit.Scene,
+                             from start: (x: Int, y: Int),
+                             to end: (x: Int, y: Int)) {
+        guard let live = itemDrag else { return }
+        let ending = live.release(
+            DragTargeting.plan(scene, from: start, to: end))
+        if case .snapBack = ending {
+            /* The button still goes up. A mouse left down is the one failure
+               the resident's dead-man exists for, and this side must not be
+               the reason it has to fire. */
+            controller.itemDragDriver?.dragRelease(nil) { _ in }
+        }
+        finish(ending)
+    }
+
+    /// What a drop is about to do, for the status line. Named per intent
+    /// because "moved" and "rearranged" are different promises.
+    private func describe(_ plan: DragTargeting.Plan) -> String {
+        let name = plan.subject.name
+        switch (plan.intent, plan.destination) {
+        case (.rearrange, _):
+            return "moving \(name) within its own window"
+        case (_, .applicationIcon(let app, _, _)):
+            return "opening \(name) with \(app)"
+        case (_, .desktop):
+            return "moving \(name) to the desktop"
+        case (_, .finderWindow(_, let path, _, _)):
+            return "moving \(name) into \(path)"
+        case (_, .container(let into, _, _, _)):
+            return "moving \(name) into \(into)"
+        case (_, .applicationWindow(_, _, let app, _, _)):
+            return "giving \(name) to \(app)"
+        }
     }
 
     private func point(_ p: CGPoint, _ scene: MirrorKit.Scene,
@@ -350,23 +588,38 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
         return Point(x: g.x, y: g.y)
     }
 
-    /// The pointer says what a press would DO, which is the cheapest
-    /// honest feedback a mirror can give: a resize corner, a thing that
-    /// can be opened, a thing that is only a picture.
+    /// THE POINTER IS A CLAIM, so it is made deliberately and only where
+    /// the guest's own scene supports it.
+    ///
+    /// This used to shape the cursor to whatever the resolver named — a
+    /// pointing hand over every control, an open hand over a title bar —
+    /// on the reasoning that saying what a press would do is what makes a
+    /// mirror feel driveable. The trouble is that a mirror is a picture
+    /// of another machine, and a cursor that promises "this is a button"
+    /// over an element whose kind we have not proven is the same
+    /// confident wrong answer plan 018 is about everywhere else. 62% of
+    /// elements carry no determined kind (docs/mirror-element-coverage.md).
+    ///
+    /// So: the ARROW is the default and the honest one, and there is
+    /// exactly one exception — an I-beam over a dialog item the GUEST
+    /// says is editable text. That claim comes from `semanticKind`, the
+    /// same v2 evidence the renderer and the hit tester read, rather than
+    /// from a second traversal of the same truth.
+    ///
+    /// Michelle, 2026-08-07: "use the normal pointer everywhere and just
+    /// focus on getting the text cursor over editable text areas."
+    ///
+    /// NOT YET DONE, and it is the direction rather than a gap here: the
+    /// guest has its own cursor and does not report it. Mirroring that
+    /// (Lane C's asset pack already carries 43 extracted `CURS`
+    /// resources) needs a capture-side verb and a contract field, and
+    /// belongs to its own slice.
     static func cursor(for object: MirrorObject) -> NSCursor {
-        switch object {
-        case .window(let w):
-            switch w.part {
-            case .growBox: return .resizeUpDown
-            case .titleBar: return .openHand
-            default: return .arrow
-            }
-        case .control, .dialogItem, .menu, .menuItem,
-             .applicationMenuAction, .app, .finderItem:
-            return .pointingHand
-        case .desktop:
-            return .arrow
+        if case .dialogItem(let item) = object,
+           item.semanticKind == "editText" {
+            return .iBeam
         }
+        return .arrow
     }
 
     /// Hand one interaction to the driver. Every gesture in this view

@@ -10,7 +10,15 @@ enum {
     kMirrorLabelWidth = 116,
     kMirrorSectionGap = 12,
     kMirrorLifecycleRows = 4,
-    kMirrorNoteLines = 2
+    kMirrorNoteLines = 2,
+    /* The one control on this page: the ask that opens the host's own
+       Mirror window. Platinum's standard push-button height is 20 and a
+       button wants a comfortable label width; both are here rather than
+       in the module so the geometry has one home the native test can
+       compile. */
+    kMirrorButtonWidth = 168,
+    kMirrorButtonHeight = 20,
+    kMirrorButtonGap = 10
 };
 
 typedef struct MirrorLayout {
@@ -19,6 +27,10 @@ typedef struct MirrorLayout {
     Rect plane_heading;
     Rect plane_rows[kMirrorPlaneCount];
     Rect note[kMirrorNoteLines];
+    /* Where the "Show Mirror on Host" button goes, and the status line
+       under it that carries the host's own answer. */
+    Rect show_button;
+    Rect show_status;
 } MirrorLayout;
 
 void now_mirror_layout_compute(const Rect *body, MirrorLayout *out);

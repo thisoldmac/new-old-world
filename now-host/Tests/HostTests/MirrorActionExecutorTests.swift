@@ -110,7 +110,7 @@ final class MirrorActionExecutorTests: XCTestCase {
             plan: .applicationVisibility(.hideOthers(
                 exceptPSN: "0.4", incarnation: "now",
                 name: "New Old World", menuID: menu.id,
-                itemIndex: 2, titleLeft: menu.left)),
+                itemIndex: 2, titleLeft: menu.left ?? 0)),
             engine: engine, id: "hide-others"))
         XCTAssertEqual(hideOthers.postcondition,
                        .processVisibility([finder: false, now: true]))
@@ -223,6 +223,47 @@ final class MirrorActionExecutorTests: XCTestCase {
         }
     }
 
+    /// **The false negative sweep A priced at 18 seconds.** `open "Mail"`
+    /// reported `timedOut` **having worked**: the desktop's `Mail` is an
+    /// alias, an alias was unclassifiable, and unclassifiable predicted a
+    /// Finder window titled `Mail` — a window no Finder ever makes,
+    /// because Mail opens as its own application. Measured on the
+    /// emulator 2026-08-07: the alias's original is an `APPL` named
+    /// `Mail`, and opening it puts a process named `Mail` at the front.
+    ///
+    /// The renamed case is the load-bearing one. An alias can be called
+    /// anything; the process is named after the TARGET, so a prediction
+    /// built from the alias's own name is a second way to time out having
+    /// worked, and it would survive a test that only ever used an alias
+    /// whose name happened to match.
+    func testOpeningAResolvedAliasPredictsWhatItPointsAt() throws {
+        let engine = try makeEngine()
+        let finder = MirrorProcessIdentity(session: engine.session,
+                                           incarnation: "finder")
+
+        for alias in ["Mail", "My Mailer"] {
+            let operation = try XCTUnwrap(MirrorActionExecutor.operation(
+                for: open(alias, in: nil),
+                plan: .finderOpen(item: alias, container: .desktop),
+                engine: engine, id: "open-\(alias)"))
+            XCTAssertEqual(operation.postcondition,
+                           .processNamedPresent("Mail"),
+                           "\(alias) points at an application called Mail")
+            XCTAssertEqual(operation.target, .process(finder))
+        }
+
+        /* An alias to a FOLDER still opens a Finder window - and the
+           Finder titles it after the target, so `Docs` would never
+           match either. */
+        let folder = try XCTUnwrap(MirrorActionExecutor.operation(
+            for: open("Docs", in: nil),
+            plan: .finderOpen(item: "Docs", container: .desktop),
+            engine: engine, id: "open-docs"))
+        XCTAssertEqual(folder.postcondition,
+                       .windowNamedPresent(owner: finder,
+                                           title: "Documents"))
+    }
+
     private func open(_ name: String, in container: String?) -> Interaction {
         let window = container.map {
             MirrorObject.Window(
@@ -256,7 +297,18 @@ final class MirrorActionExecutorTests: XCTestCase {
           {"name":"Macintosh HD","kind":"disk","x":500,"y":40,
            "placed":true,"alias":false,"invisible":false},
           {"name":"Read Me","kind":"file","type":"TEXT","creator":"ttxt",
-           "x":500,"y":120,"placed":true,"alias":false,"invisible":false}],
+           "x":500,"y":120,"placed":true,"alias":false,"invisible":false},
+          {"name":"Mail","kind":"file","x":500,"y":200,"placed":true,
+           "alias":true,"invisible":false,
+           "aliasTarget":{"name":"Mail","kind":"application",
+                          "type":"APPL","creator":"aplt"}},
+          {"name":"My Mailer","kind":"file","x":500,"y":260,"placed":true,
+           "alias":true,"invisible":false,
+           "aliasTarget":{"name":"Mail","kind":"application",
+                          "type":"APPL","creator":"aplt"}},
+          {"name":"Docs","kind":"file","x":500,"y":320,"placed":true,
+           "alias":true,"invisible":false,
+           "aliasTarget":{"name":"Documents","kind":"folder"}}],
          "windows":[
           {"id":"0.3/System Folder#0","app":"Finder","psn":"0.3",
            "title":"System Folder","rect":{"l":1,"t":2,"r":200,"b":180},

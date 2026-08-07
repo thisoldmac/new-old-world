@@ -34,9 +34,10 @@ struct LogsModuleView: View {
 
     private var subtitle: String {
         if model.persistsToDisk, let path = log.url?.path {
-            return "This Mac's event log — saving to \(path)"
+            return "\(MachineNaming.thisMac)'s event log — saving to \(path)"
         }
-        return "This Mac's event log — in memory only, not written to disk"
+        return "\(MachineNaming.thisMac)'s event log — in memory only, "
+            + "not written to disk"
     }
 
     private var switches: some View {

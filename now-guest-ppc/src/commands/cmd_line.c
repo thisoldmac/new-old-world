@@ -37,6 +37,23 @@ static void trim_into(const char *src, char *out, long cap)
     out[n] = '\0';
 }
 
+/* Two appenders that refuse rather than truncate. A half-written request
+   is not a smaller version of the typed one. */
+static int append_char(char *out, long cap, long *n, char c)
+{
+    if (*n + 2 > cap) return 0;
+    out[(*n)++] = c;
+    return 1;
+}
+
+static int append_lit(char *out, long cap, long *n, const char *lit)
+{
+    while (*lit != '\0') {
+        if (!append_char(out, cap, n, *lit++)) return 0;
+    }
+    return 1;
+}
+
 int now_cmd_line(const char *request_json, char *out, long cap)
 {
     if (out == NULL || cap < 1) {
@@ -207,5 +224,46 @@ int now_cmd_line_int(const char *line, long *out)
         }
         ++p;
     }
+    return 0;
+}
+
+int now_console_line_request(const char *line, char *out, long cap)
+{
+    long n = 0;
+
+    if (out == NULL || cap < 1) {
+        return 0;
+    }
+    out[0] = '\0';
+    if (line == NULL) {
+        return 0;
+    }
+    /* {"line":"..."} - written by hand rather than through a JSON writer
+       because this file is Toolbox-free and has no allocator, and the
+       shape is one key. Only the two characters JSON forbids raw are
+       escaped; a control character in a typed line is dropped rather
+       than emitted, because a raw one would make the request
+       unparseable and no keyboard produces one on purpose.
+
+       EVERY REFUSAL BLANKS WHAT IT WROTE. The appends fill `out` as they
+       go, so a refusal that only returned 0 would leave a PREFIX of the
+       typed line sitting in the caller's buffer - which for this
+       function is a shorter AppleScript that would still have run. */
+    if (!append_lit(out, cap, &n, "{\"line\":\"")) goto refuse;
+    while (*line != '\0') {
+        char c = *line++;
+        if (c == '"' || c == '\\') {
+            if (!append_char(out, cap, &n, '\\')) goto refuse;
+            if (!append_char(out, cap, &n, c)) goto refuse;
+        } else if ((unsigned char)c >= 0x20) {
+            if (!append_char(out, cap, &n, c)) goto refuse;
+        }
+    }
+    if (!append_lit(out, cap, &n, "\"}")) goto refuse;
+    out[n] = '\0';
+    return 1;
+
+refuse:
+    out[0] = '\0';
     return 0;
 }

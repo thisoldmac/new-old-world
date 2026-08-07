@@ -78,6 +78,7 @@ final class Session {
     private let onServeChange: (GuestListener.ChangeRequest) -> Void
     private let onServeCloud: (GuestListener.CloudAsk) -> Void
     private let onServeChat: (GuestListener.ChatAsk) -> Void
+    private let onServeHostShow: (HostShow) -> Void
     private let onProcessListing: (ProcessListing) -> Void
     private let onSoftwareListing: (SoftwareListing) -> Void
     private let onProcessResult: (ProcessResult) -> Void
@@ -212,6 +213,8 @@ final class Session {
              = { _ in },
          onServeChat: @escaping (GuestListener.ChatAsk) -> Void
              = { _ in },
+         onServeHostShow: @escaping (HostShow) -> Void
+             = { _ in },
          onProcessListing: @escaping (ProcessListing) -> Void,
          onSoftwareListing: @escaping (SoftwareListing) -> Void,
          onProcessResult: @escaping (ProcessResult) -> Void,
@@ -256,6 +259,7 @@ final class Session {
         self.onServeChange = onServeChange
         self.onServeCloud = onServeCloud
         self.onServeChat = onServeChat
+        self.onServeHostShow = onServeHostShow
         self.onProcessListing = onProcessListing
         self.onSoftwareListing = onSoftwareListing
         self.onProcessResult = onProcessResult
@@ -554,6 +558,13 @@ final class Session {
             onServeChat(.reset(request))
         case .cloudPreview(let request):
             onServeCloud(.preview(request))
+        /* The host-surface family: the guest asking THIS Mac to bring
+           one of its own windows forward. One direction by definition
+           like cloud and chat — the host never sends host.show, and its
+           answer (.hostShown) stays in the default arm with every other
+           inbound this side does not serve. */
+        case .hostShow(let request):
+            onServeHostShow(request)
         case .previewBegin, .previewEnd:
             /* Declared asymmetry: previews answer cloud.preview, and
                this host never asks one — its screen can decode the

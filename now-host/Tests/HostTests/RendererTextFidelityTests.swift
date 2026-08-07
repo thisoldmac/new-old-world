@@ -273,6 +273,154 @@ final class RendererTextFidelityTests: XCTestCase {
                           + "table is keyed by byte value, not by MacRoman")
     }
 
+    // MARK: - Charcoal, the system font, standing in as Chicago
+
+    /// Font id 0 means "the system font", and on Mac OS 8.5 and later that
+    /// is **Charcoal** — not Chicago, which is System 7's. The pack had no
+    /// Charcoal because Charcoal ships no bitmap strike anywhere on the
+    /// guest; it is rasterised from TrueType at run time by the machine and,
+    /// since 2026-08-07, by the extractor too.
+    func testTheSystemFontIsCharcoalAndNotChicago() throws {
+        try skipUnlessAssetPack()
+        let strike = try XCTUnwrap(DisplayReplay.strike(font: 0, size: 0))
+        XCTAssertEqual(strike.face, "Charcoal",
+                       "font 0 is the system font, and Chicago is System 7's")
+        XCTAssertEqual(strike.pointSize, 12,
+                       "txSize 0 is the port default, which QuickDraw "
+                       + "resolves to 12 — not a zero-height strike")
+        XCTAssertEqual(FontBook.system?.face, "Charcoal",
+                       "the host draws its own menus and titles in the "
+                       + "system font too")
+    }
+
+    /// **The guest's own numbers, string by string.**
+    ///
+    /// Before it draws a group-box title the CDEF erases a band out of the
+    /// frame it has just drawn and clips to it — so the band's width IS
+    /// that machine's statement of how wide that string is in that face at
+    /// that size. Nine such bands sit in the committed captures, and they
+    /// are the only oracle this needs: no VM, no screendump, no judgement.
+    ///
+    /// Chicago overran every one of them, by +1 to +7 px, monotonically
+    /// with length — a per-glyph advance difference, which is what a face
+    /// substitution looks like from the arithmetic end. And because the
+    /// guest leaves the frame line standing on either side of the band,
+    /// the overrun is not clipped away: it is drawn ON the frame, which is
+    /// what "the group boxes are stroked through their own labels" was.
+    ///
+    /// Apple's `hdmx` table answers all nine EXACTLY.
+    func testAGroupTitleIsExactlyAsWideAsTheBandTheGuestErasedForIt() throws {
+        try skipUnlessAssetPack()
+        // (fixture, title, the band the guest cleared out of its own frame)
+        let bands: [(String, String, Int)] = [
+            ("date-and-time", "Current Date", 80),
+            ("date-and-time", "Current Time", 81),
+            ("date-and-time", "Time Zone", 64),
+            ("general-controls", "Desktop", 51),
+            ("general-controls", "Menu Blinking", 89),
+            ("general-controls", "Insertion Point Blinking", 148),
+            ("general-controls", "Documents", 71),
+            ("general-controls", "Check Disk", 66),
+        ]
+        let strike = try XCTUnwrap(DisplayReplay.strike(font: 0, size: 0))
+        var wrong: [String] = []
+        for (fixture, title, band) in bands {
+            // The band is only an oracle if the capture still draws that
+            // title as font 0; a fixture that changed underneath must fail
+            // here rather than let the width assertion pass on nothing.
+            let drawn = try textOps("qdtrace-drain-sweep-\(fixture)")
+                .contains { $0.font == 0 && $0.text == title }
+            XCTAssertTrue(drawn, "\(fixture) no longer draws \(title) as "
+                          + "the system font")
+            let measured = strike.width(title)
+            if measured != band {
+                wrong.append("\(title): \(strike.face) says \(measured), "
+                             + "the guest erased \(band)")
+            }
+        }
+        XCTAssertEqual(wrong, [],
+                       "the strike disagrees with the machine's own layout")
+    }
+
+    /// The same defect from the clipped end, and the string the sweep
+    /// reported: Date & Time draws "Use a Network Time Server" at pen x 40
+    /// under `clip [40,195,210,217]`, so it has 170 px. Chicago wants 177
+    /// and the final "r" — 7 px of it — falls outside, which is why the
+    /// mirror rendered "Use a Network Time Serve".
+    ///
+    /// Generalised over the whole corpus rather than that one string,
+    /// because the same arithmetic governs every font-0 run the guest
+    /// clipped, and a gate that names one string cannot notice the next.
+    /// This is `testNoMemoryPanelLabelOverrunsTheClipTheGuestSetForIt` for
+    /// the system font.
+    func testNoSystemFontRunOverrunsTheClipTheGuestSetForIt() throws {
+        try skipUnlessAssetPack()
+        let captures = [
+            "appearance", "date-and-time", "memory", "sound", "sound-1pass",
+            "general-controls", "finder", "finder-selected", "note-pad",
+            "stickies", "scrapbook", "sherlock-2", "key-caps",
+        ]
+        var overruns: [String] = []
+        var measured = 0
+        var sawTheSweepsOwnString = false
+        for capture in captures {
+            var clips: [String: [Int]] = [:]
+            for op in try ops("qdtrace-drain-sweep-\(capture)") {
+                let port = (op["port"] as? String) ?? ""
+                if (op["op"] as? String) == "state",
+                   (op["kind"] as? String) == "clip",
+                   let rect = op["rect"] as? [Int], rect.count == 4 {
+                    clips[port] = rect
+                }
+                guard (op["op"] as? String) == "text",
+                      (op["font"] as? Int) == 0,
+                      let text = op["text"] as? String,
+                      !text.trimmingCharacters(in: .whitespaces).isEmpty,
+                      let pen = op["pen"] as? [Int], pen.count == 2,
+                      let clip = clips[port],
+                      let strike = DisplayReplay.strike(
+                        font: 0, size: (op["size"] as? Int) ?? 12)
+                else { continue }
+                measured += 1
+                if text == "Use a Network Time Server" {
+                    sawTheSweepsOwnString = true
+                }
+                // The same one pixel of slack the applFont gate allows: a
+                // run ending exactly on its clip is laid out, not overrun.
+                let right = pen[0] + strike.width(text)
+                if right > clip[2] + 1 {
+                    overruns.append("\(capture): \"\(text)\" ends at "
+                                    + "\(right), clipped at \(clip[2])")
+                }
+            }
+        }
+        XCTAssertGreaterThan(measured, 500, "the corpus stopped being read")
+        XCTAssertTrue(sawTheSweepsOwnString,
+                      "the capture that lost its \"r\" stopped drawing it")
+        XCTAssertEqual(overruns, [],
+                       "system-font runs are measured wider than the "
+                       + "machine laid them out")
+    }
+
+    /// The strikes the pack rasterises rather than lifts must SAY so, in
+    /// the metrics the consumer reads. A width whose provenance is a
+    /// rasteriser's guess and a width that is Apple's own device metric
+    /// are not the same claim, and the file is where that distinction
+    /// survives the trip out of the extractor.
+    func testACharcoalStrikeDeclaresWhereItsWidthsCameFrom() throws {
+        try skipUnlessAssetPack()
+        let url = try XCTUnwrap(AssetPack.url(forResource: "charcoal-12",
+                                              withExtension: "json",
+                                              subdirectory: "fonts"))
+        let meta = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: url)) as? [String: Any])
+        XCTAssertEqual(meta["widthSource"] as? String, "hdmx",
+                       "a rasterised strike whose advances did not come "
+                       + "from the font's own device metrics is a guess")
+        XCTAssertEqual(meta["rasterisedFrom"] as? String, "sfnt")
+        XCTAssertEqual(meta["face"] as? String, "Charcoal")
+    }
+
     // MARK: - R8, a selected label rendered as a solid black bar
 
     /// The Finder paints a selected label's background and writes the text

@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "axwalk.h"    /* NowAxDefProcOrigin: scene.h stores one as a short */
+#include "control_cdef.h"  /* NowCdefState, and the documented CDEF table */
 #include "json.h"
 #include "scene_digest.h"
 #include "scene_phase.h"
@@ -206,6 +207,15 @@ static void put_apps(Sink *k, const NowScene *s)
         put_str(k, p->name);
         put(k, ",\"front\":");
         put(k, p->front ? "true" : "false");
+        /* Present only when TRUE, like `isSelf` on ProcessListing: absence
+           means the process did not declare `modeOnlyBackground`, and 24
+           rows do not each pay for a false. It is the process's own
+           statement that it has no user interface - never a conclusion
+           drawn from an empty window list, which cannot tell "no UI by
+           design" from "we failed to look". */
+        if (p->background_only) {
+            put(k, ",\"backgroundOnly\":true");
+        }
         if (p->incarnation != 0) {
             put(k, ",\"incarnation\":");
             put_process_incarnation(k, p->incarnation);
@@ -254,6 +264,9 @@ static void put_processes(Sink *k, const NowScene *s)
         put(k, p->front ? "true" : "false");
         put(k, ",\"signature\":");
         put_signature(k, p->signature);
+        if (p->background_only) {
+            put(k, ",\"backgroundOnly\":true");
+        }
         if (p->incarnation != 0) {
             put(k, ",\"incarnation\":");
             put_process_incarnation(k, p->incarnation);
@@ -453,6 +466,19 @@ static const char *control_definition(short origin)
     }
 }
 
+/* The role the CDEF route supports for a control the Control Manager
+   would not name, or NULL. It is consulted ONLY where `role` is empty:
+   a control that told us what it is outranks the identity of the code
+   that draws it, and averaging the two would be the laundering this
+   whole split exists to prevent. */
+static const char *derived_role(const NowSceneControl *c)
+{
+    if (c->cdef_state != (short)kNowCdefNamed) {
+        return NULL;
+    }
+    return now_cdef_role(c->cdef_id, c->cdef_variant);
+}
+
 static const char *control_kind(const char *role)
 {
     if (strcmp(role, "button") == 0) return "pushButton";
@@ -471,6 +497,7 @@ static const char *control_kind(const char *role)
     if (strcmp(role, "userPane") == 0) return "userPane";
     if (strcmp(role, "imageWell") == 0) return "imageWell";
     if (strcmp(role, "systemControl") == 0) return "systemControl";
+    if (strcmp(role, "tab") == 0) return "tab";
     return "unknown";
 }
 
@@ -484,6 +511,17 @@ static const char *control_action(const char *role)
     }
     if (strcmp(role, "popup") == 0) return "choose";
     if (strcmp(role, "scrollbar") == 0) return "scroll";
+    /* A TAB and a LIST BOX both answer to a click at a POINT, and until
+       2026-08-07 neither had an action at all - so `authorizesAction` was
+       false and every driver declined them, which is most of what
+       "lists, scrollbars and tabs render now but they cant be used"
+       named. `press` is the honest word for both: the act is a mouse
+       click the owning application routes through its own handler, the
+       same mechanism a push button uses. Which tab, and which row, is
+       decided by WHERE - so a caller sends `ctlact` a point, and the
+       point is what makes these two rows worth having. */
+    if (strcmp(role, "tab") == 0) return "press";
+    if (strcmp(role, "listBox") == 0) return "press";
     return NULL;
 }
 
@@ -549,7 +587,16 @@ static void put_controls(Sink *k, const NowScene *s, const NowSceneWindow *w)
         /* IR v2 keeps the legacy role only so v1-era renderers can draw an
            approximation. Unknown is explicit: geometry and a value range
            never become an action-bearing type. */
-        put_str(k, c->role[0] != '\0' ? c->role : "unknown");
+        /* A derived role rides here too. This field is documented as the
+           APPROXIMATION a v1-era renderer draws from, and "the Toolbox
+           runs the scroll bar CDEF for this control" is a strictly better
+           approximation than the word `unknown` - which is what every
+           OS 9 control panel's controls carried before the CDEF route
+           existed. The semantic object below still says which of the two
+           it was. */
+        put_str(k, c->role[0] != '\0' ? c->role
+                                      : (derived_role(c) != NULL
+                                         ? derived_role(c) : "unknown"));
         put(k, ",\"title\":");
         put_str(k, c->title);
         snprintf(rect, sizeof rect, ",\"rect\":{\"l\":%d,\"t\":%d,\"r\":%d,"
@@ -568,6 +615,50 @@ static void put_controls(Sink *k, const NowScene *s, const NowSceneWindow *w)
         put_num(k, c->max);
         put_ref_required(k, c->ref);
         put(k, ",\"semantic\":{\"knowledge\":");
+        if (c->role[0] == '\0' && derived_role(c) != NULL) {
+            /* THE THIRD STATE, and it is deliberately not `known`.
+               `known` is the control answering about itself through
+               `kControlKindTag`; this is the Resource Manager naming the
+               CDEF that draws it and this guest looking the id up in a
+               header. That is the machine stating something rather than
+               us guessing - which is why it may carry an action at all -
+               and it is still one remove from the control's own word,
+               which is why it may not be spelled the same. A reader that
+               cannot tell them apart is reading a document that no longer
+               says which it got. */
+            const char *role = derived_role(c);
+            const char *action = control_action(role);
+
+            put_str(k, "derived");
+            put(k, ",\"kind\":");
+            put_str(k, control_kind(role));
+            if (action != NULL) {
+                put(k, ",\"action\":");
+                put_str(k, action);
+            }
+            if (control_has_state(role)) {
+                put(k, ",\"state\":");
+                put_str(k, c->value != 0 ? "on" : "off");
+            }
+            /* NO `semantic.value` HERE, and its absence is the answer.
+               The CDEF id names a KIND; it does not read a control's
+               contents, so this branch has nothing to say about them.
+               `semantic.value` is the control's own words - the text in
+               the field, the item chosen in the menu - and every consumer
+               DRAWS it. Emitting `GetControlValue` into it published the
+               integer 0 as the text of every static field and every user
+               pane, and on 2026-08-07 that erased the whole Appearance
+               panel: its root pane came back captioned "0" and, being the
+               last control in the chain, painted over all six tabs.
+
+               The number is not lost and never was - it rides the
+               control's own `value` key a few lines above, where it means
+               what the Control Manager means. Saying it twice under two
+               meanings is how it came to be read as prose. */
+            put(k, ",\"provenance\":\"guest-cdef-resource\","
+                   "\"completeness\":\"complete\"}}");
+            continue;
+        }
         if (c->role[0] == '\0') {
             const char *definition = control_definition(c->definition);
 
@@ -578,6 +669,26 @@ static void put_controls(Sink *k, const NowScene *s, const NowSceneWindow *w)
             if (definition != NULL) {
                 put(k, ",\"definition\":");
                 put_str(k, definition);
+            }
+            /* WHY nobody could say, when the guest knows. The semantic
+               client computes exactly this - "Unsupported custom
+               control", "Control kind undetermined", "Semantic
+               classification unavailable" - and until 2026-08-07 it was
+               emitted ONLY beside a role, which is the one case where it
+               is least needed. So every unclassified control reached the
+               host as a bare `unknown` and the guest's own diagnosis of
+               its own gap was dropped on the floor: 71 of Appearance's 73
+               controls read identically whether the resident had refused
+               them, never reached them, or been asked at all.
+
+               It is a REASON, not a value, and it rides the existing
+               field rather than a new one because that field already
+               carries this class of string beside a known role. A reader
+               must not promote it into a kind: knowledge is still
+               `unknown` here and that is the load-bearing key. */
+            if (c->semantic_value_known) {
+                put(k, ",\"value\":");
+                put_str(k, c->semantic_value);
             }
         } else {
             const char *action = control_action(c->role);
@@ -872,8 +983,19 @@ static const char *coverage_status(NowSceneCoverage coverage)
     }
 }
 
-static const char *coverage_reason(NowSceneCoverage coverage)
+static const char *coverage_reason(NowSceneCoverage coverage,
+                                   const NowSceneProc *owner)
 {
+    /* "not-observed" is the right word for an application we could not
+       look inside, and the WRONG one for a process that declared it has
+       no user interface: there was nothing there to observe. Same
+       status - we did not enumerate - but a consumer deciding whether a
+       gap is a defect needs the reason, and `no-ui` says the gap is the
+       machine working correctly. */
+    if (coverage == kNowSceneCoverageUnavailable
+        && owner != NULL && owner->background_only) {
+        return "no-ui";
+    }
     switch (coverage) {
     case kNowSceneCoveragePartial: return "bounded";
     case kNowSceneCoverageRetracted: return "validation";
@@ -886,9 +1008,10 @@ static const char *coverage_reason(NowSceneCoverage coverage)
 
 static void put_coverage_claim(Sink *k, const char *scope,
                                const NowSceneProc *owner,
-                               NowSceneCoverage coverage, int first)
+                               NowSceneCoverage coverage, int first,
+                               unsigned long evicted)
 {
-    const char *reason = coverage_reason(coverage);
+    const char *reason = coverage_reason(coverage, owner);
 
     put(k, first ? "{\"scope\":" : ",{\"scope\":");
     put_str(k, scope);
@@ -901,6 +1024,17 @@ static void put_coverage_claim(Sink *k, const char *scope,
     if (reason != NULL) {
         put(k, ",\"reason\":");
         put_str(k, reason);
+    }
+    /* HOW MANY THIS CLAIM'S LEDGER FORGOT. Only the `depth` scope has
+       one, and it rides only when nonzero: 0 is the ordinary case and a
+       key present on every claim in every scene would cost more than it
+       says. What it buys is the difference between "we never saw this
+       process come forward" and "we saw it and then forgot", which is
+       the empty-versus-unknown split this IR makes everywhere else and
+       could not make here. */
+    if (evicted != 0) {
+        put(k, ",\"evicted\":");
+        put_num(k, (long)evicted);
     }
     put(k, "}");
 }
@@ -916,11 +1050,23 @@ static void put_coverage(Sink *k, const NowScene *s)
         k->sp->coverage_off = k->len;
     }
     put(k, "[");
-    put_coverage_claim(k, "processes", NULL, s->processes_coverage, 1);
+    put_coverage_claim(k, "processes", NULL, s->processes_coverage, 1, 0);
+    /* ONE CLAIM FOR THE WHOLE ROSTER, and the reason `backgroundOnly` can
+       stay true-only: this says whether an absent key means "has a face"
+       or "nobody asked". See NowScene.process_kind_coverage. */
+    put_coverage_claim(k, "process-kind", NULL,
+                       s->process_kind_coverage, 0, 0);
+    /* AND ONE FOR THE ORDER THE ARRAY ITSELF CARRIES. Every other claim
+       here is about a list's membership; this one is about its
+       SEQUENCE, which is meaning too - the front process is first - and
+       until now was the one piece of the scene that could be wrong with
+       nothing saying so. See NowScene.depth_coverage. */
+    put_coverage_claim(k, "depth", NULL, s->depth_coverage, 0,
+                       s->depth_evicted);
     for (i = 0; i < s->proc_count; ++i) {
         const NowSceneProc *p = &s->procs[i];
 
-        put_coverage_claim(k, "windows", p, p->windows_coverage, 0);
+        put_coverage_claim(k, "windows", p, p->windows_coverage, 0, 0);
         if (p->front) {
             front = p;
         }
@@ -935,11 +1081,59 @@ static void put_coverage(Sink *k, const NowScene *s)
     } else {
         menubar_coverage = kNowSceneCoverageUnavailable;
     }
-    put_coverage_claim(k, "menubar", front, menubar_coverage, 0);
+    put_coverage_claim(k, "menubar", front, menubar_coverage, 0, 0);
     put(k, "]");
     if (k->sp != NULL) {
         k->sp->coverage_len = k->len - k->sp->coverage_off;
     }
+}
+
+/* meta.theme: the colours the MACHINE gave, as `#RRGGBB` strings.
+ *
+ * A string rather than a number because a colour read out of a capture
+ * by a person is going to be compared against a hex pixel, and
+ * `14540253` is not that. Every key is omitted when the ask failed, and
+ * the whole object is omitted when nothing was asked - so a consumer
+ * meeting no `theme` knows this producer did not ask, and one meeting
+ * `theme` without `alertBackground` knows the ask was made and refused.
+ * Those are different facts and the old single constant could carry
+ * neither. See scene.h, NowSceneTheme. */
+static void put_theme_key(Sink *k, int *first, const char *name, long rgb)
+{
+    char hex[10];
+
+    if (rgb < 0) {
+        return;
+    }
+    put(k, *first ? "" : ",");
+    put_str(k, name);
+    put(k, ":");
+    snprintf(hex, sizeof hex, "#%02lX%02lX%02lX",
+             (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+    put_str(k, hex);
+    *first = 0;
+}
+
+static void put_theme(Sink *k, const NowScene *s)
+{
+    int first = 1;
+
+    if (s->theme.dialog_background < 0 && s->theme.alert_background < 0
+        && s->theme.document_background < 0 && s->theme.highlight < 0) {
+        return;
+    }
+    put(k, ",\"theme\":{");
+    put_theme_key(k, &first, "dialogBackground", s->theme.dialog_background);
+    put_theme_key(k, &first, "alertBackground", s->theme.alert_background);
+    put_theme_key(k, &first, "documentBackground",
+                  s->theme.document_background);
+    put_theme_key(k, &first, "highlight", s->theme.highlight);
+    if (s->theme.depth >= 0) {
+        put(k, first ? "" : ",");
+        put(k, "\"depth\":");
+        put_num(k, (long)s->theme.depth);
+    }
+    put(k, "}");
 }
 
 /* meta.errors carries what the scene could not do, in upstream's
@@ -1005,6 +1199,84 @@ static void put_meta(Sink *k, const NowScene *s)
                 "rather than some of them");
         first = 0;
     }
+    /* WHICH WINDOW, by name. The sentences above and below say a plane
+       was dropped somewhere in this scene; these say where. A driving
+       agent meeting `controls: []` on a panel it can see six tabs in
+       otherwise has no way to tell an empty window from an unread one -
+       measured on the Appearance control panel, 2026-08-07, which
+       published zero controls and zero dialog items with nothing naming
+       it. Emitted per window rather than folded into one line because
+       two silent windows are two separate errands. */
+    for (i = 0; i < s->window_count; ++i) {
+        const NowSceneWindow *w = &s->windows[i];
+        /* +240, not +160: the longest reason below is ~170 characters and
+           the chain figures add ~45 more. It was sized for the reason
+           alone, so the number this line exists to carry would have been
+           the part snprintf dropped. */
+        char line[kNowSceneTitleMax + 240];
+        const char *why;
+
+        switch (w->walk_verdict) {
+        case kNowSceneWalkRecordUnreadable:
+            why = "window record failed validation, so no control or item "
+                  "plane was attempted - absent here means unknown, "
+                  "not empty";
+            break;
+        case kNowSceneWalkControlsBound:
+            why = "control chain is longer than this scene carries, so its "
+                  "controls are unknown rather than absent - the bound is "
+                  "ours, not the machine's";
+            break;
+        case kNowSceneWalkControlsCyclic:
+            why = "control chain did not end within the diagnostic probe "
+                  "bound, so it is cyclic or corrupt rather than merely "
+                  "long - raising a cap would not reach it";
+            break;
+        case kNowSceneWalkControlsInvalid:
+            why = "control chain failed validation: a record left the "
+                  "readable zones, so its controls are unknown rather than "
+                  "absent and the fault is where we are allowed to look";
+            break;
+        case kNowSceneWalkControlsRetracted:
+            why = "control chain hit a bound or failed validation, so its "
+                  "controls are unknown rather than absent";
+            break;
+        case kNowSceneWalkDialogItemsRetracted:
+            why = "dialog item list hit a bound or failed validation, so "
+                  "its items are unknown rather than absent";
+            break;
+        case kNowSceneWalkControlsAndItemsRetracted:
+            why = "both the control chain and the dialog item list failed, "
+                  "so nothing in this window is addressable and the reason "
+                  "is the walk, not the window";
+            break;
+        default:
+            continue;
+        }
+        /* THE NUMBER, beside the reason. "The bound is ours" told a
+           reader which half of the system to look at and left them to
+           measure the other half by hand - which is exactly what the
+           Appearance investigation had to do to learn that the chain was
+           73 against a bound of 48. Both figures are in the guest's hand
+           here, so both go on the line, and a floor says it is one. */
+        if (w->control_chain_len > 0
+            && (w->walk_verdict == kNowSceneWalkControlsBound
+                || w->walk_verdict == kNowSceneWalkControlsInvalid
+                || w->walk_verdict == kNowSceneWalkControlsCyclic)) {
+            snprintf(line, sizeof line, "%s: %s (chain is %s%d, this scene "
+                     "carries %d)",
+                     w->title[0] != '\0' ? w->title : "(untitled window)",
+                     why, w->control_chain_len_exact ? "" : "at least ",
+                     (int)w->control_chain_len, (int)kNowSceneMaxControls);
+        } else {
+            snprintf(line, sizeof line, "%s: %s",
+                     w->title[0] != '\0' ? w->title : "(untitled window)",
+                     why);
+        }
+        put(k, first ? "" : ",");
+        put_str(k, line);
+        first = 0;
+    }
     if (s->list_cells_truncated) {
         put(k, first ? "" : ",");
         put_str(k, "list cells truncated: structured list content exceeded "
@@ -1038,6 +1310,7 @@ static void put_meta(Sink *k, const NowScene *s)
     if (k->sp != NULL) {
         k->sp->tail_off = k->len;
     }
+    put_theme(k, s);
     if (s->plane[0] != '\0') {
         put(k, ",\"plane\":");
         put_str(k, s->plane);

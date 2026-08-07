@@ -310,8 +310,20 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         MirrorKit.Scene, Int, @escaping () -> Void
     ) -> Void)?
     private let lifecycleDidChange: @MainActor () -> Void
-    private(set) var running = false
+    /// **Published, because it is now a control and not an internal flag.**
+    ///
+    /// Running used to be implied by an open window, and the window's own
+    /// `isOpen` was the `@Published` a button watched. Under start/stop
+    /// this is the thing the button IS, so a plain stored property would
+    /// have rendered the label once and then frozen — the control saying
+    /// "Start" over a poll that had been running for a minute.
+    @Published private(set) var running = false
     private var runGeneration = 0
+    /// The deferred lifecycle refresh a stop schedules eleven seconds out,
+    /// held so a restart inside that window can cancel it. Without this a
+    /// Stop→Start pair leaves a refresh from the DEAD run to land on the
+    /// live one and repaint the plane card with the stopped state.
+    private var deferredLifecycleRefresh: Task<Void, Never>?
     private var cycleGeneration: Int?
     private var pollRequestedAfterCycle = false
     private var rearmTask: Task<Void, Never>?
@@ -413,6 +425,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
     func start() {
         guard !running else { return }
+        /* A stop schedules a lifecycle refresh eleven seconds out to catch
+           the resident's leases lapsing. If a person starts again inside
+           that window, that refresh describes a run that no longer exists
+           and repaints the plane card as stopped over a live poll. */
+        deferredLifecycleRefresh?.cancel()
+        deferredLifecycleRefresh = nil
         runGeneration &+= 1
         iconTask?.cancel()
         iconTask = nil
@@ -490,9 +508,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             self.mutationBroker?.sessionChanged()
             self.mutationBroker = nil
             self.lifecycleDidChange()
-            Task { @MainActor [weak self] in
+            self.deferredLifecycleRefresh = Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: 11_000_000_000)
-                self?.lifecycleDidChange()
+                guard let self, !Task.isCancelled, !self.running else {
+                    return
+                }
+                self.lifecycleDidChange()
             }
         }
     }
@@ -1042,12 +1063,26 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// bound; every page carries the same total so a partial read is refused.
     nonisolated private static let iconPageSize = 8
 
+    /// **`bounds of`, not `position of`** — the whole of the list-view defect.
+    ///
+    /// `position` is the Finder's live layout in an ICON view and the SAVED
+    /// icon grid in a list view, and this script had no idea which it was
+    /// looking at. So a window drawing ten rows at a 19-px pitch reported ten
+    /// icons on a three-column grid, every rect was wrong, and nothing could
+    /// be selected — Michelle's "unable to select items in list view".
+    ///
+    /// `bounds` is the box the Finder actually drew, in every view, and it
+    /// carries the position as its top-left; there is nothing `position`
+    /// answered that this does not. Measured 2026-08-07 on mac99 / OS 9.1
+    /// against a screendump — the full table is in `FinderItems`'s header,
+    /// along with the `view of window` vocabulary that was measured in the
+    /// same pass and is deliberately NOT read here.
     static func iconItemsScript(container: String, offset: Int,
                                 limit: Int = iconPageSize) -> String {
         """
         tell application "Finder"
         set ns to name of every item of \(container)
-        set ps to position of every item of \(container)
+        set ps to bounds of every item of \(container)
         set ks to kind of every item of \(container)
         end tell
         set totalCount to count ns
@@ -1059,7 +1094,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         repeat with i from firstIndex to lastIndex
         set p to item i of ps
         set out to out & "I" & tab & (item i of ns) & tab & (item 1 of p) & \
-        tab & (item 2 of p) & tab & (item i of ks) & return
+        tab & (item 2 of p) & tab & (item 3 of p) & tab & (item 4 of p) & \
+        tab & (item i of ks) & return
         end repeat
         end if
         return out
@@ -1152,20 +1188,100 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
            either side of it. */
         let typesByName = Dictionary(uniqueKeysWithValues:
             Self.parseIconTypes(art.truncated ? "" : (art.value ?? "")))
-        return Self.applyingArt(roster, types: typesByName)
+
+        /* THE THIRD PASS, and its own script for the second pass's reason.
+           An alias whose original is on an unmounted volume raises, and
+           AppleScript fails a script whole - fused with the type pass, one
+           stale alias on the desktop would cost every item its icon art.
+           Each resolution is also wrapped individually, so one bad alias
+           costs only itself. */
+        let aliases = roster.filter(\.alias).map(\.name)
+        var targetsByName: [String: MirrorKit.Scene.DesktopItem.AliasTarget] = [:]
+        if !aliases.isEmpty {
+            let read = await readingOutput(
+                "script",
+                ["source": .text(Self.aliasTargetsScript(container: container))])
+            if read.value == nil || read.truncated {
+                note("\(container): \(aliases.count) alias(es) read, but not "
+                     + "what they point at - "
+                     + "\(read.truncated ? "guest result truncated" : "\(read.error ?? "no reason given")")")
+            }
+            targetsByName = Dictionary(
+                Self.parseAliasTargets(read.truncated ? ""
+                                       : (read.value ?? "")),
+                uniquingKeysWith: { first, _ in first })
+        }
+        return Self.applyingArt(roster, types: typesByName,
+                                aliasTargets: targetsByName)
+    }
+
+    /// What every alias in a container points at.
+    ///
+    /// `original item` is the Finder's own resolution, so it follows a
+    /// renamed or moved target the way a double-click does. It raises for
+    /// a broken alias and for one whose volume is not mounted, which is
+    /// why every row is wrapped: a missing row means "unresolved", and
+    /// unresolved keeps the old prediction rather than inventing one.
+    static func aliasTargetsScript(container: String) -> String {
+        """
+        tell application "Finder"
+        set out to ""
+        repeat with a in (every alias file of \(container))
+        try
+        set t to original item of a
+        set out to out & "A" & tab & (name of a) & tab & (name of t) & tab & \
+        (file type of t as string) & tab & (creator type of t as string) & \
+        tab & (kind of t) & return
+        end try
+        end repeat
+        end tell
+        return out
+        """
+    }
+
+    /// The alias pass, parsed from its OWN blob for `parseIconTypes`'
+    /// reason: each script answers in source form and carries its own
+    /// quotes.
+    static func parseAliasTargets(_ raw: String)
+        -> [(String, MirrorKit.Scene.DesktopItem.AliasTarget)] {
+        let text = unquote(raw)
+        return text.components(separatedBy: CharacterSet.newlines)
+            .compactMap { line in
+                let f = line.components(separatedBy: "\t")
+                guard f.count >= 6, f[0] == "A", !f[1].isEmpty else {
+                    return nil
+                }
+                let kind = f[5].lowercased()
+                return (f[1], .init(
+                    name: f[2],
+                    kind: kind.contains("folder") ? "folder"
+                        : kind.contains("disk") ? "disk"
+                        : kind.contains("application") ? "application"
+                        : "file",
+                    type: osType(fromAppleScript: f[3]),
+                    creator: osType(fromAppleScript: f[4])))
+            }
     }
 
     /// The item roster and the type pass, joined by name — the one place a
     /// file's type and creator are attached to the icon that will be drawn
     /// with them.
-    static func applyingArt(_ items: [MirrorKit.Scene.DesktopItem],
-                            types: [String: (String, String)])
+    static func applyingArt(
+        _ items: [MirrorKit.Scene.DesktopItem],
+        types: [String: (String, String)],
+        aliasTargets: [String: MirrorKit.Scene.DesktopItem.AliasTarget] = [:])
         -> [MirrorKit.Scene.DesktopItem] {
         items.map { item in
-            guard let pair = types[item.name] else { return item }
             var out = item
-            out.type = osType(fromAppleScript: pair.0)
-            out.creator = osType(fromAppleScript: pair.1)
+            if let pair = types[item.name] {
+                out.type = osType(fromAppleScript: pair.0)
+                out.creator = osType(fromAppleScript: pair.1)
+            }
+            /* Only onto an item the ROSTER called an alias. The alias pass
+               asks the Finder for `every alias file`, and joining its rows
+               onto anything else would let a name collision give a plain
+               document a target it does not have. */
+            if item.alias { out.aliasTarget = aliasTargets[item.name] }
             return out
         }
     }
@@ -1470,6 +1586,23 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// classic AppleScript's terminator, and the reason `linefeed` is not
     /// used to build it (that identifier does not exist in OS 9's
     /// AppleScript and fails the whole script with osaErr -1753).
+    /// One roster row, with the Finder's kind string reduced to the four
+    /// words `Scene.DesktopItem.kind` is allowed to hold.
+    static func rosterItem(name: String, kind rawKind: String,
+                           x: Int, y: Int, w: Int?, h: Int?)
+        -> MirrorKit.Scene.DesktopItem {
+        let kind = rawKind.lowercased()
+        return .init(
+            name: name,
+            kind: kind.contains("folder") ? "folder"
+                : kind.contains("disk") ? "disk"
+                : kind.contains("application") ? "application" : "file",
+            type: nil, creator: nil,
+            x: x, y: y, placed: true,
+            alias: kind.contains("alias"), invisible: false,
+            w: w, h: h)
+    }
+
     static func parseIcons(_ raw: String) -> [MirrorKit.Scene.DesktopItem] {
         let text = unquote(raw)
         var items: [MirrorKit.Scene.DesktopItem] = []
@@ -1481,16 +1614,22 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             guard f.count >= 5 else { continue }
             switch f[0] {
             case "I":
-                guard let x = Int(f[2]), let y = Int(f[3]) else { continue }
-                let kind = f[4].lowercased()
-                items.append(.init(
-                    name: f[1],
-                    kind: kind.contains("folder") ? "folder"
-                        : kind.contains("disk") ? "disk"
-                        : kind.contains("application") ? "application" : "file",
-                    type: nil, creator: nil,
-                    x: x, y: y, placed: true,
-                    alias: kind.contains("alias"), invisible: false))
+                /* Seven fields since the roster moved to `bounds`: name,
+                   l, t, r, b, kind. A five-field row is an older capture
+                   carrying a bare position, and is still read — with no
+                   size, which every reader answers with the 32x32 it used
+                   to assume. A row that is neither is a partial read and
+                   is dropped rather than half-believed. */
+                guard f.count >= 7, let l = Int(f[2]), let t = Int(f[3]),
+                      let r = Int(f[4]), let b = Int(f[5]) else {
+                    guard let x = Int(f[2]), let y = Int(f[3]) else { continue }
+                    items.append(Self.rosterItem(name: f[1], kind: f[4],
+                                                 x: x, y: y, w: nil, h: nil))
+                    continue
+                }
+                items.append(Self.rosterItem(name: f[1], kind: f[6],
+                                             x: l, y: t,
+                                             w: r - l, h: b - t))
             case "F":
                 /* The Finder answers with the type as a `type class`, which
                    reaches the wire as AppleScript's rendering of it rather

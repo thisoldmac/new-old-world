@@ -5,16 +5,6 @@
 
 /* Multi-character constants spelled out so the host cc never warns;
    the values are the big-endian 4CCs the Process Manager reports. */
-#define PROC_4CC(a, b, c, d)                                          \
-    (((unsigned long)(a) << 24) | ((unsigned long)(b) << 16)          \
-     | ((unsigned long)(c) << 8) | (unsigned long)(d))
-
-enum {
-    kTypeApplication = PROC_4CC('A', 'P', 'P', 'L'),
-    kTypeBackground = PROC_4CC('a', 'p', 'p', 'e'),
-    kTypeFinder = PROC_4CC('F', 'N', 'D', 'R')
-};
-
 static void set_rect(Rect *r, short left, short top, short right,
                      short bottom)
 {
@@ -147,21 +137,6 @@ void proc_fourcc_text(unsigned long code, char out[5])
     out[4] = '\0';
 }
 
-void proc_kind_text(unsigned long type, char *out, long cap)
-{
-    if (type == kTypeApplication) {
-        snprintf(out, (size_t)cap, "application");
-    } else if (type == kTypeBackground) {
-        snprintf(out, (size_t)cap, "background only");
-    } else if (type == kTypeFinder) {
-        snprintf(out, (size_t)cap, "the Finder");
-    } else {
-        char four[5];
-
-        proc_fourcc_text(type, four);
-        snprintf(out, (size_t)cap, "%s", four);
-    }
-}
 
 /* 1,024 rather than 1024: the classic Memory control panel groups
    thousands, and the string stays ASCII. Only sizes wear this; counts

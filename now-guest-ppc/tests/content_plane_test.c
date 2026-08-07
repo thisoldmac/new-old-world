@@ -866,17 +866,128 @@ static void test_state_null_live(void)
 /* The static asserts in the header do the real work at compile time on all
    three compilers. This checks the two numbers a reader on the wire has to
    agree with us about, so a change to them fails here as well as there. */
+/* ---- the arm-time census's verdict ---------------------------------
+ *
+ * WHAT EACH CASE IS DEFENDING, because a predicate that answers yes too
+ * often here does not fail a test, it writes four bytes into somebody
+ * else's heap. The happy case is one real world; every other case is a
+ * shape that will occur many thousands of times in a single sweep of a
+ * live application heap, and must answer no.
+ */
+static void test_census_match(void)
+{
+    /* A GWorld as NewGWorld builds one: colour port, its own rect, and a
+       pixmap whose bounds are the same rectangle. */
+    check_eq(now_content_census_match(0xC001, 0x1e950000,
+                                      0, 0, 344, 238,
+                                      0x1ea00000, 0x8000 | 688,
+                                      0, 0, 344, 238),
+             1, "a colour port whose pixmap bounds are its own rect is a world");
+
+    /* THE WINDOW CASE, and it is the one this predicate exists to get
+       right without a list walk. A window's portRect is LOCAL and its
+       portPixMap is the SCREEN's, whose bounds are the whole display in
+       global coordinates. The two disagree, and so this says no. */
+    check_eq(now_content_census_match(0xC001, 0x00a80000,
+                                      0, 0, 344, 238,
+                                      0x9c000000, 0x8000 | 2560,
+                                      0, 0, 640, 480),
+             0, "a window port's rect and the screen pixmap's bounds differ");
+
+    /* The discriminator. A classic B&W GrafPort is the same SIZE and a
+       different SHAPE, so reading grafProcs on one lands in the middle
+       of another field - the reason nothing may be written until this
+       passes. */
+    check_eq(now_content_census_match(0x0001, 0x1e950000,
+                                      0, 0, 344, 238,
+                                      0x1ea00000, 0x8000 | 688,
+                                      0, 0, 344, 238),
+             0, "a port that is not a colour port is refused");
+
+    /* Zeroed and near-zeroed blocks. A live heap is full of both, and
+       every one of them is walked. */
+    check_eq(now_content_census_match(0xC001, 0,
+                                      0, 0, 344, 238,
+                                      0x1ea00000, 0x8000 | 688,
+                                      0, 0, 344, 238),
+             0, "a null portPixMap is refused");
+    check_eq(now_content_census_match(0xC001, 0x1e950001,
+                                      0, 0, 344, 238,
+                                      0x1ea00000, 0x8000 | 688,
+                                      0, 0, 344, 238),
+             0, "an odd portPixMap is not a handle");
+    check_eq(now_content_census_match(0xC001, 0x1e950000,
+                                      0, 0, 344, 238,
+                                      0, 0x8000 | 688,
+                                      0, 0, 344, 238),
+             0, "a zero baseAddr is a zeroed block, not a world");
+    check_eq(now_content_census_match(0xC001, 0x1e950000,
+                                      0, 0, 0, 0,
+                                      0x1ea00000, 0x8000 | 688,
+                                      0, 0, 0, 0),
+             0, "an empty rectangle is not a world however well it agrees");
+
+    /* rowBytes' high bit is QuickDraw's own "this record is a PixMap".
+       Without it the record is a BitMap - somebody else's structure
+       however plausibly the rest of it reads. */
+    check_eq(now_content_census_match(0xC001, 0x1e950000,
+                                      0, 0, 344, 238,
+                                      0x1ea00000, 688,
+                                      0, 0, 344, 238),
+             0, "a BitMap-flagged record is not a PixMap");
+    check_eq(now_content_census_match(0xC001, 0x1e950000,
+                                      0, 0, 344, 238,
+                                      0x1ea00000, 0x8000,
+                                      0, 0, 344, 238),
+             0, "a zero stride is refused");
+
+    /* The stride sanity check. Four rectangle words can agree by
+       coincidence over an unrelated stride; a row too narrow to hold
+       the pixels at ONE bit each cannot be this pixmap's. */
+    check_eq(now_content_census_match(0xC001, 0x1e950000,
+                                      0, 0, 344, 238,
+                                      0x1ea00000, 0x8000 | 8,
+                                      0, 0, 344, 238),
+             0, "a stride too small to hold one row at 1bpp is refused");
+    check_eq(now_content_census_match(0xC001, 0x1e950000,
+                                      0, 0, 344, 238,
+                                      0x1ea00000, 0x8000 | 43,
+                                      0, 0, 344, 238),
+             1, "exactly one row at 1bpp is allowed - shallowness is legal");
+
+    /* Partial agreement is not agreement. A block whose rect matches the
+       pixmap in three of four coordinates is a coincidence, and the
+       whole point of using shape as the key is that all of it must hold. */
+    check_eq(now_content_census_match(0xC001, 0x1e950000,
+                                      0, 0, 344, 238,
+                                      0x1ea00000, 0x8000 | 688,
+                                      0, 0, 344, 239),
+             0, "three of four coordinates agreeing is not a match");
+
+    /* A world at a nonzero origin. GWorlds are usually built at (0,0)
+       but nothing requires it, and a predicate that only ever saw the
+       origin would look correct for the wrong reason. */
+    check_eq(now_content_census_match(0xC001, 0x1e950000,
+                                      -20, -8, 324, 230,
+                                      0x1ea00000, 0x8000 | 688,
+                                      -20, -8, 324, 230),
+             1, "a world at a nonzero origin is still a world");
+}
+
 static void test_layout(void)
 {
     check_eq((long)sizeof(NowContentRecHeader), 32, "v2 record header is 32");
-    check_eq((long)sizeof(NowContentBlock), 324 + kNowContentRingCap,
-             "block is v1 prefix + ring + v2 tail + probe tail + qdext tail");
+    check_eq((long)sizeof(NowContentBlock), 368 + kNowContentRingCap,
+             "block is v1 prefix + ring + v2 + probe + qdext + census tails");
     check_eq((long)offsetof(NowContentBlock, probe_pending_pixmap),
              192 + kNowContentRingCap,
              "the probe tail starts where the v2 tail ended");
     check_eq((long)offsetof(NowContentBlock, qdext_calls),
              292 + kNowContentRingCap,
              "and the qdext tail starts where the probe tail ended");
+    check_eq((long)offsetof(NowContentBlock, census_runs),
+             324 + kNowContentRingCap,
+             "and the census tail starts where the qdext tail ended");
     check_eq((long)kNowContentArmCommit, 0x4E576361L, "'NWca'");
     check_eq((long)kNowContentBlockMagic, 0x4E576362L, "'NWcb'");
     check(kNowContentArmCommit != 1 && kNowContentArmCommit != 0,
@@ -900,6 +1011,7 @@ int main(void)
     test_probe_match();
     test_probe_pixmap_match();
     test_blit_source();
+    test_census_match();
 
     test_ring_basic_append();
     test_ring_odd_payload_pads_even();

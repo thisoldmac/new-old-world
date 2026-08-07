@@ -104,8 +104,8 @@ final class CloudModuleModelTests: XCTestCase {
         XCTAssertEqual(Set(labels).count, labels.count,
                        "a picker with two identical rows is a bug " +
                            "a person can't tell apart on screen")
-        XCTAssertEqual(labels, ["Original", "Long side 1600",
-                                "Long side 1024", "Long side 640"])
+        XCTAssertEqual(labels, ["Default size", "1600 px",
+                                "1024 px", "640 px"])
     }
 
     func testAVanishedPreviousFolderFallsBackToDownloads() throws {

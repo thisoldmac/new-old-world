@@ -113,12 +113,32 @@ public struct AgentIntegrationMirrorEntity:
     /// nil is honest unknown: process visibility is a separate retained
     /// guest observation, not something the structural roster implies.
     public let visible: Bool?
+    /// For a `process` entity: what it is, and what we know about what it
+    /// has. `headless` is a KIND — the process declared it has no user
+    /// interface. `windowed` and `empty` are facts about the MACHINE: we
+    /// looked, and it has windows, or it has none open right now.
+    /// `unknown` is a fact about US, and `presenceReason` says which.
+    ///
+    /// An agent driving the machine needs "this process has no UI by
+    /// design" as much as a renderer does. Without it, a faceless
+    /// background application and an application whose walk failed looked
+    /// identical — both `ax_oracle_not_found`, an error word for what is,
+    /// on a healthy machine, the ordinary state of six processes.
+    ///
+    /// nil on a `window` entity: the question is not asked of windows.
+    public let presence: String?
+    /// Why a presence is `unknown` — the guest's own token where there is
+    /// one (`ax_oracle_*`, `now_*`). Never a word invented here.
+    public let presenceReason: String?
     public let freshness: String
     public let actionable: Bool
 
     public init(id: String, kind: Kind, ownerID: String?, name: String,
                 title: String?, front: Bool, visible: Bool?,
+                presence: String? = nil, presenceReason: String? = nil,
                 freshness: String, actionable: Bool) {
+        self.presence = presence
+        self.presenceReason = presenceReason
         self.id = id
         self.kind = kind
         self.ownerID = ownerID
@@ -156,10 +176,22 @@ public struct AgentIntegrationMirrorMenu:
     public let id: Int
     public let title: String
     public let apple: Bool
-    public let left: Int
+    /// Where this menu's title sits in the menu bar — **absent when the
+    /// guest did not report one**, rather than 0.
+    ///
+    /// This is the number a caller hands to `now_menu_act` as
+    /// `titleLeft`, and it is that act's identity check: the guest arms
+    /// its press there, and a press anywhere else belongs to the person
+    /// at the machine. So an absence has to arrive AS an absence. It used
+    /// to arrive as 0, which is not "unknown" — it is four pixels left of
+    /// the Apple menu's title, and a caller that passed it on armed a
+    /// press there in perfect good faith. A row with no `left` cannot be
+    /// pressed by any route on this host, and the guest refuses one
+    /// besides.
+    public let left: Int?
     public let items: [AgentIntegrationMirrorMenuItem]
 
-    public init(id: Int, title: String, apple: Bool, left: Int,
+    public init(id: Int, title: String, apple: Bool, left: Int?,
                 items: [AgentIntegrationMirrorMenuItem]) {
         self.id = id
         self.title = title
@@ -169,6 +201,15 @@ public struct AgentIntegrationMirrorMenu:
     }
 }
 
+/// A rectangle inside one window, **always local to that window's content**
+/// and never in screen coordinates.
+///
+/// Stated here because it was not stated anywhere, and a snapshot that mixed
+/// two conventions shipped: until 2026-08-07 a window's controls and dialog
+/// items were content-local while the desktop's icons were global screen
+/// positions, in the same `items` array, with nothing to tell them apart.
+/// Four honest integers either way — which is why only a written convention,
+/// and a producer that converts to it, can hold this.
 public struct AgentIntegrationMirrorRect: Codable, Equatable, Sendable {
     public let l: Int
     public let t: Int
@@ -193,8 +234,11 @@ public struct AgentIntegrationMirrorRect: Codable, Equatable, Sendable {
 /// radios rendered as push buttons.
 public struct AgentIntegrationMirrorSurfaceItem:
     Codable, Equatable, Sendable {
-    /// `control` or `dialogItem` — different actuation paths on the Mac,
-    /// so never flattened into one list without saying which.
+    /// `control`, `dialogItem` or `finderItem` — different actuation paths
+    /// on the Mac, so never flattened into one list without saying which.
+    /// A `finderItem` is a file the Finder draws, addressed BY NAME
+    /// (`finderSelect` / `finderOpen`), which is why its `ref` is always
+    /// absent; `rect` is absent too when the Finder did not place it.
     public let source: String
     public let ref: String?
     public let role: String?

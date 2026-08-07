@@ -34,6 +34,13 @@ void now_mirror_layout_compute(const Rect *body, MirrorLayout *out)
         y = (short)(y + kMirrorRowHeight);
     }
     y = (short)(y + kMirrorSectionGap);
+    out->show_button = row(*body, y);
+    out->show_button.right = (short)(out->show_button.left
+                                     + kMirrorButtonWidth);
+    out->show_button.bottom = (short)(y + kMirrorButtonHeight);
+    y = (short)(y + kMirrorButtonHeight + kMirrorButtonGap);
+    out->show_status = row(*body, y);
+    y = (short)(y + kMirrorRowHeight + kMirrorSectionGap);
     for (i = 0; i < kMirrorNoteLines; ++i) {
         out->note[i] = row(*body, y);
         y = (short)(y + kMirrorRowHeight);
@@ -67,21 +74,60 @@ void now_mirror_lifecycle_text(const MirrorFacts *facts, char *out, long cap)
     }
 }
 
+/* **ONE row per plane, and the array is UNSIZED on purpose.**
+ *
+ * Two arrays sized `[kMirrorPlaneCount]` with four initialisers each is
+ * how P5 came to be drawn from one element past the end of both: C fills
+ * the missing row with a null pointer and says nothing. Leaving the bound
+ * off makes the TABLE the length it actually is, and the assert below
+ * compares that length against the enumeration — so a plane added to one
+ * and not the other fails the build on both compilers rather than
+ * rendering as a blank line.
+ *
+ * The purposes are the resident's own words for these planes, so a
+ * person reading the page and a person reading a `mirror` reply are
+ * reading one vocabulary. */
+typedef struct MirrorPlaneLabel {
+    const char *name;
+    const char *purpose;
+} MirrorPlaneLabel;
+
+static const MirrorPlaneLabel k_plane_labels[] = {
+    { "Structure",   "windows and menus" },
+    { "Semantics",   "native control meaning" },
+    { "Content",     "data-driven contents" },
+    { "Interaction", "keyboard and mouse input" },
+    { "Transitions", "transitions a poll is too slow to see" }
+};
+
+_Static_assert(sizeof k_plane_labels / sizeof k_plane_labels[0]
+                   == kMirrorPlaneCount,
+               "every MirrorPlane needs a name and a purpose: this table "
+               "and the enumeration are one list, and the four-row "
+               "version of it drew P5 from past its own end");
+
+/* Range-checked, and the empty string is the honest answer rather than a
+   read of whatever follows the table. Belt to the assert's braces: the
+   assert covers the table, this covers a plane index that came off the
+   wire. */
+static const MirrorPlaneLabel *label_for(MirrorPlane plane)
+{
+    static const MirrorPlaneLabel none = { "", "" };
+
+    if ((int)plane < 0 || (int)plane >= kMirrorPlaneCount) {
+        return &none;
+    }
+    return &k_plane_labels[(int)plane];
+}
+
 const char *now_mirror_plane_name(MirrorPlane plane)
 {
-    static const char *names[kMirrorPlaneCount] = {
-        "Structure", "Semantics", "Content", "Interaction"
-    };
-    return names[(int)plane];
+    return label_for(plane)->name;
 }
 
 const char *now_mirror_plane_purpose(MirrorPlane plane)
 {
-    static const char *purposes[kMirrorPlaneCount] = {
-        "windows and menus", "native control meaning",
-        "data-driven contents", "keyboard and mouse input"
-    };
-    return purposes[(int)plane];
+    return label_for(plane)->purpose;
 }
 
 void now_mirror_plane_value(const MirrorFacts *facts, MirrorPlane plane,
@@ -121,7 +167,7 @@ const char *now_mirror_note(int line)
 {
     static const char *notes[kMirrorNoteLines] = {
         "These are observed guest facts. Mirror policy belongs to the host.",
-        "This page is read-only; changing policy here would create two authorities."
+        "The button asks that Mac to show its Mirror; policy stays there."
     };
     return line >= 0 && line < kMirrorNoteLines ? notes[line] : "";
 }

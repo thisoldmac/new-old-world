@@ -60,10 +60,12 @@ add_application(now-guest-ppc
     src/cloud/cloud_photos_view.c
     src/cloud/cloud_contacts_card.c
     src/cloud/cloud_contacts_view.c
+    src/mirror/mirror_anchor.c
     src/mirror/mirror_layout.c
     src/mirror/mirror_json.c
     src/mirror/mirror_probe.c
     src/mirror/mirror_module.c
+    src/mirror/mirror_show.c
     src/census/census_decode.c
     src/census/census_report.c
     src/files/files_module.c
@@ -89,6 +91,9 @@ add_application(now-guest-ppc
     src/peek/peek_oracle.c
     src/peek/event_read.c
     src/peek/arm_target.c
+    src/peek/anchor_acquire.c
+    src/peek/anchor_cycle.c
+    src/peek/anchor_acquire_logic.c
     src/peek/transitions_logic.c
     src/peek/transitions_cmd.c
     src/peek/peek_read.c
@@ -98,6 +103,7 @@ add_application(now-guest-ppc
     src/processes/proc_actions.c
     src/processes/proc_hide_args.c
     src/processes/proc_quit_args.c
+    src/processes/proc_roster.c
     src/processes/processes_layout.c
     src/processes/processes_module.c
     src/workshop/workshop_layout.c
@@ -108,9 +114,13 @@ add_application(now-guest-ppc
     src/scene/scene_json.c
     src/scene/scene_phase.c
     src/scene/scene_collect.c
+    src/scene/scene_theme.c
+    src/scene/front_order.c
     src/scene/scene_self.c
     src/workshop/control_kind.c
     src/scene/scene_walk.c
+    src/scene/control_cdef.c
+    src/scene/cdef_resolver.c
     src/scene/dialog_text.c
     # The foreign-memory walk, ported from this project's own prototype
     # (timbottu/mirror). Pure parsers plus one Toolbox binding; see
@@ -146,6 +156,9 @@ add_application(now-guest-ppc
     src/act/act_settlement.c
     src/act/act_client.c
     src/act/act_cmds.c
+    src/act/ctlact_line.c
+    src/act/act_menu_probe.c
+    src/act/act_menu_identity.c
     ../now-guest-shared/src/now_act_guard.c
     # The one-act-at-a-time latch. Shared and natively tested for the
     # same reason the guard is: it is the thing standing in for a
@@ -166,6 +179,12 @@ add_application(now-guest-ppc
     src/machine/mach_reply.c
     src/machine/mach_activate.c
     src/machine/mach_selftest.c
+    # The desktop's own account of itself, via the Appearance Manager's
+    # theme collection. Same split again: desktop_report.c is Toolbox-free
+    # and natively tested, desktop_theme.c holds every Toolbox call and
+    # decides nothing the report cannot show.
+    src/machine/desktop_report.c
+    src/machine/desktop_theme.c
     # The input plane: mouseloc (a read, and the instrument the act plane
     # is measured with), script (OSADoScript) and aesend (four core Apple
     # Events, a closed vocabulary rather than a class/id pipe).

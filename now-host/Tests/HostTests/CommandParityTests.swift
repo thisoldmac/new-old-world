@@ -230,6 +230,13 @@ final class CommandParityTests: XCTestCase {
         // it to type at this Mac - and it reaches this verb anyway
         // through the exec plane, which is the command-first proof.
         "chat": "chat.* family served BY the host; nothing to serve it to",
+        // The same shape as chat, travelling the same way: the subject is
+        // a window on the HOST, which reaches its own Mirror through its
+        // Window menu and the mirror_open agent verb. There is nothing
+        // for it to type at this Mac, and the capability it would be
+        // typing about is not this Mac's.
+        "showmirror": "host.* family served BY the host; its own Mirror is "
+                    + "reached from its menu and mirror_open",
         "put": "file.* family from the host side, not an x-command",
         "mv": "file.* family from the host side, not an x-command",
         "trash": "file.* family from the host side, not an x-command",
@@ -282,6 +289,7 @@ final class CommandParityTests: XCTestCase {
     private static let reachedByFallback: [String: String] = [
         "putstat": "no arguments; renders as rows through console_reply.c",
         "mouseloc": "no arguments; renders as rows through console_reply.c",
+        "desktop": "no arguments; renders as rows through console_reply.c",
     ]
 
     /// Verbs with no console face because **a person cannot usefully type
@@ -307,6 +315,13 @@ final class CommandParityTests: XCTestCase {
         "textset": "takes an opaque element reference",
         "ctlact": "takes an opaque element reference and a part code",
         "ditemact": "takes one observed control reference and DITL item",
+        "dragpress": "takes an opaque element reference",
+        // The nonce is minted by dragpress and held by the caller that
+        // began the gesture. A person could type a number, but not THIS
+        // number: it exists only inside one drag, and typing a stale one
+        // is the case the resident drops on purpose.
+        "dragmove": "takes a session nonce dragpress minted",
+        "dragrelease": "takes a session nonce dragpress minted",
         "menuact": "the identity check is a coordinate the scene supplies",
         "handle": "takes an opaque reference",
         "observe": "answers with references no person can read or retype",

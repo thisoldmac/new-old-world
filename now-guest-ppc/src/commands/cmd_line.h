@@ -57,4 +57,16 @@ int now_cmd_line_flag_value(const char *line, const char *flag,
 /* The first integer on the line ("tail 40"). 0 when there is none. */
 int now_cmd_line_int(const char *line, long *out);
 
+/* The other direction: a console's raw rest-of-line, written as the
+   `line` field of a command request, so a verb reached from the keyboard
+   takes the SAME path as one reached from the wire.
+   It exists because the guest's own console passed NULL here, and every
+   verb that had no console-local special case therefore got no arguments
+   at all - `script` and `ctlact` answered "requires source" / "requires
+   part" against exactly the line their own help printed.
+   Escapes only what JSON requires and refuses a line that will not fit,
+   because a truncated line is a different request from the one typed.
+   Returns 1 on success; `out` is NUL-terminated either way. */
+int now_console_line_request(const char *line, char *out, long cap);
+
 #endif

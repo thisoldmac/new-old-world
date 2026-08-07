@@ -204,7 +204,14 @@ public enum SceneBuilder {
                 x: h, y: v,
                 placed: !(h == 0 && v == 0),
                 alias: flags & fdIsAlias != 0,
-                invisible: false))
+                invisible: false,
+                /* The SAVED grid, and it says so. `fdLocation` is where the
+                   icon was last filed, not where the Finder has laid it out
+                   now — on the probe folder the two differed by a constant
+                   (52, 25) at rest. Fine to draw a desktop from, and not a
+                   place to return a dragged file to. A {0,0} entry has no
+                   position at all, which `placed` already says. */
+                origin: (h == 0 && v == 0) ? .unknown : .saved))
         }
         return items
     }
@@ -309,8 +316,16 @@ public enum SceneBuilder {
                     mark: truthy(item["mark"]),
                     cmd: menuCommand(item["command"])))
             }
+            /* NOT `?? 0`. A menu whose `left` the producer did not
+               send has no position, and 0 is not "no position" - it is
+               the leftmost menu, and a menu act arms its press four
+               pixels right of it, which is the APPLE MENU. That default
+               armed on somebody else's title and answered whoever
+               pressed it next: the measured 18/20 hijack, reintroduced
+               here (2026-08-07). The menu still enters the scene, so a
+               person can see it; what it cannot do is be pressed. */
             menus.append(.init(title: isApple ? "" : title, apple: isApple,
-                               left: intValue(menu["left"]) ?? 0,
+                               left: intValue(menu["left"]),
                                id: intValue(menu["id"]) ?? 0,
                                items: items))
         }

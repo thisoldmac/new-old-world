@@ -334,6 +334,76 @@ gets at least one deliberate boot before "verified" is claimed.
   first plane that can *write* into another process rather than only
   read low memory in its context.
 
+- **P7 — drag** (2026-08-07): a mouse button that stays **down** across a
+  gesture, and a resident that lets go whether or not anybody asks.
+
+  Its own plane, and not a ninth op on P4, for a structural reason worth
+  restating here because it constrains anything else that wants to act
+  while an application is busy: **P4 serves everything from the jGNE
+  filter, and the filter is not entered during a tracking loop.** The
+  moment the button goes down the application is inside `DragGrayRgn` or
+  `TrackControl` and has stopped calling `GetNextEvent`, so motion and
+  release cannot be delivered the way every other act is. P7 is therefore
+  a **Time Manager task** — the same vehicle P6 uses, for the same
+  reason: it fires regardless of who is being scheduled.
+
+  It installs **no trap patches at all**, which makes its blast radius
+  much smaller than P4's six; everything it does is four low-memory mouse
+  globals and a deadline.
+
+  **The dead-man is the charter-relevant part.** This is the first plane
+  that can leave the machine in a state the host cannot undo — a guest
+  holding the button sits in a tracking loop forever, and the host's only
+  channel is the cell the wedged application has stopped reading. So the
+  release is not something the host is trusted to send: the resident
+  carries two deadlines, clamps both itself so a caller cannot switch
+  them off, and releases whether or not asked. That generalises past
+  drag: **a resident capability whose failure mode is unreachable from
+  the host must carry its own undo**, and must clamp any parameter of it
+  that a caller could get wrong.
+
+  *Unverified.* Cross-compiles; the decision layer is tested and was
+  watched failing by mutation; the vehicle has never fired on a machine.
+  Attend its first boot the way P4's was attended.
+
+- **P8 — cursor** (2026-08-07): the guest's **drawn** cursor follows what
+  the plane acts on. The smallest plane in the family and the one with
+  the most direct claim on a person's experience of the machine: before
+  it, every act happened somewhere the arrow was not.
+
+  **It is here because a documented technique did not work, and finding
+  out why is the durable part.** P4 and P7 both moved the pointer by
+  writing `MTemp` / `RawMouse` / `MouseLocation` and copying `CrsrCouple`
+  into `CrsrNew`, which is Inside Macintosh's recipe. Everything the
+  Toolbox *reads* followed. The sprite never moved. Read from outside the
+  guest, every precondition was met and `CrsrNew` came back consumed — the
+  cursor task ran and declined to draw. **On Mac OS 8/9 the Cursor Device
+  Manager owns the sprite**, and the low-memory globals are downstream of
+  it. So the plane calls `CursorDeviceMoveTo`, which is what a mouse
+  driver's own interrupt handler calls, and keeps the low-memory writes
+  because they are what a tracking loop reads.
+  [docs/cursor-follow.md](cursor-follow.md) carries the evidence.
+
+  **The charter-relevant part is that this plane can annoy a human.** P7
+  introduced the first capability whose failure the host cannot undo;
+  this is the first whose *success* a person sharing the machine can feel
+  — we move their pointer. So it carries a rule that generalises: **a
+  resident capability that competes with a person for a shared control
+  must be able to lose, must lose by default, and must count the times it
+  did.** P8 declines to move the sprite for a second after any motion it
+  did not cause, keeps making the position writes so an act still lands
+  where it says, and reports `yielded`. A courtesy nobody can observe is
+  indistinguishable from a bug.
+
+  It also states the second half of "optional": the capability bit is
+  published only if the manager answered with a device, and the fallback
+  to the old recipe is **reported as its own route**. A plane that
+  silently degrades to the thing that does not work looks exactly like
+  one that works.
+
+  *Emulator-verified.* See docs/open-issues.md for what was watched and
+  what remains unwatched on metal.
+
 ## Charter amendment
 
 AGENTS.md's "what this is" grows one sentence, and this note is its

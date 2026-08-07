@@ -182,16 +182,19 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `capture.accept` / `capture.refuse` / `capture.cancel` | ✅ | ❌ | the guest-OFFERS-a-capture handshake; 68K only answers requests |
 | `stream.start` / `stream.stop` / `stream.refresh` | ✅ | ❌ | |
 | `scene.request` | ✅ | ❌ | the semantic walk — the Mirror's whole input. **NOW-68K serves no scene at all**: it has no `scene/`, no `axwalk/`, no `peek/` and no `observe/`, so a `scene.request` falls through to its unknown-message path. This is the single largest declared asymmetry in the contract and it is a subsystem, not a row |
+| `scene.request` — TITLE AND RECT VALIDATION | ✅ | n/a | **A declared asymmetry INSIDE the row above, added 2026-08-07 (plan 018 slice 4).** The PPC walk now refuses to publish a title it cannot vouch for and clamps a rect outside the plausible QuickDraw range (`scene_build.c :: now_scene_title_is_publishable` / `now_scene_rect_is_sane`), and makes the live ControlRecord authoritative over a DITL's frozen text so the control walk and the dialog-item walk can never contradict each other on a shared ref. **NOW-68K has gained none of this**, and cannot: it serves no scene at all, so there is nothing there to validate. Recorded here rather than left to a merge, per Michelle's scoping call of 2026-08-06 — the 68K guest is out of scope for that arc. If NOW-68K ever grows a scene, it inherits this obligation with it |
+| `scene.request` — `apps[].backgroundOnly` (2026-08-07) | ✅ | ❌ | **A declared asymmetry that is NOT a gap in what the guests can tell apart.** The scene's new `backgroundOnly` key rides the scene family, which NOW-68K does not serve at all (row above), so only the PPC guest emits it. But the FACT is not PowerPC-only: both guests already classify a faceless process from the same `modeOnlyBackground` bit for `process.list` — `proc68.c:322` and `wire.c:5161` — so `kind: "background"` is symmetric today. Closing this asymmetry would mean giving NOW-68K a scene producer, not teaching it about headless processes |
 | `scene.begin` / `scene.end` | — | — | **The ANSWERER's half, and neither guest handles one inbound.** The PPC guest SENDS them (`wire.c:1786` and the transfer it brackets); a host never sends them to a guest, so these can never grow guest-handling ticks. The answer's transfer pair. `scene.begin` gained `digest` / `delta` / `baseline` / `wholeBytes` on 2026-08-06 |
 | `scene.same` | — | — | Same: SENT by the PPC guest (`wire.c:1826`), handled by neither. The no-change answer, added 2026-08-06: a control frame with no transfer, sent only in answer to a request that quoted `since`. See [scene-deltas.md](scene-deltas.md) |
 | `agent.access` | ❌ | ❌ | neither guest HANDLES one — it is guest-to-host only, and a host never sends it. PPC SENDS it when its consent tier changes; 68K has no tier to change |
 | `cloud.report` / `cloud.listing` / `cloud.card` / `cloud.refuse` | ✅ | ❌ | the ASKER's half: the PPC guest consumes these as answers for its iCloud page and SENDS `cloud.services` / `cloud.list` / `cloud.detail` / `cloud.get` / `cloud.preview`. No guest serves the family — its subject is the host's own iCloud (contract `guestAsksCloud`), so these rows can never grow guest ticks |
 | `chat.catalog` / `chat.delta` / `chat.status` / `chat.result` | ✅ | ❌ | the ASKER's half of the chat family (contract `guestAsksChat`): the PPC guest SENDS `chat.models` / `chat.send` / `chat.cancel` / `chat.reset` — from its Chat page and its console-only `chat` verb — and consumes these as answers; the host serves the family from its harness (`ChatWireService`). `chat.models` is TWO asks in one message and `chat.catalog` two answer shapes: without a provider it lists providers; with one it pages that provider's models (cursor/more, asked lazily on selection), each row carrying a HOST-MINTED `ref` that `chat.send` returns — a provider's model name never crosses the wire. Like cloud, its subject is the host's own model harness, so this row can never grow guest-SERVING ticks. 68K never asks, deliberately: the page is PPC-only and the family is a luxury a 384 KB partition does not buy |
+| `host.shown` | ✅ | ❌ | the ASKER's half of the host-surface family (contract `guestAsksHostSurface`): the PPC guest SENDS `host.show` — from the Mirror page's button and its console-only `showmirror` verb — and consumes this as the answer; the host serves it (`HostSurfaceService.swift`), opening its own Mirror window. Like cloud and chat, the subject is a surface on the HOST, so this row can never grow guest-SERVING ticks. **NOW-68K neither asks nor serves, and that is out of scope rather than decided** — nothing about a 68030 makes the ask impossible, and a NOW-68K that grew a Mirror page would want it |
 | `preview.begin` / `preview.end` | ✅ | ❌ | the photo preview's transfer bracket, answering the PPC guest's own `cloud.preview`: raw indexed rows the HOST already dithered, landed in the iCloud page's pane by one CopyBits. Asker's half again — no guest will ever serve it |
 
-PPC handles **48** inbound types; NOW-68K handles **23**. **That count
+PPC handles **49** inbound types; NOW-68K handles **23**. **That count
 understates the difference** — see the next two sections, where two of
-these rows open into 42 command verbs and 14 hardware probes.
+these rows open into 47 command verbs and 14 hardware probes.
 
 (An earlier version of this file said 33 for the PowerPC guest and was
 wrong: the number had been hand-counted. It is derived now, and that is
@@ -221,7 +224,7 @@ hides most of what a machine can be asked — the hardware, network, RAM
 and ROM facts do not have message types of their own. They live behind
 `gestalt` and `census`, one row each above and a whole subsystem below.
 
-The registry is `x-commands` in the contract: **42 verbs.** Sixteen of
+The registry is `x-commands` in the contract: **47 verbs.** Sixteen of
 them landed on 2026-07-31 and are grouped at the foot of the table; the
 Dialog Manager act joined that group on 2026-08-03: the
 act plane, the reference layer that mints what it addresses, two verbs
@@ -265,6 +268,7 @@ number here has been found wrong by re-deriving it.
 | `put` | send a file from the guest | console only | ✅ |
 | `cancel` | stop the transfer in flight, either way | via UI / `file.cancel` | ✅ |
 | `putstat` | transfer diagnostics | ✅ | ❌ |
+| `desktop` | what the desktop is actually drawn from — the Appearance Manager's theme collection, not the `ppat` resource nobody updates | ✅ | ❌ — declared asymmetry, see below |
 | `wirestat` | how long this Mac takes to NOTICE a request — **and the only verb in the registry that CHANGES the machine's scheduling**; a subsystem, expanded below | ✅ | ❌ |
 | `observe` | walk the elements on screen, minting a reference for each | ✅ | ❌ |
 | `axtree` | the same walk, to look at rather than to act on | ✅ | ❌ |
@@ -274,12 +278,16 @@ number here has been found wrong by re-deriving it.
 | `winact` | move, resize, zoom or close one window | ✅ | ❌ |
 | `textget` | read one addressed text element | ✅ | ❌ |
 | `textset` | replace one addressed text element's contents | ✅ | ❌ |
-| `ctlact` | act on one control | ✅ | ❌ |
+| `ctlact` | act on one control — optionally at a NAMED POINT inside it, because a tab strip's centre is one particular tab and a list's centre is one particular row | ✅ | ❌ |
+| `dragpress` | press and hold the mouse button on one addressed element | ✅ | ❌ |
+| `dragmove` | move a held drag to a point | ✅ | ❌ |
+| `dragrelease` | release a held drag | ✅ | ❌ |
 | `ditemact` | select one addressed Dialog Manager item | ✅ | ❌ |
 | `menuact` | perform one menu command | ✅ | ❌ |
 | `activate` | bring one process forward, by serial number | ✅ | ❌ |
+| `cycle` | walk the App Switcher's own membership to bring a process forward when `activate` cannot | ✅ | ❌ |
 | `actselftest` | prove the act plane's trap ABI in one process | ✅ | ❌ |
-| `mouseloc` | where the pointer actually is | ✅ | ❌ |
+| `mouseloc` | where the pointer actually is, and where its PICTURE was last put | ✅ | ❌ |
 | `script` | run one AppleScript | ✅ | ❌ |
 | `aesend` | send one of four core Apple Events | ✅ | ❌ |
 | `qdtrace` | what is drawing, from the content plane's ring | ✅ | ❌ |
@@ -424,19 +432,29 @@ produced the first live sighting of the sampler's own stated limit — a
 backgrounded and its event passes never saw the change. See
 [open-issues.md](open-issues.md).
 
-**PPC serves 39 of 42.** `put` is console-only there and `cancel` is
+**PPC serves 44 of 47.** `put` is console-only there and `cancel` is
 not a verb at all, both deliberately: the host reaches those
 capabilities through the `file.*` families and that guest's own
 Workshop. `shotdiag` is the third, and the newest: it diagnoses a raw
 framebuffer walk the PowerPC guest does not have.
 
-**NOW-68K serves 13 of 42** — `help`, `ls`, `sw`, `census`, `put`,
+**NOW-68K serves 13 of 47** — `help`, `ls`, `sw`, `census`, `put`,
 `cancel`, `vprobe`, `screenshot`, `shotdiag`, `ps`, `launch`, `quit`,
-`front`. The twenty-nine it does not: `gestalt`, `catsearch`, `tail`,
-`reveal`, `vers`, `putstat`, `wirestat`, `key`, `net`, `mirror`, `hide`, the eleven of the
-act plane and the reference layer, the six registered on 2026-07-31 —
-`activate`, `actselftest`, `mouseloc`, `script`, `aesend`, `qdtrace` —
-and `transitions`.
+`front`. The **thirty-four** it does not, derived with `comm -23` over
+the sorted registry and its own table rather than listed from memory:
+`activate`, `actselftest`, `aesend`, `axsnap`, `axtree`, `catsearch`,
+`ctlact`, `cycle`, `desktop`, `ditemact`, `dragmove`, `dragpress`,
+`dragrelease`, `elements`, `gestalt`, `handle`, `hide`, `key`,
+`menuact`, `mirror`, `mouseloc`, `net`, `observe`, `putstat`, `qdtrace`,
+`reveal`, `script`, `tail`, `textget`, `textset`, `transitions`, `vers`,
+`winact`, `wirestat`.
+
+(That sentence read "13 of 42 … the twenty-nine it does not" until
+2026-08-07 and named a list four verbs short — `cycle` and the drag
+plane's three, none of which had a table row either. This is the
+enumeration-rots-at-merges failure in its usual shape: the table was
+right about what it contained and the prose restated a smaller,
+older version of it.)
 
 `transitions` is a **declared asymmetry, not an omission**, and it is
 the same one `qdtrace` and `mirror` already carry: all three read the
@@ -483,6 +501,30 @@ So the asymmetry is: **the PowerPC guest serves `hide`, NOW-68K does not,
 and it stays that way until the selector's presence under System 7.1 comes
 from a document rather than from an experiment.** That is a decision with a
 reason, not a to-do.
+
+### `desktop` is PowerPC-only, and the 68K answer would be a different one
+
+The PowerPC guest serves `desktop` through the Appearance Manager's theme
+collection — `GetTheme` into a `Collection`, then the desktop tags in it.
+NOW-68K does not serve it, and this is a **scoping decision** (Michelle,
+2026-08-06: NOW-68K is out of scope for the 018 arc) recorded here rather
+than left as a silent absence.
+
+It is worth writing down what the 68K answer would have to be, because it
+is not the same answer with a different compiler. System 7.1 has no
+Appearance Manager at all, so there is no theme collection to read; its
+desktop is the black-and-white or `ppat` desk pattern the Control Panel
+sets, reachable through low memory (`DeskPattern`, `DeskCPat`) — which is
+the route Carbon removed and the reason the PowerPC guest cannot use it.
+So the two guests would answer this question through *opposite* mechanisms:
+the one that exists on 68K is the one Carbon deleted, and the one that
+exists on PowerPC did not ship until Appearance 1.1.
+
+That makes a shared implementation impossible rather than merely unwritten,
+and it means the eventual 68K verb would carry a different output shape —
+`hasPicture` cannot be false-or-true on a System 7.1 machine, it is
+meaningless. Whoever adds it should expect to declare that, not to reuse
+this.
 
 ### `software.list` — one message, two amounts of answer
 
@@ -935,12 +977,12 @@ without anyone noticing, and how `key` and `net` sat here twice. Run
 these from the repository root:
 
 ```sh
-# the registry — 42
+# the registry — 47
 awk '/^  x-commands:$/{f=1;next} f&&/^  [^ ]/{f=0} \
      f&&/^    [a-z][a-z0-9]*:$/{gsub(/[ :]/,"");print}' \
     contract/asyncapi.yaml | sort -u
 
-# what the PowerPC guest serves — 39
+# what the PowerPC guest serves — 44
 grep -oE 'strcmp\(name, *"[a-z0-9]+"\)' \
     now-guest-ppc/src/commands/commands.c \
   | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
@@ -952,10 +994,15 @@ grep -oE '\{ *"[a-z0-9]+"' now-guest-68k/src/commands/commands68.c \
 
 The registry command tracks the block by indentation deliberately: a
 naive `sed` range over `x-commands` runs past the end of the block and
-picks up a nested `services:` key from a later section, giving 43. A
-derivation that is off by one in the direction of "one more verb than
-exists" is not obviously wrong on sight, which is the reason to have the
-command written down rather than retyped each time.
+picks up a nested `services:` key from a later section, which gave one
+MORE than the correct count on the tree where that was found (43 against
+42). A derivation that is off by one in the direction of "one more verb
+than exists" is not obviously wrong on sight, which is the reason to
+have the command written down rather than retyped each time. *(Checked
+again at the 019 integration: the naive range and the indentation-aware
+one now agree at 47, so the trap does not reproduce on today's file. It
+is kept because the file moves and the trap comes back — an agreement
+between two derivations on one day is not a property of the command.)*
 
 > **Re-derived once more on the merge, 2026-08-06.** Two threads
 > counted these hours apart and disagreed by one in two rows — the
@@ -965,17 +1012,222 @@ command written down rather than retyped each time.
 > is this file's own rule working exactly as written: a hand-carried
 > count drifts, a derivation does not.
 
-## Re-derived 2026-08-06
+## Re-derived at the 019 integration round 5, 2026-08-07 (`claude/019-integration-5`)
 
-Every command above was run again against this tree. What the numbers
-are today:
+**This supersedes every derivation below.** Seven lanes —
+`019-embed-mirror`, `019-embed-content`, `019-sweepb-regressions`,
+`019-theme-colours`, `019-derived-gate`, `019-workflow-lessons` and
+`019-sweep-b` — were merged into one tree and the commands at the foot
+were run against the RESULT, not carried across the merge.
+
+| | Derived here | Round 4 said | Moved by |
+|---|---|---|---|
+| PowerPC inbound message types | **49** | 49 | — |
+| NOW-68K inbound message types | **23** | 23 | — |
+| `x-commands` registry | **47** | 47 | — |
+| PowerPC verbs served | **44** | 44 | — |
+| NOW-68K verbs served | **13** | 13 | — |
+| census probes, PPC / 68K | **14 / 14** | 14 / 14 | — |
+
+**Nothing moved, and this round the counts are no longer the only thing
+checking that.** Round 4 found this file's verb table carrying 43 rows
+against a 47-verb registry with three prose sentences restating the
+smaller number — a hole no count could see, because every count was
+right. `019-derived-gate` landed in this same merge and closes it
+mechanically: the derived block at the foot of this file records the
+sha256 of each command's ANSWER, not its length, so a row that goes
+missing changes the hash even when the total does not. It was re-run at
+this merge (`tools/derived-doc-gate rederive`) and moved the recorded
+answers 48→49 inbound, 42→47 registry and 39→44 verbs — not because the
+tree changed under it, but because the gate's own receipt was declared on
+a lane cut before round 4's verbs landed. **That is the merge-time rot
+this file has been describing for two days, caught by a tool for the
+first time.**
+
+Checked by row rather than by total, this round: the table's 47 verb
+rows and the registry's 47 names are the same 47 (`comm -3` empty), and
+`comm -23` still names the same three unserved verbs — `put`, `cancel`,
+`shotdiag`. In `mcp-coverage.md` the unnoticed list is **one** list of
+thirteen names, and its `unnoticed-from-prose` derivation hashes
+identically to `unnoticed-from-table`. The two-lists defect did not
+recur across a seven-lane merge.
+
+`019-theme-colours` adds `meta.theme` to the scene, which is a new FIELD
+on an existing message and so is exactly the change these counts cannot
+see — the same blind spot round 4 recorded for `018-cdef-classify`.
+
+## Re-derived at the 019 integration round 4, 2026-08-07 (`claude/019-integration-4`)
+
+**This supersedes every derivation below.** Five lanes —
+`018-render-defects`, `018-cdef-classify`, `019-charcoal`,
+`019-cursor-follow`, `019-depth-and-face` — were merged into one tree and
+the five commands at the foot were run against the RESULT.
+
+| | Derived here | Round 3 said | Moved by |
+|---|---|---|---|
+| PowerPC inbound message types | **49** | 49 | — |
+| NOW-68K inbound message types | **23** | 23 | — |
+| `x-commands` registry | **47** | 47 | — |
+| PowerPC verbs served | **44** | 44 | — |
+| NOW-68K verbs served | **13** | 13 | — |
+| census probes, PPC / 68K | **14 / 14** | 14 / 14 | — |
+
+**Nothing moved again, and the second nothing is more interesting than
+the first.** `018-cdef-classify` classifies controls by CDEF resource id
+and gives `ctlact` a click point; `019-cursor-follow` makes the guest's
+drawn cursor follow and adds prose to `mouseloc`. Both are exactly the
+change these counts cannot see — new ARGUMENTS on existing verbs, and a
+new field on an existing message — and a reader who watched only this
+table would conclude the surface was untouched on a night when three
+things that had never been drivable became drivable. `comm -23` over the
+sorted registry and PowerPC lists still names the same three unserved
+verbs: `put`, `cancel`, `shotdiag`.
+
+**Round 3's section above claims `018-cdef-classify` and
+`019-cursor-follow` among its seven merged lanes, and they were not in
+its tree** — both branches conflicted against `claude/019-integration-3`
+when merged here, which they could not have done had they already
+landed. The counts round 3 recorded are unaffected (neither lane adds a
+verb), but the sentence naming what was in the tree is wrong, and it is
+left standing above with this note rather than edited, because a
+derivation record that gets quietly corrected stops being evidence.
+
+**What DID move is the table, and it had been wrong for two rounds.**
+The verb table carried 43 rows against a 47-verb registry: `cycle`
+(`018-anchor-acquisition`) and `dragpress` / `dragmove` / `dragrelease`
+(`018-drag`) had landed in the registry, been recorded in the round-2
+*counts*, and never been given rows. The prose under it restated the
+smaller table — "the registry is 44 verbs", "PPC serves 41 of 44",
+"NOW-68K serves 13 of 42 … the twenty-nine it does not" — three numbers
+and a list, each internally consistent with the others and none
+consistent with the contract. Rows added, prose re-derived, and the
+row-for-row check now passes with nothing on either side.
+
+## Re-derived at the 019 integration round 3, 2026-08-07 (`claude/019-integration-3`)
+
+**This supersedes every derivation below.** Seven lanes —
+`018-cdef-classify` (carrying `018-control-semantics`), `019-conformance`,
+`019-cursor-follow`, `019-embed-mirror`, `019-embed-scope`,
+`019-one-answer-a`, `019-one-answer-b` — were merged into one tree and the
+five commands at the foot were run against the RESULT.
+
+| | Derived here | Round 2 said | Moved by |
+|---|---|---|---|
+| PowerPC inbound message types | **49** | 49 | — |
+| NOW-68K inbound message types | **23** | 23 | — |
+| `x-commands` registry | **47** | 47 | — |
+| PowerPC verbs served | **44** | 44 | — |
+| NOW-68K verbs served | **13** | 13 | — |
+
+**Nothing moved, and that is the finding.** Ninety-nine commits landed,
+including a cursor lane that added a resident vehicle, a shared-header
+change to `contract/peek_table.h` and 58 lines to
+`now-guest-ppc/src/input/input_cmds.c` — and not one of them added a
+verb or a message type. The cursor work extended the *arguments* of
+verbs that already existed rather than the vocabulary, which is exactly
+the shape of change these counts cannot see and the reason the counts
+are not the whole coverage story. `comm -23` over the sorted registry
+and PowerPC lists still names the same three unserved verbs: `put`,
+`cancel`, `shotdiag`.
+
+## Re-derived at the 019 integration merge, 2026-08-07 (`claude/019-integration-2`)
+
+**This supersedes every derivation below.** `main` and four lanes —
+`018-port-ranges`, `018-drag`, `018-drag-targeting`, `018-mcp-revival` —
+were merged into one tree and the five commands at the foot were run
+against the RESULT.
+
+| | Derived here | The 018 integration said | Moved by |
+|---|---|---|---|
+| PowerPC inbound message types | **49** | 49 | — |
+| NOW-68K inbound message types | **23** | 23 | — |
+| `x-commands` registry | **47** | 44 | `dragpress`, `dragmove`, `dragrelease` (`018-drag`) |
+| PowerPC verbs served | **44** | 41 | the same three |
+| NOW-68K verbs served | **13** | 13 | — |
+
+The three registry verbs the PowerPC guest still does not serve are
+unchanged: `put`, `cancel`, `shotdiag`. Derived, not remembered —
+`comm -23` over the two sorted lists rather than read off this table.
+
+`main` moved none of these. Thirteen commits of host UI landed in the
+same merge and touched nothing under `contract/`, `now-guest-ppc/` or
+`now-guest-68k/`, which is worth recording because the counts being
+unmoved by a large merge is the kind of non-event that otherwise gets
+mistaken for a derivation nobody ran.
+
+The three `drag*` verbs are one gesture and are the first verbs on this
+surface with a physical effect on somebody else's desk; the
+[mcp-coverage.md](mcp-coverage.md) row explains why they must be decided
+together.
+
+## Re-derived at the plan-018 integration merge, 2026-08-07 (`claude/018-integration`)
+
+**This is the derivation that supersedes every one below it.** Seventeen
+018 lanes were merged into one tree and the five commands at the foot
+were run against the RESULT, not against any lane. That distinction is
+the whole point of this section: the `desktop-pattern` re-derivation
+immediately below was honest and is now wrong, because it counted a tree
+that did not yet contain `cycle`.
+
+| | Derived here | `018-desktop-pattern` said | Moved by |
+|---|---|---|---|
+| PowerPC inbound message types | **49** | 48 | `host.shown` (`018-open-mirror`) |
+| NOW-68K inbound message types | **23** | 23 | — |
+| `x-commands` registry | **44** | 43 | `cycle` (`018-anchor-acquisition`) |
+| PowerPC verbs served | **41** | 40 | `cycle` |
+| NOW-68K verbs served | **13** | 13 | — |
+
+The three registry verbs the PowerPC guest still does not serve are
+unchanged: `put`, `cancel`, `shotdiag`.
+
+**Two verbs that landed in this arc are deliberately absent from these
+numbers, and a reader who goes looking for them should stop here.**
+
+- `showmirror` is a **console verb, not an x-command**, so it is
+  correctly absent from the registry and from the served list. Its
+  second face is the Mirror page's button rather than a wire verb — the
+  declared asymmetry is in [command-parity.md](command-parity.md) and
+  `CommandParityTests` carries it.
+- `host.show` is **sent** by the PPC guest and served by the host, so it
+  appears in the contract but never in the inbound-type grep. Only its
+  answer, `host.shown`, is inbound — and that is the one that moved the
+  count from 48 to 49.
+
+## Re-derived 2026-08-07 (`claude/018-desktop-pattern`)
+
+The three commands at the foot were run again against this tree while
+adding `desktop`:
 
 | | Derived | Was |
 |---|---|---|
-| PowerPC inbound message types | **48** | 42 |
+| PowerPC inbound message types | **48** | 48 |
 | NOW-68K inbound message types | **23** | 23 |
-| `x-commands` registry | **42** | 39 |
-| PowerPC verbs served | **39** | 36 |
+| `x-commands` registry | **43** | 42 |
+| PowerPC verbs served | **40** | 39 |
+| NOW-68K verbs served | **13** | 13 |
+
+`desktop` is the only change: one registry entry, one PowerPC verb, and a
+declared 68K asymmetry with its own section above. The three verbs the
+PowerPC guest still does not serve are unchanged (`put`, `cancel`,
+`shotdiag`). Nothing else had drifted.
+
+**This lane touched a sibling lane's territory and must be re-derived at
+the merge.** Plan 018 runs several lanes in parallel and at least one
+other may land a verb; two honest derivations hours apart is exactly the
+2026-08-05 shape this file records, where both authors were right when
+they wrote and wrong on arrival.
+
+## Re-derived 2026-08-06
+
+Every command above was run again against this tree. What the numbers
+were then:
+
+| | Derived | Was |
+|---|---|---|
+| PowerPC inbound message types | **49** | 48 |
+| NOW-68K inbound message types | **23** | 23 |
+| `x-commands` registry | **42** | 42 |
+| PowerPC verbs served | **39** | 39 |
 | NOW-68K verbs served | **13** | 13 |
 
 **The tables were right and the counts at the foot were stale**, which is
@@ -991,3 +1243,59 @@ next to it, so it is the part most worth re-running.
 `qdtrace` is now expanded as a subsystem above, per this file's own rule.
 It was ticked as one row while its record vocabulary had grown by three
 and its `status` by a whole object.
+
+### Re-derived again, later on 2026-08-06
+
+Every command re-run after the `host.show` / `host.shown` family landed.
+Only the first row moved, by one: `host.shown` is the PPC guest's 49th
+inbound type. The registry and both verb counts are unchanged, because
+`showmirror` is a CONSOLE verb rather than an x-command — the same
+console-only shape as `chat`, and for the same reason (the host reaches
+its own Mirror from its Window menu and the `mirror_open` agent verb, so
+there is nothing for it to type at the guest).
+
+**The declared asymmetry this adds: NOW-68K does not ask.** It is out of
+scope for the arc that added the family, not a decision about the
+machine — a 68030 could send `host.show` as easily as the PowerPC guest
+does. Written down here rather than left as an absent row, because an
+absence nobody declared is how `process.list` shipped wire-only.
+
+## The machine half: this file declares itself derived
+
+Everything above is derived, and this section is the part a hook can
+read. The `derived-doc` block below carries the same commands as runnable
+text, the sha256 of each one's answer, and a digest of the source files
+they read. `tools/derived-doc-gate` refuses a **merge** commit that
+touches this file, or any of those sources, unless the commands were
+re-run and still produce what is recorded here.
+
+It exists for the merge specifically. Two lanes re-deriving honestly, on
+two branches, produce two correct numbers and one merged lie — which is
+this file's own "re-derive at the MERGE" rule, with something checking
+it. Re-derive with `tools/derived-doc-gate rederive`, then read what
+moved; the hash is the receipt, not the point.
+
+<!-- derived-doc v1
+sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
+sources-sha1: 5caa8826f35d76f62e3cfe804bf5ef282a4a5d47
+derive ppc-inbound-types sha256=c15c9c82d3460aa5288ca67ace049e5cbf47d7bf305be82c85e3a07cfe0ae5e2 lines=49 published
+    grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
+      | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
+derive 68k-inbound-types sha256=17315f30f1d8e258d705add272b55c2aa1635ebc4d1ec9f5dd9de67e5e149047 lines=23 published
+    grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
+      | sed 's/.*"\(.*\)".*/\1/' | sort -u
+derive x-commands-registry sha256=2cfac62c73d551f528ca57266caa5fa724aee8fd21486c054e79b332399fdfdf lines=47 published
+    awk '/^  x-commands:$/{f=1;next} f&&/^  [^ ]/{f=0} \
+         f&&/^    [a-z][a-z0-9]*:$/{gsub(/[ :]/,"");print}' \
+        contract/asyncapi.yaml | sort -u
+derive ppc-verbs sha256=a50feab1794656fbff9a897f1c1e3bb27aee0b26761d46edb6fcba3ad8e61223 lines=44 published
+    grep -oE 'strcmp\(name, *"[a-z0-9]+"\)' \
+        now-guest-ppc/src/commands/commands.c \
+      | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
+derive 68k-verbs sha256=70a32cc1ffb1933862444e2c0a0d7972fb6f1b68e40d34a2fd6bb5ef729e78d2 lines=13 published
+    grep -oE '\{ *"[a-z0-9]+"' now-guest-68k/src/commands/commands68.c \
+      | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
+rederived: 2026-08-07T03:49:51-0400 8c1e3d94 sources, ppc-inbound-types 0->48, 68k-inbound-types 0->23, x-commands-registry 0->42, ppc-verbs 0->39, 68k-verbs 0->13 (first declaration)
+rederived: 2026-08-07T04:05:51-0400 dd520b71 unchanged
+rederived: 2026-08-07T12:06:15-0400 c76fea99 sources, ppc-inbound-types 48->49, x-commands-registry 42->47, ppc-verbs 39->44
+-->

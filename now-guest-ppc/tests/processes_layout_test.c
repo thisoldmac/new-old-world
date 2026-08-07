@@ -131,15 +131,6 @@ static void check_formatters(void)
     proc_fourcc_text(0x00010203UL, buf);
     check(strcmp(buf, "....") == 0, "unprintable fourcc becomes dots");
 
-    proc_kind_text(0x4150504CUL, buf, sizeof buf);
-    check(strcmp(buf, "application") == 0, "APPL reads application");
-    proc_kind_text(0x61707065UL, buf, sizeof buf); /* 'appe' */
-    check(strcmp(buf, "background only") == 0, "appe reads background");
-    proc_kind_text(0x464E4452UL, buf, sizeof buf); /* 'FNDR' */
-    check(strcmp(buf, "the Finder") == 0, "FNDR reads the Finder");
-    proc_kind_text(0x494E4954UL, buf, sizeof buf); /* 'INIT' */
-    check(strcmp(buf, "INIT") == 0, "unknown kind shows its 4CC");
-
     proc_mem_text(312, 1024, buf, sizeof buf);
     check(strcmp(buf, "312K used of 1,024K") == 0, "memory text groups");
     proc_mem_text(1847, 2400, buf, sizeof buf);

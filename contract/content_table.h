@@ -342,6 +342,56 @@ typedef struct {
     NowContentU32 qdext_born;
     NowContentU32 qdext_died;
     NowContentU32 qdext_born_missed;
+
+    /* --- the arm-time census (plan 018), appended -------------------
+       Accretive under the same rule as everything above it: a reader
+       gates on `length` before looking, and no offset moved.
+
+       WHAT THIS EXISTS FOR. The trap patch above hooks a world at the
+       instant it is BORN, which reaches every world created after the
+       plane was armed and no world created before it. A Finder window
+       that was already open when recording started therefore composites
+       into a world nothing names: its blit arrives with an unjoinable
+       source, the ladder correctly refuses to guess, and the interior
+       renders as one honest hatch. That is the largest visible defect
+       the 2026-08-07 fidelity sweep found, and it is capture-side.
+
+       The census closes it by enumerating the worlds that already
+       exist, once, at arm time, in the armed process's own heap - and
+       hooking each one through exactly the path a birth takes, so a
+       censused world and a born world are indistinguishable downstream.
+       It emits the same `worldBorn` record; the host's join needs no
+       new vocabulary and the contract gains no message.
+
+       WHY THESE COUNTERS AND NOT A BOOLEAN. A census that finds nothing
+       and a census that never ran look identical from outside, and this
+       project has paid for that ambiguity twice (`qdext_installed`
+       exists for the same reason). `runs` says it happened; `bytes` and
+       `usecs` are the COST, measured on the machine rather than
+       estimated; `examined` is how many blocks got past the cheap
+       filter into a dereference; `found` how many passed the match;
+       `hooked` how many became rows. The four subtractions between them
+       are each a different verdict, and each was worth a separate
+       number the first time it was nonzero.
+
+       `truncated` is the honest-degradation flag: a heap larger than
+       the byte budget is swept as far as the budget reaches and SAYS
+       so, rather than either stalling a cooperatively-scheduled machine
+       or pretending completeness. */
+    NowContentU32 census_runs;         /* censuses actually started       */
+    NowContentU32 census_bytes;        /* heap span swept, bytes          */
+    NowContentU32 census_usecs;        /* wall cost of the last sweep     */
+    NowContentU32 census_examined;     /* candidates that got a deref     */
+    NowContentU32 census_found;        /* candidates that matched a world */
+    NowContentU32 census_hooked;       /* worlds that became rows         */
+    NowContentU32 census_windows;      /* matched, but on the WindowList  */
+    NowContentU32 census_already;      /* matched, already a row          */
+    NowContentU32 census_unrecoverable;/* matched, but not a live handle  */
+    NowContentU32 census_refused;      /* rows the port table could not take,
+                                          plus censuses that never ran at
+                                          all (no zone, or a zone whose own
+                                          bounds cannot be believed)      */
+    NowContentU32 census_truncated;    /* sweeps cut short by the budget  */
 } NowContentBlock;
 
 /* ---- ring records --------------------------------------------------
@@ -547,7 +597,10 @@ _Static_assert(offsetof(NowContentBlock, probe_pending_pixmap)
 _Static_assert(offsetof(NowContentBlock, qdext_calls)
                    == 292 + kNowContentRingCap,
                "qdext append offset");
-_Static_assert(sizeof(NowContentBlock) == 324 + kNowContentRingCap,
+_Static_assert(offsetof(NowContentBlock, census_runs)
+                   == 324 + kNowContentRingCap,
+               "census append offset");
+_Static_assert(sizeof(NowContentBlock) == 368 + kNowContentRingCap,
                "block size");
 
 /* ---- the arm verdict (now_content_logic.c) -------------------------
@@ -690,6 +743,39 @@ int now_content_probe_pixmap_match(NowContentU16 cand_port_version,
                                    NowContentU16 want_row_bytes,
                                    NowContentS16 want_l, NowContentS16 want_t,
                                    NowContentS16 want_r, NowContentS16 want_b);
+
+/* ---- the arm-time census's verdict (now_content_logic.c) ------------
+   Given one block of the armed process's heap read as a CGrafPort, plus
+   what its portPixMap points AT: is this a live offscreen graphics
+   world? The caller does the reading and the range checking; this only
+   decides, so the decision is testable on the host cc where a wrong
+   answer costs nothing.
+
+   IT ASKS ONLY QUESTIONS THAT SURVIVE HEAP MOTION, and that is the
+   design rather than an accident. `LockPixels` relocates the PixMap
+   RECORD (docs/toolbox-and-gworld.md §6), so a baseAddr or a recovered
+   handle taken at one moment is not the same number at the next. Every
+   test below is either a discriminator bit or a SHAPE - bounds and
+   rowBytes - and shape is what a relocation leaves alone. `pm_base` is
+   read only for the nonzero test: a zeroed block is not a world, and
+   half a heap is zeroed blocks.
+
+   THE ONE THAT DOES THE WORK is `portRect == pixmap bounds`. It is the
+   GWorld invariant - `NewGWorld` sets both from the same rectangle -
+   and it is also what excludes every WINDOW port in the machine
+   without a list walk: a window's portRect is local while its
+   portPixMap is the SCREEN's, whose bounds are global and the size of
+   the display. The caller still checks WindowList membership before
+   hooking, because a full-screen window at the origin is the one case
+   where the two rectangles could agree. */
+int now_content_census_match(NowContentU16 port_version,
+                             NowContentU32 port_pixmap_handle,
+                             NowContentS16 port_l, NowContentS16 port_t,
+                             NowContentS16 port_r, NowContentS16 port_b,
+                             NowContentU32 pm_base,
+                             NowContentU16 pm_row_bytes,
+                             NowContentS16 pm_l, NowContentS16 pm_t,
+                             NowContentS16 pm_r, NowContentS16 pm_b);
 
 /* ---- the blit's source port (now_content_logic.c) ------------------
    The decision behind the blit-source record: given the port table's

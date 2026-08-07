@@ -37,7 +37,7 @@ enum QuickCaptureOutcome: Equatable {
     }
 }
 
-/// Whether "Screenshot Guest" can run right now, and why not when it can't.
+/// Whether "Capture Screen" can run right now, and why not when it can't.
 /// Pure and separate from the models so the menu's validation hook and the
 /// tests agree on one rule instead of two drifting copies.
 struct QuickCaptureReadiness: Equatable {
@@ -52,7 +52,7 @@ struct QuickCaptureReadiness: Equatable {
                          isStreaming: Bool,
                          isTransferringFile: Bool) -> QuickCaptureReadiness {
         guard connection.canCapture else {
-            return .init(isEnabled: false, reason: "No Mac is connected")
+            return .init(isEnabled: false, reason: "No \(MachineNaming.commonNoun) is connected")
         }
         if isCapturing {
             return .init(isEnabled: false,
@@ -77,7 +77,7 @@ struct QuickCaptureReadiness: Equatable {
 @MainActor
 final class QuickCaptureCommand: ObservableObject {
     @Published private(set) var readiness =
-        QuickCaptureReadiness(isEnabled: false, reason: "No Mac is connected")
+        QuickCaptureReadiness(isEnabled: false, reason: "No \(MachineNaming.commonNoun) is connected")
 
     /// Where the outcome goes. The app wires both halves of the feedback
     /// pair here; tests and headless runs simply observe.

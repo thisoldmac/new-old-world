@@ -118,6 +118,9 @@ static void build_window(AxFixture *f, int kind, unsigned long controls,
     axfix_put16(f, kWin + 18, port_left);     /* portRect.left (local) */
     axfix_put16(f, kWin + 108, kind);         /* windowKind */
     axfix_put8(f, kWin + 110, 1);             /* visible */
+    /* Both regions on one handle: this fixture is not about the frame,
+       and axwalk_test is where the two are pinned apart. */
+    axfix_put32(f, kWin + 114, kContRgnH);    /* structure region */
     axfix_put32(f, kWin + 118, kContRgnH);    /* content region handle */
     axfix_put32(f, kWin + 134, kWinTitleH);   /* title handle */
     axfix_put32(f, kWin + 140, controls);     /* control list */
@@ -277,6 +280,108 @@ static void a_cycle_is_retracted(void)
     check(s.controls_truncated == 1, "and the bound is reported");
 }
 
+/* THE LENGTH, not just the fact of the bound.
+ *
+   A retracted plane that says only "our bound" leaves the next question
+   open, and answering it by hand is what the Appearance investigation
+   had to do. These three cases are the three answers a reader can act on
+   differently: a chain that fits, one that is merely longer than the cap
+   (raise it, and by this much), and one that never ends (raising it
+   would reach nothing).
+
+   Laid out in the fixture's own arena: records 384 bytes apart, because
+   the control read validates 296 of them, and handles parked above the
+   records so neither table walks into the other. */
+enum {
+    kLongCtlRec = 0x00102000UL,   /* record i at +i*0x180 */
+    kLongCtlRecStride = 0x180UL,
+    kLongCtlHandles = 0x0010E000UL, /* handle i at +i*4 */
+    kLongChain = 120              /* comfortably past the carrying cap */
+};
+
+static void build_long_chain(AxFixture *f, int n, int cyclic)
+{
+    int i;
+
+    for (i = 0; i < n; ++i) {
+        unsigned long handle = kLongCtlHandles + (unsigned long)i * 4UL;
+        unsigned long record = kLongCtlRec
+                             + (unsigned long)i * kLongCtlRecStride;
+        unsigned long next;
+
+        if (i + 1 < n) {
+            next = kLongCtlHandles + (unsigned long)(i + 1) * 4UL;
+        } else {
+            next = cyclic ? kLongCtlHandles : 0UL;
+        }
+        build_control(f, handle, record, next, "Tab", 0, 0, 10, 10, 0, 0);
+    }
+}
+
+static void a_long_chain_reports_its_length(void)
+{
+    AxFixture f;
+    NowAxMemory m;
+    NowScene s;
+
+    axfix_init(&f, &m);
+    build_window(&f, 8, kLongCtlHandles, 0, 0, 40, 60, 200, 400);
+    build_long_chain(&f, kLongChain, 0);
+
+    one_window(&s, kNowSceneAnchorOk);
+    now_scene_walk_window(&s, 0, &m, kWin, NULL);
+
+    check(s.windows[0].controls_present == 0,
+          "a chain past the cap is retracted, never shipped as a prefix");
+    check(s.control_count == 0, "and the pool is returned");
+    check(s.windows[0].walk_verdict == kNowSceneWalkControlsBound,
+          "the verdict says the bound was ours");
+    check(s.windows[0].control_chain_len == kLongChain,
+          "and it says how long the chain actually was");
+    check(s.windows[0].control_chain_len_exact == 1,
+          "exactly, because the chain ended on its own sentinel");
+}
+
+static void a_cycle_is_not_a_long_chain(void)
+{
+    AxFixture f;
+    NowAxMemory m;
+    NowScene s;
+
+    axfix_init(&f, &m);
+    build_window(&f, 8, kLongCtlHandles, 0, 0, 40, 60, 200, 400);
+    build_long_chain(&f, kLongChain, 1);
+
+    one_window(&s, kNowSceneAnchorOk);
+    now_scene_walk_window(&s, 0, &m, kWin, NULL);
+
+    check(s.windows[0].walk_verdict == kNowSceneWalkControlsCyclic,
+          "a chain that never terminates is cyclic, not merely long - "
+          "reported as a bound it would argue forever for a bigger cap");
+    check(s.windows[0].control_chain_len_exact == 0,
+          "and its length is a floor, never a length");
+}
+
+static void a_complete_chain_reports_its_length_too(void)
+{
+    AxFixture f;
+    NowAxMemory m;
+    NowScene s;
+
+    axfix_init(&f, &m);
+    build_window(&f, 8, kCtl1H, 0, 0, 40, 60, 200, 400);
+    build_control(&f, kCtl1H, kCtl1, kCtl2H, "OK", 10, 20, 30, 90, 0, 1);
+    build_control(&f, kCtl2H, kCtl2, 0, "Cancel", 10, 100, 30, 170, 255, 0);
+
+    one_window(&s, kNowSceneAnchorOk);
+    now_scene_walk_window(&s, 0, &m, kWin, NULL);
+
+    check(s.windows[0].control_chain_len == 2,
+          "the ordinary path records the length too, so a reader never "
+          "has to infer it from the absence of a note");
+    check(s.windows[0].control_chain_len_exact == 1, "and exactly");
+}
+
 /* An unreadable window record claims NOTHING. The row keeps exactly what
    peek_read.c established for it. */
 static void an_unreadable_record_claims_nothing(void)
@@ -401,6 +506,64 @@ static void dialog_items_are_guest_semantics(void)
           "the DialogRecord's default item reaches the exact button");
     check(!s.dialog_items[0].default_known,
           "defaultness applies to push buttons, not resource controls");
+}
+
+/* THE TWO WALKS MUST NOT CONTRADICT EACH OTHER.
+ *
+ * Mail's Internet-setup alert, as sweep A found it on 2026-08-07: the
+ * control walk reported Yes / No / Set Up Now and the dialog-item walk
+ * reported OK / Cancel / Don't Save - the same three refs, the same
+ * three rects, three different names. A DITL carries the RESOURCE's
+ * title, frozen when the dialog was built; SetControlTitle writes to the
+ * ControlRecord and never back. So both walks were reporting honestly
+ * from two different moments, and a driving agent reading one label and
+ * clicking the other control is the worst outcome this surface has.
+ *
+ * The fixture arranges exactly that divergence and asserts there is one
+ * answer. It is also the reason the last case exists: a live control
+ * with NO title must not fall back to the resource's text, or the
+ * contradiction returns from the other side. */
+static void the_two_walks_agree_on_a_shared_ref(void)
+{
+    AxFixture f;
+    NowAxMemory m;
+    NowScene s;
+    unsigned long at;
+
+    axfix_init(&f, &m);
+    build_window(&f, 2, kCtl1H, 0, 0, 40, 60, 300, 500);
+    /* What the machine says NOW. */
+    build_control(&f, kCtl1H, kCtl1, kCtl2H, "Yes", 150, 300, 170, 380,
+                  0, 0);
+    build_control(&f, kCtl2H, kCtl2, kCtl3H, "Set Up Now", 150, 100, 170,
+                  260, 0, 0);
+    build_control(&f, kCtl3H, kCtl3, 0, "", 180, 100, 200, 260, 0, 0);
+
+    axfix_put32(&f, kWin + 156, kDitlH);
+    axfix_put_handle(&f, kDitlH, kDitl);
+    axfix_put16(&f, kDitl, 2);               /* three items */
+    at = kDitl + 2;
+    /* What the RESOURCE said when the dialog was built. */
+    at = put_ditem(&f, at, kCtl1H, 4, 150, 300, 170, 380, "OK");
+    at = put_ditem(&f, at, kCtl2H, 4, 150, 100, 170, 260, "Don't Save");
+    (void)put_ditem(&f, at, kCtl3H, 4, 180, 100, 200, 260, "Cancel");
+    axfix_put16(&f, kWin + 164, -1);
+    axfix_put16(&f, kWin + 168, 1);
+
+    one_window(&s, kNowSceneAnchorOk);
+    now_scene_walk_window(&s, 0, &m, kWin, NULL);
+
+    check(s.windows[0].dialog_item_count == 3, "three items reach the scene");
+    check(strcmp(s.dialog_items[0].title, "Yes") == 0,
+          "the live control wins over the DITL's stale 'OK'");
+    check(strcmp(s.dialog_items[1].title, "Set Up Now") == 0,
+          "...and over 'Don't Save'");
+    check(strcmp(s.dialog_items[2].title, "") == 0,
+          "a live control with no title publishes none, rather than "
+          "reinstating the resource's 'Cancel'");
+    check(strcmp(s.controls[0].title, "Yes") == 0
+          && strcmp(s.controls[1].title, "Set Up Now") == 0,
+          "and the control walk says the same thing it always did");
 }
 
 static void malformed_ditl_retracts_the_plane(void)
@@ -837,9 +1000,13 @@ int main(void)
     empty_is_not_absent();
     a_broken_chain_is_retracted();
     a_cycle_is_retracted();
+    a_long_chain_reports_its_length();
+    a_cycle_is_not_a_long_chain();
+    a_complete_chain_reports_its_length_too();
     an_unreadable_record_claims_nothing();
     dialog_text();
     dialog_items_are_guest_semantics();
+    the_two_walks_agree_on_a_shared_ref();
     malformed_ditl_retracts_the_plane();
     text_is_gated_on_the_kind();
     menubar_complete();

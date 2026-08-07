@@ -1,8 +1,22 @@
 import SwiftUI
 import NOWAgentIntegration
 
-/// The Connections page — which Macs are connected, which one an agent is
-/// talking to, and how to tell them apart.
+/// The Connection page — **the link, and who is on it.**
+///
+/// One page from two. There were a "Connections" module in the list and a
+/// "Connection" module in the footer, and the split did not survive being
+/// read: the footer one owned the port and the state of the link, the list
+/// one owned the roster of machines on that link, and each had to restate
+/// the other's half to make sense of its own. The footer pane explained what
+/// a connection was for; the list pane explained why it was empty by naming
+/// the port. That is one subject asked twice.
+///
+/// So the page is ordered as one sentence. The header states the link and
+/// the count in a single line — `snapshot.headline`, which is the only place
+/// either fact is drawn. Then this Mac's side of it: the port, the switch,
+/// the health of the session. Then who is on it: the machines, the one being
+/// driven, the ones the host merely remembers. The listener's log last,
+/// because it is the record rather than the state.
 ///
 /// **The resting state is one Mac, or none.** A page that only made sense
 /// with three connected would be the wrong page for this desk, so the
@@ -12,6 +26,10 @@ import NOWAgentIntegration
 /// a failure. The only red on this page is a listener that actually failed.
 struct ConnectionsModuleView: View {
     @ObservedObject var model: ConnectionsModel
+    @ObservedObject var settings: SettingsModel
+    @ObservedObject var listener: GuestListener
+    var onStart: () -> Void
+    var onStop: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -19,14 +37,13 @@ struct ConnectionsModuleView: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    if model.snapshot.isIdle {
-                        idle
-                    } else {
-                        ForEach(model.snapshot.connected) { row in
-                            ConnectionCard(row: row, model: model)
-                        }
-                    }
+                    ConnectionLinkSection(settings: settings,
+                                          listener: listener,
+                                          onStart: onStart,
+                                          onStop: onStop)
+                    wire
                     remembered
+                    ConnectionListenerLog(listener: listener)
                 }
                 .padding(.horizontal, 28)
                 .padding(.vertical, 20)
@@ -38,9 +55,14 @@ struct ConnectionsModuleView: View {
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
+    /// The one line that answers both halves at once: whether the link is up
+    /// and who came in over it. Drawn here and nowhere else — the link
+    /// section below deliberately has no status line of its own, because
+    /// when the two panes were separate they each had one and the two were
+    /// worded differently.
     private var header: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text("Connections")
+            Text("Connection")
                 .font(.largeTitle.weight(.semibold))
             Label(model.snapshot.headline, systemImage: indicator.symbol)
                 .foregroundStyle(indicator.tint)
@@ -54,6 +76,34 @@ struct ConnectionsModuleView: View {
         .padding(.horizontal, 28)
         .padding(.top, 24)
         .padding(.bottom, 14)
+    }
+
+    /// Who is on the link. The second half of the page's one sentence, and
+    /// the reason the first half has a port control at all.
+    @ViewBuilder
+    private var wire: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHead("On the wire", caption: wireCaption)
+            if model.snapshot.isIdle {
+                idle
+            } else {
+                ForEach(model.snapshot.connected) { row in
+                    ConnectionCard(row: row, model: model)
+                }
+            }
+        }
+    }
+
+    /// Says what the roster below is, in the number of machines actually in
+    /// it — with two connected the interesting fact is which one everything
+    /// goes to, and with one or none there is no choice to explain.
+    private var wireCaption: String {
+        guard model.snapshot.connected.count > 1 else {
+            return "\(MachineNaming.properNounPlural) connected to "
+                + "\(MachineNaming.thisMac) right now."
+        }
+        return "Every command, module and capture request goes to the "
+            + "machine being driven. The others stay connected."
     }
 
     /// The same dot vocabulary the sidebar footer and the modules use, so
@@ -71,24 +121,29 @@ struct ConnectionsModuleView: View {
         }
     }
 
-    /// Nothing connected. Stated as what the host is doing and what has to
-    /// happen next — the vintage Mac dials in, this side only listens — so
-    /// a person reads a waiting room rather than a broken machine.
+    /// Nothing connected. Stated as what has to happen next, so a person
+    /// reads a waiting room rather than a broken machine.
+    ///
+    /// It no longer repeats which side dials — the link section directly
+    /// above says that once, whether or not anything is connected. When
+    /// these were two panes this card had to carry that sentence itself,
+    /// because the pane that owned it was somewhere else in the sidebar.
     @ViewBuilder
     private var idle: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(idleTitle)
                 .font(.title3.weight(.semibold))
-            Text("The classic Mac dials in; this side only listens. Open "
-                 + "NOW on the vintage Mac and point it at this host.")
+            Text("Open NOW on the old machine and point it at "
+                 + "\(MachineNaming.thisMac).")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             /* The addressing consequence, said once here rather than on
                every remembered row: with nothing connected an agent that
-               names any machine is told there is no guest, which is a
-               different sentence from "that Mac is not connected". */
-            Text("An agent addressing any Mac right now is told that no "
-                 + "guest is connected.")
+               names any machine is told there is nothing connected,
+               which is a different sentence from "that machine is not
+               connected". */
+            Text("An agent addressing any machine right now is told that "
+                 + "no \(MachineNaming.commonNoun) is connected.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -103,7 +158,8 @@ struct ConnectionsModuleView: View {
         switch model.snapshot.state {
         case .failed: return "The listener stopped"
         case .idle: return "Not listening"
-        case .listening, .connected: return "Waiting for a Mac"
+        case .listening, .connected:
+            return "Waiting for \(MachineNaming.simpleReference)"
         }
     }
 
@@ -115,14 +171,10 @@ struct ConnectionsModuleView: View {
         let rows = model.snapshot.known
         if !rows.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Remembered")
-                    .font(.headline)
-                Text("Named here, not connected now. An agent that names "
-                     + "one of these is refused, never answered by "
-                     + "another Mac.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                SectionHead("Remembered", caption:
+                    "Named here, not connected now. An agent that names "
+                    + "one of these is refused, never answered by "
+                    + "another machine.")
                 ForEach(rows) { row in
                     RememberedRow(row: row)
                 }
@@ -157,7 +209,8 @@ private struct ConnectionCard: View {
                 if !row.idIsAnchored {
                     Badge(text: "Id is a guess", tint: .orange,
                           help: "This machine reached the host from an "
-                              + "address that cannot tell two Macs apart "
+                              + "address that cannot tell two machines "
+                              + "apart "
                               + "(loopback, so every emulated guest). The "
                               + "id surviving a reconnection is a guess. "
                               + "Use the session id when it must be exact.")
@@ -191,17 +244,19 @@ private struct ConnectionCard: View {
                 /* The person's half of what an agent does by naming a
                    machine. An agent asserts which Mac it means; a person
                    points the window at one. Same seam underneath. */
-                Button("Drive This Mac") { model.drive(row) }
+                /* "Drive This Mac" read as the Mac the app is running
+                   on — the one machine the button cannot mean. */
+                Button("Drive This One") { model.drive(row) }
                     .help("Every command, module and capture request goes "
-                          + "to the Mac chosen here. The others stay "
+                          + "to the machine chosen here. The others stay "
                           + "connected.")
             }
             Button(row.idIsAutoAssigned ? "Name…" : "Rename…") {
                 proposed = row.machineID
                 renaming = true
             }
-            .help("The id an agent types to address this Mac. Naming it is "
-                  + "what makes it durable.")
+            .help("The id an agent types to address this machine. Naming "
+                  + "it is what makes it durable.")
         }
         .popover(isPresented: $renaming, arrowEdge: .bottom) {
             rename
@@ -213,7 +268,7 @@ private struct ConnectionCard: View {
             Text("Machine id")
                 .font(.headline)
             Text("Letters, numbers and hyphens. This is what a person or "
-                 + "an agent types to reach this Mac.")
+                 + "an agent types to reach this machine.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: 280, alignment: .leading)
@@ -242,8 +297,11 @@ private struct ConnectionCard: View {
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 14,
              verticalSpacing: 4) {
             GridRow {
+                /* Not "this Mac": on the one page that lists several
+                   machines, that phrase means the Mac the app is running
+                   on, which is the one machine this label cannot mean. */
                 FieldLabel("Machine id", help:
-                    "Stable. What you type to reach this Mac, and what "
+                    "Stable. What you type to reach this machine, and what "
                     + "follows it across a reconnection.")
                 Copyable(row.machineID)
             }
@@ -251,7 +309,7 @@ private struct ConnectionCard: View {
                 GridRow {
                     FieldLabel("Session id", help:
                         "This connection only. A caller holding it after "
-                        + "the Mac reconnects is told the session ended, "
+                        + "this machine reconnects is told the session ended, "
                         + "rather than being answered by its successor.")
                     Copyable(session)
                 }
@@ -365,10 +423,13 @@ private struct AddressingLine: View {
     private var summary: String {
         switch addressing.outcome {
         case .answered: return "answered"
-        case .notAddressed: return "refused — this host is driving another Mac"
+        case .notAddressed:
+            return "refused — \(MachineNaming.thisMac) is driving another "
+                + MachineNaming.commonNoun
         case .notConnected: return "refused — not connected"
         case .sessionEnded: return "refused — that session has ended"
-        case .noGuestConnected: return "refused — no Mac is connected"
+        case .noGuestConnected:
+            return "refused — no \(MachineNaming.commonNoun) is connected"
         case .unrecognised(let code): return "refused — \(code)"
         }
     }

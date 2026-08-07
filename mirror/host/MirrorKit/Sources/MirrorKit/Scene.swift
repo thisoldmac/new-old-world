@@ -48,6 +48,19 @@ public struct Scene: Codable, Equatable, Sendable {
 
     public enum Knowledge: String, Codable, Equatable, Sendable {
         case known
+        /// The machine named the CODE that draws this control - a `CDEF`
+        /// resource id, via the Resource Manager - and the guest looked
+        /// the id up in a documented table. One remove from `known`,
+        /// which is the control answering about itself through
+        /// `kControlKindTag`, and the distance matters: OS 9's own
+        /// control panels build their controls from `CNTL` resources and
+        /// the Control Manager declines to name them at all (measured
+        /// 2026-08-07: Appearance 2 of 73, Date & Time 0 of 21), so
+        /// `derived` is the only answer that exists for most of what a
+        /// person actually drives. It is not a guess and it is not
+        /// `known`; a consumer that needs the stronger claim tests for
+        /// `known` explicitly.
+        case derived
         case unknown
         case truncated
         case stale
@@ -79,13 +92,24 @@ public struct Scene: Codable, Equatable, Sendable {
         public var owner: String?
         public var status: CoverageStatus
         public var reason: String?
+        /// How many members this claim's own bounded ledger has had to
+        /// FORGET. Present only on `depth`, and only when nonzero.
+        ///
+        /// It exists because "absent because we forgot it" and "absent
+        /// because we never saw it" are different facts, and a bounded
+        /// ledger silently turns the first into the second. The front-order
+        /// table keeps 32 slots; past that a process's rank is absent for a
+        /// reason nothing on the wire could state.
+        public var evicted: Int?
 
         public init(scope: String, owner: String? = nil,
-                    status: CoverageStatus, reason: String? = nil) {
+                    status: CoverageStatus, reason: String? = nil,
+                    evicted: Int? = nil) {
             self.scope = scope
             self.owner = owner
             self.status = status
             self.reason = reason
+            self.evicted = evicted
         }
     }
 
@@ -168,8 +192,18 @@ public struct Scene: Codable, Equatable, Sendable {
             self.completeness = completeness
         }
 
+        /// WHY `derived` AUTHORISES. The bar this property enforces is
+        /// "the machine said so", not "the strongest possible source said
+        /// so". A `CDEF` resource id comes from the Resource Manager
+        /// naming a loaded resource; the id-to-kind table is Apple's own
+        /// `ControlDefinitions.h`. Nothing in that chain is a shape
+        /// heuristic or a value-range guess - which is what
+        /// `presentation-inference` is, and why it stays excluded by
+        /// name. Holding `derived` out would have left every control in
+        /// every OS 9 control panel undrivable while the render drew them
+        /// perfectly, which is the exact split this refuses to ship.
         public var authorizesAction: Bool {
-            knowledge == .known
+            (knowledge == .known || knowledge == .derived)
                 && completeness == .complete
                 && action != nil
                 && provenance != "presentation-inference"
@@ -189,6 +223,16 @@ public struct Scene: Codable, Equatable, Sendable {
         /// Process identity across captures. A PSN alone can be reused after
         /// an application quits, so reducers key continuity from this token.
         public var incarnation: String? = nil
+        /// The process's own declaration that it has no user interface —
+        /// `modeOnlyBackground` in its 'SIZE' resource, as the guest's
+        /// Process Manager reports it. "Headless" and "faceless" are the
+        /// same fact in prose.
+        ///
+        /// `nil` is NOT `false`. It means the producer did not say, which
+        /// is a different claim from "this process has a face"; a scene
+        /// from a guest that predates the field reads nil on every row.
+        /// Never derive it from a window count — see `ProcessPresence`.
+        public var backgroundOnly: Bool? = nil
         /// Per-app oracle error (`ax_oracle_*`), surfaced honestly.
         public var error: String?
     }
@@ -199,6 +243,10 @@ public struct Scene: Codable, Equatable, Sendable {
         public var front: Bool
         public var signature: String
         public var incarnation: String? = nil
+        /// See `AppRef.backgroundOnly`. Carried on both rows because the
+        /// two arrays are populated from the same Process Manager walk
+        /// and a consumer may hold either.
+        public var backgroundOnly: Bool? = nil
     }
 
     public struct Menubar: Codable, Equatable, Sendable {
@@ -210,9 +258,26 @@ public struct Scene: Codable, Equatable, Sendable {
         /// Empty for the Apple menu (the wire sends the Chicago apple byte).
         public var title: String
         public var apple: Bool
-        /// Guest menubar x of this title (MenuList `left`) — the anchor for
-        /// guest-true menubar layout and for input-device menu tracking.
-        public var left: Int
+        /// Guest menubar x of this title (MenuList `left`), or **nil when
+        /// the producer did not report one**.
+        ///
+        /// Optional because it used to default to 0, and 0 is not a
+        /// missing reading — it is the x of the leftmost menu. A menu act
+        /// arms its press at this coordinate plus four, so an unreported
+        /// `left` armed at x=4, which is the Apple menu, and answered
+        /// whoever pressed it next. That is the measured 18/20 hijack
+        /// reintroduced by a `?? 0` (2026-08-07). The host knew it had
+        /// never learned the number and manufactured one anyway.
+        ///
+        /// So the absence is carried rather than filled, and every
+        /// consumer answers it the same way: a menu bar is a POSITIONAL
+        /// surface, so a menu with no position is not drawn, not hit
+        /// tested, and not pressed. A title painted at an invented
+        /// position and a press armed at one are the same mistake at two
+        /// severities, and giving the renderer a fallback the act path
+        /// refused would put the two back into disagreement — which is
+        /// the defect this whole change exists to close.
+        public var left: Int?
         /// The guest's own menu ID. Carried because acting by IDENTITY needs it:
         /// the Portal answers the application's MenuSelect with (menuID, item),
         /// and a title is not an identity the Menu Manager understands.
@@ -305,6 +370,15 @@ public struct Scene: Codable, Equatable, Sendable {
         /// nil when not traced. The renderer draws it in place of the empty
         /// content rect.
         public var display: [DisplayOp]?
+        /// Which clock `display` came off — see ``DisplayEpoch``. nil means
+        /// this window has NO content stream, which is the common healthy
+        /// case and renders semantics-only rather than waiting.
+        ///
+        /// **Not in the frozen IR (v1/v2)**, for the same reason `island`
+        /// is not: it is host-internal render state that happens to live on
+        /// this struct. Every number in it already crosses the wire on the
+        /// drain records themselves.
+        public var displayEpoch: DisplayEpoch? = nil
         /// M3 pixel island: this window's content area as the guest's REAL
         /// pixels, for content with no semantics to read — the Finder
         /// composites its icon views offscreen and blits them in, so their
@@ -460,9 +534,75 @@ public struct Scene: Codable, Equatable, Sendable {
         public var creator: String?
         public var x: Int
         public var y: Int
+        /// The size of the box the Finder actually drew, when the producer
+        /// asked for it — `bounds of` an item, minus its top-left.
+        ///
+        /// **Why a size at all, when every icon is 32×32.** It is not. A
+        /// window in list view draws a 16×16 row icon, and one in small-icon
+        /// view a 16×16 icon on a different grid; only the icon view's box is
+        /// 32×32. A producer that reported a position and let the reader
+        /// assume the size therefore described a list row as if it were an
+        /// icon on a grid — see the `view` measurement in `FinderItems`.
+        ///
+        /// **nil is a real answer**, and means the producer did not ask. Every
+        /// reader falls back to the 32×32 icon box, which is what it assumed
+        /// before this field existed, so an older fixture decodes unchanged.
+        public var w: Int?
+        public var h: Int?
+
+        /// **Where this position came from**, which is a different question
+        /// from whether there is one.
+        ///
+        /// `placed` was doing both jobs and could not: it is set to `true` by
+        /// `FinderItems.merge` from the box the Finder actually drew, by
+        /// `SceneBuilder.desktopItems` from the *saved* `fdLocation` grid, and
+        /// by `ScenePoller.placeVolumes` from a layout rule this side
+        /// **invented**. Three provenances, one boolean, and every reader that
+        /// asked "do we know where this is?" got `true` from the one that had
+        /// made the answer up.
+        ///
+        /// That is tolerable while the only consumer is a renderer — an icon a
+        /// few pixels off is cosmetic. It stops being tolerable the moment
+        /// something must put an item BACK: a snap-back to an invented home
+        /// moves a file to a place it never was, and does it confidently.
+        /// So the provenance is carried, and `homeIsTrustworthy` is the one
+        /// question the drag plane asks.
+        ///
+        /// **nil is a real answer** and means the producer did not say — an
+        /// older fixture, or a path not yet moved onto this field. It reads as
+        /// untrustworthy, deliberately: a default of "drawn" would make every
+        /// old fixture claim a provenance it never had.
+        public var origin: PositionOrigin?
+
+        /// May something be returned to this position?
+        ///
+        /// Only the Finder's own drawn box qualifies. The saved grid is close
+        /// enough to draw from and not close enough to aim with (it differed
+        /// from the drawn position by a constant (52, 25) on the probe folder,
+        /// and diverged completely once a window scrolled — see `FinderItems`).
+        public var homeIsTrustworthy: Bool { origin == .drawn }
+
         public var placed: Bool
         public var alias: Bool
         public var invisible: Bool
+
+        /// What an alias POINTS AT, when the producer could ask.
+        ///
+        /// An alias file's own `kind`, `type` and `creator` describe the
+        /// alias and never its target, so an alias to an application and
+        /// an alias to a folder are indistinguishable from the fields
+        /// above — which is why every alias used to be unclassifiable,
+        /// and why opening one predicted a Finder window that never
+        /// appeared. Measured 2026-08-07: the desktop's `Mail` is an
+        /// alias whose original is an `APPL` named `Mail`, and opening
+        /// it launches a process named `Mail`.
+        ///
+        /// **Optional because "we did not ask" and "it points at
+        /// nothing" are different facts.** A broken alias, a producer
+        /// with no scripting, or a target on an unmounted volume all
+        /// leave this nil, and nil must keep the old prediction rather
+        /// than acquire a new way to be wrong.
+        public var aliasTarget: AliasTarget?
 
         /// Public because a HOST may know icons the guest's own walk
         /// cannot: NOW reads the Toolbox's windows, controls and menus,
@@ -471,11 +611,99 @@ public struct Scene: Codable, Equatable, Sendable {
         /// AppleScript and are merged into the scene on this side.
         public init(name: String, kind: String, type: String?,
                     creator: String?, x: Int, y: Int, placed: Bool,
-                    alias: Bool, invisible: Bool) {
+                    alias: Bool, invisible: Bool,
+                    aliasTarget: AliasTarget? = nil,
+                    w: Int? = nil, h: Int? = nil,
+                    origin: PositionOrigin? = nil) {
             self.name = name; self.kind = kind; self.type = type
             self.creator = creator; self.x = x; self.y = y
+            self.w = w; self.h = h
             self.placed = placed; self.alias = alias
             self.invisible = invisible
+            self.aliasTarget = aliasTarget
+            self.origin = origin
+        }
+
+        /// The item an alias resolves to. Same three fields the alias
+        /// itself carries, so a consumer classifies a target exactly the
+        /// way it classifies any other item — one rule, not two.
+        public struct AliasTarget: Codable, Equatable, Sendable {
+            /// The TARGET's name, which is what a launched process is
+            /// named after. An alias may be renamed freely and often is,
+            /// so this is not the same string as the item's `name`.
+            public var name: String
+            public var kind: String
+            public var type: String?
+            public var creator: String?
+
+            public init(name: String, kind: String,
+                        type: String?, creator: String?) {
+                self.name = name; self.kind = kind
+                self.type = type; self.creator = creator
+            }
+        }
+    }
+
+    /// How a desktop or window item's position was established. The ladder is
+    /// ordered: a later producer may overwrite an earlier one's position only
+    /// by climbing it, never by descending.
+    ///
+    /// The vocabulary matches the one this arc already settled for content —
+    /// **`empty`** is a fact about the machine, **`unknown`** is a fact about
+    /// us — applied to geometry: `drawn` and `saved` are things the guest told
+    /// us, `unknown` is what we say when the answer is ours rather than its.
+    public enum PositionOrigin: String, Codable, Equatable, Sendable {
+        /// `bounds of` the item, as the Finder has actually laid it out now.
+        /// The only provenance a snap-back may use.
+        case drawn
+        /// The catalog's saved `fdLocation` icon grid. Good enough to draw a
+        /// desktop from; not the box the Finder drew, and not a home.
+        case saved
+        /// **We made it up.** A volume laid out by our own default rule
+        /// because nothing would tell us where the Finder put it. It is drawn
+        /// — a disk you cannot see at all is worse than one a few inches off —
+        /// and no act may aim with it.
+        case unknown
+    }
+
+    /// The colours the GUEST'S OWN Appearance Manager hands out, asked
+    /// once per scene rather than assumed here.
+    ///
+    /// Every field is optional and an absent one means the ask failed —
+    /// never "black". A nil `Theme` altogether means the producer did not
+    /// ask, which is a different fact: the first says that machine would
+    /// not name the brush, the second that nobody looked. A renderer
+    /// meeting either falls back to its own constant and should say so.
+    ///
+    /// This is not the theme's palette and must not become one. These are
+    /// fills the machine makes on request; a renderer's bevel greys have
+    /// no producer on the machine to ask and would arrive here as guesses
+    /// wearing a wire format. See `contract/asyncapi.yaml`, "WHAT COLOUR
+    /// THE MACHINE DRAWS WITH".
+    public struct Theme: Codable, Equatable, Sendable {
+        /// `#RRGGBB` — kThemeBrushDialogBackgroundActive.
+        public var dialogBackground: String?
+        /// `#RRGGBB` — kThemeBrushAlertBackgroundActive.
+        public var alertBackground: String?
+        /// `#RRGGBB` — kThemeBrushDocumentWindowBackground.
+        public var documentBackground: String?
+        /// `#RRGGBB` — the low-memory selection colour.
+        public var highlight: String?
+        /// The screen depth the brushes were ASKED AT. A brush answers
+        /// differently at 8 bits than at 32, so a colour with no depth
+        /// beside it cannot be checked against a screendump.
+        public var depth: Int?
+
+        public init(dialogBackground: String? = nil,
+                    alertBackground: String? = nil,
+                    documentBackground: String? = nil,
+                    highlight: String? = nil,
+                    depth: Int? = nil) {
+            self.dialogBackground = dialogBackground
+            self.alertBackground = alertBackground
+            self.documentBackground = documentBackground
+            self.highlight = highlight
+            self.depth = depth
         }
     }
 
@@ -488,6 +716,8 @@ public struct Scene: Codable, Equatable, Sendable {
         /// Typed collection authority. Human-readable `errors` remains for
         /// diagnostics; reducers make replacement/deletion decisions here.
         public var coverage: [CoverageClaim]? = nil
+        /// What the guest's Appearance Manager actually draws with.
+        public var theme: Theme? = nil
     }
 }
 

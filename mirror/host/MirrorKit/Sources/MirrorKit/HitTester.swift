@@ -79,6 +79,29 @@ public enum HitTester {
     public static let iconSize = 32
     public static let iconLabelHeight = 12
 
+    /// The box that selects a Finder item, from whatever the item carries.
+    ///
+    /// **The size is the Finder's own `bounds`, not a constant.** An icon-view
+    /// icon is 32×32; a list-view row's icon and a small-icon-view icon are
+    /// 16×16 (measured 2026-08-07, mac99 / OS 9.1 — see `FinderItems`). An
+    /// item with no size at all is one whose producer never asked, and it
+    /// keeps the 32×32 every reader assumed before the field existed.
+    ///
+    /// **The label is added BELOW and only below.** A name drawn under an
+    /// icon is part of the target — clicking it selects, which is what the
+    /// Finder does — and that is the icon view's arrangement. A list or
+    /// small-icon row draws its name BESIDE the icon instead, and the Finder
+    /// does not measure that text for us, so the row's target is the icon
+    /// alone. That under-claims: it costs a click that must land on the icon.
+    /// Guessing the text's width would over-claim, and an over-claimed box in
+    /// a 19-pixel row pitch is a click that selects the wrong file.
+    public static func targetSize(_ item: Scene.DesktopItem) -> (w: Int, h: Int) {
+        guard let w = item.w, let h = item.h, w > 0, h > 0 else {
+            return (iconSize, iconSize + iconLabelHeight)
+        }
+        return (w, h >= iconSize ? h + iconLabelHeight : h)
+    }
+
     /// The topmost desktop icon containing this point, if any. Later items win,
     /// matching the draw order (the renderer paints them in list order, so the
     /// last one drawn is the one visibly on top).
@@ -87,8 +110,9 @@ public enum HitTester {
         guard let items = scene.desktopItems else { return nil }
         var hit: Scene.DesktopItem?
         for item in items where item.placed && !item.invisible {
-            if x >= item.x, x < item.x + iconSize,
-               y >= item.y, y < item.y + iconSize + iconLabelHeight {
+            let box = targetSize(item)
+            if x >= item.x, x < item.x + box.w,
+               y >= item.y, y < item.y + box.h {
                 hit = item
             }
         }
@@ -110,8 +134,9 @@ public enum HitTester {
         let cx = x - origin.x, cy = y - origin.y
         var hit: Scene.DesktopItem?
         for item in items where item.placed && !item.invisible {
-            if cx >= item.x, cx < item.x + iconSize,
-               cy >= item.y, cy < item.y + iconSize + iconLabelHeight {
+            let box = targetSize(item)
+            if cx >= item.x, cx < item.x + box.w,
+               cy >= item.y, cy < item.y + box.h {
                 hit = item
             }
         }
@@ -203,17 +228,25 @@ public enum HitTester {
         }
         // The menubar strip resolves against the wire's MenuList lefts:
         // a title's span runs from its left to the next title's left.
+        //
+        // A menu the producer never placed claims NO span. It used to
+        // claim the leftmost one, because an absent `left` arrived as 0,
+        // so it stole the Apple menu's clicks - the same substitution
+        // that let a menu act arm on the Apple menu's title.
         if y >= 0, y < menubarHeight, let menus = scene.menubar?.menus,
            !menus.isEmpty {
-            for (i, menu) in menus.enumerated()
-            where menu.id != ObjectResolver.applicationMenuID
-                    && x >= menu.left {
-                let next = menus.dropFirst(i + 1)
-                    .filter { $0.id != ObjectResolver.applicationMenuID
-                        && $0.left > menu.left }
-                    .map(\.left).min() ?? (menu.left + 60)
+            let placed = menus.enumerated().compactMap {
+                (i, m) -> (index: Int, left: Int)? in
+                guard m.id != ObjectResolver.applicationMenuID,
+                      let left = m.left else { return nil }
+                return (i, left)
+            }
+            for (n, entry) in placed.enumerated() where x >= entry.left {
+                let next = placed.dropFirst(n + 1)
+                    .filter { $0.left > entry.left }
+                    .map(\.left).min() ?? (entry.left + 60)
                 if x < next {
-                    return .menuTitle(index: i)
+                    return .menuTitle(index: entry.index)
                 }
             }
         }

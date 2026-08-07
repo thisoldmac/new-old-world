@@ -313,8 +313,15 @@ final class MirrorPlaneDomainTests: XCTestCase {
             XCTAssertFalse(sources.contains(forbidden),
                            "active Mirror path contains legacy runtime term \(forbidden)")
         }
-        XCTAssertTrue(active.contains("Open Mirror"))
-        XCTAssertTrue(active.contains("Close Mirror"))
+        /* **Two controls now, because the Mirror has two axes.** The old
+           pair was `Open Mirror` / `Close Mirror`, one button meaning
+           both "run the poll" and "put a window on screen". Splitting
+           them is the point of the 019 change; asserting all four here
+           keeps the page from quietly collapsing back to one. */
+        XCTAssertTrue(active.contains("\"Stop\" : \"Start\""),
+                      "the running axis has a control of its own")
+        XCTAssertTrue(active.contains("\"Attach\" : \"Detach\""),
+                      "and so does the where-it-is-shown axis")
     }
 
     func testCloseReleasesContentAndInteractionOffRefusesBeforeDispatch() throws {

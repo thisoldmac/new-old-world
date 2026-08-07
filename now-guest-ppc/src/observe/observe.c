@@ -11,6 +11,8 @@
 #include "axtext.h"
 #include "json.h"
 #include "obsref.h"
+#include "peek.h"
+#include "proc_roster.h"
 
 enum {
     /* Bounds on one answer. They are about the FRAME, not about the
@@ -65,6 +67,59 @@ void now_observe_init(void)
     g_armed = 1;
 }
 
+/* --- the plane this walk reads through ---------------------------------
+ *
+ * **THE WALK ARMS ITS OWN PLANE, and until 2026-08-07 it armed nothing.**
+ *
+ * Every foreign read below goes through the anchor plane, and this file
+ * never claimed it. It worked only when somebody ELSE happened to be
+ * holding the plane up — the scene, whose owner lease is ten seconds
+ * (`peek.c :: kNowPeekOwnerLeaseTicks`) and is renewed by host traffic
+ * only once a `scene.request` has been served on the link, or the
+ * Processes page, which claims while it is the visible module.
+ *
+ * Two consequences, and the second is the one that was reported:
+ *
+ *   - A headless caller that never asks for a scene — an MCP client
+ *     calling `now_observe_elements` — had NO claim at all, and every
+ *     walk answered `no-plane` for every foreign process, for ever.
+ *   - A caller with a Mirror polling beside it got an INTERMITTENT
+ *     answer: `no-plane` seconds after a `reveal`, `ok` on a later poll,
+ *     depending on where the walk fell against somebody else's poll
+ *     cadence and that ten-second lease. An intermittent false negative
+ *     is the worse of the two — it teaches a caller to retry blindly and
+ *     makes every result downstream of it probabilistic.
+ *
+ * So: claim, then WAIT briefly for the resident's echo, which is the
+ * scene's own pattern and for its own reason (`wire.c :: serve_scene`).
+ * A claim is a request; the resident echoes it into `arm_active` on its
+ * next pass, and a walk that reads before the echo gates itself off and
+ * reports "I could not look" for the whole machine. `now_peek_settle`
+ * returns as soon as the echo lands (~15 ms measured) and gives up after
+ * half a second; the walk proceeds either way, because a walk that says
+ * "not observed" is still the honest answer when the plane genuinely is
+ * not armed.
+ *
+ * The lease is the claim's, not this call's: ten seconds, held across
+ * requests. That is the number a caller acting at HUMAN speed needs —
+ * an agent that observes, decides and acts is inside it, and an agent
+ * that has stopped for ten seconds is one whose next answer should be
+ * re-armed rather than served off a plane nobody wanted. It is not
+ * released at the end of the walk on purpose: releasing would drop the
+ * plane between two calls of a caller who is plainly still using it,
+ * which is the flap this whole comment is about.
+ *
+ * The tree bit rides along because the walk emits controls and menus. */
+enum { kNowObsArmSettleTicks = 30 };   /* half a second, the scene's bound */
+
+static void arm_anchor_plane(void)
+{
+    now_peek_claim(kNowPeekOwnerObserve,
+                   (unsigned long)(kNowPeekCapAnchors | kNowPeekCapTree));
+    (void)now_peek_settle((unsigned long)kNowPeekCapAnchors,
+                          kNowObsArmSettleTicks);
+}
+
 /* --- binding one process ----------------------------------------------- */
 
 typedef struct {
@@ -96,40 +151,52 @@ static NowObsBindStatus bind_status(NowPeekReadStatus status)
     return kNowObsBindUnreadable;
 }
 
-static int bind_target(const ProcessSerialNumber *psn, NowObsTarget *out)
+/* Bind one process the ROSTER already described. `front` comes off that
+   row, which means it comes off the walk's ONE sample - this function
+   used to call GetFrontProcess itself, once per process, so a Cmd-Tab
+   mid-walk could produce a reply in which two rows carried
+   `front: true`, or none did. A snapshot that contradicts itself is
+   worse than a stale one, because a caller cannot tell. Everything else
+   in this guest samples the front once before its loop; now this does
+   too, and it does it by not having the call at all. */
+static int bind_target_row(const NowProcRosterRow *row, NowObsTarget *out)
 {
-    ProcessInfoRec      info;
-    ProcessSerialNumber front;
-    NowPeekReadStatus   status;
+    NowPeekReadStatus status;
 
     memset(out, 0, sizeof(*out));
-    out->psn = *psn;
+    out->psn = row->psn;
     out->bind = kNowObsBindNoProcess;
-
-    memset(&info, 0, sizeof(info));
-    info.processInfoLength = sizeof(info);
-    info.processName = out->name;
-    info.processAppSpec = NULL;
-    out->name[0] = 0;
-    if (GetProcessInformation(psn, &info) != noErr) {
-        return 0;
-    }
-    out->signature = info.processSignature;
+    BlockMoveData(row->pname, out->name, (long)row->pname[0] + 1);
+    out->signature = (OSType)row->creator;
     /* The launch date is the discriminator a PSN is not: it is the one
        field a relaunch into a recycled serial number cannot inherit.
        See now_obs_process_fingerprint. */
     out->process_fingerprint = now_obs_process_fingerprint(
-        (unsigned long)psn->highLongOfPSN, (unsigned long)psn->lowLongOfPSN,
-        (unsigned long)info.processSignature,
-        (unsigned long)info.processLaunchDate,
-        (unsigned long)info.processLocation,
-        (unsigned long)info.processSize, out->name);
-    if (GetFrontProcess(&front) == noErr) {
-        (void)SameProcess(psn, &front, &out->is_front);
-    }
-    status = now_ax_bind_process(psn, &out->context);
+        (unsigned long)row->psn.highLongOfPSN,
+        (unsigned long)row->psn.lowLongOfPSN,
+        row->creator, row->launch_date, row->location, row->process_size,
+        row->pname);
+    out->is_front = row->is_front;
+    status = now_ax_bind_process(&out->psn, &out->context);
     out->bind = bind_status(status);
     return 1;
+}
+
+/* One process, named rather than walked. A single-row answer is a single
+   moment by construction, so this is the one place the front may be
+   sampled for one process - and it is the roster's sample, not a fourth
+   private read. */
+static int bind_target(const ProcessSerialNumber *psn, NowObsTarget *out)
+{
+    NowProcRosterRow row;
+
+    if (!now_proc_roster_read(psn, &row)) {
+        memset(out, 0, sizeof(*out));
+        out->psn = *psn;
+        out->bind = kNowObsBindNoProcess;
+        return 0;
+    }
+    return bind_target_row(&row, out);
 }
 
 static void live_from(const NowObsTarget *target, NowObsLive *live)
@@ -156,26 +223,18 @@ void now_observe_walk_begin(NowObsWalk *walk)
 void now_observe_walk_aim_self(NowObsWalk *walk,
                                const ProcessSerialNumber *psn)
 {
-    ProcessInfoRec info;
-    Str31          name;
-    unsigned long  fingerprint = 0;
+    NowProcRosterRow row;
+    unsigned long    fingerprint = 0;
 
     if (walk == NULL || psn == NULL) {
         return;
     }
-    memset(&info, 0, sizeof(info));
-    info.processInfoLength = sizeof(info);
-    info.processName = name;
-    info.processAppSpec = NULL;
-    name[0] = 0;
-    if (GetProcessInformation((ProcessSerialNumber *)psn, &info) == noErr) {
+    if (now_proc_roster_read(psn, &row)) {
         fingerprint = now_obs_process_fingerprint(
             (unsigned long)psn->highLongOfPSN,
             (unsigned long)psn->lowLongOfPSN,
-            (unsigned long)info.processSignature,
-            (unsigned long)info.processLaunchDate,
-            (unsigned long)info.processLocation,
-            (unsigned long)info.processSize, name);
+            row.creator, row.launch_date, row.location, row.process_size,
+            row.pname);
     }
     /* NULL memory reader: nothing here reads memory. The window list is
        our own, from the Window Manager. */
@@ -188,35 +247,28 @@ void now_observe_walk_aim_self(NowObsWalk *walk,
 void now_observe_walk_aim(NowObsWalk *walk, const ProcessSerialNumber *psn,
                           const NowAxContext *context)
 {
-    ProcessInfoRec info;
-    Str31          name;
-    unsigned long  fingerprint = 0;
+    NowProcRosterRow row;
+    unsigned long    fingerprint = 0;
 
     if (walk == NULL || psn == NULL || context == NULL) {
         return;
     }
-    memset(&info, 0, sizeof(info));
-    info.processInfoLength = sizeof(info);
-    info.processName = name;
-    info.processAppSpec = NULL;
-    name[0] = 0;
     /* The SAME tuple bind_target computes, and it has to be: a reference
        minted against one fingerprint and re-proved against another is
        refused as a recycled process, which would make every scene
-       reference fail with the most alarming verdict this layer has. A
+       reference fail with the most alarming verdict this layer has. It
+       is the same tuple because it is now read from the same row. A
        process the Process Manager will not describe gets a zero
        fingerprint, and every reference for it will fail that check - so
        it is aimed with a seam it cannot mint through instead. */
-    if (GetProcessInformation(psn, &info) != noErr) {
+    if (!now_proc_roster_read(psn, &row)) {
         now_obs_walk_aim(walk, NULL, 0, 0, 0, 0, 0);
         return;
     }
     fingerprint = now_obs_process_fingerprint(
         (unsigned long)psn->highLongOfPSN, (unsigned long)psn->lowLongOfPSN,
-        (unsigned long)info.processSignature,
-        (unsigned long)info.processLaunchDate,
-        (unsigned long)info.processLocation,
-        (unsigned long)info.processSize, name);
+        row.creator, row.launch_date, row.location, row.process_size,
+        row.pname);
     now_obs_walk_aim(walk, &context->memory, context->window_list,
                      (unsigned long)psn->highLongOfPSN,
                      (unsigned long)psn->lowLongOfPSN, fingerprint,
@@ -276,11 +328,101 @@ static int window_is_ours(WindowRef window)
     return 0;
 }
 
+/* `detail` for one of OUR OWN windows, and for the control in it.
+ *
+ * THIS USED TO BE LEFT ZEROED, and the verdict said Ok over it. The
+ * foreign path fills `detail` from `now_ax_resolve_ref`, which reads the
+ * other process's ControlRecord; the self path has no foreign memory to
+ * read and simply did not fill it, so every consumer of a self reference
+ * was handed a control with an empty title, invisible, disabled, value 0
+ * and the rectangle {0,0,0,0} — beside `"resolved": true`.
+ *
+ * Two consequences, one of them silent for months:
+ *
+ * - The `handle` verb described every control of this application that
+ *   way. A confidently wrong answer, which is the defect class plan 018
+ *   exists to remove.
+ * - `ctlact` computes its press point from this rectangle, so the press
+ *   landed at 0,0. HARMLESS THERE, and that is why nobody noticed: the
+ *   act plane's patch answers for the control HANDLE the request names
+ *   and declines every other, so where the press landed decided nothing.
+ *   It stops being harmless the moment a caller needs the point itself —
+ *   which a drag does, and the drag lane hit it on 2026-08-07.
+ *
+ * GLOBAL COORDINATES, because that is what `detail.control` already
+ * means: `now_ax_read_control` adds the window's content origin to the
+ * local rect it reads (`axwalk.c`, "Local to global"). `GetControlBounds`
+ * answers in the owner window's LOCAL coordinates, so the same origin is
+ * added here. Two producers of one field must agree about its space, and
+ * the field's space was decided by whoever wrote first.
+ *
+ * Note this is deliberately NOT `scene_self.c`'s convention, which keeps
+ * a control's rect content-relative because IR v1 says a control's rect
+ * is content-relative. Those are two different fields with two different
+ * contracts, and the disagreement the drag lane found was between this
+ * one and its own foreign twin — not between the scene and the handle.
+ */
+static void fill_self_control_detail(ControlRef control, WindowRef owner,
+                                     NowAxControl *detail)
+{
+    Rect   box;
+    Rect   content;
+    Str255 title;
+    short  dh = 0;
+    short  dv = 0;
+
+    if (GetWindowBounds(owner, kWindowContentRgn, &content) == noErr) {
+        dh = content.left;
+        dv = content.top;
+    }
+    GetControlBounds(control, &box);
+    detail->address = (unsigned long)control;
+    detail->top = (short)(box.top + dv);
+    detail->left = (short)(box.left + dh);
+    detail->bottom = (short)(box.bottom + dv);
+    detail->right = (short)(box.right + dh);
+    detail->visible = IsControlVisible(control) ? 1 : 0;
+    detail->enabled = IsControlActive(control) ? 1 : 0;
+    detail->value = GetControlValue(control);
+    detail->min = GetControlMinimum(control);
+    detail->max = GetControlMaximum(control);
+    title[0] = 0;
+    GetControlTitle(control, title);
+    detail->title_len = title[0];
+    if (title[0] != 0) {
+        memcpy(detail->title, title + 1, title[0]);
+    }
+    detail->title[title[0]] = '\0';
+}
+
+static void fill_self_window_detail(WindowRef window, NowAxWindow *detail)
+{
+    Rect   box;
+    Str255 title;
+
+    if (GetWindowBounds(window, kWindowStructureRgn, &box) == noErr) {
+        detail->left = box.left;
+        detail->top = box.top;
+        detail->right = box.right;
+        detail->bottom = box.bottom;
+    }
+    detail->address = (unsigned long)window;
+    detail->visible = IsWindowVisible(window) ? 1 : 0;
+    /* The title travelled as an empty string too, for the same reason and
+       with the same `resolved: true` over it. */
+    title[0] = 0;
+    GetWTitle(window, title);
+    detail->title_len = title[0];
+    if (title[0] != 0) {
+        memcpy(detail->title, title + 1, title[0]);
+    }
+    detail->title[title[0]] = '\0';
+}
+
 static void resolve_self(NowObsKind kind, const NowObsEntry *entry,
                          NowObsHandle *out)
 {
     WindowRef window = (WindowRef)entry->identity.window_address;
-    Rect      box;
 
     if (kind == kNowObsKindElement) {
         ControlRef control = (ControlRef)entry->identity.control_handle;
@@ -296,6 +438,8 @@ static void resolve_self(NowObsKind kind, const NowObsEntry *entry,
         out->window = GetControlOwner(control);
         out->verdict = kNowObsOk;
         out->identity = entry->identity;
+        fill_self_control_detail(control, out->window, &out->detail.control);
+        fill_self_window_detail(out->window, &out->detail.window);
         return;
     }
 
@@ -307,14 +451,7 @@ static void resolve_self(NowObsKind kind, const NowObsEntry *entry,
     out->window = window;
     out->verdict = kNowObsOk;
     out->identity = entry->identity;
-    if (GetWindowBounds(window, kWindowStructureRgn, &box) == noErr) {
-        out->detail.window.left = box.left;
-        out->detail.window.top = box.top;
-        out->detail.window.right = box.right;
-        out->detail.window.bottom = box.bottom;
-    }
-    out->detail.window.address = (unsigned long)window;
-    out->detail.window.visible = IsWindowVisible(window) ? 1 : 0;
+    fill_self_window_detail(window, &out->detail.window);
 }
 
 static void resolve_kind(NowObsKind kind, const char *reference, long len,
@@ -773,9 +910,9 @@ static void walk_reply(const char *key, const char *scope, long id,
                        char *out, long cap,
                        const ProcessSerialNumber *want)
 {
-    ProcessSerialNumber psn = { 0, kNoProcess };
+    NowProcRosterIter   it;
+    NowProcRosterRow    proc;
     NowObsTarget        target;
-    ProcessSerialNumber front;
     long                used = 0;
     int                 count = 0;
     int                 first = 1;
@@ -784,6 +921,7 @@ static void walk_reply(const char *key, const char *scope, long id,
                                       && strcmp(scope, "front") == 0);
 
     now_observe_init();
+    arm_anchor_plane();
     if (!append(out, cap, &used,
                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
                 "\"output\":{\"%s\":{\"scope\":\"%s\",\"processes\":[",
@@ -791,11 +929,15 @@ static void walk_reply(const char *key, const char *scope, long id,
         fail(out, cap, id, "overflow", "observe header");
         return;
     }
-    if (front_only && GetFrontProcess(&front) != noErr) {
+    /* ONE front sample for the whole reply, taken here, before the first
+       row - so `scope: front` and every row's `front` field describe the
+       same instant. */
+    now_proc_roster_begin(&it);
+    if (front_only && !it.have_front) {
         fail(out, cap, id, "no-front", "no front process");
         return;
     }
-    while (GetNextProcess(&psn) == noErr) {
+    while (now_proc_roster_next(&it, &proc)) {
         long mark = used;
 
         if (count >= kObsMaxProcs || cap - used < kObsTailSlack) {
@@ -805,14 +947,14 @@ static void walk_reply(const char *key, const char *scope, long id,
         if (want != NULL) {
             Boolean same = false;
 
-            if (SameProcess(&psn, want, &same) != noErr || !same) {
+            if (SameProcess(&proc.psn, want, &same) != noErr || !same) {
                 continue;
             }
         }
-        if (!bind_target(&psn, &target)) {
-            continue;
+        if (front_only && !proc.is_front) {
+            continue;           /* decided from the one sample, not a new one */
         }
-        if (front_only && !target.is_front) {
+        if (!bind_target_row(&proc, &target)) {
             continue;
         }
         if (!append(out, cap, &used, "%s", first ? "" : ",")
@@ -913,7 +1055,8 @@ void now_observe_axsnap_command(const char *request_json, long id, char *out,
 
     (void)request_json;
     now_observe_init();
-    if (GetFrontProcess(&front) != noErr) {
+    arm_anchor_plane();
+    if (!now_proc_roster_front(&front)) {
         fail(out, cap, id, "no-front", "no front process");
         return;
     }
@@ -957,6 +1100,10 @@ void now_observe_handle_command(const char *request_json, long id, char *out,
     long         used = 0;
 
     now_observe_init();
+    /* Revalidation reads the same plane the walk that minted the
+       reference did. Without this, "is this reference still good?" could
+       answer no for the one reason that is not about the reference. */
+    arm_anchor_plane();
     reference[0] = '\0';
     if (request_json == NULL
         || !now_json_find_string(request_json, "ref", reference,

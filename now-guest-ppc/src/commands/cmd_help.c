@@ -62,6 +62,20 @@ static const char *const d_putstat[] = {
     NULL
 };
 
+static const char *const d_desktop[] = {
+    "  What this Mac's desktop is actually drawn from, asked",
+    "  of the Appearance Manager rather than read out of a",
+    "  resource. The `ppat` in the System file is a shipped",
+    "  default the desktop is never chosen from, so it says",
+    "  nothing about what is on the screen.",
+    "  Reports the theme, the pattern's name and its",
+    "  flattened bytes in hex, and - when a picture is set -",
+    "  its name and alignment. A picture is drawn OVER the",
+    "  pattern, so both are reported and `source` says which",
+    "  one a person is looking at.",
+    NULL
+};
+
 static const char *const d_wirestat[] = {
     "  How long this Mac takes to NOTICE a request, as two",
     "  histograms: the interval between wire service passes,",
@@ -190,6 +204,35 @@ static const char *const d_ctlact[] = {
     "  you name, so the application runs its real mouse-down handler.",
     "  Button parts are 10 and 11; a scroll bar's are 20 up, 21 down,",
     "  22 page-up, 23 page-down, and 129 is the indicator.",
+    "  Part 0 answers NOTHING: the press is still posted and the",
+    "  application's own tracking decides, which is how a tab switches",
+    "  and a list row selects.",
+    "  h and v are global screen coordinates and must be inside the",
+    "  control. Omit both to press its centre.",
+    NULL
+};
+static const char *const d_dragpress[] = {
+    "  Presses the mouse button on the element and LEAVES IT DOWN,",
+    "  handing the gesture to the resident's drag vehicle. Returns a",
+    "  session nonce that dragmove and dragrelease must name.",
+    "  The resident carries its own deadline and will release the",
+    "  button whether or not anyone asks - idle and cap set how long,",
+    "  in ticks, and it clamps both, so neither can switch it off.",
+    NULL
+};
+static const char *const d_dragmove[] = {
+    "  Publishes a new pointer position for a held drag. The resident's",
+    "  Time Manager task applies it; the application being dragged in is",
+    "  inside its own tracking loop and is not reading events at all.",
+    "  Also relays that the caller is still alive, which is what holds",
+    "  the resident's idle deadline open.",
+    NULL
+};
+static const char *const d_dragrelease[] = {
+    "  Asks the resident to release a held drag. It reports that it",
+    "  ASKED, never that it released: the resident performs it on its",
+    "  next tick through the same path its deadline uses, and that",
+    "  deadline may already have got there first. Read the ended row.",
     NULL
 };
 static const char *const d_ditemact[] = {
@@ -380,6 +423,28 @@ static const char *const d_mirror[] = {
     "  page are read-only views over the same guest-observed facts.",
     NULL
 };
+static const char *const d_cycle[] = {
+    "  Brings each application forward in turn, with the anchor plane",
+    "  armed, so it pumps its event loop once and the plane captures it.",
+    "  The application that was front is restored afterwards.",
+    "",
+    "  THIS DISTURBS THE MACHINE ON PURPOSE. Windows come forward and",
+    "  flash past. It is never automatic; run it once on a fresh boot,",
+    "  or when what the Mirror shows has gone stale.",
+    "",
+    "  Why it is needed: the plane captures a process only while THAT",
+    "  process is executing GetNextEvent, and on a Mac nobody has driven",
+    "  nothing else is ever scheduled inside an armed window. Processes",
+    "  it can reach without fronting them are woken invisibly first.",
+    "",
+    "  Faceless background processes have no window to bring forward and",
+    "  are reported as background-only rather than as failures. They are",
+    "  outside what this can reach.",
+    "",
+    "  Believe the counters, not the flashing: passes rising without",
+    "  scans rising means it fronted things and captured nothing.",
+    NULL
+};
 static const char *const d_axsnap[] = {
     "  Who is front, whether the reference layer can see it, and how",
     "  many references are live. No walk, so no minting - the one call",
@@ -509,6 +574,8 @@ const NowCommandDoc kNowCommandDocs[] = {
       "putstat", d_putstat },
     { "wirestat", 1, "how long this Mac takes to notice a request",
       "wirestat [reset | sleep N | wake on|off]", d_wirestat },
+    { "desktop", 1, "what this Mac's desktop is actually drawn from",
+      "desktop", d_desktop },
     { "mv", 0, "move or rename something in the shared files",
       "mv <path> <new path>", d_mv },
     { "trash", 0, "move something to the Trash",
@@ -552,7 +619,13 @@ const NowCommandDoc kNowCommandDocs[] = {
     { "textset", 1, "replace one text element's contents",
       "textset <element> <text>", d_textset },
     { "ctlact", 1, "act on one control",
-      "ctlact <element> <part>", d_ctlact },
+      "ctlact <element> <part> [h v]", d_ctlact },
+    { "dragpress", 1, "press and hold the mouse button on an element",
+      "dragpress <element> [idle] [cap]", d_dragpress },
+    { "dragmove", 1, "move a held drag to a point",
+      "dragmove <session> <h> <v>", d_dragmove },
+    { "dragrelease", 1, "ask the resident to release a held drag",
+      "dragrelease <session>", d_dragrelease },
     { "ditemact", 1, "select one Dialog Manager item",
       "ditemact <element> <item>", d_ditemact },
     { "menuact", 1, "perform one menu command",
@@ -584,6 +657,8 @@ const NowCommandDoc kNowCommandDocs[] = {
       "axsnap", d_axsnap },
     { "mirror", 1, "NOW Extension lifecycle and P1-P4 plane facts",
       "mirror", d_mirror },
+    { "cycle", 1, "bring each application forward once so the Mirror can "
+      "see it", "cycle", d_cycle },
     { "help", 1, "list commands (\"help <cmd>\" for one)",
       "help [command]", d_help },
     { "clear", 0, "clear the console scrollback",

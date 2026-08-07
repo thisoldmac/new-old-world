@@ -87,6 +87,16 @@ what is landed, what is not, what conflicts each unlanded branch would
 hit, whether main is in, what is running on the machine, and whether the
 gates are actually armed. Run it before saying any of that out loud.
 
+**And every line of it is a timestamp.** `idle` means *that worktree had
+no dirty files at the moment it was read* — an agent between two edits
+reads exactly like an agent that finished. An integration takes an hour;
+a lane can wake up inside it. So a plan built on a status is fine, and a
+**claim** built on one is only as old as the run: say when you took it,
+and re-derive before quoting a number to a person. The second of the two
+misreports above was true when the branch was read and false ten minutes
+later, and what made it a lie rather than a stale fact was the missing
+timestamp.
+
 ## The two cadences, and they are different
 
 **The triggers are numbers in [arc-triggers.conf](arc-triggers.conf), and
@@ -280,6 +290,12 @@ The tell, when reading a report: **does the product do something it could
 not do before?** If the answer is "we now understand why it doesn't",
 that is a finding, and the work is still open.
 
+This is one of seven things a brief owes a lane;
+[commissioning-a-lane.md](commissioning-a-lane.md) has the rest, and the
+observation that produced it — **the lanes that came back saying the
+coordinator was wrong were the most valuable ones**, which is a property
+of how they were asked rather than of who they were.
+
 ## Things that read as green and are not
 
 Each of these produced a false green here, and each is checked by
@@ -302,6 +318,59 @@ Each of these produced a false green here, and each is checked by
   whole script and closed stdin. **A pipeline that closes the pipe is a
   batch, not a client.**
 
+## Arming a gate into a moving fleet
+
+The instinct on finding a gate missing is to arm it now, and on
+2026-08-07 the case for urgency was as strong as it gets: the commit
+hooks had never fired in any worktree. It was still not the lane's to
+do, and the lane that built them said so — **arming is the coordinator's
+to sequence while twenty lanes are live.**
+
+The risk is not that a new gate is wrong. It is that it is **right and
+refuses correct in-flight work**, stranding it, for a reason its author
+cannot act on. Against that, one more hour without the gate is cheap.
+
+- **Name the branches it would newly refuse.** Not argue about it — run
+  it. Check out each live branch, stage its own last commit, run the
+  gate as this tree proposes it *and* as that branch carries it, and
+  report only the difference. Eleven branches, one run.
+- **Warn where the failure is informational; refuse only where a quiet
+  pass lets a real lie through.** That is a much smaller set than the
+  set of things the gate can detect.
+- **Put the refusal where the harm is, not where detection is
+  earliest.** An unbaked resident is ordinary sequencing on a branch and
+  a genuine hazard on `main`. Gating lane-to-lane merges would have made
+  thirteen branches merge each other's work harder to prevent a drift
+  that costs less.
+
+## Between the lanes: the machine
+
+The fan-out's state is half git and half hardware, and `tools/arc-status`
+reports both for that reason. The hardware half has its own rules, all
+of them paid for:
+
+- **A lane derives its own ports** (`tools/lane-ports`, from the
+  worktree path). Nobody assigns them. The alternative held a dozen
+  allocations in one session's head and failed three ways in a day.
+- **A result from an unidentified machine reads exactly like a passing
+  one.** Every guest here sees the host at `10.0.2.2`. Assert the build
+  under test before believing a row — including in a scratch driver you
+  intend to throw away, which is where two published findings were
+  measured and later withdrawn.
+- **Copy the evidence out before teardown.** `lane-ports reclaim`
+  deletes the run directory, screendumps included.
+- **Clean up by reporting, not deleting.** An idle run directory between
+  two boots looks exactly like an abandoned one. `gc` names them with
+  their size and whether a process still holds the disk, and removes
+  none of them; deleting somebody's mid-flight clone to reclaim disk
+  would be a previous mistake in a new currency.
+- **Leave the target clean, or declare it dirty.** A modal one sweep
+  pass left open was front in the next, so that row is **void, not
+  unstable** — and it contaminated every check after it.
+- **Taking a held resource is not yours to do.** A guard that refuses
+  because another session holds the machine has worked correctly. Wait;
+  do not set the override.
+
 ## Derived things are re-derived at the merge, never merged
 
 Coverage tables, counts, and any hand-maintained enumeration. Two lanes
@@ -309,6 +378,17 @@ each honestly re-derive a table, the merge keeps both, and the result is
 a lie neither author wrote. It has happened here at least three times —
 including one where a "named together" prose list became **two** lists,
 one naming `desktop`, the other `cycle`, neither naming both.
+
+**There is now a machine half, and it is not armed.**
+`tools/derived-doc-gate` reads a `derived-doc` block that each derived
+document carries next to its own commands, re-runs them, and refuses a
+merge commit whose derivations were not re-run —
+`tools/derived-doc-gate rederive` is the cure and writes what moved (or
+`unchanged`, with the sha) into the file. It sits behind
+`NOW_DERIVED_DOC_GATE=1` in both merge hooks; arming it is a change to
+every branch at once and waits for a quiet fleet and `.githooks` on
+`main`. Until then an integrator runs `rederive` by hand, which is the
+same command the gate would run.
 
 And check the shape after any conflicted merge: a keep-both once produced
 **six duplicate Python function definitions that still parsed**. Brace

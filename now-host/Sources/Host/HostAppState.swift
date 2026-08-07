@@ -15,14 +15,26 @@ final class HostAppState: ObservableObject {
     }()
     private let notifier = CaptureNotifier()
     private(set) lazy var files: FilesModuleModel = {
-        listener.announceReceivedFile = { [notifier] guest, url, bytes in
-            notifier.announce(fileFrom: guest, url: url, bytes: bytes)
-        }
-        return FilesModuleModel(
+        FilesModuleModel(
             listener: listener,
             defaults: defaults,
             artifactApprover: agentIntegration)
     }()
+
+    /// A file the guest sent landed here — say so outside the window.
+    ///
+    /// This used to be an assignment hook on the listener
+    /// (`announceReceivedFile`), set from the middle of `files`' lazy
+    /// initialiser, which meant the notification only existed once somebody
+    /// had touched the Files page and that exactly one thing could ever
+    /// hear it. It is an event now, and this is one subscriber among
+    /// however many want it.
+    private lazy var arrivals: HostEventSubscription = listener.events
+        .subscribe { [notifier] event in
+            guard case .fileReceived(_, let url, let bytes, let guest) = event
+            else { return }
+            notifier.announce(fileFrom: guest, url: url, bytes: bytes)
+        }
 
     /// The menu-bar "Screenshot Guest" command. Reports through the system
     /// notifier and, because that path is silent under an ad-hoc signature,
@@ -120,7 +132,126 @@ final class HostAppState: ObservableObject {
         }
         return source
     }()
-    private(set) lazy var mirrorWindow = NOWMirrorWindow(source: mirrorSource)
+    /// Where the Mirror is shown, and at what size. Persisted, so a
+    /// person finds it where they left it.
+    private(set) lazy var mirrorPresentation = MirrorPresentation(
+        defaults: defaults)
+    /// Whether it is running, which is a different question. See
+    /// `MirrorRunControl` for why they had to stop being one.
+    private(set) lazy var mirrorRun = MirrorRunControl(source: mirrorSource,
+                                                       defaults: defaults)
+    private(set) lazy var mirrorWindow = NOWMirrorWindow(
+        source: mirrorSource, presentation: mirrorPresentation)
+
+    /// **Show the Mirror on an already-running host, whoever asked.**
+    ///
+    /// The one implementation behind four faces: the Mirror page's own
+    /// button, the Window menu item, the `mirror_open` agent verb and
+    /// the guest's `host.show`. All of them end here, so none of them can
+    /// drift into being a second way to do it.
+    ///
+    /// It exists because until now there was no third face at all.
+    /// `--open-mirror` covers launch and a click covers a person at this
+    /// Mac; an agent on the socket, and a person sitting at the classic
+    /// Mac, had nothing — and the gap was closed in practice by
+    /// scripting macOS accessibility to click the button, on somebody's
+    /// actual desktop.
+    ///
+    /// **It resolves BOTH axes now, and the order matters.** Showing used
+    /// to imply starting because a window was the only container and its
+    /// `show()` called `source.start()`. With the two split, a `showmirror`
+    /// against a stopped Mirror would otherwise put a frozen picture in
+    /// front of somebody and refuse every act behind it — which is
+    /// `docs/open-issues.md`'s "a window over a stopped poll" arriving
+    /// through a new door. So: start first, then put it where it can be
+    /// seen — raise the detached window if that is where it lives,
+    /// otherwise select the module.
+    ///
+    /// Already showing is not an error. The asker wanted the Mirror in
+    /// front of them, and it is.
+    @discardableResult
+    func showMirror() -> HostSurfaceOutcome {
+        let name = connectedMachineName
+        let detached = mirrorPresentation.isDetached
+        let wasShowing = detached
+            ? mirrorWindow.isOpen
+            : selectedModuleID == "mirror"
+        let wasRunning = mirrorSource.running
+        guard wasRunning || Self.guestState(
+            from: listener.state, key: listener.activeKey).canCapture else {
+            /* Refused rather than shown-empty. A Mirror with no Mac
+               behind it publishes nothing, so a caller that opened one
+               would read an honest empty answer and have no way to tell
+               it from a quiet machine — the same trap `--open-mirror`
+               fell into before it learned to retry `start()`. */
+            return .refused(
+                code: "unavailable",
+                reason: "No Mac is connected, so there is nothing to "
+                    + "mirror yet.")
+        }
+        mirrorRun.start()
+        if detached {
+            mirrorWindow.show(title: "Mirror — \(name)")
+        } else {
+            selectedModuleID = "mirror"
+        }
+        /* **These sentences are read on the OTHER machine.** They cross
+           the wire in `host.shown` and the guest draws them verbatim in
+           its Mirror page's status line (`mirror_module.c:63-70`), so
+           they must describe an outcome a person at a classic Mac can
+           check, and must not name a host window that may not exist. */
+        let place = detached ? "in its own window" : "on the Mirror page"
+        return .showing(
+            wasAlreadyOpen: wasShowing && wasRunning,
+            detail: wasShowing && wasRunning
+                ? "The Mirror was already running; brought it to the front "
+                    + place + "."
+                : "The Mirror is running on \(name), \(place).")
+    }
+
+    /// Whether `--open-mirror` has been honoured yet this launch. A guest
+    /// that dials in, drops and redials must not be treated as a second
+    /// launch request.
+    private var didHonourMirrorLaunchRequest = false
+
+    /// **A Mac arrived. Does the Mirror care?**
+    ///
+    /// Two independent reasons it might, and they are checked in the
+    /// order of who asked most recently:
+    ///
+    /// 1. `--open-mirror` on argv, once per launch. It means *start*,
+    ///    and shows the Mirror wherever the person last left it — the
+    ///    headless sweep needs the poll and has no opinion about windows.
+    /// 2. A persisted "it was running when you last quit". Running is a
+    ///    state of the product rather than of one session, so it comes
+    ///    back by itself; every request the Mirror serves refuses while
+    ///    it is stopped, and a person who left it running would have to
+    ///    rediscover why before anything worked.
+    ///
+    /// Every later connection change comes through this same door, which
+    /// is what makes the retry inside `MirrorRunControl` a belt rather
+    /// than the only route: `start()` refuses while the listener has no
+    /// active key, and that is the ordinary order of events at launch.
+    private func mirrorFollowsTheConnection() {
+        if MirrorLaunchOptions.parse(ProcessInfo.processInfo.arguments)
+            .openAtLaunch, !didHonourMirrorLaunchRequest {
+            didHonourMirrorLaunchRequest = true
+            showMirror()
+            return
+        }
+        /* **Read from `defaults` rather than from `mirrorRun`.** Touching
+           the run control constructs `mirrorSource`, and this runs on
+           every connection — so asking it "were you running?" would make
+           every host with a Mac on the wire build the Mirror, which is
+           the same mistake as letting a metrics read construct the
+           measurer. The stored answer costs nothing and is the same
+           answer. */
+        guard MirrorRunControl.storedWantsRunning(defaults) else { return }
+        mirrorRun.resumeIfWanted()
+        if mirrorPresentation.isDetached, mirrorSource.running {
+            mirrorWindow.show(title: "Mirror — \(connectedMachineName)")
+        }
+    }
 
     /// What to put in the mirror window's title bar. A person may have
     /// several Macs connected, and a window showing one of them that does
@@ -147,13 +278,13 @@ final class HostAppState: ObservableObject {
     private(set) lazy var software = SoftwareModel(listener: listener)
     private(set) lazy var processes: ProcessesModel = {
         let model = ProcessesModel(listener: listener)
-        // "Screenshot App" shows the Screenshots page and asks for a
+        // "Screenshot App" shows the Screen page and asks for a
         // window-cropped capture of the process. The guest owns the timing
         // (front, let it repaint, crop, deliver — process.shot), so there
         // is no delay to fake here.
         model.onScreenshotApp = { [weak self] psnHigh, psnLow in
             guard let self else { return }
-            self.selectedModuleID = "screenshots"
+            self.selectedModuleID = "screen"
             self.screenshots.captureProcess(psnHigh: psnHigh, psnLow: psnLow)
         }
         return model
@@ -161,9 +292,8 @@ final class HostAppState: ObservableObject {
 
     private let defaults: UserDefaults
     private static let selectionKey = "selectedModuleID"
-    private var stateMirror: AnyCancellable?
-    private var rosterMirror: AnyCancellable?
-    private var knownGuests: Set<GuestKey> = []
+    /// The one subscription that re-points every guest-scoped model.
+    private var focusWatch: HostEventSubscription?
 
     /// Every model that shows one machine's state. Listed once so a new
     /// module cannot be wired into the connection and forgotten by the
@@ -223,46 +353,29 @@ final class HostAppState: ObservableObject {
         selectedModuleID = stored.flatMap(registry.resolvingRenames(id:))?.id
             ?? registry.modules.first?.id
             ?? ""
-        stateMirror = listener.$state.sink { [weak self] state in
+        _ = arrivals
+        focusWatch = listener.events.subscribe { [weak self] event in
             guard let self else { return }
-            let connection = Self.guestState(
-                from: state, key: self.listener.activeKey)
-            /* One assignment per model, from one place, in one turn. The
-               models decide for themselves what a switch means to them —
-               see GuestScopedState.swift — but they must all learn about it
-               at the same moment, or the window shows two machines at once
-               for a frame. */
-            for model in self.guestScopedModels {
-                model.connection = connection
-            }
-            // The console's completions came from THIS guest's `help`, and
-            // the next one may serve a different set — NOW-68K serves three
-            // commands where the Carbon guest serves fifteen. So they go
-            // with the connection rather than lingering as a list from a
-            // machine that is no longer there.
-            self.console.focus(on: connection)
-            if case .connected = state {} else {
-                self.console.forgetGuest()
-            }
-            self.captureSmokeIfRequested(state)
-            if case .connected = state {
-                self.mirrorWindow.openIfLaunchAsked(
-                    title: "Mirror — \(self.connectedMachineName)")
-            }
-        }
-        /* A guest leaving the roster is a different event to the active one
-           changing, and only the models whose cache dies with the
-           connection act on it. Diffed here rather than published as a
-           departure, because the roster is the thing that is true. */
-        rosterMirror = listener.$guests.sink { [weak self] guests in
-            guard let self else { return }
-            let now = Set(guests.map(\.key))
-            for gone in self.knownGuests.subtracting(now) {
+            switch event {
+            /* Both, because either can change what "the machine on screen"
+               means: the link going down with one Mac attached, and the
+               focus moving between two that are both up. They settle in
+               either order, so this reads the listener rather than the
+               event's payload. */
+            case .linkStateChanged, .focusChanged:
+                self.repointModels()
+            /* A guest leaving is a different event to the active one
+               changing, and only the models whose cache dies with the
+               connection act on it. It arrives named now; it used to be
+               DIFFED out of the roster here, which was a second thing that
+               had to agree with the listener about who had gone. */
+            case .guestDisconnected(let gone, _):
                 for model in self.guestScopedModels {
                     model.guestLeft(gone)
                 }
+            default:
+                break
             }
-            self.knownGuests = now
         }
         /* Bound at the end of init, once every stored property exists: the
            closure captures self, and the Mirror source it reads is made
@@ -270,6 +383,26 @@ final class HostAppState: ObservableObject {
            the Mirror — an agent asking what has been measured would then
            create the measurer and get an empty answer that reads exactly
            like a quiet machine. */
+        /* The guest's face on the same implementation. Bound here rather
+           than in the listener's own init for the reason the drivers
+           below are: the window layer is the app's, and a listener
+           running without one must refuse by name instead of pretending. */
+        listener.hostSurfaceOpener = { [weak self] surface in
+            guard let self else {
+                return .refused(code: "unavailable",
+                                reason: "This Mac is shutting down.")
+            }
+            switch surface {
+            case .mirror: return self.showMirror()
+            }
+        }
+        integration.bindMirrorOpener { [weak self] in
+            guard let self else {
+                return .refused(code: "unavailable",
+                                reason: "This Mac is shutting down.")
+            }
+            return self.showMirror()
+        }
         integration.bindMirrorDriver { [weak self] request in
             guard let self else {
                 return .init(unavailable: .init(
@@ -318,6 +451,43 @@ final class HostAppState: ObservableObject {
         }
         if settings.listenAtLaunch {
             startListening()
+        }
+    }
+
+    /// One assignment per model, from one place, in one turn. The models
+    /// decide for themselves what a switch means to them — see
+    /// GuestScopedState.swift — but they must all learn about it at the same
+    /// moment, or the window shows two machines at once for a frame.
+    private func repointModels() {
+        let state = listener.state
+        let connection = Self.guestState(from: state, key: listener.activeKey)
+        for model in guestScopedModels {
+            model.connection = connection
+        }
+        // The console's completions came from THIS guest's `help`, and the
+        // next one may serve a different set — NOW-68K serves three commands
+        // where the Carbon guest serves fifteen. So they go with the
+        // connection rather than lingering as a list from a machine that is
+        // no longer there.
+        console.focus(on: connection)
+        if case .connected = state {} else {
+            console.forgetGuest()
+        }
+        captureSmokeIfRequested(state)
+        /* Re-attached at the 019 integration, when this body moved out of
+           the event closure and into a method. Every connection change
+           comes through this door and this door only, which is what lets
+           `mirrorFollowsTheConnection` be asked repeatedly — see its own
+           comment: an open window is not a running poll, and the launch
+           request arrives before the listener has an active key.
+
+           It replaced `mirrorWindow.openIfLaunchAsked` at the round-3
+           integration. The window can no longer answer this question,
+           because with the Mirror embedded as a module there may be no
+           window: the two axes are RUNNING and WHERE, and only the app
+           knows both. */
+        if case .connected = state {
+            mirrorFollowsTheConnection()
         }
     }
 
