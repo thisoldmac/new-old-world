@@ -17,6 +17,23 @@ not have that verb, so it stops with "the agent refused the script verb"
 and leaves the machine up. Measured 2026-08-05; its `hello` lists 24
 tools and `script` is not among them.
 
+AND THAT REFUSAL IS NOT A SESSION'S DECISION - it is the only scope there
+is. The lab tool's message says the scope "excludes it… that is a scope
+decision, not a bug in this tool", which reads as though a differently
+configured session would fare better. None would. The scope is a static
+`worker.session` file BAKED into the image, byte-identical in both bases
+(read out of `now-mirror-stage.qcow2` and `os91-runner.qcow2` on
+2026-08-07, same 24 verbs, same `policyDigest` 328e2ef0…), stamped
+`"owner":"canonical"`. So the lab tool refuses for **every lane, every
+run, always**, and it is the tool an agent finds first because it is the
+one with the obvious name. A lane that trusts its final sentence -
+"nothing here can shut this guest down gracefully" - is left choosing
+between a power cut and abandoning a running VM. That sentence is FALSE
+about this rig, and the false half is the expensive half: `launch` IS in
+the baked scope, which is the whole reason route 2 below works, and
+route 1 does not touch the anchor at all. SCOPE_PREFLIGHT below prints
+that, so nobody has to take the corner on trust.
+
 HOW THIS ONE ASKS. Two routes, and the order matters.
 
   1. THE FINDER'S OWN Special > Shut Down, given `--wire <port>`. This is
@@ -62,13 +79,15 @@ down that somebody is using.
 Exit 0 means QEMU exited, which only happens because the guest asked for
 power off. Exit 1 means it did not, and the VM is left running and
 untouched: deciding to kill an emulator that would not shut down is the
-caller's business, not this file's.
+caller's business, not this file's - but see `--force`, which is that
+decision made in the open and with the shared-image guard in front of it.
 """
 import argparse
 import json
 import os
 import socket
 import struct
+import subprocess
 import sys
 import time
 
@@ -78,11 +97,38 @@ NOW = os.path.abspath(os.path.join(HERE, ".."))
 # The lab checkout owns the emulator and the anchor client; NOW owns the
 # artifacts. Normally NOW's parent - but not from a git worktree, which
 # sits several levels deeper and whose parent has no mcp-classic in it.
-LAB = os.environ.get("NOW_LAB_ROOT")
+def _walk_up_for_lab(start):
+    at = start
+    while at != "/":
+        if os.path.isdir(os.path.join(at, "mcp-classic")):
+            return at
+        at = os.path.dirname(at)
+    return None
+
+
+LAB = os.environ.get("NOW_LAB_ROOT") or _walk_up_for_lab(NOW)
 if not LAB:
-    LAB = NOW
-    while LAB != "/" and not os.path.isdir(os.path.join(LAB, "mcp-classic")):
-        LAB = os.path.dirname(LAB)
+    # WALKING UP IS NOT ENOUGH FROM EVERY WORKTREE. `git worktree add` may
+    # put a lane anywhere - a scratchpad under /private/tmp is normal for
+    # an agent - and from there the ancestors are /private/tmp and /, with
+    # no mcp-classic among them. The lane then gets a bare ModuleNotFound
+    # on the ONE tool that stops its VM cleanly, which is precisely the
+    # corner this file exists to remove. Git knows where the real checkout
+    # is even when the filesystem does not, so ask it.
+    try:
+        common = subprocess.run(
+            ["git", "-C", NOW, "rev-parse", "--path-format=absolute",
+             "--git-common-dir"],
+            capture_output=True, text=True, timeout=15)
+        if common.returncode == 0:
+            LAB = _walk_up_for_lab(os.path.dirname(common.stdout.strip()))
+    except (OSError, subprocess.SubprocessError):
+        LAB = None
+if not LAB:
+    sys.exit("cannot find the lab checkout (the one with mcp-classic/) from "
+             f"{NOW}. Set NOW_LAB_ROOT to it. This tool borrows the lab's "
+             "anchor client; without it the applet route is unavailable, "
+             "though tools/shared-image-guard.py still works.")
 sys.path.insert(0, os.path.join(LAB, "mcp-classic"))
 from timbottu_mcp_classic.harness import Harness, HarnessError  # noqa: E402
 
@@ -359,6 +405,141 @@ def quit_a_shut_down_machine(sock_path):
         s.close()
 
 
+# ---------------------------------------------------------------------
+# Which routes are open on THIS machine, said before anything is tried.
+# ---------------------------------------------------------------------
+
+def anchor_scope(port):
+    """The anchor's session scope as a set of verb names, or None.
+
+    None means the anchor did not answer - which is a different problem
+    from a narrow scope and must not be reported as one."""
+    try:
+        hello = Harness(host="127.0.0.1", port=port,
+                        expect_backing={"worker"}).request("hello", {})
+    except Exception:
+        return None
+    return {v for v in str(hello.get("tools", "")).replace(",", " ").split()}
+
+
+def routes(scope, wire, applet_staged):
+    """[(name, open?, sentence)] - the routes, in the order they are tried.
+
+    Written as data rather than as prose in a failure branch because the
+    reader needs it BEFORE the failure, and because a route list stated
+    twice is a route list that will disagree with itself."""
+    return [
+        ("Finder Special > Shut Down, over NOW's own wire",
+         wire is not None,
+         "the only route MEASURED to leave a clean volume. Needs --wire "
+         "and a guest with NOW's act plane; the anchor's scope does not "
+         "enter into it, because this route never asks the anchor."
+         if wire is not None else
+         "NOT ATTEMPTED: no --wire given. This is the clean-volume route "
+         "and it is being skipped. Pass --wire <port>."),
+        ("the staged NOW Shut Down applet, via the anchor's `launch`",
+         scope is None or "launch" in scope,
+         "starts a shutdown reliably; does not reliably FINISH one - "
+         "three images preserved after it were still marked mounted. A "
+         "fallback, not a plan."
+         if (scope is None or "launch" in scope) else
+         "REFUSED: `launch` is not in this anchor's scope. That is new - "
+         "the canonical baked scope has it - so this is not the "
+         "canonical anchor and the machine may be somebody else's."),
+        ("the lab's tools/shutdown-guest, via the anchor's `script`",
+         bool(scope and "script" in scope),
+         "available on this anchor, unusually."
+         if (scope and "script" in scope) else
+         "CLOSED, and closed on every machine in this rig: `script` is "
+         "absent from the canonical worker.session baked into both base "
+         "images. Not a per-session decision, and re-running it will not "
+         "help."),
+    ]
+
+
+def print_scope_preflight(scope, wire, applet):
+    print("routes to a clean shutdown on this machine:")
+    for name, is_open, why in routes(scope, wire, applet):
+        print(f"  [{'open' if is_open else 'shut'}] {name}")
+        print(f"         {why}")
+    if scope is None:
+        print("  (the anchor did not answer, so its scope is unknown - the "
+              "route list above assumes the canonical one)")
+
+
+def print_the_third_option(sock, wire_given):
+    """What to do when NO graceful route took, and what it costs.
+
+    THIS IS THE POINT OF THE FILE. The lab tool ends by saying nothing
+    can shut the guest down gracefully and stops, which leaves a reader
+    holding two bad options - power-cut a shared asset, or abandon a
+    running VM for the next lane to trip over - and no third. A lane took
+    the power cut on 2026-08-07 and reported it honestly, and that is the
+    most plausible mechanism yet found for the five dirty images this
+    project is carrying. A warning that names no action gets read,
+    believed, and correctly acted on by nobody."""
+    print("", file=sys.stderr)
+    print("NO GRACEFUL ROUTE TOOK. There are three things to do and only "
+          "one of them is free:", file=sys.stderr)
+    if not wire_given:
+        print("  1. RETRY WITH --wire. You did not pass one, so the only "
+              "route measured to leave a clean volume was never tried. "
+              "This is the first thing to do.", file=sys.stderr)
+    else:
+        print("  1. LOOK AT IT FIRST. tools/shot, or a screendump. A modal "
+              "on the desktop - Disk First Aid from a PREVIOUS dirty boot "
+              "is the common one - blocks every route here, and dismissing "
+              "it is cheaper than anything below.", file=sys.stderr)
+    print(f"  2. LEAVE IT UP and say so in your report, naming the QMP "
+          f"socket ({sock}) and your lane. A running VM somebody knows "
+          f"about costs a sentence; one nobody knows about cost a lane its "
+          f"run on 2026-08-06.", file=sys.stderr)
+    print(f"  3. POWER-CUT IT DELIBERATELY: re-run this with --force. That "
+          f"is a QMP quit, and its price is a volume marked mounted, so "
+          f"every clone of that image afterwards opens in Disk First Aid. "
+          f"--force asks tools/shared-image-guard.py first and REFUSES "
+          f"outright if this machine writes to a shared image, and it "
+          f"stamps the disk so a later bake cannot mistake it for clean.",
+          file=sys.stderr)
+    print("  What is NOT on the list: a bare QMP quit, and `kill` on "
+          "whatever lsof returned for the wire port - under user-mode "
+          "networking that is QEMU itself.", file=sys.stderr)
+
+
+def force_power_cut(sock_path, disk):
+    """The last resort, in the open. 0 if it happened, 1 if refused."""
+    sys.path.insert(0, HERE)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "shared_image_guard", os.path.join(HERE, "shared-image-guard.py"))
+    guard = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(guard)
+
+    v = guard.verdict(sock_path=sock_path)
+    for row in v["top"]:
+        print(f"  writable {row['kind']:8} {row['path']}", file=sys.stderr)
+    if not v["allowed"]:
+        print(f"--force REFUSED: {v['reason']}", file=sys.stderr)
+        return 1
+    print(f"--force allowed: {v['reason']}", file=sys.stderr)
+    quit_a_shut_down_machine(sock_path)
+    # STAMP THE IMAGE. The damage is invisible until something boots the
+    # image, and by then it is somebody else's afternoon. A sidecar beside
+    # the file is what `qemu-img check` could never give: it survives the
+    # process, and it is what a later bake or install can read.
+    for row in v["top"]:
+        try:
+            with open(row["path"] + ".power-cut", "w") as f:
+                json.dump({"powerCutAt": time.time(),
+                           "by": os.path.basename(__file__),
+                           "note": "volume is marked MOUNTED; this image "
+                                   "must not be preserved or installed - "
+                                   "check with tools/volclean.py"}, f)
+        except OSError:
+            pass
+    return 0
+
+
 def front_process(h):
     for p in h.request("observe", {}).get("processes", []):
         if p.get("front"):
@@ -409,6 +590,13 @@ def main():
                     help="the VM's disk image, watched for the writes that "
                          "outlast the worker; defaults to session.qcow2 "
                          "beside the qmp socket")
+    ap.add_argument("--force", action="store_true",
+                    help="if no graceful route takes, POWER-CUT the machine "
+                         "(QMP quit) rather than leave it running - but only "
+                         "after tools/shared-image-guard.py agrees, and the "
+                         "disk is stamped .power-cut afterwards. This is the "
+                         "third option a cornered lane needs; it is not the "
+                         "first one.")
     a = ap.parse_args()
 
     if not qmp_alive(a.sock):
@@ -416,6 +604,27 @@ def main():
               file=sys.stderr)
         return 1
 
+    # BEFORE ANYTHING IS TRIED. A refusal three minutes in reads as a
+    # defect in the machine; the same fact stated up front is a route
+    # list, and the reader can act on it.
+    print_scope_preflight(anchor_scope(a.port), a.wire, a.applet)
+
+    if _graceful(a) == 0:
+        return 0
+
+    # ONE ENDING, and it is never "you are on your own". Every graceful
+    # route failing used to fall out of the bottom of this function with a
+    # sentence about looking at a screendump, which is advice but not a
+    # decision - and the reader still had a running VM and no sanctioned
+    # way to stop it.
+    if a.force:
+        return force_power_cut(a.sock, a.disk)
+    print_the_third_option(a.sock, a.wire is not None)
+    return 1
+
+
+def _graceful(a):
+    """Every route that can leave the volume clean. 0 if the machine went."""
     # THE FINDER FIRST, when the caller can give us NOW's wire. Measured
     # 2026-08-06 and it is the only route that has produced a verifiably
     # clean volume: the machine powered off, QEMU exited on its own within
@@ -436,13 +645,21 @@ def main():
         print("  the Finder route did not take; falling back to the applet",
               file=sys.stderr)
 
-    h = Harness(host="127.0.0.1", port=a.port, expect_backing={"worker"})
+    # An anchor that will not answer is a CLOSED ROUTE, not a crash. It
+    # used to raise out of main with a HarnessError traceback, which is
+    # the least actionable ending this file has ever had.
+    try:
+        h = Harness(host="127.0.0.1", port=a.port, expect_backing={"worker"})
+        st = h.request("stat", {"path": a.applet})
+    except Exception as exc:
+        print(f"the anchor on port {a.port} did not answer ({exc}), so the "
+              f"applet route is closed too", file=sys.stderr)
+        return 1
 
     # Fail on a MISSING applet rather than on a launch that quietly did
     # nothing: "the file is not staged" and "the guest ignored us" are
     # different problems with different cures, and only one of them is
     # about this rig at all.
-    st = h.request("stat", {"path": a.applet})
     if not st.get("exists"):
         print(f"no shutdown applet at {a.applet} - stage it first "
               f"(NOW_SHUTDOWN_BIN=... tools/stage-ext.py, built by "
@@ -517,9 +734,8 @@ def main():
         time.sleep(2)
 
     print(f"guest still running {a.timeout}s after the applet was launched, "
-          f"and its worker is still answering - so it did not shut down. "
-          f"Left alone deliberately: look at a screendump before deciding "
-          f"to quit it.", file=sys.stderr)
+          f"and its worker is still answering - so it did not shut down.",
+          file=sys.stderr)
     return 1
 
 

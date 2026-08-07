@@ -390,14 +390,36 @@ def reclaim(lane: dict, *, power_cut: bool, dry_run: bool) -> int:
         if dry_run:
             print(f"  qmp {sock}: would shut down"); stopped += 1; continue
         anchor = str(lane["ports"]["anchor"])
-        print(f"  qmp {sock}: guest-clean shutdown (anchor {anchor})")
+        wire = str(lane["ports"]["wire"])
+        print(f"  qmp {sock}: guest-clean shutdown "
+              f"(anchor {anchor}, wire {wire})")
+        # --wire, AND IT IS NOT OPTIONAL HERE. Without it shutdown-guest.py
+        # skips the Finder route and goes straight to the applet - the one
+        # its own docstring says starts a shutdown without finishing it,
+        # and after which three preserved images were still marked
+        # mounted. This call omitted --wire until 2026-08-07, so every
+        # `reclaim` in this rig took the dirty route by construction while
+        # printing "guest-clean". The wire is derived from the same lane
+        # block as the anchor, so there was never anything to pass.
         rc = subprocess.run([sys.executable, os.path.join(here, "tools",
                                                           "shutdown-guest.py"),
-                             sock, "--port", anchor, "--timeout", "120"]).returncode
+                             sock, "--port", anchor, "--wire", wire,
+                             "--timeout", "120"]).returncode
         if rc != 0 and power_cut:
-            print(f"  qmp {sock}: clean shutdown failed; POWER CUT (QMP quit)")
-            print("    the volume will be dirty and the next boot of this"
-                  " image runs Disk First Aid")
+            # THROUGH THE GUARD, not around it. --power-cut is the owner's
+            # decision about their OWN lane's throwaway clone; it is not
+            # standing to power-cut a shared asset, and a lane booted with
+            # `launch --base` is writing to one.
+            print(f"  qmp {sock}: clean shutdown failed; --power-cut given")
+            guard = subprocess.run(
+                [sys.executable, os.path.join(here, "tools",
+                                              "shared-image-guard.py"), sock])
+            if guard.returncode != 0:
+                print("    REFUSED by the shared-image guard (above). The VM "
+                      "is left up.")
+                return 1
+            print("    POWER CUT (QMP quit): the volume will be dirty and "
+                  "the next boot of this image runs Disk First Aid")
             qmp_quit(sock)
         elif rc != 0:
             print(f"  qmp {sock}: clean shutdown FAILED and the VM is left up.")
