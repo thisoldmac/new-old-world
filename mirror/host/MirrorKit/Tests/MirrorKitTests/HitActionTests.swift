@@ -325,7 +325,14 @@ final class HitActionTests: XCTestCase {
         let front = scene.windows.first { $0.front }!
         // Hit the center of each widget's WindowChrome box (the same box the
         // renderer draws) and expect that widget back.
-        for widget in WindowChrome.Widget.allCases {
+        /* The zoom box is DELIBERATELY absent, and this test used to
+           force-unwrap it. IR v1 cannot say whether a window has one and
+           `kind` cannot stand in — Extensions Manager is kind 2 and has a zoom
+           box, Memory is kind 2 and has none — so the mirror stopped offering
+           an affordance it cannot prove. See WindowChrome.zoomBox. */
+        XCTAssertNil(WindowChrome.widgetBox(front, .zoom),
+                     "a zoom box the guest has not reported is not offered")
+        for widget in WindowChrome.Widget.allCases where widget != .zoom {
             let box = WindowChrome.widgetBox(front, widget)!
             let c = WindowChrome.center(box)
             guard case .widget(_, let kind, let ax, let ay) =

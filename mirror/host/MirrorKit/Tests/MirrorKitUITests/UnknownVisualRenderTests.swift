@@ -68,7 +68,7 @@ final class UnknownVisualRenderTests: XCTestCase {
         let png = try RenderShot.png(
             scene: scene([unknownWindow(rect: r, dst: [20, 40, 360, 240])]))
 
-        let x0 = r.l + 1 + 20 + 40          // well inside the dst rect
+        let x0 = r.l + 20 + 40          // well inside the dst rect
         let y0 = r.t + Int(Platinum.contentTop) + 40 + 40
         // Snap onto the device lattice the fill is anchored to.
         let ax = x0 - (x0 % 2), ay = y0 - (y0 % 2)
@@ -123,7 +123,7 @@ final class UnknownVisualRenderTests: XCTestCase {
         let r = Rect(l: 100, t: 100, r: 500, b: 400)
         let png = try RenderShot.png(
             scene: scene([unknownWindow(rect: r, dst: [20, 40, 52, 72])]))
-        let x0 = r.l + 1 + 20 + 8
+        let x0 = r.l + 20 + 8
         let y0 = r.t + Int(Platinum.contentTop) + 40 + 8
         let ax = x0 - (x0 % 2), ay = y0 - (y0 % 2)
 

@@ -215,7 +215,7 @@ final class PlatinumTabTests: XCTestCase {
     // MARK: - Pixels
 
     /// Where the guest's content lands in a render, given the window rect
-    /// below: `frame.l + 1` and `frame.t + Platinum.contentTop`.
+    /// below: `frame.l` and `frame.t + Platinum.contentTop`.
     ///
     /// Chosen so the rendered content sits at the same screen coordinates the
     /// guest's own content did in the sweep-A screendump — world (0,0) at
