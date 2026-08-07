@@ -123,6 +123,8 @@ Measured on `now-mirror-stage.qcow2`, 2026-08-06:
 | Patterns (`ppat` / `PAT `) | 3 + 5 |
 | Pictures (`PICT`) | 42, carried unconverted |
 | Per-app icons by `(creator, type)` | **914**, 185 creators, from 186 bundles |
+| Font strikes (`NFNT` sheets + metrics) | 9 — Chicago 12, Geneva 9/9-italic/10/12/14/18/20/24 |
+| TrueType faces (`sfnt`, carried verbatim) | 3 — Chicago, Charcoal, Geneva |
 
 The app-icon number is where mounting pays. Over the wire each
 application's fork was a separate pull; here every app on the volume is
@@ -160,6 +162,31 @@ document icon the Finder shows for the theme file itself. The Appearance
 Manager draws Platinum chrome procedurally, and the host renderer must
 keep drawing it from the ported specification;
 [mirror-assets.md](mirror-assets.md) needed no correction.
+
+**Tabs were asked about separately, and get the same answer.** The
+2026-08-07 fidelity sweep found the Appearance and Energy Saver panels
+rendering with no tab edges in both passes, and Appearance also losing
+its "Themes"/"Appearance" tab labels — so plan 018's slice 5 re-opened
+the census specifically to look for tab art. There is none: no `PICT`
+in the file is a tab or a tab edge, and the only bitmaps are the fifteen
+listed above. What the file carries for tabs is `tvar`/`tthm`/`scen`
+and the accent `clut`s — **parameters**. `DrawThemeTab` /
+`DrawThemeTabPane` draw them at run time from those, exactly as
+`DrawThemeWindowFrame` draws the title bar.
+
+So the missing tab edges are a **renderer** gap, not an extraction gap,
+and there is nothing here for the extractor to grow. They belong to
+[plan 016](plans/2026-08-06-016-feat-platinum-from-the-source-plan.md)'s
+Appearance-answers route — ask a running `AppearanceLib` for the
+metrics — plus a host-side tab drawing routine. Recorded here rather
+than left in a session note because the next person to see a missing
+tab edge will come looking in the extractor, which is where the answer
+is not.
+
+(The blank theme *swatches* in the Appearance panel are the one part
+that could have been art: they are the fourteen 177×125 `PICT`s above.
+The pack carries `PICT` unconverted because macOS has no QuickDraw
+picture decoder — a separate, pre-existing decision, not this gap.)
 
 What the file *does* contain that is worth having is **specification,
 not art**: the 21 accent ramps are the exact eight-step colour tables the
@@ -271,6 +298,45 @@ selected list row**. The new render test carries its own scene for that
 reason. No guest screendump has a selected row either, so this colour is
 **measured from the source, not metal-verified** — a machine has not yet
 been watched drawing it.
+
+## The fonts — and the one this image cannot give
+
+Added 2026-08-07. Until then **the offline route extracted no fonts at
+all**, which quietly broke the recovery procedure this page and
+[asset-pack.md](asset-pack.md) both name: "run the extractor" rebuilt a
+pack whose `fonts/` directory was empty, and `FontBook` — which asks for
+`chicago-12` and `geneva-9/10/12` by name — answered nil for all of them
+and fell through to a fallback face with different metrics. The pack in
+the store had its strikes because the *wire* route put them there.
+
+The strikes are **not in the System file**. Its four `NFNT`s are a
+Geneva/Monaco rump; the real ones are in `System Folder:Fonts:`, each
+suitcase a file with an empty data fork and everything in its resource
+fork. The parser is the live route's own `fonts.py`
+(`parse_fond` → association table → `parse_nfnt` → `render_strike`), so
+the sheets cannot disagree between routes — and they demonstrably do
+not: **all eight sheets the store's pack already carried came out of the
+offline route byte-identical**, PNG and metrics JSON alike. The offline
+run also produces a ninth, `geneva-9-italic` (`NFNT` 769), which the
+wire pack was missing.
+
+**Charcoal — the Mac OS 8/9 system font — has no strike to extract, and
+that is a fact about the image rather than a gap in the tool.** Its
+suitcase holds `FOND` 2002, one `sfnt`, `vers`, `ftag` — and the `FOND`
+association table has exactly one row, `(size 0, style 0, id 9719)`,
+size 0 meaning *scalable*. There is no `NFNT` anywhere on the volume for
+it, the System file included, and its `sfnt` carries no embedded bitmap
+tables either (no `bdat`/`bloc`, no `EBDT`/`EBLC` — the table list is
+`OS/2 VDMX bsln cmap cvt fdsc feat fmtx fpgm glyf hdmx head hhea hmtx
+just loca maxp mort name post prep prop umif`). Mac OS rasterises
+Charcoal from TrueType at run time, with `hdmx`/`VDMX` supplying the
+device metrics. So the renderer substituting Chicago is not a missing
+extraction; closing it means rasterising the TTF, which is a different
+job with a different fidelity claim.
+
+The three `sfnt`s are carried out verbatim as `fonts/ttf/<face>.ttf` (an
+`sfnt` resource *is* the TrueType file image), which is where a Charcoal
+rasteriser would start. Nothing reads them today.
 
 ## The honest split for a host-side asset pack
 

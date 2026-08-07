@@ -1414,22 +1414,17 @@ public struct SceneRenderer {
         guard frame.width > 1, frame.height > 1 else { return }
         var clipped = ctx
         clipped.clip(to: Path(frame))
-        clipped.fill(Path(frame), with: .color(Platinum.g1))
-        var x = frame.minX - frame.height
-        while x < frame.maxX {
-            var hatch = Path()
-            hatch.move(to: CGPoint(x: x, y: frame.maxY))
-            hatch.addLine(to: CGPoint(x: x + frame.height,
-                                      y: frame.minY))
-            clipped.stroke(hatch, with: .color(Platinum.g2), lineWidth: 1)
-            x += 6
-        }
-        clipped.stroke(Path(frame), with: .color(Platinum.g3),
-                       style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
-        guard frame.width >= 60, frame.height >= 14 else { return }
+        /* The look lives in UnknownVisual and nowhere else — see its
+           header for why it is quiet and how the pick was made. This site
+           and DisplayReplay's used to hold two identical copies of the
+           fill, free to drift apart with nothing to notice. */
+        UnknownVisual.drawGround(in: clipped, frame: frame)
+        let ascent = CGFloat(FontBook.small?.ascent ?? 8)
+        guard let at = UnknownVisual.captionOrigin(in: frame,
+                                                   ascent: ascent) else { return }
         let caption = label.isEmpty ? "Visual unavailable" : label
-        appText(caption, clipped, x: frame.minX + 4,
-                baselineY: frame.midY + 4, color: Platinum.g4, small: true)
+        appText(caption, clipped, x: at.x, baselineY: at.y,
+                color: UnknownVisual.caption, small: true)
     }
 
     private func drawButton(_ ctx: GraphicsContext, _ ctl: MirrorKit.Scene.Control,
