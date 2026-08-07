@@ -998,6 +998,81 @@ static void test_unproven_controls_are_unknown_and_unactionable(void)
     check_absent(out, "\"action\":\"scroll\"");
 }
 
+/* An unclassified control says WHY nobody could classify it.
+ *
+ * Measured on the emulator, 2026-08-07, OS 9.1 with the resident active:
+ * of the Appearance control panel's 73 controls, 62 came back
+ * "Unsupported custom control" (the resident asked the Control Manager
+ * for kControlKindTag and it declined), 5 "Semantic classification
+ * unavailable", 4 were never reached by the batch drain at all, and 2
+ * classified as list boxes. Before this, all 71 of the first three
+ * groups reached the host as an identical bare `unknown` - so a refusal
+ * by the machine, a miss by the drain and a question never asked were
+ * indistinguishable, and the guest's own diagnosis of its own gap was
+ * computed and then dropped by the encoder.
+ *
+ * Two things are pinned, and the second is the one that matters. The
+ * reason is EMITTED beside an unknown kind. And it never promotes that
+ * kind: `knowledge` stays "unknown" and no `action` appears, because a
+ * control we can now describe the failure of is still a control nobody
+ * has identified. */
+static void test_an_unknown_kind_carries_the_reason_it_is_unknown(void)
+{
+    NowScene s;
+    char out[8192];
+    int p;
+
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    p = now_scene_add_process(&s, 0, 9, "Appearance", 0x61706370UL, 1,
+                              kNowSceneAnchorOk, 0);
+    (void)now_scene_add_window(&s, p, "Appearance", 30, 40, 200, 400, 1);
+
+    /* 0 refused by the Control Manager, 1 refused for another reason,
+       2 never reached by the drain, 3 refused AND later identified. */
+    (void)now_scene_add_control(&s, 0, "", 85, 70, 101, 152, 1, 1, 0, 0, 1);
+    (void)now_scene_add_control(&s, 0, "", 105, 70, 121, 152, 1, 1, 0, 0, 1);
+    (void)now_scene_add_control(&s, 0, "", 125, 70, 141, 152, 1, 1, 0, 0, 1);
+    (void)now_scene_add_control(&s, 0, "Set Desktop", 145, 70, 161, 152,
+                                1, 1, 0, 0, 1);
+    now_scene_set_control_definition(&s, 0, 0, 1);   /* System */
+    now_scene_set_control_definition(&s, 0, 1, 1);
+    now_scene_set_control_definition(&s, 0, 2, 1);
+    now_scene_set_control_semantic_value(&s, 0, 0,
+                                         "Unsupported custom control");
+    now_scene_set_control_semantic_value(&s, 0, 1,
+                                         "Semantic classification "
+                                         "unavailable");
+    /* Index 2 gets nothing at all: the drain never reached it, and that
+       is a THIRD state, not a spelling of either refusal. It must stay
+       distinguishable, so no reason key may be invented for it. */
+    now_scene_set_control_semantic_value(&s, 0, 3,
+                                         "Unsupported custom control");
+    now_scene_set_control_role(&s, 0, 3, "button");  /* ...then identified */
+
+    check(now_scene_encode(&s, out, sizeof out, NULL) == kNowSceneEncodeOk,
+          "the panel encodes");
+
+    check_present(out, "\"knowledge\":\"unknown\",\"definition\":\"system\","
+                       "\"value\":\"Unsupported custom control\"");
+    check_present(out, "\"knowledge\":\"unknown\",\"definition\":\"system\","
+                       "\"value\":\"Semantic classification unavailable\"");
+    /* The never-asked control keeps its definition and gains no reason -
+       an absent key, not an empty string, per the absent-key rule. */
+    check_present(out, "\"knowledge\":\"unknown\",\"definition\":\"system\","
+                       "\"provenance\"");
+
+    /* THE CLAIM THAT MUST NOT SLIP. A reason is not a kind: nothing here
+       may become known, and nothing here may become actionable. */
+    check_absent(out, "\"knowledge\":\"unknown\",\"kind\"");
+    check(strstr(out, "\"knowledge\":\"unknown\",\"definition\":\"system\","
+                      "\"action\"") == NULL,
+          "a reason for an unknown kind never produces an action");
+
+    /* The identified control took the role path instead, so its reason
+       rides beside a real kind exactly as it did before. */
+    check_present(out, "\"knowledge\":\"known\",\"kind\":\"pushButton\"");
+}
+
 /* `definition` says WHERE a control's definition function came from, and
  * the rule it has to keep is that it never grows into a kind.
  *
@@ -1229,6 +1304,7 @@ int main(void)
     test_coverage_and_incarnation_reach_the_wire();
     test_proven_control_roles_keep_their_semantics();
     test_unproven_controls_are_unknown_and_unactionable();
+    test_an_unknown_kind_carries_the_reason_it_is_unknown();
     test_definition_is_not_a_kind();
     test_dialog_items_carry_v2_semantics();
     test_a_control_without_a_reference_still_carries_the_key();
