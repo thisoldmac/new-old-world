@@ -30,63 +30,6 @@ struct MirrorCard<Content: View>: View {
     }
 }
 
-/// **What the lane is doing, and where the last acts spent their time.**
-///
-/// The 2026-08-04 PowerBook drive could not tell an act that was
-/// working slowly from one queued behind an act that was going to
-/// time out. Both look like a click that did nothing. The four clocks
-/// answer it, so they belong on screen and not only in a log file
-/// nobody opens mid-drive.
-struct MirrorActsCard: View {
-    @ObservedObject var timeline: MirrorActTimeline
-
-    var body: some View {
-        MirrorCard {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Acts").font(.headline)
-                Spacer()
-                Text(MirrorLaneDepth.sentence(timeline.depth))
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(timeline.depth > 1 ? .primary : .secondary)
-            }
-            Text("One act reaches the Mac at a time, and it holds the lane "
-                 + "until the Mac confirms it or it times out. A gesture "
-                 + "that waited is not a slow Mac.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if timeline.records.isEmpty {
-                Text("No acts yet this session.")
-                    .font(.callout).foregroundStyle(.secondary)
-            } else {
-                ForEach(Array(timeline.records.reversed().prefix(8).enumerated()),
-                        id: \.offset) { _, clocks in
-                    Divider()
-                    actRow(clocks)
-                }
-            }
-        }
-    }
-
-    private func actRow(_ clocks: MirrorActClocks) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(clocks.label.isEmpty ? clocks.operationID : clocks.label)
-                    .font(.callout)
-                    .lineLimit(1)
-                Spacer()
-                Text(clocks.outcome.rawValue)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Text(clocks.narrative)
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
-        }
-    }
-}
-
 /// How many acts the lane is holding, in a sentence. Pure and shared
 /// because the drawer's header and the card's corner say the same thing
 /// and a second phrasing is a second place to be wrong.
@@ -203,29 +146,29 @@ struct MirrorLifecycleCard: View {
     }
 }
 
-/// **The planes: a state to read and a switch to set, in one row.**
+/// **The planes: a state to read and a switch to set, in ONE row.**
 ///
-/// `showsPolicy` is the one thing that varies, and it exists because the
-/// two halves can legitimately live in different places: the plane's
-/// STATE is a diagnostic a person reads while something is wrong, and the
-/// host's policy over it is a setting a person changes once per machine.
-/// Drawn together they explain each other — "off, because you turned it
-/// off" is one row rather than a readout in a drawer and a switch in a
-/// sheet that a person has to correlate.
+/// The two halves could legitimately live apart — a plane's STATE is a
+/// diagnostic a person reads while something is wrong, and the host's
+/// policy over it is a setting a person changes once per machine — and a
+/// draft of this module put the switches in a settings sheet and left the
+/// states here. That draft was rejected, and the reason generalises:
+/// separated, "on, and the Mac is not sending it" becomes a correlation a
+/// person has to perform across two surfaces. Together it is one row that
+/// explains itself.
+///
+/// It is also why this module has **no settings sheet at all**. Plane
+/// policy is the only thing in the Mirror that a person sets rather than
+/// watches, and it is here.
 struct MirrorPlanesCard: View {
     @ObservedObject var model: MirrorControlModel
-    /// Draw the host-policy toggles, or only the states.
-    var showsPolicy: Bool = true
 
     var body: some View {
         MirrorCard {
             Text("Planes").font(.headline)
-            Text(showsPolicy
-                 ? "Structure is required while the Mirror is running. The other "
+            Text("Structure is required while the Mirror is running. The other "
                  + "planes are independent host policy switches; turning one "
-                 + "off cannot change another owner's claim."
-                 : "What each plane is doing right now. The switches that "
-                 + "decide what this Mac asks for are in Mirror Settings.")
+                 + "off cannot change another owner's claim.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -245,10 +188,7 @@ struct MirrorPlanesCard: View {
         let state = model.presentation(for: plane)
         return VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline) {
-                if !showsPolicy {
-                    Text(plane.id == .structure
-                         ? "Structure (required)" : plane.id.title)
-                } else if plane.id == .structure {
+                if plane.id == .structure {
                     Toggle(isOn: .constant(true)) {
                         Text("Structure (required)")
                     }

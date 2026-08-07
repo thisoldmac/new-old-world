@@ -85,16 +85,39 @@ final class MirrorPresentation: ObservableObject {
         didSet { defaults.set(inspectorShown, forKey: Self.inspectorKey) }
     }
 
+    /// The event drawer under the picture. **Closed by default, for the
+    /// same reason the inspector is** — and the pair of defaults is the
+    /// decision: with both closed this module is exactly the toolbar and
+    /// the Macintosh that was already accepted, so the drawer can only
+    /// ever be something a person opened.
+    ///
+    /// It is a drawer rather than a second trailing column because the
+    /// events are a TABLE — glyph, label, duration, outcome — and a
+    /// 260-point column cannot hold one without truncating the label,
+    /// which is the one part a person is reading. The diagnostics beside
+    /// it are labelled facts and are perfectly happy narrow. Each shape
+    /// gets the container it fits.
+    @Published var eventsShown: Bool {
+        didSet { defaults.set(eventsShown, forKey: Self.eventsKey) }
+    }
+
+    /// Which kinds the drawer is listing. Not persisted: it is a lens on
+    /// a session's own history, and a stored "everything" would greet the
+    /// next launch with a wall of poll cycles nobody asked for.
+    @Published var eventFilter = MirrorEventFilter()
+
     private let defaults: UserDefaults
     private static let detachedKey = "mirrorDetached"
     private static let zoomKey = "mirrorZoom"
     private static let inspectorKey = "mirrorInspectorShown"
+    private static let eventsKey = "mirrorEventsShown"
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         isDetached = defaults.bool(forKey: Self.detachedKey)
         zoom = Self.sanitised(defaults.string(forKey: Self.zoomKey))
         inspectorShown = defaults.bool(forKey: Self.inspectorKey)
+        eventsShown = defaults.bool(forKey: Self.eventsKey)
     }
 
     /// A stored zoom made whole. Pure and static so the rule — and in

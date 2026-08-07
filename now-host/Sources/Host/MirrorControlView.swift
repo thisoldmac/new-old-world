@@ -7,10 +7,17 @@ import SwiftUI
 /// that made the first embedded version read as a dump. **Start/Stop and
 /// Detach are actions**: frequent, one click, always visible. **Zoom is a
 /// view setting**: adjusted while looking, so it sits here too but as a
-/// picker rather than a button. Everything else — the planes, the
-/// resident's lifecycle, the act and cycle clocks — is diagnostics, and
-/// diagnostics go in the inspector behind a toggle, because a person
-/// driving a Macintosh is not reading them.
+/// picker rather than a button. Everything else lives behind one of the
+/// two drawers, both closed by default: the acts under the picture, where
+/// a table has the width to be one, and the planes and the resident's
+/// lifecycle in the trailing column, where labelled facts belong. A
+/// person driving a Macintosh is reading neither.
+///
+/// **The two drawers are opened differently and that is deliberate.** The
+/// inspector has no handle of its own, so it gets the toolbar toggle; the
+/// event drawer draws its own header strip whether it is open or shut, so
+/// a second control here would be one affordance too many. A drawer with
+/// a visible handle does not also need a button somewhere else.
 struct MirrorToolbarView: View {
     @ObservedObject var model: MirrorControlModel
     @ObservedObject var run: MirrorRunControl
@@ -62,8 +69,9 @@ struct MirrorToolbarView: View {
                 Image(systemName: "sidebar.trailing")
             }
             .toggleStyle(.button)
-            .help("Show the planes, the resident's lifecycle and the act "
-                  + "clocks.")
+            .help("Show the planes, the resident's lifecycle and what the "
+                  + "last scene reported. The acts are the Events drawer "
+                  + "under the picture.")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -103,7 +111,7 @@ struct MirrorToolbarView: View {
     }
 }
 
-/// **The Mirror's inspector: what a person looks UP, beside the picture.**
+/// **The Mirror's inspector: labelled FACTS, beside the picture.**
 ///
 /// Everything here was a card stacked under the Mirror in the first
 /// embedded version, which is what made it read as two things piled on
@@ -111,14 +119,33 @@ struct MirrorToolbarView: View {
 /// driving; all of it is wanted when something is wrong. So it is a
 /// trailing column behind a toggle, closed by default.
 ///
-/// The host's policy over the four named planes lives here too. The guest
-/// Workshop reports these same resident facts read-only; it never becomes
-/// a second policy authority.
+/// **The acts left.** They are a time-ordered stream and a stream is a
+/// table — glyph, label, duration, outcome — which a 260-point column
+/// cannot hold without truncating the label, the one part a person is
+/// actually reading. They are the event drawer under the picture now
+/// (`MirrorEventStreamView`). What stayed is what this shape fits: named
+/// values with their names beside them.
+///
+/// The cycles stayed even though they are also measurements, and the
+/// reason is not sentiment. The drawer lists cycles in TIME order; this
+/// card lists **the latest of each walk kind**, which is the only
+/// like-for-like comparison the data supports (rule 2 of
+/// `docs/mirror-measurement-method.md`). Two different questions about
+/// one record.
+///
+/// **The plane switches stayed too, and that is the deliberate half.** A
+/// plane's state is a diagnostic and the host's policy over it is a
+/// setting, so they could have been split — a sheet for the switches, a
+/// readout here. They are one row instead, because separated they make
+/// "on, and the Mac is not sending it" a correlation a person has to
+/// perform themselves, which is the same defect as every other one this
+/// arc has removed. The guest Workshop reports these same resident facts
+/// read-only; it never becomes a second policy authority.
 struct MirrorControlView: View {
     @ObservedObject var model: MirrorControlModel
     @ObservedObject var run: MirrorRunControl
     @ObservedObject var presentation: MirrorPresentation
-    @ObservedObject var timeline: MirrorActTimeline
+    @ObservedObject var source: NOWMirrorSource
     @ObservedObject var cycles: MirrorCycleTimeline
 
     var body: some View {
@@ -127,10 +154,10 @@ struct MirrorControlView: View {
             Divider()
             MirrorScrollBox {
                 VStack(alignment: .leading, spacing: 14) {
-                    MirrorActsCard(timeline: timeline)
-                    MirrorCyclesCard(cycles: cycles)
                     MirrorLifecycleCard(model: model)
-                    MirrorPlanesCard(model: model, showsPolicy: true)
+                    MirrorPlanesCard(model: model)
+                    MirrorSceneFactsCard(source: source)
+                    MirrorCyclesCard(cycles: cycles)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12)

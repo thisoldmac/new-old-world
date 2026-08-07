@@ -43,13 +43,25 @@ final class MirrorModuleLayoutRenderTests: XCTestCase {
         ("wide", CGSize(width: 1400, height: 900)),
     ]
 
-    /// Round two. B is the arrangement Michelle accepted and is rendered
-    /// again as the control — with content in it this time, which is the
-    /// comparison round one could not make.
-    private static let candidates = ["B-accepted-inspector-open",
-                                     "D-disclosure-sidebar",
-                                     "E-bottom-event-drawer",
-                                     "F-popup-panels-no-sheet"]
+    /// **Round three renders the SHIPPING module, not mocks.**
+    ///
+    /// Rounds one and two put candidates in front of a person and one was
+    /// chosen — a full-width event drawer under the picture, labelled
+    /// facts in the trailing column, both closed by default. So there is
+    /// nothing left to compare: what wants looking at now is the real
+    /// `MirrorModuleView` in each of the states a person can put it in.
+    ///
+    /// The resting state comes FIRST on purpose. Both drawers shut is
+    /// what the module looks like on launch, and it is deliberately the
+    /// arrangement that was already accepted — so if the drawers turn out
+    /// to be wrong, closing them is the whole of the retreat.
+    private static let states: [(String, Bool, Bool)] = [
+        // label, events open, inspector open
+        ("closed", false, false),
+        ("events", true, false),
+        ("inspector", false, true),
+        ("both", true, true),
+    ]
 
     func testTheMirrorModuleRendersAtBothPaneWidths() throws {
         let outDir = URL(fileURLWithPath:
@@ -59,281 +71,24 @@ final class MirrorModuleLayoutRenderTests: XCTestCase {
             at: outDir, withIntermediateDirectories: true)
 
         for (label, size) in Self.sizes {
-            for candidate in Self.candidates {
+            for (state, events, inspector) in Self.states {
                 let rig = try makeRig()
-                    let view = AnyView(
-                    arrangement(candidate, rig)
+                rig.presentation.eventsShown = events
+                rig.presentation.inspectorShown = inspector
+                let view = AnyView(
+                    MirrorModuleView(model: rig.model, source: rig.source,
+                                     run: rig.run,
+                                     presentation: rig.presentation,
+                                     window: rig.window,
+                                     connectedMachineName: "Power Mac G4",
+                                     timeline: rig.source.actTimeline,
+                                     cycles: rig.source.cycleTimeline)
                         .frame(width: size.width, height: size.height))
-                let image = try render(view, candidate: candidate,
-                                       label: label)
+                let image = try render(view, candidate: state, label: label)
                 try write(image, to: outDir,
-                          named: "mirror-module-\(candidate)-\(label).png")
+                          named: "mirror-module-\(state)-\(label).png")
             }
         }
-
-        /* The sheet, separately and once. A sheet is presented by a
-           window and there is no window here, so `.sheet` renders as
-           nothing at all — which would have been a silently empty
-           candidate D. Rendering the sheet's CONTENT at the size the
-           sheet declares is the honest substitute, and it says plainly
-           what is not being shown: the sheet's own chrome. */
-        let rig = try makeRig()
-        let sheet = AnyView(
-            MirrorSettingsView(model: rig.model, dismiss: {})
-                .frame(width: 460, height: 460))
-        let image = try render(sheet, candidate: "settings-sheet",
-                               label: "sheet")
-        try write(image, to: outDir,
-                  named: "mirror-module-settings-sheet.png")
-    }
-
-    // MARK: - The arrangements
-
-    /// **Every candidate composes the SAME views** — the real toolbar,
-    /// the real pane, the real cards, the real event stream. Only the
-    /// container differs, which is what makes the pictures a question
-    /// about arrangement rather than about drawing, and what keeps a
-    /// candidate nobody picks from having cost a shipping code path.
-    @ViewBuilder
-    private func arrangement(_ candidate: String, _ rig: Rig) -> some View {
-        switch candidate {
-        case "B-accepted-inspector-open":
-            let _ = (rig.presentation.inspectorShown = true)
-            MirrorModuleView(model: rig.model, source: rig.source,
-                             run: rig.run, presentation: rig.presentation,
-                             window: rig.window,
-                             connectedMachineName: "Power Mac G4",
-                             timeline: rig.source.actTimeline,
-                             cycles: rig.source.cycleTimeline)
-        case "D-disclosure-sidebar":
-            CandidateD(rig: rig)
-        case "E-bottom-event-drawer":
-            CandidateE(rig: rig)
-        default:
-            CandidateF(rig: rig)
-        }
-    }
-
-    /// **D — one collapsible trailing sidebar, sectioned by disclosure.**
-    ///
-    /// Michelle's shape, with the switcher taken out. A segmented control
-    /// was the first draft and it is wrong twice: it makes Events and
-    /// Diagnostics mutually exclusive in a column tall enough for both,
-    /// and `Picker(.segmented)` returns the prohibited placeholder in the
-    /// offscreen renderer, so picking it would mean nobody can review
-    /// this module again without sitting at the machine
-    /// (`MirrorReviewRendering`). Disclosure sections are native, are
-    /// what Xcode's own inspectors use, and let a person keep the two
-    /// things open that they are correlating.
-    ///
-    /// Settings are a sheet off the toolbar's gear.
-    private struct CandidateD: View {
-        let rig: Rig
-        @State private var eventsOpen = true
-        @State private var detailsOpen = true
-        @State private var filter = MirrorEventFilter()
-
-        var body: some View {
-            VStack(spacing: 0) {
-                mockToolbar(rig, gear: true)
-                Divider()
-                HStack(spacing: 0) {
-                    MirrorPaneView(source: rig.source,
-                                   presentation: rig.presentation,
-                                   container: .modulePane)
-                        .frame(minWidth: 280, maxWidth: .infinity,
-                               maxHeight: .infinity)
-                        .layoutPriority(1)
-                    Divider()
-                    MirrorScrollBox {
-                        VStack(alignment: .leading, spacing: 10) {
-                            DisclosureGroup("Events", isExpanded: $eventsOpen) {
-                                /* Bounded, because the stream has no
-                                   length of its own and this section is
-                                   inside a scroller. That bound is the
-                                   candidate's cost, not a detail: it is
-                                   a scrolling list inside a scrolling
-                                   column, which macOS does badly and
-                                   people do worse. */
-                                MirrorEventStreamView(
-                                    timeline: rig.source.actTimeline,
-                                    cycles: rig.source.cycleTimeline,
-                                    filter: $filter)
-                                    .frame(height: 240)
-                            }
-                            Divider()
-                            DisclosureGroup("Details", isExpanded: $detailsOpen) {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    MirrorLifecycleCard(model: rig.model)
-                                    MirrorPlanesCard(model: rig.model,
-                                                     showsPolicy: false)
-                                    MirrorSceneFactsCard(source: rig.source)
-                                }
-                            }
-                        }
-                        .padding(10)
-                    }
-                    .frame(width: 260)
-                }
-            }
-        }
-    }
-
-    /// **E — the log gets the width it wants.** The trailing inspector
-    /// keeps the diagnostics; the event stream is a full-width drawer
-    /// under the picture, because a stream of labelled, timed rows reads
-    /// as a table and a 260-point column is not one.
-    ///
-    /// A `VSplitView` would be the obvious way to let a person size it,
-    /// and it is disqualified: it does not rasterize offscreen at all
-    /// (round one found this), so a resizable drawer could only ever be
-    /// reviewed by somebody sitting at the machine. Fixed height, and a
-    /// disclosure to close it.
-    private struct CandidateE: View {
-        let rig: Rig
-        @State private var eventsOpen = true
-        @State private var filter = MirrorEventFilter()
-
-        var body: some View {
-            VStack(spacing: 0) {
-                mockToolbar(rig, gear: true)
-                Divider()
-                HStack(spacing: 0) {
-                    VStack(spacing: 0) {
-                        MirrorPaneView(source: rig.source,
-                                       presentation: rig.presentation,
-                                       container: .modulePane)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        Divider()
-                        HStack(spacing: 6) {
-                            Button {
-                                eventsOpen.toggle()
-                            } label: {
-                                Image(systemName: eventsOpen
-                                      ? "chevron.down" : "chevron.right")
-                                    .font(.caption2)
-                                Text("Events").font(.callout.weight(.medium))
-                            }
-                            .buttonStyle(.plain)
-                            Spacer()
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(.bar)
-                        if eventsOpen {
-                            Divider()
-                            MirrorEventStreamView(
-                                timeline: rig.source.actTimeline,
-                                cycles: rig.source.cycleTimeline,
-                                filter: $filter)
-                                .frame(height: 190)
-                        }
-                    }
-                    .frame(minWidth: 280, maxWidth: .infinity)
-                    .layoutPriority(1)
-                    Divider()
-                    diagnostics(rig, showsPolicy: false)
-                        .frame(width: 260)
-                }
-            }
-        }
-    }
-
-    /// **F — no modal at all.** One trailing sidebar, one pop-up naming
-    /// which panel it is showing, and the plane switches stay beside the
-    /// plane states they explain. The control for the other two: if a
-    /// sheet turns out to buy nothing, this is the arrangement with the
-    /// least new furniture in it.
-    ///
-    /// The switcher is a `Picker(.menu)` — a pop-up. It is the same
-    /// choice the toolbar already makes for zoom, and unlike a segmented
-    /// control it does not spend the column's whole width on three words
-    /// nor vanish from the offscreen renderer.
-    private struct CandidateF: View {
-        let rig: Rig
-        @State private var panel = 0
-        @State private var filter = MirrorEventFilter()
-
-        var body: some View {
-            VStack(spacing: 0) {
-                mockToolbar(rig, gear: false)
-                Divider()
-                HStack(spacing: 0) {
-                    MirrorPaneView(source: rig.source,
-                                   presentation: rig.presentation,
-                                   container: .modulePane)
-                        .frame(minWidth: 280, maxWidth: .infinity,
-                               maxHeight: .infinity)
-                        .layoutPriority(1)
-                    Divider()
-                    VStack(spacing: 0) {
-                        HStack {
-                            Picker("", selection: $panel) {
-                                Text("Events").tag(0)
-                                Text("Details").tag(1)
-                                Text("Settings").tag(2)
-                            }
-                            .pickerStyle(.menu)
-                            .labelsHidden()
-                            .fixedSize()
-                            Spacer()
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        Divider()
-                        switch panel {
-                        case 0:
-                            MirrorEventStreamView(
-                                timeline: rig.source.actTimeline,
-                                cycles: rig.source.cycleTimeline,
-                                filter: $filter)
-                        case 1:
-                            diagnostics(rig, showsPolicy: false)
-                        default:
-                            MirrorSettingsView(model: rig.model)
-                        }
-                    }
-                    .frame(width: 260)
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Shared pieces of the mocks
-
-@MainActor
-private func mockToolbar(_ rig: MirrorModuleLayoutRenderTests.Rig,
-                     gear: Bool) -> some View {
-    HStack(spacing: 0) {
-        MirrorToolbarView(model: rig.model, run: rig.run,
-                          presentation: rig.presentation,
-                          setDetached: { _ in })
-        if gear {
-            /* Drawn outside MirrorToolbarView rather than added to it:
-               the gear only exists in the candidates that have a sheet,
-               and a control added to the shipping toolbar for a candidate
-               nobody picks is exactly the cost these mocks avoid. */
-            Button { } label: { Image(systemName: "gearshape") }
-                .help("Mirror Settings…")
-                .padding(.trailing, 12)
-                .padding(.vertical, 8)
-                .background(.bar)
-        }
-    }
-}
-
-@MainActor
-private func diagnostics(_ rig: MirrorModuleLayoutRenderTests.Rig,
-                         showsPolicy: Bool) -> some View {
-    MirrorScrollBox {
-        VStack(alignment: .leading, spacing: 14) {
-            MirrorLifecycleCard(model: rig.model)
-            MirrorPlanesCard(model: rig.model, showsPolicy: showsPolicy)
-            MirrorSceneFactsCard(source: rig.source)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
     }
 }
 
@@ -655,21 +410,11 @@ final class MirrorPanelRenderTests: XCTestCase {
             + "swallowing them")
 
         let cards = try colours(
-            MirrorScrollBox {
-                VStack(alignment: .leading, spacing: 12) {
-                    MirrorLifecycleCard(model: rig.model)
-                    MirrorPlanesCard(model: rig.model, showsPolicy: false)
-                    MirrorSceneFactsCard(source: rig.source)
-                }
-                .padding(12)
-            }, column)
+            MirrorControlView(model: rig.model, run: rig.run,
+                              presentation: rig.presentation,
+                              source: rig.source,
+                              cycles: rig.source.cycleTimeline), column)
         XCTAssertGreaterThan(cards, 8,
-            "the diagnostics cards drew \(cards) colours at 260×600")
-
-        let settings = try colours(
-            MirrorSettingsView(model: rig.model, dismiss: {}),
-            CGSize(width: 460, height: 460))
-        XCTAssertGreaterThan(settings, 8,
-            "the settings sheet drew \(settings) colours at 460×460")
+            "the diagnostics column drew \(cards) colours at 260×600")
     }
 }

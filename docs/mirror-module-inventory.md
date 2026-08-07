@@ -44,6 +44,13 @@ Plane policy is **the only true setting the module has** — the only switch
 that changes what the other Macintosh is asked to do. Everything else on
 this list is about this Mac's screen.
 
+**And that is why there is no settings sheet.** A draft put the switches
+in one and left the plane states in the inspector; it was rejected because
+separated, "on, and the Mac is not sending it" becomes a correlation a
+person has to perform across two surfaces. The switch and the state it
+explains are one row, in the Planes card. A sheet holding nothing but a
+machine name would have been a container with a heading in it.
+
 Retired and **gated against return** by
 `tools/mirror-gate-tests/test_legacy_mirror_retirement.py`: the agent port,
 the QMP socket path, the MirrorApp path and "build from source before
@@ -66,8 +73,8 @@ launching". They are not missing; they are deliberately gone.
 
 | stream | capacity | shown |
 |---|---|---|
-| Acts (`MirrorActTimeline`) | 32 | the last **8**, as two-line cards |
-| Scene cycles (`MirrorCycleTimeline`) | 24 | the **latest of each of 4 walk kinds**; the other ~20 are invisible |
+| Acts (`MirrorActTimeline`) | 32 | *was* the last **8** as two-line cards; now every one of them, one row each, in the event drawer |
+| Scene cycles (`MirrorCycleTimeline`) | 24 | the **latest of each of 4 walk kinds** in the inspector (the only like-for-like comparison the data supports), and all of them in time order in the drawer behind its filter |
 | Operation journal (`MirrorOperationJournal`) | 128 | **nothing** — MCP only |
 | Settlement evidence (`MirrorSettlementTracker`) | — | **nothing** |
 | `acts.log` on disk | unbounded | **no viewer** |
@@ -99,16 +106,96 @@ the expected picture when the guest reports no QuickDraw content, and
 without a count beside it a person cannot tell that from a rendering
 failure.
 
+## What is absent — capabilities, not layout
+
+These exist in the model and can reach nobody. **An inventory that lists
+what exists and stays silent about what does not is half an inventory**,
+and this list is the half that steers the next arc rather than this one.
+None of it is a container problem; putting a drawer around a thing that
+does not exist would not create it.
+
+**Actions with no way in:**
+
+- **Fetch one scene on demand, with a content join.** The pre-embed page's
+  "Look Now / Look Again" was the only caller that joined the content
+  plane because somebody asked rather than because a timer fired. There is
+  now **no way to ask for a scene at all without running the poll** — the
+  poll is the only observer. This is the sharpest of the eight.
+- **Export evidence.** `MirrorEvidenceExporter` writes a correlated frame
+  PNG beside its projection artifact, and **no menu item, button or panel
+  invokes it.** The capability is complete and unreachable.
+- **Save a render screenshot.** The standalone `MirrorApp` has the menu
+  item (`Save Render-Screenshot`); the embedded module has no equivalent.
+- **Open a recorded scene document**, and with it the provenance banner
+  that told a replay from this Mac right now.
+- **Clear the scene.**
+
+**Readouts with nothing to draw them:**
+
+- **Scene age** — "Scene from 40 seconds ago". Nothing dates the picture,
+  so a stalled poll and a live idle desktop are the same image.
+- **`contentNote`** — what became of the last content join. An empty
+  window interior has at least six causes and a blank rectangle is the
+  same picture for all of them; this line is where they stopped being the
+  same picture.
+- **`refusalNote` / `liveNote`** — a refused ask said out loud while a
+  good scene is still on screen, and why the loop is backed off or
+  stopped.
+
+**Deliberately NOT surfaced, so nobody re-adds it:** the operation
+journal. It is the same operations the act clocks are derived from,
+projected for MCP — a panel for it would list every event twice. Its one
+field the act row lacks is `reason`, and the right repair is to put
+`reason` on the act row, not to open a third stream.
+
 ## What the offscreen renderer can and cannot see
 
-Not content, but it constrains every layout built out of it, and it is the
-reason round one's pictures were misread. The table lives in
-`now-host/Sources/Host/MirrorReviewRendering.swift` beside the workaround.
-The short version: **`ScrollView` renders as nothing at all**, and `List`,
-`TabView`, `VSplitView`, `Picker(.segmented)` and a bordered `Menu` all
-return the prohibited placeholder. `DisclosureGroup`, `Form`,
-`Picker(.menu)` and `Picker(.radioGroup)` draw.
+Not content, but it constrains every layout built out of it, and it is why
+round one's pictures were misread: three candidates were compared against
+frames whose inspector column was **blank**, and the blankness was read as
+"the cards have no data in them". That was true and was not the whole
+story.
 
-A component the renderer cannot see is an argument against choosing it,
-because choosing it means this module can never be reviewed again without
-somebody sitting at the machine.
+**The instrument built so an agent could review its own layout could not
+see the parts of a layout that hold content.** Measured 2026-08-07 with
+`ImageRenderer` at scale 1, offscreen, on macOS 27:
+
+| furniture | offscreen |
+|---|---|
+| `VStack`, `HStack`, `Divider`, `Text`, `Image` | draws |
+| `Button`, `Toggle`, `LabeledContent` | draws |
+| `DisclosureGroup` | draws |
+| `Form` | draws |
+| `Picker(.menu)` | draws |
+| `Picker(.radioGroup)` | draws |
+| `GeometryReader` | draws |
+| **`ScrollView`** | **draws NOTHING — silently, no placeholder** |
+| `List` | prohibited placeholder |
+| `TabView` | prohibited placeholder |
+| `VSplitView` | prohibited placeholder |
+| `Picker(.segmented)` | prohibited placeholder |
+| `Menu` (bordered / borderless) | prohibited placeholder |
+
+`ScrollView` is the dangerous row. Everything else at least *shows* you a
+yellow prohibition sign; a `ScrollView` renders as though its content were
+not there, and every panel in this module lives inside one.
+
+Two rules follow.
+
+- **A component the renderer cannot see is an argument against choosing
+  it**, because choosing it means this module can never be reviewed again
+  without somebody sitting at the machine. That is why the drawer's filter
+  is a `Picker(.menu)` and not a `Menu`, why the panel switcher became a
+  disclosure and not a segmented control, and why the event drawer is a
+  fixed height and not a `VSplitView`.
+- **Where scrolling is genuinely required, make the CONTAINER reviewable
+  rather than the design unscrollable.** `MirrorScrollBox` is a
+  `ScrollView` in the product and a bounded stack under review, behind an
+  environment flag only the render test sets. It is a rig affordance
+  living in production code and should be read as one; the alternative was
+  a design constrained by an instrument, which is the wrong way round.
+
+And the guard that follows from both: `MirrorPanelRenderTests` renders
+each panel **alone**, at the width it actually gets, because
+`assertHasContent` over a whole candidate passes a frame holding a
+Macintosh and an empty column — which is exactly the defect that shipped.
