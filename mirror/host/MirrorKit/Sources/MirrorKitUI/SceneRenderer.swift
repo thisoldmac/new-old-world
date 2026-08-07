@@ -614,6 +614,29 @@ public struct SceneRenderer {
            titled thing is not the untitled kind. */
         let isDialog = win.kind == 2 && win.title.isEmpty
 
+        /* TWO DECISIONS, NOT ONE, and collapsing them was a defect.
+         *
+           `isDialog` above answers "does this window have a title bar",
+           and it is right to key that on the title. It was ALSO being
+           used to answer "what colour is the content face", and those two
+           questions have different answers for the same window: the Date
+           & Time control panel is windowKind 2 with a title, so it drew
+           chrome correctly and then filled its whole body white.
+         *
+           The face follows the WINDOW MANAGER'S OWNER, not the chrome. A
+           Dialog Manager window is erased with the Appearance Manager's
+           `kThemeBrushDialogBackgroundActive` whether or not it has a
+           title bar - one brush, and the guest itself asks for it by that
+           name in three places (workshop_window.c, confirm.c,
+           census_module.c). So `kind == 2` alone decides the face.
+         *
+           `kind` is the WindowRecord's own `windowKind`, read out of the
+           machine - not something this side inferred. Anything else keeps
+           white, which is what a document window's content really is. */
+        let facesDialogBackground = win.kind == 2
+        let windowFace = facesDialogBackground ? Platinum.dialogFace
+                                               : Platinum.g0
+
         // Drop shadow, frame, face, raised bevel.
         ctx.fill(Path(frame.offsetBy(dx: 2, dy: 2)),
                  with: .color(.black.opacity(0.35)))
@@ -646,8 +669,7 @@ public struct SceneRenderer {
                              width: frame.width - (isDialog ? 12 : 2),
                              height: max(0, frame.height - contentTop
                                             - (isDialog ? 6 : 1)))
-        ctx.fill(Path(content),
-                 with: .color(isDialog ? Platinum.g1 : Platinum.g0))
+        ctx.fill(Path(content), with: .color(windowFace))
         if !isDialog {
             ctx.fill(Path(CGRect(x: content.minX, y: content.minY,
                                  width: content.width, height: 1)),
@@ -763,7 +785,8 @@ public struct SceneRenderer {
                 && Self.dialogItemIsBackground(item.semantic.kind)
                 && (item.ref.map { !semanticControlRefs.contains($0) }
                     ?? true) {
-            drawDialogItem(contentCtx, item, contentOrigin: content.origin)
+            drawDialogItem(contentCtx, item, contentOrigin: content.origin,
+                           windowFace: windowFace)
         }
         if let display = win.display {
             DisplayReplay.draw(display, in: contentCtx, content: content,
@@ -780,7 +803,8 @@ public struct SceneRenderer {
                 && (!displayOwnsVisuals || Self.semanticOwnsDisplay(control)
                     || Self.isWindowFurniture(control)) {
             drawControl(contentCtx, control, contentOrigin: content.origin,
-                        isDefault: control.semantic?.isDefault == true)
+                        isDefault: control.semantic?.isDefault == true,
+                        windowFace: windowFace)
         }
         /* An alert's default-outline slot is a DITL user item laid OVER the
            button it outlines, and it is drawn after it. Painting a
@@ -800,7 +824,8 @@ public struct SceneRenderer {
                     ?? true) {
             drawDialogItem(contentCtx, item, contentOrigin: content.origin,
                            covering: drawnItems,
-                           replayed: replayCoverage)
+                           replayed: replayCoverage,
+                           windowFace: windowFace)
         }
         // Finder icon-view items, in window-local content coords — the
         // Finder's own live positions, so what is drawn is where the guest
@@ -1063,8 +1088,14 @@ public struct SceneRenderer {
         }
     }
 
+    /// `windowFace` is the colour THIS window's content was erased with —
+    /// see `Platinum.dialogFace`. A control that knocks a hole in the face
+    /// to sit in (a group box's title band) must fill that hole with the
+    /// face, not with a constant, or the hole becomes a visible plate on
+    /// every window whose face is not white.
     private func drawControl(_ ctx: GraphicsContext, _ ctl: MirrorKit.Scene.Control,
-                             contentOrigin: CGPoint, isDefault: Bool) {
+                             contentOrigin: CGPoint, isDefault: Bool,
+                             windowFace: Color = Platinum.g0) {
         guard let local = ctl.rect else { return }   // rect is content-local
         let frame = rect(local).offsetBy(dx: contentOrigin.x,
                                          dy: contentOrigin.y)
@@ -1087,7 +1118,7 @@ public struct SceneRenderer {
             drawPopup(ctx, ctl, frame)
             return
         case "groupBox":
-            drawGroup(ctx, ctl, frame)
+            drawGroup(ctx, ctl, frame, windowFace: windowFace)
             return
         case "progressIndicator":
             drawProgress(ctx, ctl, frame)
@@ -1229,7 +1260,8 @@ public struct SceneRenderer {
 
     private func drawGroup(_ ctx: GraphicsContext,
                            _ ctl: MirrorKit.Scene.Control,
-                           _ frame: CGRect) {
+                           _ frame: CGRect,
+                           windowFace: Color = Platinum.g0) {
         ctx.stroke(Path(frame.insetBy(dx: 0.5, dy: 0.5)),
                    with: .color(ctl.enabled ? Platinum.g4 : Platinum.g3),
                    lineWidth: 1)
@@ -1237,7 +1269,9 @@ public struct SceneRenderer {
         let titleWidth = CGFloat(FontBook.app?.width(ctl.title) ?? 0)
         let patch = CGRect(x: frame.minX + 8, y: frame.minY - 1,
                            width: titleWidth + 8, height: 14)
-        ctx.fill(Path(patch), with: .color(Platinum.g0))
+        // Knock the box's own rule out from behind the title, in the face
+        // the window was erased with.
+        ctx.fill(Path(patch), with: .color(windowFace))
         appText(ctl.title, ctx, x: patch.minX + 4,
                 baselineY: patch.minY + 10,
                 color: ctl.enabled ? Platinum.g6 : Platinum.g3)
@@ -1368,7 +1402,8 @@ public struct SceneRenderer {
                                 _ item: MirrorKit.Scene.DialogItem,
                                 contentOrigin: CGPoint,
                                 covering drawn: [CGRect] = [],
-                                replayed: DisplayReplay.Coverage? = nil) {
+                                replayed: DisplayReplay.Coverage? = nil,
+                                windowFace: Color = Platinum.g0) {
         let frame = rect(item.rect).offsetBy(dx: contentOrigin.x,
                                              dy: contentOrigin.y)
         guard frame.width > 0, frame.height > 0 else { return }
@@ -1390,7 +1425,11 @@ public struct SceneRenderer {
         }
         switch item.semantic.kind {
         case "panel":
-            ctx.fill(Path(frame), with: .color(Platinum.g0))
+            // A DITL group box's interior is the window's own face - the
+            // application never painted it a different colour, it simply
+            // did not paint it. Filling white made a white plate on any
+            // window whose face is the dialog grey.
+            ctx.fill(Path(frame), with: .color(windowFace))
             ctx.stroke(Path(frame), with: .color(Platinum.g5), lineWidth: 1)
         case "placard":
             ctx.fill(Path(frame), with: .color(Platinum.g2))
