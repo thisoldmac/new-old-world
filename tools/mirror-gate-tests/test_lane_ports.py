@@ -50,6 +50,38 @@ def code_of(function: str) -> str:
     raise AssertionError(f"tools/lane-ports has no {function}()")
 
 
+def find_lab():
+    """The lab checkout, by spin-up-ppc's own two routes, or None.
+
+    A worktree under /private/tmp shares no ancestor with the lab, so the
+    walk alone answers None there — and that is the lane configuration,
+    not an edge case. Ask git for the MAIN clone's .git and walk up from
+    that, exactly as the script does.
+    """
+    def walk_up(start):
+        d = Path(start).resolve()
+        while True:
+            if (d / "tools" / "lib.sh").is_file():
+                return d
+            if d == d.parent:
+                return None
+            d = d.parent
+
+    if os.environ.get("NOW_LAB_ROOT"):
+        return walk_up(os.environ["NOW_LAB_ROOT"])
+    found = walk_up(ROOT)
+    if found:
+        return found
+    try:
+        common = subprocess.run(
+            ["git", "-C", str(ROOT), "rev-parse", "--path-format=absolute",
+             "--git-common-dir"], capture_output=True, text=True,
+            timeout=30).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return walk_up(Path(common).parent) if common else None
+
+
 def load_module():
     """Import `tools/lane-ports` despite its having no .py suffix."""
     spec = importlib.util.spec_from_loader(
@@ -282,6 +314,23 @@ class HumanRangeTests(Sandbox):
         self.assertIn("RESERVED HUMAN RANGE", out.stdout)
         self.assertNotIn("unclaimed", out.stdout)
 
+    def test_is_human_answers_by_exit_code_at_both_edges(self):
+        """The predicate scripts/spin-up-ppc branches on. It exists so the
+        range is stated in ONE place: a shell script that restated
+        590-599 would be a second copy to drift."""
+        module = load_module()
+        first = module.BASE + module.HUMAN_BLOCK_FIRST * module.STRIDE
+        last = module.BASE + (module.HUMAN_BLOCK_LAST + 1) * module.STRIDE - 1
+        for port, human in ((first, True), (last, True),
+                            (first - 1, False), (last + 1, False),
+                            (module.BASE, False), (22, False)):
+            out = self.run_tool("human", "--is-human", str(port), check=False)
+            self.assertEqual(out.returncode, 0 if human else 1,
+                             f"port {port}: expected human={human}")
+            self.assertEqual(out.stdout, "",
+                             "the predicate must be silent — shell branches "
+                             "on the exit code, not on output")
+
     def test_the_reserved_range_is_inside_the_region_it_carves_from(self):
         """A range outside the region would protect nothing: allocation
         only ever hands out blocks 0..BLOCKS-1."""
@@ -510,6 +559,62 @@ class AdditiveTests(unittest.TestCase):
         anchor_only = spin("half", NOW_ANCHOR_PORT="1700")
         self.assertEqual(anchor_only[0], 1700)
         self.assertEqual(anchor_only[1], derived[1])
+
+    def test_a_human_stack_cannot_be_handed_over_headless(self):
+        """On 2026-08-07 a lane handed Michelle a VM booted `-display
+        none`. A modal alert came up in Mail, she had no window to dismiss
+        it in, and the stack was unusable. The brief was followed exactly;
+        the brief did not say "and give her a screen".
+
+        So the machine decides, from the ports, which already know whose
+        it is. RUN, not read: a text assertion would survive an edit that
+        moved the check after the boot, which is where it would stop
+        mattering.
+        """
+        # The same two routes spin-up-ppc itself uses, in the same order.
+        # Walking up from ROOT alone is not enough: an agent lane's
+        # worktree lives under /private/tmp with no shared ancestor at
+        # all, so that walk reaches / — and this guard would then SKIP in
+        # exactly the configuration the defect happened in.
+        if not find_lab():
+            raise unittest.SkipTest(
+                "no lab checkout (tools/lib.sh) above the repo or its main "
+                "worktree, so spin-up-ppc cannot run here")
+
+        module = load_module()
+        human_anchor = module.ports_of(module.HUMAN_BLOCK)["anchor"]
+
+        work = tempfile.mkdtemp(prefix="lnpt-h-", dir="/private/tmp")
+        self.addCleanup(shutil.rmtree, work, ignore_errors=True)
+        for name in ("base.qcow2", "ext.bin", "app.bin", "shut.bin"):
+            open(os.path.join(work, name), "wb").close()
+
+        env = dict(os.environ,
+                   NOW_LANE_REGISTRY=os.path.join(work, "registry"),
+                   NOW_SPIN_RUN=os.path.join(work, "headless"),
+                   TIMBOTTU_QEMU="/bin/echo",
+                   NOW_SPIN_BASE=os.path.join(work, "base.qcow2"),
+                   NOW_EXT_BIN=os.path.join(work, "ext.bin"),
+                   NOW_APP_BIN=os.path.join(work, "app.bin"),
+                   NOW_SHUTDOWN_BIN=os.path.join(work, "shut.bin"),
+                   NOW_ANCHOR_PORT=str(human_anchor),
+                   NOW_WIRE_PORT=str(human_anchor + 1),
+                   NOW_SPIN_DISPLAY="0")
+        out = subprocess.run([str(SPIN)], env=env, cwd=str(ROOT),
+                             capture_output=True, text=True, timeout=180)
+        if "is in use" in out.stdout + out.stderr:
+            raise unittest.SkipTest(
+                "the human stack is running on these ports right now, "
+                "which is the whole point of reserving them")
+        self.assertEqual(out.returncode, 64,
+                         "a human stack was allowed to boot headless:\n"
+                         f"{out.stdout}\n{out.stderr}")
+        self.assertIn("REFUSING", out.stderr)
+        self.assertIn("HUMAN port range", out.stderr)
+        # And it refused BEFORE spending a clone on it.
+        self.assertFalse(
+            os.path.exists(os.path.join(work, "headless", "session.qcow2")),
+            "it cloned the image before deciding it would not hand it over")
 
     def test_the_vm_is_recorded_before_it_boots(self):
         """An orphan nobody recorded cannot be reclaimed. The attach has

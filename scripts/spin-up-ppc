@@ -3,7 +3,12 @@
 # COLD-reboot so the INIT loads, and make the guest say whether it did.
 #
 #     scripts/spin-up-ppc                  # headless: stage, reboot, verify
-#     NOW_SPIN_DISPLAY=1 scripts/spin-up-ppc   # with a cocoa window
+#     NOW_SPIN_DISPLAY=1 scripts/spin-up-ppc   # with a window
+#
+# HEADLESS IS THE LANE'S DEFAULT AND NEVER A PERSON'S. A boot on the
+# reserved human port block (tools/lane-ports human) gets a window
+# whether or not anyone asked, and refuses to boot without one — see the
+# NOW_HUMAN_STACK block below, and docs/handing-over-a-human-stack.md.
 #
 # This is the missing half of scripts/build-guests. That script builds
 # ext/; until tools/stage-ext.py and this file, nothing installed it, so
@@ -328,6 +333,44 @@ echo "ports: anchor=$ANCHOR wire=$WIRE"
 # The fallback is not decoration: this repo and the lab checkout are versioned
 # apart, so a lab that predates tbt_human_display would otherwise leave
 # -display empty under set -e and take the boot down with it.
+#
+# A HUMAN STACK IS NOT ALLOWED TO BE HEADLESS, and that is decided here
+# rather than left to whoever wrote the brief. On 2026-08-07 a lane was
+# asked to hand Michelle a stack, followed its brief exactly, and handed
+# her a VM booted `-display none` — so when a modal alert came up in Mail
+# she had no window to dismiss it in, and the one route left (the act
+# plane) was refusing those buttons. Nothing was misconfigured: headless
+# is the right default for a lane, and no step said "and give her a
+# screen", because a default nobody states is a default nobody checks.
+#
+# So the default follows the PORTS, which already know whose machine this
+# is: tools/lane-ports reserves 590-599 for a person, allocation can never
+# hand them to a lane, and a boot on them is therefore a human's stack by
+# construction. On those ports a window is the default, and asking for
+# headless is refused rather than obeyed — a person cannot drive a machine
+# they cannot see, and "I explicitly passed 0" is not a reason to hand one
+# over anyway. Set NOW_HUMAN_STACK=0 to declare it is not a person's
+# after all; that is a statement, not a knob.
+HUMAN_STACK="${NOW_HUMAN_STACK:-}"
+if [ -z "$HUMAN_STACK" ]; then
+    HUMAN_STACK=0
+    [ -x "$NOW/tools/lane-ports" ] \
+        && "$NOW/tools/lane-ports" human --is-human "$ANCHOR" 2>/dev/null \
+        && HUMAN_STACK=1
+fi
+if [ "$HUMAN_STACK" = "1" ]; then
+    if [ "${NOW_SPIN_DISPLAY:-1}" != "1" ]; then
+        echo "REFUSING: anchor $ANCHOR is in the reserved HUMAN port range,\
+ so this is a person's stack — and NOW_SPIN_DISPLAY=0 would hand them a\
+ machine with no window. That is what happened on 2026-08-07: a boot modal\
+ came up and there was no screen to dismiss it in. Give it a display, or\
+ say NOW_HUMAN_STACK=0 if this really is not a person's." >&2
+        exit 64
+    fi
+    NOW_SPIN_DISPLAY=1
+    echo "human stack (anchor $ANCHOR is in the reserved human range): a \
+window is not optional here"
+fi
 DISPLAY_KIND=none
 [ "${NOW_SPIN_DISPLAY:-0}" = "1" ] \
     && DISPLAY_KIND="$(tbt_human_display 2>/dev/null || printf 'sdl')"

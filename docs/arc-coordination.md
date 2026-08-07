@@ -380,6 +380,15 @@ and `--force` does not open it. `tools/lane-ports human` reports the
 block read-only. Michelle's stack lives on **block 591** — anchor
 `16728`, wire `16729`.
 
+**A stack on those ports is a PERSON's, and a person needs a screen.**
+`scripts/spin-up-ppc` reads the range through `tools/lane-ports human
+--is-human` and gives a boot on it a window by default, refusing (exit
+64) if told to go headless there. That is enforced rather than briefed
+because on 2026-08-07 a lane handed her a VM booted `-display none`,
+followed its brief exactly, and left her with a modal alert she had no
+window to dismiss. [`docs/handing-over-a-human-stack.md`](handing-over-a-human-stack.md)
+is the checklist, including the replace-a-running-stack order.
+
 It is written in code and named here because the failure it prevents
 happened with the rule already implied. On 2026-08-07 her VM was running
 on 16728/16729 and the hash handed block 591 — exactly those ports — to a
