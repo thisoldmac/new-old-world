@@ -34,6 +34,70 @@ import Foundation
 /// constant (52, 25) at rest and diverged completely once the window scrolled,
 /// which is exactly the case the saved grid cannot see.
 ///
+/// ### The table above was measured in ONE view (corrected 2026-08-07)
+///
+/// Every number above was taken from a window in **icon view**, and the row
+/// that says `position of` is "live, window-content-local, scroll-compensated"
+/// is only true there. Measured on mac99 / OS 9.1 against a window drawing a
+/// ten-row list, with a screendump beside the answer:
+///
+/// | View (`view of window 1`) | `position of` item 1 | `bounds of` item 1 |
+/// |---|---|---|
+/// | `icon` | 34, 25 | 34, 25, 66, 57 — position + 32 |
+/// | `small icon` | 35, 25 (a DIFFERENT grid) | 16×16 |
+/// | `name` (the list) | **2, 42 — the saved icon grid, not a row** | 22, 43, 38, 59 — the row's icon, 19-px pitch |
+///
+/// So in a list view `position` answers the icon grid the window is not
+/// drawing, and a reader that trusts it computes a click for a layout that is
+/// not on screen. This is the defect Michelle named as "unable to select items
+/// in list view".
+///
+/// **`bounds of` is the cure, and it is one property in every view.** It is
+/// the box the Finder actually drew: identical to `position … position + 32`
+/// in icon view (so nothing that was right becomes wrong), the live 16×16 row
+/// icon in list view, and the live small-icon box in small-icon view. It also
+/// answers for `every item of desktop`. Every producer here therefore asks for
+/// `bounds` and none asks for `position`.
+///
+/// ### The Finder's view vocabulary, measured (2026-08-07, mac99 / OS 9.1)
+///
+/// Recorded because it had never been measured, and guessing it was the reason
+/// this defect was left open rather than closed with a plausible wrong answer.
+///
+/// - `view of window 1` **works**. Its class renders as `«class pvew»`.
+/// - Its value has no string coercion: `(view of window 1) as string` raises
+///   **-1700**, "Can't make «class pvew» of window 1 ... into a string".
+///   Concatenating it (`"[" & v & "]"`) does render it, as a bare word.
+/// - The words, raw: **`icon`**, **`name`** (this is the list view — confirmed
+///   against a screendump of the window drawing rows), **`small icon`**. They
+///   are also the setter's vocabulary: `set view of window 1 to name` works.
+///
+/// What did NOT work, recorded because a failure saves the next reader a VM:
+///
+/// - `current view of window 1` — not a term. **osaErr -1753 for the whole
+///   script**, which is the trap: an unknown term is a COMPILE failure, so a
+///   `try` block around it does not catch it and it takes every other phrasing
+///   in the same script down with it. Probe one phrasing per script.
+/// - `properties of window 1` — **-1728**, "Can't get properties of window 1".
+///   There is no property dump to enumerate the vocabulary from.
+/// - `set view of window 1 to list view` / `button view` — **-1728**, "Can't
+///   get view"; `buttons` / `button` — **-2753**, "The variable ... is not
+///   defined". These are the modern Finder's words and OS 9 does not have
+///   them. `set view of window 1 to list` compiles and raises **-15279**,
+///   "Value out of range" — `list` is the class, not the view.
+/// - The raw four-character enum was not pinned. Comparing against
+///   `«constant ****icnv»`, `nmev`, `lisv`, `ivew`, `nvew`, `bvew`, `sicv`,
+///   `btnv` answered false or silently did nothing; only `«constant ****smic»`
+///   round-tripped, to `small icon`. The bare words are what reaches the wire
+///   and what the code uses, so this was left unfinished rather than guessed.
+/// - A guest `script` source is capped at **2048 bytes** — a batched probe
+///   over more than ~5 phrasings is refused with `too-large`.
+///
+/// Nothing in this project reads the view today: `bounds` made the geometry
+/// right in every view, so a carried `view` would be a field with no reader,
+/// which is its own defect class. It is written down here so that the next
+/// lane that needs it does not spend a VM re-deriving it.
+///
 /// ### The standing hazard
 ///
 /// A whole-disk Finder search wedged a real machine for ~12 minutes (lab
@@ -42,8 +106,10 @@ import Foundation
 /// a name.
 public enum FinderItems {
 
-    /// The Finder's icon box: `bounds of` an item is `position … position+32`.
-    /// Measured, not assumed (see the table above).
+    /// The icon VIEW's box: `bounds of` an item is `position … position+32`
+    /// there. Measured, not assumed (see the table above) — and it is the
+    /// icon view's number only, which is why nothing computes a box from it
+    /// any more when the Finder was asked for one.
     public static let iconSize = 32
 
     /// Cap on items reported per window. A folder with a thousand files would
@@ -77,9 +143,13 @@ public enum FinderItems {
             "set r to r & \"T|;;\"",
             "exit repeat",
             "end if",
-            "set q to position of t",
+            /* `bounds`, never `position`: in a LIST view `position` answers
+               the saved icon grid the window is not drawing. See the view
+               table in this file's header. */
+            "set q to bounds of t",
             "set r to r & \"I|\" & (name of t) & \"|\" & (item 1 of q) & \",\""
-                + " & (item 2 of q) & \";;\"",
+                + " & (item 2 of q) & \",\" & (item 3 of q) & \",\""
+                + " & (item 4 of q) & \";;\"",
             "end repeat",
             "end try",
             "end repeat",
@@ -99,11 +169,23 @@ public enum FinderItems {
         public var truncated: Bool
     }
 
-    /// A name and the Finder's live window-content-local position for it.
+    /// A name and the Finder's live window-content-local BOX for it — the
+    /// top-left is the old `position`, and the size is what tells a 16×16
+    /// list row from a 32×32 icon.
     public struct Placed: Equatable {
         public var name: String
         public var x: Int
         public var y: Int
+        /// nil when the record carried a bare `x,y` pair: an older fixture,
+        /// or a producer that has not been moved to `bounds` yet.
+        public var w: Int?
+        public var h: Int?
+
+        public init(name: String, x: Int, y: Int,
+                    w: Int? = nil, h: Int? = nil) {
+            self.name = name; self.x = x; self.y = y
+            self.w = w; self.h = h
+        }
     }
 
     /// Parse the script's `W|`/`I|`/`T|` record stream.
@@ -129,13 +211,19 @@ public enum FinderItems {
                                  items: [], truncated: false))
             case "I":
                 guard fields.count >= 3, !out.isEmpty else { continue }
-                let coords = fields[2].split(separator: ",")
-                guard coords.count == 2,
-                      let x = Int(coords[0].trimmingCharacters(in: .whitespaces)),
-                      let y = Int(coords[1].trimmingCharacters(in: .whitespaces))
-                else { continue }
+                /* Two numbers is a bare position (an older record); four is
+                   `bounds`. Anything else is a partial read and is dropped
+                   rather than half-believed. */
+                let coords = fields[2].split(separator: ",").map {
+                    Int($0.trimmingCharacters(in: .whitespaces))
+                }
+                guard coords.count == 2 || coords.count == 4,
+                      !coords.contains(where: { $0 == nil }) else { continue }
+                let n = coords.map { $0! }
                 out[out.count - 1].items.append(
-                    .init(name: fields[1], x: x, y: y))
+                    .init(name: fields[1], x: n[0], y: n[1],
+                          w: coords.count == 4 ? n[2] - n[0] : nil,
+                          h: coords.count == 4 ? n[3] - n[1] : nil))
             case "T":
                 if !out.isEmpty { out[out.count - 1].truncated = true }
             default:
@@ -165,6 +253,8 @@ public enum FinderItems {
                 x: 0, y: 0, placed: false, alias: false, invisible: false)
             item.x = p.x
             item.y = p.y
+            item.w = p.w
+            item.h = p.h
             item.placed = true      // the Finder drew it; that IS placement
             return item
         }
@@ -219,8 +309,12 @@ public enum FinderItems {
                                   in win: Scene.Window) -> (x: Int, y: Int)? {
         guard item.placed else { return nil }
         let area = iconArea(win)
-        let cx = item.x + iconSize / 2
-        let cy = item.y + iconSize / 2
+        /* The centre of the box the FINDER drew. A constant 32/2 put the
+           point 16 px below a 16-px list row — one row down at the Finder's
+           19-px pitch, so the click landed on the next file. */
+        let box = HitTester.targetSize(item)
+        let cx = item.x + box.w / 2
+        let cy = item.y + min(box.h, iconSize) / 2
         guard cx >= area.l, cx < area.r, cy >= area.t, cy < area.b else {
             return nil
         }
