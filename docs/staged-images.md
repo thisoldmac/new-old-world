@@ -208,9 +208,123 @@ missing record must not read as nothing to do.
 `scripts/test-all` runs the doctor first and, when the gates are not armed,
 its final line stops saying they passed.
 
+## Why images kept arriving dirty: nobody was careless, they were cornered
+
+Five of the seven preserved images on this Mac have the HFS "volume
+unmounted" bit clear, so every clone of them opens in Disk First Aid
+(`tools/volclean.py`, run over all of them 2026-08-07):
+
+| image | mtime | volume |
+|---|---|---|
+| `now-mirror-stage.qcow2` | 08-06 01:58 | clean |
+| `now-mirror-stage.qcow2.bak-20260806` | 08-06 00:44 | clean |
+| `now-mirror-stage.qcow2.bak-20260806-2` | 08-06 01:10 | **dirty** |
+| `now-mirror-stage.qcow2.bak-20260806-3` | 08-06 01:19 | **dirty** |
+| `now-mirror-stage.qcow2.bak-20260806-4-dirty` | 08-06 01:58 | **dirty** |
+| `now-mirror-stage.qcow2.bak-…-pre-transport` | 08-06 01:12 | **dirty** |
+| `os91-runner.qcow2` | 07-19 13:55 | **dirty** |
+
+`volclean.py` and the bake gate were built to DETECT this. Nothing had
+established **why it kept happening**, and the question matters: a rule
+everybody breaks is not a rule, it is a description of tooling that made
+the rule impossible.
+
+**The mechanism, established 2026-08-07.** A lane reported, honestly, that
+it had power-cut its VM against the rule, because the graceful route
+refused: the lab's `tools/shutdown-guest` asks the Finder through the
+anchor's `script` verb, and the anchor refuses it. Its message ends
+*"nothing here can shut this guest down gracefully; that is a scope
+decision, not a bug in this tool."* The lane was then choosing between a
+power cut and leaving a VM running for the next lane to trip over. It took
+the power cut and said so.
+
+Two things about that refusal, and both of them are worse than they look:
+
+- **It fires for every lane, every run, always.** The scope is not a
+  per-session decision. It is a static `worker.session` file baked into
+  the image, and it is byte-identical in both bases — the same 24 verbs,
+  the same `policyDigest` 328e2ef0…, stamped `"owner":"canonical"`. So
+  "most sessions are fine and this one was unusual" was never available as
+  an explanation.
+- **The sentence is false about this rig, and the false half is the
+  expensive half.** `launch` IS in that baked scope, which is exactly why
+  NOW's staged-applet route works; and the Finder route
+  (`shutdown-guest.py --wire`) never asks the anchor at all. Two graceful
+  routes were open the whole time. Nothing said so, and the tool an agent
+  finds first is the one with the obvious name.
+
+**And our own callers steered onto the dirty route.** `--wire` is what
+selects the Finder route, the only one measured to leave a clean volume;
+without it `shutdown-guest.py` falls to the applet, which starts a
+shutdown without reliably finishing one. Until 2026-08-07 neither
+`tools/lane-ports reclaim` nor the `stop:` recipe `scripts/spin-up-ppc`
+prints passed it — while both printed the words *guest-clean*.
+`scripts/bake-ext-image` did pass it, and checks `volclean` afterwards;
+that is why the current oracle is clean and the older bakes are not.
+
+### What a lane does now
+
+    tools/shutdown-guest.py <qmp.sock> --port <anchor> --wire <wire>
+
+It prints the route list **before** it tries anything, read from the
+anchor's own `hello`, so a refusal is a route list rather than a mystery.
+If every graceful route fails it names three options and what each costs —
+retry with `--wire`, leave the VM up and say so, or `--force`. There is no
+ending where the reader is left holding two bad choices and no third; that
+is the same failure as the dead-hooks warning four lanes read, believed,
+and correctly did nothing about.
+
+`--force` is a QMP `quit` made in the open. It asks
+`tools/shared-image-guard.py` first, which **refuses outright** if the
+machine is writing to a shared image (`launch --base` does), fails closed
+when it cannot tell, and does not object to a read-only backing file. When
+a cut does happen the disk is stamped `<image>.power-cut`, because the
+damage is otherwise invisible until something boots the image — by which
+time it is somebody else's afternoon.
+
+**Still true and still the rule:** a bare QMP `quit` is a power cut. What
+changed is that refusing it no longer means abandoning a running VM.
+
+## Which rig tools a lane can actually rely on
+
+Three times on 2026-08-07 a brief cited a tool that was not present on the
+branch it was cited to, and each time the lane either worked around it or
+broke a rule. Measured across the 48 `claude/019-*` branches:
+
+| tool | present on | absent from |
+|---|---|---|
+| `tools/shutdown-guest.py` | 47 | 1 |
+| `tools/volclean.py` | all | — |
+| `tools/lane-ports` | 42 | 6 |
+| `tools/arc-status`, `docs/arc-coordination.md` | 18 | **30** |
+
+The first two are safe to cite anywhere. `tools/lane-ports` nearly is.
+`tools/arc-status` is on integration branches and nowhere common, so an
+instruction that names it is wrong for most worktrees — which is how it
+became the third instance of the same mistake in one day.
+
+Two more traps worth knowing before you reach for the parent checkout:
+
+- **`tools/shutdown-guest` (no `.py`) is a different tool.** It lives in
+  the lab checkout, not here, and it is the one that refuses; NOW's is
+  `tools/shutdown-guest.py`. A lane that finds the parent's by name has
+  found the broken route.
+- **A worktree outside the repo tree could not run it at all.** The lab
+  checkout was located by walking up from the worktree, and an agent
+  worktree cut into `/private/tmp` has no such ancestor — so the one tool
+  that stops a VM cleanly answered with `ModuleNotFoundError`. It now asks
+  git where the real checkout is; `NOW_LAB_ROOT` still wins.
+
+**The landing decision, which is not this lane's to make:** if a rig tool
+is meant to be citable in a brief, it belongs on the arc base so every
+lane inherits it. `tools/arc-status` and `docs/arc-coordination.md` are
+the two that currently are not, and they are the two that keep being
+cited.
+
 ## Run it
 
     tools/image-discipline-tests     # fourteen mutations, ~3 seconds
+    scripts/test-native              # includes the shutdown-route gate
     tools/gate-impact-sweep --all-matching 'claude/018-'
 
 The second is the one to run before tightening any gate here: it stages

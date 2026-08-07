@@ -14,6 +14,70 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED: agents were not power-cutting VMs carelessly — the rig cornered them (2026-08-07, `claude/019-shutdown-always-available`)
+
+Five of the seven preserved qcow2 images on this Mac have the HFS volume
+still marked mounted, so every clone of them opens in Disk First Aid.
+`tools/volclean.py` and the bake gate were built to find that. **Nobody
+had established why it kept happening**, and three bakes in one night plus
+`os91-runner.qcow2` sitting dirty since 19 July is not a run of bad luck.
+
+**The mechanism.** A lane reported, honestly, that it had broken the
+"never QMP `quit`" rule: the lab's `tools/shutdown-guest` asks the Finder
+through the anchor's `script` verb, the anchor refused, and the tool's
+message ends *"nothing here can shut this guest down gracefully."* Its two
+remaining options were a power cut or abandoning a running VM.
+
+Two facts turn that from an edge case into a standing defect:
+
+- **The refusal is not a session's decision and does not fire
+  sometimes — it fires always.** The anchor's scope is a static
+  `worker.session` baked into the image, byte-identical in
+  `now-mirror-stage.qcow2` and `os91-runner.qcow2`: the same 24 verbs, the
+  same `policyDigest` 328e2ef0…, stamped `"owner":"canonical"`. There is
+  no configuration under which that tool succeeds here.
+- **The message is false, and the false half is the expensive half.**
+  `launch` IS in that baked scope — which is why NOW's applet route
+  works — and the Finder route never asks the anchor at all. Two graceful
+  routes were open the whole time.
+
+**And our own callers took the dirty route by construction.** `--wire`
+selects the Finder route, the only one measured to leave a clean volume.
+Neither `tools/lane-ports reclaim` nor the `stop:` recipe
+`scripts/spin-up-ppc` prints passed it, while both printed the words
+*guest-clean*. `scripts/bake-ext-image` did pass it and checks `volclean`
+afterwards, which is why the current oracle is clean and the older bakes
+are not — the fix landed on 2026-08-06 in one caller out of three.
+
+**What changed.** `tools/shared-image-guard.py` refuses a power cut
+against a VM writing to a shared image, names the file, and fails closed
+when it cannot tell. `shutdown-guest.py` prints its route list before
+trying anything, ends by naming three options and what each costs, and
+carries `--force` as the sanctioned last resort — gated by the guard,
+stamping the disk `.power-cut` so the damage cannot be inherited silently.
+Both other callers now pass `--wire`. 23 tests, 21 mutations watched fail,
+no survivors (`tools/mirror-gate-tests/test_shutdown_always_available.py`).
+
+**TESTED, not metal-verified**, and one thing is deliberately unverified:
+no VM was booted for this. It did not need one — the baked scope was read
+directly out of both images, which is a stronger oracle than one machine's
+`hello`, and the guard is driven over a fake QMP socket in its own tests.
+What that leaves unproven is the end-to-end claim that `--force` on a real
+cornered VM behaves as written. Nobody has been cornered since the fix.
+
+**Still open, and not this lane's to land:** `tools/arc-status` and
+`docs/arc-coordination.md` exist on 18 of the 48 `claude/019-*` branches
+and were cited in briefs to lanes that did not have them — the same
+mistake three times in one day. If a rig tool is meant to be citable, it
+belongs on the arc base. See docs/staged-images.md > "Which rig tools a
+lane can actually rely on" for the per-tool counts.
+
+**Also unfixed, because it is in the lab checkout and this repo does not
+edit its instruments:** the lab's `tools/shutdown-guest` still ends with
+the sentence that corners people. It should say that NOW's
+`tools/shutdown-guest.py --wire` is the route on this rig. Someone with
+standing in that tree should change it.
+
 ## BROKEN: the machine will not say what a foreign control IS, and that is not a bug we can fix in the walk (2026-08-07, `claude/018-control-semantics`)
 
 Michelle, driving the integrated build: *"a lot of controls (such as
