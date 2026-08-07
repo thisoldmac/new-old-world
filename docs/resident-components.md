@@ -334,6 +334,118 @@ gets at least one deliberate boot before "verified" is claimed.
   first plane that can *write* into another process rather than only
   read low memory in its context.
 
+## What each plane costs at rest
+
+The charter says a resident component is **always optional — the product
+degrades honestly without it**. An extension that cannot stand down is
+not optional in the sense that matters, so this section answers the
+question directly: *with NOW not running and nothing armed, what does
+this component still do?*
+
+It is here rather than in a session note because it is the section that
+rots. Every new plane adds a line, and the line it adds is the one a
+reviewer should ask for first.
+
+### The two gates that already exist
+
+Two mechanisms, both already in the tree, do most of the standing down:
+
+- **The arm bit.** No plane beyond the core executes its payload until
+  the application writes `arm_request`. This is the charter's "planes,
+  dormant until armed".
+- **The writer lease** (`now_ext_writer_lease_valid`,
+  `kNowPeekWriterLeaseTicks` = 180 ticks). The application must renew a
+  heartbeat in the table every three seconds. When it does not — it
+  quit, it crashed, it was never launched — `now_ext_gne_apply` forces
+  `request = 0` for the whole pass. **This is the important one**,
+  because it means standing down does not depend on the application
+  getting a shutdown right. A machine whose user never launches NOW has
+  never had a valid lease, so every lease-gated plane has been dark
+  since boot.
+
+The lease covers P1, P2 and P4 (read in `now_ext_gne_apply`) and P3 (read
+again in `now_content_gne`, via `resident_owner_epoch`). It does **not**
+cover P6, and that is the finding below.
+
+### The census
+
+Read as: what is installed at boot, what executes per event-loop pass
+while resting, and whether the plane is genuinely at rest.
+
+| plane | installed at boot | per resting pass | at rest? |
+|---|---|---|---|
+| **P0** core | jGNE filter chained; Gestalt selector; table in system heap | the filter body itself: `LMGetTicks`, one store, the lease check, four not-taken bit tests | **irreducible** — see below |
+| **P1** anchors | nothing | one not-taken bit test | **yes** |
+| **P2** tree | nothing | one not-taken bit test | **yes** |
+| **P3** content | ten UPPs; **~64 KiB system-heap block, unconditionally**; *no port hooked, no trap patched* | `now_content_gne`: two low-memory reads, eight block loads, the verdict call, `content_uninstall_context` (which loops zero times when `gPortCount == 0`) | **yes for hooks; no for memory** |
+| **P4** act | nothing | one not-taken bit test | **yes** — patches go in on the first *armed* pass only |
+| **P5** events | small system-heap block | `now_event_pass`: three low-memory reads, the should-record call, three stores | **yes** |
+| **P6** liveness | **Time Manager task, primed at 5 s, unconditionally and forever** | `now_liveness_probe_transport` — and on the first pass ever, `PBOpenSync(".IPP")` **plus** `TCPCreate` with a receive buffer | **no** |
+
+### The premise, corrected
+
+The worry that prompted this section was that the extension "hooks every
+app draw and app state even when Mirror isn't running". Both halves are
+worth stating precisely, because one is false and the other is true in a
+place nobody named.
+
+**Draws: false.** No `grafProcs` is installed into any port, and no
+QuickDraw trap is patched, until the content plane is armed for a named
+A5 *and* a named window. `now_content_boot` builds the hook table and
+allocates the block; it installs nothing. `content_qdext_install` runs
+only under `kNowContentVerdictArmed` and only in record mode. A machine
+that never opens the Mirror never executes a draw hook — which is
+exactly what "planes, dormant until armed" promised, and it is kept.
+
+**App state: false in the sense meant.** Anchors are captured only under
+the arm bit, which the lease already forces off.
+
+**What is actually always-on is P6, and it is more than a hook.** On
+*any* machine with this extension installed, whether or not NOW is ever
+launched:
+
+- a Time Manager task is installed at boot and re-primes itself every
+  five seconds, forever;
+- on the first event-loop pass after boot, the resident opens MacTCP's
+  `.IPP` driver (`PBOpenSync`) and creates a TCP stream with a receive
+  buffer (`TCPCreate`).
+
+Neither is arm-gated and neither is lease-gated. The *dialling* is
+correctly gated — `published_endpoint()` returns NULL until the
+application publishes an endpoint, so a resting machine's tick reaches
+`want == NULL` and idles — but the driver open, the stream, and the
+5-second interrupt are unconditional. That is the real cost, and it is
+the one that touches a shared system resource rather than only CPU.
+
+### What follows, per plane
+
+- **P1, P2, P5 — already resting.** Nothing to do. Their resting cost is
+  a bit test inside a filter that has to run anyway.
+- **P3 hooks — already resting. P3 memory — is not.** ~64 KiB of system
+  heap is held for the life of the machine so that arming never has to
+  allocate inside a foreign process. The trade is deliberate and
+  documented in `now_content_boot`; what makes it defensible is that the
+  first event-loop pass *is* non-interrupt time, which is where P6
+  already does its own allocation. Lazy allocation is therefore possible
+  and is a real option, not a foreclosed one.
+- **P4 — dynamic bypass already achieved; removal is restart-only, and
+  correctly so.** The six trap patches go in on the first armed pass and
+  never come out, because a patch that vanishes while a caller is inside
+  it is a jump into freed code, and because another extension may have
+  patched the same trap after us — removing ours from the middle of the
+  chain is unsafe on this OS. But **a patch that returns immediately is
+  not the same as a patch that is absent, and here it is good enough**:
+  the arm bit is the plane's bypass switch, the lease force-clears it,
+  and a disarmed patch chains straight through. The residual cost of a
+  machine that once armed P4 is six trap dispatches that fall through —
+  paid only by a machine that has actually used the plane, never by one
+  that has not.
+- **P6 — not resting, and the one to fix.** Unlike a trap patch, a Time
+  Manager task has a sanctioned removal (`RmvTime`), so this plane is
+  not subject to the constraint that pins P4. And the driver open and
+  stream creation have no reason to precede the application publishing
+  an endpoint.
+
 ## Charter amendment
 
 AGENTS.md's "what this is" grows one sentence, and this note is its
