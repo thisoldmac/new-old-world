@@ -179,18 +179,29 @@ struct ActBattery {
         // 3. Grow box → resize. Done BEFORE the move, while the window is at
         // its default on-screen spot (a move can push the grow box off the
         // bottom edge, where QMP can't position). Shrink (always has room).
+        // A SKIP, on every window, until `FindWindow`'s `inGrow` lands:
+        // `WindowChrome.growBox` answers nil because nothing in IR v1 says
+        // which windows have one, and the battery may only act on a box the
+        // chrome will vouch for. Grading a drag at a corner we cannot
+        // establish would score the fabricated affordance as a pass.
         if let w = scene().flatMap(Self.front) {
-            let r = w.rect
-            dispatch(ActionModel.growDrag(from: (r.r - 7, r.b - 7),
-                                          to: (r.r - 60, r.b - 60)))
-            let s = settle { s in
-                let n = Self.front(s)?.rect ?? r
-                return abs(n.r - r.r) > 15 || abs(n.b - r.b) > 15
+            if let box = WindowChrome.growBox(w) {
+                let r = w.rect
+                let g = WindowChrome.center(box)
+                dispatch(ActionModel.growDrag(from: g,
+                                              to: (g.x - 53, g.y - 53)))
+                let s = settle { s in
+                    let n = Self.front(s)?.rect ?? r
+                    return abs(n.r - r.r) > 15 || abs(n.b - r.b) > 15
+                }
+                let n = s.flatMap(Self.front)?.rect ?? r
+                let changed = abs(n.r - r.r) > 15 || abs(n.b - r.b) > 15
+                record("grow box (resize)", changed ? .pass : .fail,
+                       "Δr=\(n.r - r.r) Δb=\(n.b - r.b)")
+            } else {
+                record("grow box (resize)", .skip,
+                       "no grow box this side can establish (KW-01)")
             }
-            let n = s.flatMap(Self.front)?.rect ?? r
-            let changed = abs(n.r - r.r) > 15 || abs(n.b - r.b) > 15
-            record("grow box (resize)", changed ? .pass : .fail,
-                   "Δr=\(n.r - r.r) Δb=\(n.b - r.b)")
         } else { record("grow box (resize)", .skip, "no front window") }
 
         // 4. Title-bar drag → window move.

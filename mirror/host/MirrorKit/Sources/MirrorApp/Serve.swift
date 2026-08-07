@@ -882,9 +882,21 @@ final class MirrorService {
                                          to: (grab.x + dx, grab.y + dy)),
                 mechanism: "drag", plane: "tracking", sess: sess, params: p)
         case "resize":
+            // A resize is a drag FROM the grow box, so it needs one — and
+            // `WindowChrome.growBox` answers nil on every window until
+            // `FindWindow`'s `inGrow` lands. Refusing is the point: dragging
+            // the corner of a window with no grow box is a drag inside a live
+            // application's content region, which is the fabricated-affordance
+            // failure the zoom box was removed for.
+            guard let box = WindowChrome.growBox(w) else {
+                return err("element_not_found",
+                           "this window has no grow box we can establish. "
+                               + "Resizability is a WDEF variant and IR v1 "
+                               + "does not carry it; see WindowChrome.growBox")
+            }
             let dx = (p["dx"] as? NSNumber)?.intValue ?? 0
             let dy = (p["dy"] as? NSNumber)?.intValue ?? 0
-            let grab = (x: w.rect.r - 7, y: w.rect.b - 7)
+            let grab = WindowChrome.center(box)
             return performAct(
                 ActionModel.growDrag(from: grab,
                                      to: (grab.x + dx, grab.y + dy)),

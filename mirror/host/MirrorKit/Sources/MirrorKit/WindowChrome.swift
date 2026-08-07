@@ -16,7 +16,10 @@ public enum WindowChrome {
     /// Close/zoom/collapse box side length. Confirmed against the machine —
     /// `PlatinumTitleBar.widgetSize`, eleven windows, always 11.
     public static let widgetSize = PlatinumTitleBar.widgetSize
-    /// Grow-box catch span at the bottom-right corner.
+    /// Grow-box catch span at the bottom-right corner. Kept, and deliberately
+    /// unused today: `growBox` answers nil on every window because nothing in
+    /// IR v1 says WHICH windows have one. The span is the geometry, and the
+    /// geometry was never the missing half — see `growBox`.
     public static let growBoxSpan = 15
 
     public enum Widget: Equatable, CaseIterable {
@@ -91,12 +94,45 @@ public enum WindowChrome {
     /// order, and it is written up in docs/open-issues.md.
     private static func zoomBox(_ win: Scene.Window) -> Rect? { nil }
 
-    /// The grow box at the bottom-right corner (front, non-dialog only).
-    public static func growBox(_ win: Scene.Window) -> Rect? {
-        guard win.kind != 2, win.front else { return nil }
-        let r = win.rect
-        return Rect(l: r.r - growBoxSpan, t: r.b - growBoxSpan, r: r.r, b: r.b)
-    }
+    /// The grow box — **and today the honest answer is always "we cannot
+    /// say"**, for the same reason and by the same argument as `zoomBox`.
+    ///
+    /// This read `guard win.kind != 2` until 2026-08-07, and fidelity sweep D
+    /// measured that discriminator wrong **in both directions at once**, in
+    /// the guest's own pixels: Appearance is `kind == 2000`, so it passed the
+    /// guard and **got a grow box the machine does not draw**; Extensions
+    /// Manager is `kind == 2`, so it failed the guard and **lost one the
+    /// machine does draw**. `kind` says who OWNS a window, not what its frame
+    /// looks like — the same lesson `hasTitleBar` and `zoomBox` each learned
+    /// separately, one function above and one below.
+    ///
+    /// Resizability is a property of the **WDEF variant**, and IR v1 does not
+    /// carry it: the WindowRecord has `goAwayFlag` (close) and `spareFlag`
+    /// (zoom) and **no grow flag at all**. The variation code lives in the
+    /// high byte of `windowDefProc` and is ambiguous without the WDEF's
+    /// resource id, because `kWindowDocumentDefProcResID` and
+    /// `kWindowDialogDefProcResID` number their variants independently — a
+    /// foreign walk holding only a Handle cannot say which it is looking at.
+    ///
+    /// So this is not a bad guess awaiting a better one; there is no field to
+    /// guess from, and **an affordance the machine does not offer is worse
+    /// than a missing one.** A fabricated box is not cosmetic: `HitTester`
+    /// reports it as a target and `Serve`/`Battery` drag from it, which on a
+    /// window with no grow box is a drag inside the content region of a live
+    /// application. That is the same failure the zoom box was removed for.
+    ///
+    /// **The cost is real and is not hidden:** every window loses its grow
+    /// box, including the ones that have one (sweep D's Workshop, SimpleText,
+    /// Finder, Apple System Profiler, Extensions Manager). `mirror.act.window
+    /// op: resize` answers `element_not_found` and the battery records a skip
+    /// rather than a pass.
+    ///
+    /// **What fills this in:** `FindWindow`'s `inGrow` — ask the Window
+    /// Manager, in the target application's own context, which part a point in
+    /// that corner belongs to. That is an **act**, not a read, so it needs an
+    /// armed, gated surface rather than the passive scene walk every other
+    /// chrome fact comes from. Written up in docs/open-issues.md.
+    public static func growBox(_ win: Scene.Window) -> Rect? { nil }
 
     public static func center(_ rect: Rect) -> (x: Int, y: Int) {
         ((rect.l + rect.r) / 2, (rect.t + rect.b) / 2)
