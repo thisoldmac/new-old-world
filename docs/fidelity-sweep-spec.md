@@ -148,6 +148,46 @@ only while it is itself pumping events with the plane armed, so an
 undriven machine hands you the anchor defect and you will report it as a
 render defect.
 
+## The guest's pixels are the truth — and how much to check
+
+Michelle, on the dose:
+
+> maybe not obsessively, but enough to check sanity and validate that the
+> mirror is showing what it should be showing how it should be showing it
+
+**The failure this guards against is not the render looking broken. It is
+the render looking RIGHT and being wrong** — self-consistent, confident,
+and diverged from the machine. That has already happened here twice:
+
+- The render printed **"Capture and stream"** where the guest had drawn
+  **"Capture and stre…"**. It looked like an improvement. It was a
+  divergence, and nobody would have filed it as a bug.
+- Group-box frames appeared to cross their own labels. Three people read
+  it as a chrome defect. It was **Chicago standing in for Charcoal and
+  overrunning a band the machine had sized for a narrower face** — a
+  render confidently drawing something the machine never drew.
+
+**A render nobody checks drifts toward plausible rather than true**, and
+each drift is individually defensible. That is why this is a standing
+rule and not a phase.
+
+The dose:
+
+- **Every target gets at least one guest/render pair actually looked
+  at.** Not scored — *looked at*, side by side, by something that will
+  say what is different.
+- **Every claim gets its own rectangle checked.** If a lane says the tabs
+  draw, check the tabs. If it says the panel face is grey, sample the
+  face. A claim and the pixels that would falsify it.
+- **Not** an exhaustive pixel diff of everything. That is the obsessive
+  end, it buys little, and a whole-window similarity score is the *worst*
+  form of it — **it cannot see a one-pixel error**, which is how a line
+  defect survived in every window since the renderer's inception.
+
+When the render and the machine disagree, **the machine is right and the
+render is the defect** — even when the render looks better. Especially
+then.
+
 ## Scoring
 
 Per target, the 0–3 rubric: **TEXT / PLACEMENT / CONTROLS / REGIONS /
