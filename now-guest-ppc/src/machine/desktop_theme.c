@@ -139,19 +139,30 @@ static void add_str_tag(Collection c, OSType tag, const char *row_name,
     now_desktop_add_row(answer, row_name, raw, note);
 }
 
+/* Every tag GetTheme returned, as four-char codes across as many rows as
+   it takes. This is the RAW evidence every other row is read out of - a
+   count alone would leave "we did not read that tag" and "the machine
+   does not have it" indistinguishable, which is the distinction this
+   whole verb is about. */
 static void add_tag_inventory(Collection c, DesktopAnswer *answer)
 {
     char list[kDesktopRowRawCap];
     char raw[kDesktopRowRawCap];
+    char note[kDesktopRowNoteCap];
     SInt32 tag_count = CountCollectionTags(c);
     SInt32 i;
     long pos = 0;
     int listed = 0;
+    int row = 0;
+
+    snprintf(raw, sizeof raw, "%ld", (long)tag_count);
+    now_desktop_add_row(answer, "tags", raw, "tags GetTheme returned");
 
     list[0] = '\0';
     for (i = 1; i <= tag_count; i++) {
         CollectionTag tag = 0;
         char text[16];
+        char name[kDesktopRowNameCap];
         long n;
 
         if (GetIndexedCollectionTag(c, i, &tag) != noErr) {
@@ -160,7 +171,14 @@ static void add_tag_inventory(Collection c, DesktopAnswer *answer)
         fourcc_text((OSType)tag, text, (long)sizeof text);
         n = (long)strlen(text);
         if (pos + n + 1 >= (long)sizeof list) {
-            break;              /* the count row carries the whole truth */
+            if (row + 1 >= kDesktopTagListRows) {
+                break;          /* the count row carries the whole truth */
+            }
+            snprintf(name, sizeof name, "tagList.%d", row);
+            now_desktop_add_row(answer, name, list, "four-char codes, continued");
+            row++;
+            pos = 0;
+            list[0] = '\0';
         }
         if (pos > 0) {
             list[pos++] = ' ';
@@ -170,13 +188,12 @@ static void add_tag_inventory(Collection c, DesktopAnswer *answer)
         list[pos] = '\0';
         listed++;
     }
-    snprintf(raw, sizeof raw, "%ld", (long)tag_count);
-    now_desktop_add_row(answer, "tags", raw, "tags GetTheme returned");
-    if (listed > 0) {
-        char note[kDesktopRowNoteCap];
+    if (pos > 0) {
+        char name[kDesktopRowNameCap];
 
-        snprintf(note, sizeof note, "%d of %ld shown", listed, (long)tag_count);
-        now_desktop_add_row(answer, "tagList", list, note);
+        snprintf(name, sizeof name, "tagList.%d", row);
+        snprintf(note, sizeof note, "%d of %ld listed", listed, (long)tag_count);
+        now_desktop_add_row(answer, name, list, note);
     }
 }
 
@@ -263,17 +280,20 @@ static void add_picture(Collection c, DesktopAnswer *answer,
         now_desktop_add_row(answer, "pictureAlign", "", note);
     }
 
-    /* The alias is a handle to a file spec. Its presence is what matters
-       here - it says a picture is CONFIGURED - and its bytes are a path
-       on someone else's disk, so only the size is reported. */
+    /* The alias is a handle to a file spec, and it is the tag that
+       actually says whether a picture is set - see the note on
+       DesktopSource for the measurement that settled that. Its bytes are
+       a path on someone else's disk, so only the size is reported. */
     if (CountTaggedCollectionItems(c, (CollectionTag)kThemeDesktopPictureAliasTag)
         > 0) {
         SInt32 alias_size = 0;
 
         if (GetTaggedCollectionItem(c, (CollectionTag)kThemeDesktopPictureAliasTag,
                                     1, &alias_size, NULL) == noErr) {
+            answer->has_picture = 1;
             snprintf(raw, sizeof raw, "%ld", (long)alias_size);
-            now_desktop_add_row(answer, "pictureAlias", raw, "alias, bytes");
+            now_desktop_add_row(answer, "pictureAlias", raw,
+                                "alias, bytes; a picture IS set");
         }
     } else {
         now_desktop_add_row(answer, "pictureAlias", "", "tag absent");
@@ -311,7 +331,12 @@ void now_desktop_gather(DesktopAnswer *out)
     }
 
     add_tag_inventory(c, out);
+    /* kThemeNameTag was ABSENT on the 9.1 runner image (2026-08-07) while
+       kThemeAppearanceFileNameTag carried the answer, so both are asked
+       and neither is assumed. */
     add_str_tag(c, (OSType)kThemeNameTag, "theme", out, NULL, 0);
+    add_str_tag(c, (OSType)kThemeAppearanceFileNameTag, "appearanceFile", out,
+                NULL, 0);
     add_str_tag(c, (OSType)kThemeDesktopPatternNameTag, "patternName", out,
                 NULL, 0);
     add_pattern(c, out);
@@ -321,7 +346,7 @@ void now_desktop_gather(DesktopAnswer *out)
        picture still HAS a pattern - it is what shows wherever the picture
        does not reach. Both facts are reported; the source says which one
        a person is actually looking at. */
-    if (picture_name[0] != '\0') {
+    if (out->has_picture || picture_name[0] != '\0') {
         out->source = kDesktopSourcePicture;
     } else if (out->has_pattern) {
         out->source = kDesktopSourcePattern;

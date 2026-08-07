@@ -72,6 +72,11 @@ static void test_basic_shape(void)
     assert(now_json_find_string(out, "source", text, sizeof text));
     assert(strcmp(text, "pattern") == 0);
     assert(now_json_find_bool(out, "hasPattern", 0));
+    /* The two layers are independent facts. A pattern desktop must not
+       report a picture just because it reported a pattern - that is the
+       mutation that makes the picture case below pass for the wrong
+       reason. */
+    assert(!now_json_find_bool(out, "hasPicture", 1));
     assert(now_json_find_int(out, "patternBytes", -1) == 40);
     assert(strstr(out, "\"desktop\":[[\"theme\",\"Apple platinum\","
                        "\"Str255, 15 bytes stored\"],"
@@ -79,6 +84,38 @@ static void test_basic_shape(void)
     /* Every successful PowerPC reply carries an output object - the
        console renderer rests on it (CommandParityTests pins the rule). */
     assert(strstr(out, "\"output\":{") != NULL);
+}
+
+/* The correction that cost a wrong answer on a live machine: the OS 9.1
+   runner showed a full-screen picture while kThemeDesktopPictureNameTag
+   was absent. A renderer must be able to learn "a picture is set" from a
+   typed field, and that field must not be derived from the name.
+   Watched failing by mutation: serializing hasPicture from has_pattern
+   makes this fail. */
+static void test_a_picture_with_no_name_still_reads_as_a_picture(void)
+{
+    DesktopAnswer answer;
+    char out[3072];
+    char text[64];
+
+    memset(&answer, 0, sizeof answer);
+    answer.source = kDesktopSourcePicture;
+    answer.has_pattern = 1;             /* the layer underneath is known */
+    answer.has_picture = 1;             /* from the alias, not the name */
+    answer.pattern_bytes = 16790;
+    answer.pattern_carried = 240;
+    now_desktop_add_row(&answer, "pictureName", "", "tag absent");
+    now_desktop_add_row(&answer, "pictureAlias", "154",
+                        "alias, bytes; a picture IS set");
+
+    assert(now_desktop_result_json(5, &answer, out, sizeof out) > 0);
+    assert(now_json_find_string(out, "source", text, sizeof text));
+    assert(strcmp(text, "picture") == 0);
+    assert(now_json_find_bool(out, "hasPicture", 0));
+    /* Both layers reported: a picture does not erase the pattern under it. */
+    assert(now_json_find_bool(out, "hasPattern", 0));
+    assert(now_json_find_int(out, "patternBytes", -1) == 16790);
+    assert(now_json_find_int(out, "patternCarried", -1) == 240);
 }
 
 static void test_absent_pattern_does_not_read_as_present(void)
@@ -176,6 +213,7 @@ int main(void)
     test_source_names();
     test_hex_is_the_bytes();
     test_basic_shape();
+    test_a_picture_with_no_name_still_reads_as_a_picture();
     test_absent_pattern_does_not_read_as_present();
     test_a_full_answer_fits_the_command_result();
     test_a_short_buffer_refuses_rather_than_truncating();

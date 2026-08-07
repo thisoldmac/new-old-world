@@ -128,10 +128,11 @@ long now_desktop_result_json(long id, const DesktopAnswer *answer,
        for a person reading the console; a renderer needs to know whether a
        pattern is even visible without parsing prose. */
     snprintf(scratch, sizeof scratch,
-             "],\"source\":\"%s\",\"hasPattern\":%s,\"patternBytes\":%ld,"
-             "\"patternCarried\":%ld",
+             "],\"source\":\"%s\",\"hasPattern\":%s,\"hasPicture\":%s,"
+             "\"patternBytes\":%ld,\"patternCarried\":%ld",
              now_desktop_source_name(answer->source),
              answer->has_pattern ? "true" : "false",
+             answer->has_picture ? "true" : "false",
              answer->pattern_bytes, answer->pattern_carried);
     if (overflowed(out, cap, &pos, scratch)) {
         return -1;

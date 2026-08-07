@@ -29,10 +29,15 @@
 enum {
     kDesktopRowNameCap = 24,
     kDesktopRowRawCap = 84,
-    kDesktopRowNoteCap = 56
+    kDesktopRowNoteCap = 44
 };
 
-enum { kDesktopRowMax = 16 };
+enum { kDesktopRowMax = 17 };
+
+/* The tag inventory is the raw evidence that everything else is read out
+   of, so it is not allowed to be a number alone - but 19 four-char codes
+   do not fit one row's raw cap. Two rows do. */
+enum { kDesktopTagListRows = 2 };
 
 /* Bytes of the flattened pattern carried back as hex, across at most
    kDesktopHexRows rows of kDesktopHexBytesPerRow each. A pattern longer
@@ -40,7 +45,7 @@ enum { kDesktopRowMax = 16 };
    length is never the amount we could carry. */
 enum {
     kDesktopHexBytesPerRow = 40,        /* 80 hex chars, inside the raw cap */
-    kDesktopHexRows = 6
+    kDesktopHexRows = 5
 };
 
 /* [name, raw, note]: the same discipline as CensusRow. The raw column is
@@ -63,6 +68,17 @@ typedef enum {
     kDesktopSourcePicture       /* a picture, drawn OVER the pattern layer */
 } DesktopSource;
 
+/* WHICH tag says a picture is set, measured 2026-08-07 rather than
+   assumed. On the OS 9.1 runner image, showing a full-screen picture,
+   kThemeDesktopPictureNameTag ('dpnm') was ABSENT while
+   kThemeDesktopPictureAliasTag ('dpal') carried 154 bytes and
+   kThemeDesktopPictureAlignmentTag ('dpan') read 5. So the NAME is not
+   the signal - a first version of this file keyed on it and reported
+   `pattern` for a machine with a picture on the screen, which is the
+   confident wrong answer this lane exists to remove. The ALIAS is the
+   signal: it is the file reference the desktop is drawn from, and it is
+   present exactly when one is configured. */
+
 typedef struct {
     DesktopRow rows[kDesktopRowMax];
     int count;
@@ -71,6 +87,9 @@ typedef struct {
        A picture desktop still has a pattern underneath it, and that layer
        is what shows wherever the picture does not reach. */
     int has_pattern;
+    /* Nonzero when a desktop picture is configured - the alias tag, not
+       the name tag; see the note on DesktopSource. */
+    int has_picture;
     long pattern_bytes;         /* true length of the flattened pattern; -1 unknown */
     long pattern_carried;       /* how many of those bytes the rows carry */
     char note[kDesktopRowNoteCap];  /* one sentence, or empty */

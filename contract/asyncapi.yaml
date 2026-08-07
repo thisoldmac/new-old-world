@@ -3578,6 +3578,20 @@ components:
               Whether a pattern could be read at all. True beside
               `source: picture` is the normal case, and means the
               pattern layer under the picture is known.
+          hasPicture:
+            type: boolean
+            description: >
+              Whether a desktop picture is configured. Read from the
+              picture ALIAS tag, not the picture NAME tag, and the
+              difference is measured rather than assumed: on an OS 9.1
+              image showing a full-screen picture the name tag was
+              ABSENT while the alias carried 154 bytes. A guest that
+              keyed on the name would report `pattern` for a machine
+              with a picture on its screen.
+
+              Independent of hasPattern. Both layers exist at once, and
+              a reader that derives one from the other has thrown away
+              the fact this field was added to carry.
           patternBytes:
             type: integer
             description: >
