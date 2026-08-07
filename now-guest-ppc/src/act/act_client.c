@@ -328,6 +328,15 @@ static void act_v2_describe(NowPeekTable *table, const NowActTarget *target,
         v2->operation_kind = kNowPeekActKindVisibility;
         v2->operation_object = (NowPeekU32)cell->item_index;
         break;
+    case kNowPeekActOpDragPress:
+        v2->operation_kind = kNowPeekActKindDrag;
+        /* The session nonce rides in control_handle for this op, and the
+           nonce is what the guard binds to - NOT the point. A drag press
+           names a point, and two presses at the same place are two
+           different gestures; binding to the point would let a stale
+           request satisfy the identity check for a live one. */
+        v2->operation_object = cell->control_handle;
+        break;
     default:
         v2->operation_kind = kNowPeekActKindNone;
         break;

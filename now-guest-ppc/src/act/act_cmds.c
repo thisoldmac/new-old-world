@@ -1268,17 +1268,24 @@ void now_act_run_dragpress(const char *request_json, long id,
     NowPeekU32       session;
     long             idle = 0;
     long             gcap = 0;
+    long             h = 0;
+    long             v = 0;
+    int              have_point;
 
     now_act_begin_command();
     if (arg_int_malformed(request_json, "idle")
-        || arg_int_malformed(request_json, "cap")) {
+        || arg_int_malformed(request_json, "cap")
+        || arg_int_malformed(request_json, "h")
+        || arg_int_malformed(request_json, "v")) {
         reply_error(out, cap, id, "bad-request",
-                    "dragpress's idle and cap are present but are not "
-                    "JSON numbers");
+                    "dragpress's idle, cap, h and v are present but are "
+                    "not JSON numbers");
         return;
     }
     (void)arg_int(request_json, "idle", &idle);
     (void)arg_int(request_json, "cap", &gcap);
+    have_point = arg_int(request_json, "h", &h)
+              && arg_int(request_json, "v", &v);
 
     if (!resolve_for_act(request_json, id, out, cap, kNowObsKindElement,
                          &handle, ref, 0)) {
@@ -1306,6 +1313,30 @@ void now_act_run_dragpress(const char *request_json, long id,
         return;
     }
 
+    if (!have_point) {
+        /* Fall back to the resolver's own rectangle for the element -
+           but only if it HAS one. Found by driving: the resolver leaves
+           detail.control zeroed for controls the scene walk reports with
+           real bounds, so this silently pressed at 0,0.
+
+           For ctlact that would be harmless, because its patch answers
+           for the HANDLE the request names and where the click landed
+           decides nothing. For a drag the point is the entire operation.
+           So this refuses rather than guesses - the same rule that says
+           an item whose home we cannot trust must not be dragged at
+           all. A caller that knows the point passes h and v. */
+        h = (handle.detail.control.left + handle.detail.control.right) / 2;
+        v = (handle.detail.control.top + handle.detail.control.bottom) / 2;
+        if (handle.detail.control.right <= handle.detail.control.left
+            || handle.detail.control.bottom <= handle.detail.control.top) {
+            reply_error(out, cap, id, "unsupported",
+                        "this element resolves to no rectangle, so there "
+                        "is no trustworthy point to press. Pass h and v "
+                        "from an observation that does know where it is");
+            return;
+        }
+    }
+
     session = now_act_drag_next_session();
     cell->op = kNowPeekActOpDragPress;
     /* The session nonce and the two deadlines ride in existing 32-bit
@@ -1315,10 +1346,8 @@ void now_act_run_dragpress(const char *request_json, long id,
     cell->control_handle = session;
     cell->win_h = (NowPeekI32)idle;
     cell->win_v = (NowPeekI32)gcap;
-    cell->click_h = (NowPeekI32)((handle.detail.control.left
-                                  + handle.detail.control.right) / 2);
-    cell->click_v = (NowPeekI32)((handle.detail.control.top
-                                  + handle.detail.control.bottom) / 2);
+    cell->click_h = (NowPeekI32)h;
+    cell->click_v = (NowPeekI32)v;
 
     st = now_act_submit(&g_target, &g_snap);
     if (st == kNowActRefused) {
@@ -1340,6 +1369,7 @@ void now_act_run_dragpress(const char *request_json, long id,
     rows_reset(&rows);
     row_add(&rows, "Element", ref);
     row_add(&rows, "Dispatch", "pressed");
+    row_add(&rows, "Point from", have_point ? "the caller" : "the resolver");
     drag_state_rows(&rows, drag);
     now_log(kLogInfo, "act", "#%ld dragpress session %ld", id,
             (long)session);

@@ -4304,6 +4304,20 @@ components:
             description: >
               The opaque reference, "now-element-" and a UUID, minted by
               the observation that saw the element.
+          h:
+            type: integer
+            description: >
+              Global horizontal point to press at. Optional, and the
+              caller SHOULD send it: without it the press falls back to
+              the rectangle the guest's own resolver has for the element,
+              which is not always populated - and where it is not, the
+              request is refused rather than pressed at a guessed point.
+              For ctlact a wrong point is harmless, because its patch
+              answers for the handle the request names; for a drag the
+              point is the entire operation.
+          v:
+            type: integer
+            description: Global vertical point to press at. See h.
           idle:
             type: integer
             description: >
