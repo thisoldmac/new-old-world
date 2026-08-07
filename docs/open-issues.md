@@ -711,6 +711,92 @@ three argument requirements were also found by being refused for them in
 turn, and both refusals said exactly what was missing, which is the
 error vocabulary working.
 
+## FIXED in the tools, REPAIRED but NOT INSTALLED on disk: every spin-up clone booted into Disk First Aid for nineteen days (2026-08-07, `claude/019-clean-base-image`)
+
+Michelle saw Disk First Aid come up and asked whether anybody was baking
+dirty images. Nobody was. The bake path is sound and the check it was
+given works: `now-mirror-stage.qcow2` measured **CLEAN** and matched the
+newest receipt, and all five per-lane clones under `agent-stage/` were
+clean too.
+
+**The dirt was where the gate does not look.**
+`~/Lab/Assets/os91-qemu/os91-runner.qcow2` measured `DIRTY — will run
+Disk First Aid`, with a content mtime of **19 July**. And
+`scripts/spin-up-ppc:89` defaults `BASE` to that file, not to the stage
+image — its own comment says so. So every spin-up clone since 19 July
+booted into "Your computer did not shut down properly", a modal that
+sits on the desktop until something dismisses it.
+
+The shape is worth more than the fix. `tools/ext-bake-gate` requires
+`volumeClean` in a **receipt**, and a receipt describes the **baked
+oracle**. `os91-runner.qcow2` is never baked, so there was no receipt to
+require anything of, and no gate was wrong — the gate and the script
+simply **named different files**. Nineteen days of green.
+
+Two other bases were also dirty and are recorded here rather than
+repaired, because nothing in the current arcs clones them:
+`os91-hd.qcow2` and `mac99-stack-dev.qcow2`.
+
+**What changed.** `tools/image-provenance` now asks the *volume* of
+whatever image it describes — measured from the file, not read out of a
+receipt, and reported for every image including the plain unbaked bases
+no receipt covers. It already ran on the base of every `spin-up-ppc` and
+`bake-ext-image` run; `scripts/q800-68k` now runs it too, which was the
+third clone site nobody was inspecting. `tools/volclean.py` grew a
+non-printing `verdict()` so both callers ask one question in one place.
+
+It **warns and does not refuse**, following `ext-bake-gate:326-333`'s
+reasoning about the oracle: whether a shared base is clean is not a
+property of the run about to start, is not in that caller's power to fix,
+and is not even a wrong result — only a slower boot and a dialog.
+`unknown` is kept as its own state, because an image that could not be
+read is not clean, and folding those together is exactly how `qemu-img
+check` came to stand in for a question it cannot answer.
+
+**What was measured, and on what.** A `cp -c` copy of the runner image
+was booted in place on a private lane block (467, anchor 15736). The
+modal was photographed — *"Verification and repairs completed
+successfully"* — dismissed with the worker's `key` verb, the shutdown
+applet pushed and `tools/shutdown-guest.py` run. Result:
+`volclean.py` **CLEAN**, `qemu-img check` **No errors were found**. A
+clone of the repaired copy was then booted end to end on a second port
+and reached the Finder desktop **with no dialog at all**, and that clone
+shut itself down clean as well — the procedure reproduces.
+
+The keyboard route was tried so nobody has to try it again: OS 9's
+`Ctrl-F2` menu access does not work here, because the worker's `key`
+verb drops the modifier (it answers `mods: 0`). The applet is the only
+route a plain base has, since the Finder's own Shut Down needs NOW's act
+plane.
+
+**STILL OPEN, and it is one command.** The repaired image is **not
+installed**. Seven QEMU guests were live on this Mac, one of them
+Michelle's own stack, and the standing rule is not to replace a shared
+base while any is running. No running VM depends on it as a backing file
+— `tbt_clone_disk` is `cp -c`, a standalone copy, and the one session
+image that could be read had no backing chain — but the rule is the rule
+and the cost of waiting is a slower boot.
+
+    # when the Mac is free (tools/lane-ports list shows no busy blocks):
+    cd ~/Lab/Assets/os91-qemu \
+      && mv os91-runner.qcow2.clean-20260807 os91-runner.qcow2 \
+      && rm -f os91-runner.qcow2.sha256 os91-runner.qcow2.volclean.json \
+      && python3 <NOW>/tools/volclean.py os91-runner.qcow2
+
+The original is preserved as `os91-runner.qcow2.bak-20260807` (still
+dirty, deliberately — it is what was found). The parked file is sha256
+`ba3c9ee1856689610fca4646d51056f250c0bb10c9d7913f698b54d8f778e5a9`; the
+dirty original is `f34f7e5df64e09ced96c7968776692bb94d9639ee32a6f51652449e1a9cda776`,
+which is the hash `docs/fidelity-sweep-2026-08-07-a.md` and several other
+documents name as their base — those remain correct about the run they
+describe, and will be describing the pre-repair image.
+
+The repaired image carries the shutdown applet at `Macintosh
+HD:TimBotTu:now-dev:NOW Shut Down`. That is deliberate and is the only
+difference beyond the volume bit: `tools/stage-ext.py` puts the same file
+at the same path on every clone anyway, and its presence makes the base
+repairable next time without a 68K build.
+
 ## BROKEN: the machine will not say what a foreign control IS, and that is not a bug we can fix in the walk (2026-08-07, `claude/018-control-semantics`)
 
 Michelle, driving the integrated build: *"a lot of controls (such as
