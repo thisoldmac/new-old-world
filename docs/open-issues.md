@@ -110,6 +110,14 @@ naming it says the lookup worked and the id was not enough.
   it. Nothing in the mirror treats "the front window is modal and I can
   serve none of it" as different from any other refusal. Mail's alert is
   now serveable; the class is not closed.
+
+  **And the cost is larger than a dialog you cannot dismiss.**
+  `tools/shutdown-guest.py`'s Finder route needs the Finder to own the
+  menu bar; a modal holds it, so the tool declines by name and falls back
+  to the applet, which is known to leave the HFS volume marked mounted
+  (measured by another lane the same day, on this defect). So a stuck
+  modal is also a dirty image waiting to happen for anyone who preserves
+  that clone — a wedged machine and a poisoned oracle from one refusal.
 - **The alert's message is `^0` and `^1`, so the modal really is blank.**
   Items 5 and 6 are `staticText` whose DITL text is the **ParamText
   placeholders**, and Mail substitutes at draw time via `ParamText`. The
