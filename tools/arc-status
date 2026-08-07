@@ -154,6 +154,38 @@ EOF
     echo
 fi
 
+echo "=== KNOWLEDGE — work that is not written down did not happen"
+undoc=0
+for b in $(git branch --list 'claude/01[0-9]-*' --format='%(refname:short)'); do
+    [ "$b" = "$INT" ] && continue
+    git merge-base --is-ancestor "$b" "$INT" 2>/dev/null && continue
+    mb=$(git merge-base "$b" "$INT")
+    d=$(git diff --name-only "$mb..$b" -- docs/ 2>/dev/null | wc -l | tr -d ' ')
+    c=$(git diff --name-only "$mb..$b" 2>/dev/null | grep -cE '\.(swift|c|h|py)$' || true)
+    if [ "${c:-0}" -gt 0 ] && [ "${d:-0}" -eq 0 ]; then
+        printf '    *** %-26s %s code files, NO docs ***\n' "${b#claude/}" "$c"
+        undoc=$((undoc + 1))
+    fi
+done
+[ "$undoc" -eq 0 ] && echo "    every unlanded lane touched docs/"
+
+# The corpus outlives this repository; in-repo docs do not. A finding that
+# is only in docs/ is a finding the next project pays for again.
+corpus="${TBT_CORPUS:-/Users/michelle/Lab/Code/timbottu/data/findings}"
+if [ -d "$corpus" ]; then
+    newest=$(ls -t "$corpus"/*.md 2>/dev/null | head -1)
+    if [ -n "$newest" ]; then
+        age=$(( ( $(date +%s) - $(stat -f %m "$newest") ) / 3600 ))
+        echo "    newest corpus finding: $(basename "$newest") (${age}h ago)"
+        [ "$age" -gt 12 ] && \
+            echo "    *** nothing graduated to the corpus in ${age}h — durable lessons are evaporating ***"
+    fi
+    untracked=$(cd "$corpus" && git status --porcelain . 2>/dev/null | grep -c '^??' || true)
+    [ "${untracked:-0}" -gt 0 ] && \
+        echo "    *** $untracked corpus finding(s) UNTRACKED — one checkout from oblivion ***"
+fi
+echo
+
 echo "=== GATE FRESHNESS — a green you did not watch is not a green"
 echo "    build-guests will SKIP silently without .env.lab:"
 if [ -f "$(git rev-parse --git-common-dir)/../.env.lab" ] || [ -f .env.lab ]; then
