@@ -29,16 +29,33 @@ public enum Platinum {
     /// the semantic pass did not draw over read as unfinished paper. One
     /// wrong constant, and it is most of why a panel pair looks unfinished.
     ///
-    /// A MEASURED CONSTANT IS NOT AN ANSWER, it is a stand-in for one. The
-    /// machine can be asked: `GetThemeBrushAsColor(
-    /// kThemeBrushDialogBackgroundActive, 32, true, &rgb)` is CarbonLib 1.0
-    /// (Appearance.h:2826) and the guest already calls it in
-    /// `census_module.c:615`. What is missing is somewhere on the wire to
-    /// put the answer — see docs/open-issues.md, "the panel face is
-    /// measured, not asked". Until that field exists this number is right
-    /// for the shipped Platinum theme and silently wrong for any other,
-    /// which is exactly the failure mode `ppat` 16 had on the desktop.
+    /// A MEASURED CONSTANT IS NOT AN ANSWER, it is a stand-in for one —
+    /// and since 2026-08-07 the answer exists. `meta.theme.dialogBackground`
+    /// carries what `GetThemeBrushAsColor(kThemeBrushDialogBackgroundActive,
+    /// …)` returned on the guest at capture time, and `SceneTheme` prefers
+    /// it. **This constant is now the FALLBACK ONLY**: a scene from a
+    /// producer too old to ask, or a machine that refused the brush.
+    ///
+    /// It stays 0xDDDDDD because that is what was counted, and the value is
+    /// confirmed by the machine — see docs/theme-colours.md for the ask
+    /// beside the count.
     public static let dialogFace = Color(hex: 0xDDDDDD)
+
+    /// Fallback for `meta.theme.alertBackground`
+    /// (kThemeBrushAlertBackgroundActive).
+    ///
+    /// **It is a SEPARATE constant from `dialogFace` because it is a
+    /// separate brush**, whatever the two happen to evaluate to under
+    /// Platinum. Collapsing them would make the theme's ability to
+    /// distinguish them unrepresentable here, which is the shape of every
+    /// defect this field exists to end.
+    public static let alertFace = Color(hex: 0xDDDDDD)
+
+    /// Fallback for `meta.theme.documentBackground`
+    /// (kThemeBrushDocumentWindowBackground). A document window's content
+    /// really is white under Platinum; another theme may disagree, and now
+    /// gets to.
+    public static let documentFace = Color(hex: 0xFFFFFF)
 
     /* The two accent colours below are MEASURED — read out of the guest's
        own `Apple platinum` theme file rather than chosen (see
@@ -54,13 +71,35 @@ public enum Platinum {
     /// ring — a marker this side draws, not a fill the guest makes.
     public static let selection = Color(rgb: PlatinumAccent.active.steps[4])
 
-    /// The colour a selected list row or run of text is filled with.
+    /// The colour a selected list row or run of text is filled with, when
+    /// the guest did not say. Fallback for `meta.theme.highlight`.
     ///
-    /// The default scene writes this literally as its own RGBColor, and it
-    /// is also Lavender's second step — two independent slots agreeing.
-    /// It was previously `g2` (0xCCCCCC), which is a grey: right value for
-    /// the *Gray Space* theme, one blue channel short for this one.
-    public static let highlight = Color(rgb: PlatinumAccent.activeHighlight)
+    /// **MEASURED 2026-08-07, AND IT OVERTURNED THE EXTRACTED ONE.**
+    /// This was `PlatinumAccent.activeHighlight` (0xCCCCFF), read offline
+    /// out of the theme file's default scene and corroborated by two slots
+    /// in that file agreeing. The running machine disagrees with both:
+    ///
+    /// * `LMGetHiliteRGB` on a stock Mac OS 9.1 guest answers **0x97A1DE**
+    ///   (`meta.theme.highlight`, guest build `beda718861c0`, screen depth
+    ///   32).
+    /// * The guest's own screendump agrees exactly — the selected sidebar
+    ///   row is 0x97A1DE across 2399 of 3240 sampled pixels (the rest is
+    ///   the row's text and icon).
+    ///
+    /// So 0xCCCCFF had **never been seen on a screen**: `AccentRampTests`
+    /// says in its own words that no capture in the corpus carried a
+    /// selected row, and forcing the constant to magenta changed no pixel
+    /// anywhere. It is a true fact about a FILE and was the wrong answer to
+    /// "what does this machine fill a selection with". `PlatinumAccent`
+    /// keeps it, correctly labelled, because the file does say that.
+    ///
+    /// WHAT IS STILL UNKNOWN: one machine, once. The live value is the
+    /// user's Appearance highlight setting, so another install may hold
+    /// something else — which is exactly why the answer belongs on the
+    /// wire and this constant is only what stands in when nobody asked.
+    /// See docs/theme-colours.md.
+    public static let highlightFallbackRGB: UInt32 = 0x97A1DE
+    public static let highlight = Color(rgb: Platinum.highlightFallbackRGB)
 
     // Logical surface (the guest screen); scenes carry rects in this space.
     public static let logicalSize = CGSize(width: 1024, height: 768)

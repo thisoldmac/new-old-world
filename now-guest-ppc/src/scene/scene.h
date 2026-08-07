@@ -525,12 +525,48 @@ typedef struct {
     short item_count;
 } NowSceneMenu;
 
+/* THE THEME'S OWN COLOURS, ASKED RATHER THAN GUESSED.
+ *
+ * Every one of these is a fill the MACHINE makes: the Appearance
+ * Manager erases a Dialog Manager window with a brush, and a renderer
+ * that wants to redraw that window has to know which colour came out.
+ * Until this struct existed the host side carried the answer as a
+ * constant COUNTED OFF A SCREENDUMP (0xDDDDDD, 10149 of 11724 interior
+ * pixels of one control panel, 2026-08-07) - right for the shipped
+ * Platinum theme and silently wrong for any other, which is the exact
+ * failure `ppat` 16 had on the desktop: a shipped default nobody
+ * updates, plausible for years.
+ *
+ * WHERE THE LINE IS. These four are brushes and low-memory colours the
+ * Toolbox itself hands out, so the theme is their author. The renderer's
+ * bevel ramp (its light/shadow greys) is NOT here and deliberately: no
+ * guest source asks for a bevel brush, those greys are this side's
+ * drawing of the Platinum 3D idiom rather than a fill the machine made,
+ * and a field with no producer on the machine is a guess wearing a
+ * wire format. See docs/theme-colours.md.
+ *
+ * Each is 0xRRGGBB, 8 bits per channel, or -1 when the ask FAILED - and
+ * -1 means "this machine would not say", never "black". A producer that
+ * never asks leaves all four at -1 and the key never reaches the wire,
+ * which is scene.h's absent-means-unknown rule applied to colour. */
+typedef struct {
+    long dialog_background;       /* kThemeBrushDialogBackgroundActive */
+    long alert_background;        /* kThemeBrushAlertBackgroundActive */
+    long document_background;     /* kThemeBrushDocumentWindowBackground */
+    long highlight;               /* LMGetHiliteRGB - the selection fill */
+    /* The depth the brushes were asked AT. A brush answers differently
+       on a 256-colour screen than on millions, so a colour with no depth
+       beside it cannot be checked against a screendump taken later. */
+    short depth;                  /* < 0 = not recorded */
+} NowSceneTheme;
+
 typedef struct {
     long version;
     long seq;
     double captured_at;           /* Unix epoch seconds, guest clock */
     char source[kNowSceneSourceMax];
     short screen_w, screen_h;
+    NowSceneTheme theme;
     char plane[kNowScenePlaneMax];        /* meta.plane, a freeform note */
     long latency_ms;                      /* < 0 = absent */
 
@@ -582,6 +618,18 @@ typedef struct {
        it has never been able to do is tell a known order from a guessed
        one, and this is that bit. */
     NowSceneCoverage depth_coverage;
+
+    /* HOW MANY APPLICATIONS THE ORDER LEDGER HAS FORGOTTEN.
+       front_order.h keeps 32 slots and counts what it evicts, precisely
+       because "this process has no rank because we forgot it" and "this
+       process has no rank because we never saw it come forward" are
+       different facts. That count stayed inside the guest, so the second
+       was the only one a consumer could read - the empty/unknown
+       conflation this IR spends most of its vocabulary preventing,
+       arriving in the one plane whose whole subject is order.
+       0 means nothing was forgotten, which is the ordinary case and is
+       why it rides the wire only when nonzero. */
+    unsigned long depth_evicted;
 
     NowSceneWindow windows[kNowSceneMaxWindows];
     short window_count;
@@ -695,6 +743,10 @@ void now_scene_set_process_kind_coverage(NowScene *s,
    a fallback. See NowScene.depth_coverage. */
 void now_scene_set_depth_coverage(NowScene *s, NowSceneCoverage coverage);
 
+/* How many processes the front-order ledger has evicted since this
+   launch. Absent from the wire when zero. */
+void now_scene_set_depth_evicted(NowScene *s, unsigned long evicted);
+
 /* Adds a window to a process already added. Returns 1 on success, 0 when
    the scene is full (sets windows_truncated) or when `proc` is out of
    range - and 0, deliberately, when that process's verdict does not
@@ -717,6 +769,11 @@ void now_scene_set_process_stamp(NowScene *s, int proc,
    may branch on it; what it is for is saying which planes a scene had
    available at all. Bounded copy; a longer note is truncated. */
 void now_scene_set_plane(NowScene *s, const char *plane);
+
+/* meta.theme - the colours above. Copies whole; a channel outside
+   0..0xFFFFFF is rejected to -1 rather than truncated, because a
+   half-copied colour would ride the wire looking measured. */
+void now_scene_set_theme(NowScene *s, const NowSceneTheme *theme);
 
 /* The row index of the most recently admitted window, or -1 when the
    scene has none. The walk needs it: it fills a window's sub-planes

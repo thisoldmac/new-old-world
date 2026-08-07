@@ -1008,7 +1008,8 @@ static const char *coverage_reason(NowSceneCoverage coverage,
 
 static void put_coverage_claim(Sink *k, const char *scope,
                                const NowSceneProc *owner,
-                               NowSceneCoverage coverage, int first)
+                               NowSceneCoverage coverage, int first,
+                               unsigned long evicted)
 {
     const char *reason = coverage_reason(coverage, owner);
 
@@ -1024,6 +1025,17 @@ static void put_coverage_claim(Sink *k, const char *scope,
         put(k, ",\"reason\":");
         put_str(k, reason);
     }
+    /* HOW MANY THIS CLAIM'S LEDGER FORGOT. Only the `depth` scope has
+       one, and it rides only when nonzero: 0 is the ordinary case and a
+       key present on every claim in every scene would cost more than it
+       says. What it buys is the difference between "we never saw this
+       process come forward" and "we saw it and then forgot", which is
+       the empty-versus-unknown split this IR makes everywhere else and
+       could not make here. */
+    if (evicted != 0) {
+        put(k, ",\"evicted\":");
+        put_num(k, (long)evicted);
+    }
     put(k, "}");
 }
 
@@ -1038,21 +1050,23 @@ static void put_coverage(Sink *k, const NowScene *s)
         k->sp->coverage_off = k->len;
     }
     put(k, "[");
-    put_coverage_claim(k, "processes", NULL, s->processes_coverage, 1);
+    put_coverage_claim(k, "processes", NULL, s->processes_coverage, 1, 0);
     /* ONE CLAIM FOR THE WHOLE ROSTER, and the reason `backgroundOnly` can
        stay true-only: this says whether an absent key means "has a face"
        or "nobody asked". See NowScene.process_kind_coverage. */
-    put_coverage_claim(k, "process-kind", NULL, s->process_kind_coverage, 0);
+    put_coverage_claim(k, "process-kind", NULL,
+                       s->process_kind_coverage, 0, 0);
     /* AND ONE FOR THE ORDER THE ARRAY ITSELF CARRIES. Every other claim
        here is about a list's membership; this one is about its
        SEQUENCE, which is meaning too - the front process is first - and
        until now was the one piece of the scene that could be wrong with
        nothing saying so. See NowScene.depth_coverage. */
-    put_coverage_claim(k, "depth", NULL, s->depth_coverage, 0);
+    put_coverage_claim(k, "depth", NULL, s->depth_coverage, 0,
+                       s->depth_evicted);
     for (i = 0; i < s->proc_count; ++i) {
         const NowSceneProc *p = &s->procs[i];
 
-        put_coverage_claim(k, "windows", p, p->windows_coverage, 0);
+        put_coverage_claim(k, "windows", p, p->windows_coverage, 0, 0);
         if (p->front) {
             front = p;
         }
@@ -1067,11 +1081,59 @@ static void put_coverage(Sink *k, const NowScene *s)
     } else {
         menubar_coverage = kNowSceneCoverageUnavailable;
     }
-    put_coverage_claim(k, "menubar", front, menubar_coverage, 0);
+    put_coverage_claim(k, "menubar", front, menubar_coverage, 0, 0);
     put(k, "]");
     if (k->sp != NULL) {
         k->sp->coverage_len = k->len - k->sp->coverage_off;
     }
+}
+
+/* meta.theme: the colours the MACHINE gave, as `#RRGGBB` strings.
+ *
+ * A string rather than a number because a colour read out of a capture
+ * by a person is going to be compared against a hex pixel, and
+ * `14540253` is not that. Every key is omitted when the ask failed, and
+ * the whole object is omitted when nothing was asked - so a consumer
+ * meeting no `theme` knows this producer did not ask, and one meeting
+ * `theme` without `alertBackground` knows the ask was made and refused.
+ * Those are different facts and the old single constant could carry
+ * neither. See scene.h, NowSceneTheme. */
+static void put_theme_key(Sink *k, int *first, const char *name, long rgb)
+{
+    char hex[10];
+
+    if (rgb < 0) {
+        return;
+    }
+    put(k, *first ? "" : ",");
+    put_str(k, name);
+    put(k, ":");
+    snprintf(hex, sizeof hex, "#%02lX%02lX%02lX",
+             (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+    put_str(k, hex);
+    *first = 0;
+}
+
+static void put_theme(Sink *k, const NowScene *s)
+{
+    int first = 1;
+
+    if (s->theme.dialog_background < 0 && s->theme.alert_background < 0
+        && s->theme.document_background < 0 && s->theme.highlight < 0) {
+        return;
+    }
+    put(k, ",\"theme\":{");
+    put_theme_key(k, &first, "dialogBackground", s->theme.dialog_background);
+    put_theme_key(k, &first, "alertBackground", s->theme.alert_background);
+    put_theme_key(k, &first, "documentBackground",
+                  s->theme.document_background);
+    put_theme_key(k, &first, "highlight", s->theme.highlight);
+    if (s->theme.depth >= 0) {
+        put(k, first ? "" : ",");
+        put(k, "\"depth\":");
+        put_num(k, (long)s->theme.depth);
+    }
+    put(k, "}");
 }
 
 /* meta.errors carries what the scene could not do, in upstream's
@@ -1248,6 +1310,7 @@ static void put_meta(Sink *k, const NowScene *s)
     if (k->sp != NULL) {
         k->sp->tail_off = k->len;
     }
+    put_theme(k, s);
     if (s->plane[0] != '\0') {
         put(k, ",\"plane\":");
         put_str(k, s->plane);

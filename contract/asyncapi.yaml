@@ -455,6 +455,56 @@ operations:
       everywhere else in this document, and the reason the guest emits
       nothing rather than zeroes when it has no clock. Eight zeroes are a
       measurement, and would be a false one.
+      WHAT COLOUR THE MACHINE DRAWS WITH, added 2026-08-07 as meta.theme
+      and additive under the accretive rule: an older host ignores the
+      key and nothing about the scene changes. Four values, each a
+      `#RRGGBB` string, each read from the LIVE Toolbox at capture time:
+      `dialogBackground` (kThemeBrushDialogBackgroundActive),
+      `alertBackground` (kThemeBrushAlertBackgroundActive),
+      `documentBackground` (kThemeBrushDocumentWindowBackground) and
+      `highlight` (the low-memory selection colour the Appearance Manager
+      keeps in step with the theme). Beside them `depth` is the screen
+      depth the brushes were ASKED AT, because a brush answers
+      differently at 8 bits than at 32 and a colour with no depth beside
+      it cannot be checked against a screendump of the same screen.
+      WHY IT IS ON THE WIRE AT ALL. A renderer redrawing these windows
+      has to fill the same faces the guest's Appearance Manager filled.
+      Until this key existed the host carried them as constants — one of
+      them COUNTED OFF A SCREENDUMP (0xDDDDDD, 10149 of 11724 interior
+      pixels of one control panel) — which is correct for the shipped
+      Platinum theme and silently wrong for every other, the same defect
+      as a factory `ppat` tiled in place of the real desktop. A colour is
+      the easiest thing in this document to be confidently wrong about,
+      because nothing ever looks broken.
+      WHAT IT IS NOT. It is not the theme's whole palette and must not
+      grow into one. These four are fills the MACHINE makes and hands
+      out on request; a renderer's bevel greys, insets and hairlines are
+      that renderer's drawing of the Platinum idiom, have no producer on
+      the machine to ask, and would arrive here as guesses wearing a wire
+      format. A key belongs in meta.theme only when a Toolbox call
+      answers it.
+      AN ABSENT KEY MEANS THE ASK FAILED; AN ABSENT meta.theme MEANS THE
+      PRODUCER DID NOT ASK. Those are different facts and a consumer
+      needs them apart: the first says this machine would not name that
+      brush, the second says nobody looked. Neither is ever sent as
+      black — 0x000000 is a legal colour and so is the one value that
+      cannot double as "unknown".
+      WHAT A BOUNDED LEDGER FORGOT, added 2026-08-07 as
+      meta.coverage[].evicted and additive: an older consumer reads the
+      claim exactly as it did before. It is carried ONLY by the `depth`
+      scope, and only when nonzero.
+      The front-order ledger that makes cross-application order a fact
+      keeps a bounded number of slots, and has counted its evictions since
+      it was written — because "this process has no rank because we FORGOT
+      it" and "this process has no rank because we never SAW it come
+      forward" are different facts. That count never left the guest, so
+      only the second was readable: past the ledger's capacity a forgotten
+      process reported as never-observed. That is the empty-versus-unknown
+      conflation stated above, arriving in the one plane whose whole
+      subject is order.
+      A ZERO IS AN ABSENT KEY, not a sent zero, because nothing forgotten
+      is the ordinary case on every machine and a key on every claim in
+      every scene would cost more than it says.
       WHAT A PROCESS IS, versus what we managed to see of it. Added
       2026-08-07 as apps[].backgroundOnly and processes[].backgroundOnly,
       additive: an older consumer ignores the key and nothing else moves.

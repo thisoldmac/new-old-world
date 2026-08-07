@@ -109,7 +109,17 @@ final class IRFreezeTests: XCTestCase {
                           status: .complete),
                     .init(scope: "menubar", owner: "process-12345678",
                           status: .retracted, reason: "validation"),
-                ]))
+                    .init(scope: "depth", status: .partial,
+                          reason: "bounded", evicted: 3),
+                ],
+                /* Every key filled, because MAXIMAL is what makes the
+                   freeze mean anything: a theme with a refused brush
+                   encodes no key for it and would freeze that field out
+                   of the shape this test exists to pin. */
+                theme: .init(dialogBackground: "#DDDDDD",
+                             alertBackground: "#DDDDDD",
+                             documentBackground: "#FFFFFF",
+                             highlight: "#97A1DE", depth: 32)))
     }
 
     // MARK: - 1. The shape does not drift

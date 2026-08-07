@@ -1427,8 +1427,119 @@ static void test_a_dropped_window_plane_names_its_window(void)
     check_present(out, "Empty By Nature: window record failed validation");
 }
 
+/* meta.theme, and the three states a colour has: measured, refused,
+ * never asked. The last two used to be the same state - a constant - and
+ * the whole point of the key is that they are not.
+ *
+ * Watched failing by mutation 2026-08-07: setting `dialog_background`
+ * back to a literal in put_theme fails the alert assertion; removing the
+ * `< 0` guard in put_theme_key makes the refused-key case emit
+ * `#FFFFFF`; dropping the all-negative early return in put_theme makes
+ * the never-asked case emit `"theme":{}`. */
+static void test_theme_colours_reach_the_wire(void)
+{
+    NowScene s;
+    NowSceneTheme t;
+    char out[16384];
+
+    /* NEVER ASKED. A producer that does not call now_scene_set_theme
+       emits no `theme` at all - not an empty object, which would say
+       "asked, and this machine names no colours". */
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_absent(out, "\"theme\"");
+
+    /* ASKED AND ANSWERED. Four distinct colours, so a test that passed
+       by emitting the same one four times cannot. */
+    t.dialog_background = 0xDDDDDDL;
+    t.alert_background = 0xEEEEEEL;
+    t.document_background = 0xFFFFFFL;
+    t.highlight = 0xCCCCFFL;
+    t.depth = 16;
+    now_scene_set_theme(&s, &t);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_present(out, "\"theme\":{");
+    check_present(out, "\"dialogBackground\":\"#DDDDDD\"");
+    check_present(out, "\"alertBackground\":\"#EEEEEE\"");
+    check_present(out, "\"documentBackground\":\"#FFFFFF\"");
+    check_present(out, "\"highlight\":\"#CCCCFF\"");
+    check_present(out, "\"depth\":16");
+    check(well_formed(out), "a scene carrying theme colours is valid JSON");
+
+    /* BLACK IS A COLOUR, and it is the one that must survive the round
+       trip, because 0 is what an uninitialised struct holds. If black
+       ever reads as absent then "the machine said black" and "nobody
+       asked" have collapsed back into one state. */
+    t.dialog_background = 0x000000L;
+    t.alert_background = -1;
+    t.document_background = -1;
+    t.highlight = -1;
+    t.depth = -1;
+    now_scene_set_theme(&s, &t);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_present(out, "\"dialogBackground\":\"#000000\"");
+
+    /* A REFUSED ASK IS AN ABSENT KEY, never a substituted colour. */
+    check_absent(out, "alertBackground");
+    check_absent(out, "documentBackground");
+    /* `"depth":` with the colon, because meta.coverage carries a SCOPE
+       spelled "depth" - the cross-application ordering claim - and a
+       bare substring search finds that instead. */
+    check_absent(out, "\"depth\":");
+    check(well_formed(out), "a partly-refused theme is valid JSON");
+
+    /* A VALUE THAT CANNOT HAVE COME FROM THE NARROWING is rejected to
+       absent rather than masked into a plausible colour. */
+    t.dialog_background = 0x1FFFFFFL;
+    now_scene_set_theme(&s, &t);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_absent(out, "\"theme\"");
+}
+
+/* THE ORDER LEDGER'S EVICTIONS, on the wire.
+ *
+ * front_order.c has counted them since it was written, for a reason it
+ * states in its own header: an absent rank because we FORGOT a process
+ * and an absent rank because we never SAW it are different facts. The
+ * count stayed inside the guest, so only the second one was readable -
+ * the empty/unknown conflation, in the one plane whose subject is order.
+ *
+ * Watched failing by mutation 2026-08-07: passing 0 instead of
+ * `s->depth_evicted` at the `depth` call site drops the key; dropping
+ * the `evicted != 0` guard puts it on every claim in every scene. */
+static void test_the_order_ledger_says_what_it_forgot(void)
+{
+    NowScene s;
+    char out[16384];
+
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    now_scene_set_depth_coverage(&s, kNowSceneCoveragePartial);
+
+    /* NOTHING FORGOTTEN is the ordinary case, and it costs no key. */
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_absent(out, "evicted");
+
+    now_scene_set_depth_evicted(&s, 3);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_present(out, "\"scope\":\"depth\",\"status\":\"partial\","
+                  "\"reason\":\"bounded\",\"evicted\":3");
+    check(well_formed(out), "an evicting scene is still valid JSON");
+
+    /* AND ONLY THE `depth` CLAIM CARRIES ONE. It is the only scope with
+       a bounded ledger behind it; a count on `processes` would be a
+       number nothing produced. */
+    {
+        const char *p = strstr(out, "\"evicted\"");
+
+        check(p != NULL && strstr(p + 1, "\"evicted\"") == NULL,
+              "exactly one coverage claim carries an eviction count");
+    }
+}
+
 int main(void)
 {
+    test_the_order_ledger_says_what_it_forgot();
+    test_theme_colours_reach_the_wire();
     test_coverage_and_incarnation_reach_the_wire();
     test_proven_control_roles_keep_their_semantics();
     test_unproven_controls_are_unknown_and_unactionable();

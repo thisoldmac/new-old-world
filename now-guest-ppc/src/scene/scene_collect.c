@@ -15,6 +15,7 @@
 #include "proc_roster.h"
 #include "scene_phase.h"
 #include "scene_self.h"
+#include "scene_theme.h"
 #include "scene_walk.h"
 #include "semantic_client.h"
 
@@ -378,6 +379,16 @@ void now_scene_collect(NowScene *out, long seq,
                     (unsigned long)TickCount(), stale_after_ticks);
     now_scene_set_plane(out, "peek anchors: processes, windows, controls, "
                         "dialog text, and the front app's menu bar");
+    /* Asked once per scene, beside the screen size and for the same
+       reason: both describe the surface the consumer is redrawing, and a
+       theme can be switched while this guest runs. Four Toolbox calls
+       against a walk that already costs tens of milliseconds. */
+    {
+        NowSceneTheme theme;
+
+        now_scene_theme_ask(&theme);
+        now_scene_set_theme(out, &theme);
+    }
     now_semantic_client_begin((unsigned long)seq);
 
     now_proc_roster_begin(&it);
@@ -548,6 +559,13 @@ void now_scene_collect(NowScene *out, long seq,
         now_scene_set_depth_coverage(
             out, unranked > 0 ? kNowSceneCoveragePartial
                               : kNowSceneCoverageComplete);
+        /* The ledger's own count of what it had to forget. It was already
+           kept (front_order.h says why); this is the line that lets a
+           consumer read it. Without it a machine that has run more than
+           32 applications reports a forgotten process as never-observed,
+           which is the empty/unknown conflation in the one plane whose
+           subject is order. */
+        now_scene_set_depth_evicted(out, g_front_order.evictions);
     }
     now_semantic_client_end();
     now_observe_walk_end(&refs);
