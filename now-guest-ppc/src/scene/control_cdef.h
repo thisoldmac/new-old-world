@@ -49,8 +49,11 @@
  * Memory's 44 controls and Date & Time's 21:
  *
  * - Every button-family control - push buttons, check boxes and radio
- *   buttons alike - reported `contrlDefProc` = 0x00002EC8, high byte
- *   ZERO. Memory's "Save contents to" (a check box) and its three On/Off
+ *   buttons alike - reported `contrlDefProc` = 0x00002EC8, which the
+ *   Resource Manager names `CDEF` 23, high byte ZERO. (23 rather than 0:
+ *   OS 9's control panels are Appearance-era controls, which is also why
+ *   the family this route most often meets is the Appearance one.)
+ *   Memory's "Save contents to" (a check box) and its three On/Off
  *   pairs (radio buttons) are byte-identical in that field to "Use
  *   Defaults" (a push button). The classic packing of the variation code
  *   into that byte, which the resolver's mask path exists to undo, is
@@ -73,6 +76,16 @@
  * approximate role would authorise an approximate act - does not have an
  * exception for the most common control on the screen.
  *
+ * WHAT THIS DOES NOT FIX, said here because the two were conflated once
+ * already: controls drawn as bare labels in a rendered mirror is a
+ * SEPARATE defect and this change makes its population LARGER, not
+ * smaller. Memory, General Controls and Date & Time were all classified
+ * identically before this change - every button-family control
+ * `pushButton` - and only Date & Time drew its check boxes. Identical
+ * input, different output, so the divergence was never here. It is
+ * downstream, in what the renderer has to draw an `unknown` control
+ * from.
+ *
  * THE COST IS REAL AND IS STATED HERE RATHER THAN DISCOVERED LATER. Those
  * controls fall back to `unknown`, and `Semantics.authorizesAction`
  * requires `known` or `derived`, so a driver that honours it will now
@@ -80,6 +93,12 @@
  * point still reaches them - the guest checks the point against the rect
  * the resolver proved and never consults the kind - so what is lost is
  * the semantic authority, not the mechanism.
+ *
+ * Measured after the change, same rig: Memory 23 classified of 44 (was
+ * 33), Date & Time 10 of 21 (was 19). Nothing else moved - Date & Time's
+ * one bevel button, `CDEF` 2, still reads `pushButton`, because a bevel
+ * button's three variants are three bevel DEPTHS and the family is the
+ * answer there.
  *
  * That is the trade this project has already decided twice, and it is
  * worth naming which way: a check box pressed as a push button is not a
