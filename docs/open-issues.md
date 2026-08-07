@@ -550,15 +550,44 @@ refusal path instead, and a switch that is accepted and then does not
 land could not be staged deliberately. So that branch builds, reads
 correctly and has never run. Nothing here is metal-verified.
 
-**The contract change was NOT made.** `ProcessResult` is
-`additionalProperties: false` and carries only `ok` and `reason`; the
-audit's recommendation of an explicit `outcome: unconfirmed` needs the
-contract first. The wire now answers `ok: false` with a reason naming the
-unlanded switch, which is honest within the schema as written and
-strictly more informative than the unconditional `ok: true` it replaced —
-but it is a **behaviour change for any caller that read `ok` as "the
-request was accepted"**, and that is the thing to weigh before the field
-is added.
+**The contract change WAS made**, under an explicit ruling, after this
+entry first recorded it as deferred. `ProcessResult` gains **`outcome`**,
+in `ActSettlement.status`'s vocabulary — borrowed rather than invented,
+because two honest-but-different words for "did it happen" would be a
+fresh instance of the defect this slice closed. `ok` now means **the
+effect this verb can establish**, never a receipt; and rather than
+silently redefining it, the difference between the two verbs is
+*declared*:
+
+- **`process.front` can be told more**, by re-reading `GetFrontProcess`,
+  so its `ok` is true only when the target is actually frontmost.
+- **`process.quit` cannot** — a `quit` Apple Event is one an application
+  may decline or sit on behind a Save dialog — so its `ok` means the
+  event was delivered and its `outcome` says
+  `dispatched-but-unconfirmed`.
+
+That split is the project's own established position rather than a new
+one: the host had already worked around the missing field in three
+places, and `BringToFrontProjection` says outright that `process.result`
+*"has no field that could carry 'and it landed'"* while
+`AgentIntegrationProcessControl` records that *"quit stops at 'the
+request was sent' because nothing on this platform can tell it more, and
+front CAN be told more."*
+
+`outcome` is **optional, and its absence is not `unknown`** — it means
+the sender does not report outcomes. NOW-68K emits none, so the host's
+confirming re-list stays as the fallback rather than being deleted as
+redundant. **That asymmetry is declared in the schema**, not left to be
+discovered.
+
+**Driven, all five shapes**, on the same rig: `front` on the Finder →
+`ok:true, outcome: confirmed`, with an independent `process.list`
+naming the Finder as front; `front` on a faceless process →
+`ok:false, outcome: refused`, front unmoved; `quit` on NOW itself and on
+a dead PSN → `outcome: refused` (never reached the machine); `quit` on a
+background process → `ok:true, outcome: dispatched-but-unconfirmed`,
+and it had in fact gone three seconds later — which is exactly the point,
+because the verb **declined to claim** what it had not established.
 
 `ProcessRosterSingleSourceTests` keeps it closed and **maintains no
 list**: it walks every `.c` under `now-guest-ppc/src` at test time and
@@ -576,11 +605,30 @@ caller in the product** — a fourth opinion on what the Finder is, held
 only by its own test. That is the shape [contract-coverage](contract-coverage.md)
 warns about: coverage that proves nothing.
 
-**Left for later, named rather than silently skipped:** F4 (two titles
-under one ref — the control's live title and the DITL's, reconciled only
-partially, `scene_walk.c:290-303`), F8 (`sw` sweeps live where
+**A second finding, from being the port scheme's first real user.** Two
+`tools/lane-ports` frictions, both fixed here and both driven:
+`scripts/spin-up-ppc` required `NOW_LAB_ROOT` by hand because every copy
+of the lab lookup assumed a worktree lives inside its checkout — an agent
+lane under `/private/tmp` has **no shared ancestor with the lab at all**,
+so the walk-up reaches `/` and finds nothing; git's `--git-common-dir`
+answers it. And `lane-ports reclaim` died on a missing import while
+printing *"clean shutdown FAILED and the VM is left up … re-run with
+`--power-cut`"* — **a host-side setup error wearing a guest failure's
+words**, one step from a dirty volume, in a repo that has already paid
+for getting shutdown wrong once. A rig that cannot start now exits 3 and
+says the machine was never asked and must not be power-cut. The lookup
+was copy-pasted into **twelve** rig tools in three shapes, one hardcoding
+a specific person's home directory; `tools/lab_root.py` is its one home
+and the two tools on the lane path use it. The other ten are experiment
+scripts off that path, left unchanged rather than edited unrun.
+
+**Left for later, named rather than silently skipped:** F8 (`sw` sweeps live where
 `software.list` pages a cache that cannot say how old it is) and F12
-(eight hand-rolled frame codecs).
+(eight hand-rolled frame codecs). **F4 was already closed** in
+`claude/018-integration` before this lane began — `scene_walk.c` now
+reads "THE LIVE CONTROL WINS, ALWAYS", with Mail's Internet-setup alert
+as its worked example — so the audit's F4 text is stale rather than
+outstanding.
 
 ## FIXED: rig ports were assigned by hand, and three lanes paid for it in one day (2026-08-07)
 
