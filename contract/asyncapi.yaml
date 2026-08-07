@@ -302,6 +302,8 @@ channels:
       chatReset: { $ref: "#/components/messages/chatReset" }
       previewBegin: { $ref: "#/components/messages/previewBegin" }
       previewEnd: { $ref: "#/components/messages/previewEnd" }
+      hostShow: { $ref: "#/components/messages/hostShow" }
+      hostShown: { $ref: "#/components/messages/hostShown" }
   bulk:
     address: "1"
     description: >
@@ -970,6 +972,57 @@ operations:
       transfer. A service that cannot render one refuses not-listable —
       the same well-formed refusal an older host's silence approximates,
       which is what keeps the ask additive.
+  guestAsksHostSurface:
+    action: send
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/hostShow"
+    description: >
+      The guest asks the HOST to bring one of its own surfaces to the
+      front. One direction by DEFINITION, the cloud and chat rule: the
+      subject is a window on the modern machine, which the classic
+      machine does not have and cannot be asked for. A host never sends
+      host.show; a side that receives one it does not serve ignores it
+      like any control message it cannot decode.
+
+      ADDITIVE family, no revision bump — the cloud.services precedent.
+      Discovery is by asking: the guest sends host.show and treats
+      silence past its own deadline as a host that predates the family.
+      That is a status line, not an error.
+
+      ONE SURFACE TODAY, `mirror`, and the family is named for the
+      question rather than the answer because the question is "show me
+      something of yours" and the Mirror is only the first thing worth
+      asking for. `surface` is a closed string a host may refuse by name
+      (unknown-surface), which is what lets a newer guest ask an older
+      host for something and be told plainly.
+
+      WHY IT EXISTS AT ALL. The Mirror is the host's rendering of the
+      GUEST's screen: the person who wants it open is often sitting at
+      the classic Mac, and until this family the only way to open one in
+      an already-running host was to walk to the other machine. There is
+      no symmetric verb going the other way and there should not be —
+      the host drives the guest's windows through the act plane, which
+      is a different and much larger capability, and a `guest.show`
+      would be a second, weaker route into it.
+  hostServesHostSurface:
+    action: receive
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/hostShown"
+    description: >
+      The host's answer, exactly one per host.show, correlated by id.
+      ALWAYS answered — the unanswered-ask wedge chat.cancel was
+      hardened against, inherited here: a guest that gets no reply can
+      only guess between an old host and a lost frame, and a person who
+      pressed a button deserves a sentence either way.
+
+      ok:true means the host acted — the window is open and frontmost,
+      or was already open and has been raised. The two are deliberately
+      the same answer: the guest asked for the Mirror to be showing, and
+      it is. `reason` carries the host's own words for the human-facing
+      status line and is MacRoman-expressible, the hostServesCloud rule
+      verbatim.
 
 components:
   messages:
@@ -1198,6 +1251,12 @@ components:
     previewEnd:
       name: preview.end
       payload: { $ref: "#/components/schemas/PreviewEnd" }
+    hostShow:
+      name: host.show
+      payload: { $ref: "#/components/schemas/HostShow" }
+    hostShown:
+      name: host.shown
+      payload: { $ref: "#/components/schemas/HostShown" }
 
   schemas:
     Hello:
@@ -1653,6 +1712,49 @@ components:
         id: { type: integer }
         transfer: { type: integer }
         ok: { type: boolean }
+    HostShow:
+      type: object
+      required: [type, id, surface]
+      additionalProperties: false
+      properties:
+        type: { const: host.show }
+        id: { type: integer }
+        surface:
+          enum: [mirror]
+          description: >
+            Which of the host's own surfaces to bring to the front. A
+            closed enum with one member today; a host that does not know
+            a name answers host.shown ok:false unknown-surface rather
+            than going quiet, so a newer guest asking an older host gets
+            a sentence instead of a timeout.
+    HostShown:
+      type: object
+      required: [type, id, surface, ok]
+      additionalProperties: false
+      properties:
+        type: { const: host.shown }
+        id: { type: integer }
+        surface: { type: string }
+        ok:
+          type: boolean
+          description: >
+            true when the surface is now showing — newly opened OR
+            already open and raised. The guest asked for it to be
+            showing, and it is; distinguishing the two would make the
+            button's answer depend on something the person cannot see.
+        code:
+          enum: [unknown-surface, unavailable]
+          description: >
+            Present only when ok is false. unknown-surface is the
+            additive-registry answer, never a protocol error;
+            unavailable is the host declining for a reason of its own
+            (no Mac connected to mirror, shutting down).
+        reason:
+          type: string
+          maxLength: 120
+          description: >
+            The host's own words, converted MacRoman-expressible, for
+            the guest's status line. Shown, not swallowed.
     CloudRefuse:
       type: object
       required: [type, id, code]
