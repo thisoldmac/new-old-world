@@ -603,6 +603,80 @@ a sibling lane repairs what it was derived from.** A stale oracle does not
 go quiet; it goes red against correct code, which is more expensive than
 silence because someone believes it.
 
+### Break 4, one layer deeper: the reply was ALREADY COMMITTED, and nothing was scheduled to read it (2026-08-07, `claude/019-drag-break-4`, UNVERIFIED — read from source, not yet driven)
+
+The entry above says the press's reply "cannot be composed" because the
+act filter is never re-entered. **Read the serve path and that is not
+what happens.** `now_ext_act.c :: now_ext_act_apply` serves the drag
+press and then calls `now_act_serve_commit(cell, error)` **in the same
+jGNE pass**, three statements later — before the filter returns, before
+`GetNextEvent` hands the queued `mouseDown` back to the Finder, and
+therefore before any tracking loop exists. `now_act_serve_commit`
+(`now-guest-shared/src/now_act_guard.c:400`) writes
+`status = kNowPeekActStatusDone`, which is the exact word
+`now_act_submit` is spinning on.
+
+So the reply the caller waits for is **written before the drag starts.**
+The act filter's re-entry has nothing to do with it. What is missing is
+a reader: classic Mac OS is cooperatively scheduled, the Finder is
+inside `DragGrayRgn` calling `StillDown`/`GetMouse` and nothing that
+yields, and **NOW does not get the processor at all** until that loop
+ends. The status word sat there Done for four seconds with nobody
+running to look at it.
+
+That reframing kills all three candidate repairs the previous lane
+listed, and it is worth being explicit about why, because each of them
+is a correct answer to the wrong question:
+
+- **a caller-minted nonce** — already true. `now_act_run_dragpress`
+  calls `now_act_drag_next_session()` and ships the nonce **into** the
+  cell in `control_handle`; the resident never mints one. The reply was
+  never the route to the nonce. This candidate was refused as an
+  `obsref.h`-shaped shortcut and it turns out it did not need refusing,
+  because it was not a change.
+- **answering on arming rather than on firing** — weakens what `ok`
+  means and buys nothing: the app still cannot run to *send* either
+  answer while the target holds the CPU.
+- **publishing the session in the drag cell for a poller** — there is
+  no poller. The only process that could poll is the one that is not
+  being scheduled.
+
+**What follows is not a repair to any of the three: it is that the
+gesture must be handed over BEFORE the button goes down.** Nothing NOW
+sends can reach the guest between the press and the release, so the
+destination has to travel with the press and be applied by the one thing
+that does run at interrupt time — the Time Manager vehicle that is
+already there.
+
+**Chosen: `dragpress` carries `toH`/`toV`.** `now_drag_begin` seeds
+`want_h`/`want_v` with the destination and `want_seq = 1` instead of
+zeroing them at the press point, so the vehicle's first tick consumes a
+want that was published before the loop started. No new field, no change
+to `sizeof(NowPeekDragCell)`, no shift of the cursor plane behind it —
+which matters, because the resident and the application are baked and
+built separately and a layout change is the one thing that cannot be
+half-deployed. The idle dead-man then releases the button at the
+destination about a second later, and reports `dead-man-idle`, which is
+the truth and should not be dressed up as `released-as-asked`.
+
+**The act deadline versus the writer lease, which this makes concrete.**
+`act_yield` renews the writer heartbeat by calling `now_peek_idle()` —
+but `act_yield` only runs when the application runs. Under the reading
+above the application does not run for the length of the gesture, so the
+180-tick writer lease lapses at 3 s of any drag longer than that and the
+resident disarms every plane underneath a gesture still in flight. The
+`toH`/`toV` form sidesteps that too: it needs nothing armed after the
+press.
+
+**Status of this entry: UNVERIFIED.** It is derived from the serve path
+and from the previous lane's measured reply, not yet driven. The
+discriminating measurement is cheap and is the next thing this lane
+does — count `act_yield` iterations and elapsed ticks inside
+`now_act_submit` and report them in the `dragpress` reply. Many yields
+over four seconds means the application WAS running and the block is
+something else; near-zero yields across four seconds is starvation and
+this entry is right.
+
 ## FIXED and EMULATOR-VERIFIED: the Finder's list rows were unclickable because a column header was read as a scroll bar — and Extensions Manager's list is not a control at all (2026-08-07, `claude/019-list-selection`)
 
 Michelle: Finder list view and Extensions Manager are *"completely not
