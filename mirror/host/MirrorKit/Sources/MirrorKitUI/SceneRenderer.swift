@@ -753,26 +753,35 @@ public struct SceneRenderer {
         let windowFace = theme.face(forWindowKind: win.kind,
                                     untitled: win.title.isEmpty)
 
-        /* **THE CONTENT BOX IS THE FIXED POINT, and the chrome is drawn
-           around it.** It used to be the other way round: the frame was
-           the guest's whole rect and the content was whatever was left
-           after chrome, so a titleless dialog's content began 14 pixels
-           above and 6 pixels right of where the guest put it — and the
-           hit tester, which reads `WindowChrome.contentOrigin`, could
-           not find a button a person had just aimed at. Now both sides
-           read the same function and the chrome absorbs the difference.
-           See WindowChrome.contentOrigin for what that cost. */
-        let content = rect(WindowChrome.content(win))
-        /* A titled window's frame is the guest's rect: the band above the
-           content is where the Window Manager draws the title bar, which
-           is the convention the rect already encodes. A titleless dialog
-           draws no title bar, so its band is not chrome and must not be
-           filled as if it were — the frame is the content wearing its
-           border. */
-        let frame = isDialog
-            ? content.insetBy(dx: -CGFloat(WindowChrome.dialogBand),
-                              dy: -CGFloat(WindowChrome.dialogBand))
-            : rect(win.rect)
+        /* **FOR A DIALOG THE CONTENT BOX IS THE FIXED POINT, and the
+           chrome is drawn around it.** It used to be the other way round
+           — the frame was the guest's whole rect and the content was
+           whatever the 6-pixel border left of it — so a titleless
+           dialog's content began 14 pixels above and 6 right of where
+           the guest put it. `HitTester` reads `WindowChrome.
+           contentOrigin`, so it could not find a button a person had
+           just aimed at, and Mail's Internet-setup alert became a modal
+           nobody could dismiss. Both sides now read that one function.
+
+           A titled window keeps its own geometry: the band above its
+           content IS where the Window Manager draws the title bar, and
+           the two pixels by which the drawn content sits below
+           `contentOrigin` are named in `Platinum.contentTop` rather than
+           chased here. Fourteen pixels lose a button; two do not. */
+        let content: CGRect
+        let frame: CGRect
+        if isDialog {
+            content = rect(WindowChrome.content(win))
+            frame = content.insetBy(dx: -CGFloat(WindowChrome.dialogBand),
+                                    dy: -CGFloat(WindowChrome.dialogBand))
+        } else {
+            frame = rect(win.rect)
+            content = CGRect(x: frame.minX + 1,
+                             y: frame.minY + Platinum.contentTop,
+                             width: frame.width - 2,
+                             height: max(0, frame.height
+                                            - Platinum.contentTop - 1))
+        }
 
         // Drop shadow, frame, face, raised bevel.
         ctx.fill(Path(frame.offsetBy(dx: 2, dy: 2)),

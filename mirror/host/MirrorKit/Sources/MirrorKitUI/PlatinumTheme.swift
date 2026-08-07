@@ -108,12 +108,17 @@ public enum Platinum {
     // Metrics (px in logical space).
     public static let menubarHeight: CGFloat = 20
     public static let titlebarHeight = CGFloat(WindowChrome.titlebarHeight)
-    /// One definition, in `WindowChrome`, because the HIT TESTER reads it
-    /// too — a second copy here is how the drawn button and the clickable
-    /// button came apart. It was 22 and the hit tester's was 20; content
-    /// now begins where the guest says it does, and the title bar's own
-    /// bevel is drawn inside the band rather than pushing content down.
-    public static let contentTop = CGFloat(WindowChrome.titlebarHeight)
+    /// A TITLED window's drawn content top, and it is two pixels below
+    /// where the guest puts it (`WindowChrome.contentOrigin`) — the
+    /// bevel and hairline under the title bar. Measured 2026-08-07: NOW's
+    /// own "Take Screenshot" button, content-local (172, 423) in a window
+    /// at (28, 50), is drawn on the guest at (200, 493) = rect + (0, 20).
+    /// Two pixels down and one right is small enough that no click has
+    /// ever missed because of it, so it is named rather than changed —
+    /// moving it churns every tuned render probe. The DIALOG case of the
+    /// same drift was fourteen pixels and is fixed; see
+    /// `WindowChrome.contentOrigin`.
+    public static let contentTop: CGFloat = 22
 
     // Chicago / Geneva stand-ins.
     public static func systemFont(_ size: CGFloat) -> Font {

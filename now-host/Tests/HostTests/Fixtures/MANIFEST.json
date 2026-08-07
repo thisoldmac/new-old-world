@@ -547,6 +547,21 @@
    }
   },
   {
+   "path": "now-host/Tests/HostTests/Fixtures/scene-mail-internet-alert.json",
+   "sha256": "bdc3134d6323cd4b7a0836f32d987a4a967d09a499854023d963374f191e71d9",
+   "bytes": 45487,
+   "ops": null,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "e715b0a6a5d7",
+    "capturedAt": 1786116545.0,
+    "note": "Mail's Internet-setup alert, raised by opening the desktop 'Mail' alias. Captured beside a QMP screendump; the machine draws its three buttons at screen y 201-221, which is the window rect's t + 20 + the items' local t.",
+    "source": "peek",
+    "version": 2,
+    "vm": "session-private clone of now-mirror-stage.qcow2, emulated mac99/OS 9.1, lane block 230 (anchor 13840 / wire 13841)"
+   }
+  },
+  {
    "path": "now-host/Tests/HostTests/Fixtures/scene-plane-held.json",
    "sha256": "17042672aa8f081b7489aa7f31542f70d4d19fd720dad8f560ab105ee4be4fe9",
    "bytes": 42329,

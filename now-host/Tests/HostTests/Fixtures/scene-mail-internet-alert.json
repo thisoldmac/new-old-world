@@ -587,6 +587,14 @@
    "signature": "aplt"
   }
  ],
+ "provenance": {
+  "build": "e715b0a6a5d7",
+  "capturedAt": 1786116545.0,
+  "note": "Mail's Internet-setup alert, raised by opening the desktop 'Mail' alias. Captured beside a QMP screendump; the machine draws its three buttons at screen y 201-221, which is the window rect's t + 20 + the items' local t.",
+  "source": "peek",
+  "version": 2,
+  "vm": "session-private clone of now-mirror-stage.qcow2, emulated mac99/OS 9.1, lane block 230 (anchor 13840 / wire 13841)"
+ },
  "screen": {
   "h": 600,
   "w": 800

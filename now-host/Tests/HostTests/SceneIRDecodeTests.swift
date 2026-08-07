@@ -173,7 +173,17 @@ final class SceneIRDecodeTests: XCTestCase {
         guard case .unsupported(let reason) = plan else {
             return XCTFail("a v1 guessed role authorized an action: \(plan)")
         }
-        XCTAssertTrue(reason.contains("authoritative semantics"))
+        /* The refusal names the missing FACT. It used to say "the guest
+           did not provide complete, authoritative semantics", which is a
+           verdict — Michelle read exactly that off a modal she could not
+           dismiss and it told her nothing to do next. A v1 scene carries
+           no semantics at all, so the honest sentence is that the kind is
+           undetermined, with no CDEF id to add. */
+        XCTAssertTrue(
+            reason.contains("could not determine what kind of control"),
+            reason)
+        XCTAssertFalse(reason.contains("CDEF"),
+                       "a v1 scene has no CDEF id to quote: \(reason)")
     }
 
     func testV2DecodesOnlyAfterTheMajorGateAndCarriesDialogTruth() throws {

@@ -102,6 +102,23 @@ public enum WindowChrome {
     /// refused for having no semantics. Nothing was wrong with the dialog
     /// plane, the DITL, the refs, or the act: `ditemact` dismissed that
     /// alert on the first try. The click never reached any of them.
+    ///
+    /// MEASURED, not assumed. Guest screendump and scene taken at the same
+    /// instant, 2026-08-07, emulated G4, guest build `e715b0a6a5d7`:
+    /// NOW's own "Take Screenshot" button is content-local (172, 423) in a
+    /// window at (28, 50), and the machine draws its box at (200, 493) —
+    /// rect plus (0, 20) exactly, on a TITLED window. Mail's alert puts
+    /// its three buttons at local y 85 in a window at t = 96, and the
+    /// machine draws them at y 201 — the same (0, 20), on a titleless one.
+    /// One convention, both classes.
+    ///
+    /// STILL OFF BY (1, 2) IN THE TITLED RENDER, and deliberately left
+    /// there: `SceneRenderer` draws a titled window's content at
+    /// `Platinum.contentTop` = 22 and one pixel in, for the bevel and
+    /// hairline under the title bar. Two pixels have never lost a click,
+    /// moving them churns every tuned render probe, and the case that was
+    /// fourteen is fixed. Named at `Platinum.contentTop` and in
+    /// docs/open-issues.md rather than half-corrected here.
     public static func contentOrigin(_ win: Scene.Window) -> (x: Int, y: Int) {
         (win.rect.l, win.rect.t + titlebarHeight)
     }
