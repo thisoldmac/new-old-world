@@ -286,26 +286,72 @@ final class PlatinumTabTests: XCTestCase {
         }
 
         // The tab strip in screen coordinates: the whole row of tabs plus
-        // three rows of the pane below them.
-        let (x0, y0, x1, y1) = (166, 96, 620, 126)
-        var deltas: [Int] = []
-        var exact = 0
+        // three rows of the pane below them. World (0,0) is screen (166, 90),
+        // so this is world y 9…36 — the row of tabs, the pane's frame and
+        // its two bevel rows.
+        let (x0, y0, x1, y1) = (166, 99, 620, 126)
+        // The label boxes, in the same screen coordinates. Reported
+        // separately because what is inside them is the FONT's fidelity, not
+        // the tab's: the pack carries no Charcoal strike, so every title
+        // renders in Chicago, which is wider (docs/render-composition.md).
+        // Mixing the two would let a font gap be read as a chrome one.
+        let labels = [(182, 231), (255, 332), (356, 390), (414, 465),
+                      (489, 528), (552, 600)]
+        func inLabel(_ x: Int) -> Bool {
+            labels.contains { x >= $0.0 && x < $0.1 }
+        }
+
+        var all: [Int] = [], chrome: [Int] = []
+        var allExact = 0, chromeExact = 0
         for y in y0..<y1 {
             for x in x0..<x1 {
                 let a = pixel(rep, x, y)
                 let b = guest.pixel(x, y)
                 let d = max(abs(a.0 - b.0), max(abs(a.1 - b.1),
                                                 abs(a.2 - b.2)))
-                deltas.append(d)
-                if d == 0 { exact += 1 }
+                all.append(d)
+                if d == 0 { allExact += 1 }
+                if !inLabel(x) {
+                    chrome.append(d)
+                    if d == 0 { chromeExact += 1 }
+                }
             }
         }
-        deltas.sort()
-        let p50 = deltas[deltas.count / 2]
-        let p95 = deltas[Int(Double(deltas.count) * 0.95)]
-        print("### TAB-DELTA n=\(deltas.count) exact=\(exact) "
-            + "(\(String(format: "%.1f", 100.0 * Double(exact) / Double(deltas.count)))%) "
-            + "p50=\(p50) p95=\(p95) max=\(deltas.last ?? 0)")
+        func report(_ name: String, _ d: [Int], _ exact: Int) {
+            let s = d.sorted()
+            print("### TAB-DELTA \(name) n=\(s.count) exact=\(exact) "
+                + "(\(String(format: "%.1f", 100.0 * Double(exact) / Double(s.count)))%) "
+                + "p50=\(s[s.count / 2]) "
+                + "p95=\(s[Int(Double(s.count) * 0.95)]) "
+                + "max=\(s.last ?? 0)")
+        }
+        report("strip", all, allExact)
+        report("chrome-only", chrome, chromeExact)
+
+        /* THE GEOMETRY CLAIM, ASSERTED RATHER THAN REPORTED. The residual
+           above is anti-aliasing: Apple composites a prepared stencil down
+           the slant and Core Graphics blends its own. What must NOT differ
+           is WHERE the slant is, and that is checkable — the darkest column
+           in each row of a cap. If the caps width, the corner or the slope
+           were wrong this drifts immediately, and a percentage would have
+           hidden it. */
+        var offBy: [Int] = []
+        for y in 102...120 {
+            // The leftmost dark column, which on these rows is the outline
+            // and nothing else — the title starts at x 182.
+            guard let mine = (168...181).first(where: { pixel(rep, $0, y).0 < 110 }),
+                  let theirs = (168...181).first(where: { guest.pixel($0, y).0 < 110 })
+            else { continue }
+            offBy.append(abs(mine - theirs))
+        }
+        XCTAssertEqual(offBy.count, 19, "every row of the cap was found")
+        XCTAssertLessThanOrEqual(offBy.max() ?? 99, 1,
+            "the front tab's left slant sits where the machine draws it: \(offBy)")
+        // 13 of the 19 rows land on the machine's own column and the other
+        // six are one pixel out — measured 2026-08-07. The bound is the
+        // measurement plus room for a rounding change, not a target.
+        XCTAssertLessThanOrEqual(offBy.filter { $0 > 0 }.count, 8,
+            "and lands exactly on most of them: \(offBy)")
     }
 
     struct PPM {
