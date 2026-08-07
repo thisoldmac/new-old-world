@@ -200,7 +200,7 @@ struct ActBattery {
                        "Δr=\(n.r - r.r) Δb=\(n.b - r.b)")
             } else {
                 record("grow box (resize)", .skip,
-                       "no grow box this side can establish (KW-01)")
+                       "no grow box this side can establish")
             }
         } else { record("grow box (resize)", .skip, "no front window") }
 

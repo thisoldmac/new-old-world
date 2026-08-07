@@ -13,9 +13,11 @@ organised around a different axis:
 > decision with no visible justification is indistinguishable from an
 > oversight.
 
-Michelle met one on 2026-08-07 (the grow box, KW-01) and had to ask why
-it was still there. The reason existed; it was in a lane report. Nowhere
-a person looking at the product would find it.
+Michelle met one on 2026-08-07 — the grow box, which was then row KW-01
+— and had to ask why it was still there. The reason existed; it was in a
+lane report. Nowhere a person looking at the product would find it. That
+row is gone: `claude/019-kw01-kw06` withdrew the fabricated grow box the
+same day, which is what a row on this list is for.
 
 So every row here is something somebody **could argue with**. If you
 think a row is the wrong call, the row tells you what closing it costs.
@@ -30,12 +32,21 @@ think a row is the wrong call, the row tells you what closing it costs.
 - **What is gated:** `now-host/Tests/HostTests/KnownWrongRegisterTests.swift`
   reads this file. It checks every row's shape (all six fields present,
   ids unique and contiguous, `Owner` and `Status` from a closed
-  vocabulary), and for the four rows whose claim is checkable in code it
-  checks the *claim itself* (KW-01, KW-02, KW-06 and KW-08). **When a
-  lane fixes one of those four, that test fails and names the row to
+  vocabulary), and for the rows whose claim is checkable in code it
+  checks the *claim itself* (KW-01, KW-05 and KW-07). **When a
+  lane fixes one of those, that test fails and names the row to
   close.** A register that
   keeps claiming a defect somebody already fixed is worse than no
   register.
+- **Row ids are POSITIONAL, and they move.** Contiguity is gated, so
+  closing a row renumbers every row below it — the grow box was KW-01
+  and the ctlact false negative was KW-06, and closing the first shifted
+  the second to KW-05 before it was closed in turn. The gate is right
+  that a gap reads as a row somebody deleted without closing, and the
+  cost is that **an id is not a permanent name**. So cite a row by its
+  TITLE as well as its number, in a commit message or anywhere else that
+  outlives this file's current shape, and treat a bare `KW-nn` from an
+  older document as a pointer to a position rather than to a defect.
 - **What is not gated:** everything else. Rows about the guest, the
   resident, the 68K side and the emulator are prose. Nothing checks that
   their measurements are still true.
@@ -63,47 +74,7 @@ Every row carries six, and the gate fails a row missing any of them:
 
 ---
 
-## KW-01 — a grow box is drawn on windows the machine leaves plain, and withheld from windows it draws one on
-
-- **What disagrees:** the mirror draws a resize box in the bottom-right
-  corner of every window whose `kind` is not 2, and none on any window
-  whose `kind` is 2. The machine does not decide it that way, so the
-  render is wrong **in both directions at once**: Appearance gets a grow
-  box it does not have, Extensions Manager loses one it does.
-- **Measured:** fidelity sweep D, 2026-08-07
-  ([`fidelity-sweep-2026-08-07-d.md`](fidelity-sweep-2026-08-07-d.md),
-  branch `claude/019-sweep-d`), nine targets against the guest's own
-  pixels. Appearance is `kind == 2000` and the machine draws no grow box;
-  Extensions Manager is `kind == 2`, is resizable, and the machine draws
-  one. Both are in that sweep's window table. The same pair is what
-  `open-issues.md` > "STILL BROKEN, and named rather than worked around"
-  (under `claude/019-titlebar-fidelity`) recorded for the zoom box, one
-  function above.
-- **Why it is left:** *because there is no honest discriminator available
-  to a foreign walk today.* The WindowRecord carries `goAwayFlag` (close)
-  and `spareFlag` (zoom) and **no grow flag at all** — resizability is a
-  property of the WDEF variant, not of the record. The variation code
-  lives in the high byte of `windowDefProc`, and it is ambiguous without
-  the WDEF's resource id, because `kWindowDocumentDefProcResID` and
-  `kWindowDialogDefProcResID` number their variants independently. A walk
-  holding only a Handle cannot name which one it is looking at. So
-  `kind` is not a bad guess that somebody should have replaced with a
-  good one — it is the only field present, and the alternative on the
-  table is a different route entirely.
-- **What would close it:** the route recorded is `FindWindow`'s `inGrow`
-  — ask the Window Manager, in the target application's own context,
-  which part a point in that corner belongs to. That is an **act**, which
-  means it needs an armed, gated surface (the act plane) rather than a
-  read, so it is not available to the passive scene walk that produces
-  every other chrome fact. Cost: a new act, its parity seam on both
-  faces, and a per-window round trip on a plane that today serves one
-  window at a time (KW-04). The cheap half — **stop drawing what we
-  cannot establish**, as `zoomBox` already does (KW-02) — costs one line
-  and loses the grow box on every window until the route lands.
-- **Owner:** `unassigned`
-- **Status:** `undecided`
-
-## KW-02 — no zoom box is drawn on any window, including the five that have one
+## KW-01 — no zoom box is drawn on any window, including the five that have one
 
 - **What disagrees:** `WindowChrome.zoomBox` returns nil for every
   window. Of the nine windows in sweep D, five have a zoom box on the
@@ -125,11 +96,13 @@ Every row carries six, and the gate fails a row missing any of them:
   `spareFlag` is the zoom flag, one byte, sitting beside the `windowKind`
   the walk already reads (`now-guest-ppc/src/scene/scene_walk.c`). Cost:
   **a contract field first, then the guest read, then both guests**, in
-  that order. Small, and unlike KW-01 it is a read rather than an act.
+  that order. Small, and unlike the grow box that used to sit above this
+  row it is a READ rather than an act — which is why that one was closed
+  by withdrawal and this one can be closed by answering it.
 - **Owner:** `claude/019-titlebar-fidelity`
 - **Status:** `decided`
 
-## KW-03 — Chicago is drawn where the machine draws Charcoal
+## KW-02 — Chicago is drawn where the machine draws Charcoal
 
 - **What disagrees:** font id 0 is "the system font", which under
   Appearance on this project's whole guest range is Charcoal. Where the
@@ -158,7 +131,7 @@ Every row carries six, and the gate fails a row missing any of them:
 - **Owner:** `Michelle`
 - **Status:** `decided`
 
-## KW-04 — one window interior at a time; every other window renders a hatch
+## KW-03 — one window interior at a time; every other window renders a hatch
 
 - **What disagrees:** the content plane (P3) is a per-window, TTL-bounded
   spotlight, not a plane. One window's interior is live; every other
@@ -189,7 +162,7 @@ Every row carries six, and the gate fails a row missing any of them:
 - **Owner:** `Michelle`
 - **Status:** `decided`
 
-## KW-05 — the title-bar geometry has a residual on windows flush to the top of the screen
+## KW-04 — the title-bar geometry has a residual on windows flush to the top of the screen
 
 - **What disagrees:** after the `contentTop` 22 → 20 correction, six of
   sweep D's nine windows agree on every sampled row. Two do not, by one
@@ -199,7 +172,7 @@ Every row carries six, and the gate fails a row missing any of them:
   puts it at `0`.
 - **Measured:** sweep D, per rectangle. Apple System Profiler 19/24 rows,
   SimpleText 21/24, both at `t = 20`; Appearance 23/24, and that row is
-  KW-03's. Separately, one pixel at `(432, t+19)` on an inactive window —
+  KW-02's. Separately, one pixel at `(432, t+19)` on an inactive window —
   where the content ring meets the bar's last row — renders `696969`
   against the machine's `555555`; its four neighbours are exact.
 - **Why it is left:** the correction that landed took the whole corpus
@@ -216,7 +189,7 @@ Every row carries six, and the gate fails a row missing any of them:
 - **Owner:** `claude/019-titlebar-fidelity`
 - **Status:** `decided`
 
-## KW-06 — `ctlact part 11` reports `act-not-taken` over presses that landed
+## KW-05 — `ctlact part 11` reports `act-not-taken` over presses that landed
 
 - **What disagrees:** the control act infers "nothing happened" from a
   single observation — that the application never called `TrackControl` —
@@ -245,7 +218,7 @@ Every row carries six, and the gate fails a row missing any of them:
 - **Owner:** `unassigned`
 - **Status:** `undecided`
 
-## KW-07 — check boxes and radio buttons render as bare labels
+## KW-06 — check boxes and radio buttons render as bare labels
 
 - **What disagrees:** the guest declines to name any control from CDEF 0
   or CDEF 23 — the classic and Appearance **button families** — because
@@ -273,7 +246,7 @@ Every row carries six, and the gate fails a row missing any of them:
 - **Owner:** `claude/018-control-semantics`
 - **Status:** `decided`
 
-## KW-08 — menu item geometry assumes uniform 16-pixel rows
+## KW-07 — menu item geometry assumes uniform 16-pixel rows
 
 - **What disagrees:** `ActionModel.menuRowHeight = 16` and
   `menuItemPoint` computes a release point from it. Rows are not uniform
@@ -294,7 +267,7 @@ Every row carries six, and the gate fails a row missing any of them:
 - **Owner:** `unassigned`
 - **Status:** `undecided`
 
-## KW-09 — the classic-side file browser cannot rename, delete, move or make a folder
+## KW-08 — the classic-side file browser cannot rename, delete, move or make a folder
 
 - **What disagrees:** the guest's Files page lists, navigates and pulls.
   It offers no rename, no delete, no new folder and no move.
@@ -314,7 +287,7 @@ Every row carries six, and the gate fails a row missing any of them:
 - **Owner:** `Michelle`
 - **Status:** `decided`
 
-## KW-10 — the Mirror keeps polling the guest when it is not on screen
+## KW-09 — the Mirror keeps polling the guest when it is not on screen
 
 - **What disagrees:** backgrounding the Mirror module does nothing to the
   poll. Clicking Console does not stop NOW asking the guest for scenes.
@@ -334,7 +307,7 @@ Every row carries six, and the gate fails a row missing any of them:
 - **Owner:** `claude/019-embed-mirror`
 - **Status:** `decided`
 
-## KW-11 — modal alert chrome is drawn from the old, unmeasured procedure
+## KW-10 — modal alert chrome is drawn from the old, unmeasured procedure
 
 - **What disagrees:** every window with a title bar was re-derived from
   the machine's own pixels in August. The `isDialog` path — `kind == 2`
@@ -353,7 +326,7 @@ Every row carries six, and the gate fails a row missing any of them:
 - **Owner:** `claude/019-titlebar-fidelity`
 - **Status:** `decided`
 
-## KW-12 — arcs and polygons are not drawn
+## KW-11 — arcs and polygons are not drawn
 
 - **What disagrees:** `DisplayReplay` has no case for the `arc` or `poly`
   display ops. A polygon arrives as a bounding box and is never drawn as
@@ -370,7 +343,7 @@ Every row carries six, and the gate fails a row missing any of them:
 - **Owner:** `unassigned`
 - **Status:** `decided`
 
-## KW-13 — two of the fourteen 68K census probes refuse by design
+## KW-12 — two of the fourteen 68K census probes refuse by design
 
 - **What disagrees:** on NOW-68K, `scsi` reports the bus as present and
   **not scanned**, and `selectors` is not served. Twelve of fourteen
@@ -390,7 +363,7 @@ Every row carries six, and the gate fails a row missing any of them:
 - **Owner:** `unassigned`
 - **Status:** `decided`
 
-## KW-14 — the Screenshots page's status line is correct by timing, not by structure
+## KW-13 — the Screenshots page's status line is correct by timing, not by structure
 
 - **What disagrees:** a previous "Failed: …" note can sit over a
   successful send. In practice it is overwritten shortly after by

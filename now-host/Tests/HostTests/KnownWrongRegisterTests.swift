@@ -18,16 +18,23 @@ import XCTest
 ///    here to make impossible.
 /// 2. **A row outlives its own defect.** Somebody fixes the grow box and
 ///    the register goes on claiming it is broken, which is worse than no
-///    register: a reader trusts it and stops looking. Four rows make a
-///    claim that is checkable from here, and those four are checked
+///    register: a reader trusts it and stops looking. Three rows make a
+///    claim that is checkable from here, and those three are checked
 ///    against the live code. **When a lane closes one, this test fails
 ///    and names the row to delete.** That is the intended failure, and
-///    the message says so.
+///    the message says so — it worked twice on 2026-08-07, when
+///    `claude/019-kw01-kw06` closed the grow box and the `ctlact` false
+///    negative and this file failed naming both.
+///
+///    **Deleting a row renumbers the ones below it**, because contiguity
+///    is gated. So these test names carry a POSITION, not a permanent
+///    name, and closing another row will move them again. The register
+///    says the same thing to its readers.
 ///
 /// What this canNOT check, said out loud because a gate that looks wider
 /// than it is repeats the mistake it exists to catch: nothing here reads
 /// the guest's pixels, the resident, the 68K tree or the emulator. Rows
-/// KW-03 through KW-05, KW-07 and KW-09 through KW-14 are prose, and
+/// KW-02 through KW-04, KW-06 and KW-08 through KW-13 are prose, and
 /// their measurements can rot with nobody noticing. The file says so too.
 final class KnownWrongRegisterTests: XCTestCase {
 
@@ -86,8 +93,8 @@ final class KnownWrongRegisterTests: XCTestCase {
     /// An `undecided` row is one nobody has argued for, so it cannot name
     /// somebody who did. Only this direction is checked: a `decided` row
     /// may honestly be `unassigned` — a deviation the project as a whole
-    /// stands behind with no single author is still a decision (KW-12,
-    /// KW-13). The failure this catches is the other way round: a row
+    /// stands behind with no single author is still a decision (KW-11,
+    /// KW-12). The failure this catches is the other way round: a row
     /// quietly acquiring an owner while still claiming nobody chose it,
     /// which takes it off the list of things to close without closing it.
     func testAnUndecidedRowNamesNobodyWhoDecidedIt() throws {
@@ -118,41 +125,15 @@ final class KnownWrongRegisterTests: XCTestCase {
         }
     }
 
-    // MARK: - The four rows whose claim is checkable from here
+    // MARK: - The rows whose claim is checkable from here
     //
     // Each of these FAILS WHEN THE DEFECT IS FIXED. That is the point.
 
-    /// KW-01 — the grow box is decided by `kind` alone, which is wrong in
-    /// both directions on the machine: Appearance (`kind == 2000`) is
-    /// drawn one it does not have, Extensions Manager (`kind == 2`) is
-    /// denied one it does.
-    ///
-    /// Posed as the property rather than as two constants: two windows
-    /// identical in every field except `kind` must not get the same
-    /// answer. Nothing else in `Scene.Window` can be reaching the
-    /// decision if that holds.
-    func testKW01TheGrowBoxIsStillDecidedByWindowKindAlone() throws {
-        try requireRow("KW-01")
-        let appearance = try window(kind: 2000, title: "Appearance")
-        let extensionsManager = try window(kind: 2, title: "Extensions Manager")
-
-        XCTAssertNotNil(
-            WindowChrome.growBox(appearance),
-            "KW-01 in \(Self.registerDoc) says a grow box is drawn on "
-                + "Appearance, which the machine leaves plain (fidelity "
-                + "sweep D). It no longer is — good. Close the row.")
-        XCTAssertNil(
-            WindowChrome.growBox(extensionsManager),
-            "KW-01 in \(Self.registerDoc) says Extensions Manager is "
-                + "denied a grow box the machine draws. It is no longer "
-                + "denied one — good. Close the row.")
-    }
-
-    /// KW-02 — no zoom box is drawn on any window, because IR v1 cannot
+    /// KW-01 — no zoom box is drawn on any window, because IR v1 cannot
     /// say which windows have one. Deliberate, and it costs five of nine
     /// corpus windows a widget the machine draws.
-    func testKW02NoWindowShapeIsGivenAZoomBox() throws {
-        try requireRow("KW-02")
+    func testKW01NoWindowShapeIsGivenAZoomBox() throws {
+        try requireRow("KW-01")
         for (kind, title) in [(2 as Int?, "Extensions Manager"),
                               (8, "SimpleText"),
                               (20, "Macintosh HD"),
@@ -161,7 +142,7 @@ final class KnownWrongRegisterTests: XCTestCase {
             let win = try window(kind: kind, title: title)
             XCTAssertNil(
                 WindowChrome.widgetBox(win, .zoom),
-                "KW-02 in \(Self.registerDoc) says nothing draws a zoom "
+                "KW-01 in \(Self.registerDoc) says nothing draws a zoom "
                     + "box, on any window, until the WindowRecord's "
                     + "spareFlag crosses the contract. \"\(title)\" now "
                     + "gets one — if the flag landed, close the row; if "
@@ -170,17 +151,17 @@ final class KnownWrongRegisterTests: XCTestCase {
         }
     }
 
-    /// KW-06 — `ctlact` infers "the act was not taken" from the absence
+    /// KW-05 — `ctlact` infers "the act was not taken" from the absence
     /// of a `TrackControl` call, and sweep D caught it saying so over a
     /// press that opened Mac Help. Checked by the guest's own refusal
     /// string, because that string IS the claim: it reports one
     /// mechanism's evidence as a conclusion about the machine.
-    func testKW06TheControlActStillConcludesFromTrackControlAlone() throws {
-        try requireRow("KW-06")
+    func testKW05TheControlActStillConcludesFromTrackControlAlone() throws {
+        try requireRow("KW-05")
         let source = try read("now-guest-ppc/src/act/act_cmds.c")
         XCTAssertTrue(
             source.contains("the application never called TrackControl"),
-            "KW-06 in \(Self.registerDoc) says `ctlact` refuses with "
+            "KW-05 in \(Self.registerDoc) says `ctlact` refuses with "
                 + "\"armed, and the application never called "
                 + "TrackControl\". That sentence is gone from "
                 + "act_cmds.c — if it became "
@@ -189,18 +170,18 @@ final class KnownWrongRegisterTests: XCTestCase {
                 + "negative the plane no longer produces.")
     }
 
-    /// KW-08 — menu item geometry assumes uniform 16-pixel rows, ~30 px
+    /// KW-07 — menu item geometry assumes uniform 16-pixel rows, ~30 px
     /// out by the bottom of a menu with separators. The row's stated
     /// reason ("nothing consumes item rects") has expired, so the
     /// consumer is checked too: if `menuItemPoint` loses its last caller
     /// the row is a dead constant, not a live wrong answer.
-    func testKW08MenuGeometryStillAssumesUniformRowsAndStillHasACaller()
+    func testKW07MenuGeometryStillAssumesUniformRowsAndStillHasACaller()
         throws
     {
-        try requireRow("KW-08")
+        try requireRow("KW-07")
         XCTAssertEqual(
             ActionModel.menuRowHeight, 16,
-            "KW-08 in \(Self.registerDoc) says menu item points are "
+            "KW-07 in \(Self.registerDoc) says menu item points are "
                 + "computed from a uniform 16 px row. The constant "
                 + "moved — if real row heights now reach the host, close "
                 + "the row.")
@@ -210,7 +191,7 @@ final class KnownWrongRegisterTests: XCTestCase {
         let fourth = ActionModel.menuItemPoint(menuLeft: 100, itemIndex: 4)
         XCTAssertEqual(
             fourth.1 - first.1, 3 * ActionModel.menuRowHeight,
-            "KW-08 says the spacing is uniform. It is not any more, which "
+            "KW-07 says the spacing is uniform. It is not any more, which "
                 + "means somebody taught this real geometry. Close the row.")
     }
 
