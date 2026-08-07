@@ -333,6 +333,32 @@ final class ChatModuleModel: ObservableObject {
         }
     }
 
+    /// "Answer that again." The last prompt is asked afresh with
+    /// everything it produced removed from both halves — a retry that
+    /// left the failed answer in context asked a different question
+    /// than the one on screen.
+    func retryLastPrompt() {
+        guard !isStreaming,
+            let rewound = ChatRewind.toLastPrompt(
+                rows: transcript, turns: conversation)
+        else { return }
+        transcript = rewound.rows
+        conversation = rewound.turns
+        send(rewound.prompt)
+    }
+
+    /// "Let me put that differently." Everything after the edited
+    /// prompt goes, including the answers a person is replacing.
+    func resend(promptID: UUID, as text: String) {
+        guard !isStreaming,
+            let rewound = ChatRewind.toPrompt(
+                id: promptID, rows: transcript, turns: conversation)
+        else { return }
+        transcript = rewound.rows
+        conversation = rewound.turns
+        send(text)
+    }
+
     func cancel() {
         Task { [weak self] in
             _ = await self?.harness.cancel(

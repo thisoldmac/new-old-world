@@ -1,18 +1,33 @@
 import AppKit
 import SwiftUI
 
-/* The Chat page, third pass. The shape every polished harness shares:
-   a quiet toolbar (provider and model, the model list following the
-   provider), a conversation that reads as one - the model's text plain
-   and full width, the person's in a trailing bubble, tool use as small
-   collapsed rows - and provider accounts in a settings sheet instead
-   of furniture above the transcript. Native controls; the page should
-   feel like this Mac. */
+/* The Chat page, fourth pass — the shape a modern harness has settled
+   on, in this Mac's own materials.
+
+   What each part is answering, since a chat pane looks arbitrary until
+   you know: ONE model button rather than a provider picker and a model
+   picker, because nobody knows which company sells which model and
+   the group heading says it anyway (ChatModelMenu). The model's answer
+   rendered as real blocks, since it writes markdown and `Text` renders
+   none of it (ChatMarkdownText). A composer with the keyboard model
+   people already have — Return sends, Shift-Return breaks the line —
+   which is why it is an NSTextView (ChatComposer). Per-row copy, retry
+   and edit, because the first thing anyone does with a wrong answer is
+   ask again slightly differently (ChatRewind).
+
+   And the scroll follows the answer only while the person is already
+   at the bottom: yanking someone back down while they are reading what
+   the model said four paragraphs ago is the single most-hated
+   behaviour in this class of application. */
 
 struct ChatModuleView: View {
     @ObservedObject var model: ChatModuleModel
     @State private var settingsShown = false
     @State private var draft = ""
+    /// Following the tail, as opposed to reading further up.
+    @State private var pinnedToBottom = true
+
+    private static let column: CGFloat = 720
 
     var body: some View {
         VStack(spacing: 0) {
@@ -20,7 +35,12 @@ struct ChatModuleView: View {
             Divider()
             transcript
             Divider()
-            composer
+            ChatComposer(
+                draft: $draft, state: composerState,
+                placeholder: model.models.isEmpty
+                    ? "Set up a provider to start"
+                    : "Ask about the connected Mac...",
+                send: submit, stop: model.cancel)
         }
         .onAppear { model.refresh() }
         .sheet(isPresented: $settingsShown) {
@@ -28,81 +48,137 @@ struct ChatModuleView: View {
         }
     }
 
+    private var composerState: ChatComposerState {
+        ChatComposerState.state(
+            draft: draft, isStreaming: model.isStreaming,
+            hasModels: !model.models.isEmpty,
+            hasSelection: !model.selectedWireModelID.isEmpty)
+    }
+
     // MARK: - Toolbar
 
     private var toolbar: some View {
         HStack(spacing: 10) {
-            Picker("Provider", selection: $model.selectedProviderID) {
-                ForEach(model.providersWithModels, id: \.id) { entry in
-                    Text(entry.label).tag(entry.id)
-                }
-            }
-            .fixedSize()
-            .disabled(model.providersWithModels.isEmpty)
-
-            Picker("Model", selection: $model.selectedWireModelID) {
-                ForEach(model.models(of: model.selectedProviderID),
-                        id: \.wireID) { served in
-                    Text(served.displayName).tag(served.wireID)
-                }
-            }
-            .frame(maxWidth: 300)
-            .disabled(model.models(of: model.selectedProviderID).isEmpty)
+            ChatModelButton(
+                models: model.models, providers: model.providersWithModels,
+                selection: $model.selectedWireModelID,
+                configure: openSettings)
 
             Spacer()
 
             Button {
                 model.newChat()
             } label: {
-                Label("New Chat", systemImage: "square.and.pencil")
+                Image(systemName: "square.and.pencil")
             }
+            .buttonStyle(.borderless)
             .disabled(model.isStreaming || model.transcript.isEmpty)
             .help("Start a fresh conversation")
 
-            Button {
-                model.refresh()
-                settingsShown = true
-            } label: {
+            Button(action: openSettings) {
                 Image(systemName: "slider.horizontal.3")
             }
+            .buttonStyle(.borderless)
             .help("Provider accounts and local runtimes")
         }
-        .pickerStyle(.menu)
-        .labelsHidden()
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 14)
         .padding(.vertical, 8)
+    }
+
+    private func openSettings() {
+        model.refresh()
+        settingsShown = true
     }
 
     // MARK: - Transcript
 
     private var transcript: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
-                    if model.transcript.isEmpty {
-                        emptyState
+        GeometryReader { outer in
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 18) {
+                        if model.transcript.isEmpty {
+                            emptyState
+                        }
+                        ForEach(model.transcript) { row in
+                            ChatMessageRow(
+                                row: row,
+                                isLast: row.id == model.transcript.last?.id,
+                                isStreaming: model.isStreaming,
+                                retry: model.retryLastPrompt,
+                                resend: { text in
+                                    model.resend(promptID: row.id, as: text)
+                                })
+                                .id(row.id)
+                        }
+                        if waitingForFirstText {
+                            waitingRow.id("waiting")
+                        }
+                        tailSensor(viewport: outer.size.height)
                     }
-                    ForEach(model.transcript) { row in
-                        rowView(row).id(row.id)
-                    }
-                    if waitingForFirstText {
-                        waitingRow.id("waiting")
+                    .frame(maxWidth: Self.column)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 18)
+                }
+                .coordinateSpace(name: Self.scrollSpace)
+                .onPreferenceChange(TailOffsetKey.self) { slack in
+                    pinnedToBottom = slack < 80
+                }
+                .background(Color(nsColor: .textBackgroundColor))
+                .overlay(alignment: .bottom) {
+                    if !pinnedToBottom && !model.transcript.isEmpty {
+                        jumpToLatest(proxy)
                     }
                 }
-                .frame(maxWidth: 680)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 16)
-            }
-            .background(Color(nsColor: .textBackgroundColor))
-            .onChange(of: model.transcript.last?.text) { _ in
-                if let last = model.transcript.last {
-                    withAnimation(.easeOut(duration: 0.1)) {
-                        proxy.scrollTo(last.id, anchor: .bottom)
-                    }
+                .onChange(of: model.transcript.last?.text) { _ in
+                    follow(proxy)
+                }
+                .onChange(of: model.transcript.count) { _ in
+                    follow(proxy)
                 }
             }
         }
+    }
+
+    private static let scrollSpace = "chat.transcript"
+
+    /// How much transcript is left below the fold, measured by a
+    /// zero-height marker at the very end of the content.
+    private func tailSensor(viewport: CGFloat) -> some View {
+        GeometryReader { geo in
+            Color.clear.preference(
+                key: TailOffsetKey.self,
+                value: geo.frame(in: .named(Self.scrollSpace)).maxY
+                    - viewport)
+        }
+        .frame(height: 1)
+    }
+
+    private func follow(_ proxy: ScrollViewProxy) {
+        guard pinnedToBottom, let last = model.transcript.last else { return }
+        withAnimation(.easeOut(duration: 0.12)) {
+            proxy.scrollTo(last.id, anchor: .bottom)
+        }
+    }
+
+    private func jumpToLatest(_ proxy: ScrollViewProxy) -> some View {
+        Button {
+            pinnedToBottom = true
+            follow(proxy)
+        } label: {
+            Label("Jump to Latest", systemImage: "arrow.down")
+                .font(.caption)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+        }
+        .buttonStyle(.plain)
+        // The one part of this page that floats over the transcript, so
+        // the one part that takes the app's glass — through GlassStyle's
+        // vocabulary, which owns both the version and the
+        // Reduce-Transparency question.
+        .nowGlassPanel(cornerRadius: 13)
+        .padding(.bottom, 10)
     }
 
     /// The model accepted the turn and has said nothing yet — the
@@ -127,144 +203,68 @@ struct ChatModuleView: View {
             .displayName ?? "the model"
     }
 
+    // MARK: - Empty state
+
+    /// Openers, not decoration: what this harness can do is not
+    /// guessable from a blinking cursor, and every one of these is a
+    /// question the tools can actually answer about the classic Mac.
+    static let openers = [
+        "What Mac is connected right now?",
+        "Show me what is on its screen.",
+        "What software is installed on it?",
+        "How much free space is left on its disk?",
+    ]
+
     private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 34, weight: .light))
-                .foregroundStyle(.tertiary)
-            Text("Talk to a model about the connected Mac")
-                .font(.title3.weight(.medium))
-                .foregroundStyle(.secondary)
-            Text("It can look at the classic Mac's screen, files and "
+        VStack(alignment: .leading, spacing: 0) {
+            Text("How can I help with this Mac?")
+                .font(.system(size: 26, weight: .semibold))
+                .padding(.bottom, 6)
+            Text("I can look at the classic Mac's screen, files and "
                  + "processes - with the access its owner granted.")
-                .font(.callout)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 380)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 18)
             if model.models.isEmpty {
-                Button("Set Up a Provider...") {
-                    model.refresh()
-                    settingsShown = true
-                }
-                .padding(.top, 8)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 70)
-    }
-
-    @ViewBuilder
-    private func rowView(_ row: ChatDisplayRow) -> some View {
-        switch row.kind {
-        case .person:
-            HStack {
-                Spacer(minLength: 60)
-                Text(row.text)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 13)
-                    .padding(.vertical, 8)
-                    .background(Color.accentColor)
-                    .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
-            }
-        case .model:
-            // The model's words, plain and full width - the reading
-            // surface, not a bubble fighting for it.
-            Text(row.text)
-                .textSelection(.enabled)
-                .lineSpacing(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        case .tool(let name, let ok):
-            HStack(spacing: 5) {
-                switch ok {
-                case .none:
-                    ProgressView().controlSize(.mini)
-                case .some(true):
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                case .some(false):
-                    Image(systemName: "minus.circle.fill")
-                        .foregroundStyle(.orange)
-                }
-                Text(toolTitle(name))
-                    .font(.caption)
-            }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 4)
-            .background(.quaternary.opacity(0.5))
-            .clipShape(Capsule())
-            .foregroundStyle(.secondary)
-            .help(name)
-        case .note:
-            Label(row.text, systemImage: "exclamationmark.triangle")
-                .font(.callout)
-                .foregroundStyle(.orange)
-                .textSelection(.enabled)
-        }
-    }
-
-    /// "now_capture_screen" reads as "Capture screen" in a capsule; the
-    /// raw name stays in the tooltip.
-    private func toolTitle(_ name: String) -> String {
-        let stripped = name.hasPrefix("now_")
-            ? String(name.dropFirst(4)) : name
-        let words = stripped.split(separator: "_").joined(separator: " ")
-        return words.prefix(1).uppercased() + words.dropFirst()
-    }
-
-    // MARK: - Composer
-
-    private var composer: some View {
-        HStack(spacing: 8) {
-            TextField(
-                model.models.isEmpty
-                    ? "Set up a provider to start"
-                    : "Ask about the connected Mac...",
-                text: $draft)
-                .textFieldStyle(.plain)
-                .font(.body)
-                .padding(.horizontal, 13)
-                .padding(.vertical, 8)
-                .background(.quaternary.opacity(0.4))
-                .clipShape(RoundedRectangle(cornerRadius: 17))
-                .onSubmit(submit)
-                .disabled(model.models.isEmpty)
-            if model.isStreaming {
-                Button {
-                    model.cancel()
-                } label: {
-                    Image(systemName: "stop.circle.fill")
-                        .font(.system(size: 24))
-                        .foregroundStyle(.red)
-                }
-                .buttonStyle(.plain)
-                .help("Stop the answer")
+                Button("Set Up a Provider...", action: openSettings)
+                    .controlSize(.large)
             } else {
-                Button(action: submit) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 24))
-                        .foregroundStyle(
-                            canSend ? Color.accentColor : Color.secondary)
+                ForEach(Self.openers, id: \.self) { opener in
+                    Divider()
+                    Button {
+                        draft = opener
+                        submit()
+                    } label: {
+                        HStack {
+                            Text(opener)
+                            Spacer()
+                        }
+                        .contentShape(Rectangle())
+                        .padding(.vertical, 9)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
-                .disabled(!canSend)
-                .help("Send")
+                Divider()
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-    }
-
-    private var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespaces).isEmpty
-            && !model.selectedWireModelID.isEmpty
-            && !model.models.isEmpty
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 40)
+        .padding(.bottom, 10)
     }
 
     private func submit() {
-        guard canSend else { return }
+        guard case .send = composerState else { return }
         model.send(draft)
         draft = ""
+        pinnedToBottom = true
+    }
+}
+
+/// The distance from the end of the transcript to the bottom of the
+/// viewport — negative or small means the person is at the tail.
+private struct TailOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
