@@ -148,7 +148,7 @@ public enum UnknownVisual {
                 CGImageAlphaInfo.premultipliedLast.rawValue),
             provider: provider, decode: nil, shouldInterpolate: false,
             intent: .defaultIntent)!
-        return Image(decorative: cg, scale: 1)
+        return Image(decorative: cg, scale: 1).interpolation(.none)
     }()
 
     /// The lattice cell, shared with `ProvisionalVisual` — which is the whole

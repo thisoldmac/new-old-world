@@ -310,8 +310,20 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         MirrorKit.Scene, Int, @escaping () -> Void
     ) -> Void)?
     private let lifecycleDidChange: @MainActor () -> Void
-    private(set) var running = false
+    /// **Published, because it is now a control and not an internal flag.**
+    ///
+    /// Running used to be implied by an open window, and the window's own
+    /// `isOpen` was the `@Published` a button watched. Under start/stop
+    /// this is the thing the button IS, so a plain stored property would
+    /// have rendered the label once and then frozen — the control saying
+    /// "Start" over a poll that had been running for a minute.
+    @Published private(set) var running = false
     private var runGeneration = 0
+    /// The deferred lifecycle refresh a stop schedules eleven seconds out,
+    /// held so a restart inside that window can cancel it. Without this a
+    /// Stop→Start pair leaves a refresh from the DEAD run to land on the
+    /// live one and repaint the plane card with the stopped state.
+    private var deferredLifecycleRefresh: Task<Void, Never>?
     private var cycleGeneration: Int?
     private var pollRequestedAfterCycle = false
     private var rearmTask: Task<Void, Never>?
@@ -413,6 +425,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
     func start() {
         guard !running else { return }
+        /* A stop schedules a lifecycle refresh eleven seconds out to catch
+           the resident's leases lapsing. If a person starts again inside
+           that window, that refresh describes a run that no longer exists
+           and repaints the plane card as stopped over a live poll. */
+        deferredLifecycleRefresh?.cancel()
+        deferredLifecycleRefresh = nil
         runGeneration &+= 1
         iconTask?.cancel()
         iconTask = nil
@@ -490,9 +508,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             self.mutationBroker?.sessionChanged()
             self.mutationBroker = nil
             self.lifecycleDidChange()
-            Task { @MainActor [weak self] in
+            self.deferredLifecycleRefresh = Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: 11_000_000_000)
-                self?.lifecycleDidChange()
+                guard let self, !Task.isCancelled, !self.running else {
+                    return
+                }
+                self.lifecycleDidChange()
             }
         }
     }

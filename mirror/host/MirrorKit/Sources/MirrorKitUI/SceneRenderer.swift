@@ -13,6 +13,27 @@ import MirrorKit
 /// This is a pure draw function: the live Canvas view and the offscreen
 /// render-screenshot both call it, so what a human sees and what an agent
 /// inspects are the same pixels.
+///
+/// ## Every bitmap is sampled nearest-neighbour, and it must stay that way
+///
+/// `GraphicsContext` has no context-wide interpolation setting, so this is
+/// stated per image — `.interpolation(.none)` at every `ctx.draw` of an
+/// `Image`, here and in `DisplayReplay`, `BitmapFont` and `UnknownVisual`.
+/// The `shouldInterpolate: false` flags scattered through this package are
+/// **not** the same rule and do not cover it: they are set on hand-built
+/// `CGImage`s only, while everything loaded from the asset pack through
+/// `CGImageSourceCreateImageAtIndex` — the icon atlas, the desktop
+/// picture, and the glyph sheet through which every character of text is
+/// drawn — arrives with it defaulting to true.
+///
+/// Why it matters more than it sounds: the mirror's zoom stops are 50,
+/// 100, 200 and 400 percent, all powers of two, so nearest-neighbour maps
+/// each guest pixel onto a whole number of host pixels and a 1-pixel
+/// Platinum rule becomes a crisp 2-pixel rule at 200%. With smoothing it
+/// becomes a grey smear — and **a similarity score cannot see that**, so
+/// no pixel gate in this package would fail. That is why the rule is
+/// defended by a gate that reads the source instead:
+/// `NearestNeighbourSamplingTests`.
 public struct SceneRenderer {
     public let scene: MirrorKit.Scene
     /// Mirror-local UI state: the open menubar menu (drawn as a Platinum
@@ -234,7 +255,8 @@ public struct SceneRenderer {
             /* ONCE, AT THE ORIGIN, UNSCALED — the operation the machine
                performs. `answer` has already refused any picture whose
                size is not the screen's, so this cannot crop or stretch. */
-            ctx.draw(Image(decorative: art, scale: 1),
+            ctx.draw(Image(decorative: art, scale: 1)
+                        .interpolation(.none),
                      in: CGRect(x: bounds.minX, y: bounds.minY,
                                 width: CGFloat(art.width),
                                 height: CGFloat(art.height)))
@@ -242,6 +264,7 @@ public struct SceneRenderer {
             let tw = CGFloat(tile.width), th = CGFloat(tile.height)
             guard tw > 0, th > 0 else { break }
             let image = Image(decorative: tile, scale: 1)
+                .interpolation(.none)
             var y = bounds.minY
             while y < bounds.maxY {
                 var x = bounds.minX
@@ -322,7 +345,8 @@ public struct SceneRenderer {
                                  item: MirrorKit.Scene.DesktopItem) {
         if let bitmap = IconAtlas.icon(for: item,
                                        size: IconAtlas.Size.fitting(box)) {
-            ctx.draw(Image(decorative: bitmap, scale: 1), in: box)
+            ctx.draw(Image(decorative: bitmap, scale: 1)
+                        .interpolation(.none), in: box)
             drawAliasBadge(ctx, box, item: item)
             return
         }
@@ -501,7 +525,8 @@ public struct SceneRenderer {
                 .first(where: { $0.psn == front.psn })?.signature
             if let img = IconAtlas.processIcon(signature: signature, size: small)
                 ?? IconAtlas.namedIcon("application", size: small) {
-                ctx.draw(Image(decorative: img, scale: 1), in: iconBox)
+                ctx.draw(Image(decorative: img, scale: 1)
+                            .interpolation(.none), in: iconBox)
             } else {
                 ctx.fill(Path(roundedRect: iconBox, cornerRadius: 2),
                          with: .color(Platinum.g3))
@@ -762,7 +787,8 @@ public struct SceneRenderer {
         // answer.
         if win.items == nil,
            let island = win.island, let image = Self.cgImage(island) {
-            contentCtx.draw(Image(decorative: image, scale: 1),
+            contentCtx.draw(Image(decorative: image, scale: 1)
+                                .interpolation(.none),
                             in: CGRect(x: content.minX, y: content.minY,
                                        width: CGFloat(island.width),
                                        height: CGFloat(island.height)))
@@ -1487,7 +1513,8 @@ public struct SceneRenderer {
             guard !(replayed?.covers(frame) ?? false) else { break }
             if let icon = IconAtlas.namedIcon(
                 "document", size: IconAtlas.Size.fitting(frame)) {
-                ctx.draw(Image(decorative: icon, scale: 1), in: frame)
+                ctx.draw(Image(decorative: icon, scale: 1)
+                            .interpolation(.none), in: frame)
             }
         case "userItem":
             /* A user item has no content of its OWN — whatever appears there

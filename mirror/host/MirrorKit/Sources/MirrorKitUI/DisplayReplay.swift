@@ -362,7 +362,8 @@ public enum DisplayReplay {
                         "document", size: IconAtlas.Size.fitting(frame))
                     else { break }
                     let draw = drawingContext()
-                    draw.draw(Image(decorative: icon, scale: 1), in: frame)
+                    draw.draw(Image(decorative: icon, scale: 1)
+                                .interpolation(.none), in: frame)
                     coverage?.add(frame)
                     coverage?.attribute(frame, .namedArt)
                     drew = true

@@ -47,10 +47,16 @@ class LegacyMirrorRetirementTests(unittest.TestCase):
     def test_one_host_model_and_one_native_window_remain(self):
         sources = ROOT / "now-host" / "Sources" / "Host"
         self.assertFalse((sources / "MirrorProduct.swift").exists())
+        # Two axes, two controls. The single Open/Close button meant both
+        # "run the poll" and "put it on screen"; 019 split them, and the
+        # window is now one of two containers rather than the only one.
         view = (sources / "MirrorControlView.swift").read_text()
-        self.assertIn("Open Mirror", view)
-        self.assertIn("Close Mirror", view)
-        self.assertIn("NOWMirrorWindow", view)
+        self.assertIn("Start Mirror", view)
+        self.assertIn("Stop Mirror", view)
+        self.assertIn("Detach", view)
+        module = (sources / "MirrorModuleView.swift").read_text()
+        self.assertIn("NOWMirrorWindow", module)
+        self.assertIn("MirrorPaneView", module)
 
 
 if __name__ == "__main__":

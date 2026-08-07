@@ -5,7 +5,8 @@ import SwiftUI
 /// resident facts read-only; it never becomes a second policy authority.
 struct MirrorControlView: View {
     @ObservedObject var model: MirrorControlModel
-    @ObservedObject var mirrorWindow: NOWMirrorWindow
+    @ObservedObject var run: MirrorRunControl
+    @ObservedObject var presentation: MirrorPresentation
     @ObservedObject var timeline: MirrorActTimeline
     @ObservedObject var cycles: MirrorCycleTimeline
 
@@ -50,30 +51,66 @@ struct MirrorControlView: View {
         .padding(12)
     }
 
+    /// **Two controls, because the Mirror has two axes.**
+    ///
+    /// One button said `Open Mirror` / `Close Mirror` and meant both
+    /// things at once: opening started the poll and closing stopped it.
+    /// That label became a lie the moment the Mirror could be looked at
+    /// in two places and driven from neither — an agent on the MCP socket
+    /// needs the poll and has no window, and a person putting the picture
+    /// back in the pane is not asking the classic Mac to stop.
+    ///
+    /// So: **Start/Stop** governs the poll, and **Detach/Attach** governs
+    /// where it is drawn. Each persists its own last answer, and neither
+    /// can change the other.
     private var productCard: some View {
         card {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Mirror this Mac").font(.headline)
-                    Text(mirrorWindow.isOpen
-                         ? "The native Mirror window is open."
-                         : "Open one native Mirror window over NOW's wire.")
+                    Text(runningSentence)
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button(mirrorWindow.isOpen ? "Close Mirror" : "Open Mirror") {
-                    if mirrorWindow.isOpen {
-                        mirrorWindow.close()
-                    } else {
-                        mirrorWindow.show(
-                            title: "Mirror — \(model.connection.peerLabel)")
-                    }
+                Button(run.running ? "Stop Mirror" : "Start Mirror") {
+                    if run.running { run.stop() } else { run.start() }
                 }
-                .disabled(!mirrorWindow.isOpen && !model.connection.canCapture)
+                .disabled(!run.running && !model.connection.canCapture)
                 .keyboardShortcut(.defaultAction)
             }
+            Divider()
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Where it is shown").font(.headline)
+                    Text(presentation.isDetached
+                         ? "In a window of its own. Closing that window "
+                            + "brings it back to this page; it does not "
+                            + "stop the Mirror."
+                         : "On this page, under these controls.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                Button(presentation.isDetached ? "Attach" : "Detach") {
+                    presentation.isDetached.toggle()
+                }
+            }
         }
+    }
+
+    private var runningSentence: String {
+        if run.running {
+            return "Running: this Mac is asking the classic Mac for its "
+                + "screen, and keeps asking while you are on another page."
+        }
+        if run.wantsRunning {
+            return "Waiting for a Mac to come back — it will start again "
+                + "by itself."
+        }
+        return "Stopped. Nothing is asking the classic Mac for its screen, "
+            + "and every Mirror request refuses until it is started."
     }
 
     /// **What the lane is doing, and where the last acts spent their time.**
@@ -213,7 +250,7 @@ struct MirrorControlView: View {
     private var planesCard: some View {
         card {
             Text("Planes").font(.headline)
-            Text("Structure is required while the Mirror is open. The other "
+            Text("Structure is required while the Mirror is running. The other "
                  + "planes are independent host policy switches; turning one "
                  + "off cannot change another owner's claim.")
                 .font(.caption)

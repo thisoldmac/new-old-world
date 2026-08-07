@@ -171,7 +171,7 @@ final class MainMenuTests: XCTestCase {
     }
 
     /// **The Mirror's menu face.** The item is the whole of it — the
-    /// action ends at `HostAppState.showMirrorWindow`, which the agent
+    /// action ends at `HostAppState.showMirror`, which the agent
     /// verb and the guest's `host.show` also end at — so an item that
     /// lost its target or its selector would be the one face of this
     /// capability with no other gate on it.

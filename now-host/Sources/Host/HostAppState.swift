@@ -132,15 +132,23 @@ final class HostAppState: ObservableObject {
         }
         return source
     }()
-    private(set) lazy var mirrorWindow = NOWMirrorWindow(source: mirrorSource)
+    /// Where the Mirror is shown, and at what size. Persisted, so a
+    /// person finds it where they left it.
+    private(set) lazy var mirrorPresentation = MirrorPresentation(
+        defaults: defaults)
+    /// Whether it is running, which is a different question. See
+    /// `MirrorRunControl` for why they had to stop being one.
+    private(set) lazy var mirrorRun = MirrorRunControl(source: mirrorSource,
+                                                       defaults: defaults)
+    private(set) lazy var mirrorWindow = NOWMirrorWindow(
+        source: mirrorSource, presentation: mirrorPresentation)
 
-    /// **Open the Mirror on an already-running host, whoever asked.**
+    /// **Show the Mirror on an already-running host, whoever asked.**
     ///
     /// The one implementation behind four faces: the Mirror page's own
     /// button, the Window menu item, the `mirror_open` agent verb and
-    /// the guest's `host.show`. All of them end here, and here ends at
-    /// the same `NOWMirrorWindow.show` a click performs — so none of
-    /// them can drift into being a second way to open a window.
+    /// the guest's `host.show`. All of them end here, so none of them can
+    /// drift into being a second way to do it.
     ///
     /// It exists because until now there was no third face at all.
     /// `--open-mirror` covers launch and a click covers a person at this
@@ -149,16 +157,29 @@ final class HostAppState: ObservableObject {
     /// scripting macOS accessibility to click the button, on somebody's
     /// actual desktop.
     ///
-    /// Already open is not an error: the window is raised and the answer
-    /// is the same `showing`. The asker wanted the Mirror in front of
-    /// them, and it is.
+    /// **It resolves BOTH axes now, and the order matters.** Showing used
+    /// to imply starting because a window was the only container and its
+    /// `show()` called `source.start()`. With the two split, a `showmirror`
+    /// against a stopped Mirror would otherwise put a frozen picture in
+    /// front of somebody and refuse every act behind it — which is
+    /// `docs/open-issues.md`'s "a window over a stopped poll" arriving
+    /// through a new door. So: start first, then put it where it can be
+    /// seen — raise the detached window if that is where it lives,
+    /// otherwise select the module.
+    ///
+    /// Already showing is not an error. The asker wanted the Mirror in
+    /// front of them, and it is.
     @discardableResult
-    func showMirrorWindow() -> HostSurfaceOutcome {
+    func showMirror() -> HostSurfaceOutcome {
         let name = connectedMachineName
-        let wasOpen = mirrorWindow.isOpen
-        guard wasOpen || Self.guestState(
+        let detached = mirrorPresentation.isDetached
+        let wasShowing = detached
+            ? mirrorWindow.isOpen
+            : selectedModuleID == "mirror"
+        let wasRunning = mirrorSource.running
+        guard wasRunning || Self.guestState(
             from: listener.state, key: listener.activeKey).canCapture else {
-            /* Refused rather than opened-empty. A Mirror with no Mac
+            /* Refused rather than shown-empty. A Mirror with no Mac
                behind it publishes nothing, so a caller that opened one
                would read an honest empty answer and have no way to tell
                it from a quiet machine — the same trap `--open-mirror`
@@ -168,12 +189,68 @@ final class HostAppState: ObservableObject {
                 reason: "No Mac is connected, so there is nothing to "
                     + "mirror yet.")
         }
-        mirrorWindow.show(title: "Mirror — \(name)")
+        mirrorRun.start()
+        if detached {
+            mirrorWindow.show(title: "Mirror — \(name)")
+        } else {
+            selectedModuleID = "mirror"
+        }
+        /* **These sentences are read on the OTHER machine.** They cross
+           the wire in `host.shown` and the guest draws them verbatim in
+           its Mirror page's status line (`mirror_module.c:63-70`), so
+           they must describe an outcome a person at a classic Mac can
+           check, and must not name a host window that may not exist. */
+        let place = detached ? "in its own window" : "on the Mirror page"
         return .showing(
-            wasAlreadyOpen: wasOpen,
-            detail: wasOpen
-                ? "The Mirror was already open; brought it to the front."
-                : "Opened the Mirror on \(name).")
+            wasAlreadyOpen: wasShowing && wasRunning,
+            detail: wasShowing && wasRunning
+                ? "The Mirror was already running; brought it to the front "
+                    + place + "."
+                : "The Mirror is running on \(name), \(place).")
+    }
+
+    /// Whether `--open-mirror` has been honoured yet this launch. A guest
+    /// that dials in, drops and redials must not be treated as a second
+    /// launch request.
+    private var didHonourMirrorLaunchRequest = false
+
+    /// **A Mac arrived. Does the Mirror care?**
+    ///
+    /// Two independent reasons it might, and they are checked in the
+    /// order of who asked most recently:
+    ///
+    /// 1. `--open-mirror` on argv, once per launch. It means *start*,
+    ///    and shows the Mirror wherever the person last left it — the
+    ///    headless sweep needs the poll and has no opinion about windows.
+    /// 2. A persisted "it was running when you last quit". Running is a
+    ///    state of the product rather than of one session, so it comes
+    ///    back by itself; every request the Mirror serves refuses while
+    ///    it is stopped, and a person who left it running would have to
+    ///    rediscover why before anything worked.
+    ///
+    /// Every later connection change comes through this same door, which
+    /// is what makes the retry inside `MirrorRunControl` a belt rather
+    /// than the only route: `start()` refuses while the listener has no
+    /// active key, and that is the ordinary order of events at launch.
+    private func mirrorFollowsTheConnection() {
+        if MirrorLaunchOptions.parse(ProcessInfo.processInfo.arguments)
+            .openAtLaunch, !didHonourMirrorLaunchRequest {
+            didHonourMirrorLaunchRequest = true
+            showMirror()
+            return
+        }
+        /* **Read from `defaults` rather than from `mirrorRun`.** Touching
+           the run control constructs `mirrorSource`, and this runs on
+           every connection — so asking it "were you running?" would make
+           every host with a Mac on the wire build the Mirror, which is
+           the same mistake as letting a metrics read construct the
+           measurer. The stored answer costs nothing and is the same
+           answer. */
+        guard MirrorRunControl.storedWantsRunning(defaults) else { return }
+        mirrorRun.resumeIfWanted()
+        if mirrorPresentation.isDetached, mirrorSource.running {
+            mirrorWindow.show(title: "Mirror — \(connectedMachineName)")
+        }
     }
 
     /// What to put in the mirror window's title bar. A person may have
@@ -316,7 +393,7 @@ final class HostAppState: ObservableObject {
                                 reason: "This Mac is shutting down.")
             }
             switch surface {
-            case .mirror: return self.showMirrorWindow()
+            case .mirror: return self.showMirror()
             }
         }
         integration.bindMirrorOpener { [weak self] in
@@ -324,7 +401,7 @@ final class HostAppState: ObservableObject {
                 return .refused(code: "unavailable",
                                 reason: "This Mac is shutting down.")
             }
-            return self.showMirrorWindow()
+            return self.showMirror()
         }
         integration.bindMirrorDriver { [weak self] request in
             guard let self else {
@@ -400,12 +477,17 @@ final class HostAppState: ObservableObject {
         /* Re-attached at the 019 integration, when this body moved out of
            the event closure and into a method. Every connection change
            comes through this door and this door only, which is what lets
-           `openIfLaunchAsked` be asked repeatedly — see its own comment:
-           an open window is not a running poll, and the launch request
-           arrives before the listener has an active key. */
+           `mirrorFollowsTheConnection` be asked repeatedly — see its own
+           comment: an open window is not a running poll, and the launch
+           request arrives before the listener has an active key.
+
+           It replaced `mirrorWindow.openIfLaunchAsked` at the round-3
+           integration. The window can no longer answer this question,
+           because with the Mirror embedded as a module there may be no
+           window: the two axes are RUNNING and WHERE, and only the app
+           knows both. */
         if case .connected = state {
-            mirrorWindow.openIfLaunchAsked(
-                title: "Mirror — \(connectedMachineName)")
+            mirrorFollowsTheConnection()
         }
     }
 
