@@ -68,11 +68,30 @@ asked to hold still in. Four mutations watched failing there, including
 the one with no symptom: dropping the `title_left_known` guard makes an
 unread menu bar report a claimed 0 as **checked**.
 
-**Still open, named rather than fixed:** the host's `?? 0` is still
-there. It is now a refusal with a reason instead of a hijack, which is
-the right place for the authority to sit — the guest is the only side
-that can see a menu bar — but a scene that cannot say where a menu is
-should probably not offer to press it either.
+**And the host's `?? 0` is gone too** (ruled the same day): the default
+is removed rather than backstopped. `Scene.Menu.left` and
+`MirrorObject.Menu.left` are optional all the way to the act, so no layer
+can substitute without seeing the absence, and `now_mirror_snapshot`
+omits the key rather than reporting 0 — that being the row a caller reads
+to fill in `titleLeft`. Two guards at two layers is not redundancy here;
+it is defence at the layer that has the information, and the host is the
+side that knows it never learned the number.
+
+One answer everywhere, because a menu bar is a positional surface: **no
+position means not drawn, not hit tested, not pressed.** Giving the
+renderer a fallback the act path refused would have put the two back into
+disagreement, which is the same defect one layer up — and it was already
+there in visible form: an unplaced menu arriving at 0 took the span from
+0 to the next title, so a click at **x = 4** in the mirror, on the Apple
+menu's own drawn title, resolved to the unplaced menu instead. The same
+four pixels the act armed at.
+
+Four mutations watched failing, including the one that makes the other
+three unreachable — restoring `?? 0` in `normalizeMenus`, after which
+nothing downstream can refuse an absence it never receives.
+
+**Not driven**, and it cannot be from this tree: no producer here omits
+`left`, so the absence is unreachable from a live guest. Tested only.
 
 ## FIXED: two window readers, two rectangles, and `windows[].rect` meant three things at once (2026-08-07, `claude/019-one-answer-a`)
 
