@@ -1,12 +1,35 @@
 # Fidelity sweep D, 2026-08-07 — scoring the composed result of rounds 6 and 7
 
-**STATUS: IN PROGRESS. This file is a live checkpoint, not a finished
-sweep.** Everything below is recorded as it is measured, so that a session
-that ends without warning still leaves the measurements behind. Rows
-without evidence beside them have not been taken.
+**Verification level: TESTED on an emulated guest, with the build
+asserted on every connection. Nothing here is metal-verified, and no
+sentence in this document says anything "works".**
 
-Sweep C (`docs/fidelity-sweep-2026-08-07-c.md`) is the most recent
-finished word; nothing here edits it.
+Sweep C (`docs/fidelity-sweep-2026-08-07-c.md`) is the previous word;
+nothing here edits it. Two of its rows are **corrected** by this run and
+both corrections are argued in place: its account of the "Set Time Zone"
+contamination, and its scoring of `act-not-taken` as an unambiguous
+clean refusal.
+
+## The short version
+
+- **A false negative on an act that landed.** `ctlact part 11` reported
+  `act-not-taken … settlement: timed-out` over a press that opened Mac
+  Help and ran a search. Proven in the guest's own pixels, before and
+  after.
+- **One of the seven claims under test is not in the tree**, and its
+  absence is priced here on real windows rather than on a fixture.
+- **The two big chrome claims are confirmed and quantified**: close and
+  collapse boxes at 121/121 pixels on nine windows out of nine, and six
+  of nine windows agreeing on all 24 sampled title-band rows where sweep
+  C's store agrees on 2.
+- **The zoom box's honest absence costs five of nine windows a widget the
+  machine draws** — measured, and split exactly on the line the code's own
+  doc comment predicted.
+- **STABILITY is scored for the first time.** Six of nine targets are
+  pixel-identical in both the guest and the render across two independent
+  captures.
+- **Two things landed and should be left alone**: `ctlact part 0`'s
+  `dispatched-but-unconfirmed`, and `controlsState`.
 
 ## Why this sweep exists
 
@@ -24,11 +47,13 @@ lanes each claimed.
 | **Spec** | `docs/fidelity-sweep-spec.md` at version **3.1** (the version-history row is present in the copy on this branch; it is byte-identical to the copy on `claude/019-sweep-c`). |
 | **Lane block** | **982** via `tools/lane-ports` — anchor **19856**, wire **19857**. The human's reserved block 590 / ports 16728–16729 was never dialled. |
 | **Base image** | `~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2`, named explicitly (it is also what `tools/base-image` designates for `ppc-work`). |
-| **Guest build** | `scripts/build-guests` green for all six targets on this tree before any capture. |
-
-## Method changes from sweep C
-
-- (to be filled in as they are made)
+| **Guest build** | `d9a78b62a414 2026-08-07T20:08:53Z`, from the guest's own `hello`, asserted by `--expect-build auto` on both capture passes and by `expect_build` on every phase-C connection. `scripts/build-guests` green for all six targets first. |
+| **Base image sha256** | `c466baa9a5455c343908e12197d68e57ffc7f07c140276a90c97a5ae2a137d70`, checked **after** the run — the same bytes `base-fitness.json` names, so nobody baked over the shared oracle during this sweep. **The image was never written to**: `spin-up-ppc` clones it and stages this checkout's ext and app into the clone. |
+| **Resident** | staged from this tree: sourceManifest `ad1b8d35302e`, buildFingerprint `1247f064b341`. `actselftest` → `abi-agreed`, by a real `MenuSelect` inside the target process. The base image's own resident **predates** the six 6-August extension commits, and is not what was under test. |
+| **Guest machine** | QEMU `mac99`, Mac OS 9.1, 800×600. Run dir `/private/tmp/nowvm-swd`. |
+| **Host app** | **not launched.** Renders were taken by `LiveShapedRenderTests` composing each drain onto its own captured scene, which is the app's composition path; nothing in this run used the agent socket. |
+| **Who answered** | every capture and every interaction connection asserted the build in the guest's own `hello`. No result here could have come from another session's VM. |
+| **Artefacts** | `~/Lab/Assets/now-mirror-assets/sweep-2026-08-07-d/` — 53 MB, 139 files (both capture passes, four render passes, the pairs, every driver script, every sequence's JSON and screendumps, the rectangle instrument and its output for **both** this sweep and sweep C, and the run's own provenance). Manifest `sweep-2026-08-07-d.sha256`, itself sha256 **`314265006aa2ba765928261727820acbb68e2f322884277f765ad9f0fdb870cc`**. Copied out **before** teardown. |
 
 ## Claims under test — what changed since sweep C
 
@@ -237,11 +262,6 @@ looks like.
 
 **This is the number sweep D's captures have to beat**, and it is
 recorded here before the after was taken.
-
-## Measurements taken so far
-
-Capture pass 1 was running when this checkpoint was written. See
-"Targets reached" below.
 
 ## How I know these captures are steady-state, and where the warm-up went
 
@@ -897,4 +917,97 @@ Two file types, not one, and the anchor worker opens both. **The refusal
 is honest and specific — that half is a pass** — but the asymmetry is
 wider than the sweep C row says, and `docs/command-parity.md` still
 declares neither.
+
+---
+
+## What should be fixed before sweep E — the pain points, to steer work in flight
+
+In order of what a person pays for first.
+
+1. **`ctlact part 11` must stop concluding from `TrackControl` alone.**
+   It reported `act-not-taken … settlement: timed-out` over a press that
+   opened Mac Help. `dispatched-but-unconfirmed` already exists in the
+   same verb's other form and is the honest word for exactly this. **This
+   is the one finding that fires a round on its own**, because an agent
+   that believes a refusal will press again, and the second press lands
+   too.
+2. **Merge `claude/019-first-render-differs`, or say why not.** It is the
+   only claim in the brief that is not in the tree, and this run priced
+   its absence on real windows: reordering the render list changes four of
+   nine renders, by up to 338 pixels and 157/255 in a channel, and it
+   produces a **one-pixel** difference between two renders of an
+   identically-drawn Appearance window — the exact error class the spec
+   says no similarity score can see.
+3. **Fix `WindowChrome.growBox`'s discriminator.** It is `guard win.kind
+   != 2`, one function below the `hasTitleBar` that was just corrected off
+   the same test, and it draws a grow box on Appearance that the machine
+   does not draw. Small, mechanical, and the same defect class the zoom
+   fix was landed to remove.
+4. **Carry the zoom flag in the contract.** The absence is honest and it
+   costs five of nine windows a widget the machine draws. `spareFlag` is
+   the zoom flag and it sits beside the `windowKind` the walk already
+   reads. Until it lands, "the render is exact on chrome" is only true of
+   windows without a zoom box.
+5. **Find why Appearance's tab does not switch.** Two sweeps now: press
+   accepted, value unmoved, zero pixels in the strip and zero in the pane.
+   Sweep B switched it. It is sweep C's item 3, unmoved.
+6. **Make a reference survive its own settlement wait.** 96 slots, and
+   every poll mints a fresh set. Either the settlement loop should not
+   mint, or a reference in use should not be evictable.
+7. **Draw the values the scene already carries** — slider thumbs, stepper
+   arrows, and now **disclosure triangles**, twelve of which Apple System
+   Profiler reports with their state and none of which are drawn. Sweep
+   C's item 6 with a new family attached.
+8. **Decide what draws a check box's mark.** Sweep C's item 4, reproduced
+   exactly, and now with the CDEF reclassification ruled out as the cause
+   by measurement rather than argument.
+9. **Draw Apple System Profiler's tab strip, and put its scroll bar on the
+   right.** The rotated target's two structural losses.
+10. **The help "?" button has been a blank plate in four consecutive
+    sweeps** and is now also the control that proved finding 1. It has
+    outlived "we'll get to it".
+11. **`quit` on a control panel should quit it or refuse.** In this run it
+    did neither, and it left a modal that voided a stability row. Sweep
+    C's attribution of that contamination to the hygiene routine is
+    wrong; fixing the hygiene routine would not have prevented it.
+12. **`launch` should serve `cdev` and `APPD`, or the asymmetry should be
+    declared in `docs/command-parity.md`.** Asked by sweep B, asked by
+    sweep C, wider than either said.
+13. **Fix the sequence harness's movement detector** before another sweep
+    quotes it: it cannot tell a drag from a clock tick, and it scored a
+    false negative against a panel that displays the time.
+
+### And two things to leave alone
+
+- **`ctlact part 0`'s new answer.** `dispatched-but-unconfirmed` is
+  exactly right, it replaced the worst epistemics in the surface, and it
+  came with a 2.4× dispatch improvement. It is also the word finding 1
+  asks `part 11` to adopt.
+- **`controlsState`.** Three of its four words appeared in the field
+  within one run, and `notFetched` did the job it was added for — it
+  turned "this window has no controls" into "nobody walked it" on a
+  window that has 21.
+
+---
+
+## Where the method changed, so nobody quotes a row as comparable
+
+- **The before is measured, not remembered.** `rects.py` was run over
+  sweep C's published store as well as this run's, so the chrome rows are
+  a measured delta. No earlier sweep did this.
+- **Two capture passes on one boot**, and STABILITY is scored per target
+  **inside its own window rect** rather than over the screen. Sweeps B and
+  C left the column blank; its rows here are comparable with nothing.
+- **The renders were taken three times** — twice in list order (identical)
+  and once reversed — so the render-order artefact is subtracted rather
+  than assumed away.
+- **The Finder row is `Macintosh HD`, not `Desktop`.** A folder window was
+  open and `find_window` takes the front one. Not comparable with sweep
+  C's Finder row.
+- **CHROME is not comparable with sweep C on any row**, in both
+  directions at once: the band and widgets became exact, and five windows
+  lost their zoom box.
+- **REST was not measured.** Sweep C's remains the most recent word.
+- **No host app was run**, so every check that needs the agent socket or
+  the Mirror's own UI is "not taken" rather than ✗.
 
