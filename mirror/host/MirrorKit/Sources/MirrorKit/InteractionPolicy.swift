@@ -327,8 +327,21 @@ public enum InteractionPolicy {
             return .keystroke(code: code, char: Int(shown.value),
                               mods: ActionModel.cmdKey)
         }
+        guard let titleLeft = i.menu.left else {
+            /* THE SCENE HALF IS MISSING, and it is the half this act is
+               guarded by. `titleLeft` is where the press arms, and the
+               resident answers a MenuSelect at that point and no other -
+               so a substituted number does not miss, it answers
+               SOMEBODY ELSE'S press. Refused with the reason rather than
+               served with a guess. */
+            return .unsupported(why: "the scene does not say where "
+                                + "\"\(i.menu.title)\" sits in the menu "
+                                + "bar, and that position is what tells "
+                                + "this act's press from the person's at "
+                                + "the machine")
+        }
         return .menuCommand(menuID: i.menu.id, itemIndex: i.index,
-                            titleLeft: i.menu.left)
+                            titleLeft: titleLeft)
     }
 
     private static func app(_ a: MirrorObject.App,
@@ -347,6 +360,14 @@ public enum InteractionPolicy {
         }
     }
 
+    /// One sentence for the one absence, so the two places that refuse
+    /// it cannot drift into saying different things about it.
+    static func unplacedMenu(_ title: String) -> String {
+        "the scene does not say where that menu sits in the menu bar, and "
+            + "that position is what tells this act's press from the "
+            + "person's at the machine"
+    }
+
     private static func applicationMenuAction(
         _ action: MirrorObject.ApplicationMenuAction,
         _ gesture: MirrorGesture
@@ -357,17 +378,30 @@ public enum InteractionPolicy {
         guard action.isEnabled else {
             return .nothing(why: "\"\(action.title)\" is disabled")
         }
+        /* The Application menu's own `left` is 0 on a real Mac and that
+           is a READING, not an absence: the Menu Manager right-aligns it
+           and reports no useful left edge (SceneRenderer says the same
+           thing where it declines to draw it from that number). nil is
+           the different case - the producer said nothing - and it is
+           refused here for the same reason an ordinary menu is. */
+        var reported: Int? { action.menu.left }
         switch action.kind {
         case .hide(let app):
+            guard let titleLeft = reported else {
+                return .unsupported(why: unplacedMenu(action.menu.title))
+            }
             return .applicationVisibility(.hide(
                 psn: app.psn, incarnation: app.incarnation, name: app.name,
                 menuID: action.menu.id, itemIndex: action.index,
-                titleLeft: action.menu.left))
+                titleLeft: titleLeft))
         case .hideOthers(let app):
+            guard let titleLeft = reported else {
+                return .unsupported(why: unplacedMenu(action.menu.title))
+            }
             return .applicationVisibility(.hideOthers(
                 exceptPSN: app.psn, incarnation: app.incarnation,
                 name: app.name, menuID: action.menu.id,
-                itemIndex: action.index, titleLeft: action.menu.left))
+                itemIndex: action.index, titleLeft: titleLeft))
         case .showAll:
             return .applicationVisibility(.showAll)
         }

@@ -180,9 +180,14 @@ public enum MirrorObject: Equatable, Sendable {
     public struct Menu: Equatable, Sendable {
         public var id: Int
         public var title: String
-        public var left: Int
+        /// Where this menu's title sits, or nil when the producer never
+        /// said. Optional all the way down to the act for one reason:
+        /// this number IS the identity check a menu press is guarded by
+        /// (`Scene.Menu.left`), and a policy that could not see the
+        /// absence would substitute one, which is what it used to do.
+        public var left: Int?
         public var isApple: Bool
-        public init(id: Int, title: String, left: Int, isApple: Bool) {
+        public init(id: Int, title: String, left: Int?, isApple: Bool) {
             self.id = id; self.title = title
             self.left = left; self.isApple = isApple
         }

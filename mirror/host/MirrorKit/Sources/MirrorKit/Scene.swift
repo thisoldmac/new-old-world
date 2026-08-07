@@ -224,9 +224,26 @@ public struct Scene: Codable, Equatable, Sendable {
         /// Empty for the Apple menu (the wire sends the Chicago apple byte).
         public var title: String
         public var apple: Bool
-        /// Guest menubar x of this title (MenuList `left`) — the anchor for
-        /// guest-true menubar layout and for input-device menu tracking.
-        public var left: Int
+        /// Guest menubar x of this title (MenuList `left`), or **nil when
+        /// the producer did not report one**.
+        ///
+        /// Optional because it used to default to 0, and 0 is not a
+        /// missing reading — it is the x of the leftmost menu. A menu act
+        /// arms its press at this coordinate plus four, so an unreported
+        /// `left` armed at x=4, which is the Apple menu, and answered
+        /// whoever pressed it next. That is the measured 18/20 hijack
+        /// reintroduced by a `?? 0` (2026-08-07). The host knew it had
+        /// never learned the number and manufactured one anyway.
+        ///
+        /// So the absence is carried rather than filled, and every
+        /// consumer answers it the same way: a menu bar is a POSITIONAL
+        /// surface, so a menu with no position is not drawn, not hit
+        /// tested, and not pressed. A title painted at an invented
+        /// position and a press armed at one are the same mistake at two
+        /// severities, and giving the renderer a fallback the act path
+        /// refused would put the two back into disagreement — which is
+        /// the defect this whole change exists to close.
+        public var left: Int?
         /// The guest's own menu ID. Carried because acting by IDENTITY needs it:
         /// the Portal answers the application's MenuSelect with (menuID, item),
         /// and a title is not an identity the Menu Manager understands.

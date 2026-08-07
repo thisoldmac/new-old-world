@@ -228,17 +228,25 @@ public enum HitTester {
         }
         // The menubar strip resolves against the wire's MenuList lefts:
         // a title's span runs from its left to the next title's left.
+        //
+        // A menu the producer never placed claims NO span. It used to
+        // claim the leftmost one, because an absent `left` arrived as 0,
+        // so it stole the Apple menu's clicks - the same substitution
+        // that let a menu act arm on the Apple menu's title.
         if y >= 0, y < menubarHeight, let menus = scene.menubar?.menus,
            !menus.isEmpty {
-            for (i, menu) in menus.enumerated()
-            where menu.id != ObjectResolver.applicationMenuID
-                    && x >= menu.left {
-                let next = menus.dropFirst(i + 1)
-                    .filter { $0.id != ObjectResolver.applicationMenuID
-                        && $0.left > menu.left }
-                    .map(\.left).min() ?? (menu.left + 60)
+            let placed = menus.enumerated().compactMap {
+                (i, m) -> (index: Int, left: Int)? in
+                guard m.id != ObjectResolver.applicationMenuID,
+                      let left = m.left else { return nil }
+                return (i, left)
+            }
+            for (n, entry) in placed.enumerated() where x >= entry.left {
+                let next = placed.dropFirst(n + 1)
+                    .filter { $0.left > entry.left }
+                    .map(\.left).min() ?? (entry.left + 60)
                 if x < next {
-                    return .menuTitle(index: i)
+                    return .menuTitle(index: entry.index)
                 }
             }
         }

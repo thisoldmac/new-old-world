@@ -110,7 +110,7 @@ final class MirrorActionExecutorTests: XCTestCase {
             plan: .applicationVisibility(.hideOthers(
                 exceptPSN: "0.4", incarnation: "now",
                 name: "New Old World", menuID: menu.id,
-                itemIndex: 2, titleLeft: menu.left)),
+                itemIndex: 2, titleLeft: menu.left ?? 0)),
             engine: engine, id: "hide-others"))
         XCTAssertEqual(hideOthers.postcondition,
                        .processVisibility([finder: false, now: true]))

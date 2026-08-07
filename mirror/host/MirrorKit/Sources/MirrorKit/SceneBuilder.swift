@@ -309,8 +309,16 @@ public enum SceneBuilder {
                     mark: truthy(item["mark"]),
                     cmd: menuCommand(item["command"])))
             }
+            /* NOT `?? 0`. A menu whose `left` the producer did not
+               send has no position, and 0 is not "no position" - it is
+               the leftmost menu, and a menu act arms its press four
+               pixels right of it, which is the APPLE MENU. That default
+               armed on somebody else's title and answered whoever
+               pressed it next: the measured 18/20 hijack, reintroduced
+               here (2026-08-07). The menu still enters the scene, so a
+               person can see it; what it cannot do is be pressed. */
             menus.append(.init(title: isApple ? "" : title, apple: isApple,
-                               left: intValue(menu["left"]) ?? 0,
+                               left: intValue(menu["left"]),
                                id: intValue(menu["id"]) ?? 0,
                                items: items))
         }

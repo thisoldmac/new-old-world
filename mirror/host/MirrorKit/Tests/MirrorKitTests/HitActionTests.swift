@@ -229,7 +229,7 @@ final class HitActionTests: XCTestCase {
         // File sits at left 38; a point inside its span resolves to it.
         let fileIndex = menus.firstIndex { $0.title == "File" }!
         guard case .menuTitle(let index) = HitTester.hitTest(
-            scene, x: menus[fileIndex].left + 5, y: 8) else {
+            scene, x: menus[fileIndex].left! + 5, y: 8) else {
             return XCTFail("expected a menubar title")
         }
         XCTAssertEqual(index, fileIndex)
@@ -246,7 +246,7 @@ final class HitActionTests: XCTestCase {
             menus.lastIndex(where: { $0.title == "Help" }))
 
         guard case .menuTitle(let index) = HitTester.hitTest(
-            scene, x: menus[helpIndex].left + 5, y: 8) else {
+            scene, x: menus[helpIndex].left! + 5, y: 8) else {
             return XCTFail("the right-aligned switcher must not swallow Help")
         }
         XCTAssertEqual(index, helpIndex)

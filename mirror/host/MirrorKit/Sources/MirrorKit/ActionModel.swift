@@ -423,8 +423,18 @@ public enum ActionModel {
         // MenuSelect by IDENTITY. The menu-drag that used to serve this case
         // aimed at rows computed from a uniform-16px assumption the guest has
         // since disproved (separators are 6px), and was device-only besides.
+        guard let titleLeft = menu.left else {
+            /* The scene never reported where this title sits, and that
+               number is the whole of the press's identity: the resident
+               answers a MenuSelect at ONE point, so arming at a
+               made-up one answers a press that is not ours. Nothing to
+               send - the same answer a separator gets, for a different
+               reason, and both are better than a press aimed at a
+               guess. */
+            return []
+        }
         return [.menuInvoke(menuID: menu.id, itemIndex: item.index,
-                            titleLeft: menu.left)]
+                            titleLeft: titleLeft)]
     }
 
     /// A title-bar drag gesture → window move (device-backed availability).

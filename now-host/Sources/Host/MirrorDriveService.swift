@@ -177,8 +177,24 @@ struct MirrorDriveService {
                         + "\(request.menuID ?? 0) item "
                         + "\(request.itemIndex ?? 0)"))
             }
+            /* WHERE THE TITLE SITS, OR NO ACT. This number is the
+               identity check a menu press is guarded by: the resident
+               answers a MenuSelect at that point and no other, so a
+               substituted one does not miss - it answers somebody
+               else's press. The scene builder used to substitute 0 here,
+               which arms four pixels in, on the Apple menu. */
+            guard let left = menu.left else {
+                return .refused(.init(
+                    code: "now-mirror-drive-menu-unplaced",
+                    message: "The published menu bar does not say where "
+                        + "menu \(request.menuID ?? 0)'s title sits, and "
+                        + "that position is what tells this act's press "
+                        + "from the person's at the machine. Read "
+                        + "now_mirror_snapshot again: a menu bar that "
+                        + "places its menus can be pressed."))
+            }
             let shape = MirrorObject.Menu(
-                id: menu.id, title: menu.title, left: menu.left,
+                id: menu.id, title: menu.title, left: left,
                 isApple: menu.apple)
             return .resolved(.init(
                 object: .menuItem(.init(
@@ -189,7 +205,7 @@ struct MirrorDriveService {
                         ObjectResolver.isAppleMenuItemsEntry(item,
                                                              in: menu))),
                 gesture: .click(count: 1, mods: 0,
-                                at: .init(x: menu.left, y: 0))))
+                                at: .init(x: left, y: 0))))
 
         case .hide, .hideOthers, .showAll:
             guard let front = scene.processes?.first(where: \.front) else {
@@ -282,17 +298,31 @@ struct MirrorDriveService {
                     message: "The Apple menu has no row named "
                         + "\(request.itemName ?? "(unnamed)")"))
             }
+            /* The Apple menu is the one this substitution aimed AT - an
+               absent left resolved to 0, four pixels off its own title -
+               so it is the last row that should be allowed to run on a
+               guess. Most of its entries route to the Finder rather than
+               to MenuSelect, and those would not care; the ones that
+               remain are menu presses like any other. */
+            guard let appleLeft = apple.left else {
+                return .refused(.init(
+                    code: "now-mirror-drive-menu-unplaced",
+                    message: "The published menu bar does not say where "
+                        + "the Apple menu's title sits, and that position "
+                        + "is what tells this act's press from the "
+                        + "person's at the machine."))
+            }
             return .resolved(.init(
                 object: .menuItem(.init(
                     menu: .init(id: apple.id, title: apple.title,
-                                left: apple.left, isApple: true),
+                                left: appleLeft, isApple: true),
                     index: row.index, title: row.title, cmd: row.cmd,
                     isEnabled: row.enabled, isSeparator: row.separator,
                     isAppleMenuItemsEntry:
                         ObjectResolver.isAppleMenuItemsEntry(row,
                                                              in: apple))),
                 gesture: .click(count: 1, mods: 0,
-                                at: .init(x: apple.left, y: 0))))
+                                at: .init(x: appleLeft, y: 0))))
 
         case .finderOpen, .finderSelect:
             let container = request.container.flatMap {
