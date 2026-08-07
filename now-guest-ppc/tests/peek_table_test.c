@@ -264,9 +264,27 @@ int main(void)
     check(offsetof(NowPeekTable, cursor)
               == offsetof(NowPeekTable, cursor_format) + sizeof(NowPeekU32),
           "the cursor cell follows its format word");
-    check(offsetof(NowPeekTable, cursor) + sizeof(NowPeekCursorCell)
+    /* U13's rest-state pair and pass counter are the new tail. The OS
+       cursor cell is no longer it, and that is the append rule working
+       than a check going stale: an application built against U10 reads a
+       shorter `length`, never looks past the string, and is right not to. */
+    check(offsetof(NowPeekTable, rest_format)
+              == offsetof(NowPeekTable, cursor) + sizeof(NowPeekCursorCell),
+          "the rest-state pair follows the cursor cell");
+    check(offsetof(NowPeekTable, gne_passes)
+              == offsetof(NowPeekTable, rest_format) + sizeof(NowPeekU32),
+          "the filter pass counter follows the rest-state pair");
+    check(offsetof(NowPeekTable, gne_passes) + sizeof(NowPeekU32)
               == sizeof(NowPeekTable),
-          "the cursor cell is the tail, so shorter means absent");
+          "the filter pass counter is the tail, so shorter means absent");
+    /* The bits are the contract and must not collide, because a reader
+       that mistook "the trap table is patched" for "the block is
+       allocated" would report the wrong durable fact about a machine. */
+    check((kNowPeekRestGNEFilter | kNowPeekRestLivenessTicking
+           | kNowPeekRestTransport | kNowPeekRestContentBlock
+           | kNowPeekRestContentHooks | kNowPeekRestActPatched
+           | kNowPeekRestQDExtPatched) == 0x7F,
+          "the seven rest-state bits are distinct and contiguous");
 
     /* Reachability is not a dial, and the values are the contract rather
        than an ordering — a refusal carries the driver's own OSErr so that

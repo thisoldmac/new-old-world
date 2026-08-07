@@ -209,6 +209,24 @@ static void act_install(NowPeekActCell *cell)
     install_patch(kNowActTrackGoAwayTrap, (void *)now_act_trackgoaway_patch,
                   &gNowActOldTrackGoAway, &cell->patches,
                   kNowPeekActPatchTrackGoAway);
+    /* THE ONE-WAY DOOR, written down where a person can see it.
+       ------------------------------------------------------------------
+       This is the only bit in `rest_state` that never clears. Disarming
+       the plane makes all six trampolines chain straight through, so the
+       machine behaves as it would with no extension — but the patches are
+       still in the dispatch table and cannot be taken out, because
+       another extension may have chained behind ours and removing a link
+       from the middle of a chain is how a Macintosh jumps into freed
+       code.
+
+       A capability bit cannot carry this and neither can `arm_active`:
+       one says the plane exists and the other says it is armed, while the
+       true and durable fact is that THIS MACHINE, THIS BOOT, has had its
+       trap table modified and will until it restarts. That is the fact a
+       person deciding whether to keep the extension installed is owed. */
+    if (gNowActTable != NULL && cell->patches != 0) {
+        gNowActTable->rest_state |= (NowPeekU16)kNowPeekRestActPatched;
+    }
 }
 
 /* ---- the text ops ------------------------------------------------------

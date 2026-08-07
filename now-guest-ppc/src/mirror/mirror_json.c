@@ -119,6 +119,15 @@ long now_mirror_json(const MirrorFacts *facts, long id, char *out, long cap)
                       facts->channel_state, facts->channel_result,
                       facts->channel_sends);
     }
+    /* Emitted only when the resident actually said it, so a host reading
+       this can tell "nothing is installed" from "this resident is too old
+       to have been asked" — opposite claims that a defaulted 0 would make
+       identical, and the reassuring one would be the lie. */
+    if (facts->has_rest_state && n < cap) {
+        n += snprintf(out + n, (size_t)(cap - n),
+                      ",\"restState\":%lu,\"gnePasses\":%lu",
+                      facts->rest_state, facts->gne_passes);
+    }
     if (facts->has_build_identity && n < cap) {
         char source[41];
         char build[41];

@@ -114,13 +114,27 @@ enum {
        application on the guest for over 90 s, past the host's silence
        window, and the wire died against a healthy Macintosh. */
     kNowPeekTableCapLiveness = 1u << 5,
-    /* P6, the second half: the resident has a TRANSPORT and a stream on
-       it. Separate from the bit above because the two are separately
-       true — the vehicle shipped and was proven on an emulator for a day
-       before anything could dial — and because capabilities are bits and
-       are never inferred from a version. A build that gains the channel
-       says so with its own bit rather than by the vehicle's changing
-       meaning underneath a reader. */
+    /* P6, the second half: this binary CAN reach a transport and dial.
+       Separate from the bit above because the two are separately true —
+       the vehicle shipped and was proven on an emulator for a day before
+       anything could dial — and because capabilities are bits and are
+       never inferred from a version.
+
+       **Corrected 2026-08-07, and the correction is the rule this enum
+       already stated.** It used to be set only once a TCP stream actually
+       existed, which made it a state word wearing a capability's name. It
+       read correctly for as long as the resident opened its transport
+       unconditionally at boot; the moment that became conditional on an
+       application asking, a resting machine advertised one fewer
+       capability than its binary had, and the bake gate — which derives
+       the expected word from this enum — called it a plane that failed to
+       arm. It was not: nothing had asked it to.
+
+       So this says what the BINARY can do, like every bit beside it.
+       Whether a stream exists right now is `channel_state`, and whether
+       one is being held is `kNowPeekRestTransport`. Three questions,
+       three words, which is the same separation `rest_state` exists to
+       make. */
     kNowPeekTableCapLivenessNet = 1u << 6,
     /* P7: the DRAG vehicle — a mouse button that stays down across a
        gesture the application is inside, and a resident that releases it
@@ -1401,7 +1415,81 @@ typedef struct {
        tail and an absent tail have to look different. */
     NowPeekU32 cursor_format; /* kNowPeekCursorFormat* */
     NowPeekCursorCell cursor;
+    /* U13 append. **What this resident is ACTUALLY doing right now**, as
+       opposed to what it can do.
+       ------------------------------------------------------------------
+       `caps` answers "which planes does this binary have"; `arm_active`
+       answers "which planes did the application ask for and get". Neither
+       answers the question a person actually asks before installing a
+       system extension: *with nothing running, what is still hooked?*
+
+       Those are three different questions and this project has already
+       paid for conflating two of them — a resident reported `active` with
+       full capabilities while every act refused, and nothing named the
+       cause, because a capability bit says what a binary CAN do and was
+       being read as what it WAS doing.
+
+       So this word reports installation, not intent, and it reports the
+       things that PERSIST — including the ones that cannot be undone.
+       `kNowPeekRestActPatched` is the sharpest of them: those six trap
+       patches never come out (unpatching from the middle of a chain
+       another extension may have joined is unsafe), so a machine that has
+       once armed the act plane carries them until it reboots. That is a
+       true fact about the machine and it should be visible, not inferred
+       from a comment in a source file.
+
+       Written by the resident and by nothing else. `gne_passes` is beside
+       it because it is the denominator every other counter here needs: it
+       is bumped on EVERY filter pass, armed or not, so "this counter is
+       zero" can be told apart from "the filter never ran". Without it a
+       resting machine and an uninstalled extension produce the same
+       reading, which is precisely the negative this component must never
+       report by accident. */
+    NowPeekU16 rest_format;
+    NowPeekU16 rest_state;
+    NowPeekU32 gne_passes;
 } NowPeekTable;
+
+/* What the resident currently HAS INSTALLED. A bitmask rather than a
+   state, because these are independent facts and a machine can be in any
+   combination of them; and installation rather than arming, because the
+   two differ and the difference is the whole point of the word. */
+enum {
+    kNowPeekRestFormatV1 = 1
+};
+enum {
+    /* The jGNE filter is chained. True on every booted machine carrying
+       this extension and never false again — it is the one hook that
+       cannot stand down, because it is what would notice a re-arm. It is
+       reported anyway: "irreducible" is a claim a reader should be able
+       to check rather than take. */
+    kNowPeekRestGNEFilter     = 1u << 0,
+    /* The Time Manager task is priming itself. FALSE on a machine whose
+       application has never published an endpoint, and false again after
+       one withdraws — the task retires by declining to re-prime rather
+       than by being removed, so this bit going clear means the interrupt
+       has genuinely stopped, not that it is idling. */
+    kNowPeekRestLivenessTicking = 1u << 1,
+    /* MacTCP's .IPP driver has been opened by US, and/or a TCP stream
+       with its receive buffer exists. Never true until an application
+       publishes an endpoint. */
+    kNowPeekRestTransport     = 1u << 2,
+    /* The content plane's ~64 KiB system-heap block is allocated. Held
+       from boot for the life of the machine: arming happens inside a
+       foreign process where allocation is illegal, so the block cannot
+       be made lazy without moving the allocation to the first leased
+       filter pass. See docs/resident-components.md. */
+    kNowPeekRestContentBlock  = 1u << 3,
+    /* At least one GrafPort currently carries our grafProcs. Goes clear
+       when the owning context next pumps and gives them back. */
+    kNowPeekRestContentHooks  = 1u << 4,
+    /* The act plane's trap patches are in. **Never clears until the
+       machine reboots** — see the field comment above. */
+    kNowPeekRestActPatched    = 1u << 5,
+    /* The NewGWorld trap patch (record mode) is in. Same one-way rule as
+       the act patches, and for the same reason. */
+    kNowPeekRestQDExtPatched  = 1u << 6
+};
 
 /* What the resident's own liveness channel is doing. Values are the
    contract and append rather than renumber. */
@@ -1660,9 +1748,22 @@ _Static_assert(offsetof(NowPeekTable, cursor_format)
 _Static_assert(offsetof(NowPeekTable, cursor)
                    == offsetof(NowPeekTable, cursor_format) + 4,
                "cursor cell offset");
-_Static_assert(sizeof(NowPeekTable)
+/* U13's append. The rest-state pair and the pass counter sit behind the
+   CURSOR cell, not behind the OS string: P7 and P8 appended first and a
+   deployed resident depends on those offsets, so this region took the new
+   tail rather than the place its own lane wrote it. Same accretive rule
+   either way — an application built against U12 reads a SHORTER `length`
+   and simply never looks here, which is the whole mechanism by which an
+   old reader and a new resident stay honest with each other. */
+_Static_assert(offsetof(NowPeekTable, rest_format)
                    == offsetof(NowPeekTable, cursor)
                           + sizeof(NowPeekCursorCell),
-               "the cursor cell is the new tail");
+               "the rest-state pair appends behind the cursor cell");
+_Static_assert(offsetof(NowPeekTable, gne_passes)
+                   == offsetof(NowPeekTable, rest_format) + 4,
+               "the filter pass counter follows the rest-state pair");
+_Static_assert(sizeof(NowPeekTable)
+                   == offsetof(NowPeekTable, gne_passes) + 4,
+               "the filter pass counter is the new tail");
 
 #endif /* NOW_PEEK_TABLE_H */

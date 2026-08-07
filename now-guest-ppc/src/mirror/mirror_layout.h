@@ -9,7 +9,12 @@ enum {
     kMirrorRowHeight = 16,
     kMirrorLabelWidth = 116,
     kMirrorSectionGap = 12,
-    kMirrorLifecycleRows = 4,
+    /* Five since 2026-08-07. The fifth is "Installed", and it is on this
+       page rather than in a log because it is the one line that answers
+       what a person actually wants to know before keeping a system
+       extension: with nothing running, what is still hooked? The four
+       above it are all about what the resident CAN do. */
+    kMirrorLifecycleRows = 5,
     kMirrorNoteLines = 2,
     /* The one control on this page: the ask that opens the host's own
        Mirror window. Platinum's standard push-button height is 20 and a
@@ -41,5 +46,9 @@ void now_mirror_plane_value(const MirrorFacts *facts, MirrorPlane plane,
                             char *out, long cap);
 const char *now_mirror_note(int line);
 void now_mirror_status_text(const MirrorFacts *facts, char *out, long cap);
+/* The "Installed" row's sentence. Toolbox-free and here rather than in
+   the module, like every other string on this page, so the host `cc`
+   compiles it and the native test can read what a person would read. */
+void now_mirror_rest_text(const MirrorFacts *facts, char *out, long cap);
 
 #endif /* NOW_MIRROR_LAYOUT_H */

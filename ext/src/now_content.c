@@ -1941,6 +1941,35 @@ void now_content_gne(NowPeekTable *table)
         content_uninstall_context(a5);
         break;
     }
+
+    /* WHAT THIS PLANE IS STILL HOLDING, refreshed once per pass.
+       ------------------------------------------------------------------
+       Two facts with opposite lifetimes, which is why they are two bits.
+       Port hooks are given back — by the owning context, on its own next
+       pass — so that bit goes clear again and a machine can be watched
+       returning to rest. The NewGWorld patch is not given back, for the
+       act plane's paid reason, so once set it stays set until reboot.
+
+       Computed rather than stamped at the moment of installation because
+       the clearing edge has no moment: a port stops being hooked in
+       whichever foreign context happens to pump next, and there is no one
+       place that could write the bit down. Two comparisons on a path that
+       has already done more than that. */
+    {
+        NowPeekU16 held = 0;
+
+        if (gPortCount > 0) {
+            held |= (NowPeekU16)kNowPeekRestContentHooks;
+        }
+        if (gNowContentOldQDExt != NULL) {
+            held |= (NowPeekU16)kNowPeekRestQDExtPatched;
+        }
+        table->rest_state = (NowPeekU16)
+            ((table->rest_state
+              & (NowPeekU16)~(kNowPeekRestContentHooks
+                              | kNowPeekRestQDExtPatched))
+             | held);
+    }
 }
 
 /* ---- boot ------------------------------------------------------------ */
@@ -2052,6 +2081,13 @@ void now_content_boot(NowPeekTable *table)
        reads to decide what it can do. */
     table->content_block = (NowPeekU32)block;
     table->caps |= (NowPeekU32)kNowPeekTableCapContent;
+    /* The honest cost of the paragraph above, in the table rather than
+       only in this comment: ~64 KiB of system heap is now held for the
+       life of the machine, armed or not. It is reported as an
+       INSTALLATION because that is what it is — a reader asking "what is
+       this extension still holding with nothing running" gets a straight
+       answer instead of a capability bit that would be set either way. */
+    table->rest_state |= (NowPeekU16)kNowPeekRestContentBlock;
 #endif
     /* Without the two additions contract/content_table.h asks for, the
        block exists and nothing can reach it: the capability bit stays

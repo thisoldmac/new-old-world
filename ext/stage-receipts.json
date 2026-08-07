@@ -51,6 +51,22 @@
       "imageSha256": "c466baa9a5455c343908e12197d68e57ffc7f07c140276a90c97a5ae2a137d70",
       "kind": "image-note",
       "reason": "Not baked: restored BY HAND at 01:58 on 2026-08-06 after three bakes that night installed images whose HFS volume was still marked mounted. These bytes are the 3 August image docs/open-issues.md calls 'the corrected local oracle' (sha c466baa9\u2026, volclean-verified, 'once again the installed oracle') \u2014 so its resident PREDATES the six extension commits that landed on 6 August. A note, not a bake: nobody has asked a guest what is in it."
+    },
+    {
+      "at": "2026-08-07T13:50:42-0400",
+      "branch": "claude/019-integration-6",
+      "extDigest": "72c1b4dd3caabb666e7d44f2bb506bed1baa7086",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_content.c",
+        "ext/src/now_ext.c",
+        "ext/src/now_ext_act.c",
+        "ext/src/now_ext_core_logic.c",
+        "ext/src/now_ext_core_logic.h",
+        "ext/src/now_liveness.c"
+      ],
+      "reason": "Round-6 integration merge of claude/019-ext-rests-when-unused. The bake is OWED and scheduled in this same session's phase 5, after the guest prune frees the Mac (scripts/bake-ext-image --shared refuses while other guests run). Baking before the merge would have baked a pre-merge resident; the peek table's U11/U13 append collision was resolved here (P7 drag + P8 cursor keep their offsets, the rest-state trio re-sequenced to the tail) and the static asserts + peek_table native test pass against the merged header."
     }
   ]
 }

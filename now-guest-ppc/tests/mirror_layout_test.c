@@ -119,12 +119,64 @@ static void test_plane_words(void)
           "refusal is visible with its reason");
 }
 
+/* The "Installed" row, which is the sentence a person reads before
+   deciding whether to keep a system extension. Tested as WORDS rather
+   than as bits because the words are the product: the failure this guards
+   is a resting machine that reads as busy, or a busy one that reads as
+   resting. */
+static void test_rest_words(void)
+{
+    MirrorFacts facts;
+    char out[160];
+
+    memset(&facts, 0, sizeof facts);
+
+    /* "Did not say" and "holding nothing" are opposite claims, and a
+       resident too old to carry the word must make the first one. */
+    facts.has_rest_state = 0;
+    now_mirror_rest_text(&facts, out, sizeof out);
+    check(strstr(out, "does not report") != NULL,
+          "an older resident says it did not answer, not that it is idle");
+
+    facts.has_rest_state = 1;
+    facts.rest_state = kNowPeekRestGNEFilter | kNowPeekRestContentBlock;
+    facts.gne_passes = 1174;
+    now_mirror_rest_text(&facts, out, sizeof out);
+    check(strstr(out, "Nothing but the event hook") != NULL
+              && strstr(out, "1174") != NULL,
+          "at rest, the line is positive and carries the pass count");
+
+    /* The count is the denominator: zero passes on a resident that claims
+       to be active is the interesting reading, and it must survive into
+       the sentence rather than being rounded away. */
+    facts.gne_passes = 0;
+    now_mirror_rest_text(&facts, out, sizeof out);
+    check(strstr(out, "0 passes") != NULL,
+          "a filter that never ran reports zero rather than hiding it");
+
+    /* Worst first: the thing that cannot be undone leads the line, and it
+       is the only place "restart" is claimed. */
+    facts.rest_state |= kNowPeekRestActPatched;
+    now_mirror_rest_text(&facts, out, sizeof out);
+    check(strncmp(out, "Trap patches in", 15) == 0
+              && strstr(out, "restart") != NULL,
+          "the one-way door leads the line and says restart");
+
+    facts.rest_state |= kNowPeekRestLivenessTicking | kNowPeekRestTransport;
+    now_mirror_rest_text(&facts, out, sizeof out);
+    check(strstr(out, "liveness ticking") != NULL
+              && strstr(out, "MacTCP stream open") != NULL
+              && strstr(out, "Nothing but") == NULL,
+          "a busy resident never reads as resting");
+}
+
 int main(void)
 {
     printf("mirror_layout_test\n");
     test_layout();
     test_lifecycle_words();
     test_plane_words();
+    test_rest_words();
     if (failures) {
         printf("%d failure(s)\n", failures);
         return 1;
