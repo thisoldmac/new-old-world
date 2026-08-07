@@ -67,6 +67,47 @@ budget is shared by every window in the scene and is pinned by
 deliberate decision for whoever owns the scene plane, not a number to
 raise in passing.
 
+### PARTLY ANSWERED, and the cap was not the binding constraint on the emulator (2026-08-07, slice 14)
+
+Two of the three numbers above are now derived rather than chosen.
+`kNowSceneWalkMaxControls` was 48 in `scene_walk.h` against a pool of 96
+in `scene.h` — **one limit in two places with different values**, so the
+smaller bit first and the pool's own headroom was unreachable. The
+per-window bound is now `= kNowSceneMaxControls` and clears 73 without
+any budget being spent. The pool (96) is unchanged: one measured panel is
+not a distribution, and a number fitted to Appearance alone would fail on
+the next panel someone opens.
+
+A retracted plane now also reports **how long the chain actually was**,
+so the next attempt measures instead of infers. Lane D's verdict said the
+bound was ours and could not say by how much, which is why establishing
+73-against-48 cost an investigation when both figures were in the guest's
+hand at the moment it gave up. A chain that never terminates is a
+separate verdict, because reported as "bound" it argues forever for a cap
+that can never reach it.
+
+**The re-measurement did not happen, and the reason is worth more than
+the number.** On a fresh `spin-up-ppc` clone (build `e14125014e17`,
+resident `lifecycle: active`), with the Appearance control panel visibly
+open and frontmost — six tabs, theme swatches, confirmed by screendump —
+the scene reported **zero windows for Appearance** and
+`ax_oracle_not_found` for every other process. The control walk never
+ran, so the cap was never reached. Arming first and fronting afterwards,
+which is the documented order, changed nothing.
+
+So on this image the **anchor plane fails before the control cap is ever
+consulted**, and raising the cap would have changed nothing observable.
+Lane D's 73 was measured on a rig where anchors resolved; that condition
+did not hold here. Whoever finishes the sizing needs
+`claude/018-anchor-acquisition` landed first, and should then use the
+chain-length report rather than repeating the investigation.
+
+One consequence for how this gets re-measured: the console verbs
+(`axtree`, `observe`, `elements`) do **not** arm the planes — only the
+`scene.request` path in `wire.c` does. A walk driven from the console
+reports no-plane for every foreign process, which looks exactly like a
+dead resident and is not one.
+
 ### NOT what Sweep A thought, for Mouse
 
 Mouse scored DRIVABILITY 0 and is **addressable**: 38 controls each with
