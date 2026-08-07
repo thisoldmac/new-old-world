@@ -34,8 +34,25 @@ enum {
     /* A bound on one window's control chain. Reaching it means the list
        is longer than a scene carries or the chain is cyclic; either way
        the window's controls are retracted rather than reported short
-       (scene.h, the retraction rule). */
-    kNowSceneWalkMaxControls = 48
+       (scene.h, the retraction rule).
+
+       DERIVED, NOT CHOSEN. A window cannot contribute more controls than
+       the whole scene carries, so a separate per-window number is a
+       second place for the limit to live - and this repository has
+       already paid for a cap stated in three places with a different
+       value in each. It was 48 against a pool of 96, which meant the
+       per-window bound bit first and the pool's own headroom was
+       unreachable: the Appearance control panel's 73-control chain was
+       refused by the smaller of two numbers that nobody had compared.
+       One number now, in scene.h, and this is a view of it. */
+    kNowSceneWalkMaxControls = kNowSceneMaxControls,
+
+    /* How far the DIAGNOSTIC count above the bound will hop. It records
+       nothing and only follows pointers, so it is affordable at an order
+       of magnitude above the carrying bound - and it is still a bound,
+       because a cyclic chain would otherwise spin inside the event loop.
+       A count that reaches it is reported as a floor, never a length. */
+    kNowSceneWalkChainProbeMax = 512
 };
 
 /* Fills one already-admitted window row's `kind`, `controls`, `text` and

@@ -1015,7 +1015,11 @@ static void put_meta(Sink *k, const NowScene *s)
        two silent windows are two separate errands. */
     for (i = 0; i < s->window_count; ++i) {
         const NowSceneWindow *w = &s->windows[i];
-        char line[kNowSceneTitleMax + 160];
+        /* +240, not +160: the longest reason below is ~170 characters and
+           the chain figures add ~45 more. It was sized for the reason
+           alone, so the number this line exists to carry would have been
+           the part snprintf dropped. */
+        char line[kNowSceneTitleMax + 240];
         const char *why;
 
         switch (w->walk_verdict) {
@@ -1028,6 +1032,11 @@ static void put_meta(Sink *k, const NowScene *s)
             why = "control chain is longer than this scene carries, so its "
                   "controls are unknown rather than absent - the bound is "
                   "ours, not the machine's";
+            break;
+        case kNowSceneWalkControlsCyclic:
+            why = "control chain did not end within the diagnostic probe "
+                  "bound, so it is cyclic or corrupt rather than merely "
+                  "long - raising a cap would not reach it";
             break;
         case kNowSceneWalkControlsInvalid:
             why = "control chain failed validation: a record left the "
@@ -1050,8 +1059,26 @@ static void put_meta(Sink *k, const NowScene *s)
         default:
             continue;
         }
-        snprintf(line, sizeof line, "%s: %s",
-                 w->title[0] != '\0' ? w->title : "(untitled window)", why);
+        /* THE NUMBER, beside the reason. "The bound is ours" told a
+           reader which half of the system to look at and left them to
+           measure the other half by hand - which is exactly what the
+           Appearance investigation had to do to learn that the chain was
+           73 against a bound of 48. Both figures are in the guest's hand
+           here, so both go on the line, and a floor says it is one. */
+        if (w->control_chain_len > 0
+            && (w->walk_verdict == kNowSceneWalkControlsBound
+                || w->walk_verdict == kNowSceneWalkControlsInvalid
+                || w->walk_verdict == kNowSceneWalkControlsCyclic)) {
+            snprintf(line, sizeof line, "%s: %s (chain is %s%d, this scene "
+                     "carries %d)",
+                     w->title[0] != '\0' ? w->title : "(untitled window)",
+                     why, w->control_chain_len_exact ? "" : "at least ",
+                     (int)w->control_chain_len, (int)kNowSceneMaxControls);
+        } else {
+            snprintf(line, sizeof line, "%s: %s",
+                     w->title[0] != '\0' ? w->title : "(untitled window)",
+                     why);
+        }
         put(k, first ? "" : ",");
         put_str(k, line);
         first = 0;
