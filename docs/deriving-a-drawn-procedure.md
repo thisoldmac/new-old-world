@@ -157,40 +157,116 @@ Two things the pixels also settle, which no amount of reasoning would:
 ## The measurement, honestly
 
 `PlatinumTabTests.testAgainstTheGuestsOwnPixels`, opt-in via
-`NOW_TAB_REFERENCE` (the reference is Apple's pixels and stays in the
-private asset store). Region: the tab strip and three rows of pane,
-screen x 166…620, y 99…126.
+`NOW_TAB_REFERENCE_DIR` (the references are Apple's pixels and stay in
+the private asset store: `sweep-2026-08-07-a/p1/panels`). Headless
+throughout — QMP screendumps against `RenderShot`; nothing drives a
+desktop.
 
-| | pixels | exact | p50 | p95 | max |
+Both tabbed panels in the corpus, every tab, by position and state.
+Region per panel: the row of tabs plus the pane's frame and its two
+bevel rows.
+
+| region | pixels | exact | p50 | p95 | max |
 |---|---|---|---|---|---|
-| whole strip | 12,258 | **77.2 %** | 0 | 204 | 255 |
-| chrome only (label boxes excluded) | 4,212 | **66.0 %** | 0 | 184 | 255 |
+| **appearance** / whole strip | 11,600 | 75.9 % | 0 | 204 | 255 |
+| appearance / chrome only | 4,150 | 65.3 % | 0 | 184 | 255 |
+| **energy-saver** / whole strip | 11,250 | 77.6 % | 0 | 204 | 255 |
+| energy-saver / chrome only | 3,200 | 68.5 % | 0 | 178 | 255 |
 
-Both numbers are worse than the picture looks, and the reasons are known
-and separate:
+Per tab — only the two caps, which is the part this drawer invented,
+with the label box excluded. `flat` excludes a two-column band around
+the machine's own outline, which is where its anti-aliasing runs:
 
+| tab | caps: exact / p95 | caps **flat**: exact / p95 / **max** |
+|---|---|---|
+| leftmost, **front** (both panels) | 55.5 % / 187 | 73.1 % / 34 / **34** |
+| middle, non-front (×6 across both) | 63.3 % / 183 | 86.1–86.4 % / 34 / **34** |
+| rightmost, non-front (both panels) | 63.3 % / 183 | 86.4 % / 34 / **34** |
+
+Read those rows carefully, because they say something a single
+percentage cannot:
+
+- **Off the diagonal, nothing is ever wrong by more than 34.** That is
+  one Platinum grey step — `#DDDDDD` against `#FFFFFF`. Every flat-region
+  disagreement is the one-pixel inner highlight landing a row or a column
+  from where the machine puts it. There is no region where the drawer is
+  wrong about WHAT colour goes there, only about exactly which pixel.
+- **On the diagonal it is anti-aliasing, and that is by construction.**
+  Apple composites a prepared stencil; Core Graphics blends its own. This
+  is the residual that will not close without baking Apple's stencil, and
+  it is judged not worth it at 1× — see the 016 amendment.
+- **Every non-front tab measures identically, on both panels.** Not a
+  bug in the harness: a cap's pixels depend only on the cap's shape and
+  the face colour either side, so there are genuinely two patterns and
+  the corpus contains many copies of each. It is also the strongest thing
+  in the table — the error is position-independent and panel-independent,
+  so nothing here is fitted to one tab.
 - **Inside the label boxes it is the FONT, not the tab.** The pack has no
-  Charcoal strike, so every title renders in Chicago, which is wider
-  (the standing gap named in [render-composition.md](render-composition.md)).
-  That is why the two rows are reported separately: mixing them would let
-  a font gap be read as a chrome one.
-- **Outside them it is the anti-aliasing of the diagonal.** Every large
-  delta in the chrome-only row is within a pixel or two of a slant.
+  Charcoal strike, so titles render in Chicago, which is wider — that is
+  the whole gap between the "whole strip" and "chrome only" rows, and it
+  is also exactly the "Notificatio" / "Advanced Setting" clipping sweep A
+  reported on Energy Saver. It is a pack gap; it is not this.
 
-So the percentage is not the claim. **The claim is the geometry, and it
-is asserted rather than reported**: for each of the 19 rows of the front
-tab's left cap, the leftmost dark column in our render against the
-leftmost dark column in the machine's. Thirteen rows land exactly, six
-are one pixel out, none is further. Widening the derived caps width by
-one pixel — the smallest possible error — takes that to a maximum of 2
-and twelve rows wrong, and the gate fails. A percentage would not have
-noticed.
+**Where it still fails, stated plainly:**
+
+1. The anti-aliased diagonal, above — 2 columns wide, both caps, every
+   tab.
+2. The inner highlight, by up to one pixel, worth one grey step.
+3. **States nobody has measured, because no capture contains one.**
+   Every control panel and application in sweep A was scanned for the
+   tab signature and exactly two have tabs, both with their window
+   ACTIVE and FRONT. So there is no capture of an inactive tab strip
+   (`kThemeTabFrontInactive` / `kThemeTabNonFrontInactive`), a pressed
+   tab, an unavailable one, or a **small** (`kThemeSmallTabHeight` = 16)
+   tab anywhere in the corpus. `DrawnTabStrip` accepts 16-high tabs and
+   the drawer is written for them, and **neither has ever been seen**.
+   That is the honest state: the seven `ThemeTabStyle` states are two
+   measured and five unmeasured.
+4. Tab direction. `DrawThemeTab` takes `kThemeTabNorth/South/East/West`;
+   everything here is North, and nothing refuses the others — they would
+   simply be drawn as North and be wrong. A capture of one has never been
+   seen either.
 
 **Verification level: emulator-verified against a stored capture.** The
-screendump is a real Mac OS 9.1 guest under QEMU, taken in fidelity
+screendumps are a real Mac OS 9.1 guest under QEMU, taken in fidelity
 sweep A on 2026-08-07. Nothing here has been on the PowerBook, and no
 running guest was contacted for this work at all — the sweep's artifacts
 were sufficient, which is itself worth knowing.
+
+## Where it sits in the renderer, and why not where you would expect
+
+Plan 018's provenance ladder (`ProvenanceLadder`, `claude/018-lane-a`)
+has four rungs: ink from the current epoch, a semantic row that owns its
+display, **asset-pack art addressed by identity**, and the marked
+unknown. The obvious place for a tab drawer is rung 3, and it is the
+wrong one:
+
+- Rung 3 is for a rectangle a SEMANTIC row named and did not draw, filled
+  from the asset pack. There is no tab art in the pack — that is this
+  whole page — and Appearance publishes `controls = 0`, so nothing names
+  the tabs at all.
+- The caps are not a placeholder for missing content. They are
+  **reconstructed ink**, derived from the same drawing that carried the
+  label boxes. That is rung 1's category, and `DrawnCellGrid` is already
+  there: a derivation that runs beside the replay and feeds it, rather
+  than an arbitration path competing for a rectangle.
+
+So `DrawnTabStrip` + `PlatinumTab` is a **rung-1 producer**, and it adds
+no precedence rule: it never claims a rectangle another plane claims, it
+clips the label box out so it cannot paint over the guest's own bevel or
+title, and where it cannot identify a strip it draws **nothing**.
+
+**That last point is why `UnknownVisual` does not appear here**, and the
+reason is a rule rather than an oversight. `UnknownVisual` marks a
+rectangle nobody could reach. A tab strip's rectangle IS reached — the
+replay drew the label boxes, the bevel and the titles into it — so
+hatching it would break render-composition's rule 4 (*a placeholder never
+paints over content another plane already drew*). The honest fallback for
+"this might not be a tab strip" is silence, and
+`DrawnTabStrip.derive` returns nothing on every doubt: unequal gaps, an
+odd gap, a height no Appearance metric names, two tabs claiming to be
+front, a missing three-line bevel. The pixels then stay exactly as the
+replay left them, which is what they were before this work existed.
 
 ## The bigger thing this found
 

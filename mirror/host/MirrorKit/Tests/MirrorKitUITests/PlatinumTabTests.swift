@@ -223,12 +223,85 @@ final class PlatinumTabTests: XCTestCase {
     /// comparison of the TAB and not of the window chrome's placement.
     private let frame = Rect(l: 165, t: 68, r: 631, b: 400)
 
-    private func appearanceScene() -> Scene {
+    private func appearanceScene() -> Scene { scene(Self.panels[0]) }
+
+    /// One captured panel: its tabs, the screendump to compare against, and
+    /// where its content landed on the guest's screen.
+    ///
+    /// `origin` is world (0,0) in the guest's own screen coordinates, taken
+    /// from that panel's window rect in its scene — `(rect.l - 1,
+    /// rect.t + 20)` for both. The rendered window's frame is chosen to put
+    /// our content at the same place, which is what makes these a comparison
+    /// of the TAB rather than of where the host puts a title bar.
+    struct Panel {
+        struct Tab { var l: Int; var r: Int; var front: Bool; var title: String }
+        var name: String
+        var reference: String
+        var origin: (x: Int, y: Int)
+        var paneWidth: Int
+        var caps: Int
+        var tabs: [Tab]
+    }
+
+    /// Both tabbed panels in the sweep — and they are the only two. The
+    /// other five control panels and every application captured were
+    /// scanned for the tab signature and none has one, so this corpus
+    /// contains **no inactive, pressed, disabled or small (16 px) tab at
+    /// all**. Those states are unmeasured, and
+    /// `docs/deriving-a-drawn-procedure.md` says so rather than this file
+    /// implying coverage it does not have.
+    static let panels: [Panel] = [
+        Panel(name: "appearance", reference: "appearance-guest.ppm",
+              origin: (166, 90), paneWidth: 464, caps: 12,
+              tabs: [.init(l: 16, r: 65, front: true, title: "Themes"),
+                     .init(l: 89, r: 166, front: false, title: "Appearance"),
+                     .init(l: 190, r: 224, front: false, title: "Fonts"),
+                     .init(l: 248, r: 299, front: false, title: "Desktop"),
+                     .init(l: 323, r: 362, front: false, title: "Sound"),
+                     .init(l: 386, r: 434, front: false, title: "Options")]),
+        Panel(name: "energy-saver", reference: "energy-saver-guest.ppm",
+              origin: (191, 104), paneWidth: 450, caps: 12,
+              tabs: [.init(l: 16, r: 90, front: true, title: "Sleep Setup"),
+                     .init(l: 114, r: 172, front: false, title: "Schedule"),
+                     .init(l: 196, r: 269, front: false, title: "Notification"),
+                     .init(l: 293, r: 410, front: false,
+                           title: "Advanced Settings")]),
+    ]
+
+    private func ops(_ panel: Panel) -> [DisplayOp] {
+        let w = panel.paneWidth + 1
+        let h = panel.name == "appearance" ? 311 : 173
+        var out: [DisplayOp] = [
+            state("fg", grey(0)),
+            state("bg", grey(0xDDDD)),
+            rect(2, [-1, 10, w, h]),
+            state("fg", grey(0xEEEE)),
+            rect(1, [-1, 31, w, h]),
+            state("fg", grey(0)),
+            rect(0, [-1, 31, w, h]),
+            state("fg", grey(0xCCCC)),
+            line([0, h - 3], [0, 32]),
+            line([0, 32], [w - 3, 32]),
+            state("fg", grey(0xFFFF)),
+            line([1, h - 4], [1, 33]),
+            line([1, 33], [w - 4, 33]),
+        ]
+        for t in panel.tabs {
+            out += tab(t.l, t.r, front: t.front, title: t.title)
+        }
+        return out
+    }
+
+    private func scene(_ panel: Panel) -> Scene {
+        let rect = Rect(l: panel.origin.x - 1,
+                        t: panel.origin.y - Int(Platinum.contentTop),
+                        r: panel.origin.x + panel.paneWidth + 1,
+                        b: panel.origin.y + 320)
         let window = Scene.Window(
-            id: "0.36372482/Appearance#0", app: "Appearance",
-            psn: "0.36372482", title: "Appearance", kind: 2000,
-            rect: frame, front: true, z: 0, visible: true, controls: [],
-            text: nil, items: nil, display: appearanceOps(), island: nil)
+            id: "0.1/\(panel.name)#0", app: panel.name, psn: "0.1",
+            title: panel.name, kind: 2000,
+            rect: rect, front: true, z: 0, visible: true, controls: [],
+            text: nil, items: nil, display: ops(panel), island: nil)
         return Scene(version: 0, seq: 1, source: "fixture", capturedAt: 0,
                      screen: .init(w: 800, h: 600), apps: [], processes: nil,
                      menubar: nil, windows: [window], desktopItems: nil,
@@ -293,66 +366,123 @@ final class PlatinumTabTests: XCTestCase {
     ///
     /// Opt-in, because the reference is a QMP screendump of Mac OS 9 and
     /// Apple's pixels do not live in this repository. Point
-    /// `NOW_TAB_REFERENCE` at `sweep-2026-08-07-a/p1/panels/appearance-guest.ppm`
-    /// in the private asset store. It REPORTS rather than asserts a
-    /// threshold: the caps are anti-aliased by Core Graphics here and by a
-    /// prepared stencil there, so a per-pixel equality gate would fail for a
-    /// reason that is not a defect. The number belongs in a document, and
-    /// `docs/deriving-a-drawn-procedure.md` is where it is.
+    /// `NOW_TAB_REFERENCE_DIR` at `sweep-2026-08-07-a/p1/panels` in the
+    /// private asset store. It REPORTS rather than asserts a threshold: the
+    /// caps are anti-aliased by Core Graphics here and by a prepared
+    /// stencil there, so a per-pixel equality gate would fail for a reason
+    /// that is not a defect. The numbers belong in a document, and
+    /// `docs/deriving-a-drawn-procedure.md` is where they are.
+    ///
+    /// It covers **both** tabbed panels and every tab in each, split by
+    /// position and by front/non-front, because a rule fitted to the front
+    /// tab could be wrong for all the others and a whole-strip average
+    /// would not say so. What it does NOT cover, and cannot: no capture in
+    /// the corpus contains an inactive, pressed, unavailable or small
+    /// (16 px) tab, so five of the seven `ThemeTabStyle` states are
+    /// unmeasured. The doc says so; this comment says so; nothing here
+    /// implies otherwise.
     func testAgainstTheGuestsOwnPixels() throws {
-        guard let path = ProcessInfo.processInfo
-            .environment["NOW_TAB_REFERENCE"] else {
-            throw XCTSkip("set NOW_TAB_REFERENCE to the guest screendump")
-        }
-        let guest = try Self.ppm(at: path)
-        let png = try RenderShot.png(scene: appearanceScene())
-        let rep = try XCTUnwrap(NSBitmapImageRep(data: png))
-        if let out = ProcessInfo.processInfo.environment["NOW_TAB_RENDER_OUT"] {
-            try png.write(to: URL(fileURLWithPath: out))
+        guard let dir = ProcessInfo.processInfo
+            .environment["NOW_TAB_REFERENCE_DIR"] else {
+            throw XCTSkip("set NOW_TAB_REFERENCE_DIR to "
+                + "<asset store>/sweep-2026-08-07-a/p1/panels")
         }
 
-        // The tab strip in screen coordinates: the whole row of tabs plus
-        // three rows of the pane below them. World (0,0) is screen (166, 90),
-        // so this is world y 9…36 — the row of tabs, the pane's frame and
-        // its two bevel rows.
-        let (x0, y0, x1, y1) = (166, 99, 620, 126)
-        // The label boxes, in the same screen coordinates. Reported
-        // separately because what is inside them is the FONT's fidelity, not
-        // the tab's: the pack carries no Charcoal strike, so every title
-        // renders in Chicago, which is wider (docs/render-composition.md).
-        // Mixing the two would let a font gap be read as a chrome one.
-        let labels = [(182, 231), (255, 332), (356, 390), (414, 465),
-                      (489, 528), (552, 600)]
-        func inLabel(_ x: Int) -> Bool {
-            labels.contains { x >= $0.0 && x < $0.1 }
-        }
+        for panel in Self.panels {
+            let guest = try Self.ppm(
+                at: dir + "/" + panel.reference)
+            let png = try RenderShot.png(scene: scene(panel))
+            let rep = try XCTUnwrap(NSBitmapImageRep(data: png))
+            if let out = ProcessInfo.processInfo
+                .environment["NOW_TAB_RENDER_OUT"] {
+                try png.write(to: URL(fileURLWithPath: out + "/"
+                    + panel.name + ".png"))
+            }
 
-        var all: [Int] = [], chrome: [Int] = []
-        var allExact = 0, chromeExact = 0
-        for y in y0..<y1 {
-            for x in x0..<x1 {
+            func delta(_ x: Int, _ y: Int) -> Int {
                 let a = pixel(rep, x, y)
                 let b = guest.pixel(x, y)
-                let d = max(abs(a.0 - b.0), max(abs(a.1 - b.1),
-                                                abs(a.2 - b.2)))
-                all.append(d)
-                if d == 0 { allExact += 1 }
-                if !inLabel(x) {
-                    chrome.append(d)
-                    if d == 0 { chromeExact += 1 }
+                return max(abs(a.0 - b.0), max(abs(a.1 - b.1), abs(a.2 - b.2)))
+            }
+            func report(_ what: String, _ d: [Int]) {
+                guard !d.isEmpty else { return }
+                let s = d.sorted()
+                let exact = s.filter { $0 == 0 }.count
+                print("### TAB-DELTA \(panel.name)/\(what) n=\(s.count) "
+                    + "exact=\(exact) "
+                    + "(\(String(format: "%.1f", 100.0 * Double(exact) / Double(s.count)))%) "
+                    + "p50=\(s[s.count / 2]) "
+                    + "p95=\(s[Int(Double(s.count) * 0.95)]) "
+                    + "max=\(s.last ?? 0)")
+            }
+
+            // The strip: the row of tabs plus the pane's frame and its two
+            // bevel rows beneath.
+            let top = panel.origin.y + 10 - 1
+            let bottom = panel.origin.y + 34
+            let left = panel.origin.x, right = panel.origin.x + panel.paneWidth
+
+            var all: [Int] = [], chrome: [Int] = []
+            /* What is INSIDE a label box is the FONT's fidelity, not the
+               tab's — the pack carries no Charcoal strike, so every title
+               renders in Chicago, which is wider
+               (docs/render-composition.md). Mixing the two would let a font
+               gap be read as a chrome one, and the font gap is the larger
+               of the two by a distance. */
+            let boxes = panel.tabs.map {
+                (panel.origin.x + $0.l, panel.origin.x + $0.r)
+            }
+            for y in top..<bottom {
+                for x in left..<right {
+                    let d = delta(x, y)
+                    all.append(d)
+                    if !boxes.contains(where: { x >= $0.0 && x < $0.1 }) {
+                        chrome.append(d)
+                    }
                 }
             }
+            report("strip", all)
+            report("chrome-only", chrome)
+
+            /* PER TAB, BY POSITION AND STATE, because a rule fitted to the
+               front tab could be wrong for every other one and a whole-strip
+               average would not say so. Each region is one tab's two caps
+               and the rows they occupy — the part this drawer invented —
+               with the label box excluded. */
+            for (i, t) in panel.tabs.enumerated() {
+                var d: [Int] = [], flat: [Int] = []
+                for y in top..<bottom {
+                    for x in (panel.origin.x + t.l - panel.caps)
+                        ..< (panel.origin.x + t.r + panel.caps) {
+                        guard x < panel.origin.x + t.l
+                            || x >= panel.origin.x + t.r else { continue }
+                        d.append(delta(x, y))
+                        /* FLAT means "not on the machine's own outline".
+                           The slanted edge is where Apple's prepared
+                           stencil and Core Graphics's blending disagree by
+                           construction; everywhere else, agreement is a
+                           real claim about the shape. Two columns each side
+                           is the widest the machine's own anti-aliasing
+                           runs. */
+                        let onEdge = (-2...2).contains {
+                            guest.pixel(x + $0, y).0 < 200
+                        }
+                        if !onEdge { flat.append(delta(x, y)) }
+                    }
+                }
+                let position = i == 0 ? "leftmost"
+                    : (i == panel.tabs.count - 1 ? "rightmost" : "middle")
+                let state = t.front ? "front" : "non-front"
+                report("caps/\(position)/\(state)", d)
+                report("caps-flat/\(position)/\(state)", flat)
+            }
         }
-        func report(_ name: String, _ d: [Int], _ exact: Int) {
-            let s = d.sorted()
-            print("### TAB-DELTA \(name) n=\(s.count) exact=\(exact) "
-                + "(\(String(format: "%.1f", 100.0 * Double(exact) / Double(s.count)))%) "
-                + "p50=\(s[s.count / 2]) "
-                + "p95=\(s[Int(Double(s.count) * 0.95)]) "
-                + "max=\(s.last ?? 0)")
-        }
-        report("strip", all, allExact)
-        report("chrome-only", chrome, chromeExact)
+
+        // The rest of this test is the geometry claim, on the Appearance
+        // panel's front tab.
+        let guest = try Self.ppm(at: dir + "/appearance-guest.ppm")
+        let rep = try XCTUnwrap(NSBitmapImageRep(
+            data: try RenderShot.png(scene: appearanceScene())))
 
         /* THE GEOMETRY CLAIM, ASSERTED RATHER THAN REPORTED. The residual
            above is anti-aliasing: Apple composites a prepared stencil down
