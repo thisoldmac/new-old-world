@@ -325,13 +325,34 @@ final class HitActionTests: XCTestCase {
         let front = scene.windows.first { $0.front }!
         // Hit the center of each widget's WindowChrome box (the same box the
         // renderer draws) and expect that widget back.
-        /* The zoom box is DELIBERATELY absent, and this test used to
-           force-unwrap it. IR v1 cannot say whether a window has one and
-           `kind` cannot stand in — Extensions Manager is kind 2 and has a zoom
-           box, Memory is kind 2 and has none — so the mirror stopped offering
-           an affordance it cannot prove. See WindowChrome.zoomBox. */
+        /* The zoom box is absent HERE because this fixture's producer never
+           reported one — it predates `windows[].zoomBox`. `kind` cannot
+           stand in (Extensions Manager is kind 2 and has a zoom box, Memory
+           is kind 2 and has none), so the mirror does not offer an
+           affordance it cannot prove. See WindowChrome.zoomBox. */
         XCTAssertNil(WindowChrome.widgetBox(front, .zoom),
                      "a zoom box the guest has not reported is not offered")
+
+        /* AND THE HALF THAT MATTERS FOR THE ACT PLANE: once the guest DOES
+           report one, the hit-tester finds it at its measured box, so a zoom
+           act lands on the widget instead of in the racing stripes — which
+           the Window Manager reads as the start of a window DRAG. Asserting
+           only the nil case would leave the mirror permanently unable to
+           zoom and nothing would say so. */
+        var proven = front
+        proven.zoomBox = true
+        var provenScene = scene
+        provenScene.windows = scene.windows.map {
+            $0.id == front.id ? proven : $0
+        }
+        let zoom = try XCTUnwrap(WindowChrome.widgetBox(proven, .zoom))
+        XCTAssertEqual(zoom.l, PlatinumTitleBar.zoomBox(front.rect).l)
+        let zc = WindowChrome.center(zoom)
+        guard case .widget(_, let zoomKind, _, _) =
+            HitTester.hitTest(provenScene, x: zc.x, y: zc.y) else {
+            return XCTFail("a proven zoom box must be hit-testable")
+        }
+        XCTAssertEqual(zoomKind, .zoom)
         for widget in WindowChrome.Widget.allCases where widget != .zoom {
             let box = WindowChrome.widgetBox(front, widget)!
             let c = WindowChrome.center(box)
