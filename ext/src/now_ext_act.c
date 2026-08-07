@@ -897,10 +897,17 @@ void now_ext_act_apply(NowPeekTable *table)
            what the accretive rule asks for instead of a new one. The two
            deadlines ride in win_h / win_v for the same reason, and the
            resident clamps both regardless of what arrived. */
+        /* And the DESTINATION in zoom_part / arm_point_h / arm_point_v,
+           three more fields with no meaning for this op. It travels with
+           the press because after the press there is no channel: the
+           target's tracking loop stops this application being scheduled
+           at all (docs/open-issues.md, break 4). */
         if (!now_ext_drag_press(table, cell->control_handle, (NowPeekU32)a5,
                                 cell->click_h, cell->click_v,
                                 (NowPeekU32)cell->win_h,
-                                (NowPeekU32)cell->win_v)) {
+                                (NowPeekU32)cell->win_v,
+                                cell->zoom_part != 0,
+                                cell->arm_point_h, cell->arm_point_v)) {
             NowPeekDragCell *drag = now_ext_drag_cell(table);
             /* Two refusals that must not collapse into one: no vehicle at
                all is a different resident, a busy vehicle is a retry. */

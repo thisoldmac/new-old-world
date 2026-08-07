@@ -62,6 +62,16 @@ int now_drag_begin(NowPeekDragCell *cell, NowPeekU32 session,
                    NowPeekU32 ticks, NowPeekU32 idle_asked,
                    NowPeekU32 cap_asked)
 {
+    return now_drag_begin_to(cell, session, target_a5, h, v, ticks,
+                             idle_asked, cap_asked, 0, 0, 0);
+}
+
+int now_drag_begin_to(NowPeekDragCell *cell, NowPeekU32 session,
+                      NowPeekU32 target_a5, NowPeekI32 h, NowPeekI32 v,
+                      NowPeekU32 ticks, NowPeekU32 idle_asked,
+                      NowPeekU32 cap_asked, int have_to,
+                      NowPeekI32 to_h, NowPeekI32 to_v)
+{
     if (cell == NULL || session == 0) {
         return 0;
     }
@@ -77,9 +87,22 @@ int now_drag_begin(NowPeekDragCell *cell, NowPeekU32 session,
     cell->session = session;
     cell->target_a5 = target_a5;
 
-    cell->want_h = h;
-    cell->want_v = v;
-    cell->want_seq = 0;
+    /* THE ONE PLACE A WANT CAN BE PUBLISHED FROM OUTSIDE THE HOST, and
+       the only window in which it is possible at all. After this
+       function returns, the button is down, the target is in its
+       tracking loop, and on a cooperatively-scheduled Macintosh the
+       application is not running - so nothing will write want_h again
+       until the gesture is over. See now_drag_begin_to's header.
+
+       want_seq 1 with moves_applied 0 is a want the vehicle has not
+       consumed, which is exactly the state a dragmove would have left,
+       so the tick path below needs no special case and there is one
+       implementation of motion rather than two. Without a destination
+       the want IS the press point and want_seq stays 0, so nothing is
+       consumed and the pointer is not moved twice. */
+    cell->want_h = have_to ? to_h : h;
+    cell->want_v = have_to ? to_v : v;
+    cell->want_seq = have_to ? 1UL : 0UL;
     cell->release_request = 0;
     cell->heartbeat_ticks = ticks;
 

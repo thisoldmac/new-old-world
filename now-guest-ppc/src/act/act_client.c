@@ -453,6 +453,22 @@ void now_act_clear_menu_postcondition(void)
     g_menu_post_armed = 0;
 }
 
+/* See act_client.h. Two words, written only by now_act_submit and read
+   only by whoever reports on it. */
+static unsigned long g_submit_began;
+static unsigned long g_submit_ticks;
+static unsigned long g_submit_yields;
+
+unsigned long now_act_last_submit_ticks(void)
+{
+    return g_submit_ticks;
+}
+
+unsigned long now_act_last_submit_yields(void)
+{
+    return g_submit_yields;
+}
+
 NowActStatus now_act_submit(const NowActTarget *target,
                             NowPeekActCell *snapshot)
 {
@@ -487,11 +503,19 @@ NowActStatus now_act_submit(const NowActTarget *target,
     cell->trap_hits_target[3] = 0;
     deadline = (unsigned long)TickCount() + kNowActDeadlineTicks;
     act_v2_describe(table, target, deadline);
+    g_submit_began = (unsigned long)TickCount();
+    g_submit_yields = 0;
+    g_submit_ticks = 0;
     cell->status = kNowPeekActStatusPending;   /* the commit, written last */
     while (cell->status == kNowPeekActStatusPending
            && (unsigned long)TickCount() < deadline) {
         act_yield();
+        /* Counted where it happens rather than derived from elapsed
+           time, because the two numbers only tell you anything apart.
+           See now_act_last_submit_yields. */
+        g_submit_yields++;
     }
+    g_submit_ticks = (unsigned long)TickCount() - g_submit_began;
     if (cell->status == kNowPeekActStatusPending) {
         now_act_settlement_note(&g_settlements, g_last_correlation_hi,
                                 g_last_correlation_lo,

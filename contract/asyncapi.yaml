@@ -4818,6 +4818,21 @@ components:
         An ok reply means the button was put down. Whether the target
         noticed is a separate observation.
 
+        THE WHOLE GESTURE TRAVELS WITH THE PRESS, and that is not a
+        convenience. Measured 2026-08-07: from the instant the target
+        enters its tracking loop, NOW ITSELF STOPS BEING SCHEDULED. This
+        Macintosh is cooperatively multitasked, DragGrayRgn calls
+        StillDown and GetMouse and nothing that yields, so no message
+        the caller sends can be read, and no reply the guest has already
+        written can be sent, until the loop ends. The resident's own
+        Time Manager task is the only thing that runs.
+
+        So a caller that wants an item to MOVE sends `toH`/`toV` with
+        the press. dragmove exists for a caller whose target does yield
+        - a scroll bar tracked by TrackControl with a live action proc,
+        say - and it is honest about being unreachable for the case that
+        motivated this plane.
+
         TWO WAYS TO NAME THE TARGET, and the second exists because the
         first cannot reach a Finder icon. Send EXACTLY ONE of `element`
         or `window`; sending both, or neither, is refused.
@@ -4882,12 +4897,48 @@ components:
           v:
             type: integer
             description: Global vertical point to press at. See h.
+          toH:
+            type: integer
+            description: >
+              WHERE THE GESTURE IS GOING, in the same global coordinates
+              as h. Sent WITH the press because it cannot be sent after
+              it: see the description above. The resident publishes it
+              as the drag's first want before the button goes down, so
+              its Time Manager task applies it on the first tick after
+              the press - while the target is inside a loop no message
+              can reach.
+
+              Both toH and toV must be sent together; one without the
+              other is a bad-request, for the same reason a half-
+              specified h/v is.
+
+              Omit both for a press that goes nowhere. That is still a
+              real request - it is what proves a press reached a foreign
+              application - but no item moves for it.
+
+              THIS IS A DESTINATION, NOT A TARGET. The caller is
+              answering "where should the pointer end up", and it must
+              have asked something that knows - the Finder for an icon's
+              own position, an observation for a window's rectangle.
+              Nothing here can check that, which is exactly why a drag
+              aimed at a guess is refused upstream rather than clamped
+              here.
+          toV:
+            type: integer
+            description: Global vertical half of toH. See toH.
           idle:
             type: integer
             description: >
               Ticks of caller silence tolerated before the resident
               releases the button itself. Advisory: the resident clamps
               it, and reports the value actually in force.
+
+              WITH toH/toV THIS IS ALSO THE DROP. The caller cannot send
+              a dragrelease during a gesture the target's own loop has
+              made unreachable, so what actually lets go is this
+              deadline expiring at the destination - and the reply says
+              `dead-man-idle`, which is the truth and is deliberately
+              not dressed up as `released-as-asked`.
           cap:
             type: integer
             description: >

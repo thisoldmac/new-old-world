@@ -43,6 +43,15 @@ static void check_u32(NowPeekU32 got, NowPeekU32 want, const char *what)
     }
 }
 
+static void check_i32(NowPeekI32 got, NowPeekI32 want, const char *what)
+{
+    if (got != want) {
+        printf("FAIL: %s (got %ld, want %ld)\n", what,
+               (long)got, (long)want);
+        failures++;
+    }
+}
+
 /* Run the vehicle forward, doing NOTHING - no wants, no heartbeats, no
    release. This is the dead host. Returns the tick at which the session
    ended, or 0 if it never did. */
@@ -295,6 +304,73 @@ static void test_tick_wraparound(void)
               "and for the right reason");
 }
 
+/* THE DESTINATION THAT TRAVELS WITH THE PRESS.
+ *
+ * This is the only route a gesture has to its destination, and the
+ * reason is not in this file: once the press returns, the target is in
+ * its own tracking loop and a cooperatively-scheduled Macintosh stops
+ * running the application entirely, so no want written later ever
+ * arrives. So the property under test is narrow and load-bearing -
+ * a want the vehicle consumes on its FIRST tick, without anyone
+ * writing one.
+ *
+ * MUTATION 1: `cell->want_seq = have_to ? 1 : 0` -> `= 0`. The first
+ * tick returns Nothing and at_h stays at the press point; "the vehicle
+ * moves there on its first tick" fails.
+ * MUTATION 2: seed want_h/want_v with h/v regardless of have_to. The
+ * pointer never leaves the origin; the same check fails on the
+ * coordinate rather than on the verdict.
+ * MUTATION 3: seed want_seq = 1 unconditionally. test_press_holds's
+ * "no motion without a want" fails - which is the direction that says
+ * a press with no destination must still press nowhere.
+ */
+static void test_destination_rides_with_the_press(void)
+{
+    NowPeekDragCell cell;
+    memset(&cell, 0, sizeof cell);
+
+    check(now_drag_begin_to(&cell, 9, 0xA5A5, 100, 100, 1000, 60, 600,
+                            1, 400, 300) == 1, "press with a destination");
+    /* The press point is where the button went down and stays the
+       origin: a destination is not a relocation of the press. */
+    check_i32(cell.origin_h, 100, "origin is the press");
+    check_i32(cell.origin_v, 100, "origin v is the press");
+    check_i32(cell.at_h, 100, "and the pointer starts there");
+    check_u32(cell.want_seq, 1, "a want is published before the button");
+    check_u32(cell.moves_applied, 0, "and nothing has consumed it yet");
+
+    /* The whole point: the FIRST tick moves, with no dragmove sent and
+       no application scheduled to send one. */
+    check(now_drag_tick(&cell, 1001) == kNowDragTickMove,
+          "the vehicle moves there on its first tick");
+    check_i32(cell.at_h, 400, "at the destination h");
+    check_i32(cell.at_v, 300, "at the destination v");
+    check_u32(cell.moves_applied, 1, "one want consumed");
+
+    /* And it is consumed once. A vehicle that re-applied it every tick
+       would refresh last_want_ticks forever and the idle dead-man would
+       never fire - the instrument feeding the clock it measures, which
+       is the shape this project has already paid for. */
+    check(now_drag_tick(&cell, 1002) == kNowDragTickNothing,
+          "the want is consumed once");
+    check(run_silent(&cell, 1003, 400) != 0,
+          "and the dead-man still fires at the destination");
+    check_u32(cell.end_reason, (NowPeekU32)kNowPeekDragEndDeadManIdle,
+              "reported as the dead-man, not as a release anyone asked for");
+    check_i32(cell.at_h, 400, "the button goes up where it was dropped");
+
+    /* have_to zero is exactly the old behaviour, and now_drag_begin is
+       written as a call to this rather than beside it - so there is one
+       implementation and this check is what says so. */
+    memset(&cell, 0, sizeof cell);
+    check(now_drag_begin_to(&cell, 9, 0xA5A5, 100, 100, 1000, 60, 600,
+                            0, 400, 300) == 1, "press with no destination");
+    check_u32(cell.want_seq, 0, "publishes no want");
+    check(now_drag_tick(&cell, 1001) == kNowDragTickNothing,
+          "and moves nothing");
+    check_i32(cell.at_h, 100, "the pointer stays where it was pressed");
+}
+
 int main(void)
 {
     test_clamps();
@@ -306,6 +382,7 @@ int main(void)
     test_dead_man_beats_a_release_in_the_same_tick();
     test_abandon();
     test_tick_wraparound();
+    test_destination_rides_with_the_press();
 
     if (failures != 0) {
         printf("%d failure(s)\n", failures);

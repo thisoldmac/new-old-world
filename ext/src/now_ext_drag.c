@@ -101,7 +101,8 @@ extern void now_ext_drag_tm_entry(void);
 void now_ext_drag_tick(TMTaskPtr task);
 int now_ext_drag_press(NowPeekTable *table, NowPeekU32 session,
                        NowPeekU32 target_a5, NowPeekI32 h, NowPeekI32 v,
-                       NowPeekU32 idle_asked, NowPeekU32 cap_asked);
+                       NowPeekU32 idle_asked, NowPeekU32 cap_asked,
+                       int have_to, NowPeekI32 to_h, NowPeekI32 to_v);
 void now_ext_drag_boot(NowPeekTable *table);
 NowPeekDragCell *now_ext_drag_cell(NowPeekTable *table);
 void now_ext_drag_abandon(NowPeekTable *table);
@@ -162,7 +163,8 @@ static void drag_button(int down)
    caller turns that into kNowPeekActErrDragNoVehicle / DragBusy. */
 int now_ext_drag_press(NowPeekTable *table, NowPeekU32 session,
                        NowPeekU32 target_a5, NowPeekI32 h, NowPeekI32 v,
-                       NowPeekU32 idle_asked, NowPeekU32 cap_asked)
+                       NowPeekU32 idle_asked, NowPeekU32 cap_asked,
+                       int have_to, NowPeekI32 to_h, NowPeekI32 to_v)
 {
     NowPeekDragCell *cell = now_ext_drag_cell(table);
     unsigned long ticks;
@@ -171,8 +173,12 @@ int now_ext_drag_press(NowPeekTable *table, NowPeekU32 session,
         return 0;
     }
     ticks = (unsigned long)LMGetTicks();
-    if (!now_drag_begin(cell, session, target_a5, h, v, (NowPeekU32)ticks,
-                        idle_asked, cap_asked)) {
+    /* The destination rides in with the press because there is no later.
+       Once this returns the application stops being scheduled - see
+       now_drag_begin_to - so a want published anywhere but here would
+       arrive after the gesture it was meant to carry. */
+    if (!now_drag_begin_to(cell, session, target_a5, h, v, (NowPeekU32)ticks,
+                           idle_asked, cap_asked, have_to, to_h, to_v)) {
         return 0;
     }
 

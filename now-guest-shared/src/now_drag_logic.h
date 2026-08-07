@@ -60,6 +60,33 @@ int now_drag_begin(NowPeekDragCell *cell, NowPeekU32 session,
                    NowPeekU32 ticks, NowPeekU32 idle_asked,
                    NowPeekU32 cap_asked);
 
+/* The same, with the gesture's DESTINATION handed over at the press.
+   `have_to` zero is exactly now_drag_begin, which is written as a call
+   to this rather than beside it.
+
+   WHY A DESTINATION MUST TRAVEL WITH THE PRESS. The instant the button
+   is down the target is inside its own tracking loop, and on a
+   cooperatively-scheduled Macintosh that means the APPLICATION IS NOT
+   SCHEDULED AT ALL until the loop ends - so it can neither write a want
+   nor read the reply the resident already committed. Measured
+   2026-08-07: a press whose reply was written three statements after
+   the mouseDown was queued did not reach its caller for four seconds.
+   Nothing the host sends can arrive in that window. This function is
+   how the gesture gets there anyway: the destination is published as
+   want number 1 BEFORE the loop exists, and the Time Manager task -
+   which fires regardless of who is scheduled - consumes it on its first
+   tick.
+
+   It is seeded as a want rather than applied here because the press
+   runs in the target's context at jGNE time and the cursor belongs to
+   the vehicle: two places moving the pointer is how a gesture ends up
+   halfway. */
+int now_drag_begin_to(NowPeekDragCell *cell, NowPeekU32 session,
+                      NowPeekU32 target_a5, NowPeekI32 h, NowPeekI32 v,
+                      NowPeekU32 ticks, NowPeekU32 idle_asked,
+                      NowPeekU32 cap_asked, int have_to,
+                      NowPeekI32 to_h, NowPeekI32 to_v);
+
 /* One tick of the vehicle. Returns a kNowDragTick* and updates the cell
    in place. Safe to call on an idle cell, on a NULL cell, and after the
    session has ended - a Time Manager task that had to be careful about
