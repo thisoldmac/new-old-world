@@ -14638,3 +14638,125 @@ contract changes serialise through the human. Until it is,
 and `CommandRegistryTests.testTheThreeHalvesAgreeOnTheCommandSet` fail,
 naming `cycle` — correctly, and they are the only two failures in the
 host suite.
+
+## 2026-08-07 — the CDEF route classified 71 of 73, and a tab, a scroll bar and a list row were driven
+
+Slice 19, and it closes the reading slice 18 left open: **the Control
+Manager will not name a foreign control, and that was never the reason
+those controls could not be used.**
+
+**Verification level: emulator-verified.** A fresh session-private clone
+of the plain base (`os91-runner.qcow2`, sha256 `f34f7e5d…`) with this
+tree's ext and app staged; guest build `ec03d8901bee`; lane block 593,
+anchor 16744 / wire 16745. Nothing here touched metal, and no claim below
+is made about a real Macintosh. Every capture discarded a warm-up scene.
+
+### What the CDEF route answered
+
+A control's `contrlDefProc` is a Handle to its loaded definition
+function. A CDEF supplied by the System file carries `sysheap`, so it is
+a resource in **every** process's resource chain and the Resource Manager
+will name it — type `CDEF`, and an ID. `procID = 16 * id + variant` is
+the Control Manager's own arithmetic and every ID is a `*Proc` constant
+in `ControlDefinitions.h`, so the id-to-kind table is documentation
+rather than inference.
+
+**Appearance, 73 controls, measured before and after:**
+
+| | before (slice 18) | after |
+|---|--:|--:|
+| classified | 2 | **71** |
+| unclassified | 71 | 2 |
+
+The 71 break down as 29 `staticText`, 16 `pushButton`, 10 `popupMenu`,
+9 `userPane`, 2 `scrollBar`, 2 `editText`, 2 `listBox` and **1 `tab`** —
+the tab strip being the control the whole slice was about. The two that
+stay unknown stay unknown.
+
+It travels as its own knowledge level, **`derived`**, with provenance
+`guest-cdef-resource`. That is deliberately not `known`: `known` is the
+control answering about itself through `kControlKindTag`, and this is us
+reading the identity of the code that draws it. A caller that needs the
+stronger claim tests for `known` explicitly. `MirrorKit`'s
+`authorizesAction` accepts `derived` — the bar it enforces is "the
+machine said so", not "the strongest possible source said so", and
+`presentation-inference` stays excluded by name.
+
+**A CDEF id this guest will not attribute produces nothing.** Several
+documented ids are deliberately absent (slider, clock, placard, icon,
+picture, separator, little and chasing arrows, popup arrow, radio group,
+scroll text box) because the role vocabulary has no honest word for them.
+So is any variant a header does not declare — CDEF 0 and CDEF 23 are the
+button FAMILY, and returning "button" for a check box would authorise the
+wrong act on the right control.
+
+### Two things stopped a control being driven, and neither was the kind
+
+**1. `kNowAxResolveMaxControls` was 32.** A control past that bound
+cannot be resolved, so no reference is minted for it and the scene
+reports it addressable by nothing. Appearance's chain is 73 long and the
+**tab strip is number 71**. Measured: 41 of that desktop's 82 controls
+carried a reference; with the bound raised to `kNowSceneMaxControls` (96)
+it is 73 of 73 in that one window. What a scene can CARRY and what an act
+can REACH were two independent constants and the smaller one silently
+decided the product's drivability — the same shape as the control-frame
+cap that once lived in three places.
+
+**2. `ctlact` pressed the centre.** A tab strip is one control and eight
+tabs; a list box is one control and every row. `ctlact` now takes `h`
+and `v` in global screen coordinates, checked against the rect the
+resolver just proved and **refused rather than clamped**. The act cell
+already carried `click_h`/`click_v`, so no `peek_table.h` change and no
+re-bake.
+
+`part: 0` gains a stated meaning: answer `TrackControl` with nothing, so
+the application's own handling decides from where the click landed.
+
+### What was driven, and watched
+
+- **A tab switched.** Appearance went Themes → Desktop, and back, by a
+  click at (438,110) and (206,110). Watched in a screendump; the control's
+  own value read 1 → 3 → 4.
+- **A scroll bar scrolled.** The Themes tab's horizontal bar, driven at
+  (570,305): the guest's own re-read went **20 → 19** — the arrow the
+  point landed on, not the one a part code would have named.
+- **A list row selected.** The Desktop tab's Patterns list, driven at
+  (504,193): selection went from "Lime" to "Lollipop 2", the highlight
+  moved, and the panel's own label read "Pattern: Lollipop 2, 128 X 128,
+  64K".
+
+### Three things this run found and did NOT close
+
+- **`ctlact` part 0 reported `act-not-taken` while the tab was
+  switching.** An Appearance-era tab is handled by the Appearance
+  Manager's own click path and never reaches the `TrackControl` trap, so
+  no patch is consulted. The message was literally true and the verdict
+  was a lie. Part 0 now reports what happened, with the control's value
+  before and after as the evidence — but **that means part 0 cannot
+  prove an act was taken for a control with no range.** Its honest claim
+  is "a real click was posted inside a control this Mac revalidated".
+- **`Re-read value` answered "the anchor plane is absent or not armed"**
+  on every act against Appearance, while the same connection's scenes
+  read that panel's 73 controls without difficulty. So the post-act
+  re-resolve takes a path the scene walk does not. Unexplained.
+- **A quoted AppleScript still differs between the two faces.** With the
+  console fix below, `script 1 + 1` answers 2 and `script return (ASCII
+  character 104)` answers `"h"` from the keyboard — but `script return
+  "hi"` answers `osaErr -1753` there while the identical wire call, sent
+  as `line` or as `source`, answers `"hi"`. So the guest decodes a
+  quoted `line` correctly and something between the console and that
+  decode does not. Narrowed to inputs the console writer escapes; not
+  closed.
+
+### And one parity defect that was one place, not one verb
+
+`console_model_dispatch` passed **NULL** for the request to
+`now_command_run`, so every verb without a console-local special case
+reached its handler with no arguments at all. `script tell application
+"Finder" to activate` and `ctlact <element> <part>` — both exactly as
+their own `help` prints them — answered "requires source" and "requires
+part" while the identical wire calls worked. `CommandParityTests` cannot
+see this: the verb is present on both faces and merely broken on one.
+The raw rest-of-line now becomes `line`, the field the contract already
+declares, read by the grammar in `cmd_line.h` that was always waiting for
+it.
