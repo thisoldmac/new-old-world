@@ -14,6 +14,75 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED: four base-image failures in two days, each one layer away from the last fix (2026-08-07, `claude/019-base-image-guards`)
+
+Michelle, after a coordinator pointed an integration lane at the wrong
+base image: *"not the first time this has happened. we need guards for
+this."* She is right that it recurs, **and the recurrence is the
+finding.**
+
+1. **2026-08-06** — the shared stage image was three days old while six
+   `ext/` commits landed that day. Every session cloned it, staged a
+   fresh build into a throwaway clone, and discarded the clone. The rule
+   was already written down and nothing checked it → `tools/ext-bake-gate`.
+2. **2026-08-06** — three bakes in one night installed images whose HFS
+   volume was still marked mounted; `qemu-img check` called all three
+   clean, because it answers a different question → `tools/volclean.py`.
+3. **19 July → 2026-08-07** — `os91-runner.qcow2` sat dirty for nineteen
+   days, opening a modal on every clone. Nobody noticed: the anchor came
+   up at 167 s behind it → the volume check moved into
+   `tools/image-provenance` (the entry below).
+4. **2026-08-07** — `scripts/spin-up-ppc:89` **defaulted** `BASE` to
+   `os91-runner.qcow2` rather than the stage image, in one line, with a
+   comment sixty lines further down saying so. Every lane in the arc
+   cloned a 19 July image. That is failure 1 again, one layer down, where
+   no gate was watching.
+
+**Each fix guarded the layer that had just failed.** Bake was well gated;
+the clone sites were not gated at all, and "which base" was spread across
+a shell default, a comment contradicting it, `ext/stage-receipts.json`
+and prose in AGENTS.md — which is the shape this project's own rule
+forbids: state a limit once, where every reader looks.
+
+`tools/base-image` is that one place. It answers *which base for this
+purpose* and *is it fit*: designated or not, volume clean / dirty /
+`unknown` (never folded together), and whether the base's baked resident
+predates this checkout's `ext/`. `spin-up-ppc`, `bake-ext-image` and
+`q800-68k` all consult it before cloning, and `spin-up-ppc` no longer
+carries a default of its own.
+
+Warn or refuse is argued per check rather than picked once — the table is
+in [docs/staged-images.md](staged-images.md). The short version: a dirty
+base is a slower boot the caller cannot fix, so it warns; a run that
+stages **no** resident, pointed at a base with none in it, produces a
+wrong result that looks right, so it refuses.
+`NOW_BASE_FORCE=1` with `NOW_BASE_FORCE_REASON="…"` overrides — a force
+with no reason is still refused.
+
+Seven guards in `tools/image-discipline-tests`, each watched failing by
+mutation. Two of them are the ones meant to make this the last time
+rather than the fifth: **a new clone site that does not consult is named
+by a scan**, and **a `BASE=` default that disagrees with the designated
+base fails the gate**.
+
+Still open, and honestly:
+
+- **Nothing here booted a VM.** Tested, not metal-verified, and not even
+  emulator-verified: the guards are watched failing against synthetic HFS
+  images, and the wiring is watched only as far as `bash -n`, the
+  spin-up-ppc python gates, and the tool's own exit codes. The first real
+  `spin-up-ppc` run after this lands is the proof, and it should be said
+  out loud when somebody makes it.
+- The designated base for ordinary PPC work is now the **stage image**
+  rather than the plain runner. That is the right default — it is the one
+  file anybody can account for — but it means ordinary lane work now
+  clones the file `--shared` bakes over. Somebody should decide whether
+  `spin-up-ppc` ought to prefer a lane's own private bake when one exists.
+- At the time of writing the shared oracle is `UNACCOUNTED` (no receipt
+  on any branch claims its bytes) and `claude/019-integration-6` is
+  baking a fresh one. Until that lands, every `spin-up-ppc` run warns
+  about the base's resident — correctly.
+
 ## FIXED in the tools, REPAIRED but NOT INSTALLED on disk: every spin-up clone booted into Disk First Aid for nineteen days (2026-08-07, `claude/019-clean-base-image`)
 
 Michelle saw Disk First Aid come up and asked whether anybody was baking

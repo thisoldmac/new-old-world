@@ -16,7 +16,8 @@ below follows from those three words.
 | You are… | You want |
 |---|---|
 | changing `ext/` or `contract/peek_table.h` and need a machine to test on | `scripts/bake-ext-image` — **private, the default**, touches nothing shared |
-| running a sweep, a fidelity pass, any ordinary guest work | `scripts/spin-up-ppc` — it clones `os91-runner.qcow2` and stages **your tree's** build; the stage image is not involved |
+| running a sweep, a fidelity pass, any ordinary guest work | `scripts/spin-up-ppc` — it clones the **designated base** and stages **your tree's** build into the clone |
+| unsure which base you should be cloning at all | `tools/base-image which` — and `tools/base-image fit <image> --purpose …` for whether it is fit |
 | landing finished resident work that everyone else must now clone | `scripts/bake-ext-image --shared` — announce it first |
 | about to quote a number from an emulator run | copy `$NOW_SPIN_RUN/provenance.md` into the report |
 | wondering whether the oracle is trustworthy right now | `tools/ext-bake-gate verify-image` |
@@ -27,10 +28,13 @@ On 2026-08-06 a coordinating session told the human that an arc's
 measurements were suspect because the shared stage image was stale. It was
 wrong twice, and a lane had to correct it:
 
-- **`scripts/spin-up-ppc` does not use the stage image.** Its `BASE`
-  defaults to `os91-runner.qcow2`. It clones that, stages *this checkout's*
-  ext and app into the clone, cold-boots so the INIT loads, and asks the
-  guest to identify itself. So the resident under test is the tree's build.
+- **`scripts/spin-up-ppc` did not use the stage image.** Its `BASE`
+  defaulted to `os91-runner.qcow2`. It clones its base, stages *this
+  checkout's* ext and app into the clone, cold-boots so the INIT loads, and
+  asks the guest to identify itself — so the resident under test is the
+  tree's build either way. (The default is gone; see *Which base, and is it
+  fit* below. The staging is unchanged, and is still why a stale base warns
+  rather than refusing.)
 - **The stage image was not merely stale, it was unaccounted for.** Its
   sha256 matched no receipt at all. Something wrote it at 01:58 while the
   newest receipt was written at 01:19, and its content mtime was three days
@@ -75,6 +79,71 @@ is the more expensive failure.
 running VM holds a write lock, the format is unfamiliar — is **not
 clean**. Folding the two together is precisely how `qemu-img check` came
 to stand in for a question it cannot answer.
+
+## Which base, and is it fit — `tools/base-image`
+
+Four times a run has been pointed at a base nobody meant, and the shape of
+the recurrence is worth more than any of the four:
+
+| when | what | what came out of it |
+|---|---|---|
+| 2026-08-06 | the stage image was three days old while six `ext/` commits landed that day; every session cloned it | `tools/ext-bake-gate` |
+| 2026-08-06 | three bakes installed images whose HFS volume was still marked mounted; `qemu-img check` called all three clean | `tools/volclean.py` |
+| 19 July → 08-07 | `os91-runner.qcow2` sat dirty for nineteen days, opening a modal on every clone | the volume check moved into `image-provenance` |
+| 2026-08-07 | `spin-up-ppc`'s `BASE` **defaulted** to `os91-runner.qcow2`, so a whole arc cloned a 19 July image | this section |
+
+**Each fix guarded the layer that had just failed, and the next failure
+happened one layer away.** Bake is well gated; the *clone sites* were not
+gated at all. And the answer to "which base" was spread across a default in
+a shell script, a comment contradicting it, `ext/stage-receipts.json` and
+prose in AGENTS.md — the exact shape this project's own rule forbids.
+
+So the answer is stated **once**, keyed by purpose rather than by path:
+
+    tools/base-image which                       # the designated PPC base
+    tools/base-image fit <image> --purpose ppc-work --stages-resident
+
+`ppc-work`, `oracle` and `bake` all designate
+`~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2`. `68k` designates nothing —
+there is one 68K base and `.env.lab` names it — and the tool says so rather
+than checking a question it did not ask. `scripts/spin-up-ppc`,
+`scripts/bake-ext-image` and `scripts/q800-68k` all consult it before they
+clone, and **a test fails if a new clone site does not** — because a
+hand-maintained list of layers is what was missing all four times.
+
+### Warn or refuse, argued per check
+
+Picking one severity for all of them is how a gate stops being read. The
+rule is `ext-bake-gate`'s: refuse when the fix is in the caller's power and
+the failure would otherwise produce a **wrong result that looks right**;
+warn when the caller cannot act on it, or when the cost is inconvenience
+rather than a false conclusion.
+
+| check | warns | refuses |
+|---|---|---|
+| the file is not there | — | always |
+| not the designated base | ordinary work — a private bake is legitimate | `--purpose oracle`, where the conclusion is about *the* stage image |
+| volume dirty | always — a slower boot, and not this run's to fix | never |
+| volume `unknown` | always, in its own words — **not** clean | never |
+| base's resident older than this checkout's `ext/` | when the run stages a fresh resident (`--stages-resident`) | when it does not: the measurement would be of an old resident and read as current |
+| shared oracle whose bytes no receipt claims | when the run stages a fresh resident | when it does not |
+
+`--stages-resident` is the load-bearing flag and it must be told the truth.
+`spin-up-ppc` passes it because it stages this checkout's ext and app into
+the clone and cold-boots; a site that only boots must not.
+
+A refusal can be overridden the way the other floors in this repository
+are, and on the same terms: `NOW_BASE_FORCE=1` **with**
+`NOW_BASE_FORCE_REASON="…"`. A force with no reason is still refused — the
+written decision is the point, not the escape.
+
+### Every finding names an act
+
+Not decoration. On 2026-08-06 four lanes read a true warning and correctly
+did nothing, because it named an action none of them could safely take. A
+warning nobody can act on is broken however true it is, so each finding
+carries what the reader should do and who can do it — re-bake, re-ask when
+the VM is down, quote `provenance.md`, say it in the channel.
 
 ### Repairing a base image
 
@@ -164,6 +233,7 @@ more than the gates themselves.
 | `ext-bake-gate merge-check` | a merge did not silently combine two branches' claims | **yes** — via `pre-merge-commit` |
 | `merge-check` on **main** | the resident source being landed is covered by a bake | **yes** — `TBT_DEFER_EXT_BAKE=1` with a reason still overrides |
 | `tools/image-provenance` | these bytes are (or are not) claimed by a receipt, **and whether the volume inside them is cleanly unmounted** | nothing; it only speaks |
+| `tools/base-image fit` | this base is (or is not) the designated one for a stated purpose, its volume's state, and whether its baked resident predates this checkout's `ext/` | **per check** — see *Warn or refuse, argued per check*. It is the only gate here that runs **before a clone**, which is why it may refuse at all |
 
 The staged-receipt case is the subtle one, and it was found by its own
 test. A receipt whose `imageSha256` does not match the file it names has
