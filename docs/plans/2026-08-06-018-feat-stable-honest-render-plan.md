@@ -69,6 +69,13 @@ tonight). Sweeps A and B from 2026-08-06 remain untouched history.
 
 ### Slice 1 — One clock: a frame is a (scene, content) pair from the same epoch
 
+**Before designing the pairing, read
+[mirror-knowledge.md](../mirror-knowledge.md) and the relevant Mirror
+source.** Epoch coherence between a polled structure and a streamed
+content plane is exactly the kind of problem the sibling may have
+already solved — or already failed at instructively. NOW has re-derived
+Mirror's answers twice in one day before; the check is one read.
+
 The render stops pairing "latest scene" with "latest drained content".
 Instead:
 
@@ -83,6 +90,17 @@ Instead:
   retired — `worldDied` already fires; the join starts consulting
   `displayEpoch` so a world that survives a view switch does not carry
   its stale pixels into the new view.
+
+**The degradation rule, stated up front because its absence is a
+deadlock:** coherence gating applies only to windows with a live P3
+stream. Content is often absent by design — record mode off, an app
+never armed, a window with no plane; a healthy session was observed at
+`content-gen 2` with `scene-gen 7`. A semantics-only window renders
+semantics-only, immediately, honest gaps and all. "Hold the last
+coherent frame" must never mean "hold forever waiting for content that
+is not coming" — that would be a worse instability than the flicker
+this slice exists to kill. Same family as "a resident component is
+always optional": the product degrades honestly without it.
 
 Exit: opening/closing/switching Finder views ten times in a row renders
 each view the same way every time. The hatch set for a given window
@@ -103,6 +121,17 @@ The ladder, highest claim first:
 3. Asset-pack art addressed **by identity** (an icon the guest named,
    a pattern the guest referenced) — never by size or shape guessing.
 4. The marked unknown. Styled once, drawn stably.
+
+**The unknown's look is a design decision, not a detail.** Half the
+"excessive hatching" complaint is the hatch itself being loud — a
+high-contrast diagonal screaming from every gap. The unknown will be
+all over the render for a while, honestly, so it must be QUIET:
+something like a flat neutral fill with a subtle marker, sitting back
+the way an unloaded image does in a browser. Per the mock-before-fleet
+rule: render 2–3 candidate styles over a real captured scene in
+minutes, put them side by side, and get Michelle's pick BEFORE wiring
+the ladder's rung 4. This materially decides whether "usable with
+gaps" feels usable.
 
 Explicitly deprecated by this slice:
 
@@ -158,6 +187,13 @@ them. In the guest walk (PPC, Carbon dialect — load
   unpositioned — never shipped as-is.
 - Host-side `displayableTitle` STAYS as defence in depth, but the
   defect class is closed where it is created.
+
+**NOW-68K is out of scope for this arc** (Michelle, 2026-08-06). The
+symmetry rule still applies in its written form: the asymmetry is
+declared, not silent — one line in
+[contract-coverage.md](../contract-coverage.md) noting the PPC walk
+gained title/rect validation and the 68K walk has not, so the gap is a
+recorded decision rather than a surprise at a merge.
 
 Exit: Memory control panel's scene carries zero pointer titles and zero
 out-of-port rects; list-view selection works in the live app (this is
@@ -264,6 +300,78 @@ redraw artefacts, anything the rubric has no row for.
   and rerun, not annotated.
 - The sweep drives the guest; where the Mirror cannot (the Mail modal),
   manual VM override is sanctioned, recorded, and does not block.
+
+### Where the artifacts live
+
+Two runs × 13 targets × 3 views is a lot of PNGs and JSON, and this
+repository just spent real effort getting bulk OUT of git. Sweep
+artifacts (screendumps, renders, captured scenes, raw metrics) go to
+the out-of-git store — the `tools/fixture-store` /
+`~/Lab/Assets/now-mirror-assets` pattern — with sha256s recorded in the
+report header so a score can be traced to its evidence. The docs carry
+only the scores, the callouts, and small crops where a picture argues
+better than a sentence. A capture worth turning into a permanent test
+fixture graduates through `tools/fixture-store` deliberately, one at a
+time, not by bulk copy.
+
+## Orchestration — subagents, not chips, and how the lanes line up
+
+This arc is executed with real subagents working in parallel where the
+dependency graph allows, coordinated by the main session. An aside
+worth doing is a spawned subagent task, not a suggestion chip.
+
+### The dependency shape
+
+```
+Slice 0 (Sweep A) ─── alone, first, nothing else running
+        │
+        ├── Lane A (host render):   Slice 1 ──► Slice 2
+        ├── Lane B (guest walk):    Slice 4 ──► Slice 3 guest fixes
+        ├── Lane C (assets, offline): Slice 5 extractor probe
+        └── Slice 3 DIAGNOSIS (read-only driving) — parallel with all
+        │
+Slice 6 (Sweep B) ─── alone, last, after integration + green gate
+```
+
+- **Sweep A and Sweep B run alone.** A sweep taken while another agent
+  is editing the tree or driving the guest measures nothing.
+- **Lane A is sequential within itself**: the ladder (2) consults the
+  epoch model (1), so 2 waits for 1. Nothing else waits for lane A.
+- **Lane B is sequential within itself**: slice 3's guest-side fixes
+  and slice 4 edit the same walk code; serialise them (4 first — it is
+  smaller and slice 3's fixes want its validated-title groundwork).
+- **Slice 3's diagnosis is read-only** (drive the guest, screendump,
+  read the walk's output) and can run beside everything from the start.
+  Its FIX lands in whichever lane the diagnosis names: capture gap →
+  lane B; ladder bug → lane A after slice 2.
+- **Lane C is fully parallel** (offline extractor work touches no
+  shared source). The desktop-`ppat` renderer change is the one
+  exception: it is a rung-3/rung-4 behaviour, so it lands through lane
+  A's ladder, not from lane C.
+- **The unknown-style mock** (slice 2's design decision) is a lane-C
+  -shaped side task: spawn it early, it needs only a captured scene,
+  and Michelle's pick should be back before lane A reaches rung 4.
+
+### Rules for the parallel phase
+
+- Each subagent works in its OWN worktree/branch off this one
+  (`claude/<slug>`), commits early and often, never pushes, never
+  touches main. The main session integrates lanes in dependency order,
+  resolves conflicts, and owns the final `scripts/test-all`.
+- Keep-both merges are the known trap: verify brace depth after any
+  conflicted merge, and only `scripts/build-guests` catches guest-side
+  truncation.
+- One live VM per agent, own ports, `--expect-build auto` — two agents
+  sharing a guest is how void findings happen. The Mirror-driving
+  diagnosis agent and a sweep NEVER run at the same time.
+- Contract changes serialise through the main session: if slices 1 and
+  4 both need a field, one asyncapi.yaml edit, both consumers follow.
+  Guests are rebuilt once per integration, `build_stamp.c` touched
+  first; an `ext/` change triggers `scripts/bake-ext-image` and its
+  receipt gate.
+- Derived docs (contract-coverage, open-issues) are re-derived at the
+  MERGE, not only at each lane's edit — a clean textual merge of a
+  derived table is no evidence at all.
 
 ## What this plan does NOT do
 
