@@ -20,6 +20,7 @@
 #include "capture.h"
 #include "census.h"
 #include "cmd_help.h"
+#include "cmd_line.h"
 #include "commands.h"
 #include "fileshare.h"
 #include "json.h"
@@ -718,6 +719,7 @@ static void console_model_dispatch(const char *input)
     char target[48];
     char target2[48];
     char result[kNowCommandResultCap];
+    char request[kMaxCols + 24];
     const char *p;
     const char *raw_args;
     const char *group = NULL;
@@ -1551,7 +1553,34 @@ static void console_model_dispatch(const char *input)
         console_model_append("  offered; the File Sharing panel reports the rest");
         return;
     }
-    now_command_run(name, NULL, 0, result, sizeof result);
+    /* THE ARGUMENTS A PERSON TYPED, handed on rather than dropped.
+     *
+     * This call passed NULL for as long as it has existed, so every verb
+     * that reaches it with arguments got none: `script tell application
+     * "Finder" to activate` answered "script requires source" and
+     * `ctlact <element> <part>` answered "ctlact requires part" - both
+     * exactly as printed by their own `help`, and both working over the
+     * wire. That is the asymmetry docs/command-parity.md is about, and
+     * `CommandParityTests` cannot see it because the verb is present on
+     * both faces and merely broken on one.
+     *
+     * `line` is the field the contract already declares for it
+     * (CommandRequest.line, and each verb's `x-line`), and cmd_line.h is
+     * already the one place every argument grammar is implemented. So
+     * this is not a second parser: it hands the raw rest-of-line to the
+     * grammar that was always waiting for it.
+     *
+     * ONLY WHEN THERE ARE ARGUMENTS. An absent line and an empty one are
+     * different requests - that distinction is the whole of gestalt's
+     * console behaviour - and a bare verb typed here has always meant
+     * the absent one. */
+    if (raw_args != NULL && *raw_args != '\0'
+        && now_console_line_request(raw_args, request,
+                                    (long)sizeof request)) {
+        now_command_run(name, request, 0, result, sizeof result);
+    } else {
+        now_command_run(name, NULL, 0, result, sizeof result);
+    }
     {
         /* The one place this Mac can say "no such verb", so it is the one
            place the exec plane can learn it. Read from the reply's own

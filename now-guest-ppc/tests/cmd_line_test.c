@@ -210,6 +210,53 @@ static void test_line_is_text_decoded(void)
     check_str(out + 4, ":Notes", "and the rest of the path survives");
 }
 
+/* THE OTHER DIRECTION, added 2026-08-07: the guest's own console writing
+ * the line a person typed as a request, so a keyboard verb takes the
+ * same path a wire verb does.
+ *
+ * It passed NULL here for as long as it existed, so `script tell
+ * application "Finder" to activate` and `ctlact <element> <part>` - both
+ * exactly as their own `help` prints them - answered "requires source"
+ * and "requires part" while the identical wire calls worked.
+ *
+ * Two properties, and the second is the one a future edit will break:
+ * a quote in a typed line must not be able to end the string it is
+ * inside (an AppleScript is nothing BUT quotes), and a line that will
+ * not fit must be REFUSED - a truncated AppleScript is a different
+ * script, and one that would still have run. */
+static void test_console_line_request(void)
+{
+    char out[256];
+
+    check(now_console_line_request("tell app \"Finder\" to activate",
+                                   out, sizeof out) == 1,
+          "a typed line becomes a request");
+    check_str(out,
+              "{\"line\":\"tell app \\\"Finder\\\" to activate\"}",
+              "and its quotes are escaped rather than ending the string");
+
+    check(now_console_line_request("a\\b", out, sizeof out) == 1,
+          "a backslash is accepted");
+    check_str(out, "{\"line\":\"a\\\\b\"}", "and doubled");
+
+    /* The round trip is the point: what comes out here is what
+       now_cmd_line reads back. */
+    {
+        char back[64];
+        check(now_console_line_request("now-element-abc 21", out,
+                                       sizeof out) == 1, "a ctlact line");
+        check(now_cmd_line(out, back, sizeof back) == 1,
+              "reads back as a line");
+        check_str(back, "now-element-abc 21", "byte for byte");
+    }
+
+    check(now_console_line_request("this will not fit at all", out, 12) == 0,
+          "a line too long to carry is REFUSED");
+    check_str(out, "", "and leaves nothing half-written");
+    check(now_console_line_request(NULL, out, sizeof out) == 0,
+          "no line is no request");
+}
+
 int main(void)
 {
     test_presence();
@@ -219,6 +266,7 @@ int main(void)
     test_int();
     test_first_word();
     test_line_is_text_decoded();
+    test_console_line_request();
 
     if (g_failures != 0) {
         fprintf(stderr, "%d failure(s)\n", g_failures);
