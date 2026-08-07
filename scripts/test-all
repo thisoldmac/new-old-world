@@ -3,10 +3,11 @@
 #
 #     scripts/test-all
 #
-#   1. native tests   - both guests' pure logic, host cc, ~2 seconds
-#   2. MirrorKit      - the vendored Mirror host package, 165 tests, ~15s
-#   3. guest builds   - both cross-compilers (skipped without Retro68)
-#   4. host gate      - 556 tests plus both Xcode configurations
+#   1. image gates    - the staged-image discipline gates, ~3 seconds
+#   2. native tests   - both guests' pure logic, host cc, ~2 seconds
+#   3. MirrorKit      - the vendored Mirror host package, 165 tests, ~15s
+#   4. guest builds   - both cross-compilers (skipped without Retro68)
+#   5. host gate      - 556 tests plus both Xcode configurations
 #
 # Cheapest first is the whole design. A broken frame codec should cost
 # two seconds to discover, not the four minutes it takes xcodebuild to
@@ -38,11 +39,28 @@ fail () {
     exit 1
 }
 
-echo "==> [1/4] native tests"
+# Before anything else: are the commit gates even WIRED? This does not fail
+# the run, and the reason is the whole point of where it sits. On 2026-08-06
+# core.hooksPath was found pointing at a directory that does not exist, so
+# NO pre-commit hook had ever run in any worktree — and every gate that
+# depends on one read green by never running. A person cannot fix that
+# mid-commit and arming it is a sequencing decision, so this SHOUTS and the
+# final line of this script stops saying the gates passed.
+hooks_armed=yes
+"$script_dir/../tools/hooks-doctor" --quiet || hooks_armed=no
+
+echo "==> [1/5] staged-image discipline gates"
+# First because it is cheap, and because a broken image gate is the one
+# failure that makes every LATER result unattributable rather than wrong:
+# it decides whether anybody can say which resident a measurement came from.
+"$script_dir/../tools/image-discipline-tests" || fail "staged-image gates"
+
+echo
+echo "==> [2/5] native tests"
 "$script_dir/test-native" || fail "native tests"
 
 echo
-echo "==> [2/4] MirrorKit gate"
+echo "==> [3/5] MirrorKit gate"
 # 165 XCTest lines is more than a green run should print, so it is logged
 # rather than shown — but a SKIP is pulled back out and echoed. A gate that
 # quietly declines to run is exactly how this stage came to be missing, so
@@ -58,11 +76,11 @@ else
 fi
 
 echo
-echo "==> [3/4] guest cross-builds"
+echo "==> [4/5] guest cross-builds"
 "$script_dir/build-guests" || fail "guest cross-builds"
 
 echo
-echo "==> [4/4] host gate"
+echo "==> [5/5] host gate"
 "$script_dir/test-host" >/dev/null 2>&1 || {
     # Re-run showing output: the host gate is verbose enough that hiding
     # it on the happy path is worth the second run on the sad one.
@@ -71,4 +89,12 @@ echo "==> [4/4] host gate"
 echo "==> host gate passed"
 
 echo
-echo "==> all gates passed (TESTED; not metal-verified)"
+if [ "$hooks_armed" = yes ]; then
+    echo "==> all gates passed (TESTED; not metal-verified)"
+else
+    echo "==> all gates passed — BUT THE COMMIT GATES ARE NOT ARMED IN THIS"
+    echo "    CLONE (see the top of this run). Nothing refuses a commit here:"
+    echo "    not the main guardrail, not the ext bake gate. Green above means"
+    echo "    the tests pass, NOT that the gates are running."
+    echo "    Repair, when no other session is mid-commit: tools/hooks-doctor --fix"
+fi

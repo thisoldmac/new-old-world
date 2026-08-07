@@ -39,6 +39,18 @@
       "shutdown": "guest-clean",
       "sourceManifest": "72f0accfe49f6931a784b91a7b32919b2a27bf5c",
       "volumeClean": "dirty"
+    },
+    {
+      "at": "2026-08-06T22:58:03-0400",
+      "branch": "claude/018-image-discipline",
+      "certifies": "provenance only \u2014 no guest was asked what resident is in this image, so this is NOT a bake and does not satisfy the commit gate.",
+      "image": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "imageBytes": 623443968,
+      "imageCtime": "2026-08-06T01:58:11-0400",
+      "imageMtime": "2026-08-03T20:20:50-0400",
+      "imageSha256": "c466baa9a5455c343908e12197d68e57ffc7f07c140276a90c97a5ae2a137d70",
+      "kind": "image-note",
+      "reason": "Not baked: restored BY HAND at 01:58 on 2026-08-06 after three bakes that night installed images whose HFS volume was still marked mounted. These bytes are the 3 August image docs/open-issues.md calls 'the corrected local oracle' (sha c466baa9\u2026, volclean-verified, 'once again the installed oracle') \u2014 so its resident PREDATES the six extension commits that landed on 6 August. A note, not a bake: nobody has asked a guest what is in it."
     }
   ]
 }

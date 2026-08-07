@@ -6250,6 +6250,50 @@ gate is not weakened here — Michelle asked for it deliberately, and
 that was missing on 3–6 August. It is simply worth writing down that its
 value is the *boot-and-answer*, not the *image*.
 
+### FOLLOW-UP (2026-08-06, night): the restore was right and left no trace a tool could read
+
+Everything above is correct and none of it was visible to a program. The
+restored oracle's sha256 matched no receipt — the file was installed at
+01:58 while the newest receipt was written at 01:19 — so
+`tools/image-provenance` could only report it as **UNACCOUNTED FOR**, and
+an unaccounted oracle reads like a defect rather than like the deliberate,
+well-reasoned repair it was. Meanwhile the sentence at the top of AGENTS.md
+("every Mirror sweep and every `scripts/spin-up-ppc` clones it") was
+false and had already caused a coordinating session to tell Michelle that
+an arc's measurements were suspect; a lane that read the script corrected
+it.
+
+So a shared mutable oracle goes wrong in **both** directions: forward when
+nobody bakes, and backward when somebody sensibly restores and writes it up
+in prose. What changed ([docs/staged-images.md](staged-images.md) is the
+page):
+
+- `tools/image-provenance` — every guest run prints which base, its sha256,
+  whether a receipt accounts for it, what was staged on top and what the
+  guest said it was running, and writes `provenance.{json,md}` into the run
+  directory. The `.md` is the rig table from
+  [the 08-07 sweep](fidelity-sweep-2026-08-07-a.md), generated.
+- `scripts/bake-ext-image` bakes **privately by default** into
+  `~/Lab/Assets/os91-qemu/agent-stage/`; `--shared` is the announced act
+  and refuses while other guests are running (five were, when it was
+  tested). A lane needing the boot-and-answer proof no longer has to touch
+  the file everyone clones.
+- `tools/ext-bake-gate verify-image` runs the `shasum` this page has asked
+  people to remember. It WARNS on the commit path and refuses only under
+  `--require`: whether another lane replaced your image is not a property
+  of your commit.
+- `tools/ext-bake-gate note-image --reason "…"` records a hand-install as
+  **provenance only** — the verdict says in words that no guest was asked
+  what is inside. The current oracle now carries one.
+- `ext/stage-receipts.json` conflicts by design at a merge
+  (`.gitattributes` + `tools/receipts-merge-driver`), and a deferral that
+  legitimately allowed a *commit* is refused at the merge into `main`.
+
+**Unverified**: `scripts/bake-ext-image --shared` has not been run since
+this change — deliberately, because another lane was in `ext/`. The
+private path has been exercised only as far as its argument handling and
+guards; the first real private bake is the at-arm census lane's.
+
 ### The applet's shutdown does not finish; the Finder's does (2026-08-06)
 
 `tools/guest-shutdown`'s applet calls `ShutDwnPower` and nothing else. It

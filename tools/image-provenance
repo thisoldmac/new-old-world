@@ -165,6 +165,11 @@ def describe(image: str, root: str | None, staged: dict | None = None,
     if side:
         out["sidecar"] = side
 
+    notes = [r for r in receipts(root)
+             if r.get("kind") == "image-note"
+             and r.get("imageSha256") == out["imageSha256"]]
+    if notes:
+        out["imageNote"] = notes[-1]
     matched = [r for r in bakes(root) if r.get("imageSha256") == out["imageSha256"]]
     newest = bakes(root)[-1] if bakes(root) else None
     out["newestReceipt"] = _slim(newest) if newest else None
@@ -180,6 +185,11 @@ def describe(image: str, root: str | None, staged: dict | None = None,
             out["verdict"] = "receipt-matched"
     elif side:
         out["verdict"] = "private-image"
+    elif notes:
+        # Weaker than a bake ON PURPOSE, and the verdict text says which
+        # question it leaves open. Somebody put these bytes here and wrote
+        # down why; nobody asked a guest what resident is inside them.
+        out["verdict"] = "noted-not-baked"
     elif out["isSharedOracle"]:
         out["verdict"] = "UNACCOUNTED"
     else:
@@ -216,6 +226,9 @@ VERDICT_LINE = {
     "private-image":
         "PRIVATE THROWAWAY — baked by one lane for itself; it is not the "
         "shared oracle and no other session should be reading it.",
+    "noted-not-baked":
+        "PLACED BY HAND AND RECORDED — a note says how these bytes got here "
+        "and why. NO BAKE: nobody asked a guest what resident is inside.",
     "UNACCOUNTED":
         "UNACCOUNTED FOR — this is the SHARED ORACLE and no receipt on this "
         "branch claims these bytes. Nobody can say what resident is in it.",
@@ -266,6 +279,15 @@ def render(p: dict) -> str:
         L.append("               Something wrote this image without leaving a receipt,")
         L.append("               or a receipt landed on another branch. Until it is")
         L.append("               re-baked, no result from a clone of it is attributable.")
+    note = p.get("imageNote")
+    if note:
+        import textwrap
+        L.append(f"  note         {note.get('at')} on {note.get('branch')}")
+        for chunk in textwrap.wrap(note.get("reason", ""), 56):
+            L.append(f"               {chunk}")
+        L.append("               A NOTE IS NOT A BAKE. It says how the file got")
+        L.append("               here. What resident is inside it is whatever was")
+        L.append("               inside when it was made — only a bake asks a guest.")
     side = p.get("sidecar")
     if side:
         L.append(f"  private bake {side.get('at')} by {side.get('branch')}"
@@ -317,6 +339,11 @@ def markdown(p: dict) -> str:
                      f"`{str(m.get('commit'))[:12]}`; extDigest "
                      f"`{str(m.get('extDigest'))[:12]}`, volumeClean "
                      f"`{m.get('volumeClean')}`"))
+    if p.get("imageNote"):
+        n = p["imageNote"]
+        rows.append(("Provenance note",
+                     f"{n.get('at')} on `{n.get('branch')}` — {n.get('reason')} "
+                     "**Not a bake:** no guest was asked what resident is in it."))
     if p["verdict"] == "UNACCOUNTED":
         n = p.get("newestReceipt") or {}
         rows.append(("Receipt", "**none matches these bytes.** Newest receipt "
