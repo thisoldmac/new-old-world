@@ -354,6 +354,14 @@ public enum IRSchema {
         "meta.theme.documentBackground",
         "meta.theme.highlight",
         "meta.theme.depth",
+
+        /* 2026-08-07. What a bounded ledger had to forget. Carried only
+           by the `depth` claim, and only when nonzero. Additive; a reader
+           that has never heard of it reads the claim exactly as before,
+           which was the problem: `partial` said the order was incomplete
+           and could not say that a named process's rank was LOST rather
+           than never taken. */
+        "meta.coverage[].evicted",
     ]
 
     public static let v2AdditionalProperties: Set<String> = [
@@ -373,6 +381,7 @@ public enum IRSchema {
         "Scene.Meta.coverage",
         "Scene.CoverageClaim.scope", "Scene.CoverageClaim.owner",
         "Scene.CoverageClaim.status", "Scene.CoverageClaim.reason",
+        "Scene.CoverageClaim.evicted",
         "Scene.Window.dialogItems",
         "Scene.Control.semantic",
         "Scene.DialogItem.number", "Scene.DialogItem.title",

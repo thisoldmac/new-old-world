@@ -560,6 +560,13 @@ void now_scene_collect(NowScene *out, long seq,
         now_scene_set_depth_coverage(
             out, unranked > 0 ? kNowSceneCoveragePartial
                               : kNowSceneCoverageComplete);
+        /* The ledger's own count of what it had to forget. It was already
+           kept (front_order.h says why); this is the line that lets a
+           consumer read it. Without it a machine that has run more than
+           32 applications reports a forgotten process as never-observed,
+           which is the empty/unknown conflation in the one plane whose
+           subject is order. */
+        now_scene_set_depth_evicted(out, g_front_order.evictions);
     }
     now_semantic_client_end();
     now_observe_walk_end(&refs);

@@ -79,13 +79,24 @@ public struct Scene: Codable, Equatable, Sendable {
         public var owner: String?
         public var status: CoverageStatus
         public var reason: String?
+        /// How many members this claim's own bounded ledger has had to
+        /// FORGET. Present only on `depth`, and only when nonzero.
+        ///
+        /// It exists because "absent because we forgot it" and "absent
+        /// because we never saw it" are different facts, and a bounded
+        /// ledger silently turns the first into the second. The front-order
+        /// table keeps 32 slots; past that a process's rank is absent for a
+        /// reason nothing on the wire could state.
+        public var evicted: Int?
 
         public init(scope: String, owner: String? = nil,
-                    status: CoverageStatus, reason: String? = nil) {
+                    status: CoverageStatus, reason: String? = nil,
+                    evicted: Int? = nil) {
             self.scope = scope
             self.owner = owner
             self.status = status
             self.reason = reason
+            self.evicted = evicted
         }
     }
 

@@ -350,6 +350,13 @@ void now_scene_set_depth_coverage(NowScene *s, NowSceneCoverage coverage)
     }
 }
 
+void now_scene_set_depth_evicted(NowScene *s, unsigned long evicted)
+{
+    if (s != NULL) {
+        s->depth_evicted = evicted;
+    }
+}
+
 void now_scene_set_process_background_only(NowScene *s, int proc,
                                            int background_only)
 {

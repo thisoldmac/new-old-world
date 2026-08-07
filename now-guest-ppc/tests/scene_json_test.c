@@ -1293,8 +1293,49 @@ static void test_theme_colours_reach_the_wire(void)
     check_absent(out, "\"theme\"");
 }
 
+/* THE ORDER LEDGER'S EVICTIONS, on the wire.
+ *
+ * front_order.c has counted them since it was written, for a reason it
+ * states in its own header: an absent rank because we FORGOT a process
+ * and an absent rank because we never SAW it are different facts. The
+ * count stayed inside the guest, so only the second one was readable -
+ * the empty/unknown conflation, in the one plane whose subject is order.
+ *
+ * Watched failing by mutation 2026-08-07: passing 0 instead of
+ * `s->depth_evicted` at the `depth` call site drops the key; dropping
+ * the `evicted != 0` guard puts it on every claim in every scene. */
+static void test_the_order_ledger_says_what_it_forgot(void)
+{
+    NowScene s;
+    char out[16384];
+
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    now_scene_set_depth_coverage(&s, kNowSceneCoveragePartial);
+
+    /* NOTHING FORGOTTEN is the ordinary case, and it costs no key. */
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_absent(out, "evicted");
+
+    now_scene_set_depth_evicted(&s, 3);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_present(out, "\"scope\":\"depth\",\"status\":\"partial\","
+                  "\"reason\":\"bounded\",\"evicted\":3");
+    check(well_formed(out), "an evicting scene is still valid JSON");
+
+    /* AND ONLY THE `depth` CLAIM CARRIES ONE. It is the only scope with
+       a bounded ledger behind it; a count on `processes` would be a
+       number nothing produced. */
+    {
+        const char *p = strstr(out, "\"evicted\"");
+
+        check(p != NULL && strstr(p + 1, "\"evicted\"") == NULL,
+              "exactly one coverage claim carries an eviction count");
+    }
+}
+
 int main(void)
 {
+    test_the_order_ledger_says_what_it_forgot();
     test_theme_colours_reach_the_wire();
     test_coverage_and_incarnation_reach_the_wire();
     test_proven_control_roles_keep_their_semantics();

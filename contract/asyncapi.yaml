@@ -489,6 +489,22 @@ operations:
       brush, the second says nobody looked. Neither is ever sent as
       black — 0x000000 is a legal colour and so is the one value that
       cannot double as "unknown".
+      WHAT A BOUNDED LEDGER FORGOT, added 2026-08-07 as
+      meta.coverage[].evicted and additive: an older consumer reads the
+      claim exactly as it did before. It is carried ONLY by the `depth`
+      scope, and only when nonzero.
+      The front-order ledger that makes cross-application order a fact
+      keeps a bounded number of slots, and has counted its evictions since
+      it was written — because "this process has no rank because we FORGOT
+      it" and "this process has no rank because we never SAW it come
+      forward" are different facts. That count never left the guest, so
+      only the second was readable: past the ledger's capacity a forgotten
+      process reported as never-observed. That is the empty-versus-unknown
+      conflation stated above, arriving in the one plane whose whole
+      subject is order.
+      A ZERO IS AN ABSENT KEY, not a sent zero, because nothing forgotten
+      is the ordinary case on every machine and a key on every claim in
+      every scene would cost more than it says.
       WHAT A PROCESS IS, versus what we managed to see of it. Added
       2026-08-07 as apps[].backgroundOnly and processes[].backgroundOnly,
       additive: an older consumer ignores the key and nothing else moves.

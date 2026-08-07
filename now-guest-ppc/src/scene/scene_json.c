@@ -909,7 +909,8 @@ static const char *coverage_reason(NowSceneCoverage coverage,
 
 static void put_coverage_claim(Sink *k, const char *scope,
                                const NowSceneProc *owner,
-                               NowSceneCoverage coverage, int first)
+                               NowSceneCoverage coverage, int first,
+                               unsigned long evicted)
 {
     const char *reason = coverage_reason(coverage, owner);
 
@@ -925,6 +926,17 @@ static void put_coverage_claim(Sink *k, const char *scope,
         put(k, ",\"reason\":");
         put_str(k, reason);
     }
+    /* HOW MANY THIS CLAIM'S LEDGER FORGOT. Only the `depth` scope has
+       one, and it rides only when nonzero: 0 is the ordinary case and a
+       key present on every claim in every scene would cost more than it
+       says. What it buys is the difference between "we never saw this
+       process come forward" and "we saw it and then forgot", which is
+       the empty-versus-unknown split this IR makes everywhere else and
+       could not make here. */
+    if (evicted != 0) {
+        put(k, ",\"evicted\":");
+        put_num(k, (long)evicted);
+    }
     put(k, "}");
 }
 
@@ -939,21 +951,23 @@ static void put_coverage(Sink *k, const NowScene *s)
         k->sp->coverage_off = k->len;
     }
     put(k, "[");
-    put_coverage_claim(k, "processes", NULL, s->processes_coverage, 1);
+    put_coverage_claim(k, "processes", NULL, s->processes_coverage, 1, 0);
     /* ONE CLAIM FOR THE WHOLE ROSTER, and the reason `backgroundOnly` can
        stay true-only: this says whether an absent key means "has a face"
        or "nobody asked". See NowScene.process_kind_coverage. */
-    put_coverage_claim(k, "process-kind", NULL, s->process_kind_coverage, 0);
+    put_coverage_claim(k, "process-kind", NULL,
+                       s->process_kind_coverage, 0, 0);
     /* AND ONE FOR THE ORDER THE ARRAY ITSELF CARRIES. Every other claim
        here is about a list's membership; this one is about its
        SEQUENCE, which is meaning too - the front process is first - and
        until now was the one piece of the scene that could be wrong with
        nothing saying so. See NowScene.depth_coverage. */
-    put_coverage_claim(k, "depth", NULL, s->depth_coverage, 0);
+    put_coverage_claim(k, "depth", NULL, s->depth_coverage, 0,
+                       s->depth_evicted);
     for (i = 0; i < s->proc_count; ++i) {
         const NowSceneProc *p = &s->procs[i];
 
-        put_coverage_claim(k, "windows", p, p->windows_coverage, 0);
+        put_coverage_claim(k, "windows", p, p->windows_coverage, 0, 0);
         if (p->front) {
             front = p;
         }
@@ -968,7 +982,7 @@ static void put_coverage(Sink *k, const NowScene *s)
     } else {
         menubar_coverage = kNowSceneCoverageUnavailable;
     }
-    put_coverage_claim(k, "menubar", front, menubar_coverage, 0);
+    put_coverage_claim(k, "menubar", front, menubar_coverage, 0, 0);
     put(k, "]");
     if (k->sp != NULL) {
         k->sp->coverage_len = k->len - k->sp->coverage_off;

@@ -108,6 +108,8 @@ final class IRFreezeTests: XCTestCase {
                           status: .complete),
                     .init(scope: "menubar", owner: "process-12345678",
                           status: .retracted, reason: "validation"),
+                    .init(scope: "depth", status: .partial,
+                          reason: "bounded", evicted: 3),
                 ],
                 /* Every key filled, because MAXIMAL is what makes the
                    freeze mean anything: a theme with a refused brush

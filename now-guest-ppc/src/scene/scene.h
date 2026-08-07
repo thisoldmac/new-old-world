@@ -584,6 +584,18 @@ typedef struct {
        one, and this is that bit. */
     NowSceneCoverage depth_coverage;
 
+    /* HOW MANY APPLICATIONS THE ORDER LEDGER HAS FORGOTTEN.
+       front_order.h keeps 32 slots and counts what it evicts, precisely
+       because "this process has no rank because we forgot it" and "this
+       process has no rank because we never saw it come forward" are
+       different facts. That count stayed inside the guest, so the second
+       was the only one a consumer could read - the empty/unknown
+       conflation this IR spends most of its vocabulary preventing,
+       arriving in the one plane whose whole subject is order.
+       0 means nothing was forgotten, which is the ordinary case and is
+       why it rides the wire only when nonzero. */
+    unsigned long depth_evicted;
+
     NowSceneWindow windows[kNowSceneMaxWindows];
     short window_count;
     int windows_truncated;
@@ -695,6 +707,10 @@ void now_scene_set_process_kind_coverage(NowScene *s,
 /* Records whether the cross-application order of `windows` is a claim or
    a fallback. See NowScene.depth_coverage. */
 void now_scene_set_depth_coverage(NowScene *s, NowSceneCoverage coverage);
+
+/* How many processes the front-order ledger has evicted since this
+   launch. Absent from the wire when zero. */
+void now_scene_set_depth_evicted(NowScene *s, unsigned long evicted);
 
 /* Adds a window to a process already added. Returns 1 on success, 0 when
    the scene is full (sets windows_truncated) or when `proc` is out of
