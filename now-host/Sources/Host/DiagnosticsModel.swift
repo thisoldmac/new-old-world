@@ -7,12 +7,24 @@ import NOWAgentIntegration
 ///
 /// The `probe` is the contract's own name and the wire value
 /// (`AgentIntegrationDiagnosticProbe`), so nothing here is a second spelling
-/// of a verb. Everything else is written for the person at this Mac.
+/// of a verb. Everything else is written for the person at this Mac — about
+/// the OTHER one. Every sentence below measures the machine being driven, so
+/// the ones that name a machine take it from `MachineNaming` rather than
+/// spelling it: this page said "this Mac" in five places while meaning the
+/// far end, which is the one error a reader has no way to detect.
 struct GuestDiagnostic: Identifiable, Equatable {
     let probe: AgentIntegrationDiagnosticProbe
     let title: String
-    /// What the machine measures, in a sentence.
-    let measures: String
+    /// What the machine measures, in a sentence — composed around whatever
+    /// that machine is called right now.
+    ///
+    /// A function rather than a stored sentence because all three of these
+    /// name the machine, and its name arrives at hello: a sentence frozen at
+    /// startup can only ever say the generic phrase, which is how "this Mac"
+    /// got written here in the first place. It takes the connection rather
+    /// than a phrase so that `MachineNaming` — not this file — decides what
+    /// the machine is called.
+    let measures: (_ connection: GuestConnectionState) -> String
     /// What it costs that machine, said before anyone spends it.
     let cost: String
     /// A conclusion this answer does NOT support. Present on exactly one of
@@ -21,6 +33,13 @@ struct GuestDiagnostic: Identifiable, Equatable {
 
     var verb: String { probe.rawValue }
     var id: String { probe.rawValue }
+
+    /// Identity is the verb. Everything else here is prose ABOUT that verb —
+    /// including a closure, which has no equality of its own — so two values
+    /// carrying the same probe are the same diagnostic.
+    static func == (lhs: GuestDiagnostic, rhs: GuestDiagnostic) -> Bool {
+        lhs.probe == rhs.probe
+    }
 }
 
 enum GuestDiagnostics {
@@ -31,11 +50,13 @@ enum GuestDiagnostics {
         GuestDiagnostic(
             probe: .vprobe,
             title: "Framebuffer Read Cost",
-            measures: "What reading this Mac's screen memory costs, by "
-                + "access method: raw reads at 8, 16, 32 and 64 bits "
-                + "against the CopyBits baseline, whether a reread hits a "
-                + "cache, whether a partial read scales, and whether the "
-                + "raw reads are pixel-faithful.",
+            measures: { connection in
+                "What reading \(MachineNaming.possessive(connection)) screen "
+                + "memory costs, by access method: raw reads at 8, 16, 32 "
+                + "and 64 bits against the CopyBits baseline, whether a "
+                + "reread hits a cache, whether a partial read scales, and "
+                + "whether the raw reads are pixel-faithful."
+            },
             cost: "A few seconds of full-screen reads — longer on a 68030. "
                 + "It wants a still screen: anything animating is measured "
                 + "too.",
@@ -54,13 +75,16 @@ enum GuestDiagnostics {
         GuestDiagnostic(
             probe: .shotdiag,
             title: "Capture Read Provenance",
-            measures: "Where a capture actually read from: the framebuffer "
-                + "base as this Mac resolved it, that base through "
-                + "StripAddress, whether it is in 32-bit addressing at the "
-                + "moment of the walk, and row 0's first sixteen bytes as "
-                + "the walk sees them beside the same row as CopyBits "
-                + "copies it. Identical samples mean the base is right and "
-                + "the fault is downstream; different ones name the byte.",
+            measures: { connection in
+                "Where a capture actually read from: the framebuffer base "
+                + "as \(MachineNaming.sentence(connection)) resolved it, "
+                + "that base through StripAddress, whether it is in 32-bit "
+                + "addressing at the moment of the walk, and row 0's first "
+                + "sixteen bytes as the walk sees them beside the same row "
+                + "as CopyBits copies it. Identical samples mean the base "
+                + "is right and the fault is downstream; different ones "
+                + "name the byte."
+            },
             cost: "It stages one real capture and throws it away, so it "
                 + "costs what a screenshot costs and wants a still screen. "
                 + "No image is produced and nothing is transferred.",
@@ -68,12 +92,14 @@ enum GuestDiagnostics {
         GuestDiagnostic(
             probe: .putstat,
             title: "Transfer Diagnostics",
-            measures: "Where the last file this Mac RECEIVED spent its "
-                + "time: bytes, chunk and write counts, the milliseconds "
-                + "inside FSWrite against the whole receive path, what a "
-                + "resume started from, and the receive backlog. Measured "
-                + "there because that is the only place the disk can be "
-                + "told apart from the wire.",
+            measures: { connection in
+                "Where the last file \(MachineNaming.sentence(connection)) "
+                + "RECEIVED spent its time: bytes, chunk and write counts, "
+                + "the milliseconds inside FSWrite against the whole "
+                + "receive path, what a resume started from, and the "
+                + "receive backlog. Measured there because that is the only "
+                + "place the disk can be told apart from the wire."
+            },
             cost: "Free — it reads counters. It describes the LAST "
                 + "transfer, so a Mac that has received nothing since it "
                 + "launched answers its own zeroes.",
@@ -94,6 +120,54 @@ enum DiagnosticServing: Equatable {
     case unknown
     case served
     case notServed
+}
+
+/// **What the page may offer for one diagnostic, and what it owes the reader
+/// when the answer is no.**
+///
+/// The list on the left shows every diagnostic whether or not the machine on
+/// the wire can run it, so each row has to carry which of three facts it is
+/// in — and they are three, not two:
+///
+/// - `supported` — that machine has said it serves the verb.
+/// - `unproven` — nobody has asked yet. **Runnable.** Unproven is not a no,
+///   and the click is what settles it.
+/// - `unsupported` — that machine said no. **Not runnable**, and it carries
+///   the sentence saying so.
+///
+/// Whether the diagnostic has ever been RUN is a fourth, orthogonal fact
+/// (`DiagnosticState.hasRun`) and lives apart on purpose: "cannot be run
+/// here" and "has not been run yet" are the two things a grey row is read as,
+/// and a page that cannot tell them apart tells the reader the wrong one.
+enum DiagnosticAvailability: Equatable {
+    case supported
+    case unproven(String)
+    case unsupported(String)
+
+    /// Whether the Run button accepts a click.
+    var isRunnable: Bool {
+        switch self {
+        case .supported, .unproven: return true
+        case .unsupported: return false
+        }
+    }
+
+    /// The sentence behind this answer. Nil only for `supported`, where
+    /// there is nothing to explain.
+    var reason: String? {
+        switch self {
+        case .supported: return nil
+        case .unproven(let text), .unsupported(let text): return text
+        }
+    }
+
+    /// Whether that sentence has to be on screen rather than in a tooltip.
+    /// A dark button must explain itself where the eye already is; an
+    /// enabled one that merely has not been proven does not get to nag.
+    var deservesAVisibleReason: Bool {
+        if case .unsupported = self { return true }
+        return false
+    }
 }
 
 /// One diagnostic's state on this page.
@@ -132,7 +206,8 @@ struct DiagnosticState: Identifiable, Equatable {
 
 /// `putstat`'s eleven rows, split by what they are actually about.
 ///
-/// **Eight of them describe the last file this Mac RECEIVED; three do not.**
+/// **Eight of them describe the last file the driven machine RECEIVED; three
+/// do not.**
 /// The guest emits them in one list (`now-guest-ppc/src/commands/commands.c
 /// :: run_putstat`), but `Rcv backlog`, `Rcv peak` and `Loop passes` are read
 /// from the live connection — they are true whether or not a file has ever
@@ -144,8 +219,8 @@ struct DiagnosticState: Identifiable, Equatable {
 /// **A zero here is a measurement, never a silence.** Whether the probe
 /// answered at all is a different question with a different answer —
 /// `DiagnosticState.answeredWithNothing` — and the two must not be collapsed:
-/// one means "nothing has been received", the other means "this Mac told us
-/// nothing".
+/// one means "nothing has been received", the other means "that machine told
+/// us nothing".
 struct TransferDiagnosticsReading: Equatable {
     /// The rows describing the last received file, in the guest's order.
     let transfer: [DiagnosticRow]
@@ -214,11 +289,11 @@ struct DiagnosticRow: Identifiable, Equatable {
 /// **Availability comes off `help`, never off which Mac it is.** The three
 /// are not served by the same guests — `vprobe` by both, `shotdiag` by the
 /// 68K guest, `putstat` by the Carbon one — so the page asks the connected
-/// machine for its command table once per connection and says, per card,
-/// whether that machine serves the verb. A card for a verb this Mac does not
-/// have does not offer a button that would do nothing, and does not suggest
-/// anything is broken: the other Mac model answers it, and that is what the
-/// card says.
+/// machine for its command table once per connection and says, per row,
+/// whether that machine serves the verb. A row for a verb the driven machine
+/// does not have does not offer a button that would do nothing, and does not
+/// suggest anything is broken: the other Mac model answers it, and that is
+/// what the row says.
 @MainActor
 final class DiagnosticsModel: ObservableObject, GuestScopedModel {
     /// One machine's readings, parked while another is driven.
@@ -245,6 +320,20 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
         didSet { connectionChanged(from: oldValue) }
     }
     @Published private(set) var states: [DiagnosticState]
+
+    /// Which diagnostic the detail side is showing.
+    ///
+    /// **Every diagnostic is selectable, including the ones the machine
+    /// cannot run.** That is the whole reason the list can afford to show
+    /// them: a row that refuses selection is a row that can never say WHY it
+    /// is grey, and "cannot be selected" is exactly how a person reads a
+    /// broken app. What a machine's refusal disables is the Run button, and
+    /// the reason travels with it (`availability(for:)`).
+    ///
+    /// It starts on the first row rather than nil, because an empty detail
+    /// pane on a page with three fixed rows is a step a person has to take
+    /// before the page says anything at all.
+    @Published var selection: String? = GuestDiagnostics.all.first?.id
 
     private let listener: GuestListener
     /// What the machines on the wire have said they can do. Shared with every
@@ -281,6 +370,17 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
         states.first { $0.id == id }
     }
 
+    /// The row the detail side is showing. Falls back to the first rather
+    /// than to nothing: `selection` can only name a diagnostic this page has,
+    /// and a nil detail pane would be a state the page has no copy for.
+    var selectedState: DiagnosticState? {
+        selection.flatMap { state(id: $0) } ?? states.first
+    }
+
+    /// The machine this page's sentences are about — never the one they are
+    /// read on.
+    var machine: String { MachineNaming.sentence(connection) }
+
     /// **Whether the machine on the wire serves one diagnostic verb**, and the
     /// sentence to show when it does not.
     ///
@@ -299,19 +399,70 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
                                       commandNames: commandNames))
     }
 
-    /// The sentence a dark Run button owes the reader, when the card is not
-    /// already saying it in better words.
+    /// **The three-way answer the list and the detail pane both read**, with
+    /// the sentence a disabled row owes its reader.
     ///
-    /// Nil for `notServed`, deliberately: the card's own body writes that case
-    /// (`notServedSentence`) and names the sibling guest that answers the verb,
-    /// which is more than the gate can know. This covers the rest — a machine
-    /// that refused the verb by name, or none attached at all — so that no
-    /// greyed button on this page is ever left standing beside nothing.
-    func unavailableNote(for state: DiagnosticState) -> String? {
-        let decision = gate(for: state.diagnostic)
-        guard decision.deservesAVisibleReason,
-              state.serving != .notServed else { return nil }
-        return decision.explanation
+    /// One decision, asked once, so the greyed row on the left and the dark
+    /// button on the right cannot disagree — and it is the gate's decision,
+    /// the same one every other page gets about the same machine, never this
+    /// page's private reading of `serving`.
+    ///
+    /// The one case where this page can say more than the gate is a verb
+    /// absent from the machine's own command table: `notServedSentence` names
+    /// the sibling guest that DOES answer it, which the gate has no way to
+    /// know. That sentence wins there; everywhere else the gate's own words
+    /// stand, including a machine that refused the verb by name and the case
+    /// of nothing being connected at all.
+    func availability(for state: DiagnosticState) -> DiagnosticAvailability {
+        if state.serving == .notServed {
+            return .unsupported(notServedSentence(state.diagnostic))
+        }
+        switch gate(for: state.diagnostic) {
+        case .allowed:
+            return .supported
+        case .unsettled(let why):
+            return .unproven(why)
+        case .unsupported(let why), .noGuest(let why), .inapplicable(let why):
+            return .unsupported(why)
+        }
+    }
+
+    /// Why a verb absent from the machine's command table is not a fault.
+    ///
+    /// Not an error, and it must not look like one: the verb missing is a
+    /// fact about WHICH NOW guest is on the wire, not about whether that Mac
+    /// is well — so the sentence names the sibling that answers it and stops
+    /// there. It lives on the model rather than in the view because it is the
+    /// reason a control is dark, and a reason a test cannot read is a reason
+    /// that can silently go missing.
+    func notServedSentence(_ diagnostic: GuestDiagnostic) -> String {
+        let elsewhere: String
+        switch diagnostic.probe {
+        case .vprobe:
+            /* Both guests serve it, so a machine without it is neither model
+               as this host knows them — an older build, most likely. Nothing
+               here guesses which. */
+            elsewhere = "Both NOW guests normally serve it, so this build "
+                + "predates it."
+        case .shotdiag:
+            elsewhere = "The 68K guest serves it; the Carbon guest does not."
+        case .putstat:
+            elsewhere = "The Carbon guest serves it; the 68K guest does not."
+        }
+        return "Not available on \(machine): \(diagnostic.verb) is not in "
+            + "its command table. Nothing is wrong with the machine — "
+            + elsewhere
+    }
+
+    /// The selected reading as plain text, for the Copy button.
+    ///
+    /// Tab-separated in the guest's own order and wording, because these are
+    /// measurements a person pastes into a note or a message beside a build
+    /// stamp — reformatting them here would make the pasted number differ
+    /// from the one on screen.
+    func copyText(for state: DiagnosticState) -> String {
+        state.rows.map { "\($0.label)\t\($0.value)" }
+            .joined(separator: "\n")
     }
 
     /// Run one diagnostic, replacing whatever it held.
@@ -324,7 +475,11 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
         let verb = probe.rawValue
         guard isConnected,
               let idx = states.firstIndex(where: { $0.id == verb }),
-              states[idx].serving != .notServed,
+              /* The same answer the button reads, so a run cannot reach the
+                 wire through a path the UI says is closed — including the
+                 case the button alone would miss, a machine that refused the
+                 verb by name after `help` had listed it. */
+              availability(for: states[idx]).isRunnable,
               !states[idx].isRunning
         else { return }
         let gen = (generation[verb] ?? 0) + 1
@@ -348,14 +503,15 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
                 if AgentIntegrationCapabilityNames.isRefusal(code) {
                     /* The machine answered the availability question by
                        refusing the verb by name. Recorded as what it is —
-                       this Mac does not serve it — rather than as a failure,
+                       that machine does not serve it — rather than as a
+                       failure,
                        which is the difference between "not here" and
                        "broken". */
                     self.states[idx].serving = .notServed
                     self.states[idx].refusal = nil
                     /* Written down where the gate can read it, in the
                        machine's own words. Without this the card would say
-                       "not available on this Mac" underneath a Run button that
+                       "not available" underneath a Run button that
                        still worked: `help` had listed the verb, so the gate
                        would go on answering `allowed` while the machine had
                        already refused it by name. */
@@ -365,8 +521,11 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
                     return
                 }
                 self.states[idx].serving = .served
+                /* The page names the machine directly above this line, so the
+                   fallback says "it" — spelling the machine out again here
+                   is where "this Mac" got written about the far end. */
                 self.states[idx].refusal = result.error?.message
-                    ?? "This Mac declined the diagnostic and said no more."
+                    ?? "It declined the diagnostic and said no more."
                 return
             }
             self.states[idx].serving = .served
@@ -383,7 +542,7 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
     }
 
     /// Ask the connected machine which commands it has, once per connection,
-    /// so a card can say what this Mac serves before anyone spends a
+    /// so a row can say what that machine serves before anyone spends a
     /// full-screen read finding out.
     ///
     /// The same request the console's completions use and the same one the
