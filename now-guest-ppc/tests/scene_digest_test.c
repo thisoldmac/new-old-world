@@ -81,6 +81,23 @@ static void build(NowScene *s, long seq, double at, short title_x)
     now_scene_set_processes_coverage(s, kNowSceneCoverageComplete);
     now_scene_set_windows_coverage(s, finder, kNowSceneCoverageComplete);
     now_scene_set_windows_coverage(s, text, kNowSceneCoverageComplete);
+
+    /* meta.theme rides in the tail, which the delta copies VERBATIM.
+       That is not free: a colour emitted outside the tail span would
+       vanish from every delta while whole documents still carried it, so
+       a host polling with `since` would drift to the wrong face and only
+       on the second frame. Building it into the shared fixture makes
+       every reconstruction assertion below cover it. */
+    {
+        NowSceneTheme t;
+
+        t.dialog_background = 0xDDDDDDL;
+        t.alert_background = 0xEEEEEEL;
+        t.document_background = 0xFFFFFFL;
+        t.highlight = 0xCCCCFFL;
+        t.depth = 16;
+        now_scene_set_theme(s, &t);
+    }
 }
 
 static long encode(NowScene *s, char *out, long cap, NowSceneSpans *sp)
@@ -298,6 +315,14 @@ static void test_reconstruction_is_byte_exact(void)
         }
         check(carried == 1, "exactly one window's bytes cross the wire");
     }
+
+    /* THE THEME IS RESTATED WHOLE on a delta, like the rest of meta. A
+       consumer that started mid-stream must be able to fill a face from
+       the frame in its hand; a theme carried only by the baseline would
+       be a colour that arrives once and then has to be remembered
+       correctly forever. */
+    check(strstr(delta, "\"dialogBackground\":\"#DDDDDD\"") != NULL,
+          "a delta restates meta.theme rather than referring to it");
     check(strstr(delta, "\"menubar\":{\"same\":true}") != NULL
           || strstr(delta, "\"menubar\":{") != NULL,
           "the menu bar is named rather than implied");
