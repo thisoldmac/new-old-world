@@ -28,12 +28,18 @@ final class NOWMirrorWindow: NSObject, ObservableObject, NSWindowDelegate {
     private var didFit = false
     private let source: NOWMirrorSource
     private let presentation: MirrorPresentation
-    private let screen: MirrorKit.Scene.ScreenSize
+    /// The guest's screen, when something already knows it. Normally
+    /// nothing does at this point — the window opens before the first
+    /// scene arrives — and `fitToGuestScreen` corrects the window once
+    /// the guest says. It used to default to 800×600, which is a claim
+    /// about somebody else's machine made by the one object that never
+    /// asks it anything.
+    private let screen: MirrorKit.Scene.ScreenSize?
     private let requestedScale: CGFloat?
 
     init(source: NOWMirrorSource,
          presentation: MirrorPresentation,
-         screen: MirrorKit.Scene.ScreenSize = .init(w: 800, h: 600),
+         screen: MirrorKit.Scene.ScreenSize? = nil,
          launchOptions: MirrorLaunchOptions = .parse(
             ProcessInfo.processInfo.arguments)) {
         self.source = source
@@ -41,6 +47,17 @@ final class NOWMirrorWindow: NSObject, ObservableObject, NSWindowDelegate {
         self.screen = screen
         requestedScale = launchOptions.scale
     }
+
+    /// The window's own size while the guest's screen is unknown. Not a
+    /// screen size and never used as one — see `show`.
+    ///
+    /// `openIfLaunchAsked` used to live beside this and does not any more:
+    /// the round-3 integration moved that question to
+    /// `HostAppState.mirrorFollowsTheConnection`, because with the Mirror
+    /// embedded as a module there may be no window to ask. 019-one-screen
+    /// edited the old function without seeing that; the constant it added
+    /// is kept and the function is not.
+    private static let beforeTheGuestSpeaks = NSSize(width: 720, height: 460)
 
     func show(title: String) {
         if window == nil {
@@ -57,13 +74,26 @@ final class NOWMirrorWindow: NSObject, ObservableObject, NSWindowDelegate {
             let w = NSWindow(contentViewController: controller)
             w.title = title
             let scale = requestedScale ?? 1
-            w.setContentSize(NSSize(width: CGFloat(screen.w) * scale,
-                                    height: CGFloat(screen.h) * scale))
-            /* A floor rather than a fixed size: below roughly half the
-               guest's own screen the Platinum chrome a person aims at -
-               a 16-point scroll arrow, an 11-point close box - stops
-               being reliably clickable with a real mouse. */
-            w.contentMinSize = NSSize(width: screen.w / 2, height: screen.h / 2)
+            if let screen = screen?.known {
+                w.setContentSize(NSSize(width: CGFloat(screen.w) * scale,
+                                        height: CGFloat(screen.h) * scale))
+                /* A floor rather than a fixed size: below roughly half the
+                   guest's own screen the Platinum chrome a person aims at -
+                   a 16-point scroll arrow, an 11-point close box - stops
+                   being reliably clickable with a real mouse. */
+                w.contentMinSize = NSSize(width: screen.w / 2,
+                                          height: screen.h / 2)
+            } else {
+                /* **A HOST WINDOW SIZE, NOT A GUEST SCREEN.** Nothing has
+                   said how big the other machine's screen is, so this
+                   claims nothing about it: it is a rectangle to put the
+                   "screen size unknown" surface in until the first scene
+                   lands, at which point `fitToGuestScreen` sizes the
+                   window to the truth and sets the aspect and the floor.
+                   Deliberately not 4:3 — a plausible aspect is what made
+                   the old guess invisible. */
+                w.setContentSize(Self.beforeTheGuestSpeaks)
+            }
             w.setFrameAutosaveName("NOWMirrorWindow")
             w.isReleasedWhenClosed = false
             w.delegate = self
@@ -119,7 +149,7 @@ final class NOWMirrorWindow: NSObject, ObservableObject, NSWindowDelegate {
         Task { @MainActor [weak self] in
             for _ in 0..<40 {                      // ~10s of first scenes
                 guard let self, let w = self.window else { return }
-                if let s = self.source.scene?.screen, s.w > 0, s.h > 0 {
+                if let s = self.source.scene?.screen.known {
                     self.didFit = true
                     let screenFit = min(1.0,
                                    min((w.screen?.visibleFrame.width ?? 1200)

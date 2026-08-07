@@ -207,9 +207,9 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                                saying so is most of what makes it feel
                                driveable rather than watched. */
                             if case .active(let pt) = phase,
+                               let where_ = point(pt, scene, geo.size),
                                let object = ObjectResolver.object(
-                                   at: point(pt, scene, geo.size),
-                                   in: scene) {
+                                   at: where_, in: scene) {
                                 hovered = object.describedForAPerson
                                 Self.cursor(for: object).set()
                             } else {
@@ -227,8 +227,9 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                                 // Same transform the renderer draws with, so
                                 // the row that lights up is the row under the
                                 // pointer at any window size.
-                                let g = guestPoint(pt, scene: scene,
-                                                   size: geo.size)
+                                guard let g = guestPoint(pt, scene: scene,
+                                                         size: geo.size)
+                                else { hoveredItem = nil; return }
                                 hoveredItem = SceneRenderer.dropdownItem(
                                     menus[idx], x: g.x, y: g.y)?.index
                             case .ended:
@@ -331,9 +332,17 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
 
     /// View point → guest point, via the same FitTransform the renderer
     /// draws with (so a click lands where the pixel is).
+    ///
+    /// **nil when the guest has not said how big its screen is**, and
+    /// every caller drops the input rather than aiming with a guessed
+    /// scale. This is the sharp end of the one-screen rule: a click
+    /// mapped through the wrong logical size lands somewhere else on the
+    /// real machine, and nothing about the miss says why.
     private func guestPoint(_ p: CGPoint, scene: MirrorKit.Scene,
-                            size: CGSize) -> (x: Int, y: Int) {
-        let logical = SceneRenderer(scene: scene).logicalSize
+                            size: CGSize) -> (x: Int, y: Int)? {
+        guard let logical = SceneRenderer(scene: scene).logicalSize else {
+            return nil
+        }
         return FitTransform(logical: logical, view: size).toGuest(p)
     }
 
@@ -360,11 +369,19 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                 /* Click-to-enter, and this is the only place that can say
                    so: the capture view sits UNDER the scene, so the press
                    a person makes to aim at the other Macintosh is caught
-                   here and never reaches the NSView. */
+                   here and never reaches the NSView.
+
+                   BEFORE the guard below, deliberately. Engaging the
+                   keyboard is about where the person aimed, not about
+                   whether this side can name a guest coordinate for it —
+                   an unknown screen would otherwise make the window
+                   silently refuse to take focus. */
                 if case .sharesWindow = keyboard { keyboardEngaged = true }
-                let start = guestPoint(value.startLocation, scene: scene,
-                                       size: size)
-                let cur = guestPoint(value.location, scene: scene, size: size)
+                guard let start = guestPoint(value.startLocation, scene: scene,
+                                            size: size),
+                      let cur = guestPoint(value.location, scene: scene,
+                                           size: size)
+                else { return }
                 // First move of this drag: decide if it's a window move or
                 // resize, and capture the window's starting rect.
                 if dragMode == nil {
@@ -423,9 +440,11 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                 let mode = dragMode
                 dragMode = nil
                 dragOutline = nil
-                let start = guestPoint(value.startLocation, scene: scene,
-                                       size: size)
-                let end = guestPoint(value.location, scene: scene, size: size)
+                guard let start = guestPoint(value.startLocation, scene: scene,
+                                            size: size),
+                      let end = guestPoint(value.location, scene: scene,
+                                           size: size)
+                else { return }
                 let moved = abs(end.x - start.x) + abs(end.y - start.y)
 
                 // An open mirror menu owns the next click.
@@ -603,9 +622,10 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
     }
 
     private func point(_ p: CGPoint, _ scene: MirrorKit.Scene,
-                       _ size: CGSize) -> Point {
-        let g = guestPoint(p, scene: scene, size: size)
-        return Point(x: g.x, y: g.y)
+                       _ size: CGSize) -> Point? {
+        guestPoint(p, scene: scene, size: size).map {
+            Point(x: $0.x, y: $0.y)
+        }
     }
 
     /// THE POINTER IS A CLAIM, so it is made deliberately and only where

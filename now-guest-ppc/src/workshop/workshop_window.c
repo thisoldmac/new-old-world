@@ -20,6 +20,7 @@
 #include "screenshots_module.h"
 #include "software_module.h"
 #include "prefs.h"
+#include "screen_bounds.h"
 #include "proc_actions.h"
 #include "workshop_layout.h"
 #include "workshop_sidebar.h"
@@ -131,16 +132,20 @@ static void compute_layout(void)
 static void standard_bounds(Rect *bounds)
 {
     Rect screen;
-    RgnHandle desktop = GetGrayRgn();
     short w = kWorkshopStdContentW;
     short h = kWorkshopStdContentH;
     short left;
     short top;
 
-    if (desktop != NULL) {
-        GetRegionBounds(desktop, &screen);
-    } else {
-        SetRect(&screen, 0, 20, 800, 600);
+    now_screen_desktop(&screen);
+    if (screen.right <= screen.left || screen.bottom <= screen.top) {
+        /* **UNKNOWN, so no clamp.** Nothing measured this machine's
+           screen, and clamping to an empty rect would produce a window
+           of nothing at all. The spec's own standard size is the honest
+           answer: it fits the screen this app was designed for, and it
+           is not a claim about the screen in front of the person. */
+        SetRect(bounds, 8, 44, (short)(8 + w), (short)(44 + h));
+        return;
     }
     if (screen.right - screen.left - 12 < w) {
         w = (short)(screen.right - screen.left - 12);

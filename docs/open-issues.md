@@ -2443,6 +2443,96 @@ dialog on the dirty `os91-runner` base and the boot continued. Either the
 rule has aged out (mac99 + `usb-kbd`) or it was always narrower than
 written. Worth a measurement, because a great deal of rig design rests on
 it.
+## FIXED: one fact about the machine, four answers, none of them asked (2026-08-07, `claude/019-one-screen-one-answer`)
+
+The guest measures its own screen and sends `scene.screen.w/h`. Exactly
+one call site read it. Four other places had decided for themselves:
+
+| Where | Said |
+| --- | --- |
+| `NOWMirrorWindow` (host) | 800x600 |
+| `ScenePoller` (MirrorKit) | 800x600 |
+| `PlatinumTheme.logicalSize` (MirrorKit) | 1024x768 |
+| `ChatSystemPrompt` (what the model is told) | 640x480 |
+
+Two more sat in the PowerPC guest as `SetRect(&screen, 0, 20, 800, 600)`
+fallbacks for a `GetGrayRgn()` that returned NULL.
+
+**Nothing was visibly wrong**, which is exactly the state AGENTS.md's
+most-repeated rule describes: *the control-frame cap lived in prose, in
+the sender, and as a different number in the receiver's buffer; nothing
+was wrong until a message grew past the smallest of the three.* The two
+800x600 defaults were both corrected in practice — the window by
+`fitToGuestScreen` on the first scene, the poller by `detectScreen()` —
+and the theme's 1024x768 was reachable only from a scene carrying no
+screen. So three of the four were latent. The fourth was not.
+
+**The chat prompt was the live one.** A model told the screen is 640x480
+while it is 800x600 aims at the wrong place and is confident about it,
+and the miss reads as an act-plane defect — which this arc has already
+spent days chasing twice. It was hedged ("the screen may be 640x480"),
+which is worse rather than better: a hedge is still a number, and the
+number was wrong on every guest this project has driven this month.
+
+### What it is now
+
+`Scene.ScreenSize` carries the vocabulary — `unknown`, `isKnown`,
+`known` — and `unknown` is a state, never a substitute. Consequences,
+each of them a refusal rather than a default:
+
+- `SceneRenderer.logicalSize` is optional. An unmeasured screen draws
+  "Screen size unknown" instead of letterboxing an invented surface.
+- `RenderShot.png` throws `screenUnknown` rather than emit a PNG at a
+  size nobody measured — that picture is what an agent reasons about.
+- `LiveMirror` drops the pointer input entirely when the scale is
+  unknown, because a click mapped through a guessed logical size lands
+  somewhere else on the real machine and nothing about the miss says so.
+- `ScenePoller.placeVolumes` places nothing without a right edge.
+- The mirror window opens at a host window size that is deliberately not
+  4:3, so a wrong aspect is visible rather than plausible.
+- The guest measures once, in `now-guest-ppc/src/core/screen_bounds.c`;
+  `scene_collect`, `main` and the Workshop all read it, and the
+  Workshop skips its clamp rather than clamp to nothing.
+
+`GuestScreenIsOneAnswerGateTests` derives both halves from source and
+maintains no list. **Read its "what this gate does NOT cover" header
+before trusting it** — notably it reads text rather than evaluating it,
+it gates the host side only, and its prompt half proves the sentence
+rather than the plumbing behind it.
+
+### Two things this arc learned the hard way
+
+- **Its own first cut passed by reading zero files.** The gate excluded
+  paths containing `/.claude/` to skip worktrees — and this checkout IS a
+  worktree under `.claude/worktrees/`, so the filter matched every file
+  in the repository. A fifth hardcoded screen size, planted in
+  `HostRootView.swift` to watch the gate fail, went unnamed. It now
+  filters on the *relative* path and asserts it scanned more than 200
+  files before reporting a finding, because **a scan that read nothing
+  passes**.
+- **Zero has to be allowed.** `ScreenSize.unknown` is written down
+  somewhere, so the scan objects only to a *plausible* size. That is a
+  hole with a name, and it is smaller than the alternative of exempting a
+  file by hand.
+
+### Still open, from the same work
+
+- **The scene IR is not in the contract.** `contract/asyncapi.yaml` has
+  no `screen` schema, no scene object at all; the only machine-readable
+  definition of `scene.screen.w/h` is MirrorKit's frozen key set in
+  `IRSchema.swift`. This lane changed no behaviour so it changed no
+  contract, but AGENTS.md's "a behaviour change starts there" cannot
+  apply to a message family the contract has never heard of.
+- **`docs/scene-deltas.md` shows `"screen": {"w": 1024, "h": 768}`** in
+  its worked example — the only place a reader learns the shape, using a
+  size no code now uses. Harmless as prose, and the gate cannot see it.
+- **`scripts/probes/qmp.py` pins the pointer against `SCREEN_W, SCREEN_H
+  = 800, 600`**, and `winact-probe.py` chooses its window geometry to fit
+  the same screen. Both declare the assumption in a comment, so they are
+  honest rather than wrong — but a probe run against a guest at another
+  resolution produces hops that are all wrong, and nothing checks.
+- The 68K guest builds no scene, so it reports its screen only as census
+  text (`"Screen", "800 x 600, 8-bit"`). Nothing structured crosses.
 
 ## BROKEN: the machine will not say what a foreign control IS, and that is not a bug we can fix in the walk (2026-08-07, `claude/018-control-semantics`)
 

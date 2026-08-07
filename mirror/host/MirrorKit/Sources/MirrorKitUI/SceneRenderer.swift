@@ -1,7 +1,8 @@
 import SwiftUI
 import MirrorKit
 
-/// Draws a `Scene` into a `GraphicsContext` on the 1024×768 logical surface.
+/// Draws a `Scene` into a `GraphicsContext` on the guest's own logical
+/// surface — the size the guest measured and sent, never one chosen here.
 /// Port of `attic/web/mirror.js` + `platinum.css`; rendering rules mirror the
 /// guest's `ui_theme.c`: only the front window gets racing stripes and
 /// widgets; dialogs (kind==2) draw modal chrome (no title bar) over the gray
@@ -91,12 +92,17 @@ public struct SceneRenderer {
         self.itemDrag = itemDrag
     }
 
-    /// The guest screen: the scene's own dimensions, falling back to the
-    /// theme default when a fixture carries none.
-    public var logicalSize: CGSize {
-        scene.screen.w > 0 && scene.screen.h > 0
-            ? CGSize(width: scene.screen.w, height: scene.screen.h)
-            : Platinum.logicalSize
+    /// The guest screen: the scene's own dimensions, and **nil when the
+    /// scene carries none**.
+    ///
+    /// There is no fallback, because there is nothing true to fall back
+    /// to. The rects in a scene are in the guest's screen space; without
+    /// that space a drawn window has no position and a click has no
+    /// destination. Callers refuse rather than draw into an invented
+    /// coordinate system — a mirror that letterboxes a guessed surface
+    /// looks right and aims wrong.
+    public var logicalSize: CGSize? {
+        scene.screen.known.map { CGSize(width: $0.w, height: $0.h) }
     }
 
     static func shouldSynthesizeAppleMenu(_ menus: [MirrorKit.Scene.Menu])
@@ -118,7 +124,13 @@ public struct SceneRenderer {
         // Fit the logical surface into the drawable — the SAME transform the
         // input inverts (FitTransform), so drawn pixels and click targets
         // register exactly.
-        let logical = logicalSize
+        guard let logical = logicalSize else {
+            /* The guest has not said how big its screen is, so every rect
+               in this scene is in a space we do not have. Say that,
+               rather than draw it somewhere plausible. */
+            drawScreenUnknown(ctx, size)
+            return
+        }
         let fit = FitTransform(logical: logical, view: size)
         var ctx = ctx
         ctx.translateBy(x: fit.offset.x, y: fit.offset.y)
@@ -195,6 +207,21 @@ public struct SceneRenderer {
                           height: CGFloat(max(0, r.b - r.t)))
         ctx.stroke(Path(rect), with: .color(Platinum.g5),
                    style: StrokeStyle(lineWidth: 2, dash: [3, 2]))
+    }
+
+    /// **Unknown, said out loud.** Not an error and not an empty mirror:
+    /// the machine may be answering perfectly while this particular fact
+    /// has not arrived. A person reading a blank grey rectangle would
+    /// reasonably conclude the guest was down.
+    private func drawScreenUnknown(_ ctx: GraphicsContext, _ size: CGSize) {
+        ctx.fill(Path(CGRect(origin: .zero, size: size)),
+                 with: .color(Platinum.g6))
+        sysCentered("Screen size unknown", ctx,
+                    centerX: size.width / 2, centerY: size.height / 2 - 8,
+                    color: .black)
+        sysCentered("Waiting for the Mac to say how big its screen is.", ctx,
+                    centerX: size.width / 2, centerY: size.height / 2 + 10,
+                    color: .black)
     }
 
     // MARK: - Text (Tier-2 bitmap, mock fallback)

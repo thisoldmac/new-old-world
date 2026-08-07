@@ -220,8 +220,15 @@ final class MirrorStateProjectionService {
         let floor = AgentIntegrationMirrorSnapshot(
             metadata: metadata(projection), coverage: coverage,
             entities: [], menus: [],
-            screen: .init(w: projection.scene.screen.w,
-                          h: projection.scene.screen.h),
+            /* ABSENT rather than zero when the guest has not said. The
+               field is optional precisely so a headless caller can tell
+               "the screen is 0x0" — which is not a thing — from "nobody
+               has measured it". Stated once here: `floor.screen` is what
+               every later pass of the shedding loop carries, so the two
+               cannot disagree. */
+            screen: projection.scene.screen.known.map {
+                .init(w: $0.w, h: $0.h)
+            },
             surfaces: [])
         let fixed = (try? JSONEncoder().encode(floor).count) ?? 0
 
