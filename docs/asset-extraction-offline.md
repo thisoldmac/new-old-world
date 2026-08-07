@@ -163,6 +163,31 @@ Manager draws Platinum chrome procedurally, and the host renderer must
 keep drawing it from the ported specification;
 [mirror-assets.md](mirror-assets.md) needed no correction.
 
+**Tabs were asked about separately, and get the same answer.** The
+2026-08-07 fidelity sweep found the Appearance and Energy Saver panels
+rendering with no tab edges in both passes, and Appearance also losing
+its "Themes"/"Appearance" tab labels — so plan 018's slice 5 re-opened
+the census specifically to look for tab art. There is none: no `PICT`
+in the file is a tab or a tab edge, and the only bitmaps are the fifteen
+listed above. What the file carries for tabs is `tvar`/`tthm`/`scen`
+and the accent `clut`s — **parameters**. `DrawThemeTab` /
+`DrawThemeTabPane` draw them at run time from those, exactly as
+`DrawThemeWindowFrame` draws the title bar.
+
+So the missing tab edges are a **renderer** gap, not an extraction gap,
+and there is nothing here for the extractor to grow. They belong to
+[plan 016](plans/2026-08-06-016-feat-platinum-from-the-source-plan.md)'s
+Appearance-answers route — ask a running `AppearanceLib` for the
+metrics — plus a host-side tab drawing routine. Recorded here rather
+than left in a session note because the next person to see a missing
+tab edge will come looking in the extractor, which is where the answer
+is not.
+
+(The blank theme *swatches* in the Appearance panel are the one part
+that could have been art: they are the fourteen 177×125 `PICT`s above.
+The pack carries `PICT` unconverted because macOS has no QuickDraw
+picture decoder — a separate, pre-existing decision, not this gap.)
+
 What the file *does* contain that is worth having is **specification,
 not art**: the 21 accent ramps are the exact eight-step colour tables the
 Appearance Manager tints highlights and selections with, and lifting
