@@ -69,6 +69,17 @@
       "reason": "Round-6 integration merge of claude/019-ext-rests-when-unused. The bake is OWED and scheduled in this same session's phase 5, after the guest prune frees the Mac (scripts/bake-ext-image --shared refuses while other guests run). Baking before the merge would have baked a pre-merge resident; the peek table's U11/U13 append collision was resolved here (P7 drag + P8 cursor keep their offsets, the rest-state trio re-sequenced to the tail) and the static asserts + peek_table native test pass against the merged header."
     },
     {
+      "at": "2026-08-07T15:57:55-0400",
+      "branch": "claude/019-cursor-follows-act",
+      "extDigest": "6ffd9d3c5777b3090697154d8f9f2ff3e7a27e00",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_act.c",
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "Baked and driven as a PRIVATE image (agent-stage/now-stage-cursor-follows-act.qcow2, sha256 e4dc794d9d61, ext fingerprint 1292d1c57887) - the mode the script documents for in-flight lane work. The shared oracle is deliberately untouched: other lanes are cloning it right now, the last bake wins, and replacing the base under them mid-arc is the exact collision --throwaway exists to remove. Bake --shared at the merge, as an announced act."
+    },
+    {
       "at": "2026-08-07T16:16:54-0400",
       "branch": "claude/019-drag-break-4",
       "extDigest": "4393b610c1ad14697e7231c9ced3244ce7f06070",
@@ -89,6 +100,17 @@
         "ext/src/now_ext_act.c"
       ],
       "reason": "Still not driven on a guest. This lane stages into its own throwaway clone and bakes before it asks to land; baking the shared oracle from source nothing has run would install a resident whose only evidence is that it compiles."
+    },
+    {
+      "at": "2026-08-07T17:05:17-0400",
+      "branch": "claude/019-integration-8",
+      "extDigest": "8c3642ac01d45a77b03ae7b4868e8e3b08d9c068",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_act.c",
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "Round 8 integration merge of claude/019-cursor-follows-act on top of claude/019-drag-break-4. Both lanes changed the resident (now_ext_act.c shared between them, plus now_ext_drag.c and now_ext_cursor.c) and both deferred their own bake with a typed reason; this merge is the first tree that holds them together, so the source it would bake from is one neither lane has driven. The --shared bake is RESERVED FOR MICHELLE and named as such in docs/plans/2026-08-07-023-recovery.md: bake-ext-image --shared refuses while any QEMU runs, the guard counts hers, and the last bake wins over every other lane still cloning the oracle. Separately the installed oracle already matches NO receipt on this branch (on-disk c466baa9, the hand-restored 3-August image) and its volumeClean is 'dirty', so nothing cloned from it is attributable today regardless of this merge. Integration does not have the standing to resolve either. peek_table.h is comment-only on this merge and peek_table_test passes; no struct size moved."
     }
   ]
 }

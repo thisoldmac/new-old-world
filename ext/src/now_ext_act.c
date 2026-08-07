@@ -67,6 +67,7 @@
 #include <stddef.h>
 
 #include "now_act_guard.h"
+#include "now_cursor_logic.h"
 
 /* P7's vehicle (now_ext_drag.c). Declared rather than headered for the
    same reason the liveness net is: this file is P4 and must not start
@@ -635,24 +636,6 @@ static int act_post_click(NowPeekActCell *cell)
         pt.v = (short)cell->click_v;
     }
 
-    /* Where the pointer is, and - new with P8 - where it LOOKS like it
-       is. This was three low-memory writes with a comment calling them
-       cosmetic; the writes are unchanged and still are cosmetic for the
-       click itself, whose `where` is stamped per event below. What is
-       not cosmetic is the second half P8 adds: the drawn cursor moving
-       to the point we are about to click on, so that a screendump is
-       evidence of WHERE we acted, software that draws relative to the
-       pointer stops being a special case, and a person watching sees a
-       machine being operated rather than a possessed one.
-
-       `owned` is 0, and that is the whole safety story: if the pointer
-       has moved since we last placed it - a person at the machine - P8
-       declines to move the sprite for a second and counts the decline,
-       while these three writes still happen so the click lands exactly
-       where the act says it does. The act never yields; only the picture
-       does. */
-    (void)now_ext_cursor_place((NowPeekI32)pt.h, (NowPeekI32)pt.v, 0u);
-
     LMSetMouseButtonState(0x00);              /* button down */
     if (PPostEvent(mouseDown, 0, &down) != noErr || down == NULL) {
         LMSetMouseButtonState(0x80);
@@ -666,7 +649,101 @@ static int act_post_click(NowPeekActCell *cell)
     }
     up->evtQWhere = pt;
     up->evtQModifiers = 0;
+
+    /* Where the pointer is, and - new with P8 - where it LOOKS like it
+       is. Three low-memory writes plus the redraw the recipe was
+       supposed to produce: a screendump becomes evidence of WHERE we
+       acted, software that draws relative to the pointer stops being a
+       special case, and a person watching sees a machine being operated
+       rather than a possessed one.
+
+       `owned` is 0, and that is the whole safety story: if the pointer
+       has moved since we last placed it - a person at the machine - P8
+       declines to move the SPRITE for a second and counts the decline,
+       while the three position writes still happen. The act never
+       yields; only the picture does.
+
+       LAST, AND THAT ORDERING IS THE FIX. It used to run first, so a
+       refused PPostEvent left the pointer sitting at a point where
+       nothing had happened - the one failure that makes this plane worse
+       than not having it, because the whole reason it exists is that a
+       person watching the screen should be able to believe the arrow.
+       Above the two returns, the press was never queued and the pointer
+       never moves.
+
+       Moving it BELOW them costs nothing, and the reason is worth
+       stating because it looks like it should. The click's `where` is
+       stamped on each queue element by hand, so it never reads these
+       globals. What does read them is the application's own tracking
+       loop - TrackControl, StillDown, GetMouse - and that runs after it
+       DEQUEUES the mouseDown, which cannot happen until this jGNE filter
+       returns. Both writes land in the same pass, ahead of every reader
+       either of them has. */
+    (void)now_ext_cursor_place((NowPeekI32)pt.h, (NowPeekI32)pt.v, 0u);
     return 1;
+}
+
+/* The window's content origin in GLOBAL coordinates, which is the frame
+ * MoveWindow's h/v are stated in and the frame every act point already
+ * uses. Read from `contRgn`'s bounding box rather than by setting a port
+ * and calling LocalToGlobal: this runs inside somebody else's jGNE
+ * filter, and a pair of pointer dereferences cannot disturb a graphics
+ * state that is not ours to save and restore.
+ *
+ * Returns 0 when the region is not there to read - a window being torn
+ * down, or one whose contRgn the Window Manager has not built yet. The
+ * caller must not guess a point from a failed read; see
+ * now_cursor_follow_window. */
+static int act_window_content_origin(WindowPtr window,
+                                     NowPeekI32 *out_h, NowPeekI32 *out_v)
+{
+    WindowPeek peek = (WindowPeek)window;
+    RgnHandle  rgn;
+
+    if (peek == NULL) {
+        return 0;
+    }
+    rgn = peek->contRgn;
+    if (rgn == NULL || *rgn == NULL) {
+        return 0;
+    }
+    *out_h = (NowPeekI32)(**rgn).rgnBBox.left;
+    *out_v = (NowPeekI32)(**rgn).rgnBBox.top;
+    return 1;
+}
+
+/* Move the window, and take the pointer with it.
+ *
+ * THE ONE ACT WHOSE TARGET TRAVELS. Everywhere else in this plane the
+ * acted point is still the right place for the arrow once the act is
+ * done, because the thing acted on has not gone anywhere. A window move
+ * is different: leave the pointer at the click point and it ends up
+ * hovering over whatever the window just uncovered, which is a more
+ * confusing picture than not moving it at all. A person drags a title
+ * bar and their hand arrives WITH the window, so the pointer travels by
+ * the same delta the window did.
+ *
+ * The delta is measured rather than assumed. MoveWindow is told where to
+ * put the window and does not promise to have done exactly that, so both
+ * origins are read off the window itself - one before, one after - and a
+ * read that fails means no placement at all. */
+static void act_place_cursor_after_move(NowPeekActCell *cell)
+{
+    WindowPtr  window = (WindowPtr)(unsigned long)cell->window_ptr;
+    NowPeekI32 old_h = 0, old_v = 0;
+    NowPeekI32 new_h = 0, new_v = 0;
+    NowPeekI32 to_h, to_v;
+    int        known;
+
+    known = act_window_content_origin(window, &old_h, &old_v);
+    MoveWindow(window, (short)cell->win_h, (short)cell->win_v, false);
+    known = act_window_content_origin(window, &new_h, &new_v) && known;
+
+    if (now_cursor_follow_window(cell->click_h, cell->click_v,
+                                 old_h, old_v, new_h, new_v,
+                                 known, &to_h, &to_v)) {
+        (void)now_ext_cursor_place(to_h, to_v, 0u);
+    }
 }
 
 /* THE PRESS EVENT, and without it nothing on this machine ever enters a
@@ -847,8 +924,7 @@ void now_ext_act_apply(NowPeekTable *table)
            repaints and queues an update event; it does not re-enter the
            Event Manager. `front` is false so the move does not also
            raise the window: one request, one effect. */
-        MoveWindow((WindowPtr)(unsigned long)cell->window_ptr,
-                   (short)cell->win_h, (short)cell->win_v, false);
+        act_place_cursor_after_move(cell);
         cell->fired = 1;
         cell->armed = kNowPeekActArmNone;
         cell->find_window_fired = 0;    /* no patch was involved */
@@ -857,6 +933,12 @@ void now_ext_act_apply(NowPeekTable *table)
         break;
     case kNowActServeSelect:
         SelectWindow((WindowPtr)(unsigned long)cell->window_ptr);
+        /* AFTER the select, and it is the same rule the click path
+           follows one function up: the pointer moves once the act has
+           actually happened, so it is never left pointing at something
+           that did not. SelectWindow is pascal void and cannot refuse,
+           so there is no error branch to guard - only the ordering. */
+        (void)now_ext_cursor_place(cell->click_h, cell->click_v, 0u);
         cell->fired = 1;
         cell->armed = kNowPeekActArmNone;
         cell->find_window_fired = 0;

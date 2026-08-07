@@ -4342,17 +4342,81 @@ remaining work for the deferred "mirror the guest's own cursor" feature
 is on the HOST — read the current `Cursor` and draw it — and that is a
 much smaller thing than it looked.
 
-### STILL BROKEN, and it is the act plane rather than this one
+### FIXED, and the cause was not where this section used to say it was (2026-08-07, `claude/019-cursor-follows-act`)
 
-**A `ctlact` places the cursor at 0,0.** The act cell's `click_h`/
-`click_v` are zero for controls the scene walk reports with real bounds,
-so P8 is asked to put the pointer at the origin and then declines because
-the origin is not where it left it. This is the SAME defect the drag lane
-found and named for the geometry lane, arriving in a second place:
-`dragpress` now takes its point from the caller and refuses rather than
-guessing, and an act still does not. Until an act carries a real point,
-**the cursor follows a drag and does not follow a click** — which is the
-half of the ask that matters most.
+This heading used to read *"a `ctlact` places the cursor at 0,0 — the act
+cell's `click_h`/`click_v` are zero"*. **That had already been fixed
+elsewhere** (`62e82470`, the lane that gave `ctlact` a point), and the
+symptom it described — the cursor follows a drag and never a click —
+carried on exactly as before, which is the whole reason it is worth
+writing down: a stale diagnosis for a live symptom is worse than no
+diagnosis, because it stops the next person looking.
+
+The act plane's points were correct. **P8 declined to use them**, always,
+on every machine, and by two compounding defects in its own yield rule:
+
+- **`gLastPlaced` is zeroed at boot.** The first placement compares the
+  real pointer against 0,0, so any pointer not resting in the very
+  top-left corner reads as a person's hand and the act yields.
+- **The yield branch then recorded the point it had just declined to move
+  to.** The device still held the pointer's true position; `gLastPlaced`
+  held a point the device had never been sent to. The two could never
+  agree again, so **one yield poisoned the rest of the boot.**
+
+Driven before the fix, private bake, pointer parked at 15,15:
+`asked 1, yielded 1`, then `asked 2, yielded 2` minutes later with the
+60-tick courtesy window long expired. `cursor at` read **311,310** — the
+target window's exact centre — the whole time. The plumbing was right and
+the picture was refused.
+
+Both halves are now one pure function each in `now_cursor_logic.c`
+(`ever_placed` is part of the foreign question; `gLastPlaced` is assigned
+only on branches that actually moved the device), watched failing by
+mutation, and driven: `asked 1, by_device 1, yielded 0`, with the sprite
+gone from 15,15 (82 pixels) and drawn at 311,310 (24) — **as an I-beam**,
+because SimpleText read `GetMouse` and chose the shape for its own text
+area.
+
+**The lesson worth keeping is about the counters.** `asked` climbing
+beside `yielded` climbing was in every report from the first day, and it
+reads as the plane working and being polite. It was the plane never
+working at all. A courtesy counter and a failure counter are the same
+number until something says which one you are looking at.
+
+### Two more this found, both fixed here
+
+- **A refused press left the pointer lying.** `act_post_click` placed the
+  cursor *before* `PPostEvent`, so a refused queue left the arrow at a
+  point where nothing had happened. It now places after both events are
+  queued — which cannot affect where the click lands, because `where` is
+  stamped per queue element, and still precedes every tracking loop,
+  because those read the globals only after dequeuing and that cannot
+  happen until the jGNE filter returns.
+- **`winact select` and `winact move` never reached P8 at all.** They
+  call the Window Manager directly and post no click, so nothing ever
+  placed a cursor for them. A `move` now carries the pointer by the delta
+  the window *actually* travelled (measured off `contRgn` either side,
+  not assumed from the request), and places nothing at all when that
+  delta cannot be read rather than inventing a point. Driven: window
+  4,40 → 200,150 carried the pointer 311,310 → 507,420.
+
+### STILL TRUE, and worth a look before the next cursor arc
+
+- **`winact` on NOW's own window never reaches the resident.** It is
+  served in-process — *"the Window Manager, called directly in this
+  process"* — so no act on NOW's own Workshop exercises any of this, and
+  the pointer does not follow it. That is defensible (the app is not the
+  machine being operated) but it is undeclared, and it means a cursor
+  test that acts on NOW's own window silently proves nothing. It cost an
+  hour here.
+- **`mouseloc` reported the working route as `none`.** `quickdraw` — the
+  only route that redraws — had no case in the switch and fell into a
+  default that printed the word the header defines as *"no vehicle: the
+  sprite is unmoved"*. Fixed by adding the case **and** by making an
+  unrecognised route print its number, so the next route added to
+  `peek_table.h` and forgotten here reads as `route 5` rather than as a
+  meaningful state. This is the enumerated-lists-rot class from AGENTS.md
+  in a switch statement, and it has no gate.
 
 ### NOT WATCHED
 

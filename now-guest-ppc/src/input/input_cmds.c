@@ -178,6 +178,7 @@ static void cursor_rows(InputRows *rows)
     const NowPeekTable *t = now_peek_table();
     const NowPeekCursorCell *c;
     const char *route;
+    char        route_unknown[24];
 
     if (t == NULL || t->magic != (NowPeekU32)kNowPeekTableMagic) {
         return;
@@ -190,11 +191,30 @@ static void cursor_rows(InputRows *rows)
         return;
     }
     c = &t->cursor;
+    /* EVERY route the header defines needs a case here, and the default
+       must not be a WORD. `quickdraw` was missing: it is the only route
+       that actually redraws the sprite, and it landed in the default,
+       so the one placement that had worked reported "none" - which the
+       header defines as "no vehicle: the sprite is unmoved". A person
+       reading `mouseloc` after a successful act was told the exact
+       opposite of what had happened, and `by_device` climbing beside it
+       was the only clue.
+
+       So an unrecognised route now reports its NUMBER. A route added to
+       peek_table.h and forgotten here then reads as "route 5", which is
+       obviously a gap in this switch, rather than as a meaningful state
+       this plane happens to have a name for. */
     switch (c->route) {
-    case kNowPeekCursorRouteDevice:  route = "device";  break;
-    case kNowPeekCursorRouteLowMem:  route = "lowmem";  break;
-    case kNowPeekCursorRouteYielded: route = "yielded"; break;
-    default:                         route = "none";    break;
+    case kNowPeekCursorRouteDevice:    route = "device";    break;
+    case kNowPeekCursorRouteLowMem:    route = "lowmem";    break;
+    case kNowPeekCursorRouteYielded:   route = "yielded";   break;
+    case kNowPeekCursorRouteQuickDraw: route = "quickdraw"; break;
+    case kNowPeekCursorRouteNone:      route = "none";      break;
+    default:
+        snprintf(route_unknown, sizeof route_unknown, "route %lu",
+                 (unsigned long)c->route);
+        route = route_unknown;
+        break;
     }
     row_add(rows, "cursor route", route);
     row_add(rows, "cursor device",

@@ -117,6 +117,9 @@ static CursorDevicePtr gDevice = NULL;
 static Point gLastPlaced;
 static unsigned long gForeignTicks = 0;
 static Boolean gBooted = false;
+/* Has this resident ever actually moved the device? Until it has,
+   gLastPlaced describes nothing and must not be compared against. */
+static Boolean gEverPlaced = false;
 /* A redraw this plane owes but could not perform where it was asked.
    The drawing route is QuickDraw and needs a real context; the drag
    vehicle runs at interrupt time and has none. So an interrupt-time
@@ -211,7 +214,8 @@ int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags)
     }
     if (now_cursor_is_foreign((NowPeekI32)raw.h, (NowPeekI32)raw.v,
                               (NowPeekI32)gLastPlaced.h,
-                              (NowPeekI32)gLastPlaced.v)) {
+                              (NowPeekI32)gLastPlaced.v,
+                              gEverPlaced ? 1 : 0)) {
         gForeignTicks = now;
     }
 
@@ -222,7 +226,19 @@ int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags)
     LMSetMouseTemp(pt);
     LMSetRawMouseLocation(pt);
     LMSetMouseLocation(pt);
-    gLastPlaced = pt;
+    /* gLastPlaced IS NOT UPDATED HERE, and that is the second half of
+       the same defect.
+     *
+       It tracks where this resident last moved the DEVICE, because the
+       device's own record is what the foreign check reads. Setting it
+       here recorded points we had decided NOT to move the device to, so
+       one yield poisoned every placement after it: the device still held
+       the pointer's real position, `gLastPlaced` held the point we
+       declined to use, the two could never agree again, and the plane
+       yielded for the rest of the boot. Driven 2026-08-07 - `asked 2,
+       yielded 2`, the two acts minutes apart and the 60-tick courtesy
+       window long expired. It is assigned on the branches below, each of
+       which has actually moved the device. */
 
     if (cell != NULL) {
         cell->seq++;                        /* odd: writing */
@@ -314,6 +330,17 @@ int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags)
         }
     }
 
+    /* Every branch above except the yield has moved the pointer - by the
+       manager where there is one, and by RawMouse where there is not,
+       which is the same global the foreign check falls back to reading.
+       So this is exactly "where we last put it", and the yield branch
+       deliberately leaves it alone: see the note beside the low-memory
+       writes for the boot this cost. */
+    if (route != kNowPeekCursorRouteYielded) {
+        gLastPlaced = pt;
+        gEverPlaced = true;
+    }
+
     if (cell != NULL) {
         cell->route = (NowPeekU32)route;
         cell->seq++;                        /* even: settled */
@@ -344,9 +371,15 @@ void now_ext_cursor_gne(NowPeekTable *table)
     gRedrawOwed = false;
     if (gDevice != NULL && gDevice->whichCursor != NULL) {
         where = gDevice->whichCursor->where;
+        /* A debt can only exist because a placement created one, so
+           gEverPlaced is necessarily true by the time this runs. It is
+           passed rather than hardcoded because the invariant is the
+           caller's and would go quiet if the debt were ever set from
+           somewhere else. */
         if (now_cursor_is_foreign((NowPeekI32)where.h, (NowPeekI32)where.v,
                                   (NowPeekI32)gLastPlaced.h,
-                                  (NowPeekI32)gLastPlaced.v)) {
+                                  (NowPeekI32)gLastPlaced.v,
+                                  gEverPlaced ? 1 : 0)) {
             return;                 /* somebody else has it now */
         }
     }
@@ -383,6 +416,7 @@ void now_ext_cursor_boot(NowPeekTable *table)
     gBooted = true;
     gLastPlaced.h = 0;
     gLastPlaced.v = 0;
+    gEverPlaced = false;
 
     /* THE CELL IS REACHED DIRECTLY HERE, and only here.
        now_ext_cursor_cell() checks `magic`, and at boot MAGIC HAS NOT
