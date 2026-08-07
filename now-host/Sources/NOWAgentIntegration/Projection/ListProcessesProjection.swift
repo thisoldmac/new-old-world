@@ -77,6 +77,8 @@ public enum ListProcessesProjection: HostProjection {
                                         ],
                                         "kind": [
                                             "type": "string",
+                                            "description":
+                                                "background means the process DECLARED it has no user interface (modeOnlyBackground in its SIZE resource) - a faceless background application, which is expected to own no windows. It does not mean \"not frontmost\"; front is a separate field.",
                                             "enum": [
                                                 "application",
                                                 "background",

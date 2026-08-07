@@ -390,6 +390,16 @@ void now_scene_collect(NowScene *out, long seq,
         if (row < 0) {
             break;                    /* assembly recorded the truncation */
         }
+        /* THE PROCESS'S OWN DECLARATION, read in the same breath as its
+           name, from the same record. `modeOnlyBackground` is the
+           'SIZE' bit a faceless background application sets to say it
+           has no user interface - so this is the process answering, not
+           us inferring, and there is deliberately no path from the walk
+           result to this field. Inferring it from "we saw no windows"
+           is the mistake that made six healthy processes read as
+           errors. */
+        now_scene_set_process_background_only(
+            out, row, (info.processMode & modeOnlyBackground) != 0);
         now_scene_set_process_incarnation(
             out, row,
             now_obs_process_fingerprint(
@@ -408,6 +418,16 @@ void now_scene_collect(NowScene *out, long seq,
         out, (process_info_failed || rows >= kSceneCollectMaxPsns
               || out->procs_truncated)
             ? kNowSceneCoveragePartial : kNowSceneCoverageComplete);
+    /* THE KIND WAS READ FOR EVERY ROW THAT EXISTS. It comes from the same
+       ProcessInfoRec as the name, so a row is in this scene exactly when
+       its kind was established - and the only way to fall short is a
+       GetProcessInformation that failed, which is already counted. Said
+       out loud rather than left implicit, because this claim is what
+       tells a consumer that an absent `backgroundOnly` means "has a
+       face" rather than "this producer does not report kinds". */
+    now_scene_set_process_kind_coverage(
+        out, process_info_failed ? kNowSceneCoveragePartial
+                                 : kNowSceneCoverageComplete);
     /* Windows front process first, then the rest in Process Manager
        order. Within a process the chain IS the stacking order and z says
        so; ACROSS processes only the front app's position is knowable

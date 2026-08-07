@@ -216,6 +216,33 @@ typedef struct {
     NowSceneAnchor anchor;        /* the verdict for this partition */
     unsigned long stamp_ticks;    /* the anchor's capture tick */
     int stale;                    /* Ok, but older than the caller's window */
+    /* THE PROCESS'S OWN DECLARATION that it has no user interface: the
+       `modeOnlyBackground` bit of its 'SIZE' resource, as the Process
+       Manager reports it in ProcessInfoRec.processMode. A faceless
+       background application - Control Strip Extension, Folder Actions,
+       an 'appe' worker - sets it, and for such a process having no
+       windows is a NORMAL, EXPECTED state rather than an unobserved one.
+       "Headless" and "faceless" are the same fact in prose; the wire
+       word is `backgroundOnly` everywhere, matching the OS bit, and
+       ProcessListing's `kind: "background"` is the enum spelling of the
+       same declaration.
+
+       THE APPLICATION MENU IS NOT A SECOND SIGNAL. Its membership is
+       this same bit, one remove away: the Process Manager omits a
+       `modeOnlyBackground` application from the Application menu, which
+       is why the mirror's own SYNTHESISED switcher listing background
+       processes read as wrong beside the real one (open-issues,
+       Cycle 20). Reading that menu back to learn what a process IS would
+       put a walked UI artifact in the path of a fact the Process Manager
+       hands over directly - and would fail for the very processes it is
+       asked about. There is one source here, and it is this field.
+
+       Never inferred from an empty window list. That inference cannot
+       tell "has no UI by design" from "we failed to look", and asserting
+       the first from the second is what made six healthy processes read
+       as `ax_oracle_not_found` errors on a good boot. 0 means the
+       process did not declare it - not that we know it has a face. */
+    int background_only;
     short window_count;           /* windows admitted for this process */
     NowSceneCoverage windows_coverage;
 } NowSceneProc;
@@ -454,6 +481,24 @@ typedef struct {
     short proc_count;
     int procs_truncated;
     NowSceneCoverage processes_coverage;
+    /* DID THIS PRODUCER ESTABLISH WHAT EACH PROCESS IS?
+       `backgroundOnly` rides the wire only when true, because 40 process
+       rows times two arrays of `,"backgroundOnly":false` is 1.8 KB
+       against a 64 KB ceiling this scene already nearly touches. That
+       makes a missing key ambiguous by itself - "has a face" and "this
+       producer never heard of the question" look identical - and a
+       consumer needs them apart or it can never report the middle state
+       (a face with nothing open) at all.
+       So the answer is given ONCE, in the vocabulary the IR already has
+       for exactly this: a `process-kind` coverage claim. `complete` means
+       every row's kind was read, so an absent key on a row means that row
+       has a face. `partial` means at least one process could not be read.
+       `unavailable` - the value a producer that never sets this leaves
+       behind - means the question was not asked, and a consumer must then
+       treat every absent key as unknown rather than as a face.
+       This is scene.h's own `_present` idiom: the looked-at-all bit lives
+       beside the data rather than being guessed from it. */
+    NowSceneCoverage process_kind_coverage;
 
     NowSceneWindow windows[kNowSceneMaxWindows];
     short window_count;
@@ -547,6 +592,21 @@ void now_scene_set_windows_coverage(NowScene *s, int proc,
  * through the add functions. */
 int now_scene_title_is_publishable(const char *title);
 int now_scene_rect_is_sane(short t, short l, short b, short r);
+/* The process's own `modeOnlyBackground` declaration (see
+   NowSceneProc.background_only). The caller passes the bit it read from
+   ProcessInfoRec.processMode; this side never derives it from window
+   counts, and there is deliberately no way to set it from a walk result.
+   No-op for an out-of-range row. */
+void now_scene_set_process_background_only(NowScene *s, int proc,
+                                           int background_only);
+
+/* Whether this producer established what each process IS - see
+   NowScene.process_kind_coverage. A producer that reads processMode for
+   every row says `complete`; one that could not read some says `partial`;
+   one that never calls this leaves `unavailable`, and its absent
+   `backgroundOnly` keys mean unknown rather than "has a face". */
+void now_scene_set_process_kind_coverage(NowScene *s,
+                                         NowSceneCoverage coverage);
 
 /* Adds a window to a process already added. Returns 1 on success, 0 when
    the scene is full (sets windows_truncated) or when `proc` is out of

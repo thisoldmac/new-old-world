@@ -28,7 +28,24 @@ public enum AppList {
         /// for it: a faceless process the Application menu would not show.
         /// Always carried, in both modes, so the row shape is stable and a
         /// consumer never has to infer it from which flag it passed.
+        ///
+        /// It is the process's own `modeOnlyBackground` declaration when the
+        /// guest sent one. It used to be `!(windows > 0 || front)`, which is
+        /// the inference this whole classification exists to remove: it said
+        /// "faceless" about SimpleText with every document closed, and about
+        /// any application whose walk failed. `presence` carries the finer
+        /// answer; this stays boolean for the callers that only need to know
+        /// whether a row belongs in a switcher.
         public var background: Bool
+        /// What this process is, and what we know about what it has —
+        /// `headless` (a kind), `windowed`, `empty` (we looked, there are
+    /// none) or `unknown` (we could not establish it, and why).
+        /// See `ProcessPresence` for why one word for three states was a
+        /// permanently-false health signal.
+        public var presence: ProcessPresence
+        /// Why, for an `unknown` row — the guest's own token where there is
+        /// one. Never a word invented here.
+        public var presenceReason: String?
         /// Windows the scene attributes to this psn. Explains the row's
         /// classification directly (`windows > 0 || front` is exactly the
         /// switchable rule). Note the Finder's desktop backdrop counts here,
@@ -39,13 +56,17 @@ public enum AppList {
         public var error: String?
 
         public init(psn: String, name: String, front: Bool,
-                    background: Bool, windows: Int, error: String? = nil) {
+                    background: Bool, windows: Int, error: String? = nil,
+                    presence: ProcessPresence = .unknown,
+                    presenceReason: String? = nil) {
             self.psn = psn
             self.name = name
             self.front = front
             self.background = background
             self.windows = windows
             self.error = error
+            self.presence = presence
+            self.presenceReason = presenceReason
         }
     }
 
@@ -60,18 +81,30 @@ public enum AppList {
     public static func rows(_ scene: Scene,
                             includeBackground: Bool = false) -> [Row] {
         let switchable = Set(switchableApps(scene).map(\.psn))
+        let established = ProcessPresence.kindsEstablished(scene)
         var windowCount: [String: Int] = [:]
         for w in scene.windows {
             windowCount[w.psn, default: 0] += 1
         }
         var out: [Row] = []
         for app in scene.apps {
-            let background = !switchable.contains(app.psn)
+            let windows = windowCount[app.psn] ?? 0
+            let verdict = ProcessPresence.classify(
+                app, windowCount: windows, kindsEstablished: established)
+            // The DECLARATION decides, and the switchable predicate is the
+            // fallback only for a guest that never sent one. Reversing that
+            // order is how an application whose walk failed, or one with
+            // nothing open, got filed as faceless and dropped from the list
+            // an agent uses to decide what it can talk to.
+            let background = app.backgroundOnly
+                ?? !switchable.contains(app.psn)
             if background && !includeBackground { continue }
             out.append(Row(psn: app.psn, name: app.name, front: app.front,
                            background: background,
-                           windows: windowCount[app.psn] ?? 0,
-                           error: app.error))
+                           windows: windows,
+                           error: app.error,
+                           presence: verdict.presence,
+                           presenceReason: verdict.reason))
         }
         return out
     }

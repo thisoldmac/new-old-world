@@ -453,6 +453,50 @@ operations:
       everywhere else in this document, and the reason the guest emits
       nothing rather than zeroes when it has no clock. Eight zeroes are a
       measurement, and would be a false one.
+      WHAT A PROCESS IS, versus what we managed to see of it. Added
+      2026-08-07 as apps[].backgroundOnly and processes[].backgroundOnly,
+      additive: an older consumer ignores the key and nothing else moves.
+      It is the process's OWN declaration that it has no user interface -
+      modeOnlyBackground in its 'SIZE' resource, as
+      ProcessInfoRec.processMode reports it - and it is the same fact
+      ProcessListing spells `kind: "background"`. Headless, faceless and
+      background-only are one thing; `backgroundOnly` is its name here.
+      SENT ONLY WHEN TRUE. Absent means the producer did not declare it,
+      which is NOT the claim that the process has a face; a consumer that
+      needs the difference must treat absence as unknown.
+      IT IS NEVER DERIVED FROM AN EMPTY WINDOW LIST, and a consumer must
+      not derive it either. That inference cannot tell "has no user
+      interface by design" from "we failed to look", and asserting the
+      first from the second is the same defect as a confidently wrong
+      pixel. The Application menu's membership is NOT a second, independent
+      signal to cross-check it against: the Process Manager populates that
+      menu from this same bit, so agreement between them is arithmetic
+      rather than evidence.
+      THREE STATES, NOT TWO, and they used to share one error word. A
+      faceless process has no windows permanently and by design
+      (backgroundOnly). An application with a face and nothing open right
+      now has none transiently, and that is an enumeration that SUCCEEDED
+      - it arrives as no error and no windows, with this process's
+      `windows` coverage claim complete. An application whose windows we
+      could not read arrives with an apps[].error token saying which
+      failure it was. Only the third is a defect. `ax_oracle_not_found`
+      answered all three until this key existed, and a producer must no
+      longer send it for a process that declared backgroundOnly: for such
+      a process there was never an anchor to find, so its absence is the
+      machine working.
+      EMPTY AND UNKNOWN ARE DIFFERENT WORDS FOR DIFFERENT FACTS, and
+      every plane in this IR says the difference the same way. EMPTY - we
+      looked, there are none - is a fact about the MACHINE, and it is a
+      coverage claim of status `complete` over a list with nothing in it.
+      UNKNOWN - we did not, or could not, establish it - is a fact about
+      US, and it is status `unavailable` with a `reason`: `no-ui` when the
+      owning process declared backgroundOnly and there was nothing there
+      to enumerate, `not-observed` when we simply did not look. A plane
+      that can be delivered late is UNKNOWN until it arrives, not empty,
+      and it says so with these same two words rather than a third that
+      names its own mechanism. HEADLESS IS NEITHER: it is a KIND, what the
+      process is, and it is carried by backgroundOnly rather than by a
+      coverage claim.
       IR V2 COLLECTION AUTHORITY. meta.coverage[] carries a typed scope,
       optional process-incarnation owner, status, and optional reason.
       Status is complete, partial, retracted, failed, stale, or unavailable.
@@ -2410,9 +2454,22 @@ components:
               kind:
                 enum: [application, background, finder]
                 description: >
-                  The responder's classification. background is a faceless
-                  process (no user windows or menu bar); finder is that
-                  machine's Finder/desktop.
+                  The responder's classification, from the process's OWN
+                  DECLARATION and never from a window count. `background`
+                  is a faceless (headless) process: it set
+                  modeOnlyBackground in its 'SIZE' resource, which is the
+                  Process Manager's record that it has no user interface,
+                  so it has no menu bar, does not appear in the
+                  Application menu, and is EXPECTED to own no windows.
+                  `finder` is that machine's Finder/desktop.
+                  It does not mean "not frontmost" - `front` is a separate
+                  field, and an ordinary application is background in that
+                  sense most of the time. And it is not the same claim as
+                  "we saw no windows for it": an application with a face
+                  and every document closed is `application`, because it
+                  can put a window up the moment someone asks, and a
+                  faceless process never will. Conflating those two is
+                  what once reported six healthy processes as errors.
               code:
                 type: string
                 description: >

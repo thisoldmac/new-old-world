@@ -211,6 +211,26 @@ const char *now_scene_proc_error(const NowSceneProc *p)
     if (p == NULL) {
         return NULL;
     }
+    /* AN ERROR WORD FOR A NORMAL CONDITION IS STILL A WRONG ANSWER.
+       `ax_oracle_not_found` means "we expected an anchor for this
+       process and there was none" - a failure to see. A process that
+       declared `modeOnlyBackground` has no user interface by design, so
+       there is nothing for an anchor to point at and its absence is the
+       EXPECTED state, not a defect. Six healthy processes on a good boot
+       (Control Strip Extension, DVD AutoLauncher, FBC Indexing
+       Scheduler, Folder Actions, tbt-appe, tbt-worker) reported that
+       token, and it is the same defect class as a confident wrong pixel:
+       an assertion of failure where the honest answer is "this process
+       has no UI by design", which `backgroundOnly` now states directly.
+
+       ONLY that one pair is suppressed. Ambiguous, Mismatch, Unreadable
+       and NoPlane are real failures whether or not the process has a
+       face - NoPlane in particular says we could not look at ANY process
+       - and a faceless process is owed those verdicts as much as any
+       other. */
+    if (p->background_only && p->anchor == kNowSceneAnchorNotFound) {
+        return p->stale ? now_scene_stale_error() : NULL;
+    }
     err = now_scene_anchor_error(p->anchor);
     if (err != NULL) {
         return err;
@@ -306,6 +326,23 @@ void now_scene_set_windows_coverage(NowScene *s, int proc,
         return;
     }
     s->procs[proc].windows_coverage = coverage;
+}
+
+void now_scene_set_process_kind_coverage(NowScene *s,
+                                         NowSceneCoverage coverage)
+{
+    if (s != NULL) {
+        s->process_kind_coverage = coverage;
+    }
+}
+
+void now_scene_set_process_background_only(NowScene *s, int proc,
+                                           int background_only)
+{
+    if (s == NULL || proc < 0 || proc >= s->proc_count) {
+        return;
+    }
+    s->procs[proc].background_only = background_only ? 1 : 0;
 }
 
 void now_scene_set_process_stamp(NowScene *s, int proc,

@@ -206,6 +206,15 @@ static void put_apps(Sink *k, const NowScene *s)
         put_str(k, p->name);
         put(k, ",\"front\":");
         put(k, p->front ? "true" : "false");
+        /* Present only when TRUE, like `isSelf` on ProcessListing: absence
+           means the process did not declare `modeOnlyBackground`, and 24
+           rows do not each pay for a false. It is the process's own
+           statement that it has no user interface - never a conclusion
+           drawn from an empty window list, which cannot tell "no UI by
+           design" from "we failed to look". */
+        if (p->background_only) {
+            put(k, ",\"backgroundOnly\":true");
+        }
         if (p->incarnation != 0) {
             put(k, ",\"incarnation\":");
             put_process_incarnation(k, p->incarnation);
@@ -254,6 +263,9 @@ static void put_processes(Sink *k, const NowScene *s)
         put(k, p->front ? "true" : "false");
         put(k, ",\"signature\":");
         put_signature(k, p->signature);
+        if (p->background_only) {
+            put(k, ",\"backgroundOnly\":true");
+        }
         if (p->incarnation != 0) {
             put(k, ",\"incarnation\":");
             put_process_incarnation(k, p->incarnation);
@@ -872,8 +884,19 @@ static const char *coverage_status(NowSceneCoverage coverage)
     }
 }
 
-static const char *coverage_reason(NowSceneCoverage coverage)
+static const char *coverage_reason(NowSceneCoverage coverage,
+                                   const NowSceneProc *owner)
 {
+    /* "not-observed" is the right word for an application we could not
+       look inside, and the WRONG one for a process that declared it has
+       no user interface: there was nothing there to observe. Same
+       status - we did not enumerate - but a consumer deciding whether a
+       gap is a defect needs the reason, and `no-ui` says the gap is the
+       machine working correctly. */
+    if (coverage == kNowSceneCoverageUnavailable
+        && owner != NULL && owner->background_only) {
+        return "no-ui";
+    }
     switch (coverage) {
     case kNowSceneCoveragePartial: return "bounded";
     case kNowSceneCoverageRetracted: return "validation";
@@ -888,7 +911,7 @@ static void put_coverage_claim(Sink *k, const char *scope,
                                const NowSceneProc *owner,
                                NowSceneCoverage coverage, int first)
 {
-    const char *reason = coverage_reason(coverage);
+    const char *reason = coverage_reason(coverage, owner);
 
     put(k, first ? "{\"scope\":" : ",{\"scope\":");
     put_str(k, scope);
@@ -917,6 +940,10 @@ static void put_coverage(Sink *k, const NowScene *s)
     }
     put(k, "[");
     put_coverage_claim(k, "processes", NULL, s->processes_coverage, 1);
+    /* ONE CLAIM FOR THE WHOLE ROSTER, and the reason `backgroundOnly` can
+       stay true-only: this says whether an absent key means "has a face"
+       or "nobody asked". See NowScene.process_kind_coverage. */
+    put_coverage_claim(k, "process-kind", NULL, s->process_kind_coverage, 0);
     for (i = 0; i < s->proc_count; ++i) {
         const NowSceneProc *p = &s->procs[i];
 

@@ -262,6 +262,18 @@ public enum IRSchema {
     // MARK: - IR v2 semantic evidence
 
     public static let v2Additions: Set<String> = [
+        /* 2026-08-07. The process's own `modeOnlyBackground` declaration:
+           it has no user interface by design, so having no windows is its
+           normal state rather than an unobserved one. Additive, and
+           deliberately three-valued on this side — absent means the
+           producer did not say, which is NOT a claim that the process has
+           a face. It replaces an inference from window counts that could
+           not tell a faceless process from an application with nothing
+           open, and an `ax_oracle_not_found` that was an error word for a
+           normal condition. */
+        "apps[].backgroundOnly",
+        "processes[].backgroundOnly",
+
         "apps[].incarnation",
         "processes[].incarnation",
         "windows[].incarnation",
@@ -331,6 +343,10 @@ public enum IRSchema {
     ]
 
     public static let v2AdditionalProperties: Set<String> = [
+        // See apps[].backgroundOnly in v2Additions.
+        "Scene.AppRef.backgroundOnly",
+        "Scene.ProcessRef.backgroundOnly",
+
         "Scene.AppRef.incarnation",
         "Scene.ProcessRef.incarnation",
         "Scene.Window.incarnation",

@@ -416,6 +416,78 @@ static void test_verdicts_reach_the_wire(void)
     check_present(out, "\"title\":\"Doc\"");
 }
 
+/* The declaration reaches the wire, and the error word it replaces does
+   not. `backgroundOnly` is present only when TRUE - absence means the
+   process declared nothing, which is NOT the same claim as "we know it
+   has a face", and an emitted `false` would make it one. */
+static void test_headless_reaches_the_wire(void)
+{
+    NowScene s;
+    char out[8192];
+    int p;
+
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    p = now_scene_add_process(&s, 0, 31, "Folder Actions", 0, 0,
+                              kNowSceneAnchorNotFound, 0);
+    (void)now_scene_add_process(&s, 0, 32, "SimpleText", 0, 0,
+                                kNowSceneAnchorNotFound, 0);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_present(out, "\"error\":\"ax_oracle_not_found\"");
+    check_absent(out, "backgroundOnly");
+    check_present(out, "\"reason\":\"not-observed\"");
+
+    now_scene_set_process_background_only(&s, p, 1);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_present(out, "\"backgroundOnly\":true");
+    check_absent(out, "\"backgroundOnly\":false");
+    /* The row that declared it drops the error; the row beside it, which
+       has a face and the same verdict, keeps it. One scene, both states,
+       so a mutation that suppresses the token globally is visible here. */
+    check_present(out, "\"error\":\"ax_oracle_not_found\"");
+    check_present(out, "\"SimpleText: ax_oracle_not_found\"");
+    check_absent(out, "Folder Actions: ");
+    /* Same coverage STATUS - we did not enumerate either - and a
+       different reason, because one gap is the machine working. */
+    check_present(out, "\"reason\":\"no-ui\"");
+    check_present(out, "\"reason\":\"not-observed\"");
+    check(well_formed(out), "still valid JSON");
+
+    /* STATE 2, and the one claim that makes it reportable at all.
+     *
+     * `backgroundOnly` is true-only on the wire - 40 rows across two
+     * arrays of `,"backgroundOnly":false` is 1.8 KB against a 64 KB
+     * ceiling this scene already nearly touches - so an absent key
+     * cannot, by itself, tell "this process has a face" from "this
+     * producer never heard of the question". A consumer that cannot tell
+     * those apart can never report EMPTY (we looked, there are none) and
+     * must say UNKNOWN forever, which loses exactly the middle state.
+     *
+     * The `process-kind` coverage claim answers it once for the whole
+     * roster: complete means every row's kind was read, so an absent key
+     * means a face. Its default is `unavailable` - a producer that never
+     * establishes kinds says so, and absence stays unknown. */
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    (void)now_scene_add_process(&s, 0, 33, "SimpleText", 0, 0,
+                                kNowSceneAnchorNoWindows, 0);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_absent(out, "backgroundOnly");
+    check_absent(out, "ax_oracle_not_found");
+    check_present(out, "\"scope\":\"process-kind\",\"status\":\"unavailable\"");
+
+    now_scene_set_process_kind_coverage(&s, kNowSceneCoverageComplete);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_present(out, "\"scope\":\"process-kind\",\"status\":\"complete\"");
+    check_absent(out, "backgroundOnly");
+
+    /* A roster with an unreadable process is PARTIAL: the rows that are
+       here had their kinds read, and a consumer is told the roster is
+       not the whole story rather than being handed a silent gap. */
+    now_scene_set_process_kind_coverage(&s, kNowSceneCoveragePartial);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_present(out, "\"scope\":\"process-kind\",\"status\":\"partial\"");
+    check(well_formed(out), "still valid JSON");
+}
+
 static void test_truncation_shows_up_in_meta(void)
 {
     NowScene s;
@@ -1167,6 +1239,7 @@ int main(void)
     test_retractions_are_reported();
     test_a_dropped_window_plane_names_its_window();
     test_verdicts_reach_the_wire();
+    test_headless_reaches_the_wire();
     test_truncation_shows_up_in_meta();
     test_overflow_fails_closed();
     test_escaping();
