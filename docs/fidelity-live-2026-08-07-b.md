@@ -27,7 +27,12 @@ Compare row for row against
 | **Host app** | `scripts/build-host-app` into `/private/tmp/f384-host`, launched `--open-mirror` with **both** `NOW_PREFS_SUFFIX=f384` and `NOW_AGENT_SOCKET_SUFFIX=f384`, listening on 15073. |
 | **Artifacts** | `/private/tmp/f384-live/` — `*-frames.jsonl` traces, `*-flicker.json` reports, guest screendumps, `LIMITS.md`. |
 
-Emulator-verified at best. Nothing here touched metal.
+Emulator-verified at best. Nothing here touched metal. `scripts/test-all`
+passed all five gates on this branch **after** the traces were taken and
+the guest was down, deliberately: an xcodebuild competing with the host
+app is exactly the kind of confound that has produced a wrong number in
+this repository before, and the 700-second idle trace is the one
+measurement it would have corrupted invisibly.
 
 **Also running on this Mac during these traces**, named because a shared
 machine is part of a measurement's rig: `claude/019-sweep-d`'s own VM and
