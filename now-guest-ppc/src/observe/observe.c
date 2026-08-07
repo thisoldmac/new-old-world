@@ -1016,12 +1016,23 @@ void now_observe_handle_command(const char *request_json, long id, char *out,
             fail(out, cap, id, "overflow", "handle window");
             return;
         }
+        /* `defProc` is the RAW `contrlDefProc` longword and `variant` is
+           the Control Manager's own answer for this control. They are
+           here because the scene reports only the CONCLUSION of the CDEF
+           route - `derived`, and a kind - and on 2026-08-07 that
+           conclusion was wrong for every control of the button family in
+           every OS 9 control panel, with nothing in any document to say
+           so. A reader could see "pushButton" and could not see that the
+           variation code behind it had never been read. One control's
+           two source numbers, printed beside the conclusion, is what
+           tells a mis-read variant from an unreadable one. */
         if (handle.control != NULL
             && !append(out, cap, &used,
                        ",\"element\":{\"title\":\"%s\",\"visible\":%s,"
                        "\"enabled\":%s,\"bounds\":{\"left\":%d,\"top\":%d,"
                        "\"right\":%d,\"bottom\":%d},\"value\":%d,"
-                       "\"min\":%d,\"max\":%d}",
+                       "\"min\":%d,\"max\":%d,"
+                       "\"defProc\":\"0x%08lX\",\"variant\":%d}",
                        control_title,
                        handle.detail.control.visible ? "true" : "false",
                        handle.detail.control.enabled ? "true" : "false",
@@ -1031,7 +1042,9 @@ void now_observe_handle_command(const char *request_json, long id, char *out,
                        (int)handle.detail.control.bottom,
                        (int)handle.detail.control.value,
                        (int)handle.detail.control.min,
-                       (int)handle.detail.control.max)) {
+                       (int)handle.detail.control.max,
+                       (unsigned long)handle.detail.control.def_proc,
+                       (int)GetControlVariant(handle.control))) {
             fail(out, cap, id, "overflow", "handle element");
             return;
         }
