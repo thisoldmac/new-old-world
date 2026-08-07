@@ -14,6 +14,15 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+**There is a third category, and it is not on this page.**
+[known-wrong.md](known-wrong.md) is the register of things NOW knowingly
+ships that disagree with the machine, or knowingly does not do — each
+with the measurement, the argument for leaving it, what closing it would
+cost, and who decided. Several of its rows draw their evidence from
+entries here and link back rather than restating them. The split is by
+what the reader is being told: broken-or-unverified means nobody chose
+this, and a row over there means somebody did.
+
 ## OPEN: a lane can revert a sibling's work in a commit whose message never mentions it (2026-08-07, round 7 integration)
 
 **Verification level: TESTED.** Found by reading a merge, not by any gate,
