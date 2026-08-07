@@ -483,6 +483,50 @@ of a 68030 — a NOW-68K with a Mirror page would want the same button.
 And there is deliberately no verb the other way: the host drives the
 guest's windows through the act plane, and a `guest.show` would be a
 second, weaker route into it.
+## FIXED: rig ports were assigned by hand, and three lanes paid for it in one day (2026-08-07)
+
+
+A dozen parallel lanes each wanted a guest VM and a host app, and the
+ports came one pair at a time from whichever session was coordinating —
+1700/5250, 1710/5260, up to 1890/5440. It held only for as long as one
+session held every allocation in its head, and on 2026-08-06 it failed
+three ways: a lane could not stage because 1840 was held by a VM orphaned
+by a host crash and lost its run; `HostMachineGuardTests` went red for
+lane after lane over a *neighbour's* QEMU; and an agent then re-diagnosed
+that three separate ways, because a busy machine looks exactly like a
+defect in your own change.
+
+`tools/lane-ports` derives a block of eight ports from the worktree path
+— hash first (so a wiped registry moves nobody), `O_EXCL` claim file
+second (so a collision is stepped past rather than shared).
+`scripts/spin-up-ppc` defaults to it and records the VM's QMP socket path
+*before* it boots. Both machine guards now say whose a held port is —
+your own block, another lane's, or unattributable — and none of them was
+made more permissive. [docs/lane-ports.md](lane-ports.md) is the whole
+scheme and the alternatives weighed against it.
+
+**Still open, and named here rather than fixed:**
+
+- **`/private/tmp/nowvm-*` from before the scheme.** 4.7 GB of run
+  directories on 2026-08-07, two of them with a live QEMU holding the
+  disk. `lane-ports gc` reaps the ones a claim records and *reports* the
+  rest, deliberately: an idle run directory between two boots looks
+  exactly like an abandoned one, and deleting somebody's mid-flight clone
+  to reclaim disk would be the 2026-08-03 mistake in a different
+  currency. Somebody has to ask, once.
+- **The host suite still shares one log file.** `HostLog.openFile` writes
+  `~/Library/Logs/now-logs/<stamp>.log`, and the stamp is not per-process,
+  so two concurrent `swift test` runs interleave into one file —
+  `HostLogTests`, `LoggingSpecTests` and `HostProjectionAuditTests` fail
+  transiently when two lanes overlap. Not touched here: it is product
+  code, not rig, and the fix (a per-process suffix, or an env override the
+  suite sets) wants its own change.
+- **This machine has no `.env.lab` in `now/` itself**, only inside a
+  sibling worktree — so every lane's `scripts/build-guests` still skips.
+  The lookup is fixed (a worktree now uses the main worktree's file, and
+  with one in place this worktree went from 6 SKIPPED to 6 ok in 7.8 s),
+  but the file has to be put there once, by hand, by somebody who owns
+  the desk.
 
 ## FIXED: the live render was worse than every fixture render, and no gate could see it (2026-08-06, evening)
 

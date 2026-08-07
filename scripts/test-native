@@ -219,6 +219,8 @@ run_py_path tools/mirror-gate-tests/test_shot_explicit_oracle.py
 run_py_path tools/mirror-gate-tests/test_mirror_parity_inventory.py
 run_py_path tools/mirror-gate-tests/test_legacy_mirror_retirement.py
 run_py_path tools/mirror-gate-tests/test_spin_up_ppc_shutdown.py
+run_py_path tools/mirror-gate-tests/test_lane_ports.py
+run_py_path tools/mirror-gate-tests/test_build_guests_env.py
 run_py_path tools/mirror-gate-tests/test_qemu_memory_oracle.py
 # The flicker instrument's arithmetic (tools/fidelity-live.py). It needs
 # no VM: the analyser is a pure function over a frame sequence, and the
