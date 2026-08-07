@@ -79,6 +79,16 @@
         "ext/src/now_ext_drag.c"
       ],
       "reason": "Unverified checkpoint banked against session loss, not a landing. The resident change (now_drag_begin_to's destination seed) has not been driven on any guest yet; baking the shared oracle from source nothing has run would install a resident whose only evidence is that it compiles. This lane stages into its own throwaway clone first and bakes before it asks to land."
+    },
+    {
+      "at": "2026-08-07T16:26:42-0400",
+      "branch": "claude/019-drag-break-4",
+      "extDigest": "8cf3e0e258a189c8681cad9b880de4a7751355ce",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_act.c"
+      ],
+      "reason": "Still not driven on a guest. This lane stages into its own throwaway clone and bakes before it asks to land; baking the shared oracle from source nothing has run would install a resident whose only evidence is that it compiles."
     }
   ]
 }

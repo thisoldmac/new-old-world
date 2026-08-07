@@ -76,7 +76,8 @@
 extern int now_ext_drag_press(NowPeekTable *table, NowPeekU32 session,
                               NowPeekU32 target_a5, NowPeekI32 h,
                               NowPeekI32 v, NowPeekU32 idle_asked,
-                              NowPeekU32 cap_asked);
+                              NowPeekU32 cap_asked, int have_to,
+                              NowPeekI32 to_h, NowPeekI32 to_v);
 extern NowPeekDragCell *now_ext_drag_cell(NowPeekTable *table);
 extern void now_ext_drag_abandon(NowPeekTable *table);
 #include "peek_table.h"

@@ -1756,7 +1756,8 @@ void now_act_run_dragpress(const char *request_json, long id,
     row_add(&rows, "Dispatch", "pressed");
     row_add(&rows, "Point from", have_point ? "the caller" : "the resolver");
     if (have_to) {
-        row_addf(&rows, "To", "%ld,%ld", to_h, to_v);
+        row_addf(&rows, "To h", "%ld", to_h);
+        row_addf(&rows, "To v", "%ld", to_v);
     } else {
         row_add(&rows, "To", "nowhere - no toH/toV, so no item moves");
     }
