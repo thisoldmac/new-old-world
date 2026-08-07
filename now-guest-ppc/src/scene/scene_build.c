@@ -523,6 +523,30 @@ void now_scene_retract_controls(NowScene *s, int window)
     w->control_count = 0;
     w->first_control = 0;
     s->controls_truncated = 1;        /* never a silent drop */
+    /* ...and never an ANONYMOUS one. The scene-wide flag above says a
+       window lost its controls; this says which. Set here rather than at
+       the call sites so a new one cannot forget it. */
+    w->walk_verdict = w->walk_verdict == kNowSceneWalkDialogItemsRetracted
+                    ? kNowSceneWalkControlsAndItemsRetracted
+                    : kNowSceneWalkControlsRetracted;
+}
+
+void now_scene_set_walk_verdict(NowScene *s, int window, short verdict)
+{
+    NowSceneWindow *w = window_at(s, window);
+
+    if (w != NULL && w->walk_verdict != kNowSceneWalkOk) {
+        w->walk_verdict = verdict;
+    }
+}
+
+void now_scene_note_window_unreadable(NowScene *s, int window)
+{
+    NowSceneWindow *w = window_at(s, window);
+
+    if (w != NULL) {
+        w->walk_verdict = kNowSceneWalkRecordUnreadable;
+    }
 }
 
 int now_scene_open_dialog_items(NowScene *s, int window)
@@ -607,6 +631,9 @@ void now_scene_retract_dialog_items(NowScene *s, int window)
     w->dialog_item_count = 0;
     w->first_dialog_item = 0;
     s->dialog_items_truncated = 1;
+    w->walk_verdict = w->walk_verdict == kNowSceneWalkControlsRetracted
+                    ? kNowSceneWalkControlsAndItemsRetracted
+                    : kNowSceneWalkDialogItemsRetracted;
 }
 
 void now_scene_set_window_text(NowScene *s, int window, const char *content,
