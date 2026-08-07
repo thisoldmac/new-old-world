@@ -155,6 +155,25 @@ Both: comments say **why**, not what. Match the surrounding density.
   is reclaimable by its owner alone (`tools/lane-ports reclaim` — through
   QMP by socket path, never `kill` on what `lsof` named).
   [docs/lane-ports.md](docs/lane-ports.md).
+- **An instrument that READS a live machine must assert that the plane
+  armed** — the same shape of rule as the two above, and it has already
+  cost this project four durable sentences. A metal gate asks *which
+  build answered* because the alternative reads green having reached
+  nothing; an observing rig must ask *was there anything to see*,
+  because the alternative reports absence and defect in the same words.
+  Integration rounds 2 and 3 rendered over a scene envelope, and
+  `SceneBuilder.normalizeWindows` sets `display: nil` unconditionally —
+  so no interior was ever on disk, every window looked empty, and the
+  emptiness was written down as four separate render defects. The check
+  is cheap and it is about the ARTIFACT, not the intent: a stored
+  capture proves the content plane was reachable only if it wrote a
+  drain, whatever the guest was doing. **"I armed it" is not the
+  assertion; "the artifact carries it" is.** The dated correction is in
+  [docs/open-issues.md](docs/open-issues.md) and the re-derivation in
+  [docs/fidelity-sweep-2026-08-07-c.md](docs/fidelity-sweep-2026-08-07-c.md).
+  Its companion: **a count you did not derive is not evidence** — the
+  honest unit is the store you can check, not sentences agreeing with
+  each other across five documents.
 - `GuestWireConformanceTests` reads `now-guest-ppc/src/**/*.c` and checks every
   message the guest can emit against this side's decoder and the
   contract's required fields. **If you add a message built across

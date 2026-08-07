@@ -14,6 +14,99 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## CORRECTION: four sentences on this page cite a render that could not have falsified them (2026-08-07, `claude/019-correct-round3-prose`)
+
+Nothing on this page is corrected by editing it, so this entry names the
+sentences rather than touching them. Named by their entry, because a
+line number in an append-only file rots the next time anyone appends —
+these were `:228`, `:527`, `:631` and `:1123` when Sweep C found them
+and are not those now. **Read this before quoting any of them:**
+
+| Entry | The sentence |
+|---|---|
+| *WAS BROKEN, FIXED … a classified control the renderer will not draw* (`019-integration-4`) | *"This is why the panel has had no group boxes, no static text and no field values in **both** rounds"* |
+| *BROKEN: the integrated render at round 3* (`019-integration-3`) | the Date & Time row — *"Still **no group boxes at all**… there is nothing to draw them as"* — the origin |
+| *BROKEN: the machine will not say what a foreign control IS* (`018-control-semantics`) | *"**This is also why Date & Time renders with no group boxes.**"* |
+| *BROKEN: a FOREIGN process's controls have no determined kind* (`019-integration-2`) | *"**Date & Time has no group boxes.**… render as nothing at all"* |
+
+One sentence outside this file — `render-composition.md`'s *"no group
+boxes in any sweep"* — is a claim about the product rather than a dated
+ledger line, and **was corrected in place** in the same commit.
+
+**What is corrected is the evidence, not the conclusion, and the two are
+different edits.** Conflating them is how the error was made in the
+first place.
+
+**The semantic defect is REAL and STANDS.** A DITL row and its
+ControlRecord are one object seen twice; the tie was broken by asking
+the control alone for `knowledge == .known`, `derived` failed that, and
+twenty of Date & Time's twenty-one classified controls lost to dialog
+items carrying `kind: null`, so a group box never reached `drawGroup`.
+Named code path, broken comparison, fix (`semanticOutranks`), mutation
+that fails naming it. Do not read this entry as a retraction of that.
+
+**What is VOID is the pixel evidence offered for it.**
+`SceneBuilder.normalizeWindows` sets `display: nil` **unconditionally**
+(`mirror/host/MirrorKit/Sources/MirrorKit/SceneBuilder.swift:285`, the
+sole occurrence in that function, no branch), so an interior reaches a
+render only on a *second* artifact — the `qdtrace` drain. Rounds 2 and 3
+were **pair captures**, not sweeps: both stores hold `manifest.json` and
+`<slug>-guest.png`, six renders each, and **zero drains**. Round 3's own
+method note says the path independently — *"host render via `MirrorApp
+--render-scene` over the same envelope"*. So those renders show no
+machine-drawn interior whatever the semantics do, and citing them *"in
+both rounds"* proves nothing either way. Derived from the artefact
+stores rather than from prose;
+[fidelity-sweep-2026-08-07-c.md](fidelity-sweep-2026-08-07-c.md) carries
+the store fingerprints and the discriminating hatch strings.
+
+**Two things this does NOT void, said plainly because the temptation is
+to over-retract:**
+
+- **Round 4's mechanism finding stands.** It was derived by reading the
+  scene JSON — twenty controls sharing a `ref` with an untyped dialog
+  item — not from a picture. Only its closing sentence *"this is why the
+  panel has had no group boxes … in both rounds"* is the void
+  attribution.
+- **Sweep A's Finder hatch stands.** Sweep A is a sweep, it has drains,
+  and *"Bitmap unavailable"* is emitted inside `DisplayReplay`
+  (`DisplayReplay.swift:835`), which cannot run without a drain — so
+  that caption is positive proof the capture had one.
+
+**And one claim was outright wrong, in the direction nobody checked.**
+`render-composition.md` said the panel had no group boxes **"in any
+sweep"**. That was never derived from a sweep. Neither
+`fidelity-sweep-2026-08-07-a.md` nor `-b.md` contains the phrase "group
+box" at all, and **two 2026-08-06 sweeps — sweeps, with drains, on the
+same panel — say the opposite in as many words**:
+
+- [fidelity-sweep-2026-08-06.md](fidelity-sweep-2026-08-06.md), row 1 —
+  Date & Time is *"the best window in the sweep. Every group box, button
+  and label within a pixel or two"*.
+- [fidelity-sweep-2026-08-06-b.md](fidelity-sweep-2026-08-06-b.md), row
+  1 — after the DITL-silencing fix, 3/3/2/3/3 and *"both group boxes,
+  the time-zone sentence and the time-server line are all back"*.
+
+Two sweeps in the same directory contradicted the sentence, and one of
+them was the A-side baseline everything else in that family is measured
+against. **The word "any" was doing work no one had checked.** This is
+the enumerated-list failure AGENTS.md describes, in its cheapest form: a
+universal quantifier is an enumeration, and nothing enumerated it.
+
+**The lesson, which is the part worth keeping.** The claim spread from
+one row of one round to four durable sentences without anyone
+re-deriving it, and each restatement read as corroboration of the one
+before. Two rules follow, both already this repository's shape:
+
+- **A count — or an appearance — you did not derive is not evidence.**
+  The honest unit is the artefact store, which is checkable, not
+  sentences agreeing with each other across five documents.
+- **A live-reading instrument must assert that the plane armed**, the
+  way a metal gate asserts which build answered. An instrument that
+  cannot tell you whether it was looking at anything reports absence and
+  defect in the same words. Written into AGENTS.md beside the metal-gate
+  rules in this commit.
+
 ## LOOK: round 5's five checks, and the one thing four lanes claimed that a picture had to settle (2026-08-07, `claude/019-integration-5`)
 
 Emulator-capture-verified, on the lane's own VM (block 591, anchor 16728 /

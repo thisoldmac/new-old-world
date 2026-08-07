@@ -296,9 +296,23 @@ fixing them as four local rules is how four rules come to disagree.
   tie is a COMPARISON.** It used to be broken by asking the control
   alone for `knowledge == .known`; `derived` failed that, so twenty of
   Date & Time's twenty-one controls lost to dialog items carrying
-  `kind: null` — which is why that panel has had no group boxes in any
-  sweep, and why the Charcoal strike could not be seen in their titles
-  even after the string began arriving whole. `semanticOutranks` asks
+  `kind: null` — so a group box the walk had classified never reached
+  `drawGroup`, and the Charcoal strike could not be seen in a title the
+  untyped row drew in its place. The defect is the comparison, and the
+  evidence for it is the code path and a mutation that fails naming it.
+  **It is not the integrated renders of rounds 2 and 3**: those were
+  taken over a scene envelope, `SceneBuilder.normalizeWindows` sets
+  `display: nil` unconditionally, and both stores hold zero drains — so
+  no interior was ever on disk and the picture would look the same
+  either way. An earlier revision of this line said the panel had *"no
+  group boxes in any sweep"*; that was never derived from a sweep. The
+  2026-08-06 sweep — a sweep, with drains — scored Date & Time its best
+  window, *"every group box, button and label within a pixel or two"*,
+  and its B side found them *"all back"* after the DITL fix. (The full
+  re-derivation is in
+  [fidelity-sweep-2026-08-07-c.md](fidelity-sweep-2026-08-07-c.md) and
+  the dated correction in [open-issues.md](open-issues.md).)
+  `semanticOutranks` asks
   which side knows more. `scene-ie-error-alert` has the opposite shape
   (`unknown` controls beside `known pushButton` items) and still loses,
   which is the point of asking rather than thresholding.
