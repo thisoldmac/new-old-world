@@ -309,6 +309,66 @@ final class MirrorStateProjectionServiceTests: XCTestCase {
         XCTAssertEqual(unplaced.state, "unplaced")
     }
 
+    /// **A list row is 16x16 at a 19-px pitch, and a 32x44 box spans three of
+    /// them.** Lane B made every item's rect a real 32x32 target; this is the
+    /// half it named and did not ship — the size is the Finder's own, so a
+    /// window drawing rows stops being projected as icons on a grid.
+    ///
+    /// The numbers are the ones the Finder answered for Macintosh HD in
+    /// `name` view on 2026-08-07 (mac99 / OS 9.1), beside a screendump.
+    func testAListViewsRowsProjectAsRowsAndNotAsIconBoxes() async throws {
+        let document = #"""
+        {
+          "version":2,"seq":11,"capturedAt":11,"source":"peek",
+          "screen":{"w":800,"h":600},
+          "apps":[{"psn":"0.3","name":"Finder","front":true,
+                   "incarnation":"process-finder"}],
+          "processes":[{"psn":"0.3","name":"Finder","front":true,
+                        "signature":"MACS",
+                        "incarnation":"process-finder"}],
+          "menubar":{"app":"Finder","menus":[]},
+          "windows":[{
+            "id":"0.3/Macintosh HD#0","app":"Finder","psn":"0.3",
+            "title":"Macintosh HD",
+            "rect":{"l":48,"t":83,"r":452,"b":321},
+            "front":true,"z":0,"visible":true,"controls":[],
+            "ref":"hd-ref",
+            "incarnation":"process-finder/window-hd",
+            "items":[
+              {"name":"Applications (Mac OS 9)","kind":"folder","type":null,
+               "creator":null,"x":22,"y":43,"w":16,"h":16,"placed":true,
+               "alias":false,"invisible":false},
+              {"name":"Documents","kind":"folder","type":null,
+               "creator":null,"x":22,"y":62,"w":16,"h":16,"placed":true,
+               "alias":false,"invisible":false}
+            ]
+          }],
+          "meta":{"errors":[],"coverage":[]}
+        }
+        """#
+        let registry = MirrorStateEngineRegistry()
+        _ = registry.engine(for: key).accept(try JSONDecoder().decode(
+            Scene.self, from: Data(document.utf8)))
+
+        let result = await service(registry).read(.init(intention: .snapshot))
+        let surface = try XCTUnwrap(result.value?.snapshot?.surfaces.first)
+        let first = try XCTUnwrap(surface.items.first {
+            $0.title == "Applications (Mac OS 9)"
+        })
+        let rect = try XCTUnwrap(first.rect)
+        XCTAssertEqual(rect.l, 22)
+        XCTAssertEqual(rect.t, 43)
+        XCTAssertEqual(rect.r, 38, "the Finder's own right edge")
+        XCTAssertEqual(rect.b, 59, "and its bottom — not 43 + 32 + 12")
+
+        let second = try XCTUnwrap(surface.items.first {
+            $0.title == "Documents"
+        })
+        XCTAssertLessThanOrEqual(rect.b, try XCTUnwrap(second.rect).t,
+                                 "two rows that overlap are one click that "
+                                 + "can select either file")
+    }
+
     func testDesktopIconsAreCarriedAndNotReportedAsAnEmptyWindow()
         async throws {
         let document = #"""

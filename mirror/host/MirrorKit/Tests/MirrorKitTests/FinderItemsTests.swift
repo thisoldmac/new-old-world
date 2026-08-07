@@ -233,4 +233,126 @@ final class FinderItemsTests: XCTestCase {
               desktopItems: nil,
               meta: .init(latencyMs: nil, bytes: nil, errors: [], plane: nil))
     }
+
+    // MARK: - The list view (measured 2026-08-07, mac99 / OS 9.1)
+    //
+    // Macintosh HD in `name` view, ten rows, window bounds 48,103,452,321.
+    // The Finder's own answers, taken beside a screendump of the window:
+    //
+    //   Applications (Mac OS 9)  bounds 22,43,38,59   position 194,42
+    //   Documents                bounds 22,62,38,78   position 386,42
+    //   Late Breaking News       bounds 22,81,38,97   position   2,66
+    //   System Folder            bounds 22,119,38,135 position   2,42
+    //   TimBotTu                 bounds 22,214,38,230 position 386,66
+    //
+    // Two facts the code now depends on, and both are in that table: the row
+    // pitch is 19 px, and `position` describes a three-column icon grid the
+    // window is not drawing.
+
+    /// The row icons are 16x16, not 32x32 — and the whole defect is what
+    /// happens when a reader assumes otherwise at a 19-px pitch.
+    func testAListRowsTargetIsTheRowAndNotAnIconBox() {
+        let row = Scene.DesktopItem(
+            name: "Applications (Mac OS 9)", kind: "folder", type: nil,
+            creator: nil, x: 22, y: 43, placed: true, alias: false,
+            invisible: false, w: 16, h: 16)
+        let size = HitTester.targetSize(row)
+        XCTAssertEqual(size.w, 16)
+        XCTAssertEqual(size.h, 16, "a row's name is drawn BESIDE the icon, so "
+                       + "the label height belongs to the icon view alone; "
+                       + "adding it here reaches into the next row")
+        XCTAssertLessThan(size.h, 19, "the Finder's measured row pitch — a "
+                          + "target taller than this can select two files")
+    }
+
+    /// An icon-view icon keeps the label under it, which is what the Finder
+    /// draws and what a click on a name selects.
+    func testAnIconViewIconKeepsItsLabel() {
+        let icon = Scene.DesktopItem(
+            name: "System Folder", kind: "folder", type: nil, creator: nil,
+            x: 34, y: 25, placed: true, alias: false, invisible: false,
+            w: 32, h: 32)
+        let size = HitTester.targetSize(icon)
+        XCTAssertEqual(size.w, 32)
+        XCTAssertEqual(size.h, 32 + HitTester.iconLabelHeight)
+    }
+
+    /// An item whose producer never asked the Finder for a size answers
+    /// exactly what every reader assumed before the field existed. Older
+    /// fixtures decode unchanged; nothing that was right becomes wrong.
+    func testAnItemWithNoMeasuredBoxKeepsTheOldIconAssumption() {
+        let size = HitTester.targetSize(Self.item("legacy", 53, 25))
+        XCTAssertEqual(size.w, HitTester.iconSize)
+        XCTAssertEqual(size.h, HitTester.iconSize + HitTester.iconLabelHeight)
+    }
+
+    /// The click point for a list row must land IN that row. Computed from a
+    /// constant 32/2 it fell 16 px down a 16-px row — past the 19-px pitch and
+    /// into the next file, which is a wrong selection rather than a miss.
+    func testAListRowsClickPointStaysInsideItsOwnRow() throws {
+        let win = Self.folderWindow(items: [
+            .init(name: "Applications (Mac OS 9)", kind: "folder", type: nil,
+                  creator: nil, x: 22, y: 43, placed: true, alias: false,
+                  invisible: false, w: 16, h: 16),
+        ])
+        let point = try XCTUnwrap(FinderItems.clickPoint(win.items![0],
+                                                         in: win))
+        let origin = FinderItems.contentOrigin(win)
+        let localY = point.y - origin.y
+        XCTAssertGreaterThanOrEqual(localY, 43)
+        XCTAssertLessThan(localY, 43 + 19,
+                          "past the row pitch is the NEXT file, and a click "
+                          + "that selects the wrong file is the failure this "
+                          + "lane exists to remove")
+        XCTAssertEqual(point.x - origin.x, 30, "22 + 16/2")
+    }
+
+    /// Two adjacent rows resolve to themselves. One box that reached into the
+    /// next row would make the later item win both points, because the hit
+    /// tester takes the last match in draw order.
+    func testAdjacentListRowsDoNotShadowEachOther() {
+        let win = Self.folderWindow(items: [
+            .init(name: "Applications (Mac OS 9)", kind: "folder", type: nil,
+                  creator: nil, x: 22, y: 43, placed: true, alias: false,
+                  invisible: false, w: 16, h: 16),
+            .init(name: "Documents", kind: "folder", type: nil, creator: nil,
+                  x: 22, y: 62, placed: true, alias: false, invisible: false,
+                  w: 16, h: 16),
+        ])
+        let origin = FinderItems.contentOrigin(win)
+        XCTAssertEqual(HitTester.windowItem(win, x: origin.x + 30,
+                                            y: origin.y + 50)?.name,
+                       "Applications (Mac OS 9)")
+        XCTAssertEqual(HitTester.windowItem(win, x: origin.x + 30,
+                                            y: origin.y + 69)?.name,
+                       "Documents")
+    }
+
+    /// The script asks for the box, and asking for the position is the bug.
+    func testTheWindowsScriptAsksForBoundsAndNotPosition() {
+        let script = FinderItems.windowsScript()
+        XCTAssertTrue(script.contains("set q to bounds of t"))
+        XCTAssertFalse(script.contains("position of"),
+                       "`position` is the SAVED icon grid in a list view, "
+                       + "which is a layout the window is not drawing")
+    }
+
+    /// Four numbers is a box; two is an older record with no size. Anything
+    /// else is a partial read of a truncated result and is dropped — a half
+    /// coordinate is a plausible lie.
+    func testParseReadsABoxAndStillReadsABarePosition() {
+        let box = FinderItems.parse(
+            "W|Macintosh HD|Macintosh HD:;;I|Documents|22,62,38,78;;")
+        XCTAssertEqual(box.first?.items.first?.x, 22)
+        XCTAssertEqual(box.first?.items.first?.y, 62)
+        XCTAssertEqual(box.first?.items.first?.w, 16)
+        XCTAssertEqual(box.first?.items.first?.h, 16)
+
+        let bare = FinderItems.parse("W|T|T:;;I|old|53,25;;")
+        XCTAssertEqual(bare.first?.items.first?.x, 53)
+        XCTAssertNil(bare.first?.items.first?.w)
+
+        let partial = FinderItems.parse("W|T|T:;;I|torn|22,62,38;;")
+        XCTAssertTrue(partial.first?.items.isEmpty ?? false)
+    }
 }
