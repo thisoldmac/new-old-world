@@ -246,6 +246,51 @@ final class IslandRenderTests: XCTestCase {
                        "CopyBits placeholders must remain behind structured ops")
     }
 
+    /// **The render never prints text the machine truncated.**
+    ///
+    /// NOW's own Workshop sidebar is 92 points wide, so the Workshop
+    /// calls `TruncString` and the guest's screen reads "Capture and
+    /// stre…". The mirror printed "Capture and stream" — the DITL row's
+    /// untruncated title, drawn because the row silenced the drawn run
+    /// beneath it. Plan 018 slice 16 ranked it the most dangerous of the
+    /// five defects for the reason it is easiest to miss: it looks like
+    /// an improvement.
+    ///
+    /// Stated as a difference so it cannot be satisfied by drawing
+    /// nothing: the row must render exactly as it does with no DITL at
+    /// all (the ink alone), and NOT as it does with no drawing at all
+    /// (the label alone).
+    func testTheRenderNeverPrintsTextTheMachineTruncated() throws {
+        let r = Rect(l: 100, t: 100, r: 500, b: 400)
+        var run = DisplayOp(op: "text", ticks: 1)
+        run.text = "Capture and stre…"
+        run.pen = [39, 35]
+        run.font = 3
+        run.size = 10
+        let row = Rect(l: 39, t: 25, r: 131, b: 39)
+        let label = Scene.DialogItem(
+            number: 1, title: "Capture and stream", rect: row,
+            enabled: true, visible: true,
+            semantic: .init(knowledge: .known, kind: "staticText",
+                            completeness: .complete))
+
+        var inkOnly = window(title: "New Old World", front: true, z: 0,
+                             rect: r, island: nil)
+        inkOnly.display = [run]
+        var labelOnly = inkOnly
+        labelOnly.display = []
+        labelOnly.dialogItems = [label]
+        var both = inkOnly
+        both.dialogItems = [label]
+
+        XCTAssertEqual(try RenderShot.png(scene: scene([both])),
+                       try RenderShot.png(scene: scene([inkOnly])),
+                       "the machine's own truncated run is what renders")
+        XCTAssertNotEqual(try RenderShot.png(scene: scene([both])),
+                          try RenderShot.png(scene: scene([labelOnly])),
+                          "and it is not the row's untruncated title")
+    }
+
     /// **A semantic control does not silence the machine's own drawing —
     /// it draws over it.**
     ///
