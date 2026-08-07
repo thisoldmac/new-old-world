@@ -26,6 +26,7 @@
 #include "peek_read.h"
 #include "prefs.h"
 #include "proc_actions.h"
+#include "proc_roster.h"
 #include "product_identity.h"
 #include "scene_collect.h"
 #include "scene_phase.h"
@@ -2303,7 +2304,7 @@ static void service_shot(void)
     /* Pixels grabbed; NOW comes back to the front to send them (it pumps
        the wire either way, but this leaves the human's machine where they
        left it). */
-    SetFrontProcess(&g_shot.self);
+    (void)now_proc_front_confirm(&g_shot.self, 0);
     if (!ok) {
         capture_fail(g_shot.id);
         return;
@@ -5217,24 +5218,18 @@ static void serve_process_list(const char *request)
        a row never truncates mid-JSON - a truncated frame decodes to
        nothing and the send silently does nothing. */
     enum { kEntryMargin = 320 };
-    /* Spelled-out 4CCs: multi-character char constants warn under
-       -Werror, and these classify the process's kind. */
-    const unsigned long kTypeFinder = 0x464E4452UL;   /* 'FNDR' */
-    const unsigned long kSigFinder = 0x4D414353UL;    /* 'MACS' */
     char json[kNowMaxControl];
     long id = now_json_find_int(request, "id", 0);
     long cursor = now_json_find_int(request, "cursor", 1);
-    ProcessSerialNumber psn = { 0, kNoProcess };
-    ProcessSerialNumber front;
-    ProcessSerialNumber me;
-    Boolean have_front = GetFrontProcess(&front) == noErr;
-    /* isSelf marks the one row that is NOW - the only identity a caller
+    /* The roster is the one walk and the one classifier (proc_roster.h).
+       isSelf marks the one row that is NOW - the only identity a caller
        can trust for "the process on the other end of this connection".
        serve_process_act already computes it to refuse a self-quit; this
        reports the same fact instead of only acting on it, so a caller can
        name this process without deriving a file name from a version
        string (contract: ProcessListing.isSelf). */
-    Boolean have_self = GetCurrentProcess(&me) == noErr;
+    NowProcRosterIter it;
+    NowProcRosterRow proc;
     long pos;
     long index = 0;                   /* readable-process position, 1-based */
     int emitted = 0;
@@ -5246,24 +5241,14 @@ static void serve_process_list(const char *request)
     pos = snprintf(json, sizeof json,
                    "{\"type\":\"process.listing\",\"id\":%ld,"
                    "\"processes\":[", id);
-    while (GetNextProcess(&psn) == noErr) {
-        ProcessInfoRec info;
-        Str31 name;
-        char cname[32];
+    now_proc_roster_begin(&it);
+    while (now_proc_roster_next(&it, &proc)) {
         char code[8], creator[8];
         char esc_name[64], esc_code[40], esc_creator[40];
-        const char *kind;
-        Boolean is_front = false;
-        Boolean is_self = false;
 
-        memset(&info, 0, sizeof info);
-        info.processInfoLength = sizeof info;
-        info.processName = name;
-        info.processAppSpec = NULL;
-        name[0] = 0;
-        if (GetProcessInformation(&psn, &info) != noErr) {
-            continue;                 /* unreadable: not a position */
-        }
+        /* Unreadable rows never arrive here at all - the roster skips
+           and counts them, so "not a position" stays one rule in one
+           place rather than a `continue` every walk has to remember. */
         ++index;
         if (index < cursor) {
             continue;                 /* before this page */
@@ -5273,27 +5258,11 @@ static void serve_process_list(const char *request)
             more = true;              /* this one starts the next page */
             break;
         }
-        memcpy(cname, name + 1, name[0]);
-        cname[name[0]] = '\0';
-        memcpy(code, &info.processType, 4);
+        memcpy(code, &proc.type, 4);
         code[4] = '\0';
-        memcpy(creator, &info.processSignature, 4);
+        memcpy(creator, &proc.creator, 4);
         creator[4] = '\0';
-        if ((unsigned long)info.processType == kTypeFinder
-            || (unsigned long)info.processSignature == kSigFinder) {
-            kind = "finder";
-        } else if ((info.processMode & modeOnlyBackground) != 0) {
-            kind = "background";
-        } else {
-            kind = "application";
-        }
-        if (have_front) {
-            (void)SameProcess(&psn, &front, &is_front);
-        }
-        if (have_self) {
-            (void)SameProcess(&psn, &me, &is_self);
-        }
-        now_json_escape(cname, esc_name, sizeof esc_name);
+        now_json_escape(proc.name, esc_name, sizeof esc_name);
         now_json_escape(code, esc_code, sizeof esc_code);
         now_json_escape(creator, esc_creator, sizeof esc_creator);
         /* isSelf only when true: the contract makes it optional and
@@ -5303,12 +5272,13 @@ static void serve_process_list(const char *request)
                         "%s{\"name\":\"%s\",\"kind\":\"%s\",\"code\":\"%s\","
                         "\"creator\":\"%s\",\"sizeKB\":%ld,\"front\":%s,"
                         "\"psnHigh\":%lu,\"psnLow\":%lu%s}",
-                        emitted > 0 ? "," : "", esc_name, kind, esc_code,
-                        esc_creator, (long)(info.processSize / 1024),
-                        is_front ? "true" : "false",
-                        (unsigned long)psn.highLongOfPSN,
-                        (unsigned long)psn.lowLongOfPSN,
-                        is_self ? ",\"isSelf\":true" : "");
+                        emitted > 0 ? "," : "", esc_name,
+                        now_proc_kind_name(proc.kind), esc_code,
+                        esc_creator, proc.size_kb,
+                        proc.is_front ? "true" : "false",
+                        (unsigned long)proc.psn.highLongOfPSN,
+                        (unsigned long)proc.psn.lowLongOfPSN,
+                        proc.is_self ? ",\"isSelf\":true" : "");
         ++emitted;
     }
     snprintf(json + pos, sizeof json - (size_t)pos,
@@ -5436,13 +5406,18 @@ static void serve_software_list(const char *request)
    serial. Both verbs answer with the one process.result shape. */
 static void serve_process_act(const char *request, Boolean quit)
 {
-    char json[192];
+    char json[256];   /* + outcome; the longest reason is 57 bytes */
     long id = now_json_find_int(request, "id", 0);
     ProcessSerialNumber psn;
     ProcessInfoRec info;
     Str31 name;
     OSErr err = noErr;
     const char *reason = NULL;
+    /* ActSettlement.status's vocabulary, borrowed rather than invented -
+       see ProcessResult.outcome in the contract. Refusals that never
+       reached the machine stay "refused"; only the two verbs' own
+       terminal states are set below. */
+    const char *outcome = "refused";
 
     psn.highLongOfPSN =
         (unsigned long)now_json_find_int(request, "psnHigh", 0);
@@ -5471,12 +5446,50 @@ static void serve_process_act(const char *request, Boolean quit)
             err = now_proc_ask_quit(&psn);
             if (err != noErr) {
                 reason = "the Mac would not deliver the quit request";
+            } else {
+                /* QUIT CANNOT BE TOLD MORE THAN THIS, and that is a fact
+                   about the platform rather than a gap here: a 'quit'
+                   Apple Event is one an application may decline or sit
+                   on behind a Save dialog. `ok` says the event was
+                   delivered; `outcome` says plainly that delivery is all
+                   that was established, so a caller reading `outcome`
+                   alone is never misled into thinking it has gone. */
+                outcome = "dispatched-but-unconfirmed";
             }
         }
     } else {
-        err = now_proc_bring_to_front(&psn);
-        if (err != noErr) {
+        /* THE SAME ASK-AND-CONFIRM the console's `front` and `mach
+           activate` make (proc_actions.h). This used to answer ok:true
+           on SetFrontProcess returning noErr, which means the switch was
+           SCHEDULED and nothing more - so `now_bring_to_front` over MCP,
+           which rides this exact path, got the weakest of three claims
+           and no way to tell. A verb reports what happened; an accepted
+           request that never landed is not a switch. */
+        switch (now_proc_front_confirm(&psn,
+                                       (unsigned long)kProcFrontWaitSecs
+                                       * 60)) {
+        case kProcFrontConfirmed:
+            outcome = "confirmed";
+            break;
+        case kProcFrontAccepted:
+            /* NEVER OBSERVED. Driven on 2026-08-07 against an emulated
+               OS 9.1 guest: fronting a faceless process took the
+               refusal branch below instead, and a switch that is
+               accepted and then does not land could not be staged
+               deliberately. This branch compiles and reads correctly
+               and has never run - which is a different thing from
+               tested, and the next person should not have to infer
+               that from its absence in a log. */
+            err = -1;
+            outcome = "dispatched-but-unconfirmed";
+            reason = "the Mac accepted the request and it is still not "
+                     "frontmost";
+            break;
+        case kProcFrontSetRefused:
+            err = -1;
+            outcome = "refused";
             reason = "the Mac would not bring it to the front";
+            break;
         }
     }
 
@@ -5503,11 +5516,13 @@ static void serve_process_act(const char *request, Boolean quit)
 
     if (reason == NULL) {
         snprintf(json, sizeof json,
-                 "{\"type\":\"process.result\",\"id\":%ld,\"ok\":true}", id);
+                 "{\"type\":\"process.result\",\"id\":%ld,\"ok\":true,"
+                 "\"outcome\":\"%s\"}", id, outcome);
     } else {
         snprintf(json, sizeof json,
                  "{\"type\":\"process.result\",\"id\":%ld,\"ok\":false,"
-                 "\"reason\":\"%s\"}", id, reason);
+                 "\"outcome\":\"%s\",\"reason\":\"%s\"}",
+                 id, outcome, reason);
     }
     send_control(json);
 }

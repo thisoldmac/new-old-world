@@ -224,9 +224,26 @@ public struct Scene: Codable, Equatable, Sendable {
         /// Empty for the Apple menu (the wire sends the Chicago apple byte).
         public var title: String
         public var apple: Bool
-        /// Guest menubar x of this title (MenuList `left`) — the anchor for
-        /// guest-true menubar layout and for input-device menu tracking.
-        public var left: Int
+        /// Guest menubar x of this title (MenuList `left`), or **nil when
+        /// the producer did not report one**.
+        ///
+        /// Optional because it used to default to 0, and 0 is not a
+        /// missing reading — it is the x of the leftmost menu. A menu act
+        /// arms its press at this coordinate plus four, so an unreported
+        /// `left` armed at x=4, which is the Apple menu, and answered
+        /// whoever pressed it next. That is the measured 18/20 hijack
+        /// reintroduced by a `?? 0` (2026-08-07). The host knew it had
+        /// never learned the number and manufactured one anyway.
+        ///
+        /// So the absence is carried rather than filled, and every
+        /// consumer answers it the same way: a menu bar is a POSITIONAL
+        /// surface, so a menu with no position is not drawn, not hit
+        /// tested, and not pressed. A title painted at an invented
+        /// position and a press armed at one are the same mistake at two
+        /// severities, and giving the renderer a fallback the act path
+        /// refused would put the two back into disagreement — which is
+        /// the defect this whole change exists to close.
+        public var left: Int?
         /// The guest's own menu ID. Carried because acting by IDENTITY needs it:
         /// the Portal answers the application's MenuSelect with (menuID, item),
         /// and a title is not an identity the Menu Manager understands.
@@ -498,6 +515,39 @@ public struct Scene: Codable, Equatable, Sendable {
         /// before this field existed, so an older fixture decodes unchanged.
         public var w: Int?
         public var h: Int?
+
+        /// **Where this position came from**, which is a different question
+        /// from whether there is one.
+        ///
+        /// `placed` was doing both jobs and could not: it is set to `true` by
+        /// `FinderItems.merge` from the box the Finder actually drew, by
+        /// `SceneBuilder.desktopItems` from the *saved* `fdLocation` grid, and
+        /// by `ScenePoller.placeVolumes` from a layout rule this side
+        /// **invented**. Three provenances, one boolean, and every reader that
+        /// asked "do we know where this is?" got `true` from the one that had
+        /// made the answer up.
+        ///
+        /// That is tolerable while the only consumer is a renderer — an icon a
+        /// few pixels off is cosmetic. It stops being tolerable the moment
+        /// something must put an item BACK: a snap-back to an invented home
+        /// moves a file to a place it never was, and does it confidently.
+        /// So the provenance is carried, and `homeIsTrustworthy` is the one
+        /// question the drag plane asks.
+        ///
+        /// **nil is a real answer** and means the producer did not say — an
+        /// older fixture, or a path not yet moved onto this field. It reads as
+        /// untrustworthy, deliberately: a default of "drawn" would make every
+        /// old fixture claim a provenance it never had.
+        public var origin: PositionOrigin?
+
+        /// May something be returned to this position?
+        ///
+        /// Only the Finder's own drawn box qualifies. The saved grid is close
+        /// enough to draw from and not close enough to aim with (it differed
+        /// from the drawn position by a constant (52, 25) on the probe folder,
+        /// and diverged completely once a window scrolled — see `FinderItems`).
+        public var homeIsTrustworthy: Bool { origin == .drawn }
+
         public var placed: Bool
         public var alias: Bool
         public var invisible: Bool
@@ -529,13 +579,15 @@ public struct Scene: Codable, Equatable, Sendable {
                     creator: String?, x: Int, y: Int, placed: Bool,
                     alias: Bool, invisible: Bool,
                     aliasTarget: AliasTarget? = nil,
-                    w: Int? = nil, h: Int? = nil) {
+                    w: Int? = nil, h: Int? = nil,
+                    origin: PositionOrigin? = nil) {
             self.name = name; self.kind = kind; self.type = type
             self.creator = creator; self.x = x; self.y = y
             self.w = w; self.h = h
             self.placed = placed; self.alias = alias
             self.invisible = invisible
             self.aliasTarget = aliasTarget
+            self.origin = origin
         }
 
         /// The item an alias resolves to. Same three fields the alias
@@ -556,6 +608,28 @@ public struct Scene: Codable, Equatable, Sendable {
                 self.type = type; self.creator = creator
             }
         }
+    }
+
+    /// How a desktop or window item's position was established. The ladder is
+    /// ordered: a later producer may overwrite an earlier one's position only
+    /// by climbing it, never by descending.
+    ///
+    /// The vocabulary matches the one this arc already settled for content —
+    /// **`empty`** is a fact about the machine, **`unknown`** is a fact about
+    /// us — applied to geometry: `drawn` and `saved` are things the guest told
+    /// us, `unknown` is what we say when the answer is ours rather than its.
+    public enum PositionOrigin: String, Codable, Equatable, Sendable {
+        /// `bounds of` the item, as the Finder has actually laid it out now.
+        /// The only provenance a snap-back may use.
+        case drawn
+        /// The catalog's saved `fdLocation` icon grid. Good enough to draw a
+        /// desktop from; not the box the Finder drew, and not a home.
+        case saved
+        /// **We made it up.** A volume laid out by our own default rule
+        /// because nothing would tell us where the Finder put it. It is drawn
+        /// — a disk you cannot see at all is worse than one a few inches off —
+        /// and no act may aim with it.
+        case unknown
     }
 
     public struct Meta: Codable, Equatable, Sendable {

@@ -176,10 +176,22 @@ public struct AgentIntegrationMirrorMenu:
     public let id: Int
     public let title: String
     public let apple: Bool
-    public let left: Int
+    /// Where this menu's title sits in the menu bar — **absent when the
+    /// guest did not report one**, rather than 0.
+    ///
+    /// This is the number a caller hands to `now_menu_act` as
+    /// `titleLeft`, and it is that act's identity check: the guest arms
+    /// its press there, and a press anywhere else belongs to the person
+    /// at the machine. So an absence has to arrive AS an absence. It used
+    /// to arrive as 0, which is not "unknown" — it is four pixels left of
+    /// the Apple menu's title, and a caller that passed it on armed a
+    /// press there in perfect good faith. A row with no `left` cannot be
+    /// pressed by any route on this host, and the guest refuses one
+    /// besides.
+    public let left: Int?
     public let items: [AgentIntegrationMirrorMenuItem]
 
-    public init(id: Int, title: String, apple: Bool, left: Int,
+    public init(id: Int, title: String, apple: Bool, left: Int?,
                 items: [AgentIntegrationMirrorMenuItem]) {
         self.id = id
         self.title = title

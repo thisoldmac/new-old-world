@@ -159,7 +159,11 @@ public struct ScenePoller {
                     + Self.placeVolumes(vols, screen: screen)
             }
         }
-        if includeWindowItems {
+        /* One script serves both, so either flag pays for it. A caller that
+           wants desktop items and not window items still gets the desktop's
+           DRAWN boxes rather than the saved grid — which is the difference
+           between an addressable desktop and a decorative one. */
+        if includeWindowItems || includeDesktopItems {
             attachWindowItems(&scene)
         }
         if includeDisplay,
@@ -375,41 +379,14 @@ public struct ScenePoller {
                     b: win.rect.b - (isDialog ? 6 : 1))
     }
 
-    /// Mounted disks as `name|h,v;;` (Finder-placed on-screen positions).
-    private static let disksScript = [
-        "tell application \"Finder\"",
-        "set r to \"\"",
-        "repeat with dk in disks",
-        "set p to position of dk",
-        "set r to r & (name of dk) & \"|\" & (item 1 of p) & \",\" & (item 2 of p) & \";;\"",
-        "end repeat",
-        "return r",
-        "end tell",
-    ].joined(separator: "\n")
-
-    /// Parse the disks script output into desktop items (kind "disk"). The
-    /// Finder position is the icon's top-left, like `fdLocation`.
-    private func diskItems(from output: String?) -> [Scene.DesktopItem]? {
-        guard var raw = output else { return nil }
-        if raw.hasPrefix("\""), raw.hasSuffix("\""), raw.count >= 2 {
-            raw = String(raw.dropFirst().dropLast())
-        }
-        var items: [Scene.DesktopItem] = []
-        for record in raw.components(separatedBy: ";;") where !record.isEmpty {
-            guard let bar = record.firstIndex(of: "|") else { continue }
-            let name = String(record[..<bar])
-            let coords = record[record.index(after: bar)...]
-                .split(separator: ",")
-            guard coords.count == 2, let h = Int(coords[0].trimmingCharacters(
-                    in: .whitespaces)),
-                  let v = Int(coords[1].trimmingCharacters(in: .whitespaces))
-            else { continue }
-            items.append(.init(name: name, kind: "disk", type: nil,
-                               creator: nil, x: h, y: v, placed: true,
-                               alias: false, invisible: false))
-        }
-        return items.isEmpty ? nil : items
-    }
+    /* A `disksScript` / `diskItems` pair used to sit here: an unreferenced
+       AppleScript asking `position of` every disk, and a parser for its
+       output. Nothing called either. Deleted with the desktop clause of
+       `FinderItems.windowsScript`, which asks the same machine the same
+       question in the one place every other surface's geometry now comes
+       from — and asks for `bounds` rather than `position`, which is the
+       correction the list-view lane paid for. Two seams for one decision is
+       the defect this arc has merged away twice. */
 
     /// (Re)trace the front app and drain its new draw ops into the bounded
     /// accumulator. Switching front apps restarts the trace and clears the
@@ -435,6 +412,18 @@ public struct ScenePoller {
     /// The Finder's default disk layout: top-right, stacked downward. Used only
     /// for volumes the guest reported as unplaced — a real position, when we can
     /// get one, always wins.
+    ///
+    /// **This function invents coordinates, and now says so.** It used to set
+    /// `placed = true` alongside them, which made the mirror's one "do we know
+    /// where this is?" flag read `true` for the single case where the answer
+    /// was ours rather than the guest's. Drawing an invented disk is a
+    /// defensible trade — a disk that is absent from the picture is worse than
+    /// one a few inches from where the Finder put it — but aiming at one is
+    /// not, and `origin: .unknown` is what separates the two.
+    ///
+    /// The desktop clause of `FinderItems.windowsScript` normally gets there
+    /// first with the drawn box, so this is the fallback for a guest whose
+    /// Finder would not answer.
     static func placeVolumes(_ vols: [Scene.DesktopItem],
                              screen: Scene.ScreenSize) -> [Scene.DesktopItem] {
         let right = screen.w > 0 ? screen.w : 800
@@ -445,6 +434,7 @@ public struct ScenePoller {
                 item.x = right - 76          // icon box inset from the right edge
                 item.y = 12 + i * 64         // one row per disk, top down
                 item.placed = true
+                item.origin = .unknown
             }
             out.append(item)
         }
@@ -501,8 +491,29 @@ public struct ScenePoller {
     public private(set) var finderPaths: [String: String] = [:]
     /// Titles whose item list the Finder truncated at our cap.
     public private(set) var truncatedWindows: Set<String> = []
+    /// The desktop's own drawn boxes, keyed by item name, from the same
+    /// script. Empty until the Finder has answered once.
+    private var desktopDrawn: [FinderItems.Placed] = []
+    /// The Finder had more desktop items than the cap.
+    public private(set) var desktopTruncated = false
     /// The layout signature the snapshot was taken at.
     private var itemsSignature = ""
+
+    /// What could have changed the DESKTOP's layout, as far as anything we can
+    /// see cheaply goes: which items are on it, and how big the screen is.
+    ///
+    /// It cannot see a drag the human performed at the machine — nothing on
+    /// this side can, short of paying the Finder round trip every poll. That
+    /// is the same bargain the folder-window snapshot already strikes, and it
+    /// carries the same rule: a cached position is fine to **draw** and not
+    /// fine to **aim with**. Every act path calls `refreshWindowItems()`
+    /// first, which is what makes a stale box a cosmetic error rather than a
+    /// file dropped in the wrong place.
+    private static func desktopSignature(_ scene: Scene) -> String {
+        let names = (scene.desktopItems ?? []).map(\.name).sorted()
+        return "DESK:\(scene.screen.w)x\(scene.screen.h)/"
+            + names.joined(separator: ",")
+    }
 
     /// Attach the Finder's own item positions to every folder window.
     ///
@@ -515,14 +526,14 @@ public struct ScenePoller {
     /// cached is never *silently* stale: any change we can observe re-fetches.
     mutating func attachWindowItems(_ scene: inout Scene) {
         let folders = scene.windows.filter(FinderItems.isFolderWindow)
-        guard !folders.isEmpty else {
-            windowItems = [:]
-            finderPaths = [:]
-            truncatedWindows = []
-            itemsSignature = ""
-            return
-        }
-        let signature = folders.map(FinderItems.layoutKey).joined(separator: "|")
+        /* NOT gated on there being a folder window. The desktop rides in the
+           same script, and the case where a person drags a desktop icon with
+           no folder open is the ORDINARY one — an early return here is how
+           the desktop kept its saved-grid positions while every window had
+           the Finder's drawn ones. */
+        let signature = (folders.map(FinderItems.layoutKey)
+                         + [Self.desktopSignature(scene)])
+            .joined(separator: "|")
         if signature != itemsSignature {
             // Only remember the signature when the Finder actually answered.
             // A failed script call that still marked the layout "done" would
@@ -548,6 +559,18 @@ public struct ScenePoller {
         if seen.values.contains(where: { $0 > 1 }) {
             scene.meta.errors.append("window_items_ambiguous_title")
         }
+        /* The desktop climbs the ladder: whatever the catalog and the volume
+           list built keeps its identity, and the Finder's drawn box replaces
+           the saved grid and the invented stack. When the Finder said nothing,
+           nothing is replaced and the items keep saying what they already
+           said — which is the point of carrying the provenance at all. */
+        if !desktopDrawn.isEmpty {
+            scene.desktopItems = FinderItems.mergeDesktop(
+                drawn: desktopDrawn, existing: scene.desktopItems ?? [])
+        }
+        if desktopTruncated {
+            scene.meta.errors.append("desktop_items_truncated")
+        }
     }
 
     /// Re-ask the Finder. Public so the act path can force freshness before it
@@ -566,7 +589,14 @@ public struct ScenePoller {
                            "timeoutMs": 20000]),
               let raw = result["output"] as? String else { return false }
         let reports = FinderItems.parse(raw)
-        guard !reports.isEmpty else { return false }
+        /* An answer with no window records is a real answer when no folder
+           window is open — the desktop clause is the whole payload then. It is
+           a FAILURE when folders were expected, which is the busy-Finder
+           timeout this guard was written for. */
+        guard !reports.isEmpty || folders.isEmpty else { return false }
+        let desk = FinderItems.parseDesktop(raw)
+        desktopDrawn = desk.items
+        desktopTruncated = desk.truncated
         var items: [String: [Scene.DesktopItem]] = [:]
         var paths: [String: String] = [:]
         var truncated: Set<String> = []

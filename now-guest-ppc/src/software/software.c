@@ -1,4 +1,5 @@
 #include "software.h"
+#include "proc_roster.h"
 
 #include "proc_actions.h"
 #include "sw_vers_parse.h"
@@ -79,20 +80,14 @@ typedef struct {
 
 static void running_gather(RunningSet *rs)
 {
-    ProcessSerialNumber psn = { 0, kNoProcess };
+    NowProcRosterIter it;
+    NowProcRosterRow row;
 
     rs->count = 0;
-    while (rs->count < kRunningMax
-           && GetNextProcess(&psn) == noErr) {
-        ProcessInfoRec info;
-        FSSpec spec;
-
-        memset(&info, 0, sizeof info);
-        info.processInfoLength = sizeof info;
-        info.processName = NULL;
-        info.processAppSpec = &spec;
-        if (GetProcessInformation(&psn, &info) == noErr) {
-            rs->specs[rs->count] = spec;
+    now_proc_roster_begin(&it);
+    while (rs->count < kRunningMax && now_proc_roster_next(&it, &row)) {
+        if (row.have_spec) {
+            rs->specs[rs->count] = row.spec;
             rs->count += 1;
         }
     }
@@ -770,20 +765,16 @@ int now_software_page(const char *domain, long cursor,
 
 Boolean now_software_find_psn(const FSSpec *spec, ProcessSerialNumber *out)
 {
-    ProcessSerialNumber psn = { 0, kNoProcess };
+    NowProcRosterIter it;
+    NowProcRosterRow row;
 
-    while (GetNextProcess(&psn) == noErr) {
-        ProcessInfoRec info;
-        FSSpec app;
-
-        memset(&info, 0, sizeof info);
-        info.processInfoLength = sizeof info;
-        info.processName = NULL;
-        info.processAppSpec = &app;
-        if (GetProcessInformation(&psn, &info) == noErr
-            && app.vRefNum == spec->vRefNum && app.parID == spec->parID
-            && EqualString(app.name, spec->name, false, true)) {
-            *out = psn;
+    now_proc_roster_begin(&it);
+    while (now_proc_roster_next(&it, &row)) {
+        if (row.have_spec
+            && row.spec.vRefNum == spec->vRefNum
+            && row.spec.parID == spec->parID
+            && EqualString(row.spec.name, spec->name, false, true)) {
+            *out = row.psn;
             return true;
         }
     }
@@ -793,18 +784,18 @@ Boolean now_software_find_psn(const FSSpec *spec, ProcessSerialNumber *out)
 /* The Finder, by signature — the reveal's addressee. */
 static Boolean find_finder(ProcessSerialNumber *out)
 {
-    ProcessSerialNumber psn = { 0, kNoProcess };
+    NowProcRosterIter it;
+    NowProcRosterRow row;
 
-    while (GetNextProcess(&psn) == noErr) {
-        ProcessInfoRec info;
-
-        memset(&info, 0, sizeof info);
-        info.processInfoLength = sizeof info;
-        info.processName = NULL;
-        info.processAppSpec = NULL;
-        if (GetProcessInformation(&psn, &info) == noErr
-            && info.processSignature == 'MACS') {
-            *out = psn;
+    /* THE ROSTER'S KIND, not a fourth spelling of 'MACS'. This used to
+       match the creator alone, so a Finder identified by its 'FNDR' TYPE
+       - which every other reader in this guest accepts - was not the
+       Finder here. Two answers to "which one is the Finder" is the
+       failure this file family was unified to remove. */
+    now_proc_roster_begin(&it);
+    while (now_proc_roster_next(&it, &row)) {
+        if (row.kind == kNowProcKindFinder) {
+            *out = row.psn;
             return true;
         }
     }

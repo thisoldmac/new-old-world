@@ -19,7 +19,8 @@ struct FileBrowserTable: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let table = NSTableView()
+        let table = BrowserTableView()
+        table.coordinator = context.coordinator
         table.style = .inset
         table.usesAlternatingRowBackgroundColors = true
         table.allowsMultipleSelection = true
@@ -61,6 +62,18 @@ struct FileBrowserTable: NSViewRepresentable {
                 NSSortDescriptor(key: id, ascending: true)
             table.addTableColumn(column)
         }
+        /* The download glyph's own column, last and narrow. A column
+           rather than an accessory floating over the name cell: the row
+           is a drag source, and a view laid over one is a view the drag
+           starts underneath. Unsorted and untitled — it is a control, and
+           a header that sorted by it would sort by nothing. */
+        let action = NSTableColumn(
+            identifier: NSUserInterfaceItemIdentifier(Coordinator.actionColumn))
+        action.title = ""
+        action.width = 24
+        action.minWidth = 24
+        action.maxWidth = 24
+        table.addTableColumn(action)
 
         let scroll = NSScrollView()
         scroll.documentView = table
@@ -129,6 +142,29 @@ struct FileBrowserTable: NSViewRepresentable {
             text.font = .systemFont(ofSize: 12)
 
             switch column.identifier.rawValue {
+            case Coordinator.actionColumn:
+                /* One click, one file, on this Mac. A folder has nothing
+                   to download, and an empty cell says that better than a
+                   disabled button nobody can explain. */
+                guard !item.isFolder else { return nil }
+                let button = NSButton()
+                button.bezelStyle = .inline
+                button.isBordered = false
+                button.image = NSImage(
+                    systemSymbolName: "arrow.down.circle",
+                    accessibilityDescription: "Download")
+                button.contentTintColor = .secondaryLabelColor
+                button.imagePosition = .imageOnly
+                button.target = self
+                button.action = #selector(downloadClickedRow(_:))
+                /* Identified by the file, not by the row number: a
+                   listing reorders under a sort click, and a button that
+                   remembered an index would then download its neighbour. */
+                button.identifier = NSUserInterfaceItemIdentifier(item.id)
+                button.toolTip = "Download \(item.name) to "
+                    + parent.model.downloadDirectory.lastPathComponent
+                button.setAccessibilityLabel("Download \(item.name)")
+                return button
             case "name":
                 let stack = NSStackView()
                 stack.orientation = .horizontal
@@ -251,9 +287,14 @@ struct FileBrowserTable: NSViewRepresentable {
                 menu.addItem(withTitle: "Open on This Mac",
                              action: #selector(openRow),
                              keyEquivalent: "").target = self
-                menu.addItem(withTitle: "Download",
-                             action: #selector(downloadRow),
-                             keyEquivalent: "").target = self
+                // ⌘D is advertised here and implemented in the table's
+                // keyDown, so the shortcut a person reads in the menu is
+                // the shortcut that works with the menu closed.
+                let download = menu.addItem(withTitle: "Download",
+                                            action: #selector(downloadRow),
+                                            keyEquivalent: "d")
+                download.target = self
+                download.keyEquivalentModifierMask = .command
                 menu.addItem(withTitle: "Download as MacBinary",
                              action: #selector(downloadRowAsMacBinary),
                              keyEquivalent: "").target = self
@@ -272,8 +313,45 @@ struct FileBrowserTable: NSViewRepresentable {
             menu.addItem(withTitle: "New Folder",
                          action: #selector(newFolder),
                          keyEquivalent: "").target = self
+            if row.isFolder {
+                // The keyboard's half of drag-to-add. A sidebar that can
+                // only be filled by dragging is a sidebar some people
+                // cannot fill.
+                menu.addItem(withTitle: "Add to Sidebar",
+                             action: #selector(pinRow),
+                             keyEquivalent: "").target = self
+            }
             menu.addItem(withTitle: "Copy Path", action: #selector(copyPath),
                          keyEquivalent: "").target = self
+        }
+
+        /// The download glyph in the row, and the ⌘D that reaches the same
+        /// place without a mouse.
+        @objc fileprivate func downloadClickedRow(_ sender: NSButton) {
+            guard let id = sender.identifier?.rawValue,
+                  let row = rows.first(where: { $0.id == id }) else { return }
+            parent.model.download(row)
+        }
+
+        /// Downloads the selection. Folders in it are skipped rather than
+        /// refusing the whole thing — a mixed selection is ordinary.
+        func downloadSelection() {
+            for row in selectedRows where !row.isFolder {
+                parent.model.download(row)
+                // One transfer lane: the second would only be refused, and
+                // the refusal is the model's to report.
+                break
+            }
+        }
+
+        func openSelection() {
+            if let row = selectedRows.first { parent.onOpen(row) }
+        }
+
+        @objc private func pinRow() {
+            if let row = clickedRow, row.isFolder {
+                parent.model.pinLocation(path: row.path)
+            }
         }
 
         @objc private func renameRow() {
@@ -343,6 +421,9 @@ struct FileBrowserTable: NSViewRepresentable {
         static let localRow =
             NSPasteboard.PasteboardType("dev.newoldworld.now.row")
 
+        /// The narrow column the download glyph lives in.
+        static let actionColumn = "download"
+
         func tableView(_ tableView: NSTableView,
                        pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
             guard let item = item(at: row) else { return nil }
@@ -351,6 +432,14 @@ struct FileBrowserTable: NSViewRepresentable {
                 // need a recursive pull, which the Finder will not get.
                 let entry = NSPasteboardItem()
                 entry.setString(item.id, forType: Coordinator.localRow)
+                /* And its path as plain text, which is what the locations
+                   sidebar reads. SwiftUI's drop destinations speak
+                   UTTypes; this private type is not one, and inventing an
+                   exported UTI for a drag that never leaves the window
+                   would be a lot of declaration for one string. The
+                   sidebar does not trust the string — it checks the path
+                   against a folder this browser can currently see. */
+                entry.setString(item.path, forType: .string)
                 return entry
             }
             let type = UTType(filenameExtension:
@@ -458,6 +547,35 @@ struct FileBrowserTable: NSViewRepresentable {
                                  into: target?.isFolder == true
                                      ? target?.path : nil)
             return true
+        }
+    }
+
+    /// The table, with the keyboard's half of what the row's controls do.
+    ///
+    /// The download glyph is a button in a cell, so Full Keyboard Access
+    /// already reaches it — but only by tabbing through every row before
+    /// it, which is not reaching. ⌘D acts on the selection the way the
+    /// context menu's Download does, and Return opens it the way a
+    /// double-click does. Both are the *same* model calls; the point is a
+    /// second door, not a second behaviour.
+    @MainActor
+    final class BrowserTableView: NSTableView {
+        weak var coordinator: Coordinator?
+
+        override func keyDown(with event: NSEvent) {
+            let command = event.modifierFlags
+                .intersection(.deviceIndependentFlagsMask) == .command
+            if command, event.charactersIgnoringModifiers?.lowercased() == "d" {
+                coordinator?.downloadSelection()
+                return
+            }
+            // Return/Enter, the Finder's own "open this".
+            if !command, let key = event.charactersIgnoringModifiers?.unicodeScalars.first,
+               key == "\r" || key == "\u{3}" {
+                coordinator?.openSelection()
+                return
+            }
+            super.keyDown(with: event)
         }
     }
 }

@@ -67,6 +67,15 @@
 #include <stddef.h>
 
 #include "now_act_guard.h"
+
+/* P7's vehicle (now_ext_drag.c). Declared rather than headered for the
+   same reason the liveness net is: this file is P4 and must not start
+   depending on P7's internals. Three entry points is the whole seam. */
+extern int now_ext_drag_press(NowPeekTable *table, NowPeekU32 session,
+                              NowPeekU32 target_a5, NowPeekI32 h,
+                              NowPeekI32 v, NowPeekU32 idle_asked,
+                              NowPeekU32 cap_asked);
+extern NowPeekDragCell *now_ext_drag_cell(NowPeekTable *table);
 #include "peek_table.h"
 
 /* Resident state. The relocated blob sits at a fixed system-heap address
@@ -91,6 +100,11 @@ extern void now_act_findwindow_patch(void);
 extern void now_act_growwindow_patch(void);
 extern void now_act_trackbox_patch(void);
 extern void now_act_trackgoaway_patch(void);
+
+/* P8, the cursor plane. Declared rather than included for the same
+   reason the core declares the planes it boots: this file knows one
+   entry point and nothing about how the sprite is moved. */
+extern int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags);
 
 /* Documented trap numbers, from the ONEWORDINLINE on each declaration
    (Universal Interfaces 3.4) - not from memory and not from a
@@ -599,11 +613,23 @@ static int act_post_click(NowPeekActCell *cell)
         pt.v = (short)cell->click_v;
     }
 
-    /* Cosmetic, plus applications that re-read GetMouse. The
-       authoritative location is stamped per event below. */
-    LMSetMouseTemp(pt);
-    LMSetRawMouseLocation(pt);
-    LMSetMouseLocation(pt);
+    /* Where the pointer is, and - new with P8 - where it LOOKS like it
+       is. This was three low-memory writes with a comment calling them
+       cosmetic; the writes are unchanged and still are cosmetic for the
+       click itself, whose `where` is stamped per event below. What is
+       not cosmetic is the second half P8 adds: the drawn cursor moving
+       to the point we are about to click on, so that a screendump is
+       evidence of WHERE we acted, software that draws relative to the
+       pointer stops being a special case, and a person watching sees a
+       machine being operated rather than a possessed one.
+
+       `owned` is 0, and that is the whole safety story: if the pointer
+       has moved since we last placed it - a person at the machine - P8
+       declines to move the sprite for a second and counts the decline,
+       while these three writes still happen so the click lands exactly
+       where the act says it does. The act never yields; only the picture
+       does. */
+    (void)now_ext_cursor_place((NowPeekI32)pt.h, (NowPeekI32)pt.v, 0u);
 
     LMSetMouseButtonState(0x00);              /* button down */
     if (PPostEvent(mouseDown, 0, &down) != noErr || down == NULL) {
@@ -619,6 +645,44 @@ static int act_post_click(NowPeekActCell *cell)
     up->evtQWhere = pt;
     up->evtQModifiers = 0;
     return 1;
+}
+
+/* Settle the mouseUp the drag vehicle could not queue.
+ *
+ * The button itself went up at interrupt time, in now_ext_drag_tick,
+ * where nothing could refuse it. This is the OTHER half: PPostEvent
+ * needs the target's own context, and this is the first moment there has
+ * been one - the tracking loop saw the button rise, returned, and handed
+ * the application back to GetNextEvent, which is where we are standing.
+ *
+ * Best-effort by design. A refused queue is recorded by leaving the debt
+ * cleared anyway, because the alternative is retrying forever against an
+ * application that may simply never want the event; the button is
+ * already up and no machine is wedged either way. That asymmetry is the
+ * point of splitting the two halves at all.
+ *
+ * Only the process the drag was addressed to may settle it. Without that
+ * check the FIRST application to pump after a drag ended would receive a
+ * mouseUp belonging to somebody else's gesture. */
+static void act_settle_drag_mouseup(NowPeekTable *table, unsigned long a5)
+{
+    NowPeekDragCell *drag = now_ext_drag_cell(table);
+    EvQElPtr up = NULL;
+    Point pt;
+
+    if (drag == NULL || drag->pending_mouseup == 0) {
+        return;
+    }
+    if (drag->target_a5 != (NowPeekU32)a5) {
+        return;
+    }
+    drag->pending_mouseup = 0;
+    pt.h = (short)drag->at_h;
+    pt.v = (short)drag->at_v;
+    if (PPostEvent(mouseUp, 0, &up) == noErr && up != NULL) {
+        up->evtQWhere = pt;
+        up->evtQModifiers = 0;
+    }
 }
 
 /* The system Application menu is owned by the Process Manager, not by the
@@ -673,6 +737,12 @@ void now_ext_act_apply(NowPeekTable *table)
     int             verdict;
     int             identity;
 
+    /* Before the armed-cell gate, and deliberately. A mouseUp owed by a
+       drag that has ALREADY ended is not a request: there may be no act
+       pending at all, and there certainly is no lease if the host that
+       began the gesture is the thing that died. It is gated on the
+       drag's own target_a5 instead. */
+    act_settle_drag_mouseup(table, (unsigned long)LMGetCurrentA5());
     if (cell == NULL) {
         return;
     }
@@ -756,6 +826,28 @@ void now_ext_act_apply(NowPeekTable *table)
             }
         }
         break;
+    case kNowActServeDragPress:
+        /* The session nonce is the caller's, carried in control_handle -
+           an existing 32-bit field with no meaning for this op, which is
+           what the accretive rule asks for instead of a new one. The two
+           deadlines ride in win_h / win_v for the same reason, and the
+           resident clamps both regardless of what arrived. */
+        if (!now_ext_drag_press(table, cell->control_handle, (NowPeekU32)a5,
+                                cell->click_h, cell->click_v,
+                                (NowPeekU32)cell->win_h,
+                                (NowPeekU32)cell->win_v)) {
+            NowPeekDragCell *drag = now_ext_drag_cell(table);
+            /* Two refusals that must not collapse into one: no vehicle at
+               all is a different resident, a busy vehicle is a retry. */
+            error = (drag == NULL) ? kNowPeekActErrDragNoVehicle
+                                   : kNowPeekActErrDragBusy;
+        } else {
+            cell->fired = 1;
+            now_act_v2_note(table, kNowPeekActStageFired,
+                            (unsigned long)LMGetTicks());
+        }
+        break;
+
     case kNowActServeVisibility:
         if (!act_post_visibility_key(cell)) {
             error = kNowPeekActErrPostFailed;

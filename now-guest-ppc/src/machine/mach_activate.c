@@ -12,6 +12,7 @@
 #include "mach_verbs.h"
 #include "nowlog.h"
 #include "proc_actions.h"
+#include "proc_roster.h"
 #include "wire.h"
 
 /* Short on purpose, and the same two seconds `front` waits: a process
@@ -19,28 +20,9 @@
    going to. */
 #define kMachActivateWaitSecs 2
 
-static void yield_ticks(UInt32 ticks)
-{
-    EventRecord event;
-
-    /* The wire stays serviced while we yield, exactly as proc_actions.c
-       does it; when the WIRE is the caller the pump's reentrancy guard
-       makes this a no-op, which is correct. */
-    now_wire_pump();
-    (void)WaitNextEvent(0, &event, ticks, NULL);
-}
-
-static Boolean is_frontmost(const ProcessSerialNumber *psn)
-{
-    ProcessSerialNumber front;
-    Boolean             same = false;
-
-    if (GetFrontProcess(&front) != noErr) {
-        return false;
-    }
-    (void)SameProcess(psn, &front, &same);
-    return same;
-}
+/* The yield that used to live here went with the confirm loop:
+   now_proc_front_confirm pumps the wire while it waits, exactly as this
+   did, and one waiting loop is the point of the change. */
 
 static void pascal_to_c(ConstStr255Param p, char *out, long cap)
 {
@@ -93,11 +75,14 @@ void now_mach_run_activate(const char *request_json, long id,
     if (GetProcessInformation(&psn, &info) == noErr) {
         facts.found = 1;
         facts.background_only =
-            (info.processMode & modeOnlyBackground) != 0;
+            now_proc_kind_classify((unsigned long)info.processType,
+                                   (unsigned long)info.processSignature,
+                                   (unsigned long)info.processMode)
+            == kNowProcKindBackground;
         pascal_to_c(name, shown, (long)sizeof shown);
     }
     if (facts.found) {
-        facts.was_front = is_frontmost(&psn) ? 1 : 0;
+        facts.was_front = now_proc_is_frontmost(&psn) ? 1 : 0;
     }
 
     outcome = now_mach_activate_verdict(&facts);
@@ -119,21 +104,19 @@ void now_mach_run_activate(const char *request_json, long id,
            function with a PSN it found by name; this one was handed the
            PSN. Two addressing modes, one implementation. */
         facts.set_called = 1;
-        facts.set_err = (int)now_proc_bring_to_front(&psn);
-        if (facts.set_err == noErr) {
-            UInt32 deadline =
-                TickCount() + (UInt32)kMachActivateWaitSecs * 60;
-
-            for (;;) {
-                if (is_frontmost(&psn)) {
-                    facts.confirmed_front = 1;
-                    break;
-                }
-                if (TickCount() >= deadline) {
-                    break;
-                }
-                yield_ticks(2);
-            }
+        switch (now_proc_front_confirm(&psn,
+                                       (unsigned long)kMachActivateWaitSecs
+                                       * 60)) {
+        case kProcFrontConfirmed:
+            facts.confirmed_front = 1;
+            break;
+        case kProcFrontAccepted:
+            break;
+        case kProcFrontSetRefused:
+            /* The verdict reads set_err, not an errno, so any non-zero
+               says the same thing it always said. */
+            facts.set_err = -1;
+            break;
         }
         outcome = now_mach_activate_verdict(&facts);
         if (!now_mach_activate_is_front(outcome)) {

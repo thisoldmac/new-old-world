@@ -7,7 +7,7 @@ import XCTest
 /// not find one of them forgetting.
 @MainActor
 final class SidebarPreferencesTests: XCTestCase {
-    private let known = ["screenshots", "files", "console", "chat"]
+    private let known = ["screen", "files", "console", "chat"]
 
     func testEmptyStoredOrderIsTheRegistryOrder() {
         // The state every existing install is in: nothing saved, so nothing
@@ -16,7 +16,7 @@ final class SidebarPreferencesTests: XCTestCase {
     }
 
     func testSavedOrderIsKept() {
-        let saved = ["chat", "screenshots", "files", "console"]
+        let saved = ["chat", "screen", "files", "console"]
         XCTAssertEqual(SidebarPreferences.sanitised(saved, against: known),
                        saved)
     }
@@ -25,34 +25,55 @@ final class SidebarPreferencesTests: XCTestCase {
         /* The reason this rule exists rather than "discard anything that
            does not match": a saved arrangement must survive the next module,
            or every new page silently resets everyone's sidebar. */
-        let saved = ["chat", "screenshots", "files"]
+        let saved = ["chat", "screen", "files"]
         XCTAssertEqual(SidebarPreferences.sanitised(saved, against: known),
-                       ["chat", "screenshots", "files", "console"])
+                       ["chat", "screen", "files", "console"])
     }
 
     func testRetiredModuleIsDropped() {
-        let saved = ["chat", "gone", "screenshots", "files", "console"]
+        let saved = ["chat", "gone", "screen", "files", "console"]
         XCTAssertEqual(SidebarPreferences.sanitised(saved, against: known),
-                       ["chat", "screenshots", "files", "console"])
+                       ["chat", "screen", "files", "console"])
     }
 
     func testDuplicateInStoredOrderIsTakenOnce() {
         // A corrupt or hand-edited value must not be able to show a row
         // twice, which would also break selection.
-        let saved = ["chat", "chat", "screenshots", "files", "console"]
+        let saved = ["chat", "chat", "screen", "files", "console"]
         XCTAssertEqual(SidebarPreferences.sanitised(saved, against: known),
-                       ["chat", "screenshots", "files", "console"])
+                       ["chat", "screen", "files", "console"])
     }
 
     func testResultIsAlwaysAPermutationOfWhatExists() {
         // The invariant the sidebar depends on: every module appears exactly
         // once, whatever was on disk.
         for saved in [[], ["gone"], ["chat", "chat", "gone"],
-                      ["console", "files", "screenshots", "chat"]] {
+                      ["console", "files", "screen", "chat"]] {
             let out = SidebarPreferences.sanitised(saved, against: known)
             XCTAssertEqual(Set(out), Set(known), "stored: \(saved)")
             XCTAssertEqual(out.count, known.count, "stored: \(saved)")
         }
+    }
+
+    /// **A saved order naming a module's OLD id keeps its position.**
+    ///
+    /// Screenshots became Screen. Without the rename going through the same
+    /// table the saved SELECTION uses, `sanitised` would read `screenshots`
+    /// as a retired module, drop it, and re-append `screen` at the end — so
+    /// a person who had dragged that page to the top would find it at the
+    /// bottom, with nothing to tell them why.
+    func testARenamedModuleKeepsItsPlaceInASavedOrder() {
+        let saved = ["screenshots", "chat", "files", "console"]
+        XCTAssertEqual(SidebarPreferences.sanitised(saved, against: known),
+                       ["screen", "chat", "files", "console"])
+    }
+
+    /// The rename must not be able to show the page twice — a saved order
+    /// written across the rename can hold both names at once.
+    func testBothNamesOfARenamedModuleCollapseToOneRow() {
+        let saved = ["screenshots", "chat", "screen", "files", "console"]
+        XCTAssertEqual(SidebarPreferences.sanitised(saved, against: known),
+                       ["screen", "chat", "files", "console"])
     }
 
     // MARK: - Against the real registry and a real defaults suite

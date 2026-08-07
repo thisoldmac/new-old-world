@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import UniformTypeIdentifiers
 
 /// One row in the browser: a guest listing entry plus what a pull of it
 /// would do.
@@ -275,7 +276,14 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     internal let listener: GuestListener
     private let defaults: UserDefaults
     private let artifactApprover: AgentIntegrationHostAdapter?
-    private var progressWatch: AnyCancellable?
+    /// What the wire tells this page without being asked: how far a
+    /// transfer has got, and that the folder it is showing is no longer
+    /// what the last listing said.
+    ///
+    /// Scoped to the machine being browsed, because both are claims about
+    /// ONE Mac's disk and a background guest's upload finishing must not
+    /// reload a listing of a different machine's folder.
+    private var busWatch: HostEventSubscription?
     private var pageCursor: Int?
 
     init(
@@ -286,6 +294,7 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
         self.listener = listener
         self.defaults = defaults
         self.artifactApprover = artifactApprover
+        self.locationsStore = FileLocationsStore(defaults: defaults)
         self.convertText =
             defaults.object(forKey: Keys.convertText) as? Bool ?? true
         self.shareDirectory = listener.share.root
@@ -295,15 +304,30 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
                                         in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory())
         listener.convertServedText = convertText
-        progressWatch = listener.$captureProgress
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] progress in
-                guard let self, var state = self.transfer,
-                      let progress else { return }
-                state.received = progress.received
-                state.expected = progress.expected
+        busWatch = listener.events.subscribe(
+            scopedTo: { [weak self] in self?.connection.key }
+        ) { [weak self] event in
+            guard let self else { return }
+            switch event {
+            case .transferProgressed(_, let received, let expected):
+                guard var state = self.transfer else { return }
+                state.received = received
+                state.expected = expected
                 self.transfer = state
+            /* The page stops being true the moment anything changes the
+               guest's disk — a change this window made, an agent's upload,
+               a mutation over the command surface. It used to stay wrong
+               until somebody clicked Refresh; the whole point of the bus is
+               that nobody has to. Only when this page is showing a listing:
+               a reload with nothing on screen would ask a question no
+               person is waiting on the answer to. */
+            case .fileTreeChanged(_, let side, _) where side == .guest:
+                guard self.canBrowse, !self.rows.isEmpty else { return }
+                self.refresh()
+            default:
+                break
             }
+        }
     }
 
     /// The rows in display order, sorted once per change rather than
@@ -354,11 +378,18 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
             let dropped = queue.count
             lastError = "\(dropped) file\(dropped == 1 ? "" : "s") "
                 + "still waiting to send were dropped: they were meant for "
-                + "the other Mac."
+                + "\(MachineNaming.simpleReference)."
         }
         queue = []
         queueTotal = 0
         queueDone = 0
+        /* The sidebar is one machine's furniture, and the customisation
+           of it is that machine's too. Discovered rows go with the old
+           machine rather than being parked: they are a claim about a disk
+           that is no longer on the other end of the wire, and the sweep
+           that replaces them costs a handful of small requests. */
+        discoveredLocations = []
+        reloadStoredLocations()
     }
 
     private func snapshot() -> Snapshot {
@@ -455,8 +486,12 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
                    this side is not allowed to hang because of it. */
                 if let asked = cursor, next <= asked {
                     self.pageCursor = nil
-                    self.lastNotice = "This Mac repeated the same listing "
-                        + "position, so the folder is shown as far as it got "
+                    /* The machine that repeated itself is the one being
+                       BROWSED, not this one — this side only asked. */
+                    self.lastNotice = MachineNaming.startingSentence(
+                        self.connection.peerLabel)
+                        + " repeated the same listing position, so the "
+                        + "folder is shown as far as it got "
                         + "(\(self.rows.count) items)."
                     return
                 }
@@ -475,6 +510,305 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
                 self.pageCursor = nil
             }
         }
+    }
+
+    // MARK: - Places worth one click
+
+    /// The sidebar, as it is drawn: this connection's discoveries minus
+    /// what a person threw out, plus what they pinned, in their order.
+    @Published private(set) var locations: [FileLocation] = []
+    @Published private(set) var isDiscoveringLocations = false
+
+    /// This run's discoveries. Never persisted: a folder that was there
+    /// last week and is not there today must not survive in a file.
+    private var discoveredLocations: [FileLocation] = []
+    private var storedLocations = FileLocationsStore.Stored()
+    private let locationsStore: FileLocationsStore
+    /// Machines already swept, so showing the page twice is not two
+    /// sweeps. A person can still ask again.
+    private var sweptMachines = Set<GuestKey>()
+
+    private var currentMachine: GuestID? { connection.key?.machine }
+
+    /// One sweep per connection, on the page's first appearance. A sweep
+    /// is a handful of small requests, but it is a handful more than a
+    /// person asked for, so it never repeats itself unprompted.
+    func discoverLocationsIfNeeded() {
+        guard let key = connection.key, !sweptMachines.contains(key) else {
+            return
+        }
+        discoverLocations()
+    }
+
+    /// Finds what of the classic furniture is actually reachable inside
+    /// this machine's share, and omits the rest in silence.
+    ///
+    /// Two routes, in this order, because they are not equally good:
+    /// `software.list` first, whose four System Folder domains are
+    /// `FindFolder`-resolved on the guest and therefore carry that
+    /// machine's own names; then plain probing, which is a guess that
+    /// either lists or does not.
+    func discoverLocations() {
+        guard canBrowse, !isDiscoveringLocations else { return }
+        if let key = connection.key { sweptMachines.insert(key) }
+        isDiscoveringLocations = true
+        /* The share root comes FIRST, and not for the sidebar's top row:
+           `software.list` answers in whole HFS paths, and turning one of
+           those into something this browser can ask for needs to know
+           what to subtract. Sweeping before the root was known threw away
+           every Folder Manager answer for want of a prefix. */
+        listener.listFiles(path: "") { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let listing):
+                if let root = listing.root, !root.isEmpty {
+                    self.shareRoot = root
+                }
+                self.sweepFolderManager(index: 0, found: [],
+                                        systemFolder: nil)
+            case .failure(let failure):
+                self.finishDiscovery(abandoned: failure.message)
+            }
+        }
+    }
+
+    /// Route one: ask for a page of each FindFolder-backed domain and
+    /// read the folder out of where its entries live.
+    private func sweepFolderManager(index: Int, found: [FileLocation],
+                                    systemFolder: String?) {
+        guard index < ClassicLocations.folderManagerDomains.count else {
+            sweepSystemFolder(found: found, systemFolder: systemFolder)
+            return
+        }
+        let domain = ClassicLocations.folderManagerDomains[index]
+        listener.listSoftware(domain: domain.domain, cursor: 1) {
+            [weak self] result in
+            guard let self else { return }
+            var found = found
+            var systemFolder = systemFolder
+            switch result {
+            case .failure(let failure):
+                guard !FileLocationResolver.isFatal(failure.code) else {
+                    self.finishDiscovery(abandoned: failure.message)
+                    return
+                }
+                // A guest too old for this domain simply does not
+                // contribute; the probe route still can.
+                break
+            case .success(let listing):
+                if let path = FileLocationResolver.folder(
+                    fromSoftware: listing.entries, shareRoot: self.shareRoot) {
+                    found.append(FileLocation(
+                        path: path,
+                        name: ClassicLocations.leafName(of: path),
+                        symbol: domain.symbol, origin: .folderManager))
+                    /* Every one of these four lives directly inside the
+                       System Folder, so any of them names it — and names
+                       it as that machine spells it, which is the whole
+                       reason this route exists. */
+                    if systemFolder == nil {
+                        systemFolder = FileLocationResolver.parent(of: path)
+                            ?? ""
+                    }
+                }
+            }
+            self.sweepFolderManager(index: index + 1, found: found,
+                                    systemFolder: systemFolder)
+        }
+    }
+
+    /// The System Folder itself: known already if a domain answered,
+    /// otherwise the one thing left to guess at before its children can
+    /// be probed.
+    private func sweepSystemFolder(found: [FileLocation],
+                                   systemFolder: String?) {
+        if let systemFolder, !systemFolder.isEmpty {
+            var found = found
+            found.insert(FileLocation(
+                path: systemFolder,
+                name: ClassicLocations.leafName(of: systemFolder),
+                symbol: ClassicLocations.systemFolder.symbol,
+                origin: .folderManager), at: 0)
+            sweepCandidates(index: 0, found: found, systemFolder: systemFolder)
+            return
+        }
+        probe(ClassicLocations.systemFolder.names, at: 0, under: "") {
+            [weak self] resolved in
+            guard let self else { return }
+            guard let resolved else {
+                self.sweepCandidates(index: 0, found: found, systemFolder: nil)
+                return
+            }
+            var found = found
+            found.insert(FileLocation(
+                path: resolved,
+                name: ClassicLocations.leafName(of: resolved),
+                symbol: ClassicLocations.systemFolder.symbol,
+                origin: .probed), at: 0)
+            self.sweepCandidates(index: 0, found: found,
+                                 systemFolder: resolved)
+        }
+    }
+
+    /// Route two: guess a name, ask for its listing, keep it if it comes
+    /// back. A candidate whose every name refuses is omitted — the rule
+    /// the whole sidebar rests on.
+    private func sweepCandidates(index: Int, found: [FileLocation],
+                                 systemFolder: String?) {
+        guard index < ClassicLocations.candidates.count else {
+            finishDiscovery(found: found)
+            return
+        }
+        let candidate = ClassicLocations.candidates[index]
+        /* A child of the System Folder cannot be probed when we never
+           found the System Folder: joining onto nothing would probe the
+           share root's own children under the same names, which is a
+           different folder that may well exist. */
+        guard let base = candidate.insideSystemFolder ? systemFolder : ""
+        else {
+            sweepCandidates(index: index + 1, found: found,
+                            systemFolder: systemFolder)
+            return
+        }
+        probe(candidate.names, at: 0, under: base) { [weak self] resolved in
+            guard let self else { return }
+            var found = found
+            if let resolved, !found.contains(where: { $0.path == resolved }) {
+                found.append(FileLocation(
+                    path: resolved, name: candidate.name,
+                    symbol: candidate.symbol, origin: .probed))
+            }
+            self.sweepCandidates(index: index + 1, found: found,
+                                 systemFolder: systemFolder)
+        }
+    }
+
+    /// Tries names in order under one folder, answering with the first
+    /// that lists. One `file.list` per name — bounded by the candidate
+    /// table, and every one of them a page of at most sixteen entries.
+    private func probe(_ names: [String], at index: Int, under base: String,
+                       completion: @escaping (String?) -> Void) {
+        guard index < names.count else {
+            completion(nil)
+            return
+        }
+        let path = FileLocationResolver.join(base, names[index])
+        listener.listFiles(path: path) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let listing):
+                if let root = listing.root, !root.isEmpty {
+                    self.shareRoot = root
+                }
+                completion(path)
+            case .failure(let failure):
+                guard !FileLocationResolver.isFatal(failure.code) else {
+                    self.finishDiscovery(abandoned: failure.message)
+                    return
+                }
+                self.probe(names, at: index + 1, under: base,
+                           completion: completion)
+            }
+        }
+    }
+
+    private func finishDiscovery(found: [FileLocation]) {
+        isDiscoveringLocations = false
+        var found = found
+        found.insert(ClassicLocations.rootLocation(shareRoot: shareRoot),
+                     at: 0)
+        discoveredLocations = found
+        republishLocations()
+    }
+
+    /// The wire went away mid-sweep. Everything not yet asked about is
+    /// unknown, not absent — so nothing is recorded, and the machine is
+    /// left un-swept so a reconnection tries again.
+    private func finishDiscovery(abandoned reason: String) {
+        isDiscoveringLocations = false
+        if let key = connection.key { sweptMachines.remove(key) }
+        lastNotice = "Could not finish looking for folders on "
+            + "\(connection.peerLabel): \(reason)"
+    }
+
+    private func republishLocations() {
+        locations = FileLocationsStore.merge(discovered: discoveredLocations,
+                                             stored: storedLocations)
+    }
+
+    private func reloadStoredLocations() {
+        storedLocations = locationsStore.load(for: currentMachine)
+        republishLocations()
+    }
+
+    private func saveStoredLocations() {
+        locationsStore.save(storedLocations, for: currentMachine)
+        republishLocations()
+    }
+
+    /// Goes to a location. The breadcrumb is the path, so the bar says
+    /// where you landed exactly as it does after a double-click.
+    func go(to location: FileLocation) {
+        guard canBrowse else { return }
+        breadcrumb = location.path.isEmpty
+            ? [] : location.path.components(separatedBy: ":")
+        load(path: path, resetRows: true)
+    }
+
+    /// What a person may drag into the sidebar: a folder this browser can
+    /// currently SEE is a folder. Nil is a refusal, and refusing is the
+    /// point — the sidebar accepts a dragged string, and a string is not
+    /// evidence of anything.
+    func pinnableName(for path: String) -> String? {
+        guard !path.isEmpty else { return nil }   // the root is always there
+        if path == self.path { return ClassicLocations.leafName(of: path) }
+        guard let row = rows.first(where: { $0.path == path }), row.isFolder
+        else { return nil }
+        return row.name
+    }
+
+    @discardableResult
+    func pinLocation(path: String) -> Bool {
+        guard let name = pinnableName(for: path) else { return false }
+        guard !locations.contains(where: { $0.path == path }) else {
+            return true                    // already there; a no-op, not a fault
+        }
+        storedLocations.pinned.append(FileLocation(
+            path: path, name: name, symbol: "folder", origin: .pinned))
+        // A location thrown out and then dragged back is no longer thrown
+        // out, or the pin would vanish on the next sweep.
+        storedLocations.hidden.removeAll { $0 == path }
+        saveStoredLocations()
+        return true
+    }
+
+    /// Takes a row out. A pinned one is forgotten; a discovered one is
+    /// remembered as unwanted, because the next sweep would otherwise put
+    /// it straight back.
+    func removeLocation(_ location: FileLocation) {
+        guard location.origin != .root else { return }
+        storedLocations.pinned.removeAll { $0.path == location.path }
+        if !location.isPinned,
+           !storedLocations.hidden.contains(location.path) {
+            storedLocations.hidden.append(location.path)
+        }
+        storedLocations.order.removeAll { $0 == location.path }
+        saveStoredLocations()
+    }
+
+    func moveLocations(from source: IndexSet, to destination: Int) {
+        var paths = locations.map(\.path)
+        paths.move(fromOffsets: source, toOffset: destination)
+        storedLocations.order = paths
+        saveStoredLocations()
+    }
+
+    /// The way back for a sidebar someone emptied. Pins are theirs and
+    /// stay; what this undoes is the throwing-out and the rearranging.
+    func restoreRemovedLocations() {
+        storedLocations.hidden = []
+        storedLocations.order = []
+        saveStoredLocations()
     }
 
     // MARK: - Download
@@ -544,34 +878,101 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
         }
     }
 
-    /// The moment after the bytes land.
+    /// The moment after the bytes land, and the three rungs it climbs
+    /// down.
     ///
-    /// **A type this Mac cannot open is not an error.** Plenty of what
-    /// is on a classic volume — a resource-only file, an `APPL` for a
-    /// processor this Mac has not run in twenty years — arrives as
-    /// MacBinary with nothing here to open it. Guessing at an
-    /// application would be worse than useless, so the file is revealed
-    /// in the Finder instead: the transfer succeeded, it is somewhere
-    /// real, and the person can see it. What is refused is the silent
-    /// version, where a double-click ends in nothing at all.
+    /// **A type this Mac cannot open is the ordinary case, not the edge
+    /// one.** Classic files carry a type and creator rather than an
+    /// extension, so most of what comes off that volume — a resource-only
+    /// document, an `APPL` for a processor this Mac has not run in twenty
+    /// years — lands as `something.bin` with nothing here claiming it.
+    /// `FileConverter.outputName` is where that name is decided, and it
+    /// deliberately does not invent an extension it cannot justify: a
+    /// `.bin` that is honestly unidentified beats a `.txt` that is
+    /// wrong.
+    ///
+    /// So the chain is: open it; failing that ASK which application to
+    /// use, which is the answer a person actually has and this Mac does
+    /// not; failing that (they cancelled, or the application refused it)
+    /// reveal it in the Finder and say so. The transfer succeeded at
+    /// every rung — none of this is an error. What is refused is the
+    /// silent version, where a double-click ends in nothing at all.
     private func openLanded(_ url: URL) {
         if systemOpen.open(url) { return }
-        systemOpen.reveal(url)
-        lastNotice = "\(url.lastPathComponent) is in "
-            + "\(shareDirectory.lastPathComponent) — this Mac has "
-            + "nothing that opens it."
+        guard let application = systemOpen.chooseApplication(url) else {
+            revealUnopened(url)
+            return
+        }
+        let name = application.deletingPathExtension().lastPathComponent
+        systemOpen.openWith(url, application) { [weak self] opened in
+            guard let self else { return }
+            guard opened else {
+                self.systemOpen.reveal(url)
+                self.lastNotice = "\(name) would not open "
+                    + "\(url.lastPathComponent). It is in "
+                    + "\(self.shareDirectory.lastPathComponent)."
+                return
+            }
+            self.lastNotice = "\(url.lastPathComponent) opened with \(name)."
+        }
     }
 
-    /// Opening and revealing, as a seam. The real thing is the Finder;
-    /// a test watches the decision instead of launching an application
-    /// on somebody's Mac.
+    private func revealUnopened(_ url: URL) {
+        systemOpen.reveal(url)
+        lastNotice = "\(url.lastPathComponent) is in "
+            + "\(shareDirectory.lastPathComponent) — \(MachineNaming.thisMac) "
+            + "has nothing that opens it."
+    }
+
+    /// Opening, choosing and revealing, as one seam. The real thing is
+    /// the Finder and a panel; a test watches the decision instead of
+    /// launching an application on somebody's Mac or putting a modal
+    /// dialog in front of a test runner.
+    ///
+    /// The two new members carry defaults that do NOTHING, so a test that
+    /// constructs this with `open:`/`reveal:` alone gets the old
+    /// behaviour rather than a chooser it never asked for.
     struct SystemOpen {
         var open: (URL) -> Bool
         var reveal: (URL) -> Void
+        /// The native "choose an application" flow. Nil is a cancel, and
+        /// a cancel is a decision — it falls through to reveal rather
+        /// than being retried.
+        var chooseApplication: (URL) -> URL? = { _ in nil }
+        /// Open a file with a named application. Launching is genuinely
+        /// asynchronous — the application has to start before it can
+        /// refuse the document — so the answer arrives later, on the main
+        /// actor, where the notice it produces is read.
+        var openWith: (URL, URL, @escaping @MainActor (Bool) -> Void)
+            -> Void = { _, _, done in Task { @MainActor in done(false) } }
 
         static let workspace = SystemOpen(
             open: { NSWorkspace.shared.open($0) },
-            reveal: { NSWorkspace.shared.activateFileViewerSelecting([$0]) })
+            reveal: { NSWorkspace.shared.activateFileViewerSelecting([$0]) },
+            chooseApplication: { url in
+                /* NSWorkspace has no public "Open With…" panel, so this is
+                   the panel the Finder's own Other… item shows: pick an
+                   application bundle. Scoped to /Applications the way that
+                   dialog is, but not confined to it. */
+                let panel = NSOpenPanel()
+                panel.canChooseFiles = true
+                panel.canChooseDirectories = false
+                panel.allowsMultipleSelection = false
+                panel.allowedContentTypes = [.application]
+                panel.directoryURL = URL(fileURLWithPath: "/Applications")
+                panel.prompt = "Open"
+                panel.message = "Choose an application to open "
+                    + "“\(url.lastPathComponent)”."
+                return panel.runModal() == .OK ? panel.url : nil
+            },
+            openWith: { file, application, done in
+                NSWorkspace.shared.open(
+                    [file], withApplicationAt: application,
+                    configuration: NSWorkspace.OpenConfiguration()) {
+                    _, error in
+                    Task { @MainActor in done(error == nil) }
+                }
+            })
     }
 
     var systemOpen = SystemOpen.workspace

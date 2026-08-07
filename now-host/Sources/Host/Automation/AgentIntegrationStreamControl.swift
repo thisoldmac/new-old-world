@@ -92,8 +92,10 @@ final class AgentIntegrationStreamControl {
     /// has been handed out. A frame request arms this and waits.
     private var frameWaiters: [CheckedContinuation<
         GuestListener.CaptureDelivery?, Never>] = []
-    private var frameWatch: AnyCancellable?
-    private var streamWatch: AnyCancellable?
+    /// One subscription for both: frames and the bracket's own
+    /// open/closed arrive on the same bus, so watching them separately
+    /// would only be two ways of hearing one listener.
+    private var busWatch: HostEventSubscription?
 
     init(listener: GuestListener,
          currentSessionID: @escaping @MainActor () -> UUID?,
@@ -112,9 +114,7 @@ final class AgentIntegrationStreamControl {
         self.callerProcessID = callerProcessID
         self.isProcessRunning = isProcessRunning
         self.frameTimeout = frameTimeout
-        frameWatch = listener.streamFrames.sink { [weak self] delivery in
-            self?.receive(delivery)
-        }
+
         /* The bracket can end without this side asking: the guest stops it,
            the connection drops, the person clicks Stop. Ownership that
            outlived the bracket would have this file ending somebody else's
@@ -132,9 +132,17 @@ final class AgentIntegrationStreamControl {
            matter on its own — with it gone, a second agent bracket inherits
            the first's ownership record if `start` is ever made not to
            overwrite one (mutation M4). */
-        streamWatch = listener.$activeStreamId.sink { [weak self] id in
-            guard let self, id != self.ownership?.streamID else { return }
-            self.releaseOwnership()
+        busWatch = listener.events.subscribe { [weak self] event in
+            guard let self else { return }
+            switch event {
+            case .streamFrame(_, let delivery):
+                self.receive(delivery)
+            case .streamStateChanged(_, let id):
+                guard id != self.ownership?.streamID else { return }
+                self.releaseOwnership()
+            default:
+                break
+            }
         }
     }
 

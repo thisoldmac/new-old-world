@@ -328,6 +328,15 @@ static void act_v2_describe(NowPeekTable *table, const NowActTarget *target,
         v2->operation_kind = kNowPeekActKindVisibility;
         v2->operation_object = (NowPeekU32)cell->item_index;
         break;
+    case kNowPeekActOpDragPress:
+        v2->operation_kind = kNowPeekActKindDrag;
+        /* The session nonce rides in control_handle for this op, and the
+           nonce is what the guard binds to - NOT the point. A drag press
+           names a point, and two presses at the same place are two
+           different gestures; binding to the point would let a stale
+           request satisfy the identity check for a live one. */
+        v2->operation_object = cell->control_handle;
+        break;
     default:
         v2->operation_kind = kNowPeekActKindNone;
         break;
@@ -526,6 +535,8 @@ const char *now_act_error_code(unsigned long plane_error)
     case kNowPeekActErrIdentity: return "act-identity-mismatch";
     case kNowPeekActErrExpired: return "act-expired";
     case kNowPeekActErrSessionChanged: return "act-session-changed";
+    case kNowPeekActErrDragBusy:    return "drag-busy";
+    case kNowPeekActErrDragNoVehicle: return "drag-no-vehicle";
     default:                        return "act-refused";
     }
 }
@@ -578,6 +589,15 @@ const char *now_act_error_message(unsigned long plane_error)
     case kNowPeekActErrSessionChanged:
         return "the application writer session changed before the request "
                "could be served";
+    /* Two refusals that must not collapse into one. Busy is a retry - a
+       button is already held and there is exactly one. No-vehicle is a
+       different resident: this extension has no drag Time Manager task,
+       so no amount of retrying will ever produce one. */
+    case kNowPeekActErrDragBusy:
+        return "a drag is already holding the mouse button down";
+    case kNowPeekActErrDragNoVehicle:
+        return "this resident has no drag vehicle, so the button could "
+               "never be held";
     default:
         return "the target refused the request";
     }
@@ -639,4 +659,96 @@ const char *now_act_status_message(NowActStatus status)
     default:
         return "the target refused the request";
     }
+}
+
+/* ---- P7, the drag session ---------------------------------------------
+ *
+ * Deliberately thin, and deliberately NOT routed through now_act_submit.
+ * A submit waits for the resident to serve a request at jGNE time, and
+ * during a drag there is no jGNE time - the target is inside
+ * DragGrayRgn. These three write shared memory and return; the Time
+ * Manager task is the reader. */
+
+NowPeekDragCell *now_act_drag_cell(void)
+{
+    NowPeekTable *table = act_table();
+
+    if (table == NULL) {
+        return NULL;
+    }
+    /* Length AND format, both. A zeroed tail and an absent tail have to
+       look different, and only the pair can tell them apart. */
+    if (table->length < (NowPeekU32)(offsetof(NowPeekTable, drag)
+                                     + sizeof(NowPeekDragCell))) {
+        return NULL;
+    }
+    if (table->drag_format != (NowPeekU32)kNowPeekDragFormatV1) {
+        return NULL;
+    }
+    return &table->drag;
+}
+
+int now_act_drag_available(void)
+{
+    NowPeekTable *table = act_table();
+
+    if (table == NULL || now_act_drag_cell() == NULL) {
+        return 0;
+    }
+    /* The capability bit is published by the resident only when its Time
+       Manager task actually installed. A cell with no vehicle behind it
+       would take a press and never let go of it. */
+    return (table->caps & (NowPeekU32)kNowPeekTableCapDrag) != 0;
+}
+
+NowPeekU32 now_act_drag_next_session(void)
+{
+    static NowPeekU32 g_drag_session;
+
+    g_drag_session++;
+    if (g_drag_session == 0) {
+        g_drag_session = 1;     /* never 0: that is "no session" */
+    }
+    return g_drag_session;
+}
+
+int now_act_drag_move(NowPeekU32 session, long h, long v)
+{
+    NowPeekDragCell *drag = now_act_drag_cell();
+
+    if (drag == NULL || session == 0) {
+        return 0;
+    }
+    if (drag->state != (NowPeekU32)kNowPeekDragStateHeld
+        || drag->session != session) {
+        return 0;
+    }
+    /* The point BEFORE its commit word, always. want_seq is what makes a
+       half-written point unconsumable, and writing it first would defeat
+       the whole arrangement - the task can fire between any two stores
+       here, because it fires at interrupt time. */
+    drag->want_h = (NowPeekI32)h;
+    drag->want_v = (NowPeekI32)v;
+    drag->heartbeat_ticks = (NowPeekU32)TickCount();
+    drag->want_seq++;
+    if (drag->want_seq == 0) {
+        drag->want_seq = 1;     /* 0 means "no want has ever been made" */
+    }
+    return 1;
+}
+
+int now_act_drag_release(NowPeekU32 session)
+{
+    NowPeekDragCell *drag = now_act_drag_cell();
+
+    if (drag == NULL || session == 0) {
+        return 0;
+    }
+    if (drag->state != (NowPeekU32)kNowPeekDragStateHeld
+        || drag->session != session) {
+        return 0;
+    }
+    drag->heartbeat_ticks = (NowPeekU32)TickCount();
+    drag->release_request = session;
+    return 1;
 }

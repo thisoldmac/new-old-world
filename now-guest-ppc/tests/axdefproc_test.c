@@ -77,6 +77,9 @@ static void build_window(AxFixture *f, unsigned long region)
     axfix_put16(f, kWin + 18, 0);
     axfix_put8(f, kWin + 108, 8);         /* windowKind: an application's */
     axfix_put8(f, kWin + 110, 255);       /* visible */
+    /* Both regions on one handle: these fixtures are not about the
+       frame, and axwalk_test is where the two are pinned apart. */
+    axfix_put32(f, kWin + 114, kRgnH);    /* structure region */
     axfix_put32(f, kWin + 118, kRgnH);    /* content region */
     axfix_put32(f, kWin + 134, kWinTitleH);
     axfix_put32(f, kWin + 140, kCtlH);

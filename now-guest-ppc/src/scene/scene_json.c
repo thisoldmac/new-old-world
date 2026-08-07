@@ -591,6 +591,26 @@ static void put_controls(Sink *k, const NowScene *s, const NowSceneWindow *w)
                 put(k, ",\"definition\":");
                 put_str(k, definition);
             }
+            /* WHY nobody could say, when the guest knows. The semantic
+               client computes exactly this - "Unsupported custom
+               control", "Control kind undetermined", "Semantic
+               classification unavailable" - and until 2026-08-07 it was
+               emitted ONLY beside a role, which is the one case where it
+               is least needed. So every unclassified control reached the
+               host as a bare `unknown` and the guest's own diagnosis of
+               its own gap was dropped on the floor: 71 of Appearance's 73
+               controls read identically whether the resident had refused
+               them, never reached them, or been asked at all.
+
+               It is a REASON, not a value, and it rides the existing
+               field rather than a new one because that field already
+               carries this class of string beside a known role. A reader
+               must not promote it into a kind: knowledge is still
+               `unknown` here and that is the load-bearing key. */
+            if (c->semantic_value_known) {
+                put(k, ",\"value\":");
+                put_str(k, c->semantic_value);
+            }
         } else {
             const char *action = control_action(c->role);
             char value[16];

@@ -491,6 +491,33 @@ final class CloudServingTests: XCTestCase {
             PhotosCloudProvider.DownloadSize.long640.longestEdge, 640)
     }
 
+    /// The label a person reads and the token that crosses the wire
+    /// are DIFFERENT strings, pinned separately. A picker label is
+    /// prose and free to change; rawValue is CloudGet.size and cannot
+    /// change without the contract and both guests. This test exists
+    /// so a future relabelling that reached through to the token
+    /// fails here rather than on someone's PowerBook — the shape of
+    /// defect this project calls two-halves-never-met-in-a-test.
+    func testEverySizeLabelIsSeparateFromItsWireToken() {
+        XCTAssertEqual(
+            PhotosCloudProvider.DownloadSize.allCases.map(\.label),
+            ["Default size", "1600 px", "1024 px", "640 px"],
+            "the Downloads picker's wording, in menu order")
+        XCTAssertEqual(
+            PhotosCloudProvider.DownloadSize.allCases.map(\.rawValue),
+            ["original", "long1600", "long1024", "long640"],
+            "the wire tokens, unchanged by any wording")
+        for size in PhotosCloudProvider.DownloadSize.allCases {
+            XCTAssertNotEqual(size.label, size.rawValue,
+                              "\(size) must not serve one string to "
+                                  + "both faces")
+            XCTAssertNil(PhotosCloudProvider.DownloadSize(
+                rawValue: size.label),
+                "a label must never parse as a token — that is how a "
+                    + "relabelling reaches the wire unnoticed")
+        }
+    }
+
     /// The scale, as arithmetic and independent of any image: the
     /// LONGER dimension lands on the number, whichever way up the photo
     /// is. Written from the task's own worked example rather than from

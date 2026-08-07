@@ -108,8 +108,509 @@ longer exists. An open window has never been a running poll; since this
 change it is not even claimed to be, and `showMirror()` starts before it
 shows — gated, and watched failing by mutation with the two statements
 swapped.
+## FIXED: two capabilities and their gate had never met, and one integration found both (2026-08-07, `claude/019-integration-3`)
+
+`scripts/test-all` failed at the host gate on the round-3 merge, twice,
+on the same row and for two different reasons. Neither lane was wrong;
+both were written against a surface that did not yet contain the other.
+
+**One: no argument.** `MCPClientConformanceTests` — landed by
+`019-conformance` — checks its recipe book against `tools/list` **both
+ways** and failed naming `now_mirror_open`, a capability
+`018-open-mirror` had landed before that lane forked. Fixed with a
+recipe: it takes no arguments and its own annotations declare it
+idempotent and non-destructive, so a conformance run may take it. It
+goes in `producersFirst` ahead of the other `now_mirror_*` rows because
+its own descriptor says they read a state engine that does not run until
+the Mirror is open.
+
+**Two: a fourth name for one question.** With an argument, the driver
+then read its reply as *"a structured result in no shape this driver can
+read: alreadyOpen, detail, showing, unavailable"*.
+`AgentIntegrationMirrorOpenResult` says availability with **`showing:
+Bool`** beside the same `unavailable` payload the other envelopes carry
+— which makes four spellings of one question on this surface:
+`available` (session health), `hostAvailable` (guest files), `ok`, and
+now `showing`. The driver's verdict was the correct thing to say about
+that surface.
+
+Taught to the driver rather than renamed, because renaming a shipped MCP
+result field is a surface change and not an integration's to make.
+**The consolidation is the open item**, and it belongs to plan 019's
+"one implementation per question": either these four become one envelope,
+or the reason there are four is written down where a fifth would be
+added. Until then every new capability with its own availability word
+fails this gate on arrival — which is the gate working, and is also four
+times more often than it should have to.
+
+**What makes this the round's most valuable finding.** Both defects were
+invisible on both branches and green on both. A gate that samples would
+have missed the first; a gate that read only the declaration — which is
+what `MCPCoverageTests` does, and it was green throughout — would have
+missed both, because `now_mirror_open` was declared correctly the whole
+time. Only speaking to the surface the way a client does found them, and
+only the merge put the client and the capability in one tree.
+
+## NOT MERGED: `018-cdef-classify` moved out from under the round-3 integration (2026-08-07, `claude/019-integration-3`)
+
+`tools/arc-status` computed the lane as **idle** at 9 commits and it was
+merged at that tip (`f3f7c7f3` and its ancestors — the reason strings, the
+`018-control-semantics` findings, the scene tests). Three further commits
+landed on it **while this round was gating**:
+
+    601cb07f  feat(scene): the CDEF resource id, as a third knowledge state
+    62e82470  feat(act): ctlact takes a POINT, and a console face that works
+    58e9e5e5  build: the four new sources compile into the guest
+
+Those three are the lane's namesake — the CDEF fallback the merged
+`018-control-semantics` entry recommends as the next slice, plus the click
+POINT that entry says tabs and list rows need. **They are not in this
+integration.** The lane was in flight at the moment it was read as idle,
+and merging a moving tip would have produced a gate result nobody could
+attribute — the same class of problem as a derived count that was true
+when it was derived.
+
+So the merged `018-control-semantics` entry's "what did NOT land, and why"
+section is accurate about this tree and already stale about that branch.
+The lane lands next round.
+
+**The general shape, which is worth more than this instance:** `idle`
+is a property of a branch at the moment it is computed, and an
+integration takes an hour. `arc-status` reports it once, at the start,
+and nothing re-checks it at the merge — so a lane can be honestly idle
+when the round begins and in flight when it ends. Re-reading the tips
+before the final gate would name it, the way re-deriving the coverage
+tables at the merge names their drift.
+
+## FIXED: an integration had truncated the entry it was recording itself in (2026-08-07, `claude/019-integration-3`)
+
+The `018-integration` entry — "the first watch of the INTEGRATED render,
+and what it shows", six numbered defects across five targets — exists on
+`claude/018-integration` and on `claude/019-cursor-follow` and **did not
+exist on `claude/019-integration-2`**. What survived there was the
+thirteen-line status addendum a later round had added *on top* of it,
+under the same heading, with the body gone. `grep -c "Seventeen plan-018
+lanes merged"` answered 1, 1 and 0.
+
+It was restored at this merge by folding the two: the addendum, then the
+body it was an addendum to. Nobody deleted it deliberately — a keep-both
+resolution had kept the newer heading and dropped the older text under
+it, and because the heading survived, every later reader saw an entry
+that looked complete.
+
+That is the failure mode of resolving a documentation conflict by
+keeping headings: **a heading is not the entry**, and a ledger whose
+entries can lose their bodies while keeping their titles reads exactly
+like a ledger that is fine. Round 2 caught its own splice truncating
+`HostAppState.swift` from 447 lines to 295 by counting lines; nothing
+counts the lines of a prose entry, and this one had been short for a
+round before anyone noticed.
+
+## ANSWERED: LIST VIEW IS WATCHED, and the round-2 pair that claimed it was icon view (2026-08-07, `claude/019-integration-3`)
+
+Two rounds recorded list view as blocked. It is not, and the block named
+in the entry below — `menuact` on View > "as List" answering
+`no-such-process` — **did not reproduce**. On the round-3 integrated
+tree, against a private baked image (resident `4d0988e8e891`,
+capabilities 511), with the Finder fronted and the anchor cycle run
+first:
+
+    menuact menu=259 item=3 titleLeft=110 psn=0.29949953
+      Dispatch      dispatched
+      Mechanism     the application's own MenuSelect
+      Identity      checked: the press is where this application's own
+                    menu bar puts that menu's title
+      Settlement    dispatched-but-unconfirmed
+      Correlation   4F976E8D-00000002
+
+and the next scene carried `as Icons  mark=false` / `as List
+mark=true`. The guest's own menu state is the confirmation, not a look
+at the pixels — and the pixels agree: ten rows with Name and Date
+Modified columns.
+
+**The round-2 baseline for this target is void.**
+`~/Lab/Assets/now-mirror-assets/019-integration/finder-list-guest.png`
+shows the Finder in **icon** view — same window, same ten icons, byte
+-for-byte the same content as `finder-icon-guest.png` beside it. The
+view was never switched and the file was named for what the run meant to
+capture rather than for what it got. Nothing about that pair can be
+compared against; the round-3 pair is the first list-view evidence this
+project has.
+
+That is the second time in three days a target has been named for its
+intent. It is the same failure as deploying a build under the name it
+was meant to be (AGENTS.md > Deploying), arriving in the assets
+directory instead of on the PowerBook.
+
+**Not fixed by anything, and that is the useful half.** No lane in this
+merge touched the anchor bind. Either the earlier refusal was a
+consequence of the rig — a guest that had not run its acquisition cycle,
+or an application not pumping with the plane armed — or it is
+intermittent. Both readings are live, and a refusal nobody can reproduce
+is not a closed defect.
+
+## BROKEN: the integrated render at round 3 — six targets, and the content plane reached none of them (2026-08-07, `claude/019-integration-3`)
+
+Seven lanes merged, then the tree was watched composing. Pairs in
+`~/Lab/Assets/now-mirror-assets/019-integration-3/` (out of git) (guest pixels via QMP screendump after the walk
+returned, host render via `MirrorApp --render-scene` over the same
+envelope). Emulated mac99/OS 9.1, private image `now-stage-int3`,
+resident `4d0988e8e891`. Nothing here is metal-verified.
+
+**Steady state was confirmed, not assumed.** Pass 1 discarded — its
+scenes carry two to four windows because the control panels were still
+opening. Pass 2 is the measurement: every scene carries all five
+windows. Pass 3 re-took two targets and the semantic answer was
+identical (21 and 73 controls, all `knowledge: unknown`), which is the
+test that distinguishes steady state from the warm-up defect: a warm-up
+scene reports NOW's **own** nine controls as unknown too, and here they
+classify correctly every time — button, checkbox, scrollbar, popup,
+triangle.
+
+| Target | Against round 2 | What it looks like |
+|---|---|---|
+| Workshop | **unchanged, and the best of the six** | Layout, text, buttons, window chrome and the disabled/enabled split all right. Sidebar module icons are a generic page glyph rather than each module's own; the sidebar's scrollbar and the preview box's outline are not drawn |
+| Desktop | **unchanged** | NOW's window with the Finder frontmost; the render correctly greys every control of the inactive window, which is the part most likely to have been got wrong |
+| Finder icon view | **unchanged** | Frame, title, scrollbars and grow box right; the interior is empty and says *"Guest content not reported"*. Identical to the round-2 render |
+| Finder list view | **BETTER — new ground** | First ever capture (above). The render draws the **Name / Date Modified column headers**, which the icon-view render does not — so the renderer does distinguish the two views. The rows themselves are absent, same content gap |
+| Date & Time | **unchanged** | Still **no group boxes at all**. "Current Date", "Current Time", "Time Zone", "Use a Network Time Server" arrive with correct rects and correct titles and no kind, so there is nothing to draw them as. Text fields are empty grey slabs. Buttons, radio buttons and the menu-bar clock group are right |
+| Appearance | **unchanged, and still the one a person would call broken** | No tab strip at all, three scrollbars stacked, interior *"Guest content not reported"* |
+
+**One cause under four of those rows.** `content: false` on **every
+window of every target**, ours included. The content plane is
+`supported: true, requested: false, active: false` throughout, so every
+interior that says "Guest content not reported" is reporting the truth
+about a plane nothing armed. This rig arms it no more than round 2's
+did, so the comparison is fair — but four of the six "unchanged" verdicts
+are one unarmed plane rather than four defects, and a look that arms it
+would say something none of these six can.
+
+**`z: 0` is still true, and the render still draws in array order.**
+Every window in all six scenes reports `z: 0` except the Finder's
+Desktop window, which reports `1`. The renders happen to look right
+because the scene's array order is front-first and tracks the front
+application — so the defect is invisible in exactly the captures that
+would expose it, and stays invisible until two windows of the SAME
+process need ordering.
+
+**`acquired: 0` on every cycle, in all three passes**, with
+`count` settling at 4 and `armed: true`. The cycle reports "every
+application got its turn" and acquires nothing new because the four are
+already anchored; it is not obviously wrong, and it is not obviously
+right either, and no run here distinguishes them.
+
+## ANSWERED: the list-view lane is still unwatched, and the reason is NOT the one recorded (2026-08-07, `claude/019-integration-2`)
+
+The 018 integration could not get a list-view pair and recorded that
+`script` "answered `osaErr -1753` to every AppleScript on that rig,
+including `get name of front window`". **That is disproven.** On this
+rig, with the integrated tree:
+
+| script | osaErr | output |
+|---|---|---|
+| `tell application "Finder" to activate` | **0** | — |
+| `tell application "Finder" to get name of front window` | **0** | `"Macintosh HD"` |
+| `… open file "Date & Time" of folder "Control Panels" of folder "System Folder" of startup disk` | **0** | opened |
+| `… open file "Appearance" of …` | **0** | opened |
+| `… set current view of front window to list view` | -1753 | — |
+| `… set view of front window to list view` | -1753 | — |
+| `… tell front window to set current view to list view` | -1753 | — |
+
+So the `script` verb works and the AppleScript path is live. What fails
+is **`current view` specifically**, in all three spellings — that term
+is Mac OS X Finder vocabulary and Mac OS 9.1's Finder does not carry it.
+It is a guest-OS limit, not a rig fault and not a defect in anything this
+project ships.
+
+The product-real route is the act plane, and it refuses for a reason
+already on this page: `menuact` on View > "as List" (menu 259, item 3,
+`titleLeft` 110, the Finder's own PSN) answers **`no-such-process`** —
+the known anchor-bind failure on the staging path, the same one that
+makes `actselftest` refuse on every spun-up clone. Two of `menuact`'s
+three argument requirements were also found by being refused for them in
+turn, and both refusals said exactly what was missing, which is the
+error vocabulary working.
+
+## BROKEN: the machine will not say what a foreign control IS, and that is not a bug we can fix in the walk (2026-08-07, `claude/018-control-semantics`)
+
+Michelle, driving the integrated build: *"a lot of controls (such as
+scrollbars and tabs) and basically all lists say the guest did not
+provide complete authoritative semantics. so like lists, scrollbars and
+tabs render now but they cant be used"*. Slices 3, 8 and 16 each hit this
+and none named the cause. This entry names it. **Emulator-verified**
+(mac99/OS 9.1, resident active, `3370f72a244e`); nothing here is
+metal-verified.
+
+**The proposed mechanism does not exist on our floor.** Slice 18's brief
+proposed `GetControlKind`. Universal Interfaces `Controls.h` line 2310
+says of it, in Apple's own words: *"This function is only available in
+Mac OS X."* CarbonLib 1.6 does not export it and the link fails — which
+`control_kind.h` already recorded in 2026-08-03. The working substitute
+is `GetControlData(…, kControlKindTag, …)`, and the resident already uses
+exactly that (`ext/src/now_semantic.c :: classify_member`). **Nothing was
+missing from the implementation.**
+
+**What the Control Manager actually answers.** Measured over steady-state
+scenes, with a warm-up scene discarded (the first scene of a connection
+walks before semantics is active and reports every role `unknown` for a
+reason that is not this defect):
+
+| Window | Controls | Answer |
+|---|---|---|
+| Appearance | 73 | 62 `Unsupported custom control`, 5 `Semantic classification unavailable`, 4 never reached by the drain, **2** classified (`listBox`) |
+| Date & Time | 21 | **21** `Unsupported custom control` |
+| NOW's own Workshop | 9 | **9** classified, with actions — button, checkbox, scrollbar, popup, triangle |
+
+`Unsupported custom control` is the resident saying it asked for
+`kControlKindTag` and the Control Manager declined, and that the
+documented `kControlListBoxListHandleTag` fallback declined too. So the
+plane is **reached, and cannot read them** — not unreached. That settles
+the question the integration round left open, and it means the split is
+by process ownership only as a *consequence*: we classify our own
+controls from the procID `control_kind.c` recorded when we made them, and
+for a foreign control there is no such record and the machine will not
+substitute one.
+
+The reason is that `kControlKindTag` is answered only for controls made
+through the Appearance-era `Create*Control` APIs. OS 9's own control
+panels are `CNTL`-resource controls created through `GetNewControl`, and
+the Control Manager holds no `ControlKind` for them. **The authoritative
+answer does not exist for the windows this product most needs it for.**
+
+**This is also why Date & Time renders with no group boxes.** "Current
+Date", "Current Time", "Time Zone" and "Use a Network Time Server" are
+four of that panel's 21 refusals. They arrive with correct rects and
+correct titles and no kind, so the renderer has nothing to draw them as.
+The missing chrome and the refused act are one defect wearing two
+costumes.
+
+**The three list flavours, distinguished** — they are not one thing and a
+single fix would have been wrong for two of them:
+
+1. **`kControlKindListBox`** — a real control. Classified correctly (the
+   2 in Appearance). It is refused for a *different* reason:
+   `scene_json.c :: control_action` returns no action for `listBox`, so
+   `Semantics.authorizesAction` is false and MirrorKit declines. Not a
+   capture defect at all. Selecting a row needs a click POINT, and
+   `ctlact` presses the control's centre — so this wants a contract
+   argument, not a role.
+2. **A bare List Manager `ListHandle`** — not a control. The control walk
+   never sees it and never will; it is not in any window's control chain.
+3. **The Finder's own lists** — the Finder draws them itself. In this
+   session a Finder window did not reach the scene at all. `FinderItems`
+   (AppleScript) is the answer for these and is a separate path.
+
+**What landed here:** an unclassified control now carries the guest's own
+reason instead of a bare `unknown`. The guest computed those strings all
+along and the encoder emitted them only beside a *known* role — the one
+case that did not need them. So a refusal by the machine, a miss by the
+drain, and a question never asked were indistinguishable downstream,
+which is most of why this took three slices to locate.
+
+**What did NOT land, and why:** nothing that would make these controls
+usable. Every route needs a gated surface and none should be taken
+unattended —
+
+- **Tabs** need `kControlKindTabs` (`'tabs'`, `ControlDefinitions.h` line
+  861) added to the resident's `compact_kind`, which today collapses it
+  and ~18 other documented kinds to `OtherSystem`. That is `ext/`, so it
+  triggers a bake. *It would not have helped here anyway* — Appearance's
+  tab control is among the 73 refusals, so the resident never gets a kind
+  to map.
+- **The honest fallback** is the control's **CDEF resource ID**, read via
+  `GetResInfo` on `contrlDefProc` — which the walk already reads raw
+  (`axwalk.c :: def_proc_origin`) and already reports as `system` for all
+  73. A system-heap CDEF with a documented id is the machine stating an
+  answer, not us guessing, and it is the only route that reaches OS 9's
+  own panels. It needs its own provenance and a weaker knowledge level so
+  the uncertainty stays visible. **This is the recommended next slice.**
+- **List rows and tab selection** need a click point on `ctlact`. The
+  act cell already carries `click_h`/`click_v`, so no `peek_table.h`
+  change — but the verb's args are contract-declared, and contract
+  changes serialise.
+
+**Do not "fix" this by weakening the reporting.** `completeness:
+complete` beside `knowledge: unknown` is the walk correctly saying it
+finished and still does not know. The number gets better by making it
+know, not by making it stop saying so.
+
+## FIXED: one menu act checked its identity, the other did not, and neither checked it against the machine (2026-08-07, `claude/019-one-answer-a`)
+
+Plan 019 slice 2, F7. `now_menu_act` requires `titleLeft` — the x of the
+named menu's title, which is where the act arms its press — and the
+requirement was earned: the resident's `MenuSelect` patch answers a press
+at ONE point, and an act surface bounded by anything weaker rode a real
+user's press **18 times in 20**. `mirror_drive menuItem` was read as
+skipping that check.
+
+**It does not skip it, and that was the smaller half of the finding.**
+Both paths end at the same guest verb with a `titleLeft`; `mirror_drive`
+derives it from the published scene's `menu.left` rather than asking its
+caller for it. What neither path had is anything checking that the
+coordinate belonged to the menu the same call NAMED — a required
+coordinate is not a checked one — and two ways a careful caller supplies
+a wrong one:
+
+- **A stale scene.** The caller read `left` a second ago; the front
+  application changed its menu bar since.
+- **A missing reading.** `SceneBuilder.normalizeMenus` defaults an
+  unreported `left` to **0**, which arms at x=4 — the Apple menu. A
+  `mirror_drive menuItem` on such a menu arms on the Apple menu's title
+  and answers whoever presses it next. That is the 18/20 hijack
+  reintroduced by a `?? 0`.
+
+The probe that reads the item before pressing it (2026-08-07, the
+disabled-`File > Print` defect) already walks past the menu row carrying
+its `left`, so the machine is now asked. Where the bar is readable its own
+`left` is authoritative and a disagreement refuses `menu-title-moved`
+BEFORE anything is armed; where it is not, there is no second opinion to
+have, the press is armed where the caller said, and the reply's
+`Identity` row says `unchecked` rather than implying a check happened.
+Three answers, three sentences — the third being NOW's own menu bar,
+which is dispatched through its event loop and arms no press at all.
+
+**Driven on an emulated Power Mac G4** (OS 9.1, `spin-up-ppc` clone,
+guest build `097462c4d7f1`), Finder in front, its menu bar read from a
+scene (`File` id 257 at x 38, `Special` at 218):
+
+- `menuact 257/1 titleLeft=38` → `dispatched`, `Identity: checked`, and
+  **`untitled folder 1` appeared in the Desktop Folder** — the act landed
+  where it was named, witnessed by the machine's own file list rather
+  than by the reply.
+- `menuact 257/1 titleLeft=218` (the Special menu's x) → **refused**
+  `menu-title-moved`.
+- `menuact 257/1 titleLeft=0` (what the `?? 0` produces) → **refused**.
+
+The decision is a pure function in its own translation unit
+(`act_menu_identity.c`) because the state it refuses — a menu bar saying
+one x while a caller says another — is not one a real Macintosh can be
+asked to hold still in. Four mutations watched failing there, including
+the one with no symptom: dropping the `title_left_known` guard makes an
+unread menu bar report a claimed 0 as **checked**.
+
+**And the host's `?? 0` is gone too** (ruled the same day): the default
+is removed rather than backstopped. `Scene.Menu.left` and
+`MirrorObject.Menu.left` are optional all the way to the act, so no layer
+can substitute without seeing the absence, and `now_mirror_snapshot`
+omits the key rather than reporting 0 — that being the row a caller reads
+to fill in `titleLeft`. Two guards at two layers is not redundancy here;
+it is defence at the layer that has the information, and the host is the
+side that knows it never learned the number.
+
+One answer everywhere, because a menu bar is a positional surface: **no
+position means not drawn, not hit tested, not pressed.** Giving the
+renderer a fallback the act path refused would have put the two back into
+disagreement, which is the same defect one layer up — and it was already
+there in visible form: an unplaced menu arriving at 0 took the span from
+0 to the next title, so a click at **x = 4** in the mirror, on the Apple
+menu's own drawn title, resolved to the unplaced menu instead. The same
+four pixels the act armed at.
+
+Four mutations watched failing, including the one that makes the other
+three unreachable — restoring `?? 0` in `normalizeMenus`, after which
+nothing downstream can refuse an absence it never receives.
+
+**Not driven**, and it cannot be from this tree: no producer here omits
+`left`, so the absence is unreachable from a live guest. Tested only.
+
+## FIXED: two window readers, two rectangles, and `windows[].rect` meant three things at once (2026-08-07, `claude/019-one-answer-a`)
+
+Plan 019 slice 2, F2. `peek_read.c` returned the **structure** region and
+`axwalk.c` the **content** region, from separate offset tables with
+opposite failure policies. The 2026-08-02 fix made the bind authoritative
+after the two disagreed about whether the Finder had any windows at all;
+it did not merge the readers, so `windows[].rect` went on having three
+derivations **inside the scene plane alone** — content grown up by a
+constant (bound foreign), peek_read's structure region raw (unbound
+foreign), and Carbon's structure region (self). One field, three
+meanings, and which one a row held depended on whether a bind had
+happened. No consumer could ask.
+
+Both readers now return **both regions**, each through one
+region-reading helper so neither can be validated more loosely than the
+other by accident, and a window missing either is refused whole — the
+policy each reader already applied to the region it did read. Every
+branch then derives `rect` the one way IR v1 defines it.
+
+**And the constant survives, deliberately, which is the opposite of what
+the audit recommended.** `kNowSceneIRTitleBarHeight` is not a
+measurement of any window's frame; it is a **convention the consumer
+decomposes the same way** — MirrorKit's hit tester finds the content
+origin at `rect.t + titleBarHeight` — and IR v1's key set is frozen. A
+producer that started sending the true structure region under `rect`
+would be sending something no consumer can take apart, alone, without an
+IR version to carry it. What the constant is no longer is a *substitute
+for reading the region*: both are read from the machine, and the
+approximation is now checkable against the measurement instead of
+competing with it.
+
+Watched on the emulator, before and after, same machine and window: NOW's
+own window reported `{l:22, t:48, r:779, b:555}` (the true structure
+region) and now reports `{l:28, t:50, r:772, b:548}`. Its content top is
+70, so the old rect decomposed to 68 — **the render was two pixels out on
+every control in that window** — and the new one decomposes exactly.
+
+**Owed, and deliberately not added here as its own key.** A caller
+holding a rectangle still cannot ask which one it is, and
+`claude/018-drag-targeting` is adding per-item origin provenance
+(`drawn` / `saved` / `unknown`) for the same class of question. **Two
+provenance schemes for two kinds of rectangle is the defect this slice
+exists to close**, so this is written as a requirement for that
+vocabulary rather than shipped as a competing field. What a caller has to
+be able to tell apart, in the order it costs them:
+
+1. **Which REGION this rectangle is.** Three answers, and they are not
+   interchangeable: the **box** (content grown by the IR title-bar
+   constant — what `windows[].rect` carries, decomposable by the
+   consumer), the **content** region (what `elements`/`axtree` publish
+   under `bounds`, and what a control's local rect is relative to), and
+   the **structure** region (the frame a person sees; read from the
+   machine now but published nowhere). Today the same window under two
+   planes gives two rectangles about twenty pixels apart with nothing
+   saying so, and a caller that joined them would be quietly wrong.
+2. **Whether the region was READ or DERIVED.** The box is arithmetic over
+   a measurement; the content and structure regions are measurements. A
+   caller comparing a rectangle against pixels needs to know it is
+   holding an approximation before it calls a two-pixel difference a
+   rendering bug — which is the mistake this entry's own measurement
+   would have produced.
+3. **Which READER answered.** `axwalk` (bound, from the target's own
+   context), `peek_read` (unbound fallback), or Carbon (self). They agree
+   now; they have disagreed, and when they disagree again the first
+   question will be which one spoke.
+
+(1) is the one a caller cannot work around. (2) and (3) are what makes a
+future disagreement diagnosable rather than another 2026-08-02. Note that
+this is a property of a rectangle, not of an item — the drag lane's
+`placed` is about a POSITION being invented, this is about a rectangle
+MEANING something different — so the shared vocabulary probably wants one
+enum with both concerns spelled out rather than one word reused.
+
+## UNVERIFIED-TO-BROKEN: the anchor lease lapses between two calls, watched (2026-08-07)
+
+Plan 019 slice 3 predicted this; it was seen while driving slice 2. On
+one connection, `cycle` followed by two identical `axsnap` calls:
+
+    axsnap  ->  bind: ok,       hasWindows: true,  hasMenus: true
+    axsnap  ->  bind: no-plane, hasWindows: false, hasMenus: false
+
+Seconds apart, nothing else touching the machine. A caller that observes
+once is told a bound process is unreachable, intermittently — which is
+the worst shape of false negative, because it teaches the caller to retry
+blindly. Recorded here rather than chased; it is slice 3's.
 
 ## BROKEN: the first watch of the INTEGRATED render, and what it shows (2026-08-07, `claude/018-integration`)
+
+**Status: list view remains UNWATCHED, not disproved** — third pass
+running. But it is now blocked on one named thing (foreign-process
+anchor bind on the staging path) rather than on a rig whose AppleScript
+was believed dead. Closing the anchor bind unblocks it; nothing else
+needs to change.
+
+For the record, the scene DOES carry what a driver needs: the View menu
+arrives with all twelve items, correct indices, and `mark: true` on "as
+Icons" — so the icon-view pair that WAS captured is confirmed to be icon
+view by the guest's own menu state rather than by looking at it.
 
 Seventeen plan-018 lanes merged into one tree, then the tree was
 **watched composing real windows** — five targets, guest pixels beside
@@ -182,6 +683,425 @@ reported, which is the known anchor-bind failure on the staging path
 rather than a new defect. `cycle` itself worked and reported honestly
 (`armed`, `complete`, `restored`, 8 considered, 6 `backgroundOnly` —
 the headless lane's classification, live).
+
+## BROKEN: a FOREIGN process's controls have no determined kind — 169 of 169, across five targets (2026-08-07, `claude/019-integration-2`)
+
+The 019 integration merged `main` and four lanes, then watched the tree
+compose five real windows on emulated mac99/OS 9.1. Pairs, scenes and
+renders: `~/Lab/Assets/now-mirror-assets/019-integration/` (out of git).
+Nothing here is metal-verified.
+
+**The split is the finding, and it is perfectly clean.** In every one of
+the five scenes:
+
+| window | controls | roles determined |
+|---|---|---|
+| NOW's own Workshop | 9 | **9** — 3 button, 3 checkbox, scrollbar, popup, triangle |
+| Date & Time | 21 | 0 |
+| Appearance | 76 | 0 |
+| Finder `Macintosh HD` | 3 | 0 |
+
+Our own process resolves richly; **every control in every foreign process
+is `role: "unknown"`, without exception.** This is not the semantic plane
+failing to run — it ran, and it says so:
+
+```json
+"role": "unknown",
+"semantic": { "completeness": "complete", "knowledge": "unknown",
+              "definition": "system", "provenance": "guest-control-manager" }
+```
+
+`completeness: complete` beside `knowledge: unknown` is the plane
+reporting honestly that it walked the whole thing and could not classify
+any of it. The rects and the titles are right — "Current Date",
+"Set Time Zone…", "On"/"Off" all arrive with correct geometry.
+
+**What it costs in pixels**, judged on the whole frame:
+
+- **Date & Time has no group boxes.** "Current Date", "Current Time",
+  "Time Zone" and "Use a Network Time Server" arrive as controls with the
+  correct enclosing rects and their titles, and render as nothing at all
+  — so the panel is a scatter of buttons on bare grey. The guest draws
+  four engraved, labelled frames.
+- **The two date fields lose their steppers**, and the two
+  daylight-saving checkboxes render as bare truncated text: "Set
+  Daylight-Saving Time Automa", "Daylight-Saving Time is in effe".
+- **Appearance's tab strip is absent**, and three scroll bars stack where
+  the theme swatches belong.
+
+**This is the same defect [mirror-element-coverage.md](mirror-element-coverage.md)
+measured at 62%**, seen here at 100% because control panels are entirely
+foreign. It is worth re-recording because the 100%/0% split by process
+ownership is sharper than a single percentage: whatever determines a kind
+is running only for our own process, and the foreign path returns
+`guest-control-manager` geometry with no classification step behind it.
+
+### And every window reports z = 0
+
+Across all five targets, every real window carries `z: 0`; only the
+Finder's `Desktop` ever gets `z: 1`. So the renderer has no stacking
+order and draws in array order. Watched: in the Date & Time pair the
+guest shows the Finder's `Macintosh HD` window in front of NOW's
+Workshop, and the render draws the Workshop's sidebar over the top of it
+instead.
+
+### What this pass did NOT arm, and therefore does not judge
+
+The capture drove the wire directly rather than through the host app, and
+a `scene.request` armed **structure, semantics and interaction — not
+content**. So every content-plane observation is out of scope here and is
+NOT evidence against the 018 pairs, which came through the app: the tab
+strip, the theme swatches, the field values, the Finder's items and the
+list rows all live on the content plane. The renderer's
+"Guest content not reported" placeholder in those regions is the product
+being honest about a plane nobody asked for, and reads as a defect only
+if you forget which planes you armed.
+
+**Two rig facts worth keeping**, both of which cost a run:
+
+- **The planes arm as a RESULT of the first `scene.request`**, so the
+  first scene on a connection is walked before semantics is active and
+  comes back with every role `unknown` — indistinguishable, in the
+  render, from the defect above. `requested`/`active` went 0/0 → 7/7
+  across one request and the body grew 25701 → 42621 bytes. A capture
+  rig needs a warm-up scene it throws away.
+- **`cycle` restores the previously-front application when it finishes**
+  (`restored: true`), which is correct and is not what a walk of one
+  target wants. Front the target with `script`, then `cycle`, then walk.
+
+## BROKEN: the plain base image has been dirty on disk since 19 July, so every clone of it boots into Disk First Aid (2026-08-07, `claude/019-integration-2`)
+
+`scripts/spin-up-ppc`'s default base,
+`~/Lab/Assets/os91-qemu/os91-runner.qcow2`, carries an HFS+ volume header
+with `kHFSVolumeUnmountedBit` **clear**. Read out of the image itself
+rather than inferred from a boot:
+
+| image | volume attributes | clean |
+|---|---|---|
+| `os91-runner.qcow2` | `0x00000000` | **NO** |
+| `now-mirror-stage.qcow2` | `0x00000100` | yes |
+
+So a fresh, session-private clone shows *"Your computer did not shut down
+properly"* on its **first** boot — before any staging, before any
+shutdown, before the script has done anything a run could get wrong. The
+modal dialog then sits over the Finder and the anchor worker never comes
+up, so the spin-up stalls at "boot a fresh, session-private clone" with
+no error. It reads exactly like a hung boot.
+
+**This is not the failure the spin-up header warns about**, and that is
+the reason to write it down. That header's rule 1 is about a QMP `quit`
+being a power cut and dirtying the volume *at the cold-reboot step*, and
+anybody meeting this screen will reach for that explanation first and go
+looking for a shutdown applet that failed. The applet is fine. The bytes
+were already dirty, and have been since the file's mtime of
+2026-07-19T13:52:17 — which means every run off the plain base since then
+has paid a Disk First Aid pass at boot, silently, including runs whose
+slowness was noticed and attributed elsewhere.
+
+**Workaround, and it is the one this integration used:**
+`NOW_SPIN_BASE=$HOME/Lab/Assets/os91-qemu/now-mirror-stage.qcow2`, which
+boots clean. That is a workaround and not the fix — it makes every run
+carry the Mirror oracle's resident whether or not the run wants it.
+
+**The fix is to clean the base once**: boot it, let Disk First Aid
+finish, shut the guest down through `tools/shutdown-guest.py`, and keep
+the result. Nobody should do that mid-flight while other lanes are
+cloning it.
+
+**What would have caught it:** the readiness check has no assertion about
+the volume's clean bit, and rule 2g of
+[mirror-drive-loop.md](mirror-drive-loop.md) already says in prose that a
+private clone is not automatically a clean clone. Reading two bytes of
+the volume header before boot is cheap and would name this in a second
+instead of presenting as a stall.
+
+## EMULATOR-VERIFIED: the drawn cursor follows what we act on, and the documented way to do it does not work (2026-08-07, plan 019, P8)
+
+**Watched, cropped and looked at.** A screendump pair either side of a
+617,443 → 180,160 placement changes **194 pixels** in a box spanning both
+points; the arrow is at 617,443 in the first and at 180,160 in the
+second, with 617,443 empty. The emulated device's own move — the positive
+control — changes **194 pixels** for the same motion. Reproduced across
+two cold boots. Rig: private clone of `os91-runner.qcow2`, anchor 1960 /
+wire 5510, resident `active`, **caps=511** (bit 8 =
+`kNowPeekTableCapCursor`, which no build before today can set), table
+length 6116. Design and evidence: [docs/cursor-follow.md](cursor-follow.md).
+
+### The emulator was NOT the obstacle, and that is the durable half
+
+The standing suspicion was that QEMU's pointing device reported over the
+top of the resident's writes — which would have meant the documented
+technique was fine and **metal was the easy case and the emulator the
+hard one**. It is not so, and the refutation is direct: read from outside
+the guest with nothing touching the host pointer, `MTemp`, `RawMouse` and
+`MouseLocation` held our value unchanged across seconds; the machine
+profile has no tablet at all (`-M mac99,via=pmu -device usb-kbd`); and
+every precondition the `CrsrNew`/`CrsrCouple` recipe needs was met —
+`CrsrCouple` 0xff, `CrsrState` 0, `CrsrObscure` 0, `CrsrBusy` 0 — with
+`CrsrNew` reading back **consumed**. The cursor task ran and did not draw.
+
+So none of what follows is a rig workaround, and metal is not expected to
+differ.
+
+### Three routes, and only the third draws
+
+| Route | Result |
+|---|---|
+| low memory (`MTemp`/`RawMouse`/`MouseLocation` + `CrsrNew`←`CrsrCouple`) | position right, **sprite unmoved** |
+| `CursorDeviceMoveTo`, then the cursor task via `JCrsrTask` (0x08EE) | `noErr`, manager's own `CursorData.where` reads back **exactly** the requested point (760,520 — checked from outside), **sprite unmoved** at 419,333 |
+| `HideCursor()` / `ShowCursor()` | **the sprite moves** |
+
+The first two are kept, because they are what makes the machine *agree*
+about where the pointer is; only the third is what a person sees. On
+Mac OS 9 the Cursor Device Manager owns the position and the blit lives
+somewhere in the pointing device's own interrupt path that neither the
+manager's state nor the compatibility vector reaches.
+
+### Two defects the DRIVING found that no reading would have
+
+1. **`CrsrObscure` had to be cleared, and we are the thing that clears
+   it.** `ObscureCursor` is what every text application calls on every
+   keystroke — hide the arrow until the mouse moves — and the device
+   driver clears it on its next report. Without the resident doing the
+   same, P8 drew faithfully into an invisible cursor: `route` correct,
+   `by_device` climbing, **zero pixels**, which is indistinguishable from
+   the plane not working. It would have worked perfectly in an empty
+   Finder and vanished in every application anybody actually drives.
+2. **"Somebody else moved the pointer" cannot be asked of `RawMouse`.**
+   Between placements, with nothing holding the globals, `RawMouse`
+   drifts back to the pointing device's position — so every act after any
+   device motion looked like a person had just touched the mouse and the
+   plane yielded forever (four acts in a row reporting `yielded` on a
+   machine nobody was sitting at). It asks the manager's own
+   `CursorData.where` now.
+
+### ANSWERED: the guest's cursor SHAPE already tracks our position
+
+SimpleText launched, text area 4,20–619,581, the resident placed the
+pointer at 311,100 inside it — and the sprite drawn there is an
+**I-beam**. Nothing in this plane knows what an I-beam is: SimpleText
+read `GetMouse`, was told our point, and chose the cursor for it.
+
+**So cursor-shape mirroring needs nothing further from the guest.** The
+remaining work for the deferred "mirror the guest's own cursor" feature
+is on the HOST — read the current `Cursor` and draw it — and that is a
+much smaller thing than it looked.
+
+### STILL BROKEN, and it is the act plane rather than this one
+
+**A `ctlact` places the cursor at 0,0.** The act cell's `click_h`/
+`click_v` are zero for controls the scene walk reports with real bounds,
+so P8 is asked to put the pointer at the origin and then declines because
+the origin is not where it left it. This is the SAME defect the drag lane
+found and named for the geometry lane, arriving in a second place:
+`dragpress` now takes its point from the caller and refuses rather than
+guessing, and an act still does not. Until an act carries a real point,
+**the cursor follows a drag and does not follow a click** — which is the
+half of the ask that matters most.
+
+### NOT WATCHED
+
+- **Metal.** Nothing here has run on the PowerBook. The mechanism is an
+  OS fact rather than an emulator one, so the expectation is that it
+  behaves the same; that is an expectation.
+- **A real drag.** During `DragGrayRgn` the application never returns to
+  `GetNextEvent`, so the owed redraw cannot be settled and the sprite is
+  expected to freeze for the length of the gesture and jump at the end.
+  The runs above pressed on controls the application does not track, so
+  the jGNE pass was always available. **This is a declared asymmetry, not
+  a measurement.**
+- **A person's pointer.** The yield rule was watched failing by mutation
+  as pure logic; nobody has sat at the machine and fought it.
+
+## EMULATOR-VERIFIED: the drag vehicle fires, and the resident lets go by itself (2026-08-07, slice 10 of plan 018)
+
+**Driven on a guest, watched, and measured.** P7 — a mouse button that
+stays down across a gesture, and a resident that releases it whether or
+not anybody asks. Design in [docs/mirror-act-plane.md](mirror-act-plane.md)
+> "Drag"; driver is `tools/local-drag-vehicle.py`.
+
+Private bake `now-stage-drag.qcow2`, resident `active`, capabilities
+**255** (bit 7 = `kNowPeekTableCapDrag`, published only when the Time
+Manager task installed), table length 6072. Both numbers are unique to
+this build and are the run's `requireTheBuildUnderTest()`.
+
+What was watched:
+
+| Claim | Evidence |
+|---|---|
+| The Time Manager task fires | `ticks_served` 2 → 31 → 59 → 66 across one gesture, ~16 ms apart, which is the cadence it was primed at |
+| A press holds the button | `State=held`, `Button=down`, and it stayed so across seconds of wire traffic |
+| Motion is applied | `moves_applied` 0 → 1 → 2; `at` followed 143,175 → 300,200 → 380,260 |
+| **The dead-man fires without being told** | `idle=60` ticks, **nothing sent**, the drag ended by itself in **~1.0 s** |
+| The cell recovers | a fresh press succeeded immediately afterwards |
+| A stale session is refused | a move after the release answered `conflict` |
+| An untrustworthy press point is refused | `unsupported`, naming the missing rectangle |
+
+### The one thing that does NOT work: the drag is invisible
+
+`CrsrNew`/`CrsrCouple` do not move the drawn cursor on QEMU/mac99. Two
+QMP screendumps either side of a 143,175 → 620,450 drag differ by **zero
+pixels** — and moving the emulated pointing device changes 22, so the
+screendump does capture the sprite and the sprite simply did not follow.
+
+**Everything the Toolbox reads did follow.** The guest's own `mouseloc`
+reported 143,175, then 400,350, then 620,450 — exactly the points the
+vehicle was given. So the vehicle drives `GetMouse` and `StillDown`,
+which is what a tracking loop consults and therefore what a drag needs;
+it does not drive the picture.
+
+That split matters in two directions and neither is settled:
+
+- **For the mechanism it is probably fine** — `DragGrayRgn` reads the
+  globals, not the sprite.
+- **For a person it is not** — a drag nobody can see is a drag nobody
+  can verify by looking, and the Mirror is a human-facing product. Why
+  the documented technique does not work here is **not known**.
+
+### Still not proven: whether the Finder tracks it
+
+Nothing in this run aimed at a Finder item, so `DragGrayRgn` remains
+untested. The evidence is now *favourable* — the globals it reads are
+the globals the vehicle demonstrably sets — but favourable is not
+measured, and this is the claim the whole design rests on.
+
+### Two defects the DRIVING found that no gate did
+
+1. **The v2 identity guard refused every press.** Its check switches on
+   `operation_kind`, and a new op with no case falls through to a
+   refusal. Fixed by `kNowPeekActKindDrag`, which binds to the session
+   nonce rather than the point.
+2. **The press landed at 0,0.** The guest's resolver leaves
+   `detail.control` zeroed for controls the scene walk reports with real
+   bounds. Harmless for `ctlact`, whose patch answers for the handle;
+   fatal for a drag, where the point is the operation. `dragpress` now
+   takes the point from the caller and refuses rather than guessing.
+
+**That second one is a live finding for the geometry lane**, and it is
+larger than this plane: `handle.detail.control` and the scene walk
+disagree about where a control is, and only one of them is right.
+
+### And the presentation half was blocked on geometry — that half is CLOSED
+
+**Superseded 2026-08-07 by the targeting lane.** What it said: slice
+10.5's snap-back needs a defensible "home", and `placed == true` was not
+a trust signal — only `FinderItems.merge` set it from the Finder's own
+drawn box, and that path ran for folder windows only, while
+`SceneBuilder.desktopItems` derived it from the saved `fdLocation` grid
+and `ScenePoller.placeVolumes` **invented** a position and set it true.
+So "refuse rather than guess" would have refused every desktop drag.
+
+Closed both ways at once:
+
+- `Scene.DesktopItem.origin` carries `drawn` / `saved` / `unknown`, and
+  `homeIsTrustworthy` is `drawn` alone. Absent means the producer did not
+  say and reads as untrustworthy. `placeVolumes` still draws the disk it
+  laid out — an absent disk is worse than a displaced one — and now says
+  `.unknown` over the coordinates it makes up, so no act may aim with
+  them.
+- The desktop is asked the same question every other surface is asked. A
+  desktop clause in `FinderItems.windowsScript` reads `bounds of` every
+  item of the desktop and every disk, in global coords, inside the one
+  script call the folder windows already pay for.
+
+Emulator-verified on a private clone (anchor 1920 / wire 5470, build
+`1a8ffb91f636`, OS 9.1 on mac99). Two things the run said that were not
+predicted:
+
+- **That guest served neither `list` nor `volumes`** (`unknown-command`),
+  so without the clause its desktop arrives EMPTY. The saved grid was not
+  a weaker source there; it was no source at all. The **Trash** is on the
+  desktop and is not in the Desktop Folder, so the catalog path could
+  never have reported it under any circumstances.
+- `items of desktop` and `disks` both report `Macintosh HD`, with the
+  **same box**, which is what makes "first record wins" inert.
+
+And the live claim was watched rather than reasoned: `set position of` on
+a desktop file moved it and `bounds of` followed — 608,92,640,124 →
+120,320 → 240,548 — with a QMP screendump showing the icon in its new
+place.
+
+## FIXED (builds): a self reference described every one of our own controls as {0,0,0,0}, over `resolved: true` (2026-08-07, slice 10.5 of plan 018)
+
+The drag lane found a press landing at **0,0** and reported it as "the
+resolver and the scene walk disagree about where a control is". They do
+not disagree. **One of them was never asked.**
+
+`observe.c :: resolve_self` is the path a reference into OUR OWN process
+takes — no foreign A5 world to aim, the Toolbox answers directly. Its
+element branch filled `control`, `window`, `verdict` and `identity`, and
+**never touched `out->detail` at all**, which `resolve_kind` had already
+`memset` to zero. So every self element resolved to a control with an
+empty title, invisible, disabled, value 0, bounds {0,0,0,0} — beside
+`"resolved": true`. The window branch had the same hole for its title.
+
+Two consequences, and the second is why it survived:
+
+- The `handle` verb described this application's own controls that way.
+- `ctlact` computes its press point from that rectangle, so the press
+  landed at 0,0 — and it did not matter, because the act plane's patch
+  answers for the control HANDLE the request names and declines every
+  other. Where the press landed decided nothing. It stops being harmless
+  the moment a caller needs the point itself, which is a drag.
+
+Fixed by filling `detail` from the live Toolbox
+(`GetControlBounds`/`GetControlTitle`/`IsControlVisible`/`IsControlActive`
+/value/min/max, and `GetWTitle` for the window). **In GLOBAL coordinates**,
+because that is what `detail.control` already means — the foreign twin
+`now_ax_read_control` adds the window's content origin to the local rect
+it reads, so the same origin is added here. Deliberately NOT
+`scene_self.c`'s convention, which keeps a control's rect content-relative
+because IR v1 says so: those are two fields with two contracts, and
+conflating them is how a click misses by a title bar.
+
+**Status: builds.** `scripts/build-guests` compiles it and `test-all` is
+green; the Carbon audit reports 0 findings. It is NOT driven, and the
+reason is worth writing down: on the emulator (build `1b6fbb321684`) the
+`elements` and `observe` walks report our own process with `bind:
+no-plane` and an empty `windows` array, so **the wire cannot mint a self
+element reference at all** and `handle` cannot be pointed at one of our
+own controls from outside. Whatever minted the reference the drag lane
+used did not come through those two verbs. Reaching this from a host
+needs either that mint path on the wire or the drag verbs themselves.
+
+## UNVERIFIED: targeting and provisional presentation, with nothing to drive them (2026-08-07, slice 10.5 of plan 018)
+
+The host half of the drag is built and gate-green, and **not one gesture
+has reached a guest**, because the vehicle above is still unreachable:
+`dragpress` / `dragmove` / `dragrelease` do not exist on the wire, so
+`ItemDragDriver` — the seam the view calls — has no conformer at all.
+Today the live view answers an item drag with "this mirror cannot hold
+the mouse button down", which is honest and is not the feature.
+
+What IS proven: `DragTargeting` resolves subjects, destinations and
+intents against the geometry above, including against a **recorded real
+desktop** from the run named earlier; `ItemDragSession` carries the four
+presentation rules and each was watched failing under a mutation;
+`ProvisionalDragRenderTests` reads the pixels back.
+
+What is NOT proven, and needs the vehicle:
+
+- **That a drop lands where the targeting says it will.** Every
+  destination is derived from the hit tester, which is well exercised for
+  clicks — and a click is a point while a drop is a point plus a thing
+  being carried, and the Finder decides the second one.
+- **That a rearrangement inside a Finder window behaves as one.** The
+  intent is computed; nothing has watched an icon shuffle.
+- **The snap-back as a person sees it.** The state machine returns the
+  ghost to `home`; whether that reads as "it went back" or as a flicker
+  is a question for a hand on a trackpad.
+- **The provisional style at speed.** The stipple is anchored to the
+  rectangle so the texture rides with the item; that was verified in a
+  render test at two positions, not at 60 frames a second under a moving
+  pointer.
+
+One gap deliberately left open: a desktop item whose position is
+`.unknown` — a disk the Finder would not place — is still **clickable**
+at its invented position. Drags refuse it and clicks do not, which is
+today's behaviour left unchanged rather than a decision. It sends a click
+to bare desktop, so it deselects rather than doing damage; closing it
+means teaching the click path the same provenance the drag path now
+reads.
 
 ## FIXED: an act could report success it had not verified, and a window could go silent without naming itself (2026-08-07, lane D of plan 018)
 
@@ -285,6 +1205,7 @@ and references. What it lacks is NAMES — 37 of 38 control titles empty,
 every role `unknown`, and its DITL titles arriving as pointer bytes.
 That is the pointer-title defect (everywhere, slice 4) plus element-kind
 coverage, not an addressing problem, and no fix belongs in the act plane.
+
 ## ANSWERED: a window opened BEFORE arming now composes — the census (2026-08-07, plan 018)
 
 **Emulator-verified.** QEMU mac99, Mac OS 9.1, guest build `288944aab6b8`,
@@ -388,6 +1309,7 @@ works; only a shared one makes it what everybody else clones.
 - **The 4 MiB truncation path is untested** on a heap large enough to hit
   it.
 - Nothing here has run on the PowerBook.
+
 ## FIXED: tabs had no edges, and the reason was that nobody read the drain (2026-08-07)
 
 Appearance and Energy Saver rendered their tab labels on flat grey — no
@@ -452,6 +1374,7 @@ whole window, and a systematic one-pixel offset is exactly the error a
 similarity score cannot see — it degrades every number a little and names
 nothing. What found it was cropping thirty rows and printing them as
 characters.
+
 ## FIXED: three states wore one error word, and it pinned a health signal at `partial` forever (2026-08-07)
 
 `ax_oracle_not_found` was the scene's answer to three different
@@ -518,6 +1441,7 @@ Three things worth keeping from how it went:
 Still open, and not this slice's to fix: the Finder read
 `ax_oracle_not_found` on that same emulator run with no planes armed.
 That is the anchor-acquisition condition above, owned by its own lane.
+
 ## FIXED: nothing could open the Mirror in an already-running host (2026-08-06, night)
 
 `--open-mirror` covers a launch and a click on the Mirror page covers a
@@ -578,6 +1502,153 @@ of a 68030 — a NOW-68K with a Mirror page would want the same button.
 And there is deliberately no verb the other way: the host drives the
 guest's windows through the act plane, and a `guest.show` would be a
 second, weaker route into it.
+
+## FIXED: one question, five answers — the process family, the scene and the front process (2026-08-07, `claude/019-one-answer-b`)
+
+Plan 019 slice 2, findings F3, F5 and F6 of the surface audit.
+
+**Five independent `GetNextProcess` walks** answered "what is running and
+which of it is faceless" — `process.list`, the `ps` console command, the
+Processes page, the scene plane and `observe` — and the
+`modeOnlyBackground` classification was copy-pasted into four of them.
+`commands.c` admitted it in a comment: *"the same test
+`serve_process_list` makes."* **The scene read the bit in none of them**,
+so at one instant `process.list` said `kind: background` about a process
+the scene called `ax_oracle_not_found`. Both were honest. A caller could
+not tell, and a driving agent that reads one answer and acts on another
+is the failure this exists to prevent.
+
+`now-guest-ppc/src/processes/proc_roster.{h,c}` is now the one walk and
+the one classifier. It is an **iterator, not a table**: a table of every
+process is a kilobyte of somebody's stack on a 56 MB machine, and the
+thing worth sharing is the sampling discipline. `now_proc_roster_begin`
+samples `GetFrontProcess` and `GetCurrentProcess` **once**, before the
+first row — so "one front process per reply" holds by construction
+rather than by care. `observe.c`'s `bind_target` read the front **per
+process** (F5) and could emit a reply in which two rows carried
+`front: true`; it now has no such call to make.
+
+**The headless lane's vocabulary is preserved and was the point**: the
+kind is the process's own `SIZE` declaration, never inferred from an
+empty window list, and the scene's `partial` coverage is derived from the
+roster's `unreadable` count rather than a flag each walk sets for itself.
+
+**F6 — three fronting implementations, three claims.** `SetFrontProcess`
+returning `noErr` means the switch was *scheduled*. The console `front`
+confirmed with its own loop; `mach activate` confirmed with a second copy
+of that loop; the **wire's `process.front` answered `ok:true` and never
+looked** — and `now_bring_to_front` over MCP rides that exact path, so an
+agent got the weakest of three claims with no way to tell; the anchor
+`cycle` called `SetFrontProcess` raw and counted **accepted requests** in
+a field its own header documents as *"applications actually brought
+forward"*. `now_proc_front_confirm` is that ask-and-re-read, once, and
+every caller now reports what happened.
+
+**DRIVEN, on an emulated mac99/OS 9.1 clone of the stage oracle** (lane
+block 502, anchor 16016 / wire 16017, guest build `d4f42b3753e7`), not
+merely tested:
+
+- Console `ps`, wire `process.list` and the **scene plane** agree on all
+  **8** rows of one machine in one connection — including the six
+  faceless ones, which the scene now reports as `backgroundOnly: true`
+  with window coverage `unavailable, reason: no-ui`. The scene's
+  `process-kind` coverage reads `complete`.
+- **The one remaining `ax_oracle_not_found` in that scene is the
+  Finder** — a faced process whose anchor genuinely could not be read on
+  a VM with no armed plane. That is the word doing its job: an error
+  about a failure, not about a normal condition.
+- `observe` returned 8 rows with **exactly one** `front: true`.
+- `process.front` on the Finder answered `ok:true`, and a
+  `process.list` taken immediately after named the Finder as front. The
+  verb's claim was checked against the machine rather than believed.
+
+**What is NOT verified, and matters.** The confirm's
+*accepted-but-unconfirmed* branch was **never exercised** — asking to
+front a faceless process on this machine took the `SetFrontProcess`
+refusal path instead, and a switch that is accepted and then does not
+land could not be staged deliberately. So that branch builds, reads
+correctly and has never run. Nothing here is metal-verified.
+
+**The contract change WAS made**, under an explicit ruling, after this
+entry first recorded it as deferred. `ProcessResult` gains **`outcome`**,
+in `ActSettlement.status`'s vocabulary — borrowed rather than invented,
+because two honest-but-different words for "did it happen" would be a
+fresh instance of the defect this slice closed. `ok` now means **the
+effect this verb can establish**, never a receipt; and rather than
+silently redefining it, the difference between the two verbs is
+*declared*:
+
+- **`process.front` can be told more**, by re-reading `GetFrontProcess`,
+  so its `ok` is true only when the target is actually frontmost.
+- **`process.quit` cannot** — a `quit` Apple Event is one an application
+  may decline or sit on behind a Save dialog — so its `ok` means the
+  event was delivered and its `outcome` says
+  `dispatched-but-unconfirmed`.
+
+That split is the project's own established position rather than a new
+one: the host had already worked around the missing field in three
+places, and `BringToFrontProjection` says outright that `process.result`
+*"has no field that could carry 'and it landed'"* while
+`AgentIntegrationProcessControl` records that *"quit stops at 'the
+request was sent' because nothing on this platform can tell it more, and
+front CAN be told more."*
+
+`outcome` is **optional, and its absence is not `unknown`** — it means
+the sender does not report outcomes. NOW-68K emits none, so the host's
+confirming re-list stays as the fallback rather than being deleted as
+redundant. **That asymmetry is declared in the schema**, not left to be
+discovered.
+
+**Driven, all five shapes**, on the same rig: `front` on the Finder →
+`ok:true, outcome: confirmed`, with an independent `process.list`
+naming the Finder as front; `front` on a faceless process →
+`ok:false, outcome: refused`, front unmoved; `quit` on NOW itself and on
+a dead PSN → `outcome: refused` (never reached the machine); `quit` on a
+background process → `ok:true, outcome: dispatched-but-unconfirmed`,
+and it had in fact gone three seconds later — which is exactly the point,
+because the verb **declined to claim** what it had not established.
+
+`ProcessRosterSingleSourceTests` keeps it closed and **maintains no
+list**: it walks every `.c` under `now-guest-ppc/src` at test time and
+derives both sets from what it finds, so a sixth walk in a new directory
+fails the same day it is written. Its five substantive rules were each
+watched failing by mutation, and four of them **failed on their first
+run against real code** — naming `main.c`, `software.c`,
+`proc_actions.c`, `anchor_cycle.c` and `processes_layout.c`, all now
+closed. `software.c`'s Finder lookup matched the `'MACS'` creator alone,
+so a Finder identified by its `'FNDR'` **type** — which every other
+reader in this guest accepts — was not the Finder there.
+
+Removed on the way: `proc_kind_text`, which had a native test and **no
+caller in the product** — a fourth opinion on what the Finder is, held
+only by its own test. That is the shape [contract-coverage](contract-coverage.md)
+warns about: coverage that proves nothing.
+
+**A second finding, from being the port scheme's first real user.** Two
+`tools/lane-ports` frictions, both fixed here and both driven:
+`scripts/spin-up-ppc` required `NOW_LAB_ROOT` by hand because every copy
+of the lab lookup assumed a worktree lives inside its checkout — an agent
+lane under `/private/tmp` has **no shared ancestor with the lab at all**,
+so the walk-up reaches `/` and finds nothing; git's `--git-common-dir`
+answers it. And `lane-ports reclaim` died on a missing import while
+printing *"clean shutdown FAILED and the VM is left up … re-run with
+`--power-cut`"* — **a host-side setup error wearing a guest failure's
+words**, one step from a dirty volume, in a repo that has already paid
+for getting shutdown wrong once. A rig that cannot start now exits 3 and
+says the machine was never asked and must not be power-cut. The lookup
+was copy-pasted into **twelve** rig tools in three shapes, one hardcoding
+a specific person's home directory; `tools/lab_root.py` is its one home
+and the two tools on the lane path use it. The other ten are experiment
+scripts off that path, left unchanged rather than edited unrun.
+
+**Left for later, named rather than silently skipped:** F8 (`sw` sweeps live where
+`software.list` pages a cache that cannot say how old it is) and F12
+(eight hand-rolled frame codecs). **F4 was already closed** in
+`claude/018-integration` before this lane began — `scene_walk.c` now
+reads "THE LIVE CONTROL WINS, ALWAYS", with Mail's Internet-setup alert
+as its worked example — so the audit's F4 text is stale rather than
+outstanding.
+
 ## FIXED: rig ports were assigned by hand, and three lanes paid for it in one day (2026-08-07)
 
 A dozen parallel lanes each wanted a guest VM and a host app, and the
@@ -621,6 +1692,136 @@ scheme and the alternatives weighed against it.
   with one in place this worktree went from 6 SKIPPED to 6 ok in 7.8 s),
   but the file has to be put there once, by hand, by somebody who owns
   the desk.
+
+## FIXED: the MCP surface advertised 41 tools, answered a batch, and could not reach the machine with seven of them (2026-08-07)
+
+Two defects, found one behind the other, and the second was found only
+because the first was being **driven** rather than tested.
+
+**Seven tools were advertised and dead.**
+`SocketAgentIntegrationClient` — the client every MCP call travels
+through — never overrode `observeElements`, `mirrorDrive` or
+`tailGuestLog`, so all three landed on the protocol default in
+`AgentIntegrationClient` and answered "no lane" from a perfectly healthy
+host. The blast radius was larger than three rows:
+`ObserveElementsProjection` is the ONLY producer of the `now-element-…`
+references `now_window_act`, `now_control_act`, `now_text_get` and
+`now_text_set` take, so those four were unreachable for want of a legal
+argument.
+
+Two of the three were four-line forwarders over lanes the socket had
+been serving the whole time. **The walk was not.** There was no
+`observe_elements` operation on the agent socket at all — no adapter
+method, no arm in the host's switch — so the audit's consolation that
+"all of it works through `tools/now-agent`" did not hold for that one:
+that tool speaks the same socket. The act plane's four addressed rows
+had had no argument producer on **any** face of this host since they
+landed on 2026-07-31.
+
+**And the transport answered nothing to a real client.** The stdio loop
+read `FileHandle.standardInput.readData(ofLength: 4096)`, which on
+Darwin blocks until it has the full count or the pipe closes. An MCP
+client holds stdio open for the session and sends one small line at a
+time, so the loop sat on a 76-byte `initialize` waiting for 4020 bytes
+that were never coming — and answered nothing, on all forty-one tools.
+Measured: one small line with stdin held open gets no reply in ten
+seconds; the same line padded to exactly 4096 bytes is answered
+immediately. It survived because every driver this binary ever had wrote
+its whole script and **closed stdin**, which is what makes the blocking
+read return. A pipeline that closes the pipe is a batch, not a client,
+and the surface passed on batches for months.
+
+**The shape both share, and the reason they are one entry.** No test
+asserted that a registered projection's client method is overridden, and
+no test ever spoke to the transport the way a client does. Every gate
+that existed was pointed one layer inside the defect: `MCPCoverageTests`
+checks the catalog against the contract, `HostProjectionRegistryTests`
+that rows are registered, `NOWAgentCompanionTests` that tools are listed
+and bounded. All were green throughout. **A table of what a surface
+declares is not evidence that the surface answers.**
+
+Two gates now, both derived rather than enumerated:
+`SocketClientForwardingTests` reads the projections' `client.<method>(`
+calls and the client protocol's requirements out of source and fails on
+any name the socket client does not declare a `func` for;
+`StdioTransportLivenessTests` spawns the real executable, writes one
+small line and holds stdin open. Both were watched failing — the first
+named all three missing lanes before the fix, the second by mutation.
+
+**Emulator-verified, not metal-verified.** All seven were driven through
+the companion binary against Mac OS 9 under QEMU on 2026-08-07 and four
+were watched taking effect: the walk minted references for a Finder
+window's scrollbars, `now_window_act` moved that window to exactly the
+coordinates it was given, `now_control_act` dispatched against one of
+those scrollbars, `now_mirror_drive` zoomed it. `now_text_get` and
+`now_text_set` reached the guest and were refused in the guest's own
+words — *"that reference names a control, not a text element"* — which
+proves the reference vocabulary crosses but is not a completed reading.
+Nothing has run on real hardware.
+
+### Closed the same day, on `claude/019-conformance`
+
+All three of the below were left open above and were taken up by the
+conformance lane. The entries stay because what each turned out to BE is
+worth more than the fix.
+
+- **A completed text reading has now been taken through MCP.** It needs a
+  dialog's `TEHandle`, so SimpleText's Find dialog was opened;
+  `now_observe_elements` minted the reference under `windows[].text.ref`,
+  `now_text_get` answered `completed` with `text: "New Old World"`,
+  `now_text_set` wrote `"read through MCP"`, and a second read returned
+  it. Emulator-verified, guest build `20ba2e29bff1`.
+- **The lease was not the defect. The walk claimed no plane at all.**
+  `observe` / `elements` / `axtree` read every foreign process through
+  the anchor plane and never claimed it, so they worked only while
+  somebody else held it up — the scene, whose ten-second lease is renewed
+  by host traffic only once a `scene.request` has been served on the
+  link, or the Processes page while it is visible. A headless MCP client
+  therefore had **no** claim and got `no-plane` for everything, for ever;
+  a client with a Mirror polling beside it got the intermittent form that
+  was reported. Fixed by giving the walk the scene's own claim-then-settle
+  pattern under its own owner. Measured A/B on one clone: pre-fix, 8 of 8
+  processes `no-plane` and `requested` still `0x0` after the walk;
+  post-fix, 0 of 8 and `requested=0x3 active=0x3` inside the same call.
+  The lease still lapses after ten seconds of silence, and a caller can no
+  longer observe it — the next walk re-arms and waits for the resident's
+  echo before reading.
+- **The refusal vocabulary was wired at two of four sites, not two of
+  two.** `reach` is derived from the guest's own reply (a refusal with no
+  correlation was never registered, so nothing was armed). `dispatch` and
+  the elements walk derived it; `textget` and `key` hardcoded `unknown`
+  and dropped the correlation and settlement the derivation rests on. Both
+  fixed, and a gate now reads the source and derives both sets from it —
+  every `Self.failure(…)` built from a `result.error`, against every one
+  that asks `reach(ofGuestRefusal:)` — in both directions, because
+  otherwise it is satisfiable by pasting the derivation onto local
+  refusals and turning every provable `notSent` into an `unknown`.
+
+### Still open, noticed in passing and not chased
+
+Three answers the first full live conformance run surfaced. All are
+**answers a healthy host gave that contradict the machine**, which is the
+class the surface work is for; none was chased.
+
+- **`now_mirror_lifecycle` refused with *"No Mac is connected, so no
+  resident has answered"* while a Mac was connected** and eighteen other
+  tools were serving from it in the same run.
+- **`now_guest_files_upload_begin` refused a four-byte upload** with
+  *"Private staging cannot reserve the declared upload"*.
+- **`now_reveal_item` refused *"nothing named System Folder to reveal"***
+  on a Mac OS 9 volume that has one.
+
+And two structural gaps the same run named:
+
+- **`now_transfer_approved_artifact` is unreachable from MCP.** Its
+  argument is minted by a person approving a transfer in the host UI, and
+  no tool on this surface produces one. It is the conformance run's only
+  `uncovered` row.
+- **The reference walk's frame budget is spent on our own process.**
+  `observe --scope all` came back `truncated: true` after ONE process on
+  a machine running eight, because NOW's own window carries the most
+  controls — so the walk cannot reach the Finder unless it is aimed by
+  serial. The least interesting process is the one that fills the reply.
 
 ## FIXED: the live render was worse than every fixture render, and no gate could see it (2026-08-06, evening)
 
@@ -1725,6 +2926,7 @@ window**. The evidence is a paired capture and five tests over the
 captured document, each watched to fail with its fix reverted; the guest
 half was watched to change the wire on a live machine (build
 `bcd1b1893664`, wire 5600).
+
 ## LIVE RISK, deliberately taken: the act wait now services the wire, and the no-hijack argument's single-cell protection is gone (2026-08-06)
 
 **This is not a defect report. It is a protection that was spent on
@@ -2833,6 +4035,7 @@ than the lease still lets the planes lapse — deliberately, that is the
 lease doing its job — and the recovery now costs latency (one settle)
 rather than a scene. And the arm handshake itself is unchanged: nothing
 here makes a plane arm faster, only stops asking before it has.
+
 ## FIXED in the host, UNVERIFIED by any drive: Apple menu items did nothing, and the act was never the missing part (2026-08-06)
 
 Michelle, driving: "apple menu items dont work (apple menu -> control
@@ -3029,6 +4232,7 @@ executing — so it is re-argued and dropped.
   itself. `now_content_arm_verdict` is untouched, so the mechanism
   survives, but the per-pass constant does not necessarily. Re-measure
   after that lands.
+
 ## SHIPPED on an emulator, UNVERIFIED on metal: a scene can now answer "the same", or send only what moved (2026-08-06)
 
 Plan 013 § 5. The wire had become the dominant cost — a 3–8.5 ms walk
@@ -3079,6 +4283,7 @@ byte-identical each time. Either the Finder did not reorder its windows,
 or the walk does not see that it did. `scene.same` is a rather good
 change detector and it has just detected something. Worth a second look;
 not chased here.
+
 ## FIXED on an emulator, NEVER ON METAL: both things the control sweep got wrong, from one change — the guest stopped hunting for controls it had made itself (2026-08-06)
 
 Plan 013 § 2. The entry below names two costs, a 1.9-second focus change
@@ -3225,6 +4430,7 @@ need it, and every scene publishes `phases.clockUs` so a reader can
 subtract rather than wonder. **If a metal pass shows `Microseconds`
 costing what it costs here, the seam count is what to reduce** — the
 per-process bind/windows/menubar trio is 6 of every 8 clock reads.
+
 ## FIXED: the PowerPC guest never reads the host's contract revision (2026-08-06)
 
 **Fixed and watched on an emulated Power Mac G4 the same night**, guest
@@ -3406,6 +4612,7 @@ identical within a page, different across one, correct on each.
   we have. If a metal run shows the Apple menu's folder-backed items cost
   real time there, that is a different finding ("this cost is
   disk-shaped") and points at not re-reading unchanged items at all.
+
 ## BROKEN, contract violation: the PowerPC guest never reads the host's contract revision (2026-08-06)
 
 `contract/asyncapi.yaml`, connection rules: "`contract` is a single
@@ -3959,6 +5166,7 @@ Still open:
   purpose): the three Data Browser pages gate arrows on
   `GetKeyboardFocus` and so have never taken a key. Spun off as its own
   task; docs/guest-ui-start-here.md carries the rule.
+
 ## CLOSED: the liveness vehicle runs, and it runs while applications do not (2026-08-05, later)
 
 The entry below is **fixed**, and it is left standing because the wrong
@@ -4280,6 +5488,7 @@ Three things worth keeping regardless of how that goes:
   Item and content families now hold separate stated byte shares of one
   ceiling. **Anything further added to this payload must take a share
   rather than assume room; there is none.**
+
 ## BROKEN: a blocked callee deafens NOW for 15 s per script (2026-08-05)
 
 **This is the mechanism behind the dropped connection**, and it is not
@@ -5049,6 +6258,7 @@ Still open from this:
   attaches the PREVIOUS command's correlation. It is conservative for the
   host rule above — a stale correlation reads as "may have landed", which
   only costs a wait — but it is wrong.
+
 ## FIXED, TESTED: an agent-driven act was journalled as a person's when it waited (2026-08-05, test landed 2026-08-05)
 
 An act that arrives while an observation is in flight is deferred and
@@ -5589,6 +6799,7 @@ until something has watched it go false.
 operation end to end. The host app could not be run beside the one already
 holding the per-user agent endpoint, so the script was proven against the
 guest directly and the join proven by unit test, not the two together.
+
 ## P4's plane is intact; the reason named for its silence was wrong (2026-08-05)
 
 **The symptom stands; the diagnosis attached to it does not.** A human drive on
@@ -7022,6 +8233,7 @@ on a build that was already correct.
   STRUCTURE region, which is a third convention again. It has not been
   measured and no consumer has complained, because the windows that
   matter come from the bound path.
+
 ## UNVERIFIED: Hide has a route now, and nothing has watched it (2026-08-05)
 
 **This amends an entry that is not in this file yet.** The branch this was
@@ -7423,6 +8635,7 @@ running; whether `mirror-agent` is the name the agent's process wears in
 the guest's own `process.list` (it is the name Mirror's source and
 `spin-up.sh` use, read rather than observed); and whether SIGTERM
 releases the agent's single client slot as cleanly as the code assumes.
+
 ## The host suite was fighting itself over ports (2026-08-02, settled 2026-08-05)
 
 **It WAS contention — and the suite was manufacturing it.** For three
@@ -7949,6 +9162,7 @@ machine. What only a granted library and metal can prove:
   ~60 KB, ~0.2 s at the measured 300 KiB/s — arithmetic, not a
   measurement; nobody has felt the selection-to-pixels latency at
   the PowerBook.
+
 ## The cloud.* family: real providers are untested, and the guest half does not exist (2026-08-01)
 
 **Unverified / unfinished, deliberately.** The host serves
@@ -8106,6 +9320,7 @@ has no metal coverage at all.** `HostServingTests` is loopback-only,
 and no `Metal*` suite exercises a real guest browsing this host's
 share. The browse direction guest→host is metal-verified only from the
 2026-07-20 arc, before the name bridge and placeholders landed.
+
 ## The Files path row names the share, unverified on metal (2026-08-01)
 
 **Unverified.** `file.listing.root` now carries the host share's Finder
@@ -8120,6 +9335,7 @@ nobody has watched: the row on a real screen — the root name arrives
 over the wire UTF-8→MacRoman via `now_json_find_text`, and an accented
 share name drawn through `DrawString` is exactly the kind of thing the
 emulator has hidden before.
+
 ## The Mirror page has never been on a machine (2026-08-01)
 
 **Unverified, and the whole page is unverified together.** The guest now
@@ -9395,6 +10611,7 @@ machine. That is the trade this subsystem exists to make.
 not serve, and it is mostly a renderer: `health.c` already samples the
 facts and the census now reports most of them again. A host asking for
 it by name still gets `unknown-command`.
+
 ## NOW-68K's software listing has never touched a disk (2026-07-28)
 
 `software.list` and the `sw` verb are served on NOW-68K
@@ -9867,6 +11084,7 @@ unverified — most of it is about what a small frame costs.
   type `docs/command-parity.md` called for now exists (`N68CmdRows`) and
   `ls` uses it; moving the other three is a refactor of working code that
   was deliberately not done in the same change as a new message family.
+
 ## An abandoned transfer wedged NOW-68K against all future ones (2026-07-26)
 
 `file.cancel` appeared nowhere in `wire68.c`'s dispatch. The guest sent
@@ -9983,6 +11201,7 @@ a desynchronised wire rather than a cancelled transfer.
   a metal gate belongs with whoever is working on that harness; it
   needs `requireTheBuildUnderTest()` before anything it reports can be
   believed.
+
 ## `front`, on both faces of both guests (2026-07-26)
 
 `process.front` had been on the PowerPC guest's wire since the Processes
@@ -12816,6 +14035,7 @@ for its live handle. So the cost is dominated by the number of
 cross-boundary reads, not by anything per-byte. If someone takes perf,
 that is where to look first — and they should measure before believing
 this paragraph.
+
 ## UNVERIFIED: the host render never settles, and nobody knows if it reaches pixels (2026-08-07)
 
 Measured live, on the unmodified tree, by `tools/fidelity-live.py`:
@@ -12863,6 +14083,7 @@ Two smaller things found on the way, both closed:
   that made it and the row that inherited it. Sweep A lost Date & Time's
   whole stability row to exactly this, and `--quit-after` read as success
   the entire time, because an application holding a modal ignores a quit.
+
 ## BROKEN: the anchor plane arms, and captures an anchor for NOW alone (2026-08-07)
 
 **Found while diagnosing plan 018 slice 3, and it is bigger than that
@@ -13042,6 +14263,7 @@ same snapshot reports `marked: true` for "as List" **and** for "as Window"
 and "Sort List" simultaneously — consistent with the sibling finding that
 `mark` is a raw byte carrying a submenu ID rather than a checkmark flag.
 Nothing here reads it.
+
 ## EXPLAINED, and it was never a contradiction: an application holds an anchor only after it has been FRONTMOST once (2026-08-07)
 
 **This closes the blocker recorded as *"BROKEN: the anchor plane arms,
@@ -13252,6 +14474,7 @@ Verification level: **emulator-verified** (QEMU mac99, OS 9.1, run dirs
 `/private/tmp/nowvm-vis18` and `-vis18b`, anchor 1810 / wire 5360, guest
 builds `59dce8562ad4` and `f3db46a66630`, both asserted on the hello).
 Nothing here touched metal.
+
 ## WORKED AROUND, not fixed: `cycle` makes an undriven machine visible, and three things it taught (2026-08-07)
 
 This continues the entry above — *"an application holds an anchor only

@@ -10,15 +10,18 @@ public struct SceneView: View {
     public let hoveredItem: Int?
     public let selectedItem: String?
     public let dragOutline: Rect?
+    public let itemDrag: SceneRenderer.ProvisionalDrag?
 
     public init(scene: MirrorKit.Scene, openMenu: Int? = nil,
                 hoveredItem: Int? = nil, selectedItem: String? = nil,
-                dragOutline: Rect? = nil) {
+                dragOutline: Rect? = nil,
+                itemDrag: SceneRenderer.ProvisionalDrag? = nil) {
         self.scene = scene
         self.openMenu = openMenu
         self.hoveredItem = hoveredItem
         self.selectedItem = selectedItem
         self.dragOutline = dragOutline
+        self.itemDrag = itemDrag
     }
 
     public var body: some View {
@@ -26,7 +29,8 @@ public struct SceneView: View {
             SceneRenderer(scene: scene, openMenu: openMenu,
                           hoveredItem: hoveredItem,
                           selectedItem: selectedItem,
-                          dragOutline: dragOutline)
+                          dragOutline: dragOutline,
+                          itemDrag: itemDrag)
                 .draw(in: ctx, size: size)
         }
         .background(Color(hex: 0x222222))
@@ -43,11 +47,13 @@ public enum RenderShot {
                            openMenu: Int? = nil,
                            hoveredItem: Int? = nil,
                            selectedItem: String? = nil,
+                           itemDrag: SceneRenderer.ProvisionalDrag? = nil,
                            size: CGSize? = nil) throws -> Data {
         let size = size ?? SceneRenderer(scene: scene).logicalSize
         let view = SceneView(scene: scene, openMenu: openMenu,
                              hoveredItem: hoveredItem,
-                             selectedItem: selectedItem)
+                             selectedItem: selectedItem,
+                             itemDrag: itemDrag)
             .frame(width: size.width, height: size.height)
         let renderer = ImageRenderer(content: view)
         renderer.scale = 1

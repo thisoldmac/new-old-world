@@ -21,6 +21,12 @@ final class FilesDoubleClickTests: XCTestCase {
     private var opened: [URL] = []
     private var revealed: [URL] = []
     private var canOpen = true
+    /// What the "choose an application" panel answers. Nil is a cancel,
+    /// which is the default here so the tests written before the chooser
+    /// existed still describe the behaviour they were written for.
+    private var chosenApplication: URL?
+    private var openedWith: [(URL, URL)] = []
+    private var chosenApplicationOpens = true
 
     override func setUp() async throws {
         listener = GuestListener(
@@ -42,12 +48,21 @@ final class FilesDoubleClickTests: XCTestCase {
         opened = []
         revealed = []
         canOpen = true
+        chosenApplication = nil
+        openedWith = []
+        chosenApplicationOpens = true
         model.systemOpen = .init(
             open: { [weak self] url in
                 self?.opened.append(url)
                 return self?.canOpen ?? false
             },
-            reveal: { [weak self] url in self?.revealed.append(url) })
+            reveal: { [weak self] url in self?.revealed.append(url) },
+            chooseApplication: { [weak self] _ in self?.chosenApplication },
+            openWith: { [weak self] file, application, done in
+                self?.openedWith.append((file, application))
+                let ok = self?.chosenApplicationOpens ?? false
+                Task { @MainActor in done(ok) }
+            })
     }
 
     override func tearDown() async throws {
@@ -113,6 +128,73 @@ final class FilesDoubleClickTests: XCTestCase {
                        "the shared folder is a real folder the other "
                        + "machine also reads")
         XCTAssertEqual(opened.first?.lastPathComponent, "Read Me (2)")
+    }
+
+    // MARK: - The application this Mac could not guess
+
+    /// The point of the chooser. A classic file carries a type and creator
+    /// rather than an extension, so the common outcome of a download is a
+    /// `.bin` nothing here claims — and a person usually knows perfectly
+    /// well what opens it. Revealing it in the Finder was the only answer
+    /// before; now it is the last one.
+    func testTheChooserIsOfferedBeforeGivingUpAndItsChoiceIsUsed()
+        async throws {
+        canOpen = false
+        chosenApplication = URL(fileURLWithPath: "/Applications/ResEdit.app")
+        let guest = try await connectedGuest()
+        model.openOnThisMac(row(named: "SimpleText"))
+        try await deliver("SimpleText", to: guest, bytes: Data([0x00]),
+                          container: "macbinary", fileType: "APPL")
+        try await waitUntil("the notice settled") {
+            self.model.lastNotice != nil
+        }
+
+        let landed = share.appendingPathComponent("SimpleText.bin")
+        XCTAssertEqual(openedWith.map(\.0), [landed])
+        XCTAssertEqual(openedWith.map(\.1), [chosenApplication])
+        XCTAssertTrue(revealed.isEmpty,
+                      "it opened; there is nothing to go and look at")
+        let notice = try XCTUnwrap(model.lastNotice)
+        XCTAssertTrue(notice.contains("ResEdit"), notice)
+        XCTAssertNil(model.lastError)
+    }
+
+    /// The application took the file and would not have it. That is not
+    /// the same as having no application, and saying "nothing here opens
+    /// it" would be false — something was tried, by name.
+    func testAnApplicationThatRefusesTheFileIsNamedInTheNotice()
+        async throws {
+        canOpen = false
+        chosenApplication = URL(fileURLWithPath: "/Applications/ResEdit.app")
+        chosenApplicationOpens = false
+        let guest = try await connectedGuest()
+        model.openOnThisMac(row(named: "SimpleText"))
+        try await deliver("SimpleText", to: guest, bytes: Data([0x00]),
+                          container: "macbinary", fileType: "APPL")
+        try await waitUntil("the notice settled") {
+            self.model.lastNotice != nil
+        }
+
+        let landed = share.appendingPathComponent("SimpleText.bin")
+        XCTAssertEqual(revealed, [landed])
+        let notice = try XCTUnwrap(model.lastNotice)
+        XCTAssertTrue(notice.contains("ResEdit"), notice)
+        XCTAssertTrue(notice.contains("would not open"), notice)
+        XCTAssertNil(model.lastError, "still nothing failed")
+    }
+
+    /// A file this Mac opens by itself never asks. Putting a panel in
+    /// front of somebody who did not need one is the failure mode of
+    /// adding a fallback.
+    func testAFileThatOpensIsNeverAskedAbout() async throws {
+        chosenApplication = URL(fileURLWithPath: "/Applications/ResEdit.app")
+        let guest = try await connectedGuest()
+        model.openOnThisMac(row(named: "Read Me"))
+        try await deliver("Read Me", to: guest, bytes: Data("hi\r".utf8))
+
+        XCTAssertTrue(openedWith.isEmpty)
+        XCTAssertEqual(opened.count, 1)
+        XCTAssertNil(model.lastNotice)
     }
 
     // MARK: - A folder still navigates

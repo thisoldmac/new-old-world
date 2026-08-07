@@ -315,6 +315,13 @@ final class CommandParityTests: XCTestCase {
         "textset": "takes an opaque element reference",
         "ctlact": "takes an opaque element reference and a part code",
         "ditemact": "takes one observed control reference and DITL item",
+        "dragpress": "takes an opaque element reference",
+        // The nonce is minted by dragpress and held by the caller that
+        // began the gesture. A person could type a number, but not THIS
+        // number: it exists only inside one drag, and typing a stale one
+        // is the case the resident drops on purpose.
+        "dragmove": "takes a session nonce dragpress minted",
+        "dragrelease": "takes a session nonce dragpress minted",
         "menuact": "the identity check is a coordinate the scene supplies",
         "handle": "takes an opaque reference",
         "observe": "answers with references no person can read or retype",

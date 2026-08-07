@@ -62,7 +62,11 @@ enum GuestStatus: Equatable {
         case .notListening:
             return "Not listening"
         case .waiting(let port):
-            return "Listening on \(String(port)) — no Mac connected"
+            /* Read from the menu bar of the Mac that is listening, so "no
+               Mac connected" had two readings and the wrong one is the
+               alarming one. */
+            return "Listening on \(String(port)) — no "
+                + "\(MachineNaming.commonNoun) connected"
         case .connected(let name, let quiet):
             guard quiet > Self.quietAfter else { return "Connected: \(name)" }
             return "\(name) — quiet for \(Int(quiet))s"

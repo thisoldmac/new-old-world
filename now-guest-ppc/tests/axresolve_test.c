@@ -65,6 +65,9 @@ static void build_window(AxFixture *f, unsigned long win, const char *title,
     axfix_put16(f, win + 18, 0);
     axfix_put16(f, win + 108, 8);
     axfix_put8(f, win + 110, visible ? 1 : 0);
+    /* Both regions on one handle: this fixture is not about the frame,
+       and axwalk_test is where the two are pinned apart. */
+    axfix_put32(f, win + 114, kRgnH);
     axfix_put32(f, win + 118, kRgnH);
     axfix_put32(f, win + 134, title_h);
     axfix_put32(f, win + 140, controls);

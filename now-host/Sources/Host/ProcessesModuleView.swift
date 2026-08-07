@@ -1,8 +1,16 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
-/// The connected Mac's process table, read over the wire. Read-only for
-/// now — bringing a process forward or asking it to quit is the guest's
-/// own page's job until process.front/.quit cross the wire.
+/// The connected Mac's process table, read over the wire: the list on the
+/// left, and everything about ONE process on the right.
+///
+/// The split is what lets the per-process controls stop being a bottom bar.
+/// A row of buttons under a table names no subject — it is only ever "the
+/// selection", read from a highlight several inches away — whereas beside
+/// the process's own facts each button plainly belongs to the thing above
+/// it. The pane also has somewhere to put a picture now, which is why a
+/// capture no longer sends the reader to another page to find it.
 struct ProcessesModuleView: View {
     @ObservedObject var model: ProcessesModel
 
@@ -11,7 +19,13 @@ struct ProcessesModuleView: View {
             header
             Divider()
             if model.canBrowse {
-                list
+                HSplitView {
+                    list
+                        .frame(minWidth: 280, idealWidth: 380)
+                    details
+                        .frame(minWidth: 300)
+                }
+                .frame(maxHeight: .infinity)
             } else {
                 disconnectedState
             }
@@ -21,17 +35,12 @@ struct ProcessesModuleView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity,
                alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
+        // The pane opened after the Mac was already connected. A (re)connect
+        // while it is open is the MODEL's to notice — it hears the state
+        // change first and reads the new table itself. This used to be an
+        // `.onChange(of: model.connection)` here as well, so every guest
+        // switch fetched twice.
         .onAppear { if model.rows.isEmpty { model.refresh() } }
-        // Refill the pane whenever the Mac (re)connects while it is open,
-        // rather than waiting for a manual Refresh. On a first connect the
-        // table is empty; on a reconnect after a redeploy the model has
-        // already dropped the stale rows — so either way this reads the new
-        // guest's table. onAppear covers a pane opened after the Mac was
-        // already connected, and the two never both fire for one connect,
-        // so there is no double fetch.
-        .onChange(of: model.connection) { connection in
-            if connection.canCapture { model.refresh() }
-        }
     }
 
     private var header: some View {
@@ -39,7 +48,8 @@ struct ProcessesModuleView: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text("Processes")
                     .font(.largeTitle.weight(.semibold))
-                Text("What is running on \(model.connection.peerLabel).")
+                Text("What is running on "
+                     + "\(MachineNaming.sentence(model.connection)).")
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -51,7 +61,7 @@ struct ProcessesModuleView: View {
                 Label("Connecting", systemImage: "circle.dotted")
                     .foregroundStyle(.orange)
             case .disconnected:
-                Label("No Mac Connected", systemImage: "circle.fill")
+                Label("No \(MachineNaming.properNoun) Connected", systemImage: "circle.fill")
                     .foregroundStyle(.secondary)
             }
         }
@@ -102,9 +112,10 @@ struct ProcessesModuleView: View {
             Image(systemName: "cpu")
                 .font(.system(size: 42))
                 .foregroundStyle(.secondary)
-            Text("No Mac Connected")
+            Text("No \(MachineNaming.properNoun) Connected")
                 .font(.title2.weight(.semibold))
-            Text("The other Mac dials this one; its running processes "
+            Text("The \(MachineNaming.commonNoun) dials "
+                 + "\(MachineNaming.thisMac); its running processes "
                  + "appear here once it does.")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -113,15 +124,195 @@ struct ProcessesModuleView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// What is left in the bottom bar once the per-process controls have
+    /// moved: only the things that are about the TABLE — reading it again,
+    /// how many rows it holds, and when it was read.
     private var footer: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        HStack(spacing: 12) {
+            Button {
+                model.refresh()
+            } label: {
+                Label("Refresh", systemImage: "arrow.clockwise")
+            }
+            .disabled(!model.canBrowse || model.isLoading)
+
+            if model.isLoading {
+                ProgressView().controlSize(.small)
+            }
+            Spacer()
+            if !model.rows.isEmpty {
+                Text(countLine)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // MARK: - The details side
+
+    /// One subject at a time, and never two panes deep: either the process,
+    /// or a picture of it. The preview REPLACES the details rather than
+    /// stacking under them, which is what makes the X a complete answer —
+    /// there is exactly one thing to close and one place it returns to.
+    @ViewBuilder
+    private var details: some View {
+        Group {
+            if let shot = model.preview {
+                preview(shot)
+            } else {
+                switch model.subject {
+                case .nothing:
+                    noSelection
+                case .running(let entry):
+                    detailBody(entry, stillRunning: true)
+                case .gone(let entry):
+                    detailBody(entry, stillRunning: false)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity,
+               alignment: .topLeading)
+        .padding(.leading, 18)
+    }
+
+    private var noSelection: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "sidebar.right")
+                .font(.system(size: 28))
+                .foregroundStyle(.tertiary)
+            Text("Select a process to see what it is and drive it.")
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            // With no process picked there is no other pane to carry a
+            // failure, and the bottom bar is only about the table now.
             if let error = model.lastError, model.canBrowse {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .font(.caption)
                     .foregroundStyle(.orange)
+                    .multilineTextAlignment(.center)
             }
-            if let note = model.bringToFrontNote(for: model.selectedEntry) {
-                /* Beside the buttons, not only in a tooltip. A greyed control
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func detailBody(_ entry: ProcessEntry,
+                            stillRunning: Bool) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(entry.name)
+                        .font(.title2.weight(.semibold))
+                    Text(entry.kindLabel)
+                        .foregroundStyle(.secondary)
+                }
+                if !stillRunning {
+                    /* The list repainted and this process was not in it. Say
+                       that, rather than emptying the pane — an empty pane
+                       reads as a lost selection, which is a bug, and this is
+                       not one. The facts below are the last ones that were
+                       true, and every control that would drive them is dark. */
+                    Label("No longer running on "
+                          + "\(MachineNaming.sentence(model.connection)). "
+                          + "These are the last facts it reported.",
+                          systemImage: "clock.arrow.circlepath")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                facts(entry)
+                Divider()
+                controls(entry, stillRunning: stillRunning)
+                if let error = model.lastError, model.canBrowse {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func facts(_ entry: ProcessEntry) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            fact("Kind", entry.kindLabel)
+            if let signature = entry.signatureLabel {
+                fact("Signature", signature)
+            }
+            if let size = entry.sizeLabel { fact("Partition", size) }
+            fact("Frontmost", entry.front == true ? "Yes" : "No")
+            if entry.isSelf == true {
+                fact("This connection", "Yes — it is NOW itself")
+            }
+            // Absent, not zero: a responder that predates the field sends no
+            // PSN, and that is exactly why the drive buttons are dark.
+            fact("Serial number", entry.isDrivable
+                 ? "\(entry.psnHigh ?? 0):\(entry.psnLow ?? 0)"
+                 : "Not reported")
+        }
+    }
+
+    private func fact(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 110, alignment: .leading)
+            Text(value)
+                .font(.callout)
+                .textSelection(.enabled)
+        }
+    }
+
+    /// The three drive verbs, one host→guest arrow, beside the process they
+    /// drive. Enabled only when the selected process named itself with a PSN
+    /// (an old guest that sends no PSN cannot be driven), is still in the
+    /// last listing, and nothing else is in flight.
+    ///
+    /// **Bring to Front carries one more condition than the other two**, and
+    /// it is a different kind of condition: whether fronting means anything
+    /// for this process at all. A faceless background process has no windows
+    /// and no menu bar, so there is nothing to bring forward — a fact about
+    /// the item rather than about the Mac, which is why it comes from
+    /// `GuestCapabilityGate` and not from a `kind == "background"` test
+    /// written into this view.
+    private func controls(_ entry: ProcessEntry,
+                          stillRunning: Bool) -> some View {
+        let enabled = entry.isDrivable && model.canBrowse
+            && !model.actionInFlight && stillRunning
+        // One decision, spent on the button and on the sentence beside it —
+        // and none at all for a process that is no longer there, which is
+        // not a case the gate has an opinion about.
+        let front = (stillRunning ? entry : nil).map {
+            model.bringToFrontGate($0)
+        }
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Button {
+                    model.bringToFront(entry)
+                } label: {
+                    Label("Bring to Front", systemImage: "arrow.up.forward.app")
+                }
+                .disabled(!enabled || front?.isEnabled == false)
+                .help(front?.explanation
+                      ?? "Bring this process to the front over there.")
+                Button {
+                    model.askToQuit(entry)
+                } label: {
+                    Label("Ask to Quit", systemImage: "xmark.circle")
+                }
+                // The guest refuses to quit itself, and says so in the row
+                // (isSelf) before being asked. Disabling here turns a refusal
+                // the human would have read as an error into a button that
+                // was never offered.
+                .disabled(!enabled || entry.isQuittable != true)
+                if model.actionInFlight {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            if let note = model.bringToFrontNote(for: entry) {
+                /* Beside the button, not only in a tooltip. A greyed control
                    with nothing next to it is indistinguishable from a bug,
                    and this one is dark for a reason nothing else on the page
                    says out loud. */
@@ -130,72 +321,94 @@ struct ProcessesModuleView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            HStack(spacing: 12) {
-                Button {
-                    model.refresh()
-                } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                }
-                .disabled(!model.canBrowse || model.isLoading)
+            Divider()
+            captureControls(entry, enabled: enabled)
+        }
+    }
 
-                Divider().frame(height: 16)
-                actionButtons
-
-                if model.actionInFlight || model.isLoading {
-                    ProgressView().controlSize(.small)
+    /// Depth beside the shutter, because it is the one setting that changes
+    /// what comes back. `CaptureDepth` is the Screen module's own enum —
+    /// there is one notion of bit depth in this app, chosen per page.
+    private func captureControls(_ entry: ProcessEntry,
+                                 enabled: Bool) -> some View {
+        HStack(spacing: 10) {
+            Button {
+                model.screenshotApp(entry)
+            } label: {
+                Label("Screenshot App", systemImage: "camera")
+            }
+            .disabled(!enabled || model.isCapturing)
+            Picker("Depth", selection: $model.captureDepth) {
+                ForEach(CaptureDepth.allCases) { depth in
+                    Text(depth.title).tag(depth)
                 }
-                Spacer()
-                if !model.rows.isEmpty {
-                    Text(countLine)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+            }
+            .labelsHidden()
+            .frame(width: 100)
+            .disabled(model.isCapturing)
+            if model.isCapturing {
+                ProgressView().controlSize(.small)
             }
         }
     }
 
-    /// The three drive verbs, one host→guest arrow. Enabled only when a
-    /// process is selected that named itself with a PSN (an old guest that
-    /// sends no PSN cannot be driven), and nothing else is in flight.
-    ///
-    /// **Bring to Front carries one more condition than the other two**, and
-    /// it is a different kind of condition: whether fronting means anything
-    /// for the selected process at all. A faceless background process has no
-    /// windows and no menu bar, so there is nothing to bring forward — a fact
-    /// about the item rather than about the Mac, which is why it comes from
-    /// `GuestCapabilityGate` and not from a `kind == "background"` test
-    /// written into this view.
-    private var actionButtons: some View {
-        let entry = model.selectedEntry
-        let enabled = entry?.isDrivable == true
-            && model.canBrowse && !model.actionInFlight
-        let front = entry.map { model.bringToFrontGate($0) }
-        return Group {
-            Button {
-                if let entry { model.bringToFront(entry) }
-            } label: {
-                Label("Bring to Front", systemImage: "arrow.up.forward.app")
+    // MARK: - The preview state
+
+    private func preview(_ shot: ScreenshotRecord) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.previewOf ?? "Screenshot")
+                        .font(.title3.weight(.semibold))
+                    Text("\(shot.width) × \(shot.height) · "
+                         + "\(shot.format.depth)-bit")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                // On top of the picture's own corner in spirit, and first in
+                // the reading order: the way back is never something a person
+                // has to look for.
+                Button {
+                    model.dismissPreview()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Close the screenshot and go back to the process")
+                .keyboardShortcut(.cancelAction)
             }
-            .disabled(front?.isEnabled == false)
-            .help(front?.explanation
-                  ?? "Bring the selected process to the front over there.")
-            Button {
-                if let entry { model.askToQuit(entry) }
-            } label: {
-                Label("Ask to Quit", systemImage: "xmark.circle")
+            Image(decorative: shot.image, scale: 1)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .border(Color.secondary.opacity(0.3))
+            HStack(spacing: 10) {
+                Button("Save as PNG…") { savePreview() }
+                Button("Copy") { model.copyPreview() }
+                Spacer()
+                Text(shot.capturedAt,
+                     format: .dateTime.hour().minute().second())
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            // The guest refuses to quit itself, and says so in the row
-            // (isSelf) before being asked. Disabling here turns a refusal
-            // the human would have read as an error into a button that
-            // was never offered.
-            .disabled(!enabled || entry?.isQuittable != true)
-            Button {
-                if let entry { model.screenshotApp(entry) }
-            } label: {
-                Label("Screenshot App", systemImage: "camera")
+            if let error = model.lastError {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
             }
         }
-        .disabled(!enabled)
+    }
+
+    private func savePreview() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.png]
+        panel.nameFieldStringValue = model.suggestedPreviewName
+        if panel.runModal() == .OK, let url = panel.url {
+            model.savePreview(to: url)
+        }
     }
 
     /// A snapshot's honest caption: how many, and that it is a snapshot.

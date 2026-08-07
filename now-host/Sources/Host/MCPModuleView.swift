@@ -74,8 +74,10 @@ struct MCPModuleView: View {
         VStack(alignment: .leading, spacing: 2) {
             Text("MCP")
                 .font(.headline)
-            Text("The server an agent connects to in order to drive this Mac "
-                    + "and the ones it is paired with, and what has come in "
+            Text("The server an agent connects to in order to drive "
+                    + "\(MachineNaming.thisMac) and the "
+                    + "\(MachineNaming.properNounPlural) paired with it, "
+                    + "and what has come in "
                     + "through it. Everything here also reaches the log; "
                     + "this is the same record, in front of you.")
                 .font(.subheadline)
@@ -189,7 +191,11 @@ struct MCPModuleView: View {
                         .foregroundStyle(.orange)
                         .frame(width: 30)
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("An agent is streaming this Mac's screen")
+                        /* The stream is of the machine being driven, not
+                           of this one — this line used to say "this Mac's
+                           screen", which named the wrong machine. */
+                        Text("An agent is streaming "
+                             + "\(MachineNaming.possessive(nil)) screen")
                             .font(.title3.weight(.semibold))
                         Text(heldLaneDetail)
                             .font(.callout)
@@ -234,7 +240,7 @@ struct MCPModuleView: View {
     private var consent: some View {
         card {
             VStack(alignment: .leading, spacing: 8) {
-                Text("What the other Mac has agreed to")
+                Text("What each \(MachineNaming.properNoun) has agreed to")
                     .font(.headline)
                 Text("Each machine answers this for itself, and can "
                         + "change its answer while connected. It is "
@@ -243,7 +249,8 @@ struct MCPModuleView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if listener.guests.isEmpty {
-                    Text("No Mac is connected, so none has answered.")
+                    Text("No \(MachineNaming.commonNoun) is connected, "
+                         + "so none has answered.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 } else {

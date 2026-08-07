@@ -457,18 +457,32 @@ public struct AgentIntegrationMenuActReceipt:
     /// press this was, which is the whole basis on which the guest agreed to
     /// treat it as the agent's rather than the person's.
     public let titleLeft: Int
+    /// **Whether that identity was checked against the machine, or only
+    /// trusted.** The guest asks the target application's own menu bar
+    /// where the named menu's title sits; where it can read one, a
+    /// disagreement is refused before anything is armed, and where it
+    /// cannot there is no second opinion to have and the press is armed
+    /// where the caller said.
+    ///
+    /// Two different safety claims, so they are two different words, and
+    /// nil is a third: a guest that answered without the row. Reporting
+    /// any of the three as the others is how a caller comes to believe a
+    /// trusted press was a verified one.
+    public let identity: String?
     public let dispatch: AgentIntegrationActDispatch
     public let dispatchedAt: Date
     public let correlation: String?
     public let settlement: String
 
     public init(menu: Int, item: Int, titleLeft: Int,
+                identity: String? = nil,
                 dispatch: AgentIntegrationActDispatch,
                 dispatchedAt: Date, correlation: String? = nil,
                 settlement: String = "unknown") {
         self.menu = menu
         self.item = item
         self.titleLeft = titleLeft
+        self.identity = identity
         self.dispatch = dispatch
         self.dispatchedAt = dispatchedAt
         self.correlation = correlation

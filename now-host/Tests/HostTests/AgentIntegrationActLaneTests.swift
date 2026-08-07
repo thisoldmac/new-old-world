@@ -252,6 +252,62 @@ final class AgentIntegrationActLaneTests: XCTestCase {
         }
     }
 
+    /// **The guest's Identity row crosses, and its absence stays absent.**
+    ///
+    /// `menuact`'s safety check is a coordinate, and since 2026-08-07 the
+    /// guest says whether it checked that coordinate against the target
+    /// application's own menu bar or only trusted it. Those are two
+    /// different claims about the same completed act, and a receipt that
+    /// flattened them would let a trusted press read as a verified one —
+    /// which is the 18/20 hijack presented as a pass.
+    ///
+    /// The second half is the one with no symptom: a guest too old to
+    /// answer the row must come back nil, never "checked". This side
+    /// cannot see a menu bar and has nothing to decide it from.
+    func testTheMenuActIdentityIsTheGuestsWordAndNotThisSidesGuess()
+        async throws {
+        let (listener, guest) = try await connectedListener()
+        defer { guest.connection.cancel(); listener.stop() }
+        installResponder(on: guest, verb: "menuact") { id in
+            .init(id: id, ok: true,
+                  output: ["menuact": [["Dispatch", "dispatched"],
+                                       ["Identity",
+                                        "unchecked: this menu bar could "
+                                            + "not be read"]]],
+                  error: nil)
+        }
+
+        let result = await adapter(listener).menuAct(
+            .init(menu: 129, item: 1, titleLeft: 44))
+
+        guard case .completed(let receipt) = result else {
+            return XCTFail("expected a receipt: \(result)")
+        }
+        XCTAssertEqual(receipt.identity,
+                       "unchecked: this menu bar could not be read")
+    }
+
+    func testAGuestThatAnswersNoIdentityRowIsNotReadAsChecked()
+        async throws {
+        let (listener, guest) = try await connectedListener()
+        defer { guest.connection.cancel(); listener.stop() }
+        installResponder(on: guest, verb: "menuact") { id in
+            .init(id: id, ok: true,
+                  output: ["menuact": [["Dispatch", "dispatched"]]],
+                  error: nil)
+        }
+
+        let result = await adapter(listener).menuAct(
+            .init(menu: 129, item: 1, titleLeft: 44))
+
+        guard case .completed(let receipt) = result else {
+            return XCTFail("expected a receipt: \(result)")
+        }
+        XCTAssertNil(receipt.identity,
+                     "a guest that said nothing about the check must not "
+                         + "read as having made one")
+    }
+
     // MARK: - 2. An act is not on the transfer lane
 
     /// **An act reaches the wire while the transfer lane is held.**

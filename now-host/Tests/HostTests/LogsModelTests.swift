@@ -37,9 +37,16 @@ final class LogsModelTests: XCTestCase {
     }
 
     func testWriteReachesTheInMemoryRing() {
+        /* Grows by one only while there is room. The log is a shared ring
+           with a cap, so once enough of the suite has run ahead of this
+           test the count stops rising and the oldest line is dropped
+           instead — which is the ring working, not a write going missing.
+           Asserting `before + 1` outright made this test pass for the
+           accidental reason that the suite used to be smaller. */
         let before = HostLog.shared.lines.count
         HostLog.shared.write(.info, "test", "a line for the ring")
-        XCTAssertEqual(HostLog.shared.lines.count, before + 1)
+        XCTAssertEqual(HostLog.shared.lines.count,
+                       min(before + 1, HostLog.ringCapacity))
         XCTAssertEqual(HostLog.shared.lines.last?.text.contains(
             "a line for the ring"), true)
     }

@@ -68,7 +68,13 @@ final class SceneRenderTests: XCTestCase {
         let scene = try scene()
         let menus = try XCTUnwrap(scene.menubar?.menus)
 
-        XCTAssertEqual(menus.map { "\($0.id):\($0.left)" }, [
+        /* `left` is optional since 2026-08-07, so an absence spells
+           itself here rather than printing as a number. That is the
+           point: every menu in this baseline was PLACED by the machine,
+           and a producer that stopped saying where one sits would make
+           it unpressable — a silent loss of capability that a row of
+           zeroes used to hide. */
+        XCTAssertEqual(menus.map { "\($0.id):\($0.left.map(String.init) ?? "unplaced")" }, [
             "256:10", "257:38", "258:73", "259:110",
             "261:154", "260:218", "-16490:277", "-16489:716",
         ])

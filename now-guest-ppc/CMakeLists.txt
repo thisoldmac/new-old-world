@@ -103,6 +103,7 @@ add_application(now-guest-ppc
     src/processes/proc_actions.c
     src/processes/proc_hide_args.c
     src/processes/proc_quit_args.c
+    src/processes/proc_roster.c
     src/processes/processes_layout.c
     src/processes/processes_module.c
     src/workshop/workshop_layout.c
@@ -152,6 +153,7 @@ add_application(now-guest-ppc
     src/act/act_client.c
     src/act/act_cmds.c
     src/act/act_menu_probe.c
+    src/act/act_menu_identity.c
     ../now-guest-shared/src/now_act_guard.c
     # The one-act-at-a-time latch. Shared and natively tested for the
     # same reason the guard is: it is the thing standing in for a

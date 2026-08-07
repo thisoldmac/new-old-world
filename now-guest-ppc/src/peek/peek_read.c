@@ -23,6 +23,7 @@
 enum {
     kWindowRecordSize = 156,      /* classic WindowRecord */
     kOffStrucRgn = 114,           /* RgnHandle within the WindowRecord */
+    kOffContRgn = 118,            /* the other one; see peek_read.h */
     kOffTitleHandle = 134,        /* StringHandle (the window title) */
     kOffNextWindow = 144,         /* WindowPeek to the next window */
     kOffRgnBBox = 2,              /* Rect after the 2-byte rgnSize */
@@ -167,26 +168,55 @@ static NowPeekReadStatus resolve(const ProcessSerialNumber *psn,
 
 /* A window's global bounds from its strucRgn->rgnBBox. Returns 0 on any
    validation failure. */
-static int read_bounds(const ReadableZones *z, unsigned long wl,
-                       NowPeekWindow *out)
+/* One region handle from the WindowRecord -> its bounding box. Both of a
+   window's regions go through this, so neither can end up validated more
+   loosely than the other by accident - which is half of how the two
+   readers came to have opposite failure policies in the first place. */
+static int read_region_bbox(const ReadableZones *z, unsigned long wl,
+                            unsigned long offset, short *out)
 {
-    unsigned long struc;
+    unsigned long handle;
     unsigned long region;
 
-    struc = read_be32(wl + kOffStrucRgn);
-    if (!in_readable(z, struc, 4)) {
+    handle = read_be32(wl + offset);
+    if (!in_readable(z, handle, 4)) {
         return 0;
     }
-    region = read_be32(struc);
+    region = read_be32(handle);
     if (!in_readable(z, region, kRegionHeader)) {
         return 0;
     }
-    out->top = read_be16(region + kOffRgnBBox);
-    out->left = read_be16(region + kOffRgnBBox + 2);
-    out->bottom = read_be16(region + kOffRgnBBox + 4);
-    out->right = read_be16(region + kOffRgnBBox + 6);
-    return now_peek_rect_sane(out->top, out->left, out->bottom,
-                              out->right);
+    out[0] = read_be16(region + kOffRgnBBox);
+    out[1] = read_be16(region + kOffRgnBBox + 2);
+    out[2] = read_be16(region + kOffRgnBBox + 4);
+    out[3] = read_be16(region + kOffRgnBBox + 6);
+    return now_peek_rect_sane(out[0], out[1], out[2], out[3]);
+}
+
+static int read_bounds(const ReadableZones *z, unsigned long wl,
+                       NowPeekWindow *out)
+{
+    short struc[4];
+    short cont[4];
+
+    /* BOTH, or neither. A window reported with one region present and
+       the other zeroed would be a window whose rect means different
+       things on different rows, which is exactly the state this merge
+       ends. The whole window is skipped, which is what this reader
+       already did for an unreadable structure region. */
+    if (!read_region_bbox(z, wl, kOffStrucRgn, struc)
+        || !read_region_bbox(z, wl, kOffContRgn, cont)) {
+        return 0;
+    }
+    out->top = struc[0];
+    out->left = struc[1];
+    out->bottom = struc[2];
+    out->right = struc[3];
+    out->cont_top = cont[0];
+    out->cont_left = cont[1];
+    out->cont_bottom = cont[2];
+    out->cont_right = cont[3];
+    return 1;
 }
 
 /* A window's title (a Pascal string behind titleHandle). Leaves the
@@ -237,8 +267,12 @@ static NowPeekReadStatus read_own_windows(NowPeekWindowList *out)
     for (hops = 0; win != NULL && hops < kWindowChainCap; ++hops) {
         Rect r;
 
+        Rect c;
+
         GetWindowBounds(win, kWindowStructureRgn, &r);
-        if (now_peek_rect_sane(r.top, r.left, r.bottom, r.right)) {
+        GetWindowBounds(win, kWindowContentRgn, &c);
+        if (now_peek_rect_sane(r.top, r.left, r.bottom, r.right)
+            && now_peek_rect_sane(c.top, c.left, c.bottom, c.right)) {
             if (out->count < kNowPeekMaxWindows) {
                 NowPeekWindow *w = &out->windows[out->count];
                 Str255 title;
@@ -248,6 +282,14 @@ static NowPeekReadStatus read_own_windows(NowPeekWindowList *out)
                 w->left = r.left;
                 w->bottom = r.bottom;
                 w->right = r.right;
+                /* The Toolbox is asked for the second region too, rather
+                   than the first one adjusted: self is the one path that
+                   can simply ask, and a constant here would be a guess
+                   nothing forced us to make. */
+                w->cont_top = c.top;
+                w->cont_left = c.left;
+                w->cont_bottom = c.bottom;
+                w->cont_right = c.right;
                 GetWTitle(win, title);
                 len = title[0];
                 if (len > kNowPeekTitleMax - 1) {

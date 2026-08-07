@@ -27,6 +27,17 @@ import Foundation
 /// Read the other way: without it there is no way to tell this act's press
 /// from theirs, which is the measured 18/20 hijack in its menu-shaped form.
 ///
+/// **And since 2026-08-07 the machine is asked whether it is right.** A
+/// required coordinate is not a checked one: a caller holding a scene a
+/// second out of date, or a host path whose scene builder defaulted an
+/// unread `left` to 0 — which arms at x=4, the Apple menu — supplies the
+/// number in perfect good faith and names one menu while describing a press
+/// on another. So the guest reads the target application's own menu bar and
+/// refuses a press that is not where that bar puts the named menu's title.
+/// Where the bar cannot be read there is no second opinion to have, the
+/// press is armed where the caller said, and the receipt's `identity` says
+/// which of the two this was. Both remain, and a caller can tell them apart.
+///
 /// **Success is `dispatched`.** It means the application's `MenuSelect`
 /// returned this item. What the command handler then did — opened a window,
 /// put up a dialog, did nothing — is the caller's to verify against the
@@ -82,6 +93,11 @@ public enum MenuActProjection: HostProjection {
                     "description":
                         "Echoed back because it is the identity that was checked, not a parameter of the act: it is the basis on which the guest agreed to treat this press as the caller's rather than the person's at the machine.",
                 ],
+                "identity": [
+                    "type": "string",
+                    "description":
+                        "Whether the identity above was CHECKED against the machine or only trusted. The guest asks the target application's own menu bar where that menu's title sits: where it can read one, a press described anywhere else is refused before anything is armed; where it cannot, the press is armed where you said and this says so. Absent means the guest did not answer the row at all — read that as unchecked, never as checked.",
+                ],
                 "dispatch": [
                     "type": "string",
                     "enum": AgentIntegrationActDispatch.allCases
@@ -124,7 +140,7 @@ public enum MenuActProjection: HostProjection {
                         "maximum":
                             AgentIntegrationActPolicy.maximumCoordinate,
                         "description":
-                            "The x of that menu's title in the menu bar, as an observation reports it. Required and not derived: this is the act's identity check. A menu press carries no handle, so the press itself is the identity — without this there is no way to tell this act's press from the user's own, and a host that guessed the position could match theirs.",
+                            "The x of that menu's title in the menu bar, as an observation reports it — now_mirror_snapshot's menubar rows carry it. Required and not derived: this is the act's identity check. A menu press carries no handle, so the press itself is the identity — without this there is no way to tell this act's press from the user's own, and a host that guessed the position could match theirs. A menubar row that reports NO left cannot be pressed: send nothing rather than a zero, which is four pixels from the Apple menu's title and is refused.",
                     ],
                     "serialHi": [
                         "type": "integer",

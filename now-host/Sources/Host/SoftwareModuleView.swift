@@ -55,7 +55,7 @@ struct SoftwareModuleView: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text("Software")
                     .font(.largeTitle.weight(.semibold))
-                Text("What is installed on \(model.connection.peerLabel).")
+                Text("What is installed on \(peerLabel).")
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -67,7 +67,7 @@ struct SoftwareModuleView: View {
                 Label("Connecting", systemImage: "circle.dotted")
                     .foregroundStyle(.orange)
             case .disconnected:
-                Label("No Mac Connected", systemImage: "circle.fill")
+                Label("No \(MachineNaming.properNoun) Connected", systemImage: "circle.fill")
                     .foregroundStyle(.secondary)
             }
         }
@@ -222,7 +222,8 @@ struct SoftwareModuleView: View {
                 factRow("State", entry.stateLabel.isEmpty
                         ? "—" : entry.stateLabel)
                 factColumn("Where", entry.path.isEmpty
-                           ? "The Mac could not name this item’s path; it "
+                           ? "\(peerLabel) could not name this item’s path; "
+                             + "it "
                              + "cannot be launched or revealed from here."
                            : entry.path)
             }
@@ -277,7 +278,10 @@ struct SoftwareModuleView: View {
         }
     }
 
-    private var peerLabel: String { model.connection.peerLabel }
+    /// The machine this page is about, in sentence position.
+    private var peerLabel: String {
+        MachineNaming.sentence(model.connection)
+    }
 
     private var detailEmpty: some View {
         VStack(spacing: 8) {
@@ -324,9 +328,10 @@ struct SoftwareModuleView: View {
             Image(systemName: "shippingbox")
                 .font(.system(size: 42))
                 .foregroundStyle(.secondary)
-            Text("No Mac Connected")
+            Text("No \(MachineNaming.properNoun) Connected")
                 .font(.title2.weight(.semibold))
-            Text("The other Mac dials this one; what is installed on it "
+            Text("The \(MachineNaming.commonNoun) dials "
+                 + "\(MachineNaming.thisMac); what is installed on it "
                  + "appears here once it does.")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -374,14 +379,16 @@ struct SoftwareModuleView: View {
                     Label("Rescan", systemImage: "arrow.clockwise")
                 }
                 .disabled(!model.canBrowse || model.isLoading)
-                .help("Sweeps this domain on the connected Mac again. The "
-                      + "listing is read once per Mac per domain and kept "
-                      + "for as long as that Mac stays connected, so this "
-                      + "button is the only thing that re-reads its disk.")
+                .help("Sweeps this domain on \(peerLabel) again. The "
+                      + "listing is read once per machine per domain and "
+                      + "kept for as long as that machine stays connected, "
+                      + "so this button is the only thing that re-reads "
+                      + "its disk.")
 
-                // What building the Applications list COSTS this Mac, as
-                // opposed to what is in it. Expensive on purpose — the
-                // guest sweeps its whole catalog twice — so it is a
+                // What building the Applications list COSTS the
+                // machine being driven, as opposed to what is in it.
+                // Expensive on purpose — it sweeps its whole catalog
+                // twice — so it is a
                 // deliberate click rather than part of Refresh.
                 Button {
                     model.measureCatalogSearch()
@@ -390,8 +397,8 @@ struct SoftwareModuleView: View {
                 }
                 .disabled(!model.canBrowse || model.isLoading
                           || model.actionInFlight)
-                .help("Times a whole-disk search for applications on the "
-                      + "connected Mac — cold, then warm. Takes seconds, "
+                .help("Times a whole-disk search for applications on "
+                      + "\(peerLabel) — cold, then warm. Takes seconds, "
                       + "and up to 20 seconds per pass on a slow disk.")
 
                 if model.isLoading {

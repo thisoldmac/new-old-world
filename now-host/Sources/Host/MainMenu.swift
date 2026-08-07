@@ -11,7 +11,7 @@ import AppKit
 /// **Where the line runs between this menu and the status item.** NOW is a
 /// menu-bar application with a window: the status item must work when there
 /// is no window at all, so it carries the smallest set that makes sense with
-/// nothing on screen — the wire's state, Open, Screenshot Guest, Quit. This
+/// nothing on screen — the wire's state, Open, Capture Screen, Quit. This
 /// menu carries everything, and duplicates exactly those three verbs. Every
 /// other command lives in one place only; a status item that mirrored the
 /// whole menu would be two surfaces to keep honest instead of one.
@@ -189,23 +189,26 @@ enum MainMenu {
         return submenu("View", items)
     }
 
-    /// Verbs that act on the other Mac. A domain menu rather than stuffing
-    /// them into File: nothing here touches a document on this side, and the
-    /// two that are destructive-ish (listening, quitting an application) read
-    /// wrongly under any of the standard menus.
+    /// Verbs that act on the machine being driven. A domain menu rather than
+    /// stuffing them into File: nothing here touches a document on this
+    /// side, and the two that are destructive-ish (listening, quitting an
+    /// application) read wrongly under any of the standard menus.
+    ///
+    /// Titled for the machine rather than "Guest": guest is what this
+    /// codebase calls it, and on screen it names neither Mac.
     private static func guestMenuItem(appName: String, target: AnyObject,
                                       actions: Actions) -> NSMenuItem {
         // "Drive" is the first item because everything under it acts on
-        // whichever machine is chosen there: a menu that offers to
-        // screenshot "the guest" while several are connected has to say
-        // which one it means, in the same menu, above the verb.
+        // whichever machine is chosen there: a menu that offers to capture
+        // a screen while several are connected has to say which one it
+        // means, in the same menu, above the verb.
         let drive = NSMenuItem(title: "Drive", action: nil, keyEquivalent: "")
         drive.tag = Tag.guestList.rawValue
         drive.submenu = NSMenu(title: "Drive")
-        return submenu("Guest", [
+        return submenu(MachineNaming.properNoun, [
             drive,
             .separator(),
-            item("Screenshot Guest", actions.screenshotGuest, "s",
+            item("Capture Screen", actions.screenshotGuest, "s",
                  target: target, modifiers: [.command, .shift]),
             .separator(),
             // The title flips to "Stop Listening" when a listener is up; the
@@ -230,9 +233,9 @@ enum MainMenu {
     /// title is now free to be what a person needs to read (`pb1400c —
     /// NOW-68K 0.14`) while the identity travels beside it.
     ///
-    /// Empty is a state worth drawing rather than hiding: "No Macs
-    /// connected", disabled, says the wire is idle. A submenu that opens
-    /// onto nothing reads as a bug in the app.
+    /// Empty is a state worth drawing rather than hiding: "No Old World
+    /// Macs Connected", disabled, says the wire is idle. A submenu that
+    /// opens onto nothing reads as a bug in the app.
     @discardableResult
     static func fillDriveMenu(_ holder: NSMenuItem,
                               guests: [ConnectedGuest],
@@ -241,8 +244,9 @@ enum MainMenu {
         let menu = holder.submenu ?? NSMenu(title: "Drive")
         menu.removeAllItems()
         guard !guests.isEmpty else {
-            let empty = NSMenuItem(title: "No Macs Connected", action: nil,
-                                   keyEquivalent: "")
+            let empty = NSMenuItem(
+                title: "No \(MachineNaming.properNounPlural) Connected",
+                action: nil, keyEquivalent: "")
             empty.isEnabled = false
             menu.addItem(empty)
             holder.submenu = menu
@@ -289,14 +293,14 @@ enum MainMenu {
     }
 
     /// No help book ships with NOW, and an item that opens an empty one is
-    /// worse than no item. These two are real: the guest's own account of
-    /// what it serves, and this Mac's log folder — the two things someone
-    /// reaches for when something is not working.
+    /// worse than no item. These two are real: the driven machine's own
+    /// account of what it serves, and this Mac's log folder — the two
+    /// things someone reaches for when something is not working.
     private static func helpMenuItem(appName: String, target: AnyObject,
                                      actions: Actions) -> NSMenuItem {
         submenu("Help", [
-            item("Ask the Guest What It Serves", actions.askGuestForHelp, "/",
-                 target: target),
+            item("Ask the \(MachineNaming.properNoun) What It Serves",
+                 actions.askGuestForHelp, "/", target: target),
             .separator(),
             item("Reveal This Mac's Log Folder", actions.revealLogFolder, "",
                  target: target),

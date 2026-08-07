@@ -202,6 +202,14 @@ def main() -> int:
     parser.add_argument("--name", help="mirror_drive: Finder item name")
     parser.add_argument("--in", dest="container",
                         help="mirror_drive: desktop, or a window entity id")
+    # observe_elements. Both halves or neither, and the tool does not
+    # default one from the other: half a process serial number names
+    # nothing, and omitting both is how this call says "the frontmost
+    # application" — which is a real answer rather than a fallback.
+    parser.add_argument("--serial-hi", type=int,
+                        help="observe_elements: process serial, high half")
+    parser.add_argument("--serial-lo", type=int,
+                        help="observe_elements: process serial, low half")
     parser.add_argument("--json", action="store_true",
                         help="print the reply verbatim")
     parser.add_argument("--timeout", type=float, default=30.0,
@@ -232,6 +240,12 @@ def main() -> int:
             if value is not None:
                 drive[key] = value
         request["mirrorDriveRequest"] = drive
+    if (args.serial_hi is None) != (args.serial_lo is None):
+        parser.error("--serial-hi and --serial-lo go together or neither; "
+                     "half a process serial number names nothing")
+    if args.serial_hi is not None:
+        request["observeProcess"] = {"high": args.serial_hi,
+                                     "low": args.serial_lo}
 
     reply = call(request, timeout=args.timeout)
     if args.json:

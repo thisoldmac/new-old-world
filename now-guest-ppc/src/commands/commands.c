@@ -36,6 +36,7 @@
 #include "catsearch.h"
 #include "software.h"
 #include "proc_actions.h"
+#include "proc_roster.h"
 
 const char *const kGestaltFullGroups[] = {
     "cpu", "memory", "os", "network", "hw", NULL
@@ -321,58 +322,28 @@ int now_gestalt_gather(GestaltRow *rows, int max)
 
 int now_process_gather(ProcRow *rows, int max)
 {
-    /* Spelled-out 4CCs: multi-character char constants warn under -Werror.
-       These classify a process's kind, the same test serve_process_list
-       makes. */
-    const unsigned long kTypeFinder = 0x464E4452UL;   /* 'FNDR' */
-    const unsigned long kSigFinder = 0x4D414353UL;    /* 'MACS' */
-    ProcessSerialNumber psn = { 0, kNoProcess };
-    ProcessSerialNumber front;
-    ProcessSerialNumber me;
-    Boolean have_front = GetFrontProcess(&front) == noErr;
-    /* The same fact the wire's isSelf carries, in the sentence a person
+    /* THE SAME WALK AND THE SAME CLASSIFIER `process.list` READS
+       (proc_roster.h). This function used to carry a comment saying it
+       made "the same test serve_process_list makes" - a claim of
+       parallel code, which is what command-parity rule 2 forbids. It is
+       now the same code, so the two faces cannot answer differently.
+
+       isSelf is the fact the wire carries, in the sentence a person
        reads: which of these rows is the application answering you. Both
        guests' ps say "self", because the host console renders both with
        one renderer. */
-    Boolean have_self = GetCurrentProcess(&me) == noErr;
+    NowProcRosterIter it;
+    NowProcRosterRow proc;
     int n = 0;
 
-    while (n < max && GetNextProcess(&psn) == noErr) {
-        ProcessInfoRec info;
-        Str31 name;
-        const char *kind;
-        Boolean is_front = false;
-        Boolean is_self = false;
-        long sz;
-
-        memset(&info, 0, sizeof info);
-        info.processInfoLength = sizeof info;
-        info.processName = name;
-        info.processAppSpec = NULL;
-        name[0] = 0;
-        if (GetProcessInformation(&psn, &info) != noErr) {
-            continue;                 /* unreadable: skip, as the wire does */
-        }
-        if ((unsigned long)info.processType == kTypeFinder
-            || (unsigned long)info.processSignature == kSigFinder) {
-            kind = "finder";
-        } else if ((info.processMode & modeOnlyBackground) != 0) {
-            kind = "background";
-        } else {
-            kind = "application";
-        }
-        if (have_front) {
-            (void)SameProcess(&psn, &front, &is_front);
-        }
-        if (have_self) {
-            (void)SameProcess(&psn, &me, &is_self);
-        }
-        memcpy(rows[n].name, name + 1, name[0]);
-        rows[n].name[name[0]] = '\0';
-        sz = (long)(info.processSize / 1024);
+    now_proc_roster_begin(&it);
+    while (n < max && now_proc_roster_next(&it, &proc)) {
+        memcpy(rows[n].name, proc.name, sizeof rows[n].name - 1);
+        rows[n].name[sizeof rows[n].name - 1] = '\0';
         snprintf(rows[n].detail, sizeof rows[n].detail, "%s, %ld KB%s%s",
-                 kind, sz, is_front ? ", front" : "",
-                 is_self ? ", self" : "");
+                 now_proc_kind_name(proc.kind), proc.size_kb,
+                 proc.is_front ? ", front" : "",
+                 proc.is_self ? ", self" : "");
         ++n;
     }
     return n;
@@ -1688,6 +1659,18 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "ctlact") == 0) {
         now_act_run_ctlact(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "dragpress") == 0) {
+        now_act_run_dragpress(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "dragmove") == 0) {
+        now_act_run_dragmove(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "dragrelease") == 0) {
+        now_act_run_dragrelease(request_json, id, out, cap);
         return;
     }
     if (strcmp(name, "ditemact") == 0) {

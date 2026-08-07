@@ -10,11 +10,35 @@ public struct AgentIntegrationEndpoint: Equatable, Sendable {
         self.socketURL = socketURL
     }
 
+    /// **A second stack on one Mac, isolated on purpose.**
+    ///
+    /// The endpoint is per-uid, which is right for the product — one
+    /// person, one host, one agent surface. It is wrong for this desk,
+    /// where several sessions run at once: the first host to bind owns
+    /// `host.sock`, so every MCP client on the machine reaches THAT
+    /// host and whatever guest it happens to be driving. Not a theory —
+    /// on 2026-08-07 a conformance run could not be taken at all because
+    /// another session's host had held the socket for an hour, and the
+    /// alternative to waiting was to reach an unrelated Macintosh
+    /// without either session knowing.
+    ///
+    /// `NOW_AGENT_SOCKET_SUFFIX` gives a run its own endpoint. Read HERE
+    /// rather than at each caller, so a host and the companion that talks
+    /// to it cannot disagree about where the socket is — the two are
+    /// separate processes and a second spelling of this rule is a second
+    /// place for them to drift apart.
+    ///
+    /// Bounded and sanitised: it becomes a directory name, and a suffix
+    /// carrying a separator would name a path outside the temporary
+    /// directory. Unset — the product's case — nothing changes.
     public static func currentUser(uid: uid_t = geteuid()) throws
         -> AgentIntegrationEndpoint {
+        let suffix = sanitisedSuffix(
+            ProcessInfo.processInfo
+                .environment["NOW_AGENT_SOCKET_SUFFIX"])
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(
-                "dev.newoldworld.now-agent-\(uid)",
+                "dev.newoldworld.now-agent-\(uid)\(suffix)",
                 isDirectory: true)
         let endpoint = AgentIntegrationEndpoint(
             directoryURL: directory,
@@ -22,6 +46,21 @@ public struct AgentIntegrationEndpoint: Equatable, Sendable {
         try AgentIntegrationUnixSocket.validatePathLength(
             endpoint.socketURL.path)
         return endpoint
+    }
+
+    /// Empty for anything that is not a short, plain identifier.
+    ///
+    /// Refusing rather than escaping: a suffix that had to be rewritten to
+    /// be safe is one whose author meant something this cannot give them,
+    /// and silently reshaping it would put their host on an endpoint they
+    /// did not name — which is the collision this exists to prevent,
+    /// arriving by the other door.
+    static func sanitisedSuffix(_ raw: String?) -> String {
+        guard let raw, !raw.isEmpty, raw.count <= 24 else { return "" }
+        let allowed = raw.allSatisfy {
+            $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_"
+        }
+        return allowed ? "-\(raw)" : ""
     }
 }
 

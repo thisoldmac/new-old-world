@@ -2,14 +2,14 @@ import XCTest
 @testable import Host
 
 final class ModuleRegistryTests: XCTestCase {
-    func testStandardRegistryHasScreenshotsFirstAndSettings() {
+    func testStandardRegistryHasScreenFirstAndSettings() {
         XCTAssertEqual(ModuleRegistry.standard.modules.map(\.id),
-                       ["screenshots", "files", "icloud", "processes",
-                        "mirror", "console", "chat", "connections",
+                       ["screen", "files", "icloud", "processes",
+                        "mirror", "console", "chat",
                         "census", "diagnostics", "networking", "software",
                         "mcp", "logs", "settings"])
-        XCTAssertEqual(ModuleRegistry.standard.module(id: "screenshots")?.title,
-                       "Screenshots")
+        XCTAssertEqual(ModuleRegistry.standard.module(id: "screen")?.title,
+                       "Screen")
         XCTAssertEqual(ModuleRegistry.standard.module(id: "settings")?.title,
                        "Connection")
     }
@@ -27,8 +27,8 @@ final class ModuleRegistryTests: XCTestCase {
         XCTAssertEqual(ModuleRegistry.standard.footerModules.map(\.id),
                        ["mcp", "logs", "settings"])
         XCTAssertEqual(ModuleRegistry.standard.listModules.map(\.id),
-                       ["screenshots", "files", "icloud", "processes",
-                        "mirror", "console", "chat", "connections",
+                       ["screen", "files", "icloud", "processes",
+                        "mirror", "console", "chat",
                         "census", "diagnostics", "networking", "software"])
     }
 
@@ -54,11 +54,15 @@ final class ModuleRegistryTests: XCTestCase {
     ///
     /// The selection is persisted by id, so `agent` → `mcp` would otherwise
     /// silently evict whoever was last looking at that page: their saved id
-    /// stops resolving and the next launch drops them on Screenshots. Every
+    /// stops resolving and the next launch drops them on the first page. Every
     /// old name in the table has to resolve, and to something real.
     func testARenamedModuleStillResolvesFromItsOldSavedID() {
         XCTAssertEqual(ModuleRegistry.standard.resolvingRenames(id: "agent")?.id,
                        "mcp")
+        // Screenshots became Screen once the page grew the live stream.
+        XCTAssertEqual(
+            ModuleRegistry.standard.resolvingRenames(id: "screenshots")?.id,
+            "screen")
         for (old, new) in ModuleRegistry.renamedIDs {
             XCTAssertNil(ModuleRegistry.standard.module(id: old),
                          "\(old) was renamed, so nothing may still claim it.")

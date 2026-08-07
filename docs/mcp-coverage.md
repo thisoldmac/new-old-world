@@ -70,6 +70,47 @@ about the Macintosh. No projection test fails, because the projection is fine.
 It was proven by removing `process.front`'s row: twenty-five tests across the
 three most closely related suites stayed green and only this one spoke.
 
+**A second check is not about this document either, and it exists because
+every table below was true while seven of the tools they describe could not
+reach a Macintosh.** On 2026-08-07 a surface audit found that
+`SocketAgentIntegrationClient` — the client every MCP call travels through —
+never overrode `observeElements`, `mirrorDrive` or `tailGuestLog`. All three
+landed on the protocol default in `AgentIntegrationClient`, so
+`now_observe_elements`, `now_mirror_drive` and `now_guest_log_tail` answered
+"no lane" from a healthy host; and because the observation is the **only**
+producer of the `now-element-…` references the act rows take,
+`now_window_act`, `now_control_act`, `now_text_get` and `now_text_set` were
+unreachable for want of a legal argument.
+
+Nothing here could see it, and that is the point worth keeping. This file
+derives what a projection **declares** — its `capability`, its `requires`,
+its `exposes` — and all seven declarations were correct. What was missing was
+four lines one layer below the projection, in a file this document does not
+read. So the gate is
+[`SocketClientForwardingTests`](../now-host/Tests/NOWAgentCompanionTests/SocketClientForwardingTests.swift),
+which derives two sets from source — every `client.<method>(` the projections
+call, and every requirement the client protocol declares — and fails when
+either contains a name `SocketAgentIntegrationClient` does not declare a
+`func` for. Neither set is maintained by hand, for the reason AGENTS.md gives
+about enumerations: the same day this was found, three separate hand-kept
+lists in this repository were wrong, and none of them by carelessness.
+
+**The drive that verified the fix found a larger defect than the one it was
+sent for**, and it belongs beside this one because it has the same shape.
+The MCP stdio loop read `FileHandle.standardInput.readData(ofLength: 4096)`,
+which on Darwin blocks until it has the full count or the pipe closes — so a
+client holding stdio open and sending one small line at a time was answered
+by **nothing at all**, on every one of the tools in this file. It survived
+because every driver this surface has ever had wrote its whole script and
+closed stdin, which is a batch rather than a client.
+[`StdioTransportLivenessTests`](../now-host/Tests/NOWAgentCompanionTests/StdioTransportLivenessTests.swift)
+spawns the real executable, writes one small line and holds stdin open — the
+one condition every previous driver removed.
+
+Both are the same lesson in different places: **a table of what a surface
+declares is not evidence that the surface answers.** Neither gate changes a
+row below; they are what makes the rows mean something.
+
 The guest-side greps are `contract-coverage.md`'s, unchanged:
 
 ```
@@ -598,6 +639,9 @@ to exist:
 | `activate` | command | ppc | deliberate | The same capability as `front`, addressed by process serial instead of by name — and `now_bring_to_front` already needs the `process.front` **family** for the reason that row gives. One capability, one route per face ([command-parity.md](command-parity.md)). What `activate` adds over `front` is real but is a GUEST-side property: it takes the identity an observation minted, so a driver that has just walked the machine does not have to go back to a name that may match twice. The host's own action dispatcher sends it directly for exactly that reason. That is a second route for one capability, which is what this column exists to refuse. |
 | `actselftest` | command | ppc | unnoticed | Proves the act plane's trap calling convention from inside one process, and it is the only instrument that reads the CALLER's side of the call — every other one reads ours. It matters more than its size, because a patch whose result lands in the wrong slot **does not crash, it lies**: every counter the plane owns reports success while the application reads a value we never wrote. Nobody has decided either way. What a row would have to settle first: whether an agent about to drive the act plane should be able to ask "is this machine's ABI the one you were built against" before it acts — the case for is that a silent wrong answer is the failure mode this plane actually has; the case against is that a host could simply call it once per session itself and never expose it. |
 | `ditemact` | command | ppc | planned | U5/KTD11 of the [NOW Mirror UX completion plan](plans/2026-08-03-001-now-mirror-ux-completion-plan.md): prove the keyboard-and-mouse Mirror path first, then add MCP parity as a thin adapter over the same typed operation. The command selects one observation-minted, revalidated 1-based DITL item through the application's Dialog Manager path; projecting it before the direct UI is watched would invert that acceptance order. |
+| `dragpress` | command | ppc | unnoticed | Presses the mouse button on an element and LEAVES IT DOWN, handing the gesture to the resident's Time Manager drag vehicle. Landed 2026-08-07 with the vehicle itself; nobody has decided whether an agent should be able to ask for it. **What a row would have to settle first, and it is not the usual question:** every other capability on this surface either reads a machine or asks an application to do something it already knows how to do. This one moves a PHYSICAL POINTER on somebody's Macintosh and holds its button down — so the question is not whether it is useful but whether a caller who is not looking at the screen should be able to start a gesture a person at that machine will be fighting. The resident's dead-man bounds the damage in TIME (it releases whether or not anyone asks, and clamps its own deadlines so a caller cannot switch it off), which is exactly the property that would make a row defensible; it does not bound it in SPACE. Deciding this means deciding all three drag verbs together, not one. |
+| `dragmove` | command | ppc | unnoticed | Publishes a new pointer position for a held drag. Same landing, same undecided status, and it cannot be decided separately from `dragpress` — a press with no move is not a gesture. Its own distinguishing question is a smaller one: this verb is also what relays caller liveness, so a projection would be taking on the obligation to keep talking, and a tool that stopped mid-gesture would produce a dead-man release rather than an error. That is the honest failure and it is still a failure a caller has to be told about in advance. |
+| `dragrelease` | command | ppc | unnoticed | Asks the resident to release a held drag. Same landing and same coupling to the other two. The one thing it adds to the decision: it reports that it ASKED and never that it released, because the resident's own deadline may have got there first — so a projection would have to carry a four-valued outcome (released-as-asked, dead-man-idle, dead-man-cap, session-lost) rather than a boolean, and a tool that flattened it would be asserting an outcome nobody observed. |
 | `aesend` | command | ppc | unnoticed | One of four core Apple Events — quit, oapp, odoc, pdoc — to a process named by its serial. A closed vocabulary, not a class/id pipe, which is what makes it a candidate at all. Nobody has decided. What a row would have to settle first: `quit` overlaps `now_request_quit` outright, so a row would either drop that op or be a second route to a capability already projected; and the two document ops are the only way this product can open or print a file on the guest, which is a capability no tool has and nobody has asked for. Deciding it means deciding those two questions separately, not deciding one verb. |
 | `key` | command | ppc | planned | **W3** of the parity slice. **The pane face landed 2026-08-01; this row tracks the MCP face, which has not.** One keystroke, posted through the Event Manager — the ground `now_text_set` cannot cover: a dialog that answers only keystrokes, and keys that carry no text (Return, Escape, the arrows). **The row that landed is the human-facing one, and it is `mods`-gated rather than blanket.** `ActionModel.availability(.key)` is now a function of `mods`: `mods == 0` answers `.available(command: "key")` and routes through `AgentIntegrationHostAdapter.key` → `AgentIntegrationActControl.key` (reads the input plane's own lower-case `posted` row, not the act plane's `Dispatch`); `mods != 0` still answers `.unavailable`, refused before a request is built. `MirrorModuleView`'s drawing captures a `keyDown` (`MirrorKeyCaptureView`, an AppKit view because `.onKeyPress` needs macOS 14 and this app supports 13) and `ActionModel.paneKeystroke` translates it, folding Shift into the character rather than into `mods` — the guest's own key table is case-sensitive on the char, not on a bit. **Not landed:** the *agent*-facing row — no `KeyProjection.swift`, no `AgentIntegrationClient.key` on the protocol, no MCP/`appIntents` face — so an MCP caller still gets no `key` tool. **Not verified:** the capture view's AppKit/SwiftUI integration has not been run in the built app (no display attached to this work); `docs/pane-keys-audit.md` names the specific risk and the check that would retire it. What a row must still decide for the modified half is the honest limit stated here since: an event's modifiers live on the Event Manager's queue element, and the only call that returns it is `PPostEvent`, which is `CALL_NOT_IN_CARBON` — so this verb refuses `mods != 0` outright rather than posting a bare key and reporting success ([input-plane-decisions.md](input-plane-decisions.md)). |
 | `cycle` | command | ppc | unnoticed | Brings each faced application forward in turn with the anchor plane held armed, so each executes its own event loop once and the resident captures its anchor, then restores the previously frontmost application. Landed 2026-08-07 (plan 018 slice 15) as the guest half only. **The gap is honest rather than argued: nobody has decided whether an agent should be able to ask for it.** **What a row would have to settle first:** this verb DISTURBS THE MACHINE on purpose — windows come forward and flash past — so exposing it to an agent is a question about consent and surprise rather than about plumbing. It is the one verb on this surface whose whole point is a visible side effect, and the argument against a tool is that an agent could invoke it while a person is working; the argument for is that an agent facing a freshly booted Mac currently sees one window and has no way to fix it, which is exactly the hole that drove agents to macOS accessibility scripting. The capability itself is not in doubt. |
@@ -628,10 +672,10 @@ to exist:
 
 ### The unnoticed rows, named together
 
-**`actselftest`, `aesend`, `axsnap`, `cycle`, `desktop`, `handle`,
-`hide`, `mirror`, `net` and `script`** — ten rows, all served by the
-PowerPC guest, none decided either way. Their rows above say what a
-decision would have to settle.
+**`actselftest`, `aesend`, `axsnap`, `cycle`, `desktop`, `dragmove`,
+`dragpress`, `dragrelease`, `handle`, `hide`, `mirror`, `net` and
+`script`** — thirteen rows, all served by the PowerPC guest, none decided
+either way. Their rows above say what a decision would have to settle.
 
 *(This list was **two** lists for the length of one merge. The
 `018-desktop-pattern` and `018-anchor-acquisition` lanes each added a
@@ -640,8 +684,21 @@ kept both, and the result named `desktop` in one and `cycle` in the
 other with neither naming both — the exact 2026-08-05 defect the
 [AGENTS.md](../AGENTS.md) section "Enumerated lists rot at merges" was
 written about, reproduced two days later by two authors who did nothing
-careless. It is derived from the Disposition column above now:*
+careless. It happened a THIRD time at the 019 integration, where the
+drag lane's rewrite of this paragraph named the three `drag*` verbs and
+dropped `cycle` and `desktop`; the list below is derived from the
+Disposition column above rather than retyped:*
 `awk -F'|' '/^\| `[a-z]/ && $5 ~ /unnoticed/ {gsub(/[ `]/,"",$2); print $2}' docs/mcp-coverage.md | sort -u`*.)*
+
+The three `drag*` verbs joined on 2026-08-07, the day the vehicle landed,
+and they are the first rows here whose undecidedness is about **physical
+effect on somebody else's desk** rather than about risk, shape or whose
+machine. Every other capability on this surface reads a Macintosh or asks
+an application to do something it already knows how to do; these move a
+pointer and hold its button down, and a person sitting at that machine
+would be fighting them. They must also be decided **together** — a press
+with no move is not a gesture — which is why there are three rows and one
+question.
 
 `desktop` joined on 2026-08-07, and it is the only one here whose
 undecidedness is about **what kind of thing this surface is for**: every
@@ -854,13 +911,114 @@ host ask.
 |---|---|---|
 | `census.request` | `censusExchange` (`action: send`) | Symmetric by definition; in practice the host asks and the guest — the machine with hardware worth asking about — serves. |
 
+## Declared versus exercised
+
+Everything above this line is **declared**: what the registry says a
+projection reaches, derived from source and gated by a test. That column
+was correct on every row while seven tools were dead and all forty-one
+were unreachable to any real client, and it is worth saying plainly why
+it could not have been otherwise — *a declaration is a claim about the
+catalog, and a dead lane is a fact about the machine.*
+
+**Exercised** is the second column, and it is filled by running the
+surface rather than reading it:
+
+```
+# The gate. No host is reached: the companion is pointed at an endpoint
+# nothing binds, which is CI's shape.
+swift test --filter MCPClientConformanceTests
+
+# The measurement. Needs a host and a guest, and asserts WHICH guest
+# before believing a row.
+NOW_AGENT_SOCKET_SUFFIX=<yours> NOW_MCP_CONFORMANCE_LIVE=1 \
+  NOW_MCP_CONFORMANCE_BUILD=<build prefix> \
+  swift test --filter MCPClientConformanceTests
+```
+
+Both print the table. Four verdicts, and the fourth is the one a
+three-verdict table would have hidden:
+
+| Verdict | Means |
+| --- | --- |
+| `served` | the tool answered with its own success |
+| `refused` | this host, the guest or the machine said no, **and said why** |
+| `failed` | no answer, an unreadable one, or an answer a healthy host contradicts |
+| `uncovered` | advertised, and this surface can construct no legal argument for it |
+
+A second column says whether the argument was `real` — built from this
+run's own earlier answers — or `synthetic`, a syntactically valid
+reference deliberately never minted. It decides what a refusal proves: a
+synthetic row exercises the lane and the guest's revalidation, and says
+nothing about the capability. Several rows are synthetic **on purpose**
+and not for want of trying — `now_text_set` replaces a field with no undo,
+`now_control_act` presses whatever control it was handed, `now_request_quit`
+would end a process the rest of the run reads.
+
+### Exercised, 2026-08-07
+
+Two runs of the same driver, on `claude/019-conformance`.
+
+| Condition | served | refused | failed | uncovered |
+| --- | --- | --- | --- | --- |
+| No host (the gate) | 0 | 40 | 0 | 1 |
+| Live, Mac OS 9 under QEMU, guest build `20ba2e29bff1` | 19 | 21 | 0 | 1 |
+
+**`now_transfer_approved_artifact` is the uncovered row, and the only
+one.** An approval receipt is minted by a person approving a transfer in
+the host's own UI; no MCP tool produces one, so a headless caller cannot
+reach that capability at all. Sending it a receipt nobody issued would
+have exercised a regular expression and scored a refusal, which is why
+the fourth verdict exists.
+
+Three answers the live run surfaced that no derivation over declarations
+could have, recorded here and in `open-issues.md`:
+
+- `now_mirror_lifecycle` refused with *"No Mac is connected, so no
+  resident has answered"* **while a Mac was connected** — a false
+  sentence from a healthy host, which is the class of defect this plan is
+  named for.
+- `now_guest_files_upload_begin` refused a **four-byte** upload with
+  *"Private staging cannot reserve the declared upload"*.
+- `now_reveal_item` refused *"nothing named System Folder to reveal"* on
+  a Mac OS 9 volume that has one.
+
+None was chased here.
+
 ## Status
 
-**Tested, not metal-verified.** Nothing in this file has been read against a
-Macintosh; it is a derivation over source and a contract, and the guest-side
-`Served` column claims only what a guest's dispatch answers — never that any
-of it has run. `contract-coverage.md`'s "how far each served thing is
-proven" is the axis for that and is not duplicated here.
+**Tested, not metal-verified.** The tables are a derivation over source and a
+contract, and the guest-side `Served` column claims only what a guest's
+dispatch answers — never that any of it has run. `contract-coverage.md`'s
+"how far each served thing is proven" is the axis for that and is not
+duplicated here.
+
+**Seven rows are now emulator-verified, and they are the only ones.** On
+2026-08-07, against Mac OS 9 under QEMU, each of `now_guest_log_tail`,
+`now_observe_elements`, `now_mirror_drive`, `now_window_act`,
+`now_control_act`, `now_text_get` and `now_text_set` was called through the
+MCP transport — the companion executable over JSON-RPC, not a test seam —
+and four of them were watched taking effect on the machine: the walk minted
+`now-element-…` references for a Finder window's scrollbars, `now_window_act`
+moved that window to exactly the coordinates it was given, `now_control_act`
+was dispatched against one of those scrollbars, and `now_mirror_drive`
+zoomed the window. `now_text_get` and `now_text_set` reached the guest and
+were refused **by the guest, in its own words** — *"that reference names a
+control, not a text element"* — which proves the reference vocabulary is
+shared but is not a completed reading; a window carrying a discoverable
+`TEHandle` was not open on that machine. Nothing here has run on real
+hardware.
+
+**The completed text reading was taken later the same day**, on
+`claude/019-conformance`, through the companion binary over JSON-RPC. A
+window with a discoverable `TEHandle` is a *dialog's*, not a document's —
+the contract says so — so SimpleText's Find dialog was opened, and
+`now_observe_elements` minted the text reference the walk carries under
+`windows[].text.ref`. `now_text_get` answered `completed` with
+`text: "New Old World"` and `truncated: false`; `now_text_set` wrote
+`"read through MCP"`; a second walk and a second `now_text_get` read that
+back. So the pair is now emulator-verified as a round trip rather than as
+reachability, and the earlier refusal is exactly what it said it was — a
+control reference, not a text one.
 
 The test is proven by mutation: adding a registry row without a table entry,
 and declaring a gap for a capability a projection exposes, both fail naming the
@@ -875,7 +1033,33 @@ real defect in its own first draft — reading the whole section rather than its
 first paragraph collected the two names the explanation mentions *because* they
 are not on the list.
 
-Last derived: 2026-07-30, on `claude/tbt-parity-slice` with the phase
+Last derived: **2026-08-07**, on `claude/019-integration-3`, by running
+`swift test --filter MCPClientConformance` and `--filter MCPCoverage`
+against the merged tree of seven lanes. **No row moved**, and the run's
+own line is `served 0, refused 41, failed 0, uncovered 1` — 42 advertised
+tools, every one of which answered a real client, with no host running
+so a named refusal is the right answer for all of them. The one
+`uncovered` is `now_transfer_approved_artifact`, unchanged and for the
+reason its recipe states.
+
+Two things had to be fixed before that line could be produced, and both
+were merge artefacts rather than defects in either lane: `now_mirror_open`
+had no conformance recipe (`018-open-mirror` landed the row before
+`019-conformance` forked), and its reply is a **fourth** spelling of
+availability — `showing` beside `available`, `hostAvailable` and `ok`.
+Consolidating those four is the open item; see
+[open-issues.md](open-issues.md).
+
+Before that, 2026-08-07, on `claude/018-mcp-revival`, by running
+`swift test --filter MCPCoverage` — which reads the registry in process, so
+the tables below are what the running catalog says today. **No row moved**,
+and that is the finding rather than the absence of one: the seven tools this
+branch brought back to life were declared correctly the whole time, so a
+derivation over declarations could not tell they were dead. The two gates
+named in "Derived, and gated by a test" are the answer, and the drive that
+proved the fix is recorded in Status above.
+
+Before that, 2026-07-30, on `claude/tbt-parity-slice` with the phase
 complete — twelve capabilities wired across twenty-six registry rows. The last
 was diagnostics, where one plan item and one wire operation became **three**
 registry rows on purpose, because availability is per row and `vprobe`,

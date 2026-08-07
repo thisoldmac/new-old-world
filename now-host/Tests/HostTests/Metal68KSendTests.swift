@@ -50,6 +50,9 @@ final class Metal68KSendTests: XCTestCase {
 
     /// Files the guest has sent back, by name, as they land.
     private var landed: [String: URL] = [:]
+    /// Held for the life of the case: the bus drops a subscription the
+    /// moment nothing holds it.
+    private var arrivals: HostEventSubscription?
 
     override func setUp() async throws {
         let env = ProcessInfo.processInfo.environment
@@ -81,7 +84,8 @@ final class Metal68KSendTests: XCTestCase {
         MetalMachineGuard.reportRecentLeftovers(in: previousRoot)
         listener.share.root = shareRoot
 
-        listener.announceReceivedFile = { [weak self] _, url, _ in
+        arrivals = listener.events.subscribe { [weak self] event in
+            guard case .fileReceived(_, let url, _, _) = event else { return }
             self?.landed[url.lastPathComponent] = url
         }
         listener.start(port: port)

@@ -23,7 +23,14 @@ final class DiagnosticsModuleModelTests: XCTestCase {
             if case .listening = self.listener.state { return true }
             return false
         }
-        model = DiagnosticsModel(listener: listener)
+        /* Its own capability record, never `.shared`. Two machines with the
+           same NAME get the same synthetic key in tests, so one case's
+           refusal would otherwise reach the next case's model and darken a
+           verb nothing in that case ever refused — a leak that only shows up
+           now that a run consults the gate rather than this page's own
+           `serving`. */
+        model = DiagnosticsModel(listener: listener,
+                                 capabilities: GuestCapabilityRecord())
     }
 
     override func tearDown() async throws {
@@ -39,13 +46,14 @@ final class DiagnosticsModuleModelTests: XCTestCase {
     /// the way a guest without it answers: `unknown-command`.
     private func connectGuest(
         commands: [String]?,
-        replies: [String: CommandResult] = [:]
+        replies: [String: CommandResult] = [:],
+        named name: String = "PB 180c"
     ) async throws -> FakeGuest {
         let guest = FakeGuest(port: listener.boundPort!)
         guest.start()
         try guest.send(.hello(Hello(
             contract: Contract.revision, side: "guest", version: "0.1",
-            name: "PB 180c", os: "7.1", chunk: 8192)))
+            name: name, os: "7.1", chunk: 8192)))
         try await waitUntil("host hello") { !guest.received.isEmpty }
         try await waitUntil("host connected") {
             if case .connected = self.listener.state { return true }
@@ -72,12 +80,19 @@ final class DiagnosticsModuleModelTests: XCTestCase {
                 error: .init(code: "unknown-command",
                              message: "\(request.name): no such command"))))
         }
-        model.connection = .connected(named: "PB 180c")
+        model.connection = .connected(named: name)
         return guest
     }
 
     private func serving(_ id: String) -> DiagnosticServing? {
         model.state(id: id)?.serving
+    }
+
+    /// Whether the page would let a person press Run — the answer the row's
+    /// dimming and the button's state both come from.
+    private func runnable(_ id: String) -> Bool {
+        guard let state = model.state(id: id) else { return false }
+        return model.availability(for: state).isRunnable
     }
 
     // MARK: - Availability comes off the machine's own help
@@ -159,6 +174,181 @@ final class DiagnosticsModuleModelTests: XCTestCase {
         XCTAssertEqual(serving("vprobe"), .served,
                        "Answering the verb settles it, which is the machine "
                            + "establishing its own availability.")
+    }
+
+    // MARK: - Three states, not two
+
+    /// **Supported, unsupported, and not-yet-run are three different facts,
+    /// and the page can name each of them.**
+    ///
+    /// The list shows every diagnostic whichever machine is on the wire, so
+    /// each row has to carry which it is in. Collapsing any pair is a page
+    /// telling a person their Mac cannot do something when the truth is that
+    /// nobody has spent the measurement yet — or the reverse, which is worse:
+    /// a Run button that will never work, offered as though it would.
+    func testSupportedUnsupportedAndNotYetRunAreThreeSeparateAnswers()
+        async throws {
+        let guest = try await connectGuest(
+            commands: ["help", "vprobe", "shotdiag"],
+            replies: ["vprobe": .init(
+                id: 0, ok: true,
+                output: ["vprobe": [["Screen", "640x480, 8-bit"]]],
+                error: nil)])
+        defer { guest.connection.cancel() }
+        try await waitUntil("help answered") {
+            self.serving("putstat") == .notServed
+        }
+
+        // Served and never run: runnable, nothing to explain, no reading.
+        let shotdiag = try XCTUnwrap(model.state(id: "shotdiag"))
+        XCTAssertEqual(model.availability(for: shotdiag), .supported)
+        XCTAssertFalse(shotdiag.hasRun,
+                       "supported is not the same fact as run")
+
+        // Served AND run: still supported — the axes do not interfere.
+        model.run(.vprobe)
+        try await waitUntil("vprobe answered") {
+            self.model.state(id: "vprobe")?.hasRun ?? false
+        }
+        let vprobe = try XCTUnwrap(model.state(id: "vprobe"))
+        XCTAssertEqual(model.availability(for: vprobe), .supported)
+        XCTAssertTrue(vprobe.hasRun)
+
+        // Absent from the table: not runnable, and it says why.
+        let putstat = try XCTUnwrap(model.state(id: "putstat"))
+        XCTAssertFalse(model.availability(for: putstat).isRunnable)
+        XCTAssertFalse(putstat.hasRun,
+                       "unsupported must not be dressed as a finished run")
+    }
+
+    /// **A machine that has not listed its commands is `unproven`, which is
+    /// RUNNABLE** — and that is the third state, not a softer kind of no.
+    func testAnUnaskedMachineLeavesEveryDiagnosticRunnable() async throws {
+        let guest = try await connectGuest(commands: nil)
+        defer { guest.connection.cancel() }
+
+        for state in model.states {
+            let availability = model.availability(for: state)
+            XCTAssertTrue(availability.isRunnable,
+                          "\(state.id) went dark on silence; unproven is not "
+                              + "a no, and the run is what settles it")
+            guard case .unproven = availability else {
+                return XCTFail("\(state.id): expected unproven, got "
+                                   + "\(availability)")
+            }
+            XCTAssertFalse(availability.deservesAVisibleReason,
+                           "an enabled control does not get to nag")
+        }
+    }
+
+    /// **A disabled diagnostic carries the sentence that says why**, naming
+    /// this machine and the sibling guest that does answer the verb.
+    ///
+    /// A greyed control with no explanation is indistinguishable from a bug —
+    /// the failure the whole gate exists to prevent — and "not available" on
+    /// its own reads as damage rather than as a difference between two
+    /// guests of different completeness.
+    func testADisabledDiagnosticSaysWhichMachineCannotAndWhy() async throws {
+        let guest = try await connectGuest(
+            commands: ["help", "vprobe", "shotdiag"])
+        defer { guest.connection.cancel() }
+        try await waitUntil("help answered") {
+            self.serving("putstat") == .notServed
+        }
+
+        let putstat = try XCTUnwrap(model.state(id: "putstat"))
+        let availability = model.availability(for: putstat)
+        XCTAssertTrue(availability.deservesAVisibleReason,
+                      "a dark control must explain itself in place, not only "
+                          + "on hover")
+        let reason = try XCTUnwrap(availability.reason)
+        XCTAssertTrue(reason.contains("PB 180c"),
+                      "the sentence names the machine that cannot: \(reason)")
+        XCTAssertTrue(reason.contains("putstat"))
+        XCTAssertTrue(reason.contains("Carbon guest"),
+                      "it names the sibling that answers the verb, which is "
+                          + "what stops this reading as a fault: \(reason)")
+        XCTAssertTrue(reason.contains("Nothing is wrong with the machine"))
+    }
+
+    /// **A 68K-shaped command table disables a different diagnostic from a
+    /// PowerPC-shaped one.** Support is a fact about the machine on the wire,
+    /// read from its own `help`, and never a static list on this side.
+    ///
+    /// Two machines in one test on purpose: the property is the DIFFERENCE.
+    /// A page that hard-coded either subset would pass every single-guest
+    /// check and still grey out the wrong row the moment the other Mac
+    /// dialled in.
+    func testTheDisabledSubsetFollowsTheMachineNotThisSide() async throws {
+        let sixtyEight = try await connectGuest(
+            commands: ["help", "vprobe", "shotdiag"], named: "PB 180c")
+        try await waitUntil("68K help answered") {
+            self.serving("putstat") == .notServed
+        }
+        XCTAssertTrue(runnable("vprobe"))
+        XCTAssertTrue(runnable("shotdiag"))
+        XCTAssertFalse(runnable("putstat"),
+                       "the 68K guest does not serve putstat")
+        sixtyEight.connection.cancel()
+        // The second machine's `help` must not race the first one's socket
+        // still being the listener's connection.
+        try await waitUntil("first machine gone") {
+            if case .connected = self.listener.state { return false }
+            return true
+        }
+        model.connection = .disconnected
+
+        let powerPC = try await connectGuest(
+            commands: ["help", "vprobe", "putstat"], named: "PB 1400c")
+        defer { powerPC.connection.cancel() }
+        try await waitUntil("PPC help answered") {
+            self.serving("shotdiag") == .notServed
+        }
+        XCTAssertTrue(runnable("vprobe"), "both guests serve vprobe")
+        XCTAssertTrue(runnable("putstat"))
+        XCTAssertFalse(runnable("shotdiag"),
+                       "the Carbon guest does not serve shotdiag, and the "
+                           + "previous machine's subset must not survive the "
+                           + "switch")
+    }
+
+    // MARK: - Selection
+
+    /// **Every diagnostic is selectable, including one the machine cannot
+    /// run.** A row that refuses selection can never show the sentence
+    /// explaining why it is grey — which leaves a page whose greyest row is
+    /// also its least explained.
+    func testAnUnsupportedDiagnosticIsStillSelectableAndExplainsItself()
+        async throws {
+        let guest = try await connectGuest(
+            commands: ["help", "vprobe", "shotdiag"])
+        defer { guest.connection.cancel() }
+        try await waitUntil("help answered") {
+            self.serving("putstat") == .notServed
+        }
+
+        XCTAssertEqual(model.selection, "vprobe",
+                       "the page opens on a row rather than on an empty "
+                           + "detail pane")
+        model.selection = "putstat"
+        let selected = try XCTUnwrap(model.selectedState)
+        XCTAssertEqual(selected.id, "putstat")
+        XCTAssertFalse(model.availability(for: selected).isRunnable)
+        XCTAssertNotNil(model.availability(for: selected).reason,
+                        "selecting the dark row is how a person finds out "
+                            + "why it is dark")
+    }
+
+    /// A selection survives the machine going away — what is on screen is
+    /// still what that Mac said, and moving the reader's place would be this
+    /// side reacting to an event they did not cause.
+    func testSelectionSurvivesTheWireDropping() async throws {
+        let guest = try await connectGuest(commands: ["help", "vprobe"])
+        defer { guest.connection.cancel() }
+        model.selection = "shotdiag"
+        model.connection = .disconnected
+        XCTAssertEqual(model.selection, "shotdiag")
+        XCTAssertEqual(model.selectedState?.id, "shotdiag")
     }
 
     // MARK: - Not here, versus not working

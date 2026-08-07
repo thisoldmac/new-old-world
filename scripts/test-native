@@ -166,6 +166,20 @@ run_c now-guest-shared now_act_guard_test.c \
 # check. The compiled test plays the interleaving; the source test says
 # the application actually routes through it, because a latch nothing
 # calls passes its own test while the plane is unguarded.
+# P7's dead-man. It is here rather than under a guest because the rule
+# belongs to the RESIDENT, and it is a native test rather than a driven
+# one because you cannot watch a dead-man work by driving a guest: to see
+# it fire you must not release, and "did not release" and "the test hung"
+# are the same observation until something separates them. Every case in
+# it names the mutation that makes it fail.
+run_c now-guest-shared now_drag_logic_test.c \
+      "-DNOW_PEEK_TABLE_HOST" src/now_drag_logic.c
+# P8's one decision, and it is native for the same shape of reason: the
+# case that matters is a HUMAN with a hand on the mouse, and "a person
+# moved the pointer and we correctly declined" is the same silence from
+# outside as "the plane is broken and moved nothing".
+run_c now-guest-shared now_cursor_logic_test.c \
+      "-DNOW_PEEK_TABLE_HOST" src/now_cursor_logic.c
 run_c now-guest-shared now_act_inflight_test.c  ""  src/now_act_inflight.c
 run_py now-guest-shared act_inflight_wiring_source_test.py
 # The six trap trampolines' result-slot ABI, read out of the assembly.
@@ -205,9 +219,8 @@ run_py now-guest-shared control_kind_source_test.py
 # argument: since 2026-08-06 the scene READS this table instead of
 # sweeping a FindControl grid, and dereferences what it hands out, so a
 # disposal the table misses is a read of freed memory. It compiles
-# control_kind.c against a four-header Toolbox stand-in (tests/toolbox_shim)
-# - the only native test in this tree that does, and the shim is on the
-# include path of this line alone.
+# control_kind.c against a Toolbox stand-in (tests/toolbox_shim), which is
+# on the include path of the lines that name it and no others.
 run_c now-guest-ppc control_kind_registry_test.c \
       "-I $repo_root/now-guest-ppc/tests/toolbox_shim" \
       src/workshop/control_kind.c
@@ -487,6 +500,16 @@ run_c now-guest-ppc obsmint_test.c          ""  src/observe/obsmint.c \
 # the same rule in miniature: an action takes exactly its own geometry
 # keys.
 run_c now-guest-ppc act_args_test.c          ""  src/act/act_args.c
+# `menuact`'s identity check, which is a COORDINATE and is therefore the
+# whole of that verb's safety. The state it refuses - a menu bar saying
+# one x while the caller says another - cannot be asked of a real
+# Macintosh on demand, so the decision sits in its own file and is
+# constructed here. Compiles against tests/toolbox_shim for the process
+# serial number the probe's header declares and this decision never
+# touches.
+run_c now-guest-ppc act_menu_identity_test.c \
+      "-I $repo_root/now-guest-ppc/tests/toolbox_shim -I $repo_root/now-guest-ppc/src/axwalk" \
+      src/act/act_menu_identity.c
 # The networking module's value core. The OT calls cannot run here, which
 # is the point: the byte order, the durations and the vocabulary of
 # absence are what go wrong on a networking page, and all three are

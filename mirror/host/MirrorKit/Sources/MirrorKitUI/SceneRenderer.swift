@@ -47,15 +47,42 @@ public struct SceneRenderer {
     /// A live drag/resize outline (guest coords), drawn on top — the classic
     /// Mac dotted-gray tracking rectangle. nil = not dragging.
     public let dragOutline: Rect?
+    /// An item travelling under the pointer, drawn over everything. nil = no
+    /// item drag in flight.
+    public let itemDrag: ProvisionalDrag?
+
+    /// **An item in flight, and whether the guest has confirmed it yet.**
+    ///
+    /// The presentation contract's rule 1 is that the item moves with the
+    /// pointer *immediately* — before any response — so this is view state,
+    /// not scene state, and it must never be folded back into the scene. A
+    /// scene is what the guest said; this is what a person is doing.
+    public struct ProvisionalDrag: Equatable {
+        /// The art: the item's own icon and name, so a person can see WHICH
+        /// file is in flight.
+        public var item: MirrorKit.Scene.DesktopItem
+        /// Where it is now, in global guest coords.
+        public var frame: Rect
+        /// The guest has answered and the select is real. Until then the
+        /// drawing says so — never the other way round.
+        public var confirmed: Bool
+
+        public init(item: MirrorKit.Scene.DesktopItem, frame: Rect,
+                    confirmed: Bool) {
+            self.item = item; self.frame = frame; self.confirmed = confirmed
+        }
+    }
 
     public init(scene: MirrorKit.Scene, openMenu: Int? = nil,
                 hoveredItem: Int? = nil, selectedItem: String? = nil,
-                dragOutline: Rect? = nil) {
+                dragOutline: Rect? = nil,
+                itemDrag: ProvisionalDrag? = nil) {
         self.scene = scene
         self.openMenu = openMenu
         self.hoveredItem = hoveredItem
         self.selectedItem = selectedItem
         self.dragOutline = dragOutline
+        self.itemDrag = itemDrag
     }
 
     /// The guest screen: the scene's own dimensions, falling back to the
@@ -72,13 +99,13 @@ public struct SceneRenderer {
     }
 
     private static func nextOrdinaryMenuLeft(
-        _ menus: [MirrorKit.Scene.Menu], after index: Int
+        _ menus: [MirrorKit.Scene.Menu], after index: Int, from left: Int
     ) -> Int {
-        let current = menus[index]
-        return menus.dropFirst(index + 1)
-            .filter { $0.id != ObjectResolver.applicationMenuID
-                && $0.left > current.left }
-            .map(\.left).min() ?? (current.left + 60)
+        menus.dropFirst(index + 1)
+            .filter { $0.id != ObjectResolver.applicationMenuID }
+            .compactMap(\.left)
+            .filter { $0 > left }
+            .min() ?? (left + 60)
     }
 
     public func draw(in ctx: GraphicsContext, size: CGSize) {
@@ -117,6 +144,41 @@ public struct SceneRenderer {
         if let dragOutline {
             drawDragOutline(ctx, dragOutline)
         }
+        if let itemDrag {
+            drawItemDrag(ctx, itemDrag)
+        }
+    }
+
+    /// The dragged item, over everything, marked provisional until the guest
+    /// has confirmed the select.
+    ///
+    /// The style is `ProvisionalVisual`'s and only `ProvisionalVisual`'s —
+    /// this function decides WHEN and WHERE, never what it looks like. A
+    /// second place deciding that is how the marked unknown ended up with two
+    /// copies of its fill, identical by coincidence and free to drift.
+    private func drawItemDrag(_ ctx: GraphicsContext,
+                              _ drag: ProvisionalDrag) {
+        let f = drag.frame
+        let frame = CGRect(x: CGFloat(f.l), y: CGFloat(f.t),
+                           width: CGFloat(max(0, f.r - f.l)),
+                           height: CGFloat(max(0, f.b - f.t)))
+        guard drag.confirmed else {
+            ProvisionalVisual.drawPlate(in: ctx, frame: frame)
+            var ghost = ctx
+            ghost.opacity = ProvisionalVisual.itemOpacity
+            drawIcon(ghost, drag.item,
+                     at: CGPoint(x: frame.minX + ProvisionalVisual.inset,
+                                 y: frame.minY + ProvisionalVisual.inset))
+            ProvisionalVisual.drawMark(in: ctx, frame: frame)
+            return
+        }
+        /* Confirmed: the guest said yes, so the item is drawn as an item.
+           Nothing PROMOTES a provisional drag to this on its own — the only
+           way here is a real response, which is rule 2 of the contract and
+           the whole reason the two drawings differ. */
+        drawIcon(ctx, drag.item,
+                 at: CGPoint(x: frame.minX + ProvisionalVisual.inset,
+                             y: frame.minY + ProvisionalVisual.inset))
     }
 
     /// The classic Mac drag/resize tracking rectangle: a 2px dotted gray
@@ -412,14 +474,20 @@ public struct SceneRenderer {
                Manager's, not ours - which is precisely why it must not
                be drawn from this loop, where left is the position. */
             if menu.id == ObjectResolver.applicationMenuID { continue }
+            /* A menu bar is a positional surface, so a menu the producer
+               never placed cannot be drawn in it. Skipped rather than
+               drawn at 0, which is where an absent `left` used to land -
+               on top of the Apple menu, and hit-testable there. */
+            guard let left = menu.left else { continue }
             if i == openMenu {
-                let next = Self.nextOrdinaryMenuLeft(menus, after: i)
-                ctx.fill(Path(CGRect(x: CGFloat(menu.left) - 6, y: 0,
-                                     width: CGFloat(next - menu.left), height: 19)),
+                let next = Self.nextOrdinaryMenuLeft(menus, after: i,
+                                                     from: left)
+                ctx.fill(Path(CGRect(x: CGFloat(left) - 6, y: 0,
+                                     width: CGFloat(next - left), height: 19)),
                          with: .color(Platinum.selection))
             }
             drawMenuTitle(ctx, menu.apple ? "\u{F8FF}" : menu.title,
-                          apple: menu.apple, left: CGFloat(menu.left),
+                          apple: menu.apple, left: CGFloat(left),
                           highlighted: i == openMenu)
         }
         if Self.shouldSynthesizeAppleMenu(menus) {
@@ -508,7 +576,12 @@ public struct SceneRenderer {
                                      screenWidth: Int = 0) -> CGRect {
         let maxLen = menu.items.map(\.title.count).max() ?? 8
         let width = CGFloat(min(max(120, maxLen * 8 + 56), 320))
-        var x = CGFloat(menu.left) - 6
+        /* UNREACHABLE WITH A nil LEFT, and stated rather than defaulted:
+           an unplaced menu is not drawn in the strip above and the hit
+           tester returns no index for one, so nothing can open its
+           dropdown. The zero is a total function's tail, not a position
+           anything is placed by. */
+        var x = CGFloat(menu.left ?? 0) - 6
         if menu.id == ObjectResolver.applicationMenuID, screenWidth > 0 {
             /* The Menu Manager reports no useful left edge for the
                right-aligned application menu. Its title geometry comes

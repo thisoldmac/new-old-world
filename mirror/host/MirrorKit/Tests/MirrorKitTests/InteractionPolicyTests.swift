@@ -244,6 +244,135 @@ final class InteractionPolicyTests: XCTestCase {
             + "which needs no modifier at all")
     }
 
+    /// **The wire's silence about a menu's position survives as silence.**
+    ///
+    /// This is the line the rest of it rests on. `normalizeMenus` used to
+    /// end `?? 0`, and every guard below is unreachable while it does:
+    /// nothing downstream can refuse an absence it never receives. The
+    /// menu still enters the scene — a person should see it — and what it
+    /// carries is "no position", which is a different fact from x = 0.
+    func testAWireMenuWithNoLeftArrivesUnplacedRatherThanAtZero() {
+        let menus = SceneBuilder.normalizeMenus([
+            ["title": "File", "id": 257, "left": 38, "items": []],
+            ["title": "Edit", "id": 258, "items": []],
+            ["title": "Odd", "id": 259, "left": 0, "items": []],
+        ])
+
+        XCTAssertEqual(menus.map(\.title), ["File", "Edit", "Odd"],
+                       "an unplaced menu is still a menu a person can see")
+        XCTAssertEqual(menus[0].left, 38)
+        XCTAssertNil(menus[1].left,
+                     "a menu the wire did not place must not arrive at 0 — "
+                         + "0 is four pixels from the Apple menu's title, "
+                         + "and a menu act arms its press there")
+        XCTAssertEqual(menus[2].left, 0,
+                       "and a menu the wire really did place at 0 is a "
+                           + "reading, not an absence")
+    }
+
+    /// **A menu the scene never placed is refused, not pressed at zero.**
+    ///
+    /// `titleLeft` is not a parameter of a menu act, it is its identity
+    /// check: the resident answers a `MenuSelect` at ONE armed point, so
+    /// that a press anywhere else — the person's, at the machine — passes
+    /// through untouched. An act surface guarded by anything weaker rode
+    /// a real user's press 18 times in 20.
+    ///
+    /// Until 2026-08-07 `SceneBuilder` defaulted an unreported `left` to
+    /// **0**, and this policy could not see the difference. Zero is not
+    /// "unknown": the act arms four pixels right of it, which is the
+    /// Apple menu's title. So the number reaching here is optional now,
+    /// and its absence is refused WITH THE REASON rather than served with
+    /// a substitute — a silent drop would read to a person as a mirror
+    /// that has stopped working.
+    func testAMenuTheSceneNeverPlacedIsRefusedRatherThanPressedAtZero() {
+        let placed = MirrorObject.Menu(id: 257, title: "File", left: 38,
+                                       isApple: false)
+        let unplaced = MirrorObject.Menu(id: 257, title: "File", left: nil,
+                                         isApple: false)
+        func item(_ menu: MirrorObject.Menu) -> Interaction {
+            Interaction(
+                object: .menuItem(.init(menu: menu, index: 1,
+                                        title: "New Folder", cmd: "",
+                                        isEnabled: true,
+                                        isSeparator: false)),
+                gesture: .click(count: 1, mods: 0, at: .init(x: 40, y: 8)))
+        }
+
+        XCTAssertEqual(
+            InteractionPolicy.plan(for: item(placed),
+                                   planes: .residentActPlane),
+            .menuCommand(menuID: 257, itemIndex: 1, titleLeft: 38),
+            "a placed menu still goes by identity")
+
+        guard case .unsupported(let why) = InteractionPolicy.plan(
+            for: item(unplaced), planes: .residentActPlane) else {
+            return XCTFail("an unplaced menu must not produce a press: "
+                + "\(InteractionPolicy.plan(for: item(unplaced), planes: .residentActPlane))")
+        }
+        XCTAssertTrue(why.contains("menu bar"),
+                      "the refusal has to name what is missing: \(why)")
+    }
+
+    /// The same absence, one layer down, where the coordinate is actually
+    /// chosen. `ActionModel.menuSelect` sends nothing at all rather than
+    /// a `menuInvoke` aimed at a guess.
+    func testMenuSelectSendsNothingForAMenuWithNoPosition() {
+        let items = [Scene.MenuItem(title: "New Folder", index: 1,
+                                    separator: false, enabled: true,
+                                    mark: false, cmd: "")]
+        let placed = Scene.Menu(title: "File", apple: false, left: 38,
+                                id: 257, items: items)
+        let unplaced = Scene.Menu(title: "File", apple: false, left: nil,
+                                  id: 257, items: items)
+
+        XCTAssertEqual(
+            ActionModel.menuSelect(menu: placed, item: items[0]),
+            [.menuInvoke(menuID: 257, itemIndex: 1, titleLeft: 38)])
+        XCTAssertEqual(
+            ActionModel.menuSelect(menu: unplaced, item: items[0]), [],
+            "no position, no press — never a press at 0, which is the "
+                + "Apple menu's title")
+    }
+
+    /// And an unplaced menu claims no span in the mirror's own menu bar.
+    ///
+    /// The 0 default did not only mis-aim acts. A menu that arrived at 0
+    /// took the span from 0 to the next title — which is the strip the
+    /// APPLE MENU's own title is drawn in — so a person clicking the
+    /// apple in the mirror got the unplaced menu instead. The same
+    /// substitution, one layer up, and visible rather than silent: the
+    /// pixel it steals (x = 4) is the pixel the act used to arm at.
+    func testAnUnplacedMenuClaimsNoSpanInTheMenuBar() {
+        let items = [Scene.MenuItem(title: "About", index: 1,
+                                    separator: false, enabled: true,
+                                    mark: false, cmd: "")]
+        func scene(fileLeft: Int?) -> Scene {
+            Scene(version: IR.version, seq: 1, source: "mock", capturedAt: 0,
+                  screen: .init(w: 800, h: 600), apps: [], processes: nil,
+                  menubar: .init(app: "Finder", menus: [
+                      // Ordered as the wire orders them, and the unplaced
+                      // one is FIRST — which is what lets it take a span
+                      // that starts before the Apple menu's.
+                      Scene.Menu(title: "File", apple: false,
+                                 left: fileLeft, id: 257, items: items),
+                      Scene.Menu(title: "", apple: true, left: 10, id: 256,
+                                 items: items),
+                  ]),
+                  windows: [], desktopItems: nil, meta: .init(errors: []))
+        }
+
+        // x = 4: inside the Apple menu's title, and four pixels is exactly
+        // the offset a menu act adds to titleLeft when it arms.
+        XCTAssertEqual(HitTester.hitTest(scene(fileLeft: nil), x: 4, y: 8),
+                       .menubarBackground,
+                       "a menu with no position owns no pixels")
+        XCTAssertEqual(HitTester.hitTest(scene(fileLeft: 0), x: 4, y: 8),
+                       .menuTitle(index: 0),
+                       "a menu really placed at 0 does own them — which is "
+                           + "why the absence had to stop arriving as 0")
+    }
+
     /// The Application menu's lower half lists PROCESSES, and choosing
     /// one means "bring this application forward" — which the wire says
     /// by process serial number.
