@@ -396,13 +396,26 @@ so a counter still at zero when the host connects is a counter that
 stayed at zero for the whole boot — which is the resting window, since
 connecting is itself what starts P6.
 
+Build `918116752a12`, `capabilities 127`, a ~127-second boot
+(`heartbeat 7633`):
+
 | | reading | what it proves |
 |---|---|---|
-| `gnePasses` | **1174** | the filter ran, continuously, across the whole window |
+| `gnePasses` | **380** | the filter ran, continuously, across the whole window |
 | `livenessTicks` | **0** | the Time Manager vehicle never ticked once before contact |
-| `transportProbe` | **0** (untried) | MacTCP's `.IPP` was never opened |
-| `restState` | **9** | `kNowPeekRestGNEFilter` + `kNowPeekRestContentBlock` — the event hook and the block, nothing else |
 | `requested` / `active` | **0 / 0** | every plane inactive; every anchor and content counter zero |
+| `channelSends` | **0** | nothing was put on the wire by the resident |
+
+Under the previous build the same boot would have opened MacTCP's `.IPP`
+on the *first* filter pass and accumulated roughly twenty-five liveness
+ticks by this point. It accumulated none.
+
+An earlier run of this branch, read before the connection had triggered
+the transport probe, showed the resting word directly:
+`restState 9` = `kNowPeekRestGNEFilter | kNowPeekRestContentBlock`, with
+`transportProbe 0` (untried) across **1174** filter passes. That is the
+resting state in one number: the event hook and the content block, and
+nothing else at all.
 
 **The denominator is the whole point.** A resting resident and an
 extension that never loaded produce identical readings on every other
