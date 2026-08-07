@@ -19,6 +19,34 @@ class SpinUpPPCShutdownTests(unittest.TestCase):
         self.assertIn("tools/shutdown-guest.py", reboot)
         self.assertNotIn('tools/qmp" "$QMP" quit', reboot)
 
+    def test_the_default_base_is_the_stage_oracle_not_the_plain_runner(self):
+        """The stale-oracle failure, one layer below where it is gated.
+
+        AGENTS.md enforces "the stage image is the resident under test" at
+        the BAKE layer. This default sat at the SPIN-UP layer and pointed
+        at `os91-runner.qcow2` — a plain base last touched in July — so
+        every lane that spun up during the 019 arc cloned a July image and
+        staged a fresh build into the clone. Whatever a clone cannot
+        restage was July's, and nothing said so.
+
+        A caller that wants the plain base asks by name through
+        NOW_SPIN_BASE. The default is the oracle.
+        """
+        text = SCRIPT.read_text()
+        default = [l for l in text.split("\n") if l.startswith("BASE=")]
+        self.assertEqual(len(default), 1, f"expected one BASE=, got {default}")
+        self.assertIn("now-mirror-stage.qcow2", default[0])
+        self.assertNotIn("os91-runner.qcow2", default[0])
+
+    def test_the_run_says_which_base_it_cloned(self):
+        """The defect was not only that the default went stale — defaults
+        do — but that nineteen days of runs never named the image they
+        cloned, so no reader could notice. A run that names its base can
+        be checked; one that does not has to be trusted."""
+        text = SCRIPT.read_text()
+        self.assertIn("== base image", text,
+                      "spin-up-ppc must announce the base it cloned")
+
     def test_the_applet_that_does_the_asking_is_staged(self):
         """The shutdown is a guest-side APPLICATION, not a message: the
         anchor worker has no `script` verb and QMP input never reaches

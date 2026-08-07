@@ -107,7 +107,24 @@ cd "$LAB"                                  # lib.sh and tools/qmp are lab-relati
 . tools/lib.sh
 
 QEMU="${TIMBOTTU_QEMU:-$LAB/qemu/build/qemu-system-ppc}"
-BASE="${NOW_SPIN_BASE:-$HOME/Lab/Assets/os91-qemu/os91-runner.qcow2}"
+# THE STAGE IMAGE IS THE DEFAULT, because the stage image is the oracle.
+#
+# This defaulted to `os91-runner.qcow2` — a plain base carrying whatever
+# resident was baked into it in JULY. AGENTS.md documents the stale-oracle
+# failure at the BAKE layer ("the resident code under test is whatever was
+# baked into that image") and a gate enforces it there. The same failure
+# was reproduced one level down, here, at the SPIN-UP layer, where nothing
+# was watching: every lane that spun up this arc cloned a 19-July image and
+# staged a fresh build into the clone, so anything the clone could not
+# restage — the resident's own older halves, an anchor changed since — was
+# July's and nobody was told.
+#
+# `now-mirror-stage.qcow2` is what `scripts/bake-ext-image` maintains and
+# what every Mirror sweep clones. A caller that genuinely wants the plain
+# base asks for it BY NAME through NOW_SPIN_BASE, and either way the run
+# says which base it got, below — a default that is silently wrong is the
+# shape of this whole class of defect.
+BASE="${NOW_SPIN_BASE:-$HOME/Lab/Assets/os91-qemu/now-mirror-stage.qcow2}"
 # A PER-VM RUN DIRECTORY, for the same reason rule 4 makes the ports
 # per-VM. It was one fixed directory, so a second spin-up in the same
 # checkout bound the same socket NAMES: the newer QEMU took them, every
@@ -149,6 +166,16 @@ SHUTDOWN_BIN="${NOW_SHUTDOWN_BIN:-$OUT/shutdown/NowShutDown.bin}"
 
 [ -x "$QEMU" ] || { echo "no qemu-system-ppc at $QEMU (set TIMBOTTU_QEMU)"; exit 1; }
 [ -f "$BASE" ] || { echo "no base image at $BASE (set NOW_SPIN_BASE)"; exit 1; }
+# SAY WHICH BASE, every run. The defect this replaces was not that the
+# default was wrong — defaults go stale — it was that nineteen days of
+# spin-ups never mentioned which image they had cloned, so nobody could
+# notice. A run that names its base can be checked by whoever reads the
+# log; one that does not has to be trusted.
+if [ -n "${NOW_SPIN_BASE:-}" ]; then
+    echo "== base image (NOW_SPIN_BASE): $BASE"
+else
+    echo "== base image (the stage oracle, by default): $BASE"
+fi
 [ -f "$EXT_BIN" ] || { echo "no NowExt.bin at $EXT_BIN — run scripts/build-guests 68k"; exit 1; }
 [ -f "$APP_BIN" ] || { echo "no guest app at $APP_BIN — run scripts/build-guests ppc"; exit 1; }
 # Checked HERE, before a 150-second boot, and not at the shutdown step
