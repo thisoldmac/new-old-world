@@ -18,8 +18,8 @@ import XCTest
 ///    here to make impossible.
 /// 2. **A row outlives its own defect.** Somebody fixes the grow box and
 ///    the register goes on claiming it is broken, which is worse than no
-///    register: a reader trusts it and stops looking. Three rows make a
-///    claim that is checkable from here, and those three are checked
+///    register: a reader trusts it and stops looking. Two rows make a
+///    claim that is checkable from here, and those two are checked
 ///    against the live code. **When a lane closes one, this test fails
 ///    and names the row to delete.** That is the intended failure, and
 ///    the message says so — it worked twice on 2026-08-07, when
@@ -34,7 +34,7 @@ import XCTest
 /// What this canNOT check, said out loud because a gate that looks wider
 /// than it is repeats the mistake it exists to catch: nothing here reads
 /// the guest's pixels, the resident, the 68K tree or the emulator. Rows
-/// KW-02 through KW-04, KW-06 and KW-08 through KW-13 are prose, and
+/// KW-02 through KW-05 and KW-07 through KW-12 are prose, and
 /// their measurements can rot with nobody noticing. The file says so too.
 final class KnownWrongRegisterTests: XCTestCase {
 
@@ -93,8 +93,8 @@ final class KnownWrongRegisterTests: XCTestCase {
     /// An `undecided` row is one nobody has argued for, so it cannot name
     /// somebody who did. Only this direction is checked: a `decided` row
     /// may honestly be `unassigned` — a deviation the project as a whole
-    /// stands behind with no single author is still a decision (KW-11,
-    /// KW-12). The failure this catches is the other way round: a row
+    /// stands behind with no single author is still a decision (KW-10,
+    /// KW-11). The failure this catches is the other way round: a row
     /// quietly acquiring an owner while still claiming nobody chose it,
     /// which takes it off the list of things to close without closing it.
     func testAnUndecidedRowNamesNobodyWhoDecidedIt() throws {
@@ -151,37 +151,18 @@ final class KnownWrongRegisterTests: XCTestCase {
         }
     }
 
-    /// KW-05 — `ctlact` infers "the act was not taken" from the absence
-    /// of a `TrackControl` call, and sweep D caught it saying so over a
-    /// press that opened Mac Help. Checked by the guest's own refusal
-    /// string, because that string IS the claim: it reports one
-    /// mechanism's evidence as a conclusion about the machine.
-    func testKW05TheControlActStillConcludesFromTrackControlAlone() throws {
-        try requireRow("KW-05")
-        let source = try read("now-guest-ppc/src/act/act_cmds.c")
-        XCTAssertTrue(
-            source.contains("the application never called TrackControl"),
-            "KW-05 in \(Self.registerDoc) says `ctlact` refuses with "
-                + "\"armed, and the application never called "
-                + "TrackControl\". That sentence is gone from "
-                + "act_cmds.c — if it became "
-                + "`dispatched-but-unconfirmed`, the row is closed and "
-                + "should be deleted rather than left claiming a false "
-                + "negative the plane no longer produces.")
-    }
-
-    /// KW-07 — menu item geometry assumes uniform 16-pixel rows, ~30 px
+    /// KW-06 — menu item geometry assumes uniform 16-pixel rows, ~30 px
     /// out by the bottom of a menu with separators. The row's stated
     /// reason ("nothing consumes item rects") has expired, so the
     /// consumer is checked too: if `menuItemPoint` loses its last caller
     /// the row is a dead constant, not a live wrong answer.
-    func testKW07MenuGeometryStillAssumesUniformRowsAndStillHasACaller()
+    func testKW06MenuGeometryStillAssumesUniformRowsAndStillHasACaller()
         throws
     {
-        try requireRow("KW-07")
+        try requireRow("KW-06")
         XCTAssertEqual(
             ActionModel.menuRowHeight, 16,
-            "KW-07 in \(Self.registerDoc) says menu item points are "
+            "KW-06 in \(Self.registerDoc) says menu item points are "
                 + "computed from a uniform 16 px row. The constant "
                 + "moved — if real row heights now reach the host, close "
                 + "the row.")
@@ -191,7 +172,7 @@ final class KnownWrongRegisterTests: XCTestCase {
         let fourth = ActionModel.menuItemPoint(menuLeft: 100, itemIndex: 4)
         XCTAssertEqual(
             fourth.1 - first.1, 3 * ActionModel.menuRowHeight,
-            "KW-07 says the spacing is uniform. It is not any more, which "
+            "KW-06 says the spacing is uniform. It is not any more, which "
                 + "means somebody taught this real geometry. Close the row.")
     }
 

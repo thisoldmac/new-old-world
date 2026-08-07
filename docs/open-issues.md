@@ -23,6 +23,74 @@ entries here and link back rather than restating them. The split is by
 what the reader is being told: broken-or-unverified means nobody chose
 this, and a row over there means somebody did.
 
+## FIXED and EMULATOR-VERIFIED: `ctlact part 11` reported a refusal over presses that landed (2026-08-07, `claude/019-kw01-kw06`)
+
+**Verification level: emulator-verified, driven, with the old build
+driven on the same rig as the control.** Closes the register row that was
+`KW-06` — *"`ctlact part 11` reports `act-not-taken` over presses that
+landed"* — which is deleted rather than left claiming a defect the plane
+no longer produces.
+
+The verb inferred "the act was not taken" from **one** observation — the
+application never called `TrackControl` — and phrased it as a conclusion
+about the machine. A Carbon control actuated by any other route lands
+without that trap ever being called, and a Help button on CarbonLib is a
+prime candidate.
+
+**Driven on this lane's clone**, the Appearance panel's help "?" button,
+identical target and part to sweep D's SEQ-A step 4, twice — once with
+the pre-fix guest restaged onto the same running clone as the control:
+
+| guest build | reply | the machine, in its own screendumps |
+|---|---|---|
+| `d9a78b62a414` (pre-fix) | `ok: false`, `act-not-taken` / "armed, and the application never called TrackControl" / `settlement: timed-out` | **Mac Help opened, frontmost, having searched "Appearance", ten results** |
+| `99bfc1d30364` (this tree) | `ok: true`, `Dispatch: dispatched-but-unconfirmed`, `Settlement: dispatched-but-unconfirmed` | the same — Mac Help opened and searched |
+
+The screendumps before each press show no Help Viewer anywhere. So the
+press landed both times and only the verdict changed, which is the whole
+claim.
+
+**Why it is a correctness problem rather than a reporting one.** An agent
+that believes the refusal presses again, and the second press lands too.
+A false negative in an act plane produces DUPLICATED ACTIONS; on a
+destructive verb that is worse than a crash.
+
+**Can a correct refusal be told from a false negative here? No — and
+that is why the weaker verdict is now given every time.** Sweep C scored
+this identical message as "REFUSED CLEANLY" and listed the act plane's
+refusal vocabulary among the things to leave alone. It may well have been
+a correct refusal in that run; nothing in the reply distinguished the two
+then and nothing could now. Everything that can POSITIVELY establish that
+nothing happened already returns earlier with its own status — the plane
+refusing, the request never reaching the machine, the reference not
+resolving. Past those, the press was queued inside the target's own
+context and this application cannot see what the target did with it. So
+`act-not-taken` had nothing left to be reserved for on that path and was
+removed rather than narrowed.
+
+**`settlement: timed-out` was the other half**, and it is latched:
+`act_settlement.c` refuses every later note once it is written, so a
+`confirmed` arriving afterwards would have been swallowed.
+`now_act_await_fired` therefore gained `timeout_is_terminal` — a caller
+that ends the act on the expiry writes the terminal word; a caller that
+goes on gathering evidence writes `dispatched-but-unconfirmed`. `winact`
+and `menuact` pass 1 and are unchanged; `ctlact` passes 0. The status
+returned is untouched, so the caller still decides what an absence means.
+
+**NOT FIXED, and the same shape — named rather than widened to
+unmeasured.** `winact`'s and `menuact`'s arms also infer from a silent
+trap patch. `winact` at least reports its trap counters, which are
+evidence about the patch rather than about the machine. Neither has been
+driven against a press that landed, and this lane did not extend a
+correction into a case nobody has measured.
+
+**Guard:** `now-guest-ppc/tests/ctlact_verdict_source_test.py`, in the
+`scripts/test-native` manifest — a source test because `act_cmds.c`
+includes Carbon and cannot be linked by a host cc. Watched to fail
+against three mutations: the `act-not-taken` reply restored, the wait
+made terminal again, and `act_client.c` taking the flag and writing
+`timed-out` regardless.
+
 ## FIXED and EMULATOR-VERIFIED: the render invented a grow box on windows the machine leaves plain (2026-08-07, `claude/019-kw01-kw06`)
 
 **Verification level: emulator-verified, per rectangle, in both

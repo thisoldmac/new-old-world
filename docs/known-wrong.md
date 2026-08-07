@@ -33,7 +33,7 @@ think a row is the wrong call, the row tells you what closing it costs.
   reads this file. It checks every row's shape (all six fields present,
   ids unique and contiguous, `Owner` and `Status` from a closed
   vocabulary), and for the rows whose claim is checkable in code it
-  checks the *claim itself* (KW-01, KW-05 and KW-07). **When a
+  checks the *claim itself* (KW-01 and KW-06). **When a
   lane fixes one of those, that test fails and names the row to
   close.** A register that
   keeps claiming a defect somebody already fixed is worse than no
@@ -189,36 +189,7 @@ Every row carries six, and the gate fails a row missing any of them:
 - **Owner:** `claude/019-titlebar-fidelity`
 - **Status:** `decided`
 
-## KW-05 — `ctlact part 11` reports `act-not-taken` over presses that landed
-
-- **What disagrees:** the control act infers "nothing happened" from a
-  single observation — that the application never called `TrackControl` —
-  and phrases it as a conclusion about the machine. A Carbon control
-  actuated by any other route lands while the act reports a refusal.
-- **Measured:** sweep D, SEQ-A step 4. The Appearance panel's help "?"
-  button, pressed with `ctlact part: 11`, answered `act-not-taken` /
-  `"armed, and the application never called TrackControl"` /
-  `settlement: timed-out`. The screendump before shows no Help Viewer on
-  the machine; the screendump after shows **Mac Help open and frontmost,
-  having run a search for "Appearance", ten results on screen**. Nothing
-  else in the sequence could have opened it. Still live in the tree as of
-  this writing: `now-guest-ppc/src/act/act_cmds.c`, the `part != 0` arm.
-- **Why it is left:** it is not. Nobody has decided this; it is on the
-  register because it is **measured, understood and still shipping**, and
-  because sweep C scored the identical message as a clean refusal and
-  listed the act plane's refusal vocabulary among the things to leave
-  alone. That reading cannot stand: the same message in the same verb is
-  sometimes a correct refusal and sometimes a false negative, and nothing
-  in the message tells them apart. An agent that believes a refusal
-  presses again, and the second press lands too.
-- **What would close it:** `dispatched-but-unconfirmed` already exists in
-  the same verb's other form and is the honest word for exactly this.
-  Cost: one refusal string and its settlement word, plus whatever host
-  tests pin the current text.
-- **Owner:** `unassigned`
-- **Status:** `undecided`
-
-## KW-06 — check boxes and radio buttons render as bare labels
+## KW-05 — check boxes and radio buttons render as bare labels
 
 - **What disagrees:** the guest declines to name any control from CDEF 0
   or CDEF 23 — the classic and Appearance **button families** — because
@@ -246,7 +217,7 @@ Every row carries six, and the gate fails a row missing any of them:
 - **Owner:** `claude/018-control-semantics`
 - **Status:** `decided`
 
-## KW-07 — menu item geometry assumes uniform 16-pixel rows
+## KW-06 — menu item geometry assumes uniform 16-pixel rows
 
 - **What disagrees:** `ActionModel.menuRowHeight = 16` and
   `menuItemPoint` computes a release point from it. Rows are not uniform
@@ -267,7 +238,7 @@ Every row carries six, and the gate fails a row missing any of them:
 - **Owner:** `unassigned`
 - **Status:** `undecided`
 
-## KW-08 — the classic-side file browser cannot rename, delete, move or make a folder
+## KW-07 — the classic-side file browser cannot rename, delete, move or make a folder
 
 - **What disagrees:** the guest's Files page lists, navigates and pulls.
   It offers no rename, no delete, no new folder and no move.
@@ -287,7 +258,7 @@ Every row carries six, and the gate fails a row missing any of them:
 - **Owner:** `Michelle`
 - **Status:** `decided`
 
-## KW-09 — the Mirror keeps polling the guest when it is not on screen
+## KW-08 — the Mirror keeps polling the guest when it is not on screen
 
 - **What disagrees:** backgrounding the Mirror module does nothing to the
   poll. Clicking Console does not stop NOW asking the guest for scenes.
@@ -307,7 +278,7 @@ Every row carries six, and the gate fails a row missing any of them:
 - **Owner:** `claude/019-embed-mirror`
 - **Status:** `decided`
 
-## KW-10 — modal alert chrome is drawn from the old, unmeasured procedure
+## KW-09 — modal alert chrome is drawn from the old, unmeasured procedure
 
 - **What disagrees:** every window with a title bar was re-derived from
   the machine's own pixels in August. The `isDialog` path — `kind == 2`
@@ -326,7 +297,7 @@ Every row carries six, and the gate fails a row missing any of them:
 - **Owner:** `claude/019-titlebar-fidelity`
 - **Status:** `decided`
 
-## KW-11 — arcs and polygons are not drawn
+## KW-10 — arcs and polygons are not drawn
 
 - **What disagrees:** `DisplayReplay` has no case for the `arc` or `poly`
   display ops. A polygon arrives as a bounding box and is never drawn as
@@ -343,7 +314,7 @@ Every row carries six, and the gate fails a row missing any of them:
 - **Owner:** `unassigned`
 - **Status:** `decided`
 
-## KW-12 — two of the fourteen 68K census probes refuse by design
+## KW-11 — two of the fourteen 68K census probes refuse by design
 
 - **What disagrees:** on NOW-68K, `scsi` reports the bus as present and
   **not scanned**, and `selectors` is not served. Twelve of fourteen
@@ -363,7 +334,7 @@ Every row carries six, and the gate fails a row missing any of them:
 - **Owner:** `unassigned`
 - **Status:** `decided`
 
-## KW-13 — the Screenshots page's status line is correct by timing, not by structure
+## KW-12 — the Screenshots page's status line is correct by timing, not by structure
 
 - **What disagrees:** a previous "Failed: …" note can sit over a
   successful send. In practice it is overwritten shortly after by
