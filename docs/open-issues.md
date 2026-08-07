@@ -14,6 +14,86 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## BROKEN: `ctlact part 11` reports `act-not-taken` over a press that landed (2026-08-07, fidelity sweep D)
+
+The full argument, with the two screendumps, is in
+[docs/fidelity-sweep-2026-08-07-d.md](fidelity-sweep-2026-08-07-d.md).
+The short form:
+
+`ctlact` with `part: 11` at Appearance's help "?" button answered
+
+    {"code": "act-not-taken",
+     "message": "armed, and the application never called TrackControl",
+     "settlement": "timed-out"}
+
+and the machine **opened Mac Help and ran a search for "Appearance"**. The
+screendump taken before the press has no Help Viewer anywhere on the
+guest; the one taken after has it frontmost with ten results. The only
+other act in that stretch was refused in 5 ms.
+
+**The mechanism is in the message.** `act-not-taken` is inferred from the
+absence of a `TrackControl` call and phrased as a statement about the
+world. A Carbon control actuated by any other route lands while the plane
+reports it did not — and nothing in the reply distinguishes that case from
+the honest refusal the same message produces elsewhere.
+
+`ctlact part 0` already answers `dispatched-but-unconfirmed`, which is the
+right shape for exactly this and landed in round 6/7. `part 11` should
+adopt it, or name `TrackControl` as the limit of what it observed.
+
+**Why this is BROKEN and not UNVERIFIED**: an agent that believes the
+refusal presses again, and the second press lands too. Sweep C scored the
+identical message as a clean refusal and listed the refusal vocabulary
+among the things to leave alone; that reading cannot stand, and this entry
+is the dated line saying so rather than an edit to sweep C.
+
+Emulator, guest `d9a78b62a414`, build asserted. Not metal-verified.
+
+## OPEN: the render is order-dependent, and the fix is on an unmerged branch (2026-08-07, fidelity sweep D)
+
+`49c9a6f6` — *"fix(mirror): one scene, one picture — and the buffer that
+was never ours"* — is **not an ancestor of `claude/019-integration-7`**.
+It sits alone on `claude/019-first-render-differs`, and neither round 6
+nor round 7 merged it. `RenderShot.png` still asks `ImageRenderer` for its
+own `cgImage`.
+
+Sweep D priced the absence on this project's real windows rather than on
+the two-button fixture the commit used. Render the same nine captures
+twice in list order: **byte-identical, 9 of 9.** Render them once with the
+list reversed: **four of nine change**, by up to 338 pixels and up to
+157/255 in a channel. And two independent captures of an Appearance window
+the guest drew identically composed to renders differing by **exactly one
+pixel** — the error class the sweep spec says no similarity score can see.
+
+Two consequences while it is unmerged: a per-target render finding carries
+an ordering artefact nobody is subtracting, and any pixel-exact render
+test in this tree is passing because of where its file happens to sit.
+
+## OPEN: `WindowChrome.growBox` still uses the discriminator `hasTitleBar` was corrected off (2026-08-07, fidelity sweep D)
+
+`hasTitleBar` was fixed from `win.kind != 2` because every
+Dialog-Manager-owned window was getting no widgets.
+**`WindowChrome.growBox` (`WindowChrome.swift:96`) still opens `guard
+win.kind != 2`**, one function below it in the same file.
+
+Confirmed in pixels, not inferred: Appearance is `kind == 2000`, so it
+passes the guard, **the machine draws no grow box on it and the render
+draws one.** That is a fabricated affordance — the same class the zoom-box
+change was landed to remove — surviving in the neighbouring function.
+
+## OPEN: a reference does not survive its own settlement wait (2026-08-07, fidelity sweep D)
+
+A tab control's reference, minted and used successfully, was
+`element-not-found: no observation minted this reference, or it has
+expired` two steps and ~45 s later. The reference table holds 96 entries
+and **every `scene.request` mints a fresh set**, so a caller polling for
+settlement evicts the reference it is waiting to act on again.
+
+The refusal itself is honest and fast (5 ms). The problem is that the
+documented way to confirm an act destroys the way to repeat it, so a
+five-step sequence cannot currently hold a reference across its own
+waiting.
+
 ## OPEN: a lane can revert a sibling's work in a commit whose message never mentions it (2026-08-07, round 7 integration)
 
 **Verification level: TESTED.** Found by reading a merge, not by any gate,
