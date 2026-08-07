@@ -258,6 +258,21 @@ void now_ext_gne_apply(void)
     }
     ticks = (NowPeekU32)LMGetTicks();
     table->heartbeat = ticks;
+    /* THE DENOMINATOR, and it is bumped before any gate.
+       ------------------------------------------------------------------
+       Every other counter in this table is inside an arm. That makes them
+       all unable to answer the question a resting machine actually poses:
+       when `arms` and `hooked_ports` and `channel_sends` all read zero, is
+       this component dark, or is it not running at all? Those are the two
+       states this project has most often confused, and a negative with no
+       denominator is exactly the shape of proof AGENTS.md refuses.
+
+       One increment, unconditionally, so that "nothing armed" can be
+       demonstrated rather than assumed: `gne_passes` climbing while every
+       plane's counters stay flat IS the resting proof, and it is a
+       cumulative resident counter diffed against itself rather than an
+       absence anybody has to trust. */
+    table->gne_passes++;
     /* P6's transport probe, once in the life of the machine. This is the
        only non-interrupt, post-boot context this component has, which is
        what the probe needs and cannot get anywhere else; it returns
@@ -382,6 +397,13 @@ void _start(void)
     table->heartbeat = table->boot_ticks;
     table->arm_request = 0;
     table->arm_active = 0;
+    /* Set BEFORE the planes boot, because they are what fill the word:
+       the content plane claims its block below and the filter claims
+       itself further down, and a bit arriving before the format word that
+       says how to read it would be a bit no reader is allowed to trust. */
+    table->rest_format = kNowPeekRestFormatV1;
+    table->rest_state = 0;
+    table->gne_passes = 0;
     table->anchor_format = kNowPeekAnchorFormatV3;
     table->anchor_count = 0;
     /* P3, and the position in this sequence is the point. It allocates
@@ -449,6 +471,11 @@ void _start(void)
        pointer, and the shim owns the non-C ABI. */
     gNowExtOldGNEFilter = LMGetGNEFilter();
     LMSetGNEFilter((GetNextEventFilterUPP)now_ext_gne_filter);
+    /* Reported, not assumed. This is the one hook that never stands down —
+       it is what would notice a re-arm, so it has to outlive every plane
+       it gates — and saying so in the table is what lets a reader check
+       the claim instead of taking it from a comment. */
+    table->rest_state |= (NowPeekU16)kNowPeekRestGNEFilter;
 
     /* P6, the extension's first INTERRUPT-time context, installed last
        for the same reason the filter is: a callback that can fire must
