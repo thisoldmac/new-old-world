@@ -83,8 +83,12 @@ echo "    merging main would hit ${mc:-0} conflicts"
 echo
 
 echo "=== MACHINE"
-vms=$(pgrep -f qemu-system-ppc 2>/dev/null | wc -l | tr -d ' ')
-hosts=$(pgrep -f 'New Old World' 2>/dev/null | wc -l | tr -d ' ')
+# pgrep exits 1 when nothing matches, and under `set -e` that killed this
+# script exactly when the machine was idle — which is when you run it to
+# find out what to do next. The tool that reports the state failed in one
+# state. `|| true` on the pipeline, not on the count.
+vms=$( (pgrep -f qemu-system-ppc || true) 2>/dev/null | wc -l | tr -d ' ')
+hosts=$( (pgrep -f 'New Old World' || true) 2>/dev/null | wc -l | tr -d ' ')
 echo "    $vms guest VM(s), $hosts host app(s) running"
 du -sh /private/tmp/nowvm-*/ 2>/dev/null | awk '{s+=$1} END {if (NR) print "    " NR " run dir(s)"}'
 echo
