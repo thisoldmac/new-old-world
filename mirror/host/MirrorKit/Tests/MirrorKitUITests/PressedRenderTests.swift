@@ -172,14 +172,29 @@ final class PressedRenderTests: XCTestCase {
                 + "(progress \(p))")
             last = ink
         }
-        let empty = try shot(control("c.ok", showsSpinner: true, progress: 0))
-        let full = try shot(control("c.ok", showsSpinner: true, progress: 1))
         let band = CGRect(x: okRect.minX, y: okRect.maxY - 6,
                           width: okRect.width, height: 5)
+        let empty = try shot(control("c.ok", showsSpinner: true, progress: 0))
+        let half = try shot(control("c.ok", showsSpinner: true, progress: 0.5))
+        let full = try shot(control("c.ok", showsSpinner: true, progress: 1))
         XCTAssertLessThan(mean(full, band).0, mean(empty, band).0 - 0.02,
                           "a full bar must be visibly darker than an empty "
                           + "one, or the person cannot see the answer coming "
                           + "due")
+        /* THE MIDPOINT, and it is the assertion that does the work. An
+           earlier version of this test compared only 0 against 1 and a
+           mutation that ignored `progress` entirely — always filling the
+           whole track — PASSED IT, because `drawWait` returns early at
+           progress 0 and so the empty case stayed empty by a different
+           route. A half-full bar is the only sample that can tell a
+           determinate indicator from a barber's pole. */
+        XCTAssertGreaterThan(mean(half, band).0, mean(full, band).0 + 0.01,
+                             "a half-run wait must be visibly LIGHTER than a "
+                             + "finished one — a bar that is always full is "
+                             + "an indeterminate indicator wearing a "
+                             + "deadline's clothes")
+        XCTAssertLessThan(mean(half, band).0, mean(empty, band).0 - 0.01,
+                          "and visibly darker than one that has not started")
     }
 
     /// The bar must not swallow the label. A person who cannot read WHICH
@@ -189,18 +204,23 @@ final class PressedRenderTests: XCTestCase {
     /// It then crosses the title and the button becomes unreadable at
     /// exactly the moment it matters most.
     func testTheWaitBarDoesNotCoverTheLabel() throws {
-        let idle = try shot(nil)
+        /* PRESSED-BUT-NOT-WAITING is the control, not the idle button.
+           Comparing against idle folds in the WASH, which tints the whole
+           face and moved this band by 0.11 — so the tolerance had to be
+           loose enough to admit the wash, and a mutation that recentred the
+           bar on `frame.midY`, straight through the title, slipped under it.
+           Holding the wash constant and varying only the bar isolates the
+           one thing this test is about, and needs no tolerance at all. */
+        let washOnly = try shot(control("c.ok", showsSpinner: false))
         let waiting = try shot(control("c.ok", showsSpinner: true,
                                        progress: 1))
-        /* The label's own band, above the bar. The wash tints it, so this
-           asserts the two are CLOSE rather than equal — a bar drawn through
-           the title moves it far more than the wash does. */
         let label = CGRect(x: okRect.minX + 4, y: okRect.minY + 3,
                            width: okRect.width - 8, height: 10)
-        XCTAssertEqual(mean(idle, label).0, mean(waiting, label).0,
-                       accuracy: 0.20,
+        XCTAssertEqual(mean(washOnly, label).0, mean(waiting, label).0,
+                       accuracy: 0.001,
                        "the wait indicator belongs inside the button's lower "
-                       + "edge, not across its title")
+                       + "edge, not across its title — a full bar must leave "
+                       + "the label's own band untouched")
     }
 
     // MARK: - The family
