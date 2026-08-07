@@ -83,6 +83,54 @@ Where two things should agree, **check that they do**:
   percentage only as colour.
 - **The same target twice** — pixel-identical, or the difference named.
 
+## The standing checks — woven in, not a separate phase
+
+Version 2 hunts seams. It **also still asks whether anything is horribly
+broken**, because the high water mark rising is exactly what makes a
+regression easy to miss: the eye goes to the new thing.
+
+Michelle, correcting an earlier draft of this spec that had dropped it:
+
+> the sweeps should have a checklist of things to go through to validate
+> that they're still green, havent regressed etc … like "while im here in
+> an app with a scrollbar, let me make sure it works" kinda stuff
+
+**So these are opportunistic, not a pass of their own.** When a target
+affords a check, take it. It costs seconds and it is the only thing
+standing between a fixed defect and its quiet return.
+
+**The rule that keeps this list honest: a landed capability adds a
+line.** Every entry below is something this project did not have until
+somebody built it, which is precisely why each is now a regression
+candidate. When a lane lands a capability, it goes here.
+
+Take each **where the target affords it**, and record ✓ / ✗ / n/a:
+
+- **A scrollbar scrolls.** A tab switches. A list row selects.
+- **A menu item lands where it was named** — and a press aimed at a menu
+  whose position is unknown is *refused*, not armed at x=0.
+- **A window opens, closes, and the one behind it redraws.**
+- **Fronting a process makes its windows appear** (anchor acquisition),
+  and `cycle` populates an undriven machine.
+- **The desktop shows its icons**, and one can be selected by name.
+- **Text is what the machine drew** — no glyph the guest truncated, no
+  glyph the guest drew missing.
+- **Icons resolve to art**, not to a blank plate; unknown regions are
+  legible as unknown at 32×32.
+- **No hatching where the machine drew** — every hatch traceable to a
+  rectangle nobody could attribute.
+- **Panel faces are the guest's grey**, not white.
+- **Window stacking matches the guest**, including two windows of the
+  *same* process.
+- **The Mirror opens** from the menu item, the agent verb, and the
+  guest's own button.
+- **An act that cannot verify its effect says so** rather than reporting
+  success.
+
+A ✗ here outranks any seam. **A regression in something that worked is
+worse than a seam nobody has found yet**, because somebody has already
+paid for the first one.
+
 ## What is captured, per target
 
 1. **The agent surface** — what a driving agent gets. Scored separately,
