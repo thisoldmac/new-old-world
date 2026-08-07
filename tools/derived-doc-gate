@@ -247,7 +247,11 @@ class Block:
                     f"lines={d.lines}\n"
                     f"      this tree {got[:16]}…  lines={n_now}")
             if d.published:
-                body = "\n".join(self.raw_document(root))
+                # The document MINUS this block: the block's own copy of the
+                # command would otherwise satisfy the check that a second
+                # copy still exists, which is the check answering itself.
+                doc = self.raw_document(root)
+                body = "\n".join(doc[:self.start] + doc[self.stop + 1:])
                 if normalise(d.command) not in normalise(body):
                     problems.append(
                         f"derivation {d.id!r} is marked `published` and its "
@@ -259,8 +263,13 @@ class Block:
 
         for a, b in self.equalities:
             if a in out and b in out and out[a] != out[b]:
-                only_a = sorted(set(out[a].split()) - set(out[b].split()))
-                only_b = sorted(set(out[b].split()) - set(out[a].split()))
+                # Line-based, not token-based: a derivation may carry a
+                # header line ("name-lists: 2") whose whole value is the
+                # difference, and splitting on whitespace would report the
+                # count without the thing it counts.
+                la, lb = set(out[a].splitlines()), set(out[b].splitlines())
+                only_a = sorted(la - lb)
+                only_b = sorted(lb - la)
                 problems.append(
                     f"{a!r} and {b!r} must agree and do not — this is the "
                     f"prose-restates-a-table case:\n"
@@ -361,7 +370,13 @@ def declared(root: str) -> list[Block]:
 # ---------------------------------------------------------------- the check
 
 def staged(root: str) -> set[str]:
-    out = run("git", "-C", root, "diff", "--cached", "--name-only")
+    # --no-renames on purpose. With rename detection a moved source file
+    # appears only under its NEW name, so a document derived from the old
+    # one is not "touched" and the gate never looks at it — while its
+    # derivation is now grepping a path that does not exist. Watched: a
+    # `git mv guest.c guest_renamed.c` passed silently until this flag.
+    out = run("git", "-C", root, "diff", "--cached", "--name-only",
+              "--no-renames")
     return set(out.split())
 
 

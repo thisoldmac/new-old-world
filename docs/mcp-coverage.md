@@ -899,17 +899,21 @@ derive disposition-census sha256=a9b141fe03737b877e28850089045fabf82e9064908ed44
     awk -F'|' '/^\| *`[a-z0-9._]+` *\|/ {s=$5; gsub(/ /,"",s); \
         if (s ~ /^(deliberate|planned|unnoticed)$/) print s}' \
         docs/mcp-coverage.md | sort | uniq -c
-derive unnoticed-from-table sha256=b8ec7bb371270287bce14f41097e53f89f0c03205ba32c0446c60006b5b399b8 lines=8
+derive unnoticed-from-table sha256=7cc654f3b11b4f42f9a356becaab8fa62d3471e7916dbf88c87bb2726efde394 lines=9
+    echo "name-lists: 1"
     awk -F'|' '/^\| *`[a-z0-9._]+` *\|/ {t=$2; gsub(/[ `]/,"",t); \
         s=$5; gsub(/ /,"",s); if (s=="unnoticed") print t}' \
         docs/mcp-coverage.md | sort -u
-derive unnoticed-from-prose sha256=b8ec7bb371270287bce14f41097e53f89f0c03205ba32c0446c60006b5b399b8 lines=8
-    awk '/^### The unnoticed rows, named together/{s=1;next} s&&/^#/{s=0} s' \
-        docs/mcp-coverage.md \
+derive unnoticed-from-prose sha256=7cc654f3b11b4f42f9a356becaab8fa62d3471e7916dbf88c87bb2726efde394 lines=9
+    runs() { awk '/^### The unnoticed rows, named together/{s=1;next} \
+        s&&/^#/{s=0} s' docs/mcp-coverage.md \
       | tr '\n' ' ' | grep -oE '\*\*[^*]+\*\*' \
-      | grep -E '^\*\*(`[a-z0-9._]+`,? ?(and )?)+\*\*$' \
-      | tr -d '*`' | tr ',' '\n' | sed 's/ and /\n/g' \
+      | grep -E '^\*\*(`[a-z0-9._]+`,? ?(and )?)+\*\*$'; }
+    echo "name-lists: $(runs | wc -l | tr -d ' ')"
+    runs | tr -d '*`' | tr ',' '\n' | sed 's/ and /\n/g' \
       | sed 's/^ *//;s/ *$//' | grep -v '^$' | sort -u
 equal: unnoticed-from-table unnoticed-from-prose
 rederived: 2026-08-07T03:50:12-0400 8c1e3d94 sources, ppc-inbound-types 0->48, 68k-inbound-types 0->23, disposition-census 0->3, unnoticed-from-table 0->8, unnoticed-from-prose 0->8 (first declaration)
+rederived: 2026-08-07T03:52:39-0400 d17ca9eb unchanged (count the lists, not just their union)
+rederived: 2026-08-07T03:52:58-0400 d17ca9eb unnoticed-from-table 8->9, unnoticed-from-prose 8->9 (the prose derivation now counts the LISTS, because two lists whose union matches the table is the 2026-08-05 rot)
 -->

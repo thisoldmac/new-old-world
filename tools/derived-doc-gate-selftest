@@ -1,0 +1,351 @@
+#!/usr/bin/env python3
+"""Mutation evidence for tools/derived-doc-gate: build the defect, watch
+it refuse, cure it, watch it pass.
+
+    tools/derived-doc-gate-selftest [-v]
+
+A gate nobody has watched fail proves nothing, and the failure this one
+exists for cannot be produced by editing a file — it needs two branches,
+two honest re-derivations and a real `git merge`. So this builds a
+throwaway repository with a source file, a document that declares itself
+derived from it, and two lanes that each do everything right; then it
+merges them and asserts that the gate names the resulting lie.
+
+Seven cases, and the second and third are the ones that would have been
+missed by an obvious implementation:
+
+  1. TWO HONEST RE-DERIVATIONS, MERGED. The headline. Each branch's count
+     is correct on its own branch; the merge keeps one and the merged tree
+     matches neither.
+  2. THE SOURCES MOVED AND NO ANSWER DID. A lane adds an ARGUMENT to an
+     existing verb. Every count holds — this is exactly what happened on
+     2026-08-05 — so a gate built on answer-hashes alone reads green
+     through it. The source digest is what speaks.
+  3. THE PROSE LIST BECAME TWO LISTS. A sentence restating a column, kept
+     twice by a merge, one naming one row and one naming another. A gate
+     that checked the table and not the prose passed all three of that
+     night's rots.
+  4. THE PROSE LIST LOST A ROW to a lane's honest rewrite.
+  5. A PUBLISHED COMMAND VANISHED from the document's prose, leaving the
+     block's copy as the only one — two places to be wrong becoming one
+     that is silently authoritative.
+  6. THE DERIVATION BROKE rather than the answer changing. Different
+     failure, different text; a gate that reports "the count moved" when
+     the grep is broken sends its reader to the wrong file.
+  7. NOT A MERGE. The same staleness on an ordinary commit is REPORTED
+     and not refused, on purpose: a gate that blocks an in-flight lane at
+     2am converts this repository's most expensive risk into a certainty.
+
+Every case ends by curing the defect and asserting the gate goes green,
+because a check that fails for everything is not a check.
+"""
+
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+import tempfile
+
+GATE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                    "derived-doc-gate")
+VERBOSE = "-v" in sys.argv
+
+
+def git(repo: str, *args: str) -> str:
+    return subprocess.run(("git", "-C", repo) + args, capture_output=True,
+                          text=True).stdout
+
+
+def gate(repo: str, *args: str, merge: bool = False) -> tuple[int, str]:
+    env = dict(os.environ, TBT_GATE_ROOT=repo)
+    if merge:
+        env["NOW_DERIVED_DOC_FORCE_MERGE"] = "1"
+    proc = subprocess.run([sys.executable, GATE, *args], capture_output=True,
+                          text=True, cwd=repo, env=env)
+    return proc.returncode, proc.stdout + proc.stderr
+
+
+SOURCE = """/* the guest's command table */
+static int dispatch(const char *name) {
+    if (strcmp(name, "ls") == 0) return 1;
+    if (strcmp(name, "ps") == 0) return 1;
+    if (strcmp(name, "hide") == 0) return 1;
+    return 0;
+}
+"""
+
+DOC = """# Who serves what
+
+Derived from the guest's own dispatch table, not from intent:
+
+```
+grep -oE 'strcmp\\(name, *"[a-z0-9]+"\\)' guest.c \\
+  | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
+```
+
+| Guest capability | Kind | Served | Disposition | Why |
+|---|---|:--:|---|---|
+| `ls` | command | ppc | deliberate | the console spelling of a projected message |
+| `hide` | command | ppc | unnoticed | nobody has decided |
+
+### The unnoticed rows, named together
+
+**`hide`** — served, decided by nobody.
+
+<!-- derived-doc v1
+sources: guest.c
+sources-sha1: 0
+derive verbs sha256=0 lines=0 published
+    grep -oE 'strcmp\\(name, *"[a-z0-9]+"\\)' guest.c \\
+      | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
+derive unnoticed-from-table sha256=0 lines=0
+    echo "name-lists: 1"
+    awk -F'|' '/^\\| *`[a-z0-9._]+` *\\|/ {t=$2; gsub(/[ `]/,"",t); \\
+        s=$5; gsub(/ /,"",s); if (s=="unnoticed") print t}' \\
+        doc.md | sort -u
+derive unnoticed-from-prose sha256=0 lines=0
+    runs() { awk '/^### The unnoticed rows, named together/{s=1;next} \\
+        s&&/^#/{s=0} s' doc.md \\
+      | tr '\\n' ' ' | grep -oE '\\*\\*[^*]+\\*\\*' \\
+      | grep -E '^\\*\\*(`[a-z0-9._]+`,? ?(and )?)+\\*\\*$'; }
+    echo "name-lists: $(runs | wc -l | tr -d ' ')"
+    runs | tr -d '*`' | tr ',' '\\n' | sed 's/ and /\\n/g' \\
+      | sed 's/^ *//;s/ *$//' | grep -v '^$' | sort -u
+equal: unnoticed-from-table unnoticed-from-prose
+-->
+"""
+
+TABLE_ROW_NET = "| `net` | command | ppc | unnoticed | nobody has decided |"
+
+
+def write(repo: str, name: str, text: str) -> None:
+    with open(os.path.join(repo, name), "w") as fh:
+        fh.write(text)
+
+
+def last_log(repo: str) -> str:
+    """The newest `rederived:` line in the fixture document."""
+    lines = [l for l in read(repo, "doc.md").splitlines()
+             if l.startswith("rederived:")]
+    return lines[-1].strip() if lines else ""
+
+
+def read(repo: str, name: str) -> str:
+    with open(os.path.join(repo, name)) as fh:
+        return fh.read()
+
+
+def base_repo(tmp: str) -> str:
+    repo = os.path.join(tmp, "r")
+    os.makedirs(repo)
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "config", "user.email", "selftest@example.invalid")
+    git(repo, "config", "user.name", "selftest")
+    write(repo, "guest.c", SOURCE)
+    write(repo, "doc.md", DOC)
+    git(repo, "add", "guest.c", "doc.md")
+    git(repo, "commit", "-q", "-m", "base")
+    rc, out = gate(repo, "rederive")
+    assert rc == 0, out
+    git(repo, "add", "doc.md")
+    git(repo, "commit", "-q", "-m", "declare derived")
+    return repo
+
+
+PASS, FAIL = [], []
+
+
+def expect(name: str, cond: bool, detail: str = "") -> None:
+    (PASS if cond else FAIL).append(name)
+    print(f"  {'ok  ' if cond else 'FAIL'}  {name}")
+    if detail and (VERBOSE or not cond):
+        for line in detail.strip().splitlines():
+            print(f"          {line}")
+
+
+def add_verb(repo: str, verb: str) -> None:
+    text = read(repo, "guest.c").replace(
+        '    return 0;',
+        f'    if (strcmp(name, "{verb}") == 0) return 1;\n    return 0;')
+    write(repo, "guest.c", text)
+
+
+# --------------------------------------------------------------- the cases
+
+def case_1_two_honest_rederivations(tmp: str) -> None:
+    """Two lanes, each correct on its own branch. The merge keeps one."""
+    repo = base_repo(tmp)
+    for branch, verb in (("lane-a", "net"), ("lane-b", "script")):
+        git(repo, "checkout", "-q", "-b", branch, "main")
+        add_verb(repo, verb)
+        gate(repo, "rederive")            # each lane does the right thing
+        git(repo, "add", "guest.c", "doc.md")
+        git(repo, "commit", "-q", "-m", f"add {verb}, re-derived")
+
+    git(repo, "checkout", "-q", "lane-a")
+    git(repo, "merge", "--no-commit", "lane-b")
+    # The conflict is in doc.md's block. Resolve it the way a keep-one
+    # merge does: take lane-a's honest version wholesale.
+    git(repo, "checkout", "--ours", "--", "doc.md")
+    git(repo, "add", "doc.md", "guest.c")
+
+    rc, out = gate(repo, "check")
+    expect("1. two honest re-derivations, merged — REFUSED", rc != 0, out)
+    expect("1. …and it names the derivation, not just the file",
+           "'verbs' no longer produces" in out, out)
+    expect("1. …and reports the recorded count against this tree's",
+           "lines=4" in out and "lines=5" in out, out)
+
+    gate(repo, "rederive")
+    git(repo, "add", "doc.md")
+    rc2, out2 = gate(repo, "check")
+    expect("1. cure: re-derive on the merged tree — passes", rc2 == 0, out2)
+    expect("1. cure: the log records what moved",
+           "verbs 4->5" in read(repo, "doc.md"), read(repo, "doc.md"))
+
+
+def case_2_shape_change_no_count_moves(tmp: str) -> None:
+    """A new ARGUMENT to an existing verb. Every count holds."""
+    repo = base_repo(tmp)
+    text = read(repo, "guest.c").replace(
+        'if (strcmp(name, "hide") == 0) return 1;',
+        'if (strcmp(name, "hide") == 0) return hide(arg_status(argv));')
+    write(repo, "guest.c", text)
+    git(repo, "add", "guest.c")
+
+    rc_v, out_v = gate(repo, "check")   # not a merge: reports, does not refuse
+    rc, out = gate(repo, "check", merge=True)
+    expect("2. shape change with every count unmoved — REFUSED", rc != 0, out)
+    expect("2. …and the reason is the SOURCES, not an answer",
+           "the SOURCES moved" in out and "no longer produces" not in out, out)
+    expect("2. …the answer-hash check alone would have passed it",
+           "'verbs' no longer produces" not in out, out)
+
+    gate(repo, "rederive")
+    git(repo, "add", "doc.md")
+    rc2, out2 = gate(repo, "check", merge=True)
+    expect("2. cure: re-derive — passes", rc2 == 0, out2)
+    # The log line for THAT re-derivation says `sources` and nothing else,
+    # which is the honest summary: the shape moved and no answer did.
+    expect("2. cure: the log says the sources moved and no answer did",
+           last_log(repo).endswith("sources"), last_log(repo))
+    # A second re-derivation with nothing to find must still leave a line.
+    _, again = gate(repo, "rederive")
+    expect("2. cure: a re-run that finds nothing still says so, on stdout",
+           "unchanged, re-derived at" in again, again)
+    expect("2. cure: …and in the file, where the next reader meets it",
+           last_log(repo).endswith("unchanged"), last_log(repo))
+
+
+def two_unnoticed_rows(repo: str) -> None:
+    """Get the fixture to the state where `hide` and `net` are both
+    unnoticed and the prose says so, correctly, in one list."""
+    add_verb(repo, "net")
+    doc = read(repo, "doc.md")
+    doc = doc.replace("| `hide` | command | ppc | unnoticed | nobody has "
+                      "decided |",
+                      "| `hide` | command | ppc | unnoticed | nobody has "
+                      "decided |\n" + TABLE_ROW_NET)
+    doc = doc.replace("**`hide`** — served, decided by nobody.",
+                      "**`hide`, `net`** — served, decided by nobody.")
+    write(repo, "doc.md", doc)
+    gate(repo, "rederive")
+    git(repo, "add", "guest.c", "doc.md")
+    git(repo, "commit", "-q", "-m", "two unnoticed rows, named together")
+
+
+def case_3_prose_becomes_two_lists(tmp: str) -> None:
+    repo = base_repo(tmp)
+    two_unnoticed_rows(repo)
+    rc0, out0 = gate(repo, "check", merge=True)
+    expect("3. control: the honest one-list state passes", rc0 == 0, out0)
+
+    # A merge keeps BOTH lanes' sentences: one naming `hide`, one naming
+    # `net`, neither naming both. Their UNION still equals the table — this
+    # is why counting the lists is part of the derivation and not a
+    # refinement of it.
+    doc = read(repo, "doc.md").replace(
+        "**`hide`, `net`** — served, decided by nobody.",
+        "**`hide`** — served, decided by nobody.\n\n"
+        "**`net`** — served, decided by nobody.")
+    write(repo, "doc.md", doc)
+    git(repo, "add", "doc.md")
+    rc, out = gate(repo, "check", merge=True)
+    expect("3. prose list kept twice by a merge — REFUSED", rc != 0, out)
+    expect("3. …and the table-vs-prose pair is what speaks",
+           "must agree and do not" in out, out)
+    expect("3. …naming the count, since the union is identical",
+           "name-lists: 2" in out, out)
+
+
+def case_4_prose_loses_a_row(tmp: str) -> None:
+    repo = base_repo(tmp)
+    two_unnoticed_rows(repo)
+
+    doc = read(repo, "doc.md").replace("**`hide`, `net`**", "**`hide`**")
+    write(repo, "doc.md", doc)
+    git(repo, "add", "doc.md")
+    rc, out = gate(repo, "check", merge=True)
+    expect("4. prose list loses a row — REFUSED", rc != 0, out)
+    expect("4. …and it names WHICH row went missing",
+           "only in unnoticed-from-table: ['net']" in out, out)
+
+
+def case_5_published_command_vanishes(tmp: str) -> None:
+    repo = base_repo(tmp)
+    doc = read(repo, "doc.md")
+    head, _, tail = doc.partition("### The unnoticed")
+    head = head.split("```")[0]        # drop the published fenced command
+    write(repo, "doc.md", head + "### The unnoticed" + tail)
+    git(repo, "add", "doc.md")
+    rc, out = gate(repo, "check", merge=True)
+    expect("5. published command vanished from the prose — REFUSED",
+           rc != 0, out)
+    expect("5. …and it says the pair, not the hash, is the point",
+           "second place to be wrong" in out, out)
+
+
+def case_6_derivation_breaks(tmp: str) -> None:
+    repo = base_repo(tmp)
+    git(repo, "mv", "guest.c", "guest_renamed.c")
+    rc, out = gate(repo, "check", merge=True)
+    expect("6. the derivation itself breaks — REFUSED", rc != 0, out)
+    expect("6. …and says the COMMAND broke, not that the answer changed",
+           "FAILED to run" in out and "this is the command breaking" in out,
+           out)
+
+
+def case_7_ordinary_commit_is_not_refused(tmp: str) -> None:
+    repo = base_repo(tmp)
+    add_verb(repo, "net")
+    git(repo, "add", "guest.c")
+    rc, out = gate(repo, "check")
+    expect("7. the same staleness on an ORDINARY commit — not refused",
+           rc == 0, out)
+    expect("7. …but reported, so nobody has to notice on their own",
+           "NOT refusing" in out and "verbs" in out, out)
+    rc_m, _ = gate(repo, "check", merge=True)
+    expect("7. …and the identical tree IS refused as a merge", rc_m != 0)
+
+
+def main() -> int:
+    cases = [case_1_two_honest_rederivations,
+             case_2_shape_change_no_count_moves,
+             case_3_prose_becomes_two_lists,
+             case_4_prose_loses_a_row,
+             case_5_published_command_vanishes,
+             case_6_derivation_breaks,
+             case_7_ordinary_commit_is_not_refused]
+    for fn in cases:
+        print((fn.__doc__ or fn.__name__).strip().splitlines()[0])
+        with tempfile.TemporaryDirectory() as tmp:
+            fn(tmp)
+    print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
+    for name in FAIL:
+        print(f"  FAILED: {name}")
+    return 1 if FAIL else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
