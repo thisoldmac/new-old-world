@@ -22,9 +22,16 @@ import SwiftUI
 /// So the requirement was stated as a design brief: sit back the way an
 /// unloaded image does in a browser, while staying unmistakably "we do not
 /// know" rather than "this is blank". Four candidates were rendered over
-/// two real sweep-A captures and compared side by side
-/// (docs/local/018-unknown-style.md; sheets in the out-of-git store at
-/// `~/Lab/Assets/now-mirror-assets/unknown-style-2026-08-07/`):
+/// two real sweep-A captures and compared side by side. The sheets are in
+/// the out-of-git store — `tools/unknown-style-mock` regenerates them, and
+/// they stay out of git because they are renders of Apple's bitmaps:
+///
+///     tools/unknown-style-mock \
+///       ~/Lab/Assets/now-mirror-assets/sweep-2026-08-07-a/p1/renders/panels/monitors.png \
+///       ~/Lab/Assets/now-mirror-assets/unknown-style-2026-08-07/02-monitors.png \
+///       140,150,660,440
+///
+/// The four:
 ///
 /// - **A, the diagonal hatch.** The baseline. Loud, and — a defect nobody
 ///   had noticed — drawn as an ANTIALIASED vector stroke into a render
@@ -77,11 +84,16 @@ public enum UnknownVisual {
     /// Device-space period of the stipple lattice, in points.
     public static let stipplePeriod: CGFloat = 2
 
-    /// A caption is drawn only where it fits without crowding the edge it
-    /// sits inside. Below this, the texture speaks for itself — the old
-    /// code's 60pt threshold put clipped prose inside 62pt-wide controls.
-    public static let minCaptionWidth: CGFloat = 96
-    public static let minCaptionHeight: CGFloat = 16
+    /// A caption is drawn only on a LARGE unknown. The old thresholds (60
+    /// or 92 wide, 14 tall) captioned nearly everything, and the mock made
+    /// the cost obvious: Monitors' eight gaps became four repetitions of
+    /// the same sentence stacked down one panel, which is the loudness
+    /// problem again wearing different clothes. At 200x40 exactly one
+    /// region in Monitors and one in the Finder window carry the word, and
+    /// the rest are carried by the texture — which is the intent, since
+    /// the texture is the marker and the word is the footnote.
+    public static let minCaptionWidth: CGFloat = 200
+    public static let minCaptionHeight: CGFloat = 40
 
     /// Left inset of the caption from the rectangle's leading edge.
     public static let captionInset: CGFloat = 4

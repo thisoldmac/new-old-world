@@ -141,15 +141,22 @@ def style_flat(d, box):
 
 
 def style_stipple(d, box, im):
-    """C — flat ground + 25% ordered stipple, hairline edge. The chosen one."""
+    """C — the chosen one. Mirrors UnknownVisual.swift's constants exactly:
+    0xEFEFEF ground, 0xDCDCDC stipple on even device rows AND columns,
+    0xD2D2D2 solid hairline, 0xAFAFAF caption above 200x40."""
     x0, y0, x1, y1 = box
     d.rectangle([x0, y0, x1 - 1, y1 - 1], fill=(0xEF, 0xEF, 0xEF))
     px = im.load()
     for y in range(y0, y1):
+        if y & 1:
+            continue
         for x in range(x0, x1):
-            if (x & 1) == 0 and (y & 1) == 0:
-                px[x, y] = (0xDF, 0xDF, 0xDF)
+            if (x & 1) == 0:
+                px[x, y] = (0xDC, 0xDC, 0xDC)
     d.rectangle([x0, y0, x1 - 1, y1 - 1], outline=(0xD2, 0xD2, 0xD2))
+    if (x1 - x0) >= 200 and (y1 - y0) >= 40:
+        d.text((x0 + 4, (y0 + y1) // 2 - 6), "Bitmap unavailable",
+               fill=(0xAF, 0xAF, 0xAF))
 
 
 def style_ticks(d, box):
