@@ -11,6 +11,7 @@
 #include "observe.h"
 #include "obsref.h"
 #include "peek_read.h"
+#include "proc_roster.h"
 #include "scene_phase.h"
 #include "scene_self.h"
 #include "scene_walk.h"
@@ -295,20 +296,23 @@ static void collect_process(NowScene *s, int row,
 void now_scene_collect(NowScene *out, long seq,
                        unsigned long stale_after_ticks)
 {
-    ProcessSerialNumber psn = { 0, kNoProcess };
-    ProcessSerialNumber front;
     ProcessSerialNumber psns[kSceneCollectMaxPsns];
-    ProcessSerialNumber self;
     Boolean selves[kSceneCollectMaxPsns];
-    Boolean have_self;
-    Boolean have_front;
+    /* THE PROCESS FAMILY'S ROW, not a sixth private walk (proc_roster.h).
+       The kind, the front sample and the admission rule are the ones
+       `process.list` and `ps` serve, so the scene can no longer say
+       `ax_oracle_not_found` about a process the processes family calls
+       `background` at the same instant. The anchor verdict rides as an
+       ADDITIONAL column on that row - it is what this plane knows and
+       the others do not. */
+    NowProcRosterIter it;
+    NowProcRosterRow proc;
     NowObsWalk refs;
     short w = 0, h = 0;
     unsigned long t_start = TickCount();
     int rows = 0;
     int i;
     int pass;
-    int process_info_failed = 0;
 
     if (out == NULL) {
         return;
@@ -335,87 +339,64 @@ void now_scene_collect(NowScene *out, long seq,
                         "dialog text, and the front app's menu bar");
     now_semantic_client_begin((unsigned long)seq);
 
-    have_front = GetFrontProcess(&front) == noErr;
-    have_self = GetCurrentProcess(&self) == noErr;
+    now_proc_roster_begin(&it);
     now_scene_phase_enter(kNowScenePhaseEnumerate);
-    while (rows < kSceneCollectMaxPsns && GetNextProcess(&psn) == noErr) {
-        ProcessInfoRec info;
-        Str31 name;
-        Boolean is_front = false;
-        Boolean is_self = false;
+    while (rows < kSceneCollectMaxPsns && now_proc_roster_next(&it, &proc)) {
         char cname[kNowSceneNameMax];
-        short len;
         int row;
         NowPeekReadStatus st;
         short unused_count = 0;
 
-        memset(&info, 0, sizeof info);
-        info.processInfoLength = sizeof info;
-        info.processName = name;
-        info.processAppSpec = NULL;
-        name[0] = 0;
-        if (GetProcessInformation(&psn, &info) != noErr) {
-            process_info_failed = 1;
-            continue;
-        }
-        len = name[0];
-        if (len > kNowSceneNameMax - 1) {
-            len = kNowSceneNameMax - 1;
-        }
-        memcpy(cname, name + 1, (size_t)len);
-        cname[len] = '\0';
-        if (have_front) {
-            (void)SameProcess(&psn, &front, &is_front);
-        }
-        if (have_self) {
-            (void)SameProcess(&psn, &self, &is_self);
-        }
+        /* The roster skipped and counted the unreadable rows, so the
+           scene's `partial` coverage is derived from ITS number rather
+           than from a flag this walk sets for itself. */
+        memcpy(cname, proc.name, sizeof cname - 1);
+        cname[sizeof cname - 1] = '\0';
         /* The cheap variant: it runs the same resolve() - the same
            oracle verdict, the same validation - without reading titles,
            so a process whose anchor is refused costs one lookup and the
            scene still learns WHY. */
-        st = now_peek_window_count(&psn, &unused_count);
-        if (is_self) {
+        st = now_peek_window_count(&proc.psn, &unused_count);
+        if (proc.is_self) {
             /* The reader's verdict is about a walk this row will not
                take. Self answers from its own Toolbox, so the row is
                admissible on its own authority - otherwise add_window
                refuses it and the description never lands. */
             st = (NowPeekReadStatus)kNowPeekReadOk;
         }
-        row = now_scene_add_process(out, psn.highLongOfPSN,
-                                    (unsigned long)psn.lowLongOfPSN, cname,
-                                    (unsigned long)info.processSignature,
-                                    is_front ? 1 : 0, (NowSceneAnchor)st,
+        row = now_scene_add_process(out, proc.psn.highLongOfPSN,
+                                    (unsigned long)proc.psn.lowLongOfPSN,
+                                    cname, proc.creator,
+                                    proc.is_front ? 1 : 0, (NowSceneAnchor)st,
                                     0);
         if (row < 0) {
             break;                    /* assembly recorded the truncation */
         }
-        /* THE PROCESS'S OWN DECLARATION, read in the same breath as its
-           name, from the same record. `modeOnlyBackground` is the
-           'SIZE' bit a faceless background application sets to say it
-           has no user interface - so this is the process answering, not
-           us inferring, and there is deliberately no path from the walk
-           result to this field. Inferring it from "we saw no windows"
+        /* THE PROCESS'S OWN DECLARATION, carried on the roster row -
+           the SAME kind `process.list` and `ps` serve, not a private
+           re-read of the bit. It is the process answering, not us
+           inferring, and there is deliberately no path from the walk
+           result to this field: inferring it from "we saw no windows"
            is the mistake that made six healthy processes read as
-           errors. */
+           errors. The Finder is a kind of its own on that row and is
+           not background-only, which is why this asks the enum rather
+           than the bit. */
         now_scene_set_process_background_only(
-            out, row, (info.processMode & modeOnlyBackground) != 0);
+            out, row, proc.kind == kNowProcKindBackground);
         now_scene_set_process_incarnation(
             out, row,
             now_obs_process_fingerprint(
-                (unsigned long)psn.highLongOfPSN,
-                (unsigned long)psn.lowLongOfPSN,
-                (unsigned long)info.processSignature,
-                (unsigned long)info.processLaunchDate,
-                (unsigned long)info.processLocation,
-                (unsigned long)info.processSize, name));
-        psns[row] = psn;
-        selves[row] = is_self;
+                (unsigned long)proc.psn.highLongOfPSN,
+                (unsigned long)proc.psn.lowLongOfPSN,
+                proc.creator, proc.launch_date, proc.location,
+                proc.process_size, proc.pname));
+        psns[row] = proc.psn;
+        selves[row] = proc.is_self;
         ++rows;
     }
     now_scene_phase_leave(kNowScenePhaseEnumerate);
     now_scene_set_processes_coverage(
-        out, (process_info_failed || rows >= kSceneCollectMaxPsns
+        out, (it.unreadable > 0 || rows >= kSceneCollectMaxPsns
               || out->procs_truncated)
             ? kNowSceneCoveragePartial : kNowSceneCoverageComplete);
     /* THE KIND WAS READ FOR EVERY ROW THAT EXISTS. It comes from the same
@@ -426,8 +407,8 @@ void now_scene_collect(NowScene *out, long seq,
        tells a consumer that an absent `backgroundOnly` means "has a
        face" rather than "this producer does not report kinds". */
     now_scene_set_process_kind_coverage(
-        out, process_info_failed ? kNowSceneCoveragePartial
-                                 : kNowSceneCoverageComplete);
+        out, it.unreadable > 0 ? kNowSceneCoveragePartial
+                               : kNowSceneCoverageComplete);
     /* Windows front process first, then the rest in Process Manager
        order. Within a process the chain IS the stacking order and z says
        so; ACROSS processes only the front app's position is knowable

@@ -103,6 +103,7 @@ add_application(now-guest-ppc
     src/processes/proc_actions.c
     src/processes/proc_hide_args.c
     src/processes/proc_quit_args.c
+    src/processes/proc_roster.c
     src/processes/processes_layout.c
     src/processes/processes_module.c
     src/workshop/workshop_layout.c

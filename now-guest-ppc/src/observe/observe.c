@@ -11,6 +11,7 @@
 #include "axtext.h"
 #include "json.h"
 #include "obsref.h"
+#include "proc_roster.h"
 
 enum {
     /* Bounds on one answer. They are about the FRAME, not about the
@@ -96,40 +97,52 @@ static NowObsBindStatus bind_status(NowPeekReadStatus status)
     return kNowObsBindUnreadable;
 }
 
-static int bind_target(const ProcessSerialNumber *psn, NowObsTarget *out)
+/* Bind one process the ROSTER already described. `front` comes off that
+   row, which means it comes off the walk's ONE sample - this function
+   used to call GetFrontProcess itself, once per process, so a Cmd-Tab
+   mid-walk could produce a reply in which two rows carried
+   `front: true`, or none did. A snapshot that contradicts itself is
+   worse than a stale one, because a caller cannot tell. Everything else
+   in this guest samples the front once before its loop; now this does
+   too, and it does it by not having the call at all. */
+static int bind_target_row(const NowProcRosterRow *row, NowObsTarget *out)
 {
-    ProcessInfoRec      info;
-    ProcessSerialNumber front;
-    NowPeekReadStatus   status;
+    NowPeekReadStatus status;
 
     memset(out, 0, sizeof(*out));
-    out->psn = *psn;
+    out->psn = row->psn;
     out->bind = kNowObsBindNoProcess;
-
-    memset(&info, 0, sizeof(info));
-    info.processInfoLength = sizeof(info);
-    info.processName = out->name;
-    info.processAppSpec = NULL;
-    out->name[0] = 0;
-    if (GetProcessInformation(psn, &info) != noErr) {
-        return 0;
-    }
-    out->signature = info.processSignature;
+    BlockMoveData(row->pname, out->name, (long)row->pname[0] + 1);
+    out->signature = (OSType)row->creator;
     /* The launch date is the discriminator a PSN is not: it is the one
        field a relaunch into a recycled serial number cannot inherit.
        See now_obs_process_fingerprint. */
     out->process_fingerprint = now_obs_process_fingerprint(
-        (unsigned long)psn->highLongOfPSN, (unsigned long)psn->lowLongOfPSN,
-        (unsigned long)info.processSignature,
-        (unsigned long)info.processLaunchDate,
-        (unsigned long)info.processLocation,
-        (unsigned long)info.processSize, out->name);
-    if (GetFrontProcess(&front) == noErr) {
-        (void)SameProcess(psn, &front, &out->is_front);
-    }
-    status = now_ax_bind_process(psn, &out->context);
+        (unsigned long)row->psn.highLongOfPSN,
+        (unsigned long)row->psn.lowLongOfPSN,
+        row->creator, row->launch_date, row->location, row->process_size,
+        row->pname);
+    out->is_front = row->is_front;
+    status = now_ax_bind_process(&out->psn, &out->context);
     out->bind = bind_status(status);
     return 1;
+}
+
+/* One process, named rather than walked. A single-row answer is a single
+   moment by construction, so this is the one place the front may be
+   sampled for one process - and it is the roster's sample, not a fourth
+   private read. */
+static int bind_target(const ProcessSerialNumber *psn, NowObsTarget *out)
+{
+    NowProcRosterRow row;
+
+    if (!now_proc_roster_read(psn, &row)) {
+        memset(out, 0, sizeof(*out));
+        out->psn = *psn;
+        out->bind = kNowObsBindNoProcess;
+        return 0;
+    }
+    return bind_target_row(&row, out);
 }
 
 static void live_from(const NowObsTarget *target, NowObsLive *live)
@@ -156,26 +169,18 @@ void now_observe_walk_begin(NowObsWalk *walk)
 void now_observe_walk_aim_self(NowObsWalk *walk,
                                const ProcessSerialNumber *psn)
 {
-    ProcessInfoRec info;
-    Str31          name;
-    unsigned long  fingerprint = 0;
+    NowProcRosterRow row;
+    unsigned long    fingerprint = 0;
 
     if (walk == NULL || psn == NULL) {
         return;
     }
-    memset(&info, 0, sizeof(info));
-    info.processInfoLength = sizeof(info);
-    info.processName = name;
-    info.processAppSpec = NULL;
-    name[0] = 0;
-    if (GetProcessInformation((ProcessSerialNumber *)psn, &info) == noErr) {
+    if (now_proc_roster_read(psn, &row)) {
         fingerprint = now_obs_process_fingerprint(
             (unsigned long)psn->highLongOfPSN,
             (unsigned long)psn->lowLongOfPSN,
-            (unsigned long)info.processSignature,
-            (unsigned long)info.processLaunchDate,
-            (unsigned long)info.processLocation,
-            (unsigned long)info.processSize, name);
+            row.creator, row.launch_date, row.location, row.process_size,
+            row.pname);
     }
     /* NULL memory reader: nothing here reads memory. The window list is
        our own, from the Window Manager. */
@@ -188,35 +193,28 @@ void now_observe_walk_aim_self(NowObsWalk *walk,
 void now_observe_walk_aim(NowObsWalk *walk, const ProcessSerialNumber *psn,
                           const NowAxContext *context)
 {
-    ProcessInfoRec info;
-    Str31          name;
-    unsigned long  fingerprint = 0;
+    NowProcRosterRow row;
+    unsigned long    fingerprint = 0;
 
     if (walk == NULL || psn == NULL || context == NULL) {
         return;
     }
-    memset(&info, 0, sizeof(info));
-    info.processInfoLength = sizeof(info);
-    info.processName = name;
-    info.processAppSpec = NULL;
-    name[0] = 0;
     /* The SAME tuple bind_target computes, and it has to be: a reference
        minted against one fingerprint and re-proved against another is
        refused as a recycled process, which would make every scene
-       reference fail with the most alarming verdict this layer has. A
+       reference fail with the most alarming verdict this layer has. It
+       is the same tuple because it is now read from the same row. A
        process the Process Manager will not describe gets a zero
        fingerprint, and every reference for it will fail that check - so
        it is aimed with a seam it cannot mint through instead. */
-    if (GetProcessInformation(psn, &info) != noErr) {
+    if (!now_proc_roster_read(psn, &row)) {
         now_obs_walk_aim(walk, NULL, 0, 0, 0, 0, 0);
         return;
     }
     fingerprint = now_obs_process_fingerprint(
         (unsigned long)psn->highLongOfPSN, (unsigned long)psn->lowLongOfPSN,
-        (unsigned long)info.processSignature,
-        (unsigned long)info.processLaunchDate,
-        (unsigned long)info.processLocation,
-        (unsigned long)info.processSize, name);
+        row.creator, row.launch_date, row.location, row.process_size,
+        row.pname);
     now_obs_walk_aim(walk, &context->memory, context->window_list,
                      (unsigned long)psn->highLongOfPSN,
                      (unsigned long)psn->lowLongOfPSN, fingerprint,
@@ -773,9 +771,9 @@ static void walk_reply(const char *key, const char *scope, long id,
                        char *out, long cap,
                        const ProcessSerialNumber *want)
 {
-    ProcessSerialNumber psn = { 0, kNoProcess };
+    NowProcRosterIter   it;
+    NowProcRosterRow    proc;
     NowObsTarget        target;
-    ProcessSerialNumber front;
     long                used = 0;
     int                 count = 0;
     int                 first = 1;
@@ -791,11 +789,15 @@ static void walk_reply(const char *key, const char *scope, long id,
         fail(out, cap, id, "overflow", "observe header");
         return;
     }
-    if (front_only && GetFrontProcess(&front) != noErr) {
+    /* ONE front sample for the whole reply, taken here, before the first
+       row - so `scope: front` and every row's `front` field describe the
+       same instant. */
+    now_proc_roster_begin(&it);
+    if (front_only && !it.have_front) {
         fail(out, cap, id, "no-front", "no front process");
         return;
     }
-    while (GetNextProcess(&psn) == noErr) {
+    while (now_proc_roster_next(&it, &proc)) {
         long mark = used;
 
         if (count >= kObsMaxProcs || cap - used < kObsTailSlack) {
@@ -805,14 +807,14 @@ static void walk_reply(const char *key, const char *scope, long id,
         if (want != NULL) {
             Boolean same = false;
 
-            if (SameProcess(&psn, want, &same) != noErr || !same) {
+            if (SameProcess(&proc.psn, want, &same) != noErr || !same) {
                 continue;
             }
         }
-        if (!bind_target(&psn, &target)) {
-            continue;
+        if (front_only && !proc.is_front) {
+            continue;           /* decided from the one sample, not a new one */
         }
-        if (front_only && !target.is_front) {
+        if (!bind_target_row(&proc, &target)) {
             continue;
         }
         if (!append(out, cap, &used, "%s", first ? "" : ",")

@@ -26,6 +26,7 @@
 #include "peek_read.h"
 #include "prefs.h"
 #include "proc_actions.h"
+#include "proc_roster.h"
 #include "product_identity.h"
 #include "scene_collect.h"
 #include "scene_phase.h"
@@ -5217,24 +5218,18 @@ static void serve_process_list(const char *request)
        a row never truncates mid-JSON - a truncated frame decodes to
        nothing and the send silently does nothing. */
     enum { kEntryMargin = 320 };
-    /* Spelled-out 4CCs: multi-character char constants warn under
-       -Werror, and these classify the process's kind. */
-    const unsigned long kTypeFinder = 0x464E4452UL;   /* 'FNDR' */
-    const unsigned long kSigFinder = 0x4D414353UL;    /* 'MACS' */
     char json[kNowMaxControl];
     long id = now_json_find_int(request, "id", 0);
     long cursor = now_json_find_int(request, "cursor", 1);
-    ProcessSerialNumber psn = { 0, kNoProcess };
-    ProcessSerialNumber front;
-    ProcessSerialNumber me;
-    Boolean have_front = GetFrontProcess(&front) == noErr;
-    /* isSelf marks the one row that is NOW - the only identity a caller
+    /* The roster is the one walk and the one classifier (proc_roster.h).
+       isSelf marks the one row that is NOW - the only identity a caller
        can trust for "the process on the other end of this connection".
        serve_process_act already computes it to refuse a self-quit; this
        reports the same fact instead of only acting on it, so a caller can
        name this process without deriving a file name from a version
        string (contract: ProcessListing.isSelf). */
-    Boolean have_self = GetCurrentProcess(&me) == noErr;
+    NowProcRosterIter it;
+    NowProcRosterRow proc;
     long pos;
     long index = 0;                   /* readable-process position, 1-based */
     int emitted = 0;
@@ -5246,24 +5241,14 @@ static void serve_process_list(const char *request)
     pos = snprintf(json, sizeof json,
                    "{\"type\":\"process.listing\",\"id\":%ld,"
                    "\"processes\":[", id);
-    while (GetNextProcess(&psn) == noErr) {
-        ProcessInfoRec info;
-        Str31 name;
-        char cname[32];
+    now_proc_roster_begin(&it);
+    while (now_proc_roster_next(&it, &proc)) {
         char code[8], creator[8];
         char esc_name[64], esc_code[40], esc_creator[40];
-        const char *kind;
-        Boolean is_front = false;
-        Boolean is_self = false;
 
-        memset(&info, 0, sizeof info);
-        info.processInfoLength = sizeof info;
-        info.processName = name;
-        info.processAppSpec = NULL;
-        name[0] = 0;
-        if (GetProcessInformation(&psn, &info) != noErr) {
-            continue;                 /* unreadable: not a position */
-        }
+        /* Unreadable rows never arrive here at all - the roster skips
+           and counts them, so "not a position" stays one rule in one
+           place rather than a `continue` every walk has to remember. */
         ++index;
         if (index < cursor) {
             continue;                 /* before this page */
@@ -5273,27 +5258,11 @@ static void serve_process_list(const char *request)
             more = true;              /* this one starts the next page */
             break;
         }
-        memcpy(cname, name + 1, name[0]);
-        cname[name[0]] = '\0';
-        memcpy(code, &info.processType, 4);
+        memcpy(code, &proc.type, 4);
         code[4] = '\0';
-        memcpy(creator, &info.processSignature, 4);
+        memcpy(creator, &proc.creator, 4);
         creator[4] = '\0';
-        if ((unsigned long)info.processType == kTypeFinder
-            || (unsigned long)info.processSignature == kSigFinder) {
-            kind = "finder";
-        } else if ((info.processMode & modeOnlyBackground) != 0) {
-            kind = "background";
-        } else {
-            kind = "application";
-        }
-        if (have_front) {
-            (void)SameProcess(&psn, &front, &is_front);
-        }
-        if (have_self) {
-            (void)SameProcess(&psn, &me, &is_self);
-        }
-        now_json_escape(cname, esc_name, sizeof esc_name);
+        now_json_escape(proc.name, esc_name, sizeof esc_name);
         now_json_escape(code, esc_code, sizeof esc_code);
         now_json_escape(creator, esc_creator, sizeof esc_creator);
         /* isSelf only when true: the contract makes it optional and
@@ -5303,12 +5272,13 @@ static void serve_process_list(const char *request)
                         "%s{\"name\":\"%s\",\"kind\":\"%s\",\"code\":\"%s\","
                         "\"creator\":\"%s\",\"sizeKB\":%ld,\"front\":%s,"
                         "\"psnHigh\":%lu,\"psnLow\":%lu%s}",
-                        emitted > 0 ? "," : "", esc_name, kind, esc_code,
-                        esc_creator, (long)(info.processSize / 1024),
-                        is_front ? "true" : "false",
-                        (unsigned long)psn.highLongOfPSN,
-                        (unsigned long)psn.lowLongOfPSN,
-                        is_self ? ",\"isSelf\":true" : "");
+                        emitted > 0 ? "," : "", esc_name,
+                        now_proc_kind_name(proc.kind), esc_code,
+                        esc_creator, proc.size_kb,
+                        proc.is_front ? "true" : "false",
+                        (unsigned long)proc.psn.highLongOfPSN,
+                        (unsigned long)proc.psn.lowLongOfPSN,
+                        proc.is_self ? ",\"isSelf\":true" : "");
         ++emitted;
     }
     snprintf(json + pos, sizeof json - (size_t)pos,
