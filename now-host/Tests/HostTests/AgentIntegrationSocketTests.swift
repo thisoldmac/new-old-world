@@ -829,6 +829,100 @@ final class AgentIntegrationSocketTests: XCTestCase {
         XCTAssertEqual(decoded.error?.code, "invalid-request")
         XCTAssertFalse(wasHandled)
     }
+
+    // MARK: - a reply that does not fit is still a reply
+
+    /// **The silent close, named.**
+    ///
+    /// `finish` encoded the response with `try?` and returned on failure,
+    /// and its `defer` closed the socket — so an answer past the 64 KB
+    /// ceiling reached the caller as a hang-up with no error frame, no
+    /// code and no reason. Found on 2026-08-07 as
+    /// `mirror_read --intention snapshot` closing the connection while
+    /// `status`, `metrics` and `find` answered normally on the same path,
+    /// which reads as a broken host rather than an oversized payload.
+    ///
+    /// It is deliberately posed here at the TRANSPORT rather than at
+    /// `mirror_read`: the encode is the one exit every served operation
+    /// leaves by, so every operation had this failure and only one of them
+    /// had been seen to.
+    func testAnOversizedReplyIsRefusedWithAReasonRatherThanAClosedSocket()
+        async throws {
+        let (endpoint, root) = try temporaryEndpoint()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let server = try AgentIntegrationLocalServer(
+            endpoint: endpoint,
+            handler: { _ in .mirrorRead(.init(unavailable: .init(
+                code: "oversized-on-purpose",
+                message: String(repeating: "M", count: 80 * 1024)))) })
+        try server.start()
+        defer { server.stop() }
+        let raw = try JSONSerialization.data(withJSONObject: [
+            "version": AgentIntegrationLocalProtocol.version,
+            "requestID": UUID().uuidString,
+            "operation": "mirror_read",
+            "mirrorReadRequest": ["intention": "snapshot"],
+        ])
+
+        let response = try await AgentIntegrationLocalClient(
+            endpoint: endpoint).sendRaw(raw)
+
+        /* The refusal itself has to fit, or the cure is the disease. */
+        XCTAssertLessThanOrEqual(
+            response.count, AgentIntegrationLocalProtocol.maximumMessageBytes)
+        let decoded = try AgentIntegrationLocalCodec.decodeResponse(response)
+        XCTAssertEqual(decoded.error?.code, "response-too-large")
+
+        /* Specific enough to act on: which operation, how big it actually
+           was, and what the ceiling is. "Not supported" would not be a
+           reason — a caller cannot tell from it whether to narrow the
+           request or to file a defect. */
+        let message = try XCTUnwrap(decoded.error?.message)
+        XCTAssertTrue(message.contains("mirror_read"), message)
+        XCTAssertTrue(message.contains(
+            "\(AgentIntegrationLocalProtocol.maximumMessageBytes)"), message)
+        XCTAssertTrue(message.contains("bytes"), message)
+    }
+
+    /// The same guarantee, asked of every operation rather than of the one
+    /// that was caught. `notImplemented` carries a free-form
+    /// `AgentIntegrationUnavailable`, so it can be made oversized for ANY
+    /// operation — which is what makes this a class check and not a second
+    /// copy of the row above.
+    func testNoOperationCanCloseTheSocketWithoutReplying() async throws {
+        for operation in ["session_health", "list_processes", "mirror_read",
+                          "machine_facts", "catalog_search",
+                          "transfer_cancel"] {
+            let (endpoint, root) = try temporaryEndpoint()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let server = try AgentIntegrationLocalServer(
+                endpoint: endpoint,
+                handler: { _ in .notImplemented(.init(
+                    code: "oversized-on-purpose",
+                    message: String(repeating: "N", count: 80 * 1024))) })
+            try server.start()
+            defer { server.stop() }
+            var request: [String: Any] = [
+                "version": AgentIntegrationLocalProtocol.version,
+                "requestID": UUID().uuidString,
+                "operation": operation,
+            ]
+            if operation == "mirror_read" {
+                request["mirrorReadRequest"] = ["intention": "status"]
+            }
+            let raw = try JSONSerialization.data(withJSONObject: request)
+
+            let response = try await AgentIntegrationLocalClient(
+                endpoint: endpoint).sendRaw(raw)
+            let decoded = try AgentIntegrationLocalCodec.decodeResponse(
+                response)
+            XCTAssertEqual(decoded.error?.code, "response-too-large",
+                           "\(operation) closed without replying")
+            XCTAssertTrue(
+                decoded.error?.message.contains(operation) ?? false,
+                "\(operation) refusal must name the operation it refused")
+        }
+    }
 }
 
 private actor InvocationFlag {
