@@ -29,7 +29,33 @@ import MirrorKit
 /// and no translation table is needed. That is worth knowing because a
 /// menu shortcut is matched on the CODE, not the character — the finding
 /// this project paid a day for.
+///
+/// ## Owning a window versus sharing one
+///
+/// Everything above describes a mirror that owns its window. A mirror
+/// drawn as one pane of a larger application is a different problem and
+/// the old behaviour is silently wrong for it: seizing first responder on
+/// appear takes the keyboard away from the host's own sidebar, and a
+/// `performKeyEquivalent` that consumes every ⌘ combination but three
+/// disables the host's entire menu bar — ⌘⇧M, ⌘0, ⌘/ — with nothing
+/// erroring and nothing on screen saying so.
+///
+/// So focus is a parameter. `.ownsWindow` is what it always did.
+/// `.sharesWindow` takes the keyboard only when the host says a person
+/// has clicked in, and hands back every character the host names.
 public struct KeyCaptureView: NSViewRepresentable {
+
+    /// **Whose keyboard this is.**
+    public enum Focus: Equatable, Sendable {
+        /// The mirror is the window. It takes first responder as soon as
+        /// it appears and keeps it.
+        case ownsWindow
+        /// The mirror is one pane among the host's own controls. It never
+        /// takes the keyboard unasked; `engaged` is the host saying a
+        /// person clicked into the mirror, and setting it back to false
+        /// hands the keyboard back.
+        case sharesWindow(engaged: Bool)
+    }
 
     /// One keystroke, already in the guest's own numbering.
     public var onKey: (_ code: Int, _ char: Int, _ mods: Int) -> Void
@@ -39,13 +65,35 @@ public struct KeyCaptureView: NSViewRepresentable {
     /// A host shortcut that was deliberately NOT forwarded, so the
     /// window can say so instead of appearing to have missed it.
     public var onReserved: (String) -> Void
+    public var focus: Focus
+    /// The keyboard went somewhere else — the person clicked the host's
+    /// sidebar, or tabbed away. Only meaningful while sharing a window,
+    /// and it exists so the host can put `engaged` back to false: without
+    /// it the host would still believe the mirror had focus and would
+    /// re-seize it on the next redraw, which is the focus theft this
+    /// whole parameter was added to end.
+    public var onFocusLost: () -> Void
+    /// The characters the host keeps for its own menu bar, matched on
+    /// `charactersIgnoringModifiers` and therefore **without regard to
+    /// shift or option**: reserving "m" reserves ⌘M and ⌘⇧M together.
+    /// Coarse on purpose — a set that distinguished them would have to
+    /// model a menu's whole matching rule, and the cost of over-reserving
+    /// is a key the guest does not get, while the cost of
+    /// under-reserving is a host menu that silently stops working.
+    public var hostReserved: Set<String>
 
     public init(onKey: @escaping (Int, Int, Int) -> Void,
                 onText: @escaping (String) -> Void,
-                onReserved: @escaping (String) -> Void) {
+                onReserved: @escaping (String) -> Void,
+                focus: Focus = .ownsWindow,
+                hostReserved: Set<String> = KeyCaptureView.hostReserved,
+                onFocusLost: @escaping () -> Void = {}) {
         self.onKey = onKey
         self.onText = onText
         self.onReserved = onReserved
+        self.focus = focus
+        self.hostReserved = hostReserved
+        self.onFocusLost = onFocusLost
     }
 
     public func makeNSView(context: Context) -> CaptureView {
@@ -56,6 +104,7 @@ public struct KeyCaptureView: NSViewRepresentable {
 
     public func updateNSView(_ v: CaptureView, context: Context) {
         v.owner = self
+        v.applyFocus()
     }
 
     /// The classic `evtQModifiers` bits, which are NOT AppKit's.
@@ -93,9 +142,51 @@ public struct KeyCaptureView: NSViewRepresentable {
             true
         }
 
+        /// What was last acted on, so focus is driven by CHANGES rather
+        /// than reasserted on every redraw. Reasserting is the bug: SwiftUI
+        /// updates this view for reasons that have nothing to do with the
+        /// keyboard, and a pane that re-takes first responder on each one
+        /// yanks it back the instant a person clicks the host's sidebar.
+        private var applied: Focus?
+
+        /// **Only `.ownsWindow` may take the keyboard by appearing.**
+        ///
+        /// A pane that seizes first responder on appear takes it from
+        /// whatever the person was actually using — the host's sidebar —
+        /// and nothing about that is visible in a screenshot or a test.
+        func applyFocus() {
+            guard let window else { return }
+            let want = owner?.focus ?? .ownsWindow
+            guard want != applied else { return }
+            applied = want
+            switch want {
+            case .ownsWindow:
+                if window.firstResponder !== self {
+                    window.makeFirstResponder(self)
+                }
+            case .sharesWindow(let engaged):
+                if engaged {
+                    if window.firstResponder !== self {
+                        window.makeFirstResponder(self)
+                    }
+                } else if window.firstResponder === self {
+                    window.makeFirstResponder(nil)
+                }
+            }
+        }
+
         public override func viewDidMoveToWindow() {
+            applied = nil
             super.viewDidMoveToWindow()
-            window?.makeFirstResponder(self)
+            applyFocus()
+        }
+
+        public override func resignFirstResponder() -> Bool {
+            if case .sharesWindow = owner?.focus ?? .ownsWindow {
+                applied = .sharesWindow(engaged: false)
+                owner?.onFocusLost()
+            }
+            return super.resignFirstResponder()
         }
 
         /// Runs BEFORE menu dispatch, which is the only reason this class
@@ -105,7 +196,8 @@ public struct KeyCaptureView: NSViewRepresentable {
             guard window?.firstResponder === self,
                   event.modifierFlags.contains(.command) else { return false }
             let letter = (event.charactersIgnoringModifiers ?? "").lowercased()
-            if KeyCaptureView.hostReserved.contains(letter) {
+            if (owner?.hostReserved ?? KeyCaptureView.hostReserved)
+                .contains(letter) {
                 owner?.onReserved("⌘" + letter.uppercased())
                 return false                 // let the host have it
             }

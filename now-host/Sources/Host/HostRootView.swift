@@ -175,9 +175,13 @@ struct HostRootView: View {
         case "processes":
             ProcessesModuleView(model: state.processes)
         case "mirror":
-            MirrorControlView(
+            MirrorModuleView(
                 model: state.mirror,
-                mirrorWindow: state.mirrorWindow,
+                source: state.mirrorSource,
+                run: state.mirrorRun,
+                presentation: state.mirrorPresentation,
+                window: state.mirrorWindow,
+                connectedMachineName: state.connectedMachineName,
                 timeline: state.mirrorSource.actTimeline,
                 cycles: state.mirrorSource.cycleTimeline)
         case "console":

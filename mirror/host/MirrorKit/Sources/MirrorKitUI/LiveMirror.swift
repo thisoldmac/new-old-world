@@ -91,7 +91,26 @@ public extension MirrorSceneSource {
 /// (HitTester / ActionModel), Platinum-drawn menus, and a status footer.
 /// The drawn pixels are exactly RenderShot's.
 public struct LiveMirrorView<Source: MirrorSceneSource>: View {
+
+    /// **Whose window this mirror is in.**
+    ///
+    /// A mirror in its own window may take the keyboard and keep it; a
+    /// mirror drawn as one pane of a larger application may not, because
+    /// `KeyCaptureView` forwards nearly every ⌘ combination to the other
+    /// Macintosh and would silently disable the host's own menu bar.
+    /// `sharesWindow` names the characters the host keeps and makes focus
+    /// click-to-enter.
+    public enum Keyboard: Equatable, Sendable {
+        case ownsWindow
+        case sharesWindow(hostReserved: Set<String>)
+    }
+
     @ObservedObject var controller: Source
+    let keyboard: Keyboard
+    /// Whether a person has clicked into the mirror, in `sharesWindow`.
+    /// Meaningless in `ownsWindow`, where the keyboard is always the
+    /// mirror's.
+    @State private var keyboardEngaged = false
     @State private var openMenu: Int?
     /// The row under the pointer in the open menu, 1-based. Menus are a
     /// selectable surface: this is what inverts, and what acts.
@@ -117,8 +136,12 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
     /// A live drag in progress, carrying the dragged window's original rect.
     private enum DragMode { case move(Rect), resize(Rect), thumb }
 
-    public init(controller: Source) {
+    /// `keyboard` defaults to `.ownsWindow`, which is what every caller
+    /// meant before there was a second container — so the dedicated
+    /// window and `MirrorApp` are unchanged by this parameter existing.
+    public init(controller: Source, keyboard: Keyboard = .ownsWindow) {
         self.controller = controller
+        self.keyboard = keyboard
     }
 
     public var body: some View {
@@ -143,7 +166,10 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                         onReserved: { combo in
                             controller.note("\(combo) is the host's; the "
                                             + "guest did not get it")
-                        })
+                        },
+                        focus: keyCaptureFocus,
+                        hostReserved: keyCaptureReserved,
+                        onFocusLost: { keyboardEngaged = false })
                     SceneView(scene: scene, openMenu: openMenu,
                               hoveredItem: hoveredItem,
                               selectedItem: selectedItem,
@@ -238,6 +264,17 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                             .foregroundStyle(.secondary)
                             .underline()
                     }
+                    /* Sharing a window makes the keyboard's owner a thing
+                       a person cannot see, and an invisible mode is the
+                       failure this project keeps paying for. So it is
+                       said, and only while it is true. */
+                    if case .sharesWindow = keyboard {
+                        Text(keyboardEngaged
+                             ? "keyboard → this Mac"
+                             : "click to type to this Mac")
+                            .foregroundStyle(.secondary)
+                            .allowsHitTesting(false)
+                    }
                 }
                 .font(.system(size: 11, design: .monospaced))
                 .padding(.horizontal, 8).padding(.vertical, 3)
@@ -256,10 +293,31 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
         return FitTransform(logical: logical, view: size).toGuest(p)
     }
 
+    /// What the capture view is told about focus. In `ownsWindow` this is
+    /// a constant, so the dedicated window behaves exactly as it did.
+    private var keyCaptureFocus: KeyCaptureView.Focus {
+        switch keyboard {
+        case .ownsWindow: return .ownsWindow
+        case .sharesWindow: return .sharesWindow(engaged: keyboardEngaged)
+        }
+    }
+
+    private var keyCaptureReserved: Set<String> {
+        switch keyboard {
+        case .ownsWindow: return KeyCaptureView.hostReserved
+        case .sharesWindow(let reserved): return reserved
+        }
+    }
+
     private func mouseGesture(scene: MirrorKit.Scene,
                               size: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
+                /* Click-to-enter, and this is the only place that can say
+                   so: the capture view sits UNDER the scene, so the press
+                   a person makes to aim at the other Macintosh is caught
+                   here and never reaches the NSView. */
+                if case .sharesWindow = keyboard { keyboardEngaged = true }
                 let start = guestPoint(value.startLocation, scene: scene,
                                        size: size)
                 let cur = guestPoint(value.location, scene: scene, size: size)

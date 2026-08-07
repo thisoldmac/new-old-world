@@ -172,7 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         }
     }
 
-    /// **The Window menu's face on `showMirrorWindow`.**
+    /// **The Window menu's face on `showMirror`.**
     ///
     /// One implementation, four faces — this, the Mirror page's button,
     /// the `mirror_open` agent verb and the guest's `host.show`. When it
@@ -180,7 +180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     /// Mirror page comes up, because a menu item that silently does
     /// nothing is indistinguishable from a broken one.
     @objc func showMirror() {
-        let outcome = state.showMirrorWindow()
+        let outcome = state.showMirror()
         guard !outcome.ok else { return }
         state.listener.note("Show Mirror: \(outcome.reason)", area: "host")
         show(moduleID: "mirror")

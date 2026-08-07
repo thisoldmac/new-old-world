@@ -146,7 +146,12 @@ final class NOWMirrorContentPlane {
         self.listener = listener
     }
 
+    /// Bumped by every `guestChanged`, so a release settling late can tell
+    /// whether the content it is about to wipe is still its own.
+    private var armGeneration = 0
+
     func guestChanged() {
+        armGeneration &+= 1
         targetPSN = nil
         targetWindow = nil
         cursor = 0
@@ -175,12 +180,23 @@ final class NOWMirrorContentPlane {
             completion(nil)
             return
         }
+        /* **THE WIPE IS GENERATION-GUARDED, and the guard belongs HERE.**
+           Both call sites in `NOWMirrorSource` already guard their own
+           completions — but this closure clears the cache FIRST, inside
+           the `qdtrace` round trip, before either of them is consulted.
+           A Stop→Start pair that lands inside that round trip therefore
+           wiped the display the NEW run had already accumulated. Under
+           the old open/close window that took a deliberate double click;
+           under a Start/Stop control it is one impatient person, and the
+           symptom — window interiors blank for a cycle — reads exactly
+           like a render defect rather than a lifecycle one. */
+        let releasing = armGeneration
         listener.runCommand("qdtrace", args: ["op": "stop"]) { [weak self] result in
             guard result.ok else {
                 completion(Self.failure(result))
                 return
             }
-            self?.guestChanged()
+            if let self, self.armGeneration == releasing { self.guestChanged() }
             completion(nil)
         }
     }
