@@ -117,8 +117,10 @@ enum GuestCapabilityGate {
                        in evidence: GuestCapabilityEvidence) -> Decision {
         guard evidence.isConnected else {
             return .noGuest(
-                "No Mac is connected. The other Mac dials this one; once it "
-                + "does, whether it serves this is its own answer.")
+                "No \(MachineNaming.commonNoun) is connected. "
+                + "\(MachineNaming.startingSentence(MachineNaming.simpleReference)) "
+                + "dials \(MachineNaming.thisMac); once it does, whether it "
+                + "serves this is its own answer.")
         }
 
         var unsettled: [String] = []
@@ -175,7 +177,7 @@ enum GuestCapabilityGate {
         } else if let code, !code.isEmpty {
             sentence += " — it answered “\(code)”"
         } else {
-            sentence += ": it is absent from this Mac's own command table"
+            sentence += ": it is absent from that machine's own command table"
         }
         return sentence + ". Nothing is wrong with the machine — NOW's two "
             + "guests are of different completeness, and this is one of the "

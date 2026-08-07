@@ -328,7 +328,7 @@ final class GuestListener: ObservableObject {
         guard sessions[key] != nil, activeKey != key else { return false }
         // Requests already in flight belong to the guest we are leaving
         // and would otherwise settle against whatever answers next.
-        failAllPending("Switched to another Mac")
+        failAllPending("Switched to another \(MachineNaming.commonNoun)")
         activeKey = key
         publishActive()
         return true
@@ -555,8 +555,8 @@ final class GuestListener: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
             MainActor.assumeIsolated {
                 if !reported {
-                    self.note("Quit without confirming the farewell reached "
-                              + "the other Mac")
+                    self.note("Quit without confirming the farewell "
+                              + "reached \(MachineNaming.simpleReference)")
                 }
                 report()
             }
@@ -586,7 +586,7 @@ final class GuestListener: ObservableObject {
             completion(CommandResult(
                 id: 0, ok: false, output: nil,
                 error: .init(code: "not-connected",
-                             message: "No Mac is connected")))
+                             message: "No \(MachineNaming.commonNoun) is connected")))
             return
         }
         let id = nextCommandId
@@ -620,7 +620,7 @@ final class GuestListener: ObservableObject {
               completion: @escaping (ExecOutcome) -> Void) {
         guard let session, case .connected = state else {
             completion(ExecOutcome(text: "", ok: false, code: "disconnected",
-                                   message: "No Mac is connected"))
+                                   message: "No \(MachineNaming.commonNoun) is connected"))
             return
         }
         let id = nextExecId
@@ -702,7 +702,7 @@ final class GuestListener: ObservableObject {
             completion(CensusReport(
                 id: 0, probe: probe, outcome: "failed", rows: [],
                 more: false, cursor: nil, total: nil,
-                note: "No Mac is connected"))
+                note: "No \(MachineNaming.commonNoun) is connected"))
             return
         }
         let id = nextCensusId
@@ -1002,7 +1002,7 @@ final class GuestListener: ObservableObject {
                                                  FileFailure>) -> Void) {
         guard let session, case .connected = state else {
             completion(.failure(.init(code: "disconnected",
-                                      message: "No Mac is connected")))
+                                      message: "No \(MachineNaming.commonNoun) is connected")))
             return
         }
         let id = nextCommandId
@@ -1024,7 +1024,7 @@ final class GuestListener: ObservableObject {
                                                      FileFailure>) -> Void) {
         guard let session, case .connected = state else {
             completion(.failure(.init(code: "disconnected",
-                                      message: "No Mac is connected")))
+                                      message: "No \(MachineNaming.commonNoun) is connected")))
             return
         }
         let id = nextCommandId
@@ -1047,7 +1047,7 @@ final class GuestListener: ObservableObject {
                                                     FileFailure>) -> Void) {
         guard let session, case .connected = state else {
             completion(.failure(.init(code: "disconnected",
-                                      message: "No Mac is connected")))
+                                      message: "No \(MachineNaming.commonNoun) is connected")))
             return
         }
         let id = nextCommandId
@@ -1074,7 +1074,7 @@ final class GuestListener: ObservableObject {
                                                     FileFailure>) -> Void) {
         guard let session, case .connected = state else {
             completion(.failure(.init(code: "disconnected",
-                                      message: "No Mac is connected")))
+                                      message: "No \(MachineNaming.commonNoun) is connected")))
             return
         }
         let id = nextCommandId
@@ -1151,7 +1151,7 @@ final class GuestListener: ObservableObject {
         _ emit: (Session, Int) -> Void) {
         guard let session, case .connected = state else {
             completion(.failure(.init(code: "disconnected",
-                                      message: "No Mac is connected")))
+                                      message: "No \(MachineNaming.commonNoun) is connected")))
             return
         }
         let id = nextCommandId
@@ -1179,7 +1179,7 @@ final class GuestListener: ObservableObject {
                                                FileFailure>) -> Void) {
         guard let session, case .connected = state else {
             completion(.failure(.init(code: "disconnected",
-                                      message: "No Mac is connected")))
+                                      message: "No \(MachineNaming.commonNoun) is connected")))
             return
         }
         let id = nextCommandId
@@ -1279,7 +1279,7 @@ final class GuestListener: ObservableObject {
     ) {
         guard session != nil, case .connected = state else {
             completion(.failure(.init(code: "disconnected",
-                                      message: "No Mac is connected")))
+                                      message: "No \(MachineNaming.commonNoun) is connected")))
             return
         }
         guard pendingPut == nil else {
@@ -1523,10 +1523,11 @@ final class GuestListener: ObservableObject {
         let quiet = health.map {
             Date().timeIntervalSince($0.lastTraffic)
         } ?? .greatestFiniteMagnitude
+        let who = MachineNaming.title(session?.guestName)
         return quiet > 20
-            ? "The classic Mac stopped answering — it may be showing a "
-              + "dialog or otherwise busy."
-            : "The classic Mac did not answer in time."
+            ? "\(who) stopped answering — it may be showing a dialog or "
+              + "otherwise busy."
+            : "\(who) did not answer in time."
     }
 
     private var pendingListings:
@@ -1631,7 +1632,7 @@ final class GuestListener: ObservableObject {
                         completion: @escaping (Result<CaptureDelivery,
                                                       CaptureFailure>) -> Void) {
         guard let session, case .connected = state else {
-            completion(.failure(.init(message: "No Mac is connected")))
+            completion(.failure(.init(message: "No \(MachineNaming.commonNoun) is connected")))
             return
         }
         let id = nextCommandId
@@ -1654,7 +1655,7 @@ final class GuestListener: ObservableObject {
                                                           CaptureFailure>)
                                 -> Void) {
         guard let session, case .connected = state else {
-            completion(.failure(.init(message: "No Mac is connected")))
+            completion(.failure(.init(message: "No \(MachineNaming.commonNoun) is connected")))
             return
         }
         let id = nextCommandId
@@ -2043,7 +2044,8 @@ final class GuestListener: ObservableObject {
     /// answering the wrong socket.
     func transferLaneObstruction(for asker: Session) -> String? {
         if asker !== session {
-            return "another Mac is being driven right now"
+            return "another \(MachineNaming.commonNoun) is being driven "
+                + "right now"
         }
         if let holder = transferLaneHolder {
             return "the transfer lane is busy: " + holder
@@ -2058,8 +2060,10 @@ final class GuestListener: ObservableObject {
             return "a preview is on its way"
         }
         switch fileTransferInFlight {
-        case .outgoing: return "a file is going to the Mac"
-        case .incoming: return "a file is coming from the Mac"
+        case .outgoing:
+            return "a file is going to \(MachineNaming.simpleReference)"
+        case .incoming:
+            return "a file is coming from \(MachineNaming.simpleReference)"
         case nil: break
         }
         if isScenePending { return "a scene is already on its way" }
@@ -2081,12 +2085,13 @@ final class GuestListener: ObservableObject {
                       completion: @escaping (Result<SceneDelivery,
                                                     SceneFailure>) -> Void) {
         guard let session, case .connected = state else {
-            completion(.failure(.init(message: "No Mac is connected")))
+            completion(.failure(.init(message: "No \(MachineNaming.commonNoun) is connected")))
             return
         }
         if let holder = transferLaneHolder {
             completion(.failure(.init(
-                message: "The Mac can move one thing at a time and "
+                message: MachineNaming.title(session.guestName)
+                    + " can move one thing at a time and "
                     + "\(holder). Ask again when it is done.")))
             return
         }

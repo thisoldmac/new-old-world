@@ -70,11 +70,16 @@ private actor AuditSpy: HostProjectionAuditSink {
 /// the lanes these tests drive answer anything real.
 private struct StubMachineClient: AgentIntegrationClient {
     var access: AgentIntegrationGuestAccess?
+    /// False means nothing has dialled in — the state a pane opens in,
+    /// and the one the system prompt has to stop describing the moment
+    /// a machine arrives.
+    var isConnected = true
 
     func addressing(_ selector: String?) -> AgentIntegrationClient { self }
 
     func sessionHealth() async -> AgentIntegrationSessionHealthResult {
-        .available(.init(
+        guard isConnected else { return .unavailable(.guest) }
+        return .available(.init(
             state: .connected,
             observedAt: Date(timeIntervalSince1970: 0),
             listeningPort: 1400,
@@ -123,6 +128,18 @@ private struct StubMachineClient: AgentIntegrationClient {
     func statGuestFile(path: String) async
         -> AgentIntegrationGuestFileStatResult {
         .hostUnavailable(.guest)
+    }
+}
+
+/// A connection that arrives mid-session, shared with the harness's
+/// client factory so the SECOND turn builds its client from the new
+/// state rather than a captured one.
+private final class Connected: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored = false
+    var value: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return stored }
+        set { lock.lock(); stored = newValue; lock.unlock() }
     }
 }
 
@@ -206,7 +223,7 @@ final class ChatHarnessTests: XCTestCase {
         // The system prompt names the machine and its situation.
         XCTAssertTrue(provider.requests[0].system.contains("pb1400c"))
         XCTAssertTrue(
-            provider.requests[0].system.contains("CLASSIC MACINTOSH"))
+            provider.requests[0].system.contains("classic machine"))
         // And the dispatch recorded the call under the chat face.
         let recorded = await audit.all()
         XCTAssertEqual(recorded.count, 1)
@@ -380,5 +397,56 @@ final class ChatHarnessTests: XCTestCase {
                 "\(descriptor.name) exposes guest addressing to the model; "
                     + "the chat face pins it per conversation")
         }
+    }
+
+    /// **The prompt is rebuilt per turn, not captured when the pane
+    /// opened.** A pane is routinely open before anything dials in, and a
+    /// prompt composed once would go on telling the model there is no
+    /// machine for the rest of the session — worse than saying nothing,
+    /// because the model then refuses tools that would now work.
+    func testAMachineThatConnectsAfterTheFirstTurnReachesTheNextPrompt()
+        async {
+        let provider = ScriptedChatProvider([
+            [.textDelta("Nothing to look at."), .finished(.endTurn)],
+            [.textDelta("Looking."), .finished(.endTurn)],
+        ])
+        let registry = ChatProviderRegistry()
+        registry.register(provider)
+        let connected = Connected()
+        let harness = ChatHarness(
+            registry: registry,
+            makeClient: { _ in
+                StubMachineClient(access: .fullAccess,
+                                  isConnected: connected.value)
+            },
+            audit: AuditSpy())
+
+        let first = EventLog()
+        await harness.run(
+            conversation: "t", wireModelID: "fake/m",
+            transcript: [.user("what is connected?")],
+            addressing: nil, origin: .hostPane, events: first.sink)
+        _ = first.wait(self)
+
+        connected.value = true
+
+        let second = EventLog()
+        await harness.run(
+            conversation: "t2", wireModelID: "fake/m",
+            transcript: [.user("what is connected now?")],
+            addressing: nil, origin: .hostPane, events: second.sink)
+        _ = second.wait(self)
+
+        XCTAssertEqual(provider.requests.count, 2)
+        XCTAssertTrue(
+            provider.requests[0].system.contains(
+                "no \(MachineNaming.commonNoun) is connected"),
+            provider.requests[0].system)
+        XCTAssertTrue(provider.requests[1].system.contains("pb1400c"),
+                      provider.requests[1].system)
+        XCTAssertFalse(
+            provider.requests[1].system.contains(
+                "no \(MachineNaming.commonNoun) is connected"),
+            provider.requests[1].system)
     }
 }

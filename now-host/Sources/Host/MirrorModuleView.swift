@@ -119,7 +119,8 @@ struct MirrorModuleView: View {
             } label: {
                 Label("Open Scene…", systemImage: "doc.badge.plus")
             }
-            .help("Open a recorded scene document (the JSON a guest sends) "
+            .help("Open a recorded scene document (the JSON "
+                  + "\(MachineNaming.simpleReference) sends) "
                   + "and draw it here.")
         }
         .padding(12)

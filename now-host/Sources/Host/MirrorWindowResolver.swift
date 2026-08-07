@@ -83,8 +83,9 @@ struct MirrorWindowResolver {
         guard let psn = Self.serial(target.psn) else {
             return .unresolved(
                 "The scene reports this window's process as "
-                    + "\"\(target.psn)\", which is not a process serial this "
-                    + "side can send. Nothing was asked of the Mac.")
+                    + "\"\(target.psn)\", which is not a process serial "
+                    + "\(MachineNaming.thisMac) can send. Nothing was asked "
+                    + "of \(MachineNaming.simpleReference).")
         }
         let result = await ask(Self.command,
                                ["serialHi": String(psn.hi),
@@ -94,13 +95,16 @@ struct MirrorWindowResolver {
                 ?? "it refused without saying why"
             return .unresolved(
                 "A window act is addressed by a reference only an "
-                    + "observation mints, and this Mac would not take the "
+                    + "observation mints, and "
+                    + "\(MachineNaming.simpleReference) would not take the "
                     + "observation: \(said)")
         }
         let windows = Self.windows(in: result)
         guard !windows.isEmpty else {
             return .unresolved(
-                "This Mac answered the observation with no windows for that "
+                MachineNaming.startingSentence(
+                    MachineNaming.simpleReference)
+                    + " answered the observation with no windows for that "
                     + "program, so there is no reference to address. The "
                     + "drawing and the walk are two readings taken at "
                     + "different moments; the drawing may be the older one.")

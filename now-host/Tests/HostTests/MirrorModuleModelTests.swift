@@ -152,7 +152,10 @@ final class MirrorModuleModelTests: XCTestCase {
         let banner = try XCTUnwrap(model.provenance?.banner)
         XCTAssertTrue(banner.contains("Replayed"),
                       "A recording must never read as this Mac, now.")
-        XCTAssertTrue(banner.contains("not this Mac now"))
+        XCTAssertTrue(banner.contains("not that machine now"))
+        XCTAssertFalse(banner.contains(MachineNaming.thisMac),
+                       "the banner must not spend the host's own phrase on "
+                           + "the machine the recording came from")
     }
 
     /// A scene outranks the discovery ladder: a page with something to draw

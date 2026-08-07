@@ -509,7 +509,8 @@ final class SoftwareModel: ObservableObject, GuestScopedModel {
                 self.lastAction = result.output?["launch"]?
                     .first?.last ?? "Launched"
             } else {
-                self.lastError = result.error?.message ?? "The Mac declined"
+                self.lastError = result.error?.message
+                    ?? "\(MachineNaming.title(self.connection)) declined"
             }
         }
     }
@@ -533,7 +534,8 @@ final class SoftwareModel: ObservableObject, GuestScopedModel {
                 self.lastAction = result.output?["reveal"]?
                     .first?.last ?? "Revealed"
             } else {
-                self.lastError = result.error?.message ?? "The Mac declined"
+                self.lastError = result.error?.message
+                    ?? "\(MachineNaming.title(self.connection)) declined"
             }
         }
     }
@@ -563,7 +565,8 @@ final class SoftwareModel: ObservableObject, GuestScopedModel {
             self.actionInFlight = false
             guard result.ok, let rows = result.output?["catsearch"] else {
                 self.lastError = result.error?.message
-                    ?? "The Mac could not measure the sweep"
+                    ?? "\(MachineNaming.title(self.connection)) could not "
+                    + "measure the sweep"
                 return
             }
             self.sweepCost = rows.map {

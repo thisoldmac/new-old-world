@@ -39,7 +39,7 @@ struct ChatModuleView: View {
                 draft: $draft, state: composerState,
                 placeholder: model.models.isEmpty
                     ? "Set up a provider to start"
-                    : "Ask about the connected Mac...",
+                    : "Ask about the connected machine...",
                 send: submit, stop: model.cancel)
         }
         .onAppear { model.refresh() }
@@ -207,7 +207,8 @@ struct ChatModuleView: View {
 
     /// Openers, not decoration: what this harness can do is not
     /// guessable from a blinking cursor, and every one of these is a
-    /// question the tools can actually answer about the classic Mac.
+    /// question the tools can actually answer about the machine being
+    /// driven.
     static let openers = [
         "What Mac is connected right now?",
         "Show me what is on its screen.",
@@ -217,11 +218,13 @@ struct ChatModuleView: View {
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("How can I help with this Mac?")
+            Text("How can I help with "
+                 + "\(MachineNaming.simpleReference)?")
                 .font(.system(size: 26, weight: .semibold))
                 .padding(.bottom, 6)
-            Text("I can look at the classic Mac's screen, files and "
-                 + "processes - with the access its owner granted.")
+            Text("I can look at "
+                 + "\(MachineNaming.possessive(String?.none)) screen, files "
+                 + "and processes - with the access its owner granted.")
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 18)
             if model.models.isEmpty {

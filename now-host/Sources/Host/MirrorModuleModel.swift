@@ -358,7 +358,8 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
             case .unsupported(let reason):
                 self.probeUsable = false
                 self.liveNote =
-                    "This Mac does not answer the cheap \"what is in front\" "
+                    MachineNaming.title(self.connection)
+                    + " does not answer the cheap \"what is in front\" "
                     + "question (\(reason)), so live updating asks for a "
                     + "whole scene every "
                     + "\(Int(self.watch.refreshCeiling.rounded())) seconds "
@@ -390,7 +391,8 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
         if failure.refusedByGuest {
             isLive = false
             updateWatch()
-            liveNote = "Live updating stopped: this Mac answered the last "
+            liveNote = "Live updating stopped: "
+                + "\(MachineNaming.sentence(connection)) answered the last "
                 + "ask with a refusal rather than a scene. Look Now asks "
                 + "again, and Live starts the loop back up."
             return
@@ -399,8 +401,9 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
             ? watch.probeInterval * 2
             : min(backoff * 2, watch.maxBackoff)
         holdUntil = Date().addingTimeInterval(backoff)
-        liveNote = "The last ask collided with something else on the Mac's "
-            + "one transfer lane. Live updating waits "
+        liveNote = "The last ask collided with something else on "
+            + "\(MachineNaming.possessive(connection)) one transfer lane. "
+            + "Live updating waits "
             + String(format: "%.1f", backoff)
             + "s and asks again — nothing is queued."
     }
@@ -471,9 +474,10 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
     func clickedOffScreen() {
         lastAction = ActionReport(
             outcome: .offScreen, target: "the border",
-            sentence: "That point is outside the Mac's screen — the drawing "
-                + "keeps the guest's own proportions, so the pane's margins "
-                + "are not part of it.")
+            sentence: "That point is outside "
+                + "\(MachineNaming.possessive(connection)) screen — the "
+                + "drawing keeps that machine's own proportions, so the "
+                + "pane's margins are not part of it.")
     }
 
     /// One keystroke, typed while the drawing has keyboard focus.
@@ -507,7 +511,8 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
             return
         }
         lastAction = ActionReport(
-            outcome: .asking, target: named, sentence: "Asking the Mac…")
+            outcome: .asking, target: named,
+            sentence: "Asking \(MachineNaming.sentence(connection))…")
         Task { @MainActor in
             let outcomes = await driver.drive([action])
             self.lastAction = Self.report(outcomes, on: named)
@@ -645,7 +650,7 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
         }
         lastAction = ActionReport(
             outcome: .asking, target: named,
-            sentence: "Asking the Mac…")
+            sentence: "Asking \(MachineNaming.sentence(connection))…")
         Task { @MainActor in
             let outcomes = await driver.drive(actions)
             self.lastAction = Self.report(outcomes, on: named)
@@ -718,8 +723,8 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
         case .control:
             return ActionReport(
                 outcome: .inert, target: named,
-                sentence: "This control reads as disabled in the scene the "
-                    + "Mac sent. A classic application often disables its "
+                sentence: "This control reads as disabled in the scene "
+                    + "that arrived. A classic application often disables its "
                     + "controls at rest, so this is not proof it would "
                     + "refuse — but nothing was sent.")
         case .growBox:
@@ -730,7 +735,9 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
             return ActionReport(
                 outcome: .inert, target: named,
                 sentence: "The grow box resizes on a drag rather than a "
-                    + "press. Drag it and the Mac is asked for the new size.")
+                    + "press. Drag it and "
+                    + "\(MachineNaming.simpleReference) is asked for the "
+                    + "new size.")
         case .widget(_, let kind, _, _):
             /* Reached only for the windowshade: close and zoom both produce
                an act. `winact` has four actions and collapse is not one, so
@@ -752,7 +759,7 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
                 outcome: .inert, target: named,
                 sentence: "Opening a menu is this page's own drawing, and "
                     + "this page does not draw one yet. Nothing was sent to "
-                    + "the Mac.")
+                    + "\(MachineNaming.simpleReference).")
         default:
             return ActionReport(
                 outcome: .inert, target: named,
@@ -1083,12 +1090,14 @@ enum MirrorPaneState: Equatable {
         case .noGuest:
             return MirrorRestingCopy(
                 symbol: "desktopcomputer",
-                title: "No Mac Connected",
-                message: "The other Mac dials this one. When it connects, "
-                    + "this page can show what is on its screen — drawn "
-                    + "from what the Mac says is there, not from its pixels.",
+                title: "No \(MachineNaming.properNoun) Connected",
+                message: MachineNaming.startingSentence(
+                    MachineNaming.simpleReference)
+                    + " dials \(MachineNaming.thisMac). When it connects, "
+                    + "this page can show what is on its screen — drawn from "
+                    + "what it says is there, not from its pixels.",
                 next: "A recorded scene can be opened here at any time, "
-                    + "with or without a Mac on the wire.")
+                    + "with or without a machine on the wire.")
         case .notLookedYet(let guest):
             return MirrorRestingCopy(
                 symbol: "questionmark.circle",
@@ -1164,7 +1173,7 @@ enum MirrorPaneState: Equatable {
                     + "windows but never says how big the screen is, so "
                     + "there is nothing to fit them into. The scene is not "
                     + "damaged — the producer did not report that plane.",
-                next: "A scene from a newer guest build will carry it.")
+                next: "A scene from a newer build of NOW will carry it.")
         case .unreadable(let reason, let provenance):
             return MirrorRestingCopy(
                 symbol: "exclamationmark.triangle",
@@ -1202,7 +1211,8 @@ extension MirrorModuleModel.Provenance {
     var banner: String {
         switch self {
         case .fixture(let name):
-            return "Replayed from \(name) — a recording, not this Mac now"
+            return "Replayed from \(name) — a recording, not that machine "
+                + "now"
         case .guest(let name):
             /* Not "live". A scene is FETCHED, one ask at a time, and by
                the time it is drawn it is a description of a moment that has

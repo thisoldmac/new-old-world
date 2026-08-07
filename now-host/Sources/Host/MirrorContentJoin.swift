@@ -100,7 +100,8 @@ final class MirrorContentJoin {
             case .ambiguous(let ports):
                 return "\(ports.count) drawing ports reported operations "
                     + "(\(ports.joined(separator: ", "))) and a scene window "
-                    + "carries no port, so this host cannot say which window "
+                    + "carries no port, so \(MachineNaming.thisMac) cannot "
+                    + "say which window "
                     + "either belongs to. Nothing was drawn rather than the "
                     + "wrong thing."
             case .noFrontWindow:
@@ -119,10 +120,12 @@ final class MirrorContentJoin {
     /// the reason, and a reason that only exists in a source file is a reason
     /// nobody reads.
     static let armGap =
-        "Nothing is armed to record drawing, and this host cannot arm it: "
+        "Nothing is armed to record drawing, and \(MachineNaming.thisMac) "
+        + "cannot arm it: "
         + "qdtrace start needs the A5 world of one process, and no NOW "
         + "command reports an A5 — the scene carries a process serial, which "
-        + "is a different thing. Arm it from the guest and press again."
+        + "is a different thing. Arm it on \(MachineNaming.simpleReference) "
+        + "and press again."
 
     private let listener: GuestListener
 
@@ -191,13 +194,17 @@ final class MirrorContentJoin {
                a guest refusal is. Both are forwarded in the guest's own
                words; neither is rewritten into a cheerier one. */
             return (scene, .refused(error.map { "\($0.message) [\($0.code)]" }
-                ?? "The Mac refused the drain without saying why."))
+                ?? MachineNaming.startingSentence(
+                    MachineNaming.simpleReference)
+                    + " refused the drain without saying why."))
         }
         guard case .object(let object)? = result.outputObjects?["qdtrace"],
               let drain = QDTraceDecode.drain(Self.plain(object)) else {
             return (scene, .refused(
-                "The Mac answered the drain with something this host cannot "
-                + "read as one."))
+                MachineNaming.startingSentence(
+                    MachineNaming.simpleReference)
+                + " answered the drain with something \(MachineNaming.thisMac) "
+                + "cannot read as one."))
         }
 
         /* The cursor advances on any answered drain, including a short one:
@@ -240,7 +247,8 @@ final class MirrorContentJoin {
     /// that is not drawing.
     static func shortness(_ drain: QDTraceDecode.Drain) -> String? {
         if drain.torn {
-            return "A program drew into the ring while this host was reading "
+            return "A program drew into the ring while "
+                + "\(MachineNaming.thisMac) was reading "
                 + "it and overtook the read, so the answer was discarded "
                 + "rather than shipped half-right. Press again."
         }
@@ -249,7 +257,8 @@ final class MirrorContentJoin {
                 + "the read. Nothing was lost; press again."
         }
         if drain.resync {
-            return "Drawing outran this host by \(drain.lostBytes) bytes, "
+            return "Drawing outran \(MachineNaming.thisMac) by "
+                + "\(drain.lostBytes) bytes, "
                 + "which no longer exist in the ring. The read restarted at "
                 + "the live end; press again for what is being drawn now."
         }
@@ -266,14 +275,16 @@ final class MirrorContentJoin {
            is said beside the ops that survived, never instead of them. */
         if drain.resync {
             parts.append("\(drain.lostBytes) bytes of earlier drawing were "
-                         + "overwritten before this host read them")
+                         + "overwritten before \(MachineNaming.thisMac) "
+                         + "read them")
         }
         if drain.more {
             parts.append("more operations are waiting (\(drain.pending) "
                          + "bytes); press again to continue")
         }
         if drain.dropped > 0 {
-            parts.append("the Mac could not fit \(drain.dropped) "
+            parts.append("\(MachineNaming.simpleReference) could not fit "
+                         + "\(drain.dropped) "
                          + "operation\(drain.dropped == 1 ? "" : "s") into "
                          + "the ring")
         }
@@ -284,7 +295,7 @@ final class MirrorContentJoin {
         if drain.truncatedText > 0 {
             parts.append("\(drain.truncatedText) text run"
                          + "\(drain.truncatedText == 1 ? " was" : "s were") "
-                         + "cut short by the Mac")
+                         + "cut short by \(MachineNaming.simpleReference)")
         }
         if !drain.undrawn.isEmpty {
             let named = drain.undrawn.sorted { $0.key < $1.key }
@@ -296,7 +307,8 @@ final class MirrorContentJoin {
                about the Mac, and it is said as one. */
             parts.append("\(drain.reportedRecords) operations were reported "
                          + "and \(drain.records.count) were read, which is a "
-                         + "fault in this host and not in the Mac")
+                         + "fault in \(MachineNaming.thisMac) and not in "
+                         + "\(MachineNaming.simpleReference)")
         }
         guard !parts.isEmpty else { return nil }
         return parts.joined(separator: "; ") + "."
@@ -325,8 +337,9 @@ final class MirrorContentJoin {
               case .object(let active)? = object["active"] else {
             /* The status did not answer. Say the least: the drain was empty,
                and this side could not find out why. */
-            return "Nothing has been drawn since this host last looked, and "
-                + "the Mac did not answer the follow-up question about "
+            return "Nothing has been drawn since \(MachineNaming.thisMac) "
+                + "last looked, and \(MachineNaming.simpleReference) did "
+                + "not answer the follow-up question about "
                 + "whether anything is armed to record drawing."
         }
         let a5: String
@@ -349,10 +362,11 @@ final class MirrorContentJoin {
                drain under it is correct behaviour and not a fault. */
             return "Drawing is being counted but not recorded (mode "
                 + "\"count\"), so there are no operations to draw. Arm the "
-                + "plane in \"record\" mode from the guest."
+                + "plane in \"record\" mode on "
+                + "\(MachineNaming.simpleReference)."
         }
         return "The plane is armed on A5 \(a5) and nothing has drawn since "
-            + "this host last looked."
+            + "\(MachineNaming.thisMac) last looked."
     }
 
     // MARK: -
