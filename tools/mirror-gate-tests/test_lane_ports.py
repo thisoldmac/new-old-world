@@ -15,6 +15,7 @@ import importlib.util
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -582,7 +583,17 @@ class AdditiveTests(unittest.TestCase):
                 "worktree, so spin-up-ppc cannot run here")
 
         module = load_module()
-        human_anchor = module.ports_of(module.HUMAN_BLOCK)["anchor"]
+        # A SPARE block in the reserved range, never HUMAN_BLOCK itself.
+        # spin-up-ppc refuses an explicitly-requested anchor that is
+        # already listening, so aiming at 591 would make this test skip
+        # exactly while her stack is up — which is most of the time, and
+        # is a gate declining to run in the one condition it is about.
+        # Any block in the range proves the same thing: the refusal keys
+        # on the RANGE, not on which block inside it.
+        spare = next(b for b in range(module.HUMAN_BLOCK_FIRST,
+                                      module.HUMAN_BLOCK_LAST + 1)
+                     if b != module.HUMAN_BLOCK)
+        human_anchor = module.ports_of(spare)["anchor"]
 
         work = tempfile.mkdtemp(prefix="lnpt-h-", dir="/private/tmp")
         self.addCleanup(shutil.rmtree, work, ignore_errors=True)
@@ -600,8 +611,34 @@ class AdditiveTests(unittest.TestCase):
                    NOW_ANCHOR_PORT=str(human_anchor),
                    NOW_WIRE_PORT=str(human_anchor + 1),
                    NOW_SPIN_DISPLAY="0")
-        out = subprocess.run([str(SPIN)], env=env, cwd=str(ROOT),
-                             capture_output=True, text=True, timeout=180)
+        # Popen and a SHORT bounded wait, not subprocess.run(timeout=...).
+        # The refusal happens in under a second; anything slower means it
+        # did not refuse and has gone on to boot, and this must then say
+        # so in one line rather than raise TimeoutExpired out of the
+        # plumbing 180 seconds later. Watched, by mutating the guard to
+        # `if false`: that is exactly what it did.
+        child = subprocess.Popen([str(SPIN)], env=env, cwd=str(ROOT),
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, text=True,
+                                 start_new_session=True)
+        try:
+            stdout, stderr = child.communicate(timeout=60)
+        except subprocess.TimeoutExpired:
+            # Kill the GROUP, and do not wait on the pipes afterwards.
+            # spin-up-ppc's readiness poll is a python3 grandchild that
+            # inherits stderr and sits there for 300s, so a plain
+            # communicate() after kill() blocks on IT — the mutation run
+            # took 309 seconds to report a failure it had already
+            # decided at 60.
+            try:
+                os.killpg(os.getpgid(child.pid), signal.SIGKILL)
+            except (OSError, ProcessLookupError):
+                child.kill()
+            self.fail("spin-up-ppc did not refuse a headless human stack — "
+                      "it went on to boot one. That is the 2026-08-07 "
+                      "defect exactly.")
+        out = subprocess.CompletedProcess(
+            child.args, child.returncode, stdout, stderr)
         if "is in use" in out.stdout + out.stderr:
             raise unittest.SkipTest(
                 "the human stack is running on these ports right now, "
