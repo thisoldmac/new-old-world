@@ -583,6 +583,278 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
         XCTAssertEqual(model.cursor, 256, "the cursor caught the writer")
     }
 
+    /* ── THE IDLE DECAY (2026-08-07) ────────────────────────────────────
+       Michelle's Date & Time panel lost its group boxes, its date field
+       and half of two labels while she was NOT touching it, minutes
+       after opening it, and never recovered until she pushed the window
+       back and brought it forward.
+
+       `displayEpoch` advances once per ARM, not per repaint, so a panel
+       with a ticking clock accumulates into ONE identity for as long as
+       it stays front. The accumulator's cap was a raw FIFO: past 1200
+       ops it dropped the OLDEST, which is the establishing repaint —
+       the erase, the group boxes, the static labels — while keeping the
+       clock ticks that pushed it over. The window did not get smaller;
+       it got hollow, and the sentence said nothing at all.
+
+       These two tests are the mechanism and its honest floor. */
+
+    /// The establishing repaint must survive an application that keeps
+    /// drawing small ops forever. Reintroduce the raw `removeFirst` trim
+    /// and this fails naming the labels.
+    func testAClockTickingPastTheCapDoesNotHollowOutTheWindow() throws {
+        let model = plane()
+        _ = model.apply(try drain(Self.establishingPass), to: try scene())
+
+        // ~40 minutes of a one-second clock at four ops a tick: far past
+        // the 1200-op cap, and not one of them redraws a label.
+        for tick in 0..<600 {
+            _ = model.apply(try drain(Self.clockTick(tick)), to: try scene())
+        }
+
+        let display = try XCTUnwrap(
+            model.apply(try drain("""
+            {"cmd":"drain","ops":[],"nextCursor":9999,"records":0}
+            """), to: try scene()).scene.windows[0].display)
+        let text = display.compactMap(\.text)
+        XCTAssertTrue(text.contains("Current Date"),
+                      "the establishing pass was evicted: \(text.prefix(8))")
+        XCTAssertTrue(text.contains("Set Daylight-Saving Time Automatically"))
+        XCTAssertTrue(text.contains("Server Options…"))
+        XCTAssertLessThanOrEqual(
+            model.operations.values.reduce(0) { $0 + $1.count },
+            NOWMirrorContentPlane.operationCapPerWindow,
+            "compaction must stay bounded, not merely stop trimming")
+    }
+
+    /// When there is no pass boundary to compact to, the ops really are
+    /// dropped — and THAT must be said, not swallowed. The frame is
+    /// marked stale so the renderer shows a gap rather than a confident
+    /// subset.
+    func testACapReachedWithNoPassBoundaryMarksTheFrameRatherThanLying()
+        throws {
+        let model = plane()
+        // Regions carry no geometry on this wire, so neither the pass
+        // rule nor the coverage rule can measure them: nothing here is
+        // provably off the guest's screen, and the drop is forced.
+        for tick in 0..<700 {
+            _ = model.apply(try drain("""
+            {"cmd":"drain","ops":[
+              {"op":"rgn","port":"0x1eba6800","ticks":\(100 + tick),
+               "a5":"0x00100000","psn":"0.29949953",
+               "displayEpoch":3,"generation":7,"verb":1},
+              {"op":"rgn","port":"0x1eba6800","ticks":\(100 + tick),
+               "a5":"0x00100000","psn":"0.29949953",
+               "displayEpoch":3,"generation":7,"verb":2}],
+             "nextCursor":\(300 + tick * 32),"records":2,"more":false}
+            """), to: try scene())
+        }
+        let update = model.apply(try drain("""
+        {"cmd":"drain","ops":[],"nextCursor":9999,"records":0}
+        """), to: try scene())
+        XCTAssertTrue(
+            update.sentence.contains("dropped"),
+            "silent subtraction is the defect: \(update.sentence)")
+        XCTAssertEqual(update.scene.windows[0].displayEpoch?.stale, true)
+    }
+
+    /// One full repaint pass of a Date & Time-shaped panel: a window-wide
+    /// erase, the group boxes, the static labels, the date field.
+    private static let establishingPass = """
+    {"cmd":"drain","ops":[
+      {"op":"rect","port":"0x1eba6800","ticks":1,
+       "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
+       "verb":2,"rect":[0,0,404,238],"ext":[0,0]},
+      {"op":"rect","port":"0x1eba6800","ticks":1,
+       "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
+       "verb":0,"rect":[12,20,190,70],"ext":[0,0]},
+      {"op":"text","port":"0x1eba6800","ticks":1,
+       "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
+       "pen":[20,18],"font":3,"size":9,"face":0,
+       "len":12,"fullLen":12,"trunc":false,"text":"Current Date"},
+      {"op":"text","port":"0x1eba6800","ticks":1,
+       "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
+       "pen":[20,40],"font":3,"size":9,"face":0,
+       "len":9,"fullLen":9,"trunc":false,"text":"8/ 7/2026"},
+      {"op":"text","port":"0x1eba6800","ticks":1,
+       "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
+       "pen":[20,120],"font":3,"size":9,"face":0,
+       "len":38,"fullLen":38,"trunc":false,
+       "text":"Set Daylight-Saving Time Automatically"},
+      {"op":"text","port":"0x1eba6800","ticks":1,
+       "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
+       "pen":[20,200],"font":3,"size":9,"face":0,
+       "len":15,"fullLen":15,"trunc":false,"text":"Server Options…"}],
+     "nextCursor":256,"records":6,"more":false}
+    """
+
+    /// One second of the panel's live clock: erase the field, draw the
+    /// time. Nothing here re-establishes anything.
+    private static func clockTick(_ tick: Int) -> String {
+        let ticks = 100 + tick
+        return """
+        {"cmd":"drain","ops":[
+          {"op":"rect","port":"0x1eba6800","ticks":\(ticks),
+           "a5":"0x00100000","psn":"0.29949953",
+           "displayEpoch":3,"generation":7,
+           "verb":2,"rect":[205,20,320,56],"ext":[0,0]},
+          {"op":"text","port":"0x1eba6800","ticks":\(ticks),
+           "a5":"0x00100000","psn":"0.29949953",
+           "displayEpoch":3,"generation":7,
+           "pen":[222,42],"font":3,"size":9,"face":0,
+           "len":8,"fullLen":8,"trunc":false,"text":"\(Self.clock(tick))"}],
+         "nextCursor":\(300 + tick * 32),"records":2,"more":false}
+        """
+    }
+
+    private static func clock(_ tick: Int) -> String {
+        String(format: "%02d:%02d:%02d", tick / 3600 % 24,
+               tick / 60 % 60, tick % 60)
+    }
+
+    /* ── THE OTHER HALF OF THE SAME DECAY ───────────────────────────────
+       The host re-arms the guest's trace on a 9-minute timer against a
+       10-minute guest TTL, with nobody touching anything. Re-arming
+       bumps the guest's `display_epoch`, so the next record opens an
+       identity this host has never seen — and an EMPTY accumulator —
+       while the window on the guest still holds every pixel it drew.
+       The first thing a settled panel draws afterwards is one clock
+       tick, and that one op settled as the entire published display.
+
+       This needs no cap, no eviction and no disposal: it is the picture
+       collapsing to whatever was redrawn in the seconds after a renewal
+       the person never asked for, on a timer that matches "minutes
+       apart, nothing touched". */
+
+    func testARenewalReArmDoesNotCollapseTheWindowToItsNextClockTick()
+        throws {
+        let model = plane()
+        _ = model.apply(try drain(Self.establishingPass), to: try scene())
+        _ = model.apply(try drain(Self.clockTick(0)), to: try scene())
+
+        // The 9-minute renewal: same window, fresh ring baseline, and the
+        // guest's re-arm advances displayEpoch 3 → 4.
+        model.carryForward = true
+        let after = model.apply(try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"rect","port":"0x1eba6800","ticks":900,
+           "a5":"0x00100000","psn":"0.29949953",
+           "displayEpoch":4,"generation":7,
+           "verb":2,"rect":[205,20,320,56],"ext":[0,0]},
+          {"op":"text","port":"0x1eba6800","ticks":900,
+           "a5":"0x00100000","psn":"0.29949953",
+           "displayEpoch":4,"generation":7,
+           "pen":[222,42],"font":3,"size":9,"face":0,
+           "len":8,"fullLen":8,"trunc":false,"text":"00:09:00"}],
+         "nextCursor":64,"records":2,"more":false}
+        """), to: try scene())
+
+        let text = try XCTUnwrap(after.scene.windows[0].display)
+            .compactMap(\.text)
+        XCTAssertTrue(text.contains("Current Date"),
+                      "the renewal collapsed the window: \(text)")
+        XCTAssertTrue(text.contains("Server Options…"))
+        XCTAssertTrue(text.contains("00:09:00"), "and it is still live")
+        XCTAssertTrue(after.sentence.contains("carried"))
+    }
+
+    /// The control for the test above: a RETARGET — a genuinely different
+    /// window — must inherit nothing, or one window's pixels would be
+    /// published as another's.
+    func testARetargetInheritsNothingFromTheWindowItReplaced() throws {
+        let model = plane()
+        _ = model.apply(try drain(Self.establishingPass), to: try scene())
+        XCTAssertFalse(model.carryForward,
+                       "a renewal sets this; a retarget must not")
+
+        let other = try scene(address: 0x2000)
+        let after = model.apply(try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"text","port":"0x00002000","ticks":900,
+           "a5":"0x00100000","psn":"0.29949953",
+           "displayEpoch":9,"generation":8,
+           "pen":[20,18],"font":3,"size":9,"face":0,
+           "len":5,"fullLen":5,"trunc":false,"text":"Fresh"}],
+         "nextCursor":64,"records":1,"more":false}
+        """), to: other)
+        XCTAssertEqual(after.scene.windows[0].display?.compactMap(\.text),
+                       ["Fresh"])
+    }
+
+    /* The coverage rule is allowed to keep an op it could have dropped
+       and is never allowed to drop one still on the guest's screen, so
+       these four are the ones that matter. Each fails if the
+       corresponding conservatism is removed. */
+
+    func testCoverageKeepsWhatItCannotMeasureOrProve() {
+        func text(_ s: String, at pen: [Int]) -> DisplayOp {
+            var op = DisplayOp(op: "text", ticks: 1)
+            op.text = s; op.pen = pen; op.size = 9; op.fullLen = s.count
+            return op
+        }
+        func rect(verb: Int, _ r: [Int]) -> DisplayOp {
+            var op = DisplayOp(op: "rect", ticks: 2)
+            op.verb = verb; op.rect = r
+            return op
+        }
+
+        // A FRAME does not replace pixels, so it covers nothing.
+        let framed = [text("Label", at: [20, 40]),
+                      rect(verb: 0, [0, 0, 400, 200])]
+        XCTAssertEqual(NOWMirrorContentPlane.coalesce(framed).count, 2)
+
+        // An erase that covers the label DOES drop it.
+        let erased = [text("Label", at: [20, 40]),
+                      rect(verb: 2, [0, 0, 400, 200])]
+        XCTAssertEqual(NOWMirrorContentPlane.coalesce(erased).count, 1)
+
+        // Partial coverage is not coverage: the label runs past the erase.
+        let clipped = [text("A very long label indeed", at: [20, 40]),
+                       rect(verb: 2, [0, 0, 60, 200])]
+        XCTAssertEqual(NOWMirrorContentPlane.coalesce(clipped).count, 2)
+
+        // An oval does not fill its bounding rectangle, so it covers
+        // nothing even when it paints.
+        var oval = DisplayOp(op: "oval", ticks: 2)
+        oval.verb = 1; oval.rect = [0, 0, 400, 200]
+        XCTAssertEqual(
+            NOWMirrorContentPlane.coalesce([text("Label", at: [20, 40]), oval])
+                .count, 2)
+    }
+
+    func testAnEraseIsNotCreditedBeyondItsOwnClip() {
+        var clip = DisplayOp(op: "state", ticks: 1)
+        clip.kind = "clip"; clip.rect = [0, 0, 100, 100]
+        var label = DisplayOp(op: "text", ticks: 1)
+        label.text = "Outside"; label.pen = [200, 40]; label.size = 9
+        label.fullLen = 7
+        var erase = DisplayOp(op: "rect", ticks: 2)
+        erase.verb = 2; erase.rect = [0, 0, 400, 400]
+        // The erase names the whole window but is clipped to a corner, so
+        // the label outside that corner survives.
+        XCTAssertEqual(
+            NOWMirrorContentPlane.coalesce([clip, label, erase]).count, 3)
+    }
+
+    func testCoverageIsJudgedInAbsoluteSpaceNotPortLocalNumbers() {
+        var shift = DisplayOp(op: "state", ticks: 1)
+        shift.kind = "origin"; shift.origin = [0, 200]
+        var label = DisplayOp(op: "text", ticks: 1)
+        label.text = "Row"; label.pen = [20, 40]; label.size = 9
+        label.fullLen = 3
+        var restore = DisplayOp(op: "state", ticks: 2)
+        restore.kind = "origin"; restore.origin = [0, 0]
+        var erase = DisplayOp(op: "rect", ticks: 2)
+        erase.verb = 2; erase.rect = [0, 0, 400, 100]
+        /* The label is drawn under an origin of [0,200] — absolutely at
+           y ≈ -160 — while the erase after it is drawn at the port's own
+           origin covering y 0…100. The port-local numbers say "covered";
+           the machine says otherwise, and the machine is right. */
+        XCTAssertEqual(
+            NOWMirrorContentPlane.coalesce([shift, label, restore, erase])
+                .count, 4)
+    }
+
     func testProcessSerialParsesOnlyTheTwoPartWireShape() {
         XCTAssertEqual(NOWMirrorContentPlane.serial("0.29360131")?.hi, 0)
         XCTAssertEqual(NOWMirrorContentPlane.serial("0.29360131")?.lo,

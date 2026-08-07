@@ -133,6 +133,17 @@ final class NOWMirrorContentPlane {
     /// Slots whose settled pixels were composed from a world the guest has
     /// since disposed. Cleared when a newer epoch settles for that slot.
     private var deadWorldSlots: Set<String> = []
+    /// Identities whose accumulator hit the cap with no pass boundary to
+    /// compact to, so ops that are still on the guest's screen were
+    /// dropped by this host. Their frames publish `stale`: a marked gap
+    /// is honest, a confident subset is not.
+    private var hollowed: Set<ContentIdentity> = []
+    /// Set by a RENEWAL arm (same window, fresh ring baseline), so the
+    /// first identity to arrive afterwards inherits the pixels the guest
+    /// still has rather than starting from nothing. Cleared once used —
+    /// it describes one arm, not a standing mode. Internal so tests can
+    /// drive a renewal without a listener.
+    var carryForward = false
     /// The structural scene sequence each slot's display last settled
     /// against — reported, never gated on. See ``DisplayEpoch``.
     private var settledAtSequence: [String: Int] = [:]
@@ -174,6 +185,7 @@ final class NOWMirrorContentPlane {
         contributingSources.removeAll()
         sourceLineage.removeAll()
         deadWorldSlots.removeAll()
+        hollowed.removeAll()
         settledAtSequence.removeAll()
         armedAt = nil
     }
@@ -255,6 +267,29 @@ final class NOWMirrorContentPlane {
             armedAt = nil
         }
         if needsTarget || needsRenewal {
+            /* **A RENEWAL IS NOT A NEW WINDOW, and the accumulator must
+               not pretend it is.** Re-arming bumps the guest's
+               `display_epoch`, so the next record carries an identity
+               this host has never seen and starts an EMPTY op list —
+               while the window on the guest still holds every pixel it
+               drew before. The first thing a settled panel draws
+               afterwards is one clock tick, and that single op settled
+               as the whole published display: the interior collapsed to
+               whatever happened to be redrawn in the seconds after a
+               renewal nobody asked for.
+
+               The renewal fires on a 9-minute timer against a 10-minute
+               guest TTL, so this arrives with the machine untouched and
+               looks exactly like the picture decaying on its own. It is
+               also why RE-FRONTING cures it and the timer does not:
+               fronting a window makes the application repaint the whole
+               thing, so the fresh accumulator is immediately complete.
+
+               Carrying the settled ops forward keeps the picture the
+               guest still has. It is only ever done for the SAME window
+               of the same process — a retarget is a different window and
+               inherits nothing. */
+            carryForward = !needsTarget
             prepare(front: front, scene: scene, completion: completion)
         } else {
             drain(scene: scene, completion: completion)
@@ -431,6 +466,8 @@ final class NOWMirrorContentPlane {
         var joined = 0
         var born = 0
         var died = 0
+        var compactedPasses = 0
+        var carried = 0
         evictedSourceCount = 0
         for record in drain.records {
             guard let address = record.portAddress else {
@@ -594,9 +631,11 @@ final class NOWMirrorContentPlane {
                 if !isSame {
                     operations[current] = nil
                     currentDisplay[slot] = identity
+                    inherit(identity, at: slot, carried: &carried)
                 }
             } else {
                 currentDisplay[slot] = identity
+                inherit(identity, at: slot, carried: &carried)
             }
             /* The join (013 slice C). A blitsrc record names the source of
                the bits record immediately after it; any other op between
@@ -630,10 +669,58 @@ final class NOWMirrorContentPlane {
             }
             for op in toAppend { portStates[address, default: PortState()].absorb(op) }
             operations[identity, default: []].append(contentsOf: toAppend)
-            if operations[identity, default: []].count
-                    > Self.operationCapPerWindow {
+            if operations[identity]!.count > Self.operationCapPerWindow {
+                /* **THE CAP TRIMS PASSES, NOT RAW OPS.** A raw
+                   `removeFirst` drops the OLDEST ops, and the oldest ops
+                   are the establishing repaint — the erase, the group
+                   boxes, the static labels. `displayEpoch` advances once
+                   per ARM and not per repaint, so a panel with a live
+                   clock accumulates into ONE identity for as long as it
+                   stays front, and every tick pushed the frame that made
+                   the window a window one op closer to the edge. Michelle
+                   watched Date & Time lose its group boxes, its date
+                   field and half of two labels while touching nothing
+                   (2026-08-07); re-fronting fixed it because that
+                   retargets, and a fresh arm starts a fresh accumulator.
+
+                   Compacting to the last pass boundary costs nothing,
+                   because `lastRepaintPass` is already the only thing
+                   ever PUBLISHED from this list — so everything it cuts
+                   was, by construction, never going to be drawn. It is
+                   idempotent, and it drops far below the cap, so this
+                   runs rarely rather than per record. */
+                let compacted = Self.lastRepaintPass(
+                    operations[identity]!, window: windowSize[identity.window])
+                if compacted.count < operations[identity]!.count {
+                    operations[identity] = compacted
+                    hollowed.remove(identity)
+                    compactedPasses += 1
+                }
+            }
+            if operations[identity]!.count > Self.operationCapPerWindow {
+                /* Still over: the application has drawn 1200 ops inside
+                   ONE pass, which is Date & Time's live clock and every
+                   other window that updates a field in place. Forget
+                   what a later op has already repainted — those pixels
+                   are not on the guest's screen either. */
+                let dense = Self.coalesce(operations[identity]!)
+                if dense.count < operations[identity]!.count {
+                    operations[identity] = dense
+                    hollowed.remove(identity)
+                    compactedPasses += 1
+                }
+            }
+            if operations[identity]!.count > Self.operationCapPerWindow {
+                /* No pass boundary to cut at — the application has drawn
+                   1200 ops without once replacing the whole window, so
+                   ops that ARE still on the machine's screen are about to
+                   leave this host. Dropping them is forced; doing it
+                   quietly is the defect. Mark the slot so the frame
+                   publishes `stale` and the renderer shows a gap instead
+                   of a confident subset, and say so in the sentence. */
                 operations[identity]!.removeFirst(
                     operations[identity]!.count - Self.operationCapPerWindow)
+                hollowed.insert(identity)
             }
             matched += 1
         }
@@ -674,6 +761,7 @@ final class NOWMirrorContentPlane {
                 if let prior = settledDisplay[slot], prior != identity {
                     settledOperations[prior] = nil
                     contributingSources[prior] = nil
+                    hollowed.remove(prior)
                 }
                 settledDisplay[slot] = identity
                 settledOperations[identity] = published
@@ -705,6 +793,26 @@ final class NOWMirrorContentPlane {
         if joined > 0 {
             facts.append("joined \(joined) composite"
                          + "\(joined == 1 ? "" : "s") from offscreen worlds")
+        }
+        if carried > 0 {
+            facts.append("carried \(carried) settled op"
+                         + "\(carried == 1 ? "" : "s") across the re-arm")
+        }
+        if compactedPasses > 0 {
+            facts.append("compacted \(compactedPasses) accumulator"
+                         + "\(compactedPasses == 1 ? "" : "s") at the cap to "
+                         + "the last full repaint pass")
+        }
+        /* A STANDING FACT, not a per-drain one. The drop happens on the
+           record that crosses the cap and its consequence — a window
+           published without drawing it still has — lasts until the
+           application repaints. Reporting it only on the drain that did
+           it is how a subtraction goes quiet. */
+        let hollowNow = settledDisplay.values.filter(hollowed.contains).count
+        if hollowNow > 0 {
+            facts.append("dropped older ops past the cap in \(hollowNow) "
+                         + "window\(hollowNow == 1 ? "" : "s") with no repaint "
+                         + "pass to compact to; marked incomplete")
         }
         if evictedSourceCount > 0 {
             facts.append("evicted \(evictedSourceCount) held source"
@@ -826,6 +934,178 @@ final class NOWMirrorContentPlane {
         if let fg = state.fg { prologue.append(stateOp("fg") { $0.rgb = fg }) }
         if let bg = state.bg { prologue.append(stateOp("bg") { $0.rgb = bg }) }
         return prologue + Array(ops[cut...])
+    }
+
+    /* ── WHAT A CAPPED ACCUMULATOR MAY FORGET ───────────────────────────
+       `lastRepaintPass` cuts at a pass boundary, and an application that
+       never repaints its whole window has none — Date & Time opens one
+       pass and then updates its clock field forever inside it. So the
+       cap has a second, weaker question to ask: which of these ops is
+       not on the guest's screen ANY MORE?
+
+       An op a LATER opaque op fully repaints is gone from the machine
+       too, so dropping it costs the picture nothing. The clock's own
+       previous 600 seconds are exactly that: each tick erases the same
+       field rect and draws into it, so tick N is covered by tick N+1's
+       erase, while the group boxes and labels outside that rect are
+       covered by nothing and stay.
+
+       Every judgement here is deliberately CONSERVATIVE in one
+       direction: bounds are over-estimated and coverage is
+       under-claimed, so the rule keeps an op it could have dropped
+       rather than dropping one still on screen. Failing to drop enough
+       falls through to the honest marker; dropping too much would put a
+       hole in a window and say nothing. */
+
+    /// Drop ops a later opaque op provably repaints. Order-preserving,
+    /// and never drops what it cannot measure.
+    static func coalesce(_ ops: [DisplayOp]) -> [DisplayOp] {
+        var origin = [0, 0]
+        var clip: [Int]?
+        var bounds: [[Int]?] = []
+        var covers: [[Int]?] = []
+        bounds.reserveCapacity(ops.count)
+        covers.reserveCapacity(ops.count)
+        for op in ops {
+            guard op.op != "state" else {
+                bounds.append(nil)
+                covers.append(nil)
+                if op.kind == "origin", let o = op.origin, o.count == 2 {
+                    origin = o
+                }
+                if op.kind == "clip", let r = op.rect, r.count == 4 {
+                    clip = r
+                }
+                continue
+            }
+            let box = Self.absolute(Self.inkBox(op), origin: origin)
+            bounds.append(box)
+            /* A COVERER IS CLIPPED TOO. The clip is what the guest
+               actually allowed onto the screen, so an erase reaching
+               past it repaints only the intersection — claiming the
+               whole rect would drop ops the clip protected. */
+            covers.append(Self.replacesPixels(op)
+                ? Self.intersect(box, Self.absolute(clip, origin: origin))
+                : nil)
+        }
+
+        var keep = [Bool](repeating: true, count: ops.count)
+        var stack: [[Int]] = []
+        for index in stride(from: ops.count - 1, through: 0, by: -1) {
+            guard ops[index].op != "state" else { continue }
+            if let box = bounds[index],
+               stack.contains(where: { Self.contains($0, box) }) {
+                keep[index] = false
+            }
+            guard let cover = covers[index], !stack.contains(cover) else {
+                continue
+            }
+            /* A repeating update writes the SAME rect every time, so
+               de-duplication alone keeps this tiny. The bound is a floor
+               under a pathological stream, and it evicts the smallest
+               cover rather than the newest — a big cover is worth more. */
+            stack.append(cover)
+            if stack.count > 64,
+               let smallest = stack.indices.min(by: {
+                   Self.area(stack[$0]) < Self.area(stack[$1])
+               }) {
+                stack.remove(at: smallest)
+            }
+        }
+
+        /* A run of state ops with nothing surviving between them is one
+           state op: only the last of each kind is ever read. Without
+           this, an application that re-states its colours every tick
+           would keep the accumulator growing after all its drawing had
+           been coalesced away. */
+        var out: [DisplayOp] = []
+        out.reserveCapacity(ops.count)
+        for (index, op) in ops.enumerated() where keep[index] {
+            if op.op == "state", let kind = op.kind,
+               let last = out.last, last.op == "state", last.kind == kind {
+                out[out.count - 1] = op
+                continue
+            }
+            out.append(op)
+        }
+        return out
+    }
+
+    /// A generous box around what an op could possibly ink, in the port's
+    /// own coordinates. Nil when this host cannot bound it — a polygon or
+    /// a region carries no geometry here, so neither is ever dropped.
+    static func inkBox(_ op: DisplayOp) -> [Int]? {
+        func box(_ r: [Int]?) -> [Int]? { r?.count == 4 ? r : nil }
+        switch op.op {
+        case "bits": return box(op.dst)
+        case "rect", "rrect", "oval", "arc": return box(op.rect)
+        case "line":
+            guard let a = op.from, a.count == 2,
+                  let b = op.to, b.count == 2 else { return nil }
+            // The pen is at least one pixel wide and can be wider; this
+            // host is not told, so allow a generous margin.
+            return [min(a[0], b[0]) - 2, min(a[1], b[1]) - 2,
+                    max(a[0], b[0]) + 2, max(a[1], b[1]) + 2]
+        case "text":
+            guard let pen = op.pen, pen.count == 2 else { return nil }
+            /* No metrics reach this host, so the box is bounded by the
+               point size: no glyph in a classic bitmap face is wider
+               than its size, and none ascends more than twice it. An
+               over-wide box only ever means "kept". */
+            let size = max(op.size ?? 12, 1)
+            let count = max(op.fullLen ?? op.len ?? op.text?.count ?? 0, 0)
+            return [pen[0] - size, pen[1] - 2 * size,
+                    pen[0] + (count + 1) * size, pen[1] + size]
+        default: return nil
+        }
+    }
+
+    /// Paint, erase and fill replace what they cover; frame and invert do
+    /// not, and neither does any shape that does not fill its own
+    /// bounding rectangle. A `bits` replaces its destination.
+    static func replacesPixels(_ op: DisplayOp) -> Bool {
+        switch op.op {
+        case "bits": return op.dst?.count == 4
+        case "rect": return op.verb == 1 || op.verb == 2 || op.verb == 4
+        default: return false
+        }
+    }
+
+    private static func absolute(_ box: [Int]?, origin: [Int]) -> [Int]? {
+        guard let box, box.count == 4, origin.count == 2 else { return nil }
+        return [box[0] - origin[0], box[1] - origin[1],
+                box[2] - origin[0], box[3] - origin[1]]
+    }
+
+    private static func intersect(_ lhs: [Int]?, _ rhs: [Int]?) -> [Int]? {
+        guard let lhs else { return nil }
+        guard let rhs else { return lhs }
+        let box = [max(lhs[0], rhs[0]), max(lhs[1], rhs[1]),
+                   min(lhs[2], rhs[2]), min(lhs[3], rhs[3])]
+        return box[0] < box[2] && box[1] < box[3] ? box : nil
+    }
+
+    private static func contains(_ outer: [Int], _ inner: [Int]) -> Bool {
+        outer[0] <= inner[0] && outer[1] <= inner[1]
+            && outer[2] >= inner[2] && outer[3] >= inner[3]
+    }
+
+    private static func area(_ box: [Int]) -> Int {
+        max(box[2] - box[0], 0) * max(box[3] - box[1], 0)
+    }
+
+    /// Seed a freshly-opened accumulator with the pixels the guest still
+    /// has, when this identity opened because of a RENEWAL rather than
+    /// because the window changed. Consumes the flag: exactly one
+    /// identity inherits per arm.
+    private func inherit(_ identity: ContentIdentity, at slot: String,
+                         carried: inout Int) {
+        guard carryForward else { return }
+        carryForward = false
+        guard let prior = settledDisplay[slot], prior != identity,
+              let ops = settledOperations[prior], !ops.isEmpty else { return }
+        operations[identity] = ops
+        carried += ops.count
     }
 
     /// Append to a held source's ops, opening its bucket if needed and
@@ -993,7 +1273,8 @@ final class NOWMirrorContentPlane {
                 generation: identity.generation,
                 epoch: identity.displayEpoch,
                 sceneSequence: settledAtSequence[slot] ?? attached.seq,
-                stale: newer || deadWorldSlots.contains(slot))
+                stale: newer || deadWorldSlots.contains(slot)
+                    || hollowed.contains(identity))
             /* P2 FROM P3's OWN EVIDENCE, and it is attached HERE rather
                than in the replay on purpose. A repeated-cell grid — hit
                rects, cell identity, which one is selected — is semantic
