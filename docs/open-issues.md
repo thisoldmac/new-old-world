@@ -126,28 +126,45 @@ Fixed by separating two decisions that had been one flag: `isDialog`
 answers "does this window have a title bar" and is rightly keyed on the
 title; the FACE follows the window's owner, so `kind == 2` decides it.
 
-**It is a measured constant, which is not an answer.**
-`GetThemeBrushAsColor(kThemeBrushDialogBackgroundActive, 32, true, &rgb)`
-is CarbonLib 1.0 (`Appearance.h:2826`) and the guest already calls it
-(`census_module.c:615`). What is missing is a field to put the answer
-in — the ask is `meta.theme.dialogBackground`, and until it exists the
-number is right for the shipped Platinum theme and silently wrong for
-any other. That is the same shape as `ppat` 16 on the desktop.
+**It was a measured constant, which is not an answer. CLOSED 2026-08-07,
+`claude/019-theme-colours`: the machine is asked now.** `meta.theme`
+carries `dialogBackground`, `alertBackground`, `documentBackground`,
+`highlight` and the screen `depth` they were asked at, read from the live
+Appearance Manager once per scene. The renderer resolves them through
+`SceneTheme`, which publishes per-colour provenance so a fallback can
+never be mistaken for an answer. Rule, line and measurements:
+[docs/theme-colours.md](theme-colours.md).
+
+The machine agreed with the count exactly — `#DDDDDD` — so nothing moved
+in the dialog face. **One other colour did not agree.**
+`Platinum.highlight` was `0xCCCCFF`, extracted offline from the theme
+FILE; `LMGetHiliteRGB` on the running guest answers `0x97A1DE` and that
+guest's own screendump agrees at 2399 of 3240 sampled pixels. It had
+never been seen on a screen: `AccentRampTests` says in its own words that
+no capture in the corpus carries a selected row. That is the same defect
+this entry names, found in a colour nobody suspected.
 
 Watched in the same run as the depth work above: Date & Time's face is
 0xDDDDDD in the guest screendump and in the render beside it, against
 white in the 018 render of the same three applications
 (`019-depth-and-face/00-before-render-018.png`).
 
-- **`kind == 2` is the Dialog Manager's answer and does not cover every
-  panel.** The Appearance control panel is windowKind 2000 — application
-  defined — so it keeps a white face. Its walk is retracted anyway, so it
-  renders as the unavailable hatch and the face does not show; a
-  window-kind-2000 panel whose walk succeeded would show it.
-- **Untitled alerts changed colour too**, from `g1` (0xEEEEEE, which came
-  from a CSS port and had no measurement behind it) to the same dialog
-  brush. Argued from the brush's name, not measured; no committed capture
-  of an alert has a screendump beside it.
+- **`kind == 2` did not cover every panel. FIXED.** windowKind 2000 —
+  application defined, which the Appearance control panel is — was
+  hardcoded to literal white, so no theme could ever move it. It now
+  takes `kThemeBrushDocumentWindowBackground`, which is the brush that
+  actually names that face.
+- **Untitled alerts: MEASURED, and the value is settled.** A real Finder
+  alert was raised on the guest
+  (`docs/raising-the-unknown-creator-modal.md`), screendumped, and its
+  interior counted: **40372 of 45974 px at 0xDDDDDD**. So `g1`
+  (0xEEEEEE) was wrong and the argued-from-the-name change was right.
+  **What a measurement cannot settle is WHICH BRUSH**: alert and dialog
+  both evaluate to 0xDDDDDD under Platinum, so no capture distinguishes
+  them until the theme differs or the guest reports the WDEF variant.
+  The renderer uses this side's existing untitled-kind-2 alert verdict
+  and says so at the point of use; see docs/theme-colours.md, "What a
+  measurement could NOT settle".
 
 ## BROKEN: the first watch of the INTEGRATED render, and what it shows (2026-08-07, `claude/018-integration`)
 
