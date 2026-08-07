@@ -1178,6 +1178,45 @@ static void console_model_dispatch(const char *input)
                      now_mirror_plane_name((MirrorPlane)mi), value);
             console_model_append(line);
         }
+        /* P1's own evidence, at the console because the wire has it and
+           command parity is not a preference (docs/command-parity.md).
+           `passes` first, deliberately: it is what separates "the filter
+           never ran while armed" from "it ran and captured nothing", and
+           a person looking at an empty anchor table needs that line
+           before any of the others. */
+        if (facts.anchors.present || facts.anchors.count > 0) {
+            int ai;
+
+            snprintf(line, sizeof line,
+                     "Anchors  passes %lu  publishes %lu (%lu changed, "
+                     "%lu cadence)  scans %lu",
+                     facts.anchors.event_passes,
+                     facts.anchors.full_publishes,
+                     facts.anchors.change_publishes,
+                     facts.anchors.cadence_publishes,
+                     facts.anchors.slot_scans);
+            console_model_append(line);
+            snprintf(line, sizeof line,
+                     "  slots %lu captured, %d readable%s",
+                     facts.anchors.count, facts.anchors.slot_count,
+                     facts.anchors.present ? ""
+                         : " (resident predates the counters)");
+            console_model_append(line);
+            for (ai = 0; ai < facts.anchors.slot_count; ++ai) {
+                const MirrorAnchorSlotFact *sl = &facts.anchors.slots[ai];
+                snprintf(line, sizeof line,
+                         "  %2d %-31.31s a5 0x%08lx  %lu ticks ago",
+                         sl->slot, sl->name[0] != '\0' ? sl->name : "?",
+                         sl->a5, sl->age_ticks);
+                console_model_append(line);
+            }
+            if (facts.anchors.slots_omitted > 0) {
+                snprintf(line, sizeof line,
+                         "  %d further slot(s) omitted",
+                         facts.anchors.slots_omitted);
+                console_model_append(line);
+            }
+        }
         console_model_append("Policy belongs to the host; this view is read-only.");
         return;
     }
