@@ -460,12 +460,18 @@ INIT loads, guest asked for itself with no plane armed. The guest's own
 answering and not another lane's VM — the rule from AGENTS.md's metal
 section applies to the emulator for the same reason.
 
+**Read the counters as a record of the window before the reader
+arrived.** They are cumulative and the reading is taken at first contact,
+so a counter still at zero when the host connects is a counter that
+stayed at zero for the whole boot — which is the resting window, since
+connecting is itself what starts P6.
+
 | | reading | what it proves |
 |---|---|---|
 | `gnePasses` | **1174** | the filter ran, continuously, across the whole window |
-| `livenessTicks` | **0** | the Time Manager vehicle never ticked once |
+| `livenessTicks` | **0** | the Time Manager vehicle never ticked once before contact |
 | `transportProbe` | **0** (untried) | MacTCP's `.IPP` was never opened |
-| `restState` | **9** | `kNowPeekRestGNEFilter | kNowPeekRestContentBlock` — the event hook and the block, nothing else |
+| `restState` | **9** | `kNowPeekRestGNEFilter` + `kNowPeekRestContentBlock` — the event hook and the block, nothing else |
 | `requested` / `active` | **0 / 0** | every plane inactive; every anchor and content counter zero |
 
 **The denominator is the whole point.** A resting resident and an
@@ -476,9 +482,19 @@ column of zeroes is a resident *proven to be running* and *proven to be
 doing nothing*, which is a different and much stronger claim than a
 screenful of zeroes.
 
-The control is the previous build of the same code: over the same
-~57-second window it would have opened the driver on the first pass and
+The control is the same code one commit earlier: over the same
+~57-second boot it opened the driver on the first pass and would have
 accumulated roughly eleven liveness ticks. It accumulated none.
+
+**And the same word distinguishes rest from use, which is what makes it
+worth having.** A later run of the same resident, read after the
+application had connected and armed a plane, returned `restState` **47** —
+`GNEFilter | LivenessTicking | Transport | ContentBlock | ActPatched`.
+Same binary, same table word, two honest answers. The `ActPatched` bit in
+that reading is the durable one: it was set by an arm that had already
+been released by the time of the read (`requested` was back to 0), which
+is exactly the fact a person is owed and exactly the fact no capability
+bit or arm bit could have carried.
 
 What this does **not** measure is the cost of the filter body itself in
 microseconds. That needs a 33 MHz 68030 and `NOW_METAL`, and it is
