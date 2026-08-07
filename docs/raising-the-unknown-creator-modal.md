@@ -65,6 +65,21 @@ behind the Finder's back. Two ways to settle that:
   `update` the desktop folder first, for a driver that wants the icon
   actually drawn. A cold reboot does the same and is never in doubt.
 
+## The evidence behind this page
+
+Out of git, in the `now-mirror-assets` store:
+`~/Lab/Assets/now-mirror-assets/slice3-2026-08-07/` — both boots'
+screendumps and every scene taken beside them. Manifest:
+`~/Lab/Assets/now-mirror-assets/slice3-2026-08-07.sha256`, itself sha256
+`0b2789b1906a368439b1fe18b00c8d1ca82f0f5a5d8913c3006e34fdcff49537`.
+
+Rig: guest build `59dce8562ad4 2026-08-07T01:29:48Z` asserted by
+`--expect-build auto` on every capture; base image
+`~/Lab/Assets/os91-qemu/os91-runner.qcow2` cloned by
+`scripts/spin-up-ppc`; QEMU mac99, Mac OS 9.1, 800×600, run dir
+`/private/tmp/nowvm-s18s3b`, anchor 1740, wire 5290. **Emulator-verified,
+never metal.**
+
 ## Dismissing it
 
 `ditemact` / `mirror_drive --gesture dialogItem` is the product path and
