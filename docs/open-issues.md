@@ -80,7 +80,7 @@ sweep B did not run it and said so; sweep C could not, because
 replying. That transport defect is fixed, and the B side is taken.
 
 The signature the provenance-ladder work was aimed at — a rectangle
-losing its ink and getting it back — **does not occur in any of the four
+losing its ink and getting it back — **does not occur in any of the five
 traces**, on a tree that has since gained the ladder, `displayEpoch`
 coherent pairs, the content plane's renewal carry-forward,
 `contentPlane`/`controlsState` not-attempted-vs-empty,
@@ -95,9 +95,20 @@ different defect in a different half of the system.
 | `finder-open-b` | 514 | **4** | 25 | 25 | **0** | 0 / 0 / 0 | yes |
 | `view-list-b` | 515 | **4** | 67 | 27 | **40** | 0 / 0 / 0 | yes |
 | `reselect-b` (×4; every `select` REFUSED "already front", so this is a second idle trace) | 854 | **17** | 45 | 45 | **0** | 0 / 0 / 0 | yes |
+| `idle-renewal-b` (**700 s** of provoking nothing, across the interval the content plane's 9-minute renewal must fall in) | 6,857 | **17** | 383 | 383 | **0** | 0 / 0 / 0 | yes, all 6,857 frames |
 
 `snapshotsMissed` is quoted beside every count deliberately: **a flicker
 count is a floor, never a total.**
+
+**The idle watch across the renewal boundary is the one that had never
+been completed.** The decay lane fixed the renewal's picture-from-nothing
+at unit level and said so. Live, across eleven idle minutes: no hatch, no
+content dropout, and `Macintosh HD`'s `displayTotal` went 845 → **1,140**
+at +200.9 s and **held** — the op count only ever grew, which is the
+carry-forward's prediction. The limit is stated rather than glossed: the
+plane's `armedAt` is host-internal and reaches no projection, so that
+epoch bump is a *candidate* renewal and not an identified one. The claim
+earned is the weaker one, and it is still the one nobody had made.
 
 Three A-side findings reproduce unchanged:
 
