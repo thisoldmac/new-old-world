@@ -156,9 +156,16 @@ void now_mirror_anchor_read(const NowPeekTable *table,
         fact->a5 = a5;
         fact->window_list = wl;
         fact->stamp_ticks = s1;
-        /* Unsigned subtraction, so a TickCount that wrapped past the
-           stamp yields the true elapsed count rather than a huge one -
-           the same arithmetic peek_oracle.c does, and free. */
-        fact->age_ticks = now_ticks - s1;
+        /* Unsigned subtraction so a TickCount that wrapped past the
+           stamp yields the true elapsed count rather than a huge one.
+           Done in NowPeekU32 and not in `unsigned long`, which is the
+           whole point: TickCount and the stamp are both 32-bit, and
+           `unsigned long` is 32 bits on the guest and 64 on the machine
+           that runs this file's test. Subtracting in the wider type
+           gives four billion instead of thirty-one, and only on the
+           side that has a test - so the bug would read as a broken test
+           rather than as a wrong number on a Macintosh. */
+        fact->age_ticks = (unsigned long)(NowPeekU32)((NowPeekU32)now_ticks
+                                                      - (NowPeekU32)s1);
     }
 }

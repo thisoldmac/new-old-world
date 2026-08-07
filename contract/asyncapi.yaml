@@ -5443,6 +5443,131 @@ components:
                   reason:
                     type: string
                     description: Present only when the guest can prove degradation.
+                  anchors:
+                    type: object
+                    description: >
+                      The structure plane's hot path, reporting on itself.
+
+                      A scene says `ax_oracle_not_found` about a process
+                      when no anchor slot claims that process's
+                      partition, and that one word covers three
+                      different defects: the resident never ran inside
+                      that process, or it ran and the partition read
+                      disagreed, or there was no partition to read. The
+                      resident has counted every one of these words
+                      since the plane shipped and no face could say
+                      them, so on 2026-08-07 two careful runs on the
+                      same commit reported ten windows and one window
+                      and neither could be advanced.
+
+                      Absent from a guest that predates this field, and
+                      absent from one whose resident is too short to
+                      carry the counters — `present` distinguishes those
+                      two, because a resident with slots and without
+                      counters is a build that exists.
+
+                      Observation only. Nothing here is policy, nothing
+                      here is settable, and a host that cannot read it
+                      loses a diagnosis and no capability.
+                    required: [present, count, slots]
+                    properties:
+                      present:
+                        type: boolean
+                        description: >
+                          Whether the resident is long enough to carry
+                          the six counters below. False means they are
+                          reported as zero because they do not exist,
+                          not because nothing happened.
+                      eventPasses:
+                        type: integer
+                        description: >
+                          Armed passes of the resident's event filter, in
+                          ANY process's context. The load-bearing
+                          number, and first for that reason: zero here
+                          with the plane armed means the filter never
+                          ran while armed, which is a different fault
+                          from running and capturing nothing.
+                      slotScans:
+                        type: integer
+                        description: >
+                          Times the filter missed its A5 fast path and
+                          scanned the slot table — in practice, a count
+                          of context changes it noticed.
+                      fullPublishes:
+                        type: integer
+                      changePublishes:
+                        type: integer
+                        description: Publishes where the captured world differed.
+                      cadencePublishes:
+                        type: integer
+                        description: Publishes made only because the slot had aged.
+                      lastPublishTicks:
+                        type: integer
+                      nowTicks:
+                        type: integer
+                        description: >
+                          The guest's TickCount at the moment the whole
+                          of this object was read. Present so that
+                          `lastPublishTicks` and every slot's
+                          `stampTicks` can be aged against the same
+                          instant — the object is ONE read of the shared
+                          table, which is what makes it usable against a
+                          plane that flaps.
+                      count:
+                        type: integer
+                        description: >
+                          Slots the resident says it maintains. Reported
+                          beside `slots` rather than derived from it,
+                          because the two disagreeing is itself a fact.
+                      slotsOmitted:
+                        type: integer
+                        description: >
+                          Occupied slots that did not fit this reply. A
+                          short list that says it is whole is the error
+                          this contract exists to prevent, so the count
+                          travels with the list.
+                      slots:
+                        type: array
+                        description: >
+                          The OCCUPIED slots only. An empty array with a
+                          nonzero `eventPasses` is a real answer about
+                          the machine — the filter ran and anchored
+                          nothing — and is not the same as an absent
+                          field.
+
+                          No length is stated here on purpose. The bound
+                          is the resident's own `kNowPeekMaxAnchors` in
+                          contract/peek_table.h, which is where both
+                          sides read it; a second number here would be a
+                          second place to be wrong, and a smaller one
+                          would refuse a longer resident's honest
+                          answer.
+                        items:
+                          type: object
+                          required: [slot, a5, stampTicks]
+                          properties:
+                            slot:
+                              type: integer
+                            name:
+                              type: string
+                              description: >
+                                The application name the resident read
+                                out of the captured context's own low
+                                memory. THE decisive field: A5 and the
+                                stack base only bound an address space
+                                and a partition can be recycled, so this
+                                is the one value that says which
+                                application the filter was inside. Empty
+                                when the resident's anchor format
+                                predates the name.
+                            a5:
+                              type: integer
+                            windowList:
+                              type: integer
+                            stampTicks:
+                              type: integer
+                            ageTicks:
+                              type: integer
               planes:
                 type: array
                 description: >
