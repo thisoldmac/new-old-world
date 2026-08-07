@@ -43,10 +43,37 @@ def fake_image(path: str, body: bytes) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "wb") as fh:
         fh.write(body)
-    # Kill any cached hash for a path we are about to reuse with new bytes.
-    for extra in (path + ".sha256",):
+    # Kill any cached answer for a path we are about to reuse with new bytes.
+    for extra in (path + ".sha256", path + ".volclean.json"):
         if os.path.exists(extra):
             os.remove(extra)
+
+
+def hfs_image(path: str, clean: bool) -> None:
+    """A raw disk with an Apple Partition Map and ONE HFS volume.
+
+    Small and synthetic on purpose: the only thing under test is whether
+    the tools read the volume's own "unmounted" attribute, and that is one
+    bit at one offset. A 600 MB qcow2 in a unit test would prove the same
+    thing far more slowly and could not be MUTATED — and a guard nobody
+    has watched fail proves nothing (AGENTS.md > Testing).
+    """
+    import struct
+    block, start = 512, 64                    # partition begins at block 64
+    disk = bytearray(block * 256)
+    disk[0:2] = b"ER"                                        # driver map
+    entry = bytearray(block)
+    entry[0:2] = b"PM"
+    struct.pack_into(">I", entry, 8, start)                  # pmPyPartStart
+    entry[16:16 + 8] = b"MacintoshHD"[:8]
+    entry[48:48 + 9] = b"Apple_HFS"
+    disk[block:block * 2] = entry
+    mdb = bytearray(block)
+    mdb[0:2] = b"BD"                                         # plain HFS
+    struct.pack_into(">H", mdb, 10, 0x0100 if clean else 0x0000)   # drAtrb
+    off = start * block + 1024
+    disk[off:off + block] = mdb
+    fake_image(path, bytes(disk))
 
 
 def sha_of(path: str) -> str:
@@ -65,8 +92,13 @@ class Repo:
         os.makedirs(os.path.join(self.path, "ext", "src"))
         os.makedirs(os.path.join(self.path, "tools"))
         os.makedirs(os.path.join(self.path, "contract"))
+        # volclean.py rides along because image-provenance imports it to
+        # ask the volume itself. A throwaway repo without it would make
+        # every volume read "could not be asked", which is a PASSING
+        # answer for the dirty case and would have hidden the very gap
+        # these tests were added for.
         for tool in ("ext-bake-gate", "image-provenance",
-                     "receipts-merge-driver"):
+                     "receipts-merge-driver", "volclean.py"):
             shutil.copy(os.path.join(ROOT, "tools", tool),
                         os.path.join(self.path, "tools", tool))
             os.chmod(os.path.join(self.path, "tools", tool), 0o755)
@@ -380,6 +412,70 @@ def _(tmp):
              runner, "--repo", r.path, env={"NOW_STAGE_IMAGE": stage})
     must("PLAIN BASE" in out.stdout, out.stdout)
     must("not the shared oracle" in out.stdout, out.stdout)
+
+
+# --------------------------------------------------------------------------
+# THE GAP THE GATE HAD, and it lasted nineteen days. tools/ext-bake-gate
+# requires `volumeClean` in a receipt — and a receipt describes the BAKED
+# oracle. scripts/spin-up-ppc's BASE defaults to os91-runner.qcow2, which
+# is never baked and so had no receipt to require anything of. It was
+# dirty from 19 July to 7 August; every spin-up clone in that window
+# booted into a Disk First Aid modal, and the only reason anyone found out
+# is that a person saw the dialog and asked.
+#
+# The gate and the script named DIFFERENT FILES. So the check moved to
+# where the file is, not where the receipt is.
+# --------------------------------------------------------------------------
+
+@case("provenance measures a DIRTY volume in a base no receipt covers")
+def _(tmp):
+    r = Repo(tmp, "vc")
+    stage = os.path.join(tmp, "stage.qcow2")
+    runner = os.path.join(tmp, "os91-runner.qcow2")
+    fake_image(stage, b"THE ORACLE")
+    hfs_image(runner, clean=False)
+    r.receipts([receipt(r.digest(), stage, sha_of(stage))])
+    out = sh(sys.executable, os.path.join(r.path, "tools/image-provenance"),
+             runner, "--repo", r.path, env={"NOW_STAGE_IMAGE": stage})
+    # It is still a plain base and still needs no receipt — the point is
+    # that "no receipt expected" must not read as "nothing to say".
+    must("PLAIN BASE" in out.stdout, out.stdout)
+    must("VOLUME       DIRTY" in out.stdout,
+         f"a dirty unbaked base must SAY so:\n{out.stdout}")
+    must("Disk First Aid" in out.stdout, out.stdout)
+    must("shutdown-guest.py" in out.stdout,
+         f"the warning must name the cure:\n{out.stdout}")
+    # A WARNING, NOT A REFUSAL — following tools/ext-bake-gate's own
+    # reasoning about the oracle: whether a shared file is clean is not
+    # in this run's power to fix, and stranding a contributor over a
+    # slower boot is a worse failure than the boot.
+    must(out.returncode == 0,
+         f"a dirty base must not stop the run (exit {out.returncode})")
+
+
+@case("provenance calls a clean volume clean, and an unreadable one neither")
+def _(tmp):
+    r = Repo(tmp, "vc2")
+    stage = os.path.join(tmp, "stage.qcow2")
+    good = os.path.join(tmp, "good.qcow2")
+    fake_image(stage, b"THE ORACLE")
+    hfs_image(good, clean=True)
+    r.receipts([receipt(r.digest(), stage, sha_of(stage))])
+    ok = sh(sys.executable, os.path.join(r.path, "tools/image-provenance"),
+            good, "--repo", r.path, env={"NOW_STAGE_IMAGE": stage})
+    must("VOLUME       clean" in ok.stdout, ok.stdout)
+    must("DIRTY" not in ok.stdout, f"clean must not read as dirty:\n{ok.stdout}")
+
+    # And the third state stays its own. An image whose volume cannot be
+    # read is NOT clean — folding the two together is how a check adjacent
+    # to the question comes to read like an answer to it, which is the
+    # mistake volclean.py was written to end.
+    mystery = os.path.join(tmp, "mystery.qcow2")
+    fake_image(mystery, b"NOT A DISK AT ALL")
+    huh = sh(sys.executable, os.path.join(r.path, "tools/image-provenance"),
+             mystery, "--repo", r.path, env={"NOW_STAGE_IMAGE": stage})
+    must("could not be asked" in huh.stdout, huh.stdout)
+    must("not the same as clean" in huh.stdout, huh.stdout)
 
 
 @case("provenance rig table names the guest's own account of the resident")

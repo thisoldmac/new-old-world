@@ -91,6 +91,46 @@ def sha256(path: str) -> str:
     return digest
 
 
+# --- and the OTHER question about the bytes, asked of the same file ------
+# THE GATE AND THE SCRIPT NAMED DIFFERENT FILES, and that is the whole
+# gap. tools/ext-bake-gate requires `volumeClean` in a receipt, and a
+# receipt describes the BAKED oracle (now-mirror-stage.qcow2). But
+# scripts/spin-up-ppc's BASE defaults to os91-runner.qcow2, which is
+# never baked and so has no receipt to require anything of. On 2026-08-07
+# that file had been dirty since 19 July: nineteen days in which every
+# spin-up clone paid a Disk First Aid pass at boot, invisibly, because
+# the one tool that asks the volume was only ever pointed at the other
+# image. A receipt is a memory of a bake; this asks the file.
+#
+# Cached like the hash and for the same reason — a 600 MB qcow2 has to be
+# converted to raw to be read, and this runs on every spin-up. Keyed on
+# (size, mtime_ns), so a replaced file gets a fresh answer rather than a
+# confident stale one.
+def volume_state(path: str) -> dict:
+    st = os.stat(path)
+    key = f"{st.st_size}:{st.st_mtime_ns}"
+    cache = path + ".volclean.json"
+    try:
+        with open(cache) as fh:
+            got = json.load(fh)
+        if got.get("key") == key:
+            return got["verdict"]
+    except Exception:
+        pass
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    try:
+        import volclean
+        got = volclean.verdict(path)
+    except Exception as exc:                     # noqa: BLE001 — never fatal
+        return {"state": "unknown", "volumes": [], "error": str(exc)}
+    try:
+        with open(cache, "w") as fh:
+            json.dump({"key": key, "verdict": got}, fh)
+    except Exception:
+        pass
+    return got
+
+
 def repo_root(start: str | None = None) -> str | None:
     try:
         return subprocess.run(
@@ -160,6 +200,11 @@ def describe(image: str, root: str | None, staged: dict | None = None,
     out["imageCtime"] = time.strftime("%Y-%m-%dT%H:%M:%S%z",
                                       time.localtime(st.st_ctime))
     out["imageSha256"] = sha256(image)
+    # Measured from the file, not read out of a receipt — and reported
+    # for EVERY image, including the plain unbaked bases that no receipt
+    # covers. That is the case this was added for.
+    if os.environ.get("NOW_SKIP_VOLUME_CHECK") != "1":
+        out["volumeMeasured"] = volume_state(image)
 
     side = sidecar(image)
     if side:
@@ -256,6 +301,34 @@ def render(p: dict) -> str:
                                    "not the shared oracle"))
     L.append(f"  VERDICT      {VERDICT_LINE[p['verdict']]}")
 
+    # A WARNING AND NOT A REFUSAL, deliberately, and the same reasoning
+    # tools/ext-bake-gate already applies to the shared oracle: whether a
+    # shared base image is clean is not a property of the run about to
+    # start and is not in this caller's power to fix in the moment.
+    # Refusing would strand a contributor for a reason they cannot act on
+    # — and it is not even an error, only a slower boot. So say it,
+    # loudly, and say what to do; do not stop the run.
+    vm = p.get("volumeMeasured")
+    if vm and vm.get("state") == "dirty":
+        L.append("  VOLUME       DIRTY — the HFS volume in this image is still "
+                 "marked mounted.")
+        L.append("               Every clone of it, including this run's, "
+                 "boots through a")
+        L.append("               Disk First Aid pass. Results stay valid; the "
+                 "boot is slower")
+        L.append("               and a person watching sees a repair dialog "
+                 "nobody asked for.")
+        L.append("               Cure: boot this image, let the check finish, "
+                 "and shut the")
+        L.append("               guest down with tools/shutdown-guest.py — "
+                 "never a QMP quit.")
+    elif vm and vm.get("state") == "unknown":
+        L.append(f"  VOLUME       could not be asked ({vm.get('error')}) — "
+                 "not the same as clean.")
+    elif vm:
+        L.append("  VOLUME       clean (HFS unmounted bit set; no Disk First "
+                 "Aid at boot)")
+
     m = p.get("matchedReceipt")
     if m:
         L.append(f"  receipt      baked {m.get('at')} on {m.get('branch')}"
@@ -332,6 +405,17 @@ def markdown(p: dict) -> str:
              f"{p.get('imageMtime','?')}, installed at this path "
              f"{p.get('imageCtime','?')})"),
             ("Provenance", VERDICT_LINE[p["verdict"]])]
+    vm = p.get("volumeMeasured") or {}
+    if vm.get("state") == "dirty":
+        rows.append(("Volume", "**DIRTY — measured from the file, not a "
+                     "receipt.** The HFS volume is still marked mounted, so "
+                     "this run's clone booted through a Disk First Aid pass."))
+    elif vm.get("state") == "clean":
+        rows.append(("Volume", "clean (measured from the file: HFS unmounted "
+                     "bit set, no Disk First Aid at boot)"))
+    elif vm:
+        rows.append(("Volume", f"**could not be asked** — {vm.get('error')}. "
+                     "Not the same as clean."))
     m = p.get("matchedReceipt")
     if m:
         rows.append(("Receipt",

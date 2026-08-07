@@ -17,9 +17,16 @@ check reads. So ask the volume.
         offset 10, bit 8 = the same meaning.
 
 Usage: volclean.py <image.qcow2 | image.raw> ...
+       volclean.py --json <image> ...
 Exit 0 only if EVERY image checked is cleanly unmounted.
+
+`verdict()` is the same answer without the printing, so a caller that
+wants to SAY something about an image rather than gate on it can ask the
+same question. tools/image-provenance is that caller: the bake gate asks
+this of the image it is about to install, and until 2026-08-07 nothing
+asked it of the image `scripts/spin-up-ppc` actually clones.
 """
-import struct, subprocess, sys, os, tempfile
+import json, struct, subprocess, sys, os, tempfile
 
 UNMOUNTED = 0x100
 
@@ -89,32 +96,60 @@ def volume_state(raw, offset):  # noqa
     return None, False
 
 
-def check(path):
-    raw, tmp = raw_of(path)
+def verdict(path):
+    """{'state': 'clean'|'dirty'|'unknown', 'volumes': [...], 'error': str?}
+
+    THE THIRD STATE IS NOT A ROUNDING OF THE SECOND. 'unknown' means the
+    question could not be put — a running VM holds a write lock and
+    `qemu-img convert` refuses, an image is a format this cannot read,
+    the tool is not installed. A caller that folds 'unknown' into 'dirty'
+    manufactures a false alarm; one that folds it into 'clean' repeats
+    the mistake this whole file exists to stop. Say which you got.
+    """
     try:
-        found = False
-        ok = True
+        raw, tmp = raw_of(path)
+    except Exception as exc:
+        return {"state": "unknown", "volumes": [], "error": str(exc)}
+    try:
+        vols = []
         for name, ptype, off in partitions(raw):
             if "HFS" not in ptype:
                 continue
             kind, clean = volume_state(raw, off)
             if kind is None:
                 continue
-            found = True
-            ok = ok and clean
-            print(f"  {os.path.basename(path)}  [{name}] {kind}: "
-                  f"{'CLEAN' if clean else 'DIRTY — will run Disk First Aid'}")
-        if not found:
-            print(f"  {os.path.basename(path)}: no HFS volume found")
-            return False
-        return ok
+            vols.append({"name": name, "kind": kind, "clean": clean})
+        if not vols:
+            return {"state": "unknown", "volumes": [],
+                    "error": "no HFS volume found"}
+        return {"state": "clean" if all(v["clean"] for v in vols) else "dirty",
+                "volumes": vols}
+    except Exception as exc:
+        return {"state": "unknown", "volumes": [], "error": str(exc)}
     finally:
         if tmp:
             os.unlink(tmp)
 
 
+def check(path):
+    got = verdict(path)
+    base = os.path.basename(path)
+    for v in got["volumes"]:
+        print(f"  {base}  [{v['name']}] {v['kind']}: "
+              f"{'CLEAN' if v['clean'] else 'DIRTY — will run Disk First Aid'}")
+    if got["state"] == "unknown":
+        print(f"  {base}: COULD NOT ASK — {got.get('error')}")
+    return got["state"] == "clean"
+
+
 if __name__ == "__main__":
+    args = [a for a in sys.argv[1:] if a != "--json"]
+    if "--json" in sys.argv[1:]:
+        out = {p: verdict(p) for p in args}
+        json.dump(out, sys.stdout, indent=2)
+        print()
+        sys.exit(0 if all(v["state"] == "clean" for v in out.values()) else 1)
     good = True
-    for p in sys.argv[1:]:
+    for p in args:
         good = check(p) and good
     sys.exit(0 if good else 1)
