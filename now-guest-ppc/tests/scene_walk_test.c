@@ -118,6 +118,9 @@ static void build_window(AxFixture *f, int kind, unsigned long controls,
     axfix_put16(f, kWin + 18, port_left);     /* portRect.left (local) */
     axfix_put16(f, kWin + 108, kind);         /* windowKind */
     axfix_put8(f, kWin + 110, 1);             /* visible */
+    /* Both regions on one handle: this fixture is not about the frame,
+       and axwalk_test is where the two are pinned apart. */
+    axfix_put32(f, kWin + 114, kContRgnH);    /* structure region */
     axfix_put32(f, kWin + 118, kContRgnH);    /* content region handle */
     axfix_put32(f, kWin + 134, kWinTitleH);   /* title handle */
     axfix_put32(f, kWin + 140, controls);     /* control list */

@@ -112,7 +112,8 @@ enum {
        control can have the same thickness. */
     kNowScrollBarThickness = 16,
 
-    /* THE TITLE BAR THE IR'S TWO RECTANGLES ARE RELATED BY.
+    /* THE TITLE BAR THE IR'S TWO RECTANGLES ARE RELATED BY, AND THE ONE
+     * PLACE ANY WINDOW RECT IS DERIVED.
      *
      * IR v1's `windows[].rect` is a BOX: the content region grown upward
      * by this much. Mirror's own producer constructs it that way, and its
@@ -125,14 +126,37 @@ enum {
      * region instead would be more honest about this Macintosh and would
      * break the arithmetic on the other side, which is the wrong trade:
      * the number's job is to let a consumer recover the content origin
-     * exactly.
+     * exactly. `windows[].rect` is a JOIN KEY between two sides that
+     * decompose it the same way, and a join key's value is that both
+     * sides spell it identically.
      *
      * Measured on a live Finder, 2026-08-02, before this existed: NOW
      * emitted the content region here, so a real hardware click at the
      * point a renderer computes from the document landed twenty pixels
      * below the scroll arrow and the machine did not move. Clicking
      * twenty pixels higher moved it (-4 to 60). The document was wrong
-     * and both of its own gates agreed with it. */
+     * and both of its own gates agreed with it.
+     *
+     * WHAT CHANGED 2026-08-07. That convention was applied on ONE of the
+     * three branches that add a window. A bound foreign process went
+     * through it; an unbound one published peek_read's STRUCTURE region
+     * raw, and NOW's own windows published Carbon's structure region -
+     * so one field carried three meanings in one document, and which one
+     * a row held depended on whether a bind had happened. That is the
+     * surface answering one question three ways, and a consumer had no
+     * way to ask which it was holding.
+     *
+     * Both foreign readers now return BOTH regions from the machine
+     * (peek_read.h, axwalk.h), so every branch adds a window as
+     * `content grown up by this constant` and there is one derivation.
+     * The constant is still an approximation of a real title bar - they
+     * are not one height across window kinds and the Appearance Manager
+     * draws them procedurally - but it is now an approximation of ONE
+     * thing in ONE place, checkable against the structure region the
+     * same walk read, instead of a third answer competing with two
+     * measurements. Publishing the true region under `rect` needs the
+     * consumer to change with it and an IR version to carry it; it is
+     * not something one side may do alone. */
     kNowSceneIRTitleBarHeight = 20,
 
     /* The walk's caps. Each is a BOUND on a scene, not a belief about a

@@ -4752,6 +4752,20 @@ components:
         belongs to the person at the machine and is passed through
         untouched.
 
+        AND THE MACHINE IS ASKED WHETHER IT IS RIGHT. A required
+        coordinate is not a checked one. A caller holding a scene a
+        second out of date supplies the number in perfect good faith
+        and names one menu while describing a press on another, so the
+        guest reads the target application's own menu bar and refuses
+        `menu-title-moved` where the two disagree - before anything is
+        armed, because an armed press answers whoever makes it. Where
+        that bar cannot be read there is no second opinion to have: the
+        press is armed where the caller said, and the reply's Identity
+        row says so rather than implying a check that did not happen.
+        Three answers, three sentences: checked, unchecked, and - for
+        NOW's own menu bar, which is dispatched through its event loop
+        and arms no press at all - not applicable.
+
         An ok reply means the application's MenuSelect returned this
         item. What its command handler then did is the caller's to
         verify against this Mac's own state.
@@ -4775,7 +4789,8 @@ components:
             description: >
               The x of that menu's title in the menu bar. Required,
               not derived: without it there is no way to tell this
-              act's press from the user's.
+              act's press from the user's. Checked against the menu
+              bar itself wherever that bar can be read.
           serialHi:
             type: integer
             description: The application. Omit for the frontmost.

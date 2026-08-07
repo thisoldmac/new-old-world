@@ -149,6 +149,171 @@ complete` beside `knowledge: unknown` is the walk correctly saying it
 finished and still does not know. The number gets better by making it
 know, not by making it stop saying so.
 
+## FIXED: one menu act checked its identity, the other did not, and neither checked it against the machine (2026-08-07, `claude/019-one-answer-a`)
+
+Plan 019 slice 2, F7. `now_menu_act` requires `titleLeft` — the x of the
+named menu's title, which is where the act arms its press — and the
+requirement was earned: the resident's `MenuSelect` patch answers a press
+at ONE point, and an act surface bounded by anything weaker rode a real
+user's press **18 times in 20**. `mirror_drive menuItem` was read as
+skipping that check.
+
+**It does not skip it, and that was the smaller half of the finding.**
+Both paths end at the same guest verb with a `titleLeft`; `mirror_drive`
+derives it from the published scene's `menu.left` rather than asking its
+caller for it. What neither path had is anything checking that the
+coordinate belonged to the menu the same call NAMED — a required
+coordinate is not a checked one — and two ways a careful caller supplies
+a wrong one:
+
+- **A stale scene.** The caller read `left` a second ago; the front
+  application changed its menu bar since.
+- **A missing reading.** `SceneBuilder.normalizeMenus` defaults an
+  unreported `left` to **0**, which arms at x=4 — the Apple menu. A
+  `mirror_drive menuItem` on such a menu arms on the Apple menu's title
+  and answers whoever presses it next. That is the 18/20 hijack
+  reintroduced by a `?? 0`.
+
+The probe that reads the item before pressing it (2026-08-07, the
+disabled-`File > Print` defect) already walks past the menu row carrying
+its `left`, so the machine is now asked. Where the bar is readable its own
+`left` is authoritative and a disagreement refuses `menu-title-moved`
+BEFORE anything is armed; where it is not, there is no second opinion to
+have, the press is armed where the caller said, and the reply's
+`Identity` row says `unchecked` rather than implying a check happened.
+Three answers, three sentences — the third being NOW's own menu bar,
+which is dispatched through its event loop and arms no press at all.
+
+**Driven on an emulated Power Mac G4** (OS 9.1, `spin-up-ppc` clone,
+guest build `097462c4d7f1`), Finder in front, its menu bar read from a
+scene (`File` id 257 at x 38, `Special` at 218):
+
+- `menuact 257/1 titleLeft=38` → `dispatched`, `Identity: checked`, and
+  **`untitled folder 1` appeared in the Desktop Folder** — the act landed
+  where it was named, witnessed by the machine's own file list rather
+  than by the reply.
+- `menuact 257/1 titleLeft=218` (the Special menu's x) → **refused**
+  `menu-title-moved`.
+- `menuact 257/1 titleLeft=0` (what the `?? 0` produces) → **refused**.
+
+The decision is a pure function in its own translation unit
+(`act_menu_identity.c`) because the state it refuses — a menu bar saying
+one x while a caller says another — is not one a real Macintosh can be
+asked to hold still in. Four mutations watched failing there, including
+the one with no symptom: dropping the `title_left_known` guard makes an
+unread menu bar report a claimed 0 as **checked**.
+
+**And the host's `?? 0` is gone too** (ruled the same day): the default
+is removed rather than backstopped. `Scene.Menu.left` and
+`MirrorObject.Menu.left` are optional all the way to the act, so no layer
+can substitute without seeing the absence, and `now_mirror_snapshot`
+omits the key rather than reporting 0 — that being the row a caller reads
+to fill in `titleLeft`. Two guards at two layers is not redundancy here;
+it is defence at the layer that has the information, and the host is the
+side that knows it never learned the number.
+
+One answer everywhere, because a menu bar is a positional surface: **no
+position means not drawn, not hit tested, not pressed.** Giving the
+renderer a fallback the act path refused would have put the two back into
+disagreement, which is the same defect one layer up — and it was already
+there in visible form: an unplaced menu arriving at 0 took the span from
+0 to the next title, so a click at **x = 4** in the mirror, on the Apple
+menu's own drawn title, resolved to the unplaced menu instead. The same
+four pixels the act armed at.
+
+Four mutations watched failing, including the one that makes the other
+three unreachable — restoring `?? 0` in `normalizeMenus`, after which
+nothing downstream can refuse an absence it never receives.
+
+**Not driven**, and it cannot be from this tree: no producer here omits
+`left`, so the absence is unreachable from a live guest. Tested only.
+
+## FIXED: two window readers, two rectangles, and `windows[].rect` meant three things at once (2026-08-07, `claude/019-one-answer-a`)
+
+Plan 019 slice 2, F2. `peek_read.c` returned the **structure** region and
+`axwalk.c` the **content** region, from separate offset tables with
+opposite failure policies. The 2026-08-02 fix made the bind authoritative
+after the two disagreed about whether the Finder had any windows at all;
+it did not merge the readers, so `windows[].rect` went on having three
+derivations **inside the scene plane alone** — content grown up by a
+constant (bound foreign), peek_read's structure region raw (unbound
+foreign), and Carbon's structure region (self). One field, three
+meanings, and which one a row held depended on whether a bind had
+happened. No consumer could ask.
+
+Both readers now return **both regions**, each through one
+region-reading helper so neither can be validated more loosely than the
+other by accident, and a window missing either is refused whole — the
+policy each reader already applied to the region it did read. Every
+branch then derives `rect` the one way IR v1 defines it.
+
+**And the constant survives, deliberately, which is the opposite of what
+the audit recommended.** `kNowSceneIRTitleBarHeight` is not a
+measurement of any window's frame; it is a **convention the consumer
+decomposes the same way** — MirrorKit's hit tester finds the content
+origin at `rect.t + titleBarHeight` — and IR v1's key set is frozen. A
+producer that started sending the true structure region under `rect`
+would be sending something no consumer can take apart, alone, without an
+IR version to carry it. What the constant is no longer is a *substitute
+for reading the region*: both are read from the machine, and the
+approximation is now checkable against the measurement instead of
+competing with it.
+
+Watched on the emulator, before and after, same machine and window: NOW's
+own window reported `{l:22, t:48, r:779, b:555}` (the true structure
+region) and now reports `{l:28, t:50, r:772, b:548}`. Its content top is
+70, so the old rect decomposed to 68 — **the render was two pixels out on
+every control in that window** — and the new one decomposes exactly.
+
+**Owed, and deliberately not added here as its own key.** A caller
+holding a rectangle still cannot ask which one it is, and
+`claude/018-drag-targeting` is adding per-item origin provenance
+(`drawn` / `saved` / `unknown`) for the same class of question. **Two
+provenance schemes for two kinds of rectangle is the defect this slice
+exists to close**, so this is written as a requirement for that
+vocabulary rather than shipped as a competing field. What a caller has to
+be able to tell apart, in the order it costs them:
+
+1. **Which REGION this rectangle is.** Three answers, and they are not
+   interchangeable: the **box** (content grown by the IR title-bar
+   constant — what `windows[].rect` carries, decomposable by the
+   consumer), the **content** region (what `elements`/`axtree` publish
+   under `bounds`, and what a control's local rect is relative to), and
+   the **structure** region (the frame a person sees; read from the
+   machine now but published nowhere). Today the same window under two
+   planes gives two rectangles about twenty pixels apart with nothing
+   saying so, and a caller that joined them would be quietly wrong.
+2. **Whether the region was READ or DERIVED.** The box is arithmetic over
+   a measurement; the content and structure regions are measurements. A
+   caller comparing a rectangle against pixels needs to know it is
+   holding an approximation before it calls a two-pixel difference a
+   rendering bug — which is the mistake this entry's own measurement
+   would have produced.
+3. **Which READER answered.** `axwalk` (bound, from the target's own
+   context), `peek_read` (unbound fallback), or Carbon (self). They agree
+   now; they have disagreed, and when they disagree again the first
+   question will be which one spoke.
+
+(1) is the one a caller cannot work around. (2) and (3) are what makes a
+future disagreement diagnosable rather than another 2026-08-02. Note that
+this is a property of a rectangle, not of an item — the drag lane's
+`placed` is about a POSITION being invented, this is about a rectangle
+MEANING something different — so the shared vocabulary probably wants one
+enum with both concerns spelled out rather than one word reused.
+
+## UNVERIFIED-TO-BROKEN: the anchor lease lapses between two calls, watched (2026-08-07)
+
+Plan 019 slice 3 predicted this; it was seen while driving slice 2. On
+one connection, `cycle` followed by two identical `axsnap` calls:
+
+    axsnap  ->  bind: ok,       hasWindows: true,  hasMenus: true
+    axsnap  ->  bind: no-plane, hasWindows: false, hasMenus: false
+
+Seconds apart, nothing else touching the machine. A caller that observes
+once is told a bound process is unreachable, intermittently — which is
+the worst shape of false negative, because it teaches the caller to retry
+blindly. Recorded here rather than chased; it is slice 3's.
+
 ## BROKEN: the first watch of the INTEGRATED render, and what it shows (2026-08-07, `claude/018-integration`)
 
 **Status: list view remains UNWATCHED, not disproved** — third pass

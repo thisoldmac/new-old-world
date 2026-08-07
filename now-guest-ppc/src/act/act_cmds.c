@@ -998,12 +998,14 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
     long                menu = 0;
     long                item = 0;
     long                title_left = 0;
+    long                arm_left = 0;
     long                hi = 0;
     long                lo = 0;
     int                 h;
     int                 v;
     int                 visibility;
     NowActMenuProbe     probe;
+    NowActMenuIdentity  identity = kNowActMenuIdentityUnchecked;
 
     memset(&probe, 0, sizeof probe);
     now_act_begin_command();
@@ -1028,6 +1030,10 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
                     "so the point has to be one we can state");
         return;
     }
+    /* Until the machine is asked, the caller's number is all there is.
+       The probe below replaces it with the menu bar's own where it can
+       read one, and refuses where the two disagree. */
+    arm_left = title_left;
     if (!arg_int(request_json, "serialHi", &hi)
         || !arg_int(request_json, "serialLo", &lo)) {
         reply_error(out, cap, id, "bad-request",
@@ -1054,6 +1060,13 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
         row_addf(&rows, "Item", "%ld", item);
         row_add(&rows, "Dispatch", "dispatched");
         row_add(&rows, "Mechanism", "the application's main-loop menu queue");
+        /* No press is armed on this path - the command goes to NOW's own
+           event loop - so there is no coordinate to be anyone's and
+           nothing for the identity check to be about. Stated rather than
+           omitted: a missing Identity row would read as unchecked. */
+        row_add(&rows, "Identity",
+                "not applicable: NOW's own menu command, dispatched "
+                "through its event loop rather than by arming a press");
         now_log(kLogInfo, "act", "#%ld menuact %ld/%ld queued for main loop",
                 id, menu, item);
         reply_rows(out, cap, id, "menuact", &rows);
@@ -1082,6 +1095,23 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
                         now_act_menu_probe_message(&probe));
             return;
         }
+        /* AND THE SAME WALK ANSWERS THE IDENTITY CHECK. The coordinate
+           IS the safety property here, so it is checked against the
+           machine rather than trusted - act_menu_probe.h states the two
+           ways a well-behaved caller's number goes wrong. Before the
+           plane is opened and before anything is armed: a press that
+           does not belong to the menu it names must never reach the
+           cell, because once armed it will answer somebody's press. */
+        identity = now_act_menu_identity(&probe, title_left, &arm_left);
+        if (identity == kNowActMenuIdentityMoved) {
+            reply_error(out, cap, id, "menu-title-moved",
+                        "titleLeft is not where this application's own "
+                        "menu bar puts that menu's title, so arming there "
+                        "would answer a press that is not this act's - "
+                        "read the menu bar again and send the x it "
+                        "reports now");
+            return;
+        }
     }
     st = now_act_ready();
     if (st != kNowActOk) {
@@ -1104,7 +1134,7 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
     }
 
     /* The menu bar is 20 px tall; aim at its middle. */
-    h = (int)(title_left + 4);
+    h = (int)(arm_left + 4);
     v = 10;
     cell->op = visibility ? kNowPeekActOpVisibility : kNowPeekActOpMenu;
     cell->menu_id = (NowPeekI32)menu;
@@ -1161,6 +1191,17 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
     row_add(&rows, "Mechanism", visibility
         ? "the Process Manager's keyboard equivalent in the target context"
         : "the application's own MenuSelect");
+    /* WHICH OF THE TWO THIS CALLER GOT, said out loud on the success
+       path as well as the refusing one. Where two paths must remain,
+       publish which is which: `checked` and `unchecked` are different
+       safety claims, and a reply that named neither left a driving agent
+       unable to tell a verified press from a trusted one. The visibility
+       items are the Process Manager's and go nowhere near a menu bar
+       press, so they have no identity to check rather than an unchecked
+       one. */
+    if (!visibility) {
+        row_add(&rows, "Identity", now_act_menu_identity_note(identity));
+    }
     /* WHAT WOULD PROVE IT, said out loud. A caller reading
        `dispatched-but-unconfirmed` cannot otherwise tell "not yet" from
        "never, because nothing here can answer", and treating the second

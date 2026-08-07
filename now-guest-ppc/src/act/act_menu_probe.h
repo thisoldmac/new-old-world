@@ -51,7 +51,58 @@ typedef struct {
     int item_marked;               /* this item carries one already */
     unsigned int item_count;       /* items walked, for the refusal text */
     char title[kNowAxTitleMax + 1];
+    /* WHERE THIS MENU'S TITLE ACTUALLY SITS, out of the target's own
+       MenuList - the same `NowAxMenu.left` the scene's menu bar is built
+       from. It is here because the walk that reads the item passes the
+       menu row on its way, so the identity check costs nothing extra;
+       see now_act_menu_identity below for what it is for. Meaningful
+       only where title_left_known is set: a bar that could not be read
+       says nothing about where anything sits, and a zero here would
+       read as "the leftmost menu". */
+    short title_left;
+    unsigned char title_left_known;
 } NowActMenuProbe;
+
+/* WHETHER THE PRESS THE CALLER DESCRIBED IS THE MENU THEY NAMED.
+ *
+ * `menuact`'s identity check is a COORDINATE (see the header comment on
+ * now_act_run_menuact): the resident's MenuSelect patch answers only a
+ * press at the armed point, so that a press anywhere else - the person's
+ * at the machine - passes through untouched. That makes the coordinate
+ * the whole of the safety property, and until 2026-08-07 nothing checked
+ * that it belonged to the menu the same call named. Two ways it could be
+ * wrong, both reachable without anyone doing anything careless:
+ *
+ *   - a STALE scene. The caller read `left` a second ago; the front
+ *     application changed its menu bar since, and the number now points
+ *     at a different title.
+ *   - a MISSING reading. `SceneBuilder.normalizeMenus` defaults an
+ *     unreported `left` to 0, and 0 arms at x=4 - which is the Apple
+ *     menu. A `mirror_drive menuItem` on such a menu would arm on the
+ *     Apple menu's title and answer the next press there, whoever made
+ *     it. That is the measured 18/20 hijack, reintroduced by a default.
+ *
+ * So the machine is asked. Where the bar was readable its own `left` is
+ * authoritative and a disagreement is refused; where it was not, there
+ * is no second opinion to have and the act proceeds on the caller's
+ * number - saying so, because an unverifiable check that reports itself
+ * as a check is worse than no check at all.
+ */
+typedef enum {
+    kNowActMenuIdentityUnchecked = 0, /* the bar could not be read */
+    kNowActMenuIdentityChecked = 1,   /* the machine agrees; arm there */
+    kNowActMenuIdentityMoved = 2      /* it disagrees: refuse */
+} NowActMenuIdentity;
+
+/* `claimed` is the caller's titleLeft. On any answer but Moved,
+   *arm_left (when non-NULL) receives the x to arm at - the machine's own
+   where it has one, the caller's where it does not. */
+NowActMenuIdentity now_act_menu_identity(const NowActMenuProbe *probe,
+                                         long claimed, long *arm_left);
+
+/* The one sentence a reply carries about the check, for every answer
+   including the ones that do not refuse. Never NULL. */
+const char *now_act_menu_identity_note(NowActMenuIdentity identity);
 
 /* Reads `item` of menu `menu` in `psn`'s menu bar. Never fails: an
    unreadable machine comes back as kNowActMenuProbeUnknown with the rest

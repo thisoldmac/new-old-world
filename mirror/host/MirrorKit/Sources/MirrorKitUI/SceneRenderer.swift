@@ -78,13 +78,13 @@ public struct SceneRenderer {
     }
 
     private static func nextOrdinaryMenuLeft(
-        _ menus: [MirrorKit.Scene.Menu], after index: Int
+        _ menus: [MirrorKit.Scene.Menu], after index: Int, from left: Int
     ) -> Int {
-        let current = menus[index]
-        return menus.dropFirst(index + 1)
-            .filter { $0.id != ObjectResolver.applicationMenuID
-                && $0.left > current.left }
-            .map(\.left).min() ?? (current.left + 60)
+        menus.dropFirst(index + 1)
+            .filter { $0.id != ObjectResolver.applicationMenuID }
+            .compactMap(\.left)
+            .filter { $0 > left }
+            .min() ?? (left + 60)
     }
 
     public func draw(in ctx: GraphicsContext, size: CGSize) {
@@ -450,14 +450,20 @@ public struct SceneRenderer {
                Manager's, not ours - which is precisely why it must not
                be drawn from this loop, where left is the position. */
             if menu.id == ObjectResolver.applicationMenuID { continue }
+            /* A menu bar is a positional surface, so a menu the producer
+               never placed cannot be drawn in it. Skipped rather than
+               drawn at 0, which is where an absent `left` used to land -
+               on top of the Apple menu, and hit-testable there. */
+            guard let left = menu.left else { continue }
             if i == openMenu {
-                let next = Self.nextOrdinaryMenuLeft(menus, after: i)
-                ctx.fill(Path(CGRect(x: CGFloat(menu.left) - 6, y: 0,
-                                     width: CGFloat(next - menu.left), height: 19)),
+                let next = Self.nextOrdinaryMenuLeft(menus, after: i,
+                                                     from: left)
+                ctx.fill(Path(CGRect(x: CGFloat(left) - 6, y: 0,
+                                     width: CGFloat(next - left), height: 19)),
                          with: .color(Platinum.selection))
             }
             drawMenuTitle(ctx, menu.apple ? "\u{F8FF}" : menu.title,
-                          apple: menu.apple, left: CGFloat(menu.left),
+                          apple: menu.apple, left: CGFloat(left),
                           highlighted: i == openMenu)
         }
         if Self.shouldSynthesizeAppleMenu(menus) {
@@ -545,7 +551,12 @@ public struct SceneRenderer {
                                      screenWidth: Int = 0) -> CGRect {
         let maxLen = menu.items.map(\.title.count).max() ?? 8
         let width = CGFloat(min(max(120, maxLen * 8 + 56), 320))
-        var x = CGFloat(menu.left) - 6
+        /* UNREACHABLE WITH A nil LEFT, and stated rather than defaulted:
+           an unplaced menu is not drawn in the strip above and the hit
+           tester returns no index for one, so nothing can open its
+           dropdown. The zero is a total function's tail, not a position
+           anything is placed by. */
+        var x = CGFloat(menu.left ?? 0) - 6
         if menu.id == ObjectResolver.applicationMenuID, screenWidth > 0 {
             /* The Menu Manager reports no useful left edge for the
                right-aligned application menu. Its title geometry comes

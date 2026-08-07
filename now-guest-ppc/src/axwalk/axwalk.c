@@ -29,6 +29,7 @@ enum {
     kNowAxWinVisible = 110,
     kNowAxWinPortTop = 16,        /* portRect.top, LOCAL coordinates */
     kNowAxWinPortLeft = 18,
+    kNowAxWinStrucRgn = 114,      /* structure region; see axwalk.h */
     kNowAxWinContRgn = 118,       /* content region; see axwalk.h */
     kNowAxWinTitleHandle = 134,
     kNowAxWinControlList = 140,
@@ -201,14 +202,48 @@ static int read_pstr_handle(const NowAxMemory *memory, unsigned long handle,
     return kNowAxOk;
 }
 
+/* One region handle -> its bounding box, with the two checks that make a
+   foreign read of one safe: the handle must dereference inside the zones
+   this walk may read, and the rgnSize word must be at least a header's
+   worth or the thing is not a Region at all. Both regions of a window go
+   through this, so neither can be validated more loosely than the other
+   by accident. */
+static int read_region_bbox(const NowAxMemory *memory,
+                            unsigned long region_handle, short *out)
+{
+    unsigned char region[kNowAxRegionBytes];
+    unsigned long region_data;
+    int           rc;
+
+    if (region_handle == 0) {
+        return kNowAxInvalid;         /* a window always has both regions */
+    }
+    rc = now_ax_read_handle(memory, region_handle, &region_data);
+    if (rc != kNowAxOk) {
+        return rc;
+    }
+    rc = now_ax_read_bytes(memory, region_data, region, sizeof(region));
+    if (rc != kNowAxOk) {
+        return rc;
+    }
+    /* rgnSize below the header size means this is not a Region. */
+    if (be16(region) < kNowAxRegionBytes) {
+        return kNowAxInvalid;
+    }
+    out[0] = bes16(region + 2);
+    out[1] = bes16(region + 4);
+    out[2] = bes16(region + 6);
+    out[3] = bes16(region + 8);
+    return kNowAxOk;
+}
+
 int now_ax_read_window(const NowAxMemory *memory, unsigned long address,
                        NowAxWindow *out)
 {
     unsigned char window[kNowAxWindowBytes];
-    unsigned char region[kNowAxRegionBytes];
-    unsigned long region_handle;
-    unsigned long region_data;
     unsigned long title_handle;
+    short         cont[4];
+    short         struc[4];
     short         port_top;
     short         port_left;
     int           rc;
@@ -244,28 +279,29 @@ int now_ax_read_window(const NowAxMemory *memory, unsigned long address,
 
     port_top = bes16(window + kNowAxWinPortTop);
     port_left = bes16(window + kNowAxWinPortLeft);
-    region_handle = be32(window + kNowAxWinContRgn);
-    if (region_handle == 0) {
-        return kNowAxInvalid;         /* a window always has a content rgn */
-    }
-    rc = now_ax_read_handle(memory, region_handle, &region_data);
+    rc = read_region_bbox(memory, be32(window + kNowAxWinContRgn), cont);
     if (rc != kNowAxOk) {
         return rc;
     }
-    rc = now_ax_read_bytes(memory, region_data, region, sizeof(region));
-    if (rc != kNowAxOk) {
-        return rc;
-    }
-    /* rgnSize below the header size means this is not a Region. */
-    if (be16(region) < kNowAxRegionBytes) {
-        return kNowAxInvalid;
-    }
-    out->top = bes16(region + 2);
-    out->left = bes16(region + 4);
-    out->bottom = bes16(region + 6);
-    out->right = bes16(region + 8);
+    out->top = cont[0];
+    out->left = cont[1];
+    out->bottom = cont[2];
+    out->right = cont[3];
     out->origin_top = (short)(out->top - port_top);
     out->origin_left = (short)(out->left - port_left);
+    /* AND THE FRAME A PERSON SEES, out of the same record. Refused
+       exactly as an unreadable content region is - a window reported
+       with one region under the other's name is the failure this merge
+       exists to end, and it would be invisible: a plausible rectangle
+       about twenty pixels out. */
+    rc = read_region_bbox(memory, be32(window + kNowAxWinStrucRgn), struc);
+    if (rc != kNowAxOk) {
+        return rc;
+    }
+    out->struc_top = struc[0];
+    out->struc_left = struc[1];
+    out->struc_bottom = struc[2];
+    out->struc_right = struc[3];
     return kNowAxOk;
 }
 

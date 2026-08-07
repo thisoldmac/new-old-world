@@ -153,6 +153,7 @@ add_application(now-guest-ppc
     src/act/act_client.c
     src/act/act_cmds.c
     src/act/act_menu_probe.c
+    src/act/act_menu_identity.c
     ../now-guest-shared/src/now_act_guard.c
     # The one-act-at-a-time latch. Shared and natively tested for the
     # same reason the guard is: it is the thing standing in for a
