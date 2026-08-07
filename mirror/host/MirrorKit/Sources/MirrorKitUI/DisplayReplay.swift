@@ -868,14 +868,16 @@ public enum DisplayReplay {
     /// Charcoal from its own outlines with Apple's `hdmx` advances; where
     /// it cannot (a ppem with no `hdmx` row) `FontBook.nearest` rounds and
     /// says which strike it gave.
+    ///
+    /// The family preference list itself now lives in
+    /// ``StrikeChoice/preferredFamilies(forID:)`` and this is derived
+    /// from it, so the honesty declaration and the pixels cannot
+    /// disagree about which face answered an id. Which one did, and
+    /// whether that makes the run's width the machine's or ours, is
+    /// FontSubstitution.swift's subject.
     static func strike(font: Int, size: Int) -> BitmapFont? {
-        let wanted = size > 0 ? size : 12
-        switch font {
-        case 0:
-            return FontBook.nearest(face: "charcoal", size: wanted)
-                ?? FontBook.nearest(face: "chicago", size: wanted)
-        default:
-            return FontBook.nearest(face: "geneva", size: wanted)
-        }
+        let choice = StrikeChoice.choice(font: font, size: size)
+        guard let servedSize = choice.servedSize else { return nil }
+        return FontBook.font("\(choice.servedFamily)-\(servedSize)")
     }
 }

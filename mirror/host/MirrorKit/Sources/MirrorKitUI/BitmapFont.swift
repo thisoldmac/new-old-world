@@ -201,14 +201,38 @@ public enum FontBook {
     /// every size the corpus has ever seen the system font drawn at. A
     /// request outside that range still rounds, and rounds small.
     public static func nearest(face: String, size: Int) -> BitmapFont? {
-        if let exact = font("\(face)-\(size)") { return exact }
-        guard let sizes = bundledSizes[face], !sizes.isEmpty else {
+        guard let pick = nearestSize(face: face, size: size) else {
             return nil
         }
-        let pick = sizes.min {
-            (abs($0 - size), $0) < (abs($1 - size), $1)
-        } ?? 12
         return font("\(face)-\(pick)")
+    }
+
+    /// WHICH SIZE `nearest` will answer with, without loading a strike.
+    ///
+    /// Split out so that the honesty report
+    /// (``FontSubstitution``) can say what a run will be drawn at on a
+    /// desk with no asset pack, and — the load-bearing half — so that it
+    /// says it by asking the rounding rule rather than by carrying a
+    /// second copy of it. A report that rounds differently from the
+    /// renderer describes a picture nobody is looking at.
+    /// It asks the DISK first and the table second, in that order,
+    /// because that is what `nearest` did before this split and a face
+    /// the table has never heard of may still be on disk. And it checks
+    /// that the size it picked out of the table actually LOADS before
+    /// answering: `bundledSizes` is a hand-maintained table and a desk
+    /// whose pack predates a face still has the row for it, so a report
+    /// trusting the table alone would name a strike the renderer then
+    /// failed to find — the report and the pixels disagreeing, which is
+    /// the whole thing this split exists to prevent.
+    public static func nearestSize(face: String, size: Int) -> Int? {
+        if font("\(face)-\(size)") != nil { return size }
+        guard let sizes = bundledSizes[face], !sizes.isEmpty,
+              let pick = sizes.min(by: { (abs($0 - size), $0)
+                                         < (abs($1 - size), $1) }),
+              font("\(face)-\(pick)") != nil else {
+            return nil
+        }
+        return pick
     }
 
     /// The system font at 12 — menus, window titles, buttons, group-box
