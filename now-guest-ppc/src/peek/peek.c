@@ -364,6 +364,7 @@ void now_peek_publish_endpoint(unsigned long host_ipv4, unsigned short port)
     NowPeekTable *table = raw_table();
     NowPeekU32 now = (NowPeekU32)TickCount();
     char name[64];
+    char sysver[kNowIdentityVersionCap];
 
     if (table == NULL || !endpoint_region_ready(table)
         || !maintain_writer(table, now)) {
@@ -378,10 +379,28 @@ void now_peek_publish_endpoint(unsigned long host_ipv4, unsigned short port)
     table->endpoint.host_port = (NowPeekU32)port;
     set_pascal(table->endpoint.guest_name,
                sizeof table->endpoint.guest_name, name);
-    /* Literal, and it is literal in send_hello() too - one string in two
-       places is exactly the drift this project has paid for, so if that
-       one ever becomes computed this must read the same source. */
-    set_pascal(table->endpoint_os, sizeof table->endpoint_os, "9");
+    /* THE CONDITION THE OLD COMMENT SET HAS COME TRUE. This was the
+       literal "9", beside a note saying that if send_hello()'s matching
+       literal ever became computed, this must read the same source. On
+       2026-08-07 it did - hello.os is gestaltSystemVersion now - so this
+       reads now_system_version() and the two are one source again.
+
+       This is not tidiness, and leaving it would not have been a smaller
+       version of the same thing. The resident's own hello fills its `os`
+       from this field (ext/src/now_liveness_net.c :: build_hello), and
+       the host associates a resident channel with its application by
+       FINGERPRINTING name and OS together (Session.swift ::
+       machineFingerprint). An application saying "9.1.0" beside a
+       resident still saying "9" is two different machines as far as that
+       fingerprint is concerned - the channel would have gone on
+       connecting and silently vouched for nobody, which is the failure
+       the guest_name line above is already worded against.
+
+       A version computed in one place and hardcoded in another is
+       strictly worse than both being hardcoded: they can now disagree,
+       and nothing says which is right. */
+    now_system_version(sysver, sizeof sysver);
+    set_pascal(table->endpoint_os, sizeof table->endpoint_os, sysver);
     table->endpoint_length = (NowPeekU16)sizeof table->endpoint;
     table->endpoint_format = kNowPeekLivenessFormatV2;
     table->endpoint.endpoint_epoch += 1;      /* commit, and LAST */
