@@ -957,7 +957,28 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
        nothing, because the patch answers with the part we named and
        refuses any control but this one. */
     st = now_act_await_fired(&g_snap);
-    if (st != kNowActOk) {
+    /* PART 0 IS NOT WAITING FOR THAT, and reporting it as a failure was
+     * measured wrong on the emulator, 2026-08-07: the Appearance control
+     * panel's tab strip went from tab 1 to tab 3 to tab 4, watched in a
+     * screendump, while every one of those three requests answered
+     * `act-not-taken - armed, and the application never called
+     * TrackControl`. The message was literally true and the verdict was
+     * a lie.
+     *
+     * An Appearance-era tab in a dialog is handled by the Appearance
+     * Manager's own click path, not by the `TrackControl` trap, so no
+     * patch is ever consulted. What the plane actually did - and what
+     * this verb's part 0 asks for - is POST A REAL CLICK at a point
+     * inside a control this Mac revalidated, and then let the
+     * application do whatever it does with one. Whether that worked is
+     * answered by the control's own re-read below, not by a trap that
+     * was never called.
+     *
+     * So part 0 reports what happened rather than whether a patch fired,
+     * and says which of the two it was in its own row. Every other part
+     * keeps the old contract exactly: naming a part code IS a request
+     * for the patch to answer, and one that never fired did not do it. */
+    if (st != kNowActOk && part != 0) {
         reply_registered_error(
             out, cap, id, "act-not-taken",
             "armed, and the application never called TrackControl");
@@ -968,10 +989,18 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
     rows_reset(&rows);
     row_add(&rows, "Element", ref);
     row_addf(&rows, "Part", "%ld", part);
-    row_add(&rows, "Dispatch", "dispatched");
-    row_add(&rows, "Mechanism",
-            part == 0 ? "the application's own tracking, unanswered"
-                      : "the application's own TrackControl");
+    row_add(&rows, "Dispatch", part == 0 ? "click posted" : "dispatched");
+    if (part == 0) {
+        row_add(&rows, "Mechanism",
+                st == kNowActOk
+                    ? "a real click at the point; the application's own "
+                      "TrackControl then ran unanswered"
+                    : "a real click at the point; this application does not "
+                      "route it through TrackControl at all, so no patch "
+                      "was consulted");
+    } else {
+        row_add(&rows, "Mechanism", "the application's own TrackControl");
+    }
     if (has_point) {
         char point[64];
 
@@ -990,6 +1019,13 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
     now_observe_resolve_element(ref, 0, &after);
     if (after.verdict == kNowObsOk) {
         if (after.detail.control.max > after.detail.control.min) {
+            /* BESIDE the value the resolver read BEFORE the act, because
+               a number on its own cannot say whether anything moved -
+               and for part 0, that pair is the only evidence there is.
+               Both are the guest's own reads of the same control, taken
+               either side of one request. */
+            row_addf(&rows, "Value before", "%ld",
+                     (long)handle.detail.control.value);
             row_addf(&rows, "Re-read value", "%ld",
                      (long)after.detail.control.value);
         } else {
