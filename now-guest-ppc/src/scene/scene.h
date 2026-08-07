@@ -353,7 +353,12 @@ enum {
        being unreadable where we looked. Lumping them sends whoever
        reads the note to raise a cap that was never the problem. */
     kNowSceneWalkControlsBound = 5,
-    kNowSceneWalkControlsInvalid = 6
+    kNowSceneWalkControlsInvalid = 6,
+    /* A third cause, split off for the same reason the first two were:
+       a chain that does not terminate within the diagnostic probe bound
+       is cyclic or corrupt, and no cap raise reaches it. Reported as
+       "bound" it would argue forever for a bigger number. */
+    kNowSceneWalkControlsCyclic = 7
 };
 
 typedef struct {
@@ -425,6 +430,26 @@ typedef struct {
      * success it cannot verify - a confident answer where the honest one
      * is "unknown". */
     short walk_verdict;           /* kNowSceneWalk*; 0 = nothing to report */
+
+    /* HOW LONG THE CHAIN ACTUALLY WAS, which is the number the verdict
+       above could not say.
+     *
+       "The bound is ours, not the machine's" is the right answer and
+       still leaves the next question unanswered: ours by how much? The
+       Appearance control panel cost a whole investigation to establish
+       that its chain is 73 and the bound was 48, and every fact in that
+       sentence was already in the guest's hand at the moment it gave
+       up. A cap raised without it is a cap fitted to one panel.
+     *
+       Counted by hopping the rest of the chain WITHOUT recording it, so
+       it costs pointer reads and no pool slots. 0 = not measured.
+       `control_chain_len_exact` distinguishes a completed count from one
+       that hit the diagnostic probe bound in turn, because "at least
+       512" and "exactly 512" argue for different caps - and a cyclic
+       chain, which is the other thing this bound catches, argues for
+       neither. */
+    short control_chain_len;
+    int control_chain_len_exact;
 
     short text;                   /* index into NowScene.texts; -1 = absent */
 
@@ -737,6 +762,12 @@ void now_scene_note_window_unreadable(NowScene *s, int window);
 /* Refine a verdict a retraction has already set. Only ever narrows -
    the retraction says a plane was dropped, this says why. */
 void now_scene_set_walk_verdict(NowScene *s, int window, short verdict);
+
+/* Records how long a window's control chain was, independent of how much
+   of it this scene could carry. `exact` distinguishes a completed count
+   from one that stopped at the diagnostic probe bound. See the field. */
+void now_scene_set_control_chain_len(NowScene *s, int window, short len,
+                                     int exact);
 
 /* A window's TextEdit content. `truncated` says the TERec was longer
    than what is carried. No-op for an out-of-range row; sets

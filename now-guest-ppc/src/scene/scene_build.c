@@ -733,6 +733,17 @@ void now_scene_set_walk_verdict(NowScene *s, int window, short verdict)
     }
 }
 
+void now_scene_set_control_chain_len(NowScene *s, int window, short len,
+                                     int exact)
+{
+    NowSceneWindow *w = window_at(s, window);
+
+    if (w != NULL && len >= 0) {
+        w->control_chain_len = len;
+        w->control_chain_len_exact = exact ? 1 : 0;
+    }
+}
+
 void now_scene_note_window_unreadable(NowScene *s, int window)
 {
     NowSceneWindow *w = window_at(s, window);

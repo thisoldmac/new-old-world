@@ -85,6 +85,42 @@ static void name_control(NowScene *s, int window, int index,
    three things interleaved 300 times, which is the difference between a
    breakdown that costs six clock reads per window and one that costs
    four per control. */
+/* How long is the rest of this chain? Called only when the bound above
+   has already bitten, so it costs nothing on the ordinary path.
+ *
+   It records NOTHING - no pool slots, no references, no semantics - it
+   only follows `next_control` and counts, which is why it can afford a
+   bound an order of magnitude larger than the one a scene carries. That
+   larger bound is still a bound, because the other thing this path
+   catches is a cyclic chain, and a cycle would otherwise hang the guest
+   inside the event loop.
+
+   Returns the total length from the head; sets *exact to 0 if the probe
+   bound stopped the count, in which case the answer is a floor. */
+static short measure_chain(const NowAxMemory *memory, const NowAxWindow *win,
+                           int *exact)
+{
+    NowAxControl control;
+    unsigned long handle = win->control_list;
+    int hops;
+
+    *exact = 1;
+    for (hops = 0; handle != 0; ++hops) {
+        if (hops >= kNowSceneWalkChainProbeMax) {
+            *exact = 0;
+            break;
+        }
+        if (now_ax_read_control(memory, win, handle, &control) != kNowAxOk) {
+            /* The count is a floor for a different reason: the chain is
+               longer than `hops`, we simply cannot see past here. */
+            *exact = 0;
+            break;
+        }
+        handle = control.next_control;
+    }
+    return (short)hops;
+}
+
 static void read_controls(NowScene *s, int window, const NowAxMemory *memory,
                           const NowAxWindow *win)
 {
@@ -97,9 +133,25 @@ static void read_controls(NowScene *s, int window, const NowAxMemory *memory,
         if (hops >= kNowSceneWalkMaxControls) {
             /* Longer than a scene carries, or cyclic. Either way what
                has been collected is a PREFIX of this window's controls
-               with nothing beside it to say so. */
+               with nothing beside it to say so.
+
+               Say HOW LONG before dropping it. The bound being ours is
+               only half an answer; a reader deciding whether to raise it
+               needs the other half, and this is the one moment the chain
+               is in front of us. */
+            int exact;
+            short len = measure_chain(memory, win, &exact);
+
             now_scene_retract_controls(s, window);
-            now_scene_set_walk_verdict(s, window, kNowSceneWalkControlsBound);
+            /* A chain that ran past the probe bound is not a long chain,
+               it is a broken one, and the two argue for opposite
+               responses. Distinguished here, where the evidence is. */
+            now_scene_set_walk_verdict(
+                s, window,
+                (!exact && len >= kNowSceneWalkChainProbeMax)
+                    ? kNowSceneWalkControlsCyclic
+                    : kNowSceneWalkControlsBound);
+            now_scene_set_control_chain_len(s, window, len, exact);
             return;
         }
         if (now_ax_read_control(memory, win, handle, &control) != kNowAxOk) {
@@ -109,6 +161,10 @@ static void read_controls(NowScene *s, int window, const NowAxMemory *memory,
             now_scene_retract_controls(s, window);
             now_scene_set_walk_verdict(s, window,
                                        kNowSceneWalkControlsInvalid);
+            /* A FLOOR, not a length: the chain is at least this long and
+               we cannot see past the record that failed. Marked inexact
+               so nobody sizes a cap from it. */
+            now_scene_set_control_chain_len(s, window, (short)hops, 0);
             return;
         }
         /* BACK TO CONTENT-RELATIVE, which is what the IR names.
@@ -153,6 +209,10 @@ static void read_controls(NowScene *s, int window, const NowAxMemory *memory,
                                          control.def_proc_origin);
         handle = control.next_control;
     }
+    /* The chain ended on its own sentinel: the count is exact and equals
+       what the scene carries. Recorded on the ordinary path too so a
+       reader never has to infer the length from the absence of a note. */
+    now_scene_set_control_chain_len(s, window, (short)hops, 1);
 }
 
 /* The three passes, in the order their claims depend on each other.
