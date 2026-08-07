@@ -8,11 +8,27 @@ Michelle, 2026-08-07:
 > about things like memory and pointers) before landing on main.
 > No need to kick that off now, just worth knowing.
 
-**No lane starts a cleanup pass.** Not a tidy-up, not a "while I'm here",
-not a refactor justified by a slice. A competing cleanup would collide
-with a review that has not happened yet, and the reviewer is the one who
-needs to have read the code — a diff that arrives pre-tidied by an agent
-is exactly the diff a careful reader cannot trust.
+**Clean up your own work — that is not what this reserves.** Michelle,
+correcting an earlier draft of this section that said no lane should:
+
+> Lanes can and should do their own cleanup, i dont want you blocking
+> them from doing that. But a global pass will be necessary anyway.
+
+So: leave your slice in the state you would want to review. Simplify what
+you wrote, delete what you replaced, name things properly, and fix the
+memory and pointer handling in your own diff rather than shipping it
+rough for somebody else. That is doing the work, not polishing it.
+
+**What is reserved is the GLOBAL pass** — a sweep across code no single
+slice owns, a repo-wide refactor, or a tidy-up of somebody else's diff on
+the way past. Two reasons, and the second is the one that costs:
+
+- Fifteen lanes reformatting shared C is a merge problem, and this arc
+  has already lost work to keep-both resolutions three times.
+- The global pass is a **reading** exercise as much as an editing one.
+  Its value is that a person who is picky about memory and pointers has
+  gone through it. Pre-tidying by an agent does not produce that, and can
+  hide the thing worth finding.
 
 What lanes SHOULD keep doing, because it is what makes that pass cheap:
 
