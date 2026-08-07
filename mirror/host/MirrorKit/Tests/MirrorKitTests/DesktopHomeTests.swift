@@ -212,3 +212,92 @@ final class DesktopHomeTests: XCTestCase {
         XCTAssertTrue(merged[0].homeIsTrustworthy)
     }
 }
+
+/// **The guest's own words, recorded 2026-08-07 on mac99 / OS 9.1.**
+///
+/// Everything above is fixtures this side wrote, and a test that constructs
+/// the message it then parses tests one half twice. This is the desktop
+/// clause's answer from a real Macintosh, pasted verbatim from
+/// `script`'s `output` field with only the OSA source-form quotes stripped.
+///
+/// The run that produced it: `scripts/spin-up-ppc` on a private clone
+/// (anchor 1920 / wire 5470), build `1a8ffb91f636`. The same session moved
+/// `HELLO_CLAUDE.txt` with `set position of` and watched `bounds of` follow
+/// it — 608,92,640,124 → 120,320,152,352 → 240,548,272,580 — with a QMP
+/// screendump showing the icon in its new place. That is what "the drawn box
+/// is live" means, on a machine rather than in a fixture.
+///
+/// **This build served neither `list` nor `volumes`** (`unknown-command`),
+/// which is the sharpest thing the run said: without the desktop clause this
+/// guest's desktop would have arrived EMPTY. The saved grid is not a weaker
+/// source here, it is no source at all.
+final class DesktopClauseLiveOutputTests: XCTestCase {
+
+    private static let recorded =
+        "D|Trash|716,510,748,542;;D|Macintosh HD|736,28,768,60;;"
+        + "D|Browse the Internet|716,187,748,219;;D|DevHarness|608,476,640,508;;"
+        + "D|From Claude.txt|608,540,640,572;;D|harness|480,28,512,60;;"
+        + "D|harness.log|736,92,768,124;;D|HELLO_CLAUDE.txt|608,92,640,124;;"
+        + "D|HelloWorld|608,348,640,380;;D|Mail|716,268,748,300;;"
+        + "D|QuickTime Player|716,349,748,381;;"
+        + "D|Register with Apple|716,430,748,462;;"
+        + "D|Rumpus 2.0 PRO (Classic)|559,289,591,321;;"
+        + "D|Rumpus_Pro2.0 Folder|608,156,640,188;;"
+        + "D|Rumpus_Pro2.0.sit|608,412,640,444;;D|runner.debug|480,156,512,188;;"
+        + "D|runner.port|480,220,512,252;;D|Sherlock 2|557,26,589,58;;"
+        + "D|TBTRunner|480,92,512,124;;D|Macintosh HD|736,28,768,60;;"
+
+    func testTheRecordedDesktopParsesIntoTrustworthyHomes() {
+        let report = FinderItems.parseDesktop(Self.recorded)
+        XCTAssertFalse(report.truncated)
+        XCTAssertEqual(report.items.count, 19,
+                       "20 records, and Macintosh HD appears twice")
+        for item in report.items {
+            XCTAssertEqual(item.w, 32)
+            XCTAssertEqual(item.h, 32, "an icon-view desktop draws 32x32")
+        }
+        let merged = FinderItems.mergeDesktop(drawn: report.items,
+                                              existing: [])
+        XCTAssertTrue(merged.allSatisfy(\.homeIsTrustworthy))
+        /* The Trash is on the desktop and is NOT in the Desktop Folder, so
+           the saved-grid path could never have seen it at all. */
+        XCTAssertNotNil(merged.first { $0.name == "Trash" })
+    }
+
+    /// The `disks` loop repeats what `items of desktop` already gave, and the
+    /// Finder answers the SAME box both times — which is what makes
+    /// "first record wins" inert rather than a coin toss.
+    ///
+    /// Recorded rather than reasoned: this is the pair of records that
+    /// actually arrived.
+    func testTheDuplicateDiskRecordAgreesWithItself() {
+        let both = Self.recorded.components(separatedBy: ";;")
+            .filter { $0.hasPrefix("D|Macintosh HD|") }
+        XCTAssertEqual(both.count, 2)
+        XCTAssertEqual(both[0], both[1])
+        XCTAssertEqual(
+            FinderItems.parseDesktop(Self.recorded)
+                .items.filter { $0.name == "Macintosh HD" }.count, 1)
+    }
+
+    /// The mirror can aim at every one of them. Mutation: restore the old
+    /// `placed`-only gate and the disk's invented position passes too.
+    func testEveryRecordedItemCouldBeDragged() {
+        let items = FinderItems.mergeDesktop(
+            drawn: FinderItems.parseDesktop(Self.recorded).items,
+            existing: [])
+        let scene = Scene(version: 2, seq: 1, source: "mac99", capturedAt: 0,
+                          screen: .init(w: 800, h: 600), apps: [],
+                          processes: nil, menubar: nil, windows: [],
+                          desktopItems: items, meta: .init(errors: []))
+        for item in items {
+            switch DragTargeting.subject(scene, x: item.x + 8,
+                                         y: item.y + 8) {
+            case .success(let s):
+                XCTAssertEqual(s.name, item.name)
+            case .failure(let r):
+                XCTFail("\(item.name): \(r.message)")
+            }
+        }
+    }
+}
