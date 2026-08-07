@@ -12,6 +12,15 @@
 docs/local/*
 !docs/local/README.md
 
+# Agent worktrees, at any depth. A checkout under here is a working copy
+# of some branch, not repository content — and one that is tracked goes
+# stale silently: five of them reached the index inside the vendored
+# Mirror subproject and each answered `Platinum.contentTop` with 22 where
+# the live tree says 20, so a grep for that constant found six answers and
+# five were wrong. No gate reads a vendored worktree, so nothing catches
+# the drift; the cure is to not track them at all.
+.claude/worktrees/
+
 build-*/
 xcuserdata/
 *.xcodeproj/project.xcworkspace/

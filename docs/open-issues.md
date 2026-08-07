@@ -101,27 +101,52 @@ has the same shape of defect — an explanation written on a failure path
 surviving into a success, specifically a live watch loop that ticks
 without clearing a note a refused press left standing. Nobody has looked.
 
-## OPEN: five complete nested agent worktrees are checked in under `mirror/` (2026-08-07, round 7 integration)
+## FIXED: five complete nested agent worktrees were checked in under `mirror/` (2026-08-07, `claude/019-housekeeping`)
 
-**Verification level: TESTED (measured, not acted on).**
+**Verification level: TESTED.**
 
-`mirror/.claude/worktrees/` holds five whole checkouts —
+`mirror/.claude/worktrees/` held five whole checkouts —
 `confident-tu-60f97b`, `funny-khorana-e67807`, `gallant-ritchie-d78731`,
 `jolly-lamarr-d3cd03`, `wizardly-bardeen-e2b6dc` — **3,789 tracked files,
 ignored by nothing**, each carrying its own `Package.swift` and its own
 copy of MirrorKit.
 
-They are stale in a way that matters for exactly the reason this
-repository states limits once: each carries
+They were stale in a way that matters for exactly the reason this
+repository states limits once: each carried
 `Platinum.contentTop: CGFloat = 22` where the live tree says `20`. A
-reader who greps this tree for a constant gets six answers, five of them
-wrong, and no gate reads them at all.
+reader who grepped this tree for that constant got six answers, five of
+them wrong, and no gate read them at all.
 
 Round 7's merge touched none of them (checked: zero paths under
 `mirror/.claude/` in `git diff claude/019-integration-6 HEAD`). Deleting
-them is not an integrator's call mid-merge, and it is somebody's — either
-a `.gitignore` entry plus a `git rm -r --cached`, or a decision that they
-are worth keeping and a note saying why.
+them was not an integrator's call mid-merge; it was taken separately,
+after checking the three things that make a deletion safe:
+
+- **Nothing live reads them.** The only references anywhere in the tree
+  are the ones that describe the problem — this entry and
+  [asset-pack.md](asset-pack.md). No script, no `Package.swift`, no test
+  resolves a path under `mirror/.claude/`.
+- **They are not registered worktrees.** `git worktree list` names none
+  of them, and none carries a `.git` file. They are five plain
+  directories that were once checkouts, so there is no branch whose
+  working tree this disturbs and no unmerged index to lose.
+- **They hold nothing that exists nowhere else.** Comparing tracked
+  paths against the live `mirror/`, each worktree had 202 paths the live
+  tree does not: 200 of them the Platinum asset pack, which
+  [asset-pack.md](asset-pack.md) removed from the index by decision and
+  verified by sha256 against
+  `~/Lab/Assets/now-mirror-assets/pack-2026-08-06`, and two source files
+   — `ActionDispatcher.swift` and `QmpClient.swift` — that had simply
+  MOVED, into `Sources/MirrorOracleKit/`. `QmpClient.swift` is byte-identical
+  to the live copy; `ActionDispatcher.swift` differs as an ancestor does,
+  the live one carrying the plane model, the renamed `deviceClick` /
+  `thumbTracking` cases and an explicit refusal arm the old one has no
+  concept of. Nothing was unique, so nothing was stopped on.
+
+The cure is a `.gitignore` entry for `.claude/worktrees/` at any depth
+plus a `git rm -r`; history still holds the 25 MB, which is the same
+reversible move [asset-pack.md](asset-pack.md) took and the same
+unresolved question about a rewrite.
 
 ## FIXED: the drive loop's own instrument armed every plane except the one that draws interiors (2026-08-07, `claude/019-instrument-arms-content`)
 
@@ -4661,14 +4686,12 @@ index — 0 missing, 0 mismatched, 0 extra.
   reversible move; taking it out of history is a rewrite, and every
   worktree and branch off this repository would have to be re-cut. Not
   taken.
-- **Four other copies of the same bitmaps are still tracked**, none of
-  them touched: `mirror/assets/platinum-pack/` (385 files, 1.9 MB), and
-  five vendored `mirror/.claude/worktrees/*` trees which between them
-  hold five more copies of both the pack and the platinum-pack — 3,789
-  tracked files and 25 MB, carried in whole by `0443ab2b vendor: Mirror
-  whole as a subproject`. That those are in git at all is a larger and
-  separate question than the pack: they are another project's agent
-  worktrees, and nothing in this tree builds from them.
+- **Another copy of the same bitmaps is still tracked**, untouched:
+  `mirror/assets/platinum-pack/` (385 files, 1.9 MB). The other five —
+  the vendored `mirror/.claude/worktrees/*` trees, 3,789 tracked files
+  and 25 MB carried in whole by `0443ab2b vendor: Mirror whole as a
+  subproject` — were removed from the index on 2026-08-07; see the
+  nested-worktrees entry above.
 
 ## MEASURED: the capture fixtures had no dead weight — 94% of the bulk was whitespace (2026-08-06)
 
