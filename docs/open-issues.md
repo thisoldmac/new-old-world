@@ -14,6 +14,62 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## UNVERIFIED: the drag vehicle exists and has never fired (2026-08-07, slice 10 of plan 018)
+
+**Built, gate-green, never run on a Macintosh.** P7 — a mouse button that
+stays down across a gesture, and a resident that lets go whether or not
+anybody asks. The design, the dead-man and the Time Manager argument are
+in [docs/mirror-act-plane.md](mirror-act-plane.md) > "Drag".
+
+What IS proven: `scripts/test-native` drives the dead-man's decision
+layer and five mutations were watched failing, each naming a distinct
+case; `scripts/build-guests` cross-compiles the resident;
+`scripts/test-all` is green.
+
+**What is not proven is everything above that**, and the list is short
+and load-bearing:
+
+- **Whether the Finder's `DragGrayRgn` actually tracks these writes.**
+  The whole design rests on it and nobody has looked. `StillDown` and
+  `GetMouse` read the globals the vehicle writes — that is documented —
+  but a tracking loop that also polls something else, or that latches on
+  entry, would make the gesture a no-op and it would look identical to a
+  vehicle that never fired.
+- **Whether the cursor visibly moves.** The `CrsrNew`/`CrsrCouple` redraw
+  is reasoned from Inside Macintosh, not seen. If it does not work, a
+  drag is invisible on a screendump — which does not break the gesture
+  but does remove the only way to watch one.
+- **Whether `PPostEvent` from the jGNE pass settles the owed `mouseUp`
+  where an application wants it.** A stray `mouseUp` with no preceding
+  `mouseDown` is ignored by most event loops; "most" is not a measurement.
+- **The dead-man on a real interrupt.** The logic is tested. The Time
+  Manager task carrying it has never been primed.
+
+### Two things block the live proof, and both were held deliberately
+
+1. **Three wire verbs the contract does not declare.** A drag needs
+   `dragpress` / `dragmove` / `dragrelease` on both faces, which is an
+   `x-commands` change to `contract/asyncapi.yaml`. Contract changes
+   serialise through Michelle and this lane did not make one. Until they
+   exist there is no way to reach the vehicle from a host at all — so the
+   vehicle is unreachable code in a shipped resident, which is the honest
+   state and is why the capability bit is published only when the Time
+   Manager install succeeded.
+2. **A bake.** `ext/` changed, so the resident under test is whatever was
+   baked, and `scripts/bake-ext-image` is private-by-default and was not
+   run.
+
+### And the presentation half is blocked on geometry, not on the vehicle
+
+Slice 10.5's snap-back needs a defensible "home". **`placed == true` is
+not a trust signal**: only `FinderItems.merge` sets it from the Finder's
+own drawn box, and that path runs for **folder windows only**.
+`SceneBuilder.desktopItems` derives it from the saved `fdLocation` grid,
+and `ScenePoller.placeVolumes` invents a position and sets it true. So
+today a desktop drag has no trustworthy return address and the rule
+"refuse rather than guess" would refuse every one of them. Closing that
+is a geometry lane, not a drag lane.
+
 ## FIXED: an act could report success it had not verified, and a window could go silent without naming itself (2026-08-07, lane D of plan 018)
 
 Sweep A found `as Buttons` "dispatched cleanly twice and never produced
