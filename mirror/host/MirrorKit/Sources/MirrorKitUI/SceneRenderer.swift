@@ -910,12 +910,22 @@ public struct SceneRenderer {
             drawDialogItem(contentCtx, item, contentOrigin: content.origin,
                            windowFace: windowFace)
         }
-        /* AND SO DOES A GROUND CONTROL. See `controlIsGround`: the
+        /* AND SO DOES A GROUND CONTROL — but only where there is no
+           drawing for it to be ground UNDER. See `controlIsGround`: the
            chain's order is the application's, not a stacking order, and
            a pane that happens to arrive last must not bury what came
-           before it. */
+           before it.
+           The condition is the same one every other control answers a
+           few lines below, and it has to be: a window whose interior
+           the replay owns has already been answered by rung 1, and a
+           pane drawn ahead of it would put "Structured content
+           unavailable" under Date & Time's own Time Zone group for the
+           length of one repaint. Ground marks an absence; where there
+           is no absence it draws nothing at all. */
         for control in win.controls where control.visible
                 && Self.controlIsGround(control)
+                && !displayOwnsVisuals
+                && !Self.groundWrapsTheChain(control, in: win)
                 && !dialogRefs.contains(control.ref) {
             drawControl(contentCtx, control, contentOrigin: content.origin,
                         isDefault: false, windowFace: windowFace)
@@ -1328,12 +1338,21 @@ public struct SceneRenderer {
             drawButton(ctx, ctl, frame, isDefault: isDefault)
             return
         case "checkBox":
-            guard !replayedWidget(frame) else { return }
-            drawChoice(ctx, ctl, frame, radio: false)
+            /* PER PIECE, NOT PER ROW, and this is the second time that
+               distinction has cost check boxes. A choice control's
+               LABEL arrives as a text op and its little mark box does
+               not, so a row-wide yield takes both: NOW's own Workshop
+               lost the tick beside "Compress on wire (PackBits)" the
+               first time this gate was written whole. Same split
+               `drawDialogItem` has made since 2026-08-06. */
+            drawChoice(ctx, ctl, frame, radio: false,
+                       markIsDrawn: { replayedWidget($0) },
+                       labelIsDrawn: { replayedWords($0) })
             return
         case "radioButton":
-            guard !replayedWidget(frame) else { return }
-            drawChoice(ctx, ctl, frame, radio: true)
+            drawChoice(ctx, ctl, frame, radio: true,
+                       markIsDrawn: { replayedWidget($0) },
+                       labelIsDrawn: { replayedWords($0) })
             return
         case "popupMenu":
             guard !replayedWords(frame) else { return }
@@ -1442,15 +1461,18 @@ public struct SceneRenderer {
 
     private func drawChoice(_ ctx: GraphicsContext,
                             _ ctl: MirrorKit.Scene.Control,
-                            _ frame: CGRect, radio: Bool) {
+                            _ frame: CGRect, radio: Bool,
+                            markIsDrawn: (CGRect) -> Bool = { _ in false },
+                            labelIsDrawn: (CGRect) -> Bool = { _ in false }) {
         let mark = CGRect(x: frame.minX, y: frame.midY - 6,
                           width: 12, height: 12)
         let shape = radio ? Path(ellipseIn: mark) : Path(mark)
+        let on = ctl.semantic?.state == "on" || ctl.checked
+        if !markIsDrawn(mark) {
         ctx.fill(shape, with: .color(Platinum.g0))
         ctx.stroke(shape,
                    with: .color(ctl.enabled ? Platinum.g6 : Platinum.g3),
                    lineWidth: 1)
-        let on = ctl.semantic?.state == "on" || ctl.checked
         if on {
             if radio {
                 ctx.fill(Path(ellipseIn: mark.insetBy(dx: 3, dy: 3)),
@@ -1465,6 +1487,11 @@ public struct SceneRenderer {
                 ctx.stroke(tick, with: .color(Platinum.g6), lineWidth: 2)
             }
         }
+        }
+        let label = CGRect(x: frame.minX + 16, y: frame.minY,
+                           width: max(0, frame.width - 16),
+                           height: frame.height)
+        guard !labelIsDrawn(label) else { return }
         appText(ctl.title, ctx, x: frame.minX + 16,
                 baselineY: frame.midY + 4,
                 color: ctl.enabled ? Platinum.g6 : Platinum.g3)
@@ -1679,6 +1706,32 @@ public struct SceneRenderer {
     /// where nothing else reaches that rectangle.
     public static func controlIsGround(_ ctl: MirrorKit.Scene.Control) -> Bool {
         ctl.semantic?.kind == "userPane"
+    }
+
+    /// **A PANE THAT WRAPS THE CHAIN IS NOT AN UNKNOWN — the chain is
+    /// what is inside it.**
+    ///
+    /// Ground still marks an honest absence, and that rule outranks any
+    /// panel looking tidier. But rung 4 is "nobody can account for it",
+    /// and a root user pane holding eighteen classified controls is
+    /// accounted for by those eighteen. Marking it says the whole
+    /// window's interior is unreachable while the renderer is about to
+    /// draw most of it — which is `isBackgroundKind`'s own rule, that a
+    /// background names nothing, arriving at the marker instead of at
+    /// the blit.
+    ///
+    /// A pane with nothing inside it still marks, because then nobody
+    /// really can account for it. Monitors has one of each.
+    static func groundWrapsTheChain(_ ground: MirrorKit.Scene.Control,
+                                    in win: MirrorKit.Scene.Window) -> Bool {
+        guard let outer = ground.rect else { return false }
+        return win.controls.contains { other in
+            guard other.visible, other.ref != ground.ref,
+                  !Self.controlIsGround(other), let inner = other.rect,
+                  inner.r > inner.l, inner.b > inner.t else { return false }
+            return inner.l >= outer.l && inner.t >= outer.t
+                && inner.r <= outer.r && inner.b <= outer.b
+        }
     }
 
     static func dialogItemIsBackground(_ kind: String?) -> Bool {
@@ -2018,7 +2071,11 @@ public struct SceneRenderer {
             ctx.fill(Path(first), with: .color(Platinum.g2))
             var clipped = ctx
             clipped.clip(to: Path(body))
-            appText(ctl.semantic?.value ?? "Selected value unavailable",
+            /* Not the raw field: a list classified by CDEF id reports
+               `GetControlValue` there, and Monitors printed a bare "0"
+               inside both of its empty wells. See `semanticText`. */
+            appText(Self.semanticText(ctl.semantic)
+                    ?? "Selected value unavailable",
                     clipped, x: body.minX + 3, baselineY: body.minY + 12,
                     color: ctl.enabled ? Platinum.g6 : Platinum.g3,
                     small: true)
