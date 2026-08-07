@@ -59,10 +59,15 @@ struct ScreenshotsModuleView: View {
                 .disabled(!model.canStream)
                 /* Present and dark rather than gone. Hiding it would move
                    every control beside it as machines connect, and would make
-                   a capability this Mac lacks indistinguishable from one NOW
+                   a capability the driven machine lacks indistinguishable
+                   from one NOW
                    does not have. The reason is on the button for a pointer
                    and in the line below for the eye. */
-                .help(model.streamGateTooltip ?? "Watch this Mac's screen live")
+                /* The screen being watched is the driven machine's, not
+                   this one's. */
+                .help(model.streamGateTooltip
+                      ?? "Watch \(MachineNaming.possessive(model.connection)) "
+                         + "screen live")
 
                 if model.isStreaming {
                     Button("Refresh") { model.refreshStream() }
@@ -313,7 +318,7 @@ struct ScreenshotsModuleView: View {
     private var connectionBadge: some View {
         switch model.connection {
         case .disconnected:
-            Label("No Mac Connected", systemImage: "circle.fill")
+            Label("No \(MachineNaming.properNoun) Connected", systemImage: "circle.fill")
                 .foregroundStyle(.secondary)
         case .connecting:
             Label("Connecting", systemImage: "circle.dotted")
@@ -372,7 +377,7 @@ struct ScreenshotsModuleView: View {
                      + String(format: "(%.1f×)", shot.compressionRatio))
             }
             GridRow {
-                Text("Guest").foregroundStyle(.secondary)
+                Text("Machine").foregroundStyle(.secondary)
                 Text("capture \(shot.format.captureMs) ms · "
                      + "encode \(shot.format.encodeMs) ms")
             }
@@ -410,9 +415,11 @@ struct ScreenshotsModuleView: View {
             Text("No Screenshots Yet")
                 .font(.title2.weight(.semibold))
             Text(model.connection.canCapture
-                 ? "Press Capture to pull \(model.connection.peerLabel)'s screen "
+                 ? "Press Capture to pull "
+                   + "\(MachineNaming.possessive(model.connection)) screen "
                    + "across the wire."
-                 : "Connect a Mac first — it dials this one.")
+                 : "Connect \(MachineNaming.simpleReference) first — it "
+                   + "dials \(MachineNaming.thisMac).")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 460)

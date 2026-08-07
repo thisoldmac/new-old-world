@@ -13,7 +13,8 @@ struct SettingsModuleView: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text("Connection")
                     .font(.largeTitle.weight(.semibold))
-                Text("The classic Mac dials in; this side only listens.")
+                Text("The \(MachineNaming.commonNoun) dials in; "
+                     + "\(MachineNaming.thisMac) only listens.")
                     .foregroundStyle(.secondary)
             }
             Divider()
@@ -92,7 +93,7 @@ struct SettingsModuleView: View {
             Grid(alignment: .leading, horizontalSpacing: 16,
                  verticalSpacing: 3) {
                 GridRow {
-                    Text("Guest").foregroundStyle(.secondary)
+                    Text("Machine").foregroundStyle(.secondary)
                     Text(guestDescription(health))
                 }
                 GridRow {
@@ -140,7 +141,8 @@ struct SettingsModuleView: View {
             Label("Not listening", systemImage: "circle")
                 .foregroundStyle(.secondary)
         case .listening(let port):
-            Label("Listening on port \(String(port)) — no Mac connected",
+            Label("Listening on port \(String(port)) — no "
+                  + "\(MachineNaming.commonNoun) connected",
                   systemImage: "circle.dotted")
                 .foregroundStyle(.orange)
         case .connected(let name):

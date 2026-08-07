@@ -79,16 +79,18 @@ struct ConnectionsModuleView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(idleTitle)
                 .font(.title3.weight(.semibold))
-            Text("The classic Mac dials in; this side only listens. Open "
-                 + "NOW on the vintage Mac and point it at this host.")
+            Text("The \(MachineNaming.commonNoun) dials in; "
+                 + "\(MachineNaming.thisMac) only listens. Open NOW on "
+                 + "the old machine and point it at this one.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             /* The addressing consequence, said once here rather than on
                every remembered row: with nothing connected an agent that
-               names any machine is told there is no guest, which is a
-               different sentence from "that Mac is not connected". */
-            Text("An agent addressing any Mac right now is told that no "
-                 + "guest is connected.")
+               names any machine is told there is nothing connected,
+               which is a different sentence from "that machine is not
+               connected". */
+            Text("An agent addressing any machine right now is told that "
+                 + "no \(MachineNaming.commonNoun) is connected.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -119,7 +121,7 @@ struct ConnectionsModuleView: View {
                     .font(.headline)
                 Text("Named here, not connected now. An agent that names "
                      + "one of these is refused, never answered by "
-                     + "another Mac.")
+                     + "another machine.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -157,7 +159,8 @@ private struct ConnectionCard: View {
                 if !row.idIsAnchored {
                     Badge(text: "Id is a guess", tint: .orange,
                           help: "This machine reached the host from an "
-                              + "address that cannot tell two Macs apart "
+                              + "address that cannot tell two machines "
+                              + "apart "
                               + "(loopback, so every emulated guest). The "
                               + "id surviving a reconnection is a guess. "
                               + "Use the session id when it must be exact.")
@@ -191,17 +194,19 @@ private struct ConnectionCard: View {
                 /* The person's half of what an agent does by naming a
                    machine. An agent asserts which Mac it means; a person
                    points the window at one. Same seam underneath. */
-                Button("Drive This Mac") { model.drive(row) }
+                /* "Drive This Mac" read as the Mac the app is running
+                   on — the one machine the button cannot mean. */
+                Button("Drive This One") { model.drive(row) }
                     .help("Every command, module and capture request goes "
-                          + "to the Mac chosen here. The others stay "
+                          + "to the machine chosen here. The others stay "
                           + "connected.")
             }
             Button(row.idIsAutoAssigned ? "Name…" : "Rename…") {
                 proposed = row.machineID
                 renaming = true
             }
-            .help("The id an agent types to address this Mac. Naming it is "
-                  + "what makes it durable.")
+            .help("The id an agent types to address this machine. Naming "
+                  + "it is what makes it durable.")
         }
         .popover(isPresented: $renaming, arrowEdge: .bottom) {
             rename
@@ -213,7 +218,7 @@ private struct ConnectionCard: View {
             Text("Machine id")
                 .font(.headline)
             Text("Letters, numbers and hyphens. This is what a person or "
-                 + "an agent types to reach this Mac.")
+                 + "an agent types to reach this machine.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: 280, alignment: .leading)
@@ -365,10 +370,13 @@ private struct AddressingLine: View {
     private var summary: String {
         switch addressing.outcome {
         case .answered: return "answered"
-        case .notAddressed: return "refused — this host is driving another Mac"
+        case .notAddressed:
+            return "refused — \(MachineNaming.thisMac) is driving another "
+                + MachineNaming.commonNoun
         case .notConnected: return "refused — not connected"
         case .sessionEnded: return "refused — that session has ended"
-        case .noGuestConnected: return "refused — no Mac is connected"
+        case .noGuestConnected:
+            return "refused — no \(MachineNaming.commonNoun) is connected"
         case .unrecognised(let code): return "refused — \(code)"
         }
     }

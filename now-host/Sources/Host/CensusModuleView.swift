@@ -31,7 +31,8 @@ struct CensusModuleView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Hardware")
                     .font(.headline)
-                Text("A passive census of \(model.connection.peerLabel).")
+                Text("A passive census of "
+                     + "\(MachineNaming.sentence(model.connection)).")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -189,9 +190,12 @@ struct CensusModuleView: View {
 
     private var disconnected: some View {
         emptyState(
-            symbol: "cable.connector.slash", title: "No Mac Connected",
-            message: "The other Mac dials this one. Once it connects, its "
-                + "hardware census can be run and read here.")
+            symbol: "cable.connector.slash",
+            title: "No \(MachineNaming.properNoun) Connected",
+            message: "The \(MachineNaming.commonNoun) dials "
+                + "\(MachineNaming.thisMac); this side only listens. Once "
+                + "it connects, its hardware census can be run and read "
+                + "here.")
     }
 }
 

@@ -110,7 +110,7 @@ struct FilesModuleView: View {
                 Label("Connecting", systemImage: "circle.dotted")
                     .foregroundStyle(.orange)
             case .disconnected:
-                Label("No Mac Connected", systemImage: "circle.fill")
+                Label("No \(MachineNaming.properNoun) Connected", systemImage: "circle.fill")
                     .foregroundStyle(.secondary)
             }
         }
@@ -317,7 +317,7 @@ struct FilesModuleView: View {
         case .ready:
             EmptyView()
         case .noGuest:
-            Text("— no Mac connected")
+            Text("— no \(MachineNaming.commonNoun) connected")
                 .foregroundStyle(.secondary)
         case .loading:
             Text("— listing…")
@@ -372,9 +372,10 @@ struct FilesModuleView: View {
             Image(systemName: "externaldrive.badge.questionmark")
                 .font(.system(size: 42))
                 .foregroundStyle(.secondary)
-            Text("No Mac Connected")
+            Text("No \(MachineNaming.properNoun) Connected")
                 .font(.title2.weight(.semibold))
-            Text("The other Mac dials this one; its shared folder "
+            Text("The \(MachineNaming.commonNoun) dials "
+                 + "\(MachineNaming.thisMac); its shared folder "
                  + "appears here once it does.")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -401,8 +402,10 @@ struct FilesModuleView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .help(transfer.isAwaitingReceipt
-                      ? "Everything has been sent, but the classic Mac "
-                        + "reads far slower than we write. It confirms "
+                      ? "Everything has been sent, but "
+                        + "\(MachineNaming.sentence(model.connection)) "
+                        + "reads far slower than this side writes. It "
+                        + "confirms "
                         + "once the file is written and named."
                       : "Bytes handed to the network so far.")
             Button("Cancel") { model.cancelTransfer() }
@@ -578,7 +581,8 @@ struct FilesModuleView: View {
                 approval.receipt, forType: .string)
             alert.messageText = "Artifact Approval Copied"
             let destination = approval.destination.isEmpty
-                ? "the guest share root" : approval.destination
+                ? "\(MachineNaming.possessive(model.connection)) share root"
+                : approval.destination
             var detail =
                 "A private read-only copy of “\(approval.name)” is approved "
                 + "once for \(destination) for 10 minutes. "

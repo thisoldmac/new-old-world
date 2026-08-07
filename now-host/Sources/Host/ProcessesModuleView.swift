@@ -39,7 +39,8 @@ struct ProcessesModuleView: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text("Processes")
                     .font(.largeTitle.weight(.semibold))
-                Text("What is running on \(model.connection.peerLabel).")
+                Text("What is running on "
+                     + "\(MachineNaming.sentence(model.connection)).")
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -51,7 +52,7 @@ struct ProcessesModuleView: View {
                 Label("Connecting", systemImage: "circle.dotted")
                     .foregroundStyle(.orange)
             case .disconnected:
-                Label("No Mac Connected", systemImage: "circle.fill")
+                Label("No \(MachineNaming.properNoun) Connected", systemImage: "circle.fill")
                     .foregroundStyle(.secondary)
             }
         }
@@ -102,9 +103,10 @@ struct ProcessesModuleView: View {
             Image(systemName: "cpu")
                 .font(.system(size: 42))
                 .foregroundStyle(.secondary)
-            Text("No Mac Connected")
+            Text("No \(MachineNaming.properNoun) Connected")
                 .font(.title2.weight(.semibold))
-            Text("The other Mac dials this one; its running processes "
+            Text("The \(MachineNaming.commonNoun) dials "
+                 + "\(MachineNaming.thisMac); its running processes "
                  + "appear here once it does.")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

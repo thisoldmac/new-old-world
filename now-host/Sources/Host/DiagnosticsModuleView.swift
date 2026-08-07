@@ -37,11 +37,18 @@ struct DiagnosticsModuleView: View {
 
     // MARK: header
 
+    /// The machine every sentence on this page is about. It is never this
+    /// one: the page reads what the driven machine measures about itself,
+    /// and the copy here used to say "this Mac" for all of it.
+    private var machine: String {
+        MachineNaming.sentence(model.connection)
+    }
+
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("Diagnostics")
                 .font(.headline)
-            Text("What \(model.connection.peerLabel) can measure about "
+            Text("What \(machine) can measure about "
                     + "itself. Which of these it serves is its own answer, "
                     + "read from its command table.")
                 .font(.subheadline)
@@ -155,7 +162,7 @@ struct DiagnosticsModuleView: View {
             .disabled(!decision.isEnabled || !model.isConnected
                       || state.isRunning)
             .help(decision.explanation
-                  ?? "Runs \(state.diagnostic.verb) on this Mac.")
+                  ?? "Runs \(state.diagnostic.verb) on \(machine).")
         }
     }
 
@@ -174,7 +181,8 @@ struct DiagnosticsModuleView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         case .unknown where !state.hasRun:
-            Label("This Mac has not listed its commands yet, so whether it "
+            Label("\(MachineNaming.startingSentence(machine)) has not "
+                    + "listed its commands yet, so whether it "
                     + "serves this is not established. Running it asks — and "
                     + "it answers in its own words if it cannot.",
                   systemImage: "questionmark.circle")
@@ -205,7 +213,8 @@ struct DiagnosticsModuleView: View {
                    the card drew an empty space for it — indistinguishable
                    from a card of zeroes, which is a real measurement. The
                    two facts now look different because they are. */
-                Label("This Mac answered but sent no measurements. That is "
+                Label("\(MachineNaming.startingSentence(machine)) "
+                        + "answered but sent no measurements. That is "
                         + "not a reading of zero — it is no reading at all.",
                       systemImage: "questionmark.circle")
                     .font(.callout)
@@ -229,7 +238,8 @@ struct DiagnosticsModuleView: View {
         case .putstat:
             elsewhere = "The Carbon guest serves it; the 68K guest does not."
         }
-        return "Not available on this Mac: \(diagnostic.verb) is not in its "
+        return "Not available on \(machine): \(diagnostic.verb) is not "
+            + "in its "
             + "command table. Nothing is wrong with the machine — "
             + elsewhere
     }
@@ -249,8 +259,9 @@ struct DiagnosticsModuleView: View {
     private func transfer(_ reading: TransferDiagnosticsReading) -> some View {
         if reading.hasReceivedNothing {
             VStack(alignment: .leading, spacing: 8) {
-                Label("No file has been received by this Mac since New Old "
-                        + "World started there, so there is no transfer to "
+                Label("No file has been received by \(machine) since New "
+                        + "Old World started there, so there is no "
+                        + "transfer to "
                         + "describe. Nothing is wrong: these counters "
                         + "describe the LAST received file, and there has "
                         + "not been one yet. Send it a file and this fills "
@@ -293,9 +304,10 @@ struct DiagnosticsModuleView: View {
             Image(systemName: "cable.connector.slash")
                 .font(.system(size: 40))
                 .foregroundStyle(.secondary)
-            Text("No Mac Connected")
+            Text("No \(MachineNaming.properNoun) Connected")
                 .font(.title3.weight(.semibold))
-            Text("The other Mac dials this one. Once it connects, the "
+            Text("The \(MachineNaming.commonNoun) dials "
+                    + "\(MachineNaming.thisMac). Once it connects, the "
                     + "diagnostics it serves can be run and read here.")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

@@ -87,7 +87,7 @@ struct MirrorModuleView: View {
                               ? "dot.radiowaves.left.and.right" : "pause.circle")
                 }
                 .help(model.isLive
-                      ? "Updating on its own: this Mac is asked a cheap "
+                      ? "Updating on its own: \(machine) is asked a cheap "
                         + "question about twice a second, and asked for a "
                         + "whole scene only when the answer changes. Press "
                         + "to stop."
@@ -110,7 +110,7 @@ struct MirrorModuleView: View {
                           systemImage: "eye")
                 }
                 .disabled(isLooking)
-                .help("Ask this Mac to walk its screen and send back what "
+                .help("Ask \(machine) to walk its screen and send back what "
                       + "it finds. It can move one thing at a time, so this "
                       + "waits its turn behind a screenshot or a file.")
             }
@@ -135,8 +135,16 @@ struct MirrorModuleView: View {
     /// tooltip.
     private var subtitle: String {
         model.provenance?.banner
-            ?? "What is on the other Mac's screen, drawn from what it says "
-            + "is there rather than from its pixels."
+            ?? "What is on \(MachineNaming.possessive(model.connection)) "
+            + "screen, drawn from what it says is there rather than from "
+            + "its pixels."
+    }
+
+    /// The machine this page is about, in sentence position — its own name
+    /// once it has said one. Every tooltip here used to say "this Mac",
+    /// which on this page is the machine it is NOT about.
+    private var machine: String {
+        MachineNaming.sentence(model.connection)
     }
 
     /// A refused ask, said out loud even when the page has a scene to draw.

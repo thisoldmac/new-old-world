@@ -60,36 +60,46 @@ struct ModuleRegistry: Sendable {
         modules.filter { $0.placement == .footer }
     }
 
+    /* The summaries below say WHICH machine each page is about, in the
+       vocabulary MachineNaming carries: the machine being driven is the
+       old world mac, the machine the app runs on is this Mac. They are
+       written through those constants rather than spelled out, because a
+       sidebar that says "the connected Mac" while every page under it says
+       something else is how the copy drifted in the first place. */
     static let standard = ModuleRegistry(modules: [
         ModuleDescriptor(
             id: "screenshots",
             title: "Screenshots",
             symbol: "camera.viewfinder",
-            summary: "Capture, browse, and save images from a classic Mac"
+            summary: "Capture, stream and save "
+                + "\(MachineNaming.possessive(nil)) screen"
         ),
         ModuleDescriptor(
             id: "files",
             title: "Files",
             symbol: "folder",
-            summary: "Browse and download from the classic Mac's share"
+            summary: "Browse \(MachineNaming.possessive(nil)) share, and "
+                + "move files both ways"
         ),
         /* Straight after Files because it is the same subject seen from
            this side: Files is what the two machines exchange, iCloud is
            what of THIS Mac's cloud joins that exchange. It is the one
-           list page about this side rather than the other Mac — kept in
-           the list anyway, because it is a feature a person turns on,
-           not the state of the link. */
+           list page about this side rather than the machine being driven
+           — kept in the list anyway, because it is a feature a person
+           turns on, not the state of the link. */
         ModuleDescriptor(
             id: "icloud",
             title: "iCloud",
             symbol: "icloud",
-            summary: "What of this Mac's iCloud the classic Mac may browse"
+            summary: "What of \(MachineNaming.thisMac)'s iCloud "
+                + "\(MachineNaming.simpleReference) may browse"
         ),
         ModuleDescriptor(
             id: "processes",
             title: "Processes",
             symbol: "cpu",
-            summary: "What is running on the connected Mac"
+            summary: "What is running on \(MachineNaming.simpleReference), "
+                + "and quit or raise it"
         ),
         /* Straight after Processes, because it answers the next question
            about the same subject: Processes is what is running, Mirror is
@@ -100,13 +110,14 @@ struct ModuleRegistry: Sendable {
             id: "mirror",
             title: "Mirror",
             symbol: "macwindow.on.rectangle",
-            summary: "The other Mac's screen, drawn from what it says is there"
+            summary: "Draws \(MachineNaming.possessive(nil)) screen from "
+                + "what it says is there, not from its pixels"
         ),
         ModuleDescriptor(
             id: "console",
             title: "Console",
             symbol: "terminal",
-            summary: "A shell into the connected Mac"
+            summary: "A command line on \(MachineNaming.simpleReference)"
         ),
         /* Beside Console because it is the same posture — a page that DOES
            things to the machine, through a model instead of a verb table.
@@ -116,24 +127,27 @@ struct ModuleRegistry: Sendable {
             id: "chat",
             title: "Chat",
             symbol: "bubble.left.and.bubble.right",
-            summary: "Talk to a model that can see and drive the connected Mac"
+            summary: "Talk to a model that can see and drive "
+                + "\(MachineNaming.simpleReference)"
         ),
         /* Above the machine-describing pages on purpose: this one is about
-           the OTHER Macs - which are connected and which is being driven -
-           where Census and Software describe the one already chosen. The
+           WHICH machines are connected and which is being driven, where
+           Census and Software describe the one already chosen. The
            footer's Connection row keeps its own job (this side's port and
            link state) and is a different question. */
         ModuleDescriptor(
             id: "connections",
             title: "Connections",
             symbol: "desktopcomputer.and.arrow.down",
-            summary: "Which Macs are connected, and which one is being driven"
+            summary: "Which \(MachineNaming.properNounPlural) are "
+                + "connected, and which one is being driven"
         ),
         ModuleDescriptor(
             id: "census",
             title: "Hardware",
             symbol: "cpu",
-            summary: "Run and read the connected Mac's hardware census"
+            summary: "\(MachineNaming.properNoun)’s own account of its "
+                + "hardware, probe by probe"
         ),
         /* Immediately after Hardware, because it answers the same class of
            question by the other route: Hardware is what the machine IS, and
@@ -144,28 +158,35 @@ struct ModuleRegistry: Sendable {
             id: "diagnostics",
             title: "Diagnostics",
             symbol: "stethoscope",
-            summary: "Measure this Mac's screen reads and transfers"
+            /* It measures the machine being driven, not this one. The old
+               summary said "this Mac's screen reads", which named the
+               wrong machine outright: nothing here reads this Mac. */
+            summary: "Measure \(MachineNaming.possessive(nil)) screen "
+                + "reads and file transfers"
         ),
         /* Beside Diagnostics rather than beside Connections: this page
-           is what the OTHER Mac says about its networking, which is a
-           measurement of that machine - the footer's Connections page is
-           about which Macs this host is talking to. Different questions,
-           and putting them together would suggest one answer. */
+           is what the machine being driven says about its own networking,
+           which is a measurement of that machine - the footer's
+           Connections page is about which machines this one is talking to.
+           Different questions, and putting them together would suggest one
+           answer. */
         ModuleDescriptor(
             id: "networking",
             title: "Networking",
             symbol: "network",
-            summary: "The connected Mac's link, address and network hardware"
+            summary: "What \(MachineNaming.simpleReference) says about "
+                + "its link, address and network hardware"
         ),
         ModuleDescriptor(
             id: "software",
             title: "Software",
             symbol: "shippingbox",
-            summary: "What is installed on the connected Mac"
+            summary: "What is installed on "
+                + "\(MachineNaming.simpleReference), and launching it"
         ),
         /* In the footer rather than the list, and above Logs, because the
-           list is what you can do to the OTHER Mac and the footer is the
-           state of this side. This page is about this host: the server an
+           list is what you can do to the machine being driven and the
+           footer is the state of this side. This page is about this host: the server an
            agent reaches it through, and what came in that way. It sits
            beside Logs because part of it is the same record read a
            different way — Logs is everything that happened, this is the
@@ -179,21 +200,23 @@ struct ModuleRegistry: Sendable {
             id: "mcp",
             title: "MCP",
             symbol: "app.connected.to.app.below.fill",
-            summary: "The MCP server agents reach this Mac through",
+            summary: "The MCP server agents reach "
+                + "\(MachineNaming.thisMac) through",
             placement: .footer
         ),
         ModuleDescriptor(
             id: "logs",
             title: "Logs",
             symbol: "text.alignleft",
-            summary: "This Mac's event log",
+            summary: "What \(MachineNaming.thisMac) has recorded happening",
             placement: .footer
         ),
         ModuleDescriptor(
             id: "settings",
             title: "Connection",
             symbol: "network",
-            summary: "Listening port and connection status",
+            summary: "The port \(MachineNaming.thisMac) listens on, and "
+                + "the state of the link",
             placement: .footer,
             showsLinkStatus: true
         ),
