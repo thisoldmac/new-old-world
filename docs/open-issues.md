@@ -14,6 +14,121 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED: the renderer's first output differed from its later output, and it was never our cache (2026-08-07, `claude/019-first-render-differs`)
+
+**Verification level: TESTED.** Host-side only; nothing here went near a
+guest or the PowerBook. MirrorKit 248 tests and the host's 1858 pass with
+the fix; the guard was watched failing 4/4 against the reintroduced
+defect.
+
+`claude/019-pressed-and-waiting` found, while building render guards, that
+a pixel-exact comparison of two identical scenes failed when it held the
+process's **first** render and passed later in the same run, and wrote it
+down as "something on the shared draw path builds lazily". Both halves of
+that sentence turned out to be wrong, and the way they were wrong is the
+useful part.
+
+### It is not the first render, and it is not a cache
+
+Rendering one fixture ten times in a fresh process: renders 1 and 2 are
+identical, the **third** moves two pixels, the **fourth** moves six more,
+and 4 through 40 never move again. Eight pixels in all — seven by 1/255 on
+antialiased control edges, one by 15/255 on the grow box's diagonal
+hatch. The settled image is byte-identical across processes; only the
+moment of settling varies, and it varies with **wall-clock time** as well
+as with the count (inserting a 0.4 s sleep between renders moved the whole
+transition from renders 3–4 to render 3 alone).
+
+Three things it is not:
+
+- **Not our lazy state.** Resolving `AssetPack.status`, `FontBook`,
+  `DesktopPattern.answer` and `IconAtlas` before the first render changes
+  nothing at all. Those were the named suspects and they are cleared.
+- **Not MirrorKit.** A `Canvas` containing no MirrorKit code — a tiled 2×2
+  decorative image, a stroked rounded rect, a diagonal — drifts the same
+  way. Pure CoreGraphics into a bitmap context of our own does not.
+- **Not warmable.** Because the transition moves with time, no fixed
+  number of throwaway renders is a fix, and a warm-up would have hidden
+  the symptom while leaving the fragility exactly where it was.
+
+It was `ImageRenderer.cgImage` — its own backing store, which we were
+borrowing.
+
+### The fix, and what it costs
+
+`ImageRenderer.render(_:)` hands the drawing to a `CGContext` of the
+caller's choosing. `RenderShot` now makes its own 8-bit sRGB bitmap
+context, and the output is stable from the very first rasterization: zero
+differing pixels over eight consecutive shots in a cold process, across
+runs, at the same cost as before (one rasterization per shot).
+
+It **changes the picture**, and that is worth knowing before reading any
+render test's history: 1471 of the fixture's 57600 pixels differ from the
+old settled image — 1141 by one or two steps, the rest up to 213/255 on
+glyph interiors and 1px frames. Flat fills are untouched. Our own 1:1
+bitmap draws hairlines crisply where ImageRenderer's drew them soft; the
+semantic checkbox's frame went from two heavy bars with washed-out sides
+to a clean square, which for a mirror of a 1px Platinum interface is a
+gain. Exactly one assertion in the tree was pinned to a glyph pixel that
+moved, and it was asking the wrong question anyway — it named one
+coordinate and expected it black, where its claim was "there is a mark in
+the box". The live window is a different path and is unaffected; this is
+the offscreen half only (tests, `writeRenderShot`, the serve endpoint).
+
+### Two traps in the GUARD, both of which passed the mutation first
+
+`AAARenderStabilityTests` renders one scene ten times as the process's
+first renders. Its first draft was wrong twice, in ways worth stealing:
+
+1. **It compared the first two renders.** Renders 1 and 2 always agree —
+   the drift starts at the third. A guard on the first pair passed the
+   mutation it was written to catch, watched doing exactly that. It has to
+   compare across the whole warm-up.
+2. **It kept `NSBitmapImageRep`s and read them at the end.**
+   `NSBitmapImageRep(cgImage:)` does not copy. Collect ten and sample them
+   afterwards and they can all answer from **one** buffer: the same ten
+   renders read 8 differing pixels when their bytes are taken as they are
+   made, and **0** when only the reps are kept. This is the likeliest
+   explanation for the reporting lane's own note that two of its render
+   guards passed a mutation they claimed to catch, and it is a live hazard
+   for any future guard — snapshot `dataProvider.data` at render time.
+
+### The limitation, which is why nobody caught this for twenty test files
+
+Coldness belongs to the **process**, not to the test. `AAA` in the class
+name puts it first under XCTest's alphabetical order, so in a full-suite
+run the guard is real — but run after any other render it passes whether
+or not the defect is present, and there is no way to make a warm process
+cold again from inside itself. **A mutation of the rasterization path must
+be watched under `swift test --filter AAARenderStabilityTests`.** A green
+from a warm run proves nothing. Every one of the twenty render-test files
+in this tree looked strict and none of them could have seen this.
+
+### The two flakes it was asked about: one plausible, one refuted
+
+- **The host gate's unnamed failure** (one run of four reported
+  `Executed 1668 tests … 1 failure`, name lost to a `grep` pipe) is
+  **plausibly this and not proven to be**. There are about eight
+  assertions in the tree of the form
+  `XCTAssertEqual(try RenderShot.png(scene: a), try RenderShot.png(scene: b))`
+  — two consecutive shots compared for equality, in `AlertItemTests` and
+  `IslandRenderTests`. Whichever of them ran first in a given process
+  straddled the warm-up and could differ. The fix removes the mechanism.
+  The name is gone, so this stays a hypothesis with a mechanism rather
+  than a diagnosis.
+- **The varying skip counts (54 / 65 / 72) are not this.** They are
+  environment: twelve `XCTSkipUnless(NOW_METAL)`, two on
+  `AssetPack.root == nil`, and a dozen more gated on a guest dialling in.
+  A machine with the asset pack and no guest skips a different set from
+  one without either. Nothing there is nondeterminism.
+- **`HostAppStateWiringTests` is refuted.** It renders nothing. It binds a
+  listener, connects a `FakeGuest` over a real socket, and polls at 20 ms
+  against a **single 8 s deadline computed once and shared by both
+  waits** — so 8.4 s under a loaded Mac against 0.06 s in isolation is
+  that deadline being approached, not a render. It is a genuine
+  load-sensitive test and a separate (small) piece of work: the second
+  wait should get its own budget.
+
 ## FIXED: the drive loop's own instrument armed every plane except the one that draws interiors (2026-08-07, `claude/019-instrument-arms-content`)
 
 **Verification level: EMULATOR-VERIFIED, by mutation.** Own VM, lane block
