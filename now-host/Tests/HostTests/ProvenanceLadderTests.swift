@@ -338,3 +338,129 @@ final class OwnerMapTests: XCTestCase {
                        .unknown)
     }
 }
+
+/// **A machine-drawn widget arrives in PIECES, and one piece is never
+/// half of it.** (`claude/019-integration-5`, 2026-08-07.)
+///
+/// `Coverage.mostlyCovers` asked whether ONE inked rectangle covered half
+/// the piece, and its own comment argued that the cases it decides are
+/// not close. They are: QuickDraw fills a well and then strokes four
+/// bevels, and a multi-line run is three or eleven separate text ops. Each
+/// fragment is well under half, so the predicate answered "the machine
+/// drew nothing here" about a rectangle the machine had covered
+/// completely, and rung 2 painted over rung 1 — the same failure the
+/// ladder exists to stop, reached from the opposite side of the same
+/// test.
+///
+/// The measurement is sweep B's own Memory capture, replayed through the
+/// real `DisplayReplay.draw` so the coverage is the by-product of the
+/// render rather than a second traversal. It finds every control
+/// rectangle that NO single fragment covers by half, and asserts the
+/// predicate now says yes to the ones their union does cover.
+///
+/// Watched failing by mutation: restoring `mostlyCovers` to its
+/// single-rectangle body makes every one of these answer false.
+@MainActor
+final class CoverageUnionTests: XCTestCase {
+
+    func testAWidgetDrawnInPiecesIsCoveredByTheirUnion() throws {
+        let sceneURL = try XCTUnwrap(Bundle.module.url(
+            forResource: "now-scene-sweepb-memory", withExtension: "json",
+            subdirectory: "Fixtures"))
+        let drainURL = try XCTUnwrap(Bundle.module.url(
+            forResource: "qdtrace-drain-sweepb-memory",
+            withExtension: "json", subdirectory: "Fixtures"))
+        let scene = try NOWMirrorSceneDecoder.decode(
+            irVersion: 2, document: Data(contentsOf: sceneURL))
+        let drain = try XCTUnwrap(QDTraceDecode.drain(
+            try XCTUnwrap(JSONSerialization.jsonObject(
+                with: Data(contentsOf: drainURL)) as? [String: Any])))
+        let plane = NOWMirrorContentPlane(listener: GuestListener(
+            identity: .init(version: "test", name: "Test Host")))
+        let composed = plane.apply(drain, to: scene).scene
+        let window = try XCTUnwrap(composed.windows.first { $0.title == "Memory" })
+        let ops = try XCTUnwrap(window.display)
+        let content = CGRect(x: 0, y: 0,
+                             width: CGFloat(window.rect.r - window.rect.l),
+                             height: CGFloat(window.rect.b - window.rect.t))
+        let coverage = DisplayReplay.Coverage()
+        let ladder = SceneRenderer.ladder(for: window, content: content,
+                                          owning: [])
+        let renderer = ImageRenderer(content: Canvas { ctx, _ in
+            DisplayReplay.draw(ops, in: ctx, content: content,
+                               ladder: ladder, coverage: coverage)
+        }.frame(width: content.width, height: content.height))
+        _ = renderer.nsImage
+        XCTAssertFalse(coverage.inked.isEmpty,
+                       "nothing was replayed, so this measures nothing")
+
+        /* The OLD rule, written out here rather than referenced, so this
+           gate keeps naming what changed even after the implementation
+           has moved on. It is the same ground bound and the same half. */
+        func oneFragmentCoversHalf(_ frame: CGRect) -> Bool {
+            let area = frame.width * frame.height
+            guard area > 0 else { return false }
+            return coverage.inked.contains {
+                guard $0.width * $0.height <= area * 4 else { return false }
+                let hit = $0.intersection(frame)
+                guard !hit.isNull else { return false }
+                return hit.width * hit.height >= area / 2
+            }
+        }
+
+        var unionOnly: [(String, CGRect)] = []
+        for control in window.controls {
+            guard let r = control.rect else { continue }
+            let frame = CGRect(x: CGFloat(r.l), y: CGFloat(r.t),
+                               width: CGFloat(r.r - r.l),
+                               height: CGFloat(r.b - r.t))
+            guard frame.width > 0, frame.height > 0 else { continue }
+            guard !oneFragmentCoversHalf(frame) else { continue }
+            guard coverage.mostlyCovers(frame) else { continue }
+            unionOnly.append((control.title.isEmpty
+                                ? (control.semantic?.kind ?? "?")
+                                : control.title, frame))
+        }
+
+        XCTAssertGreaterThanOrEqual(unionOnly.count, 3, """
+            no rectangle in this capture is covered by the UNION of the \
+            machine's fragments without also being covered by one of \
+            them, so either the fixture stopped being the multi-piece \
+            capture this is about or mostlyCovers went back to asking \
+            about a single rectangle. Sweep B's Memory panel has five: \
+            two multi-line paragraphs (4 and 11 runs) and three \
+            separators. See DisplayReplay.Coverage.mostlyCovers.
+            """)
+        for (name, frame) in unionOnly {
+            XCTAssertTrue(coverage.mostlyCovers(frame),
+                          "\(name) at \(frame) is covered by the union and "
+                          + "the predicate must say so")
+        }
+    }
+
+    /// And the union must not become a way to count one fragment twice.
+    /// Two copies of the same 40% fragment are 40%, not 80% — the failure
+    /// mode a summed-area implementation would have had.
+    func testOverlappingFragmentsAreNotCountedTwice() throws {
+        let coverage = DisplayReplay.Coverage()
+        let content = CGRect(x: 0, y: 0, width: 100, height: 100)
+        let piece = CGRect(x: 10, y: 10, width: 40, height: 40)
+        // Three identical strokes over the same 40% of the piece.
+        let ops: [MirrorKit.DisplayOp] = (0..<3).map { i in
+            var op = MirrorKit.DisplayOp(op: "rect", ticks: i)
+            op.verb = 1                      // paint
+            op.rect = [10, 10, 50, 26]
+            return op
+        }
+        let renderer = ImageRenderer(content: Canvas { ctx, _ in
+            DisplayReplay.draw(ops, in: ctx, content: content,
+                               coverage: coverage)
+        }.frame(width: content.width, height: content.height))
+        _ = renderer.nsImage
+        XCTAssertFalse(coverage.mostlyCovers(piece), """
+            three copies of one 40% fragment answered "mostly covered". \
+            The union is measured over a grid for exactly this reason; \
+            summing fragment areas would have said 120%.
+            """)
+    }
+}

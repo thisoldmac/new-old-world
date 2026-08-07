@@ -126,11 +126,33 @@ public enum DisplayReplay {
         /// The label beside it is genuinely covered by the text run and
         /// genuinely must yield; the box is not and must not.
         ///
-        /// Half, and a single rectangle rather than a union, because the
-        /// union of a hundred small rects is expensive to compute per
-        /// row and the cases this decides are not close: a replayed text
-        /// run covers its row almost exactly, and a frame line clipping
-        /// a corner covers a few per cent.
+        /// Half — and **the union where one rectangle is not enough**,
+        /// which is the part this got wrong until 2026-08-07. The
+        /// original argued that a union of a hundred small rects is
+        /// expensive and that the cases are not close. The first half is
+        /// true and the second is not: QuickDraw draws a filled widget in
+        /// PIECES, so a machine-drawn well is a fill plus four bevel
+        /// strokes and a machine-drawn icon is a mask blit beside an art
+        /// blit. Every one of those fragments is under half of the piece,
+        /// and a rung-2 widget then paints straight over a rectangle the
+        /// machine had entirely covered — the exact failure `covers`
+        /// versus `mostlyCovers` exists to arbitrate, arrived at from the
+        /// other side.
+        ///
+        /// So a single rectangle still answers on its own and returns
+        /// immediately — that is the common case and it costs what it
+        /// always did. Only when several fragments each fall short is
+        /// their union measured, over a 16×16 sample grid of the piece
+        /// rather than by rectangle subdivision: the pieces this decides
+        /// are a 12-point mark box or a 20-point icon, where a grid cell
+        /// is under a pixel, and a grid cannot double-count overlap the
+        /// way summed areas would. **Summing the fragments would be
+        /// wrong**, and wrong in the dangerous direction: two copies of
+        /// the same 40% fragment are not 80% of anything.
+        ///
+        /// The ground bound below applies to every fragment before it may
+        /// join the union, so the panel face is excluded from the union
+        /// exactly as it is excluded from the single-rectangle test.
         ///
         /// **And the ink must be ABOUT this rectangle.** A window-scale
         /// paint — the panel face, which every control panel opens with —
@@ -145,12 +167,46 @@ public enum DisplayReplay {
         public func mostlyCovers(_ frame: CGRect) -> Bool {
             let area = frame.width * frame.height
             guard area > 0 else { return false }
-            return inked.contains {
-                guard $0.width * $0.height <= area * 4 else { return false }
-                let hit = $0.intersection(frame)
-                guard !hit.isNull else { return false }
-                return hit.width * hit.height >= area / 2
+            var fragments: [CGRect] = []
+            for rect in inked {
+                guard rect.width * rect.height <= area * 4 else { continue }
+                let hit = rect.intersection(frame)
+                guard !hit.isNull, hit.width > 0, hit.height > 0 else {
+                    continue
+                }
+                if hit.width * hit.height >= area / 2 { return true }
+                fragments.append(hit)
             }
+            guard fragments.count > 1 else { return false }
+            return Self.unionCoversHalf(of: frame, fragments)
+        }
+
+        /// Whether `fragments` — all already clipped to `frame` — jointly
+        /// cover half of it, measured by cell centres on a fixed grid.
+        ///
+        /// Fixed rather than adaptive so the answer does not depend on how
+        /// many fragments arrived: a predicate whose resolution moves with
+        /// its input is one that gives two answers for one picture.
+        static func unionCoversHalf(of frame: CGRect,
+                                    _ fragments: [CGRect]) -> Bool {
+            let n = 16
+            let cw = frame.width / CGFloat(n)
+            let ch = frame.height / CGFloat(n)
+            guard cw > 0, ch > 0 else { return false }
+            var covered = 0
+            for iy in 0..<n {
+                let y = frame.minY + (CGFloat(iy) + 0.5) * ch
+                for ix in 0..<n {
+                    let x = frame.minX + (CGFloat(ix) + 0.5) * cw
+                    if fragments.contains(where: {
+                        x >= $0.minX && x < $0.maxX
+                            && y >= $0.minY && y < $0.maxY
+                    }) {
+                        covered += 1
+                    }
+                }
+            }
+            return covered * 2 >= n * n
         }
 
         /// **Did the machine already draw WORDS in this rectangle?**
