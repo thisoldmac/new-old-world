@@ -262,7 +262,10 @@ public enum ObjectResolver {
                               isEnabled: ctl.enabled, window: win,
                               part: part,
                               isSemanticallyActionable: authorized,
-                              semanticAction: semantics?.action))
+                              semanticAction: semantics?.action,
+                              semanticKnowledge: semantics?.knowledge.rawValue,
+                              semanticDefinition: semantics?.definition,
+                              semanticCdef: semantics?.cdef))
     }
 
     private static func dialogItem(_ item: Scene.DialogItem,

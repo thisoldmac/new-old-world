@@ -157,8 +157,20 @@ public enum InteractionPolicy {
             return .nothing(why: "that control is disabled")
         }
         guard c.isSemanticallyActionable else {
-            return .unsupported(why: "the guest did not provide complete, "
-                                + "authoritative semantics for that control")
+            /* **Name the missing fact, and the route that survives.**
+               This said "the guest did not provide complete, authoritative
+               semantics for that control" — a verdict, with nothing in it
+               a person could do anything about. Michelle read exactly that
+               sentence off the status line of a modal she could not
+               dismiss, and it told her neither what was unknown nor that
+               anything else was still possible.
+               `ctlact` with an explicit point does still reach these: the
+               guest checks the point against the rect the resolver proved
+               and never consults the kind. */
+            return .unsupported(why: "\(c.missingSemanticFact), so this "
+                                + "driver will not decide for it. Pressing "
+                                + "it by position is still possible and "
+                                + "nothing here has done so")
         }
         guard !c.ref.isEmpty else {
             return .unsupported(why: "that control reached the mirror with "

@@ -1,4 +1,5 @@
 import SwiftUI
+import MirrorKit
 
 /// Platinum asset pack, ported from `attic/web/platinum.css` — which in turn
 /// took its seven grays from the guest's hand-drawn kit (`ui_theme.c`).
@@ -106,8 +107,13 @@ public enum Platinum {
 
     // Metrics (px in logical space).
     public static let menubarHeight: CGFloat = 20
-    public static let titlebarHeight: CGFloat = 20
-    public static let contentTop: CGFloat = 22
+    public static let titlebarHeight = CGFloat(WindowChrome.titlebarHeight)
+    /// One definition, in `WindowChrome`, because the HIT TESTER reads it
+    /// too — a second copy here is how the drawn button and the clickable
+    /// button came apart. It was 22 and the hit tester's was 20; content
+    /// now begins where the guest says it does, and the title bar's own
+    /// bevel is drawn inside the band rather than pushing content down.
+    public static let contentTop = CGFloat(WindowChrome.titlebarHeight)
 
     // Chicago / Geneva stand-ins.
     public static func systemFont(_ size: CGFloat) -> Font {

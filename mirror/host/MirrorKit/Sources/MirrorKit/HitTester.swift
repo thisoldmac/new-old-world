@@ -263,7 +263,7 @@ public enum HitTester {
                real title bar. Keeping these two in step matters more
                than either being right on its own - when they disagreed,
                a control drew 11 pixels above where it could be hit. */
-            if !(win.kind == 2 && win.title.isEmpty),
+            if WindowChrome.hasTitleBar(win),
                y < win.rect.t + titlebar {
                 if let target = widgetHit(win, x, y) {
                     return target
@@ -276,10 +276,16 @@ public enum HitTester {
                 let c = WindowChrome.center(grow)
                 return .growBox(windowID: win.id, x: c.x, y: c.y)
             }
-            // Controls carry content-local rects; content origin is the
-            // window box's top-left pushed below the title bar.
-            let cx = x - win.rect.l
-            let cy = y - (win.rect.t + titlebar)
+            /* Controls carry content-local rects; the content origin is
+               `WindowChrome`'s, which is the SAME number the renderer
+               draws from. It used to be spelled out here as "the window
+               box pushed below the title bar", which is only true of a
+               window that has one — see WindowChrome.contentOrigin for
+               the fourteen pixels that cost a modal nobody could
+               dismiss. */
+            let origin = WindowChrome.contentOrigin(win)
+            let cx = x - origin.x
+            let cy = y - origin.y
             // DITL items are drawn over the structural ControlRecord chain,
             // and later items are drawn over earlier ones. Hit in that same
             // order. Date & Time's Date Formats button occupied the same box

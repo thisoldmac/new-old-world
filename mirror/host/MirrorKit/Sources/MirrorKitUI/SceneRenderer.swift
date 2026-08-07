@@ -697,8 +697,8 @@ public struct SceneRenderer {
     }
 
     private func drawWindow(_ ctx: GraphicsContext, _ win: MirrorKit.Scene.Window) {
-        let frame = rect(win.rect)
-        guard frame.width > 2, frame.height > 2 else { return }
+        guard win.rect.r - win.rect.l > 2,
+              win.rect.b - win.rect.t > 2 else { return }
         let active = win.front
         /* `kind` says WHO OWNS the window, not what it looks like. Both a
            modal alert and a titled assistant are windowKind 2, because
@@ -716,7 +716,7 @@ public struct SceneRenderer {
            no title, and anything the Window Manager gives a title bar
            has one to put in it. Same shape as the control-role rule - a
            titled thing is not the untitled kind. */
-        let isDialog = win.kind == 2 && win.title.isEmpty
+        let isDialog = !WindowChrome.hasTitleBar(win)
 
         /* TWO DECISIONS, NOT ONE, and collapsing them was a defect.
          *
@@ -753,6 +753,27 @@ public struct SceneRenderer {
         let windowFace = theme.face(forWindowKind: win.kind,
                                     untitled: win.title.isEmpty)
 
+        /* **THE CONTENT BOX IS THE FIXED POINT, and the chrome is drawn
+           around it.** It used to be the other way round: the frame was
+           the guest's whole rect and the content was whatever was left
+           after chrome, so a titleless dialog's content began 14 pixels
+           above and 6 pixels right of where the guest put it — and the
+           hit tester, which reads `WindowChrome.contentOrigin`, could
+           not find a button a person had just aimed at. Now both sides
+           read the same function and the chrome absorbs the difference.
+           See WindowChrome.contentOrigin for what that cost. */
+        let content = rect(WindowChrome.content(win))
+        /* A titled window's frame is the guest's rect: the band above the
+           content is where the Window Manager draws the title bar, which
+           is the convention the rect already encodes. A titleless dialog
+           draws no title bar, so its band is not chrome and must not be
+           filled as if it were — the frame is the content wearing its
+           border. */
+        let frame = isDialog
+            ? content.insetBy(dx: -CGFloat(WindowChrome.dialogBand),
+                              dy: -CGFloat(WindowChrome.dialogBand))
+            : rect(win.rect)
+
         // Drop shadow, frame, face, raised bevel.
         ctx.fill(Path(frame.offsetBy(dx: 2, dy: 2)),
                  with: .color(.black.opacity(0.35)))
@@ -763,28 +784,19 @@ public struct SceneRenderer {
               light: active ? Platinum.g0 : Platinum.g1,
               shadow: active ? Platinum.g4 : Platinum.g3)
 
-        let contentTop: CGFloat
         if isDialog {
             // Modal dialog chrome: NO title bar — a raised border band with
-            // an inner hairline, content face flush beneath.
+            // an inner hairline, content face flush inside it.
             let innerFrame = face.insetBy(dx: 4, dy: 4)
             ctx.fill(Path(CGRect(x: innerFrame.minX, y: innerFrame.minY,
                                  width: innerFrame.width, height: 1)),
                      with: .color(Platinum.g4))
             ctx.stroke(Path(innerFrame), with: .color(Platinum.g6),
                        lineWidth: 1)
-            contentTop = 6
         } else {
             drawTitlebar(ctx, win, face: face, active: active)
-            contentTop = Platinum.contentTop
         }
 
-        // Content area beneath the chrome.
-        let content = CGRect(x: frame.minX + (isDialog ? 6 : 1),
-                             y: frame.minY + contentTop,
-                             width: frame.width - (isDialog ? 12 : 2),
-                             height: max(0, frame.height - contentTop
-                                            - (isDialog ? 6 : 1)))
         ctx.fill(Path(content), with: .color(windowFace))
         if !isDialog {
             ctx.fill(Path(CGRect(x: content.minX, y: content.minY,
