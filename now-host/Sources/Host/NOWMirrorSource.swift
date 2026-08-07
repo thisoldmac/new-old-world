@@ -1710,6 +1710,37 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         _ = perform(interaction, source: .human)
     }
 
+    /// **The press feedback's answer, and the half of it this side can give.**
+    ///
+    /// `LiveMirrorView` draws a button pressed from the gesture onward and
+    /// needs something to end that drawing. The protocol's default never
+    /// answers, so every press would run to `PressSession.patience` and
+    /// report that it never learned — honest, but a poor answer for the
+    /// cases this side settles immediately.
+    ///
+    /// **Refusals are answered here; confirmations are not, and that
+    /// asymmetry is deliberate rather than unfinished.** A `.refused`
+    /// disposition means nothing reached the guest and nothing is coming —
+    /// the sentence is already the whole truth, so the button comes back up
+    /// at once with the reason beside it. The other three dispositions all
+    /// mean the act LEFT, and none of them is evidence that it worked:
+    /// `.direct` is dispatched with no typed postcondition and *nothing will
+    /// ever settle it*, `.held` has a record still coming, and `.brokered`
+    /// settles later through the broker's lane. Answering `.confirmed` for
+    /// any of them would be reporting dispatch as success, which is the exact
+    /// shape of the AppleScript lie this whole surface replaced.
+    ///
+    /// So a press that reaches the guest currently ends at the deadline,
+    /// saying we asked and never learned. That is the true state of this
+    /// side's knowledge today; routing the broker's settlement back into
+    /// `PressAnswer.confirmed` is the follow-on, and it is the same missing
+    /// plumbing `ItemDragDriver` is waiting on (docs/open-issues.md).
+    func perform(_ interaction: Interaction,
+                 answer: @escaping (PressAnswer) -> Void) {
+        let disposition = perform(interaction, source: .human)
+        if let why = disposition.refusal { answer(.refused(why)) }
+    }
+
     /// The one dispatch path, with the face that asked for it. `MirrorKit`'s
     /// `MirrorSceneSource` conformance above is the gesture door; this is the
     /// same door with the caller named.
