@@ -306,6 +306,37 @@ lands on the right icon in the right process. What is not closed is
 carrying the gesture, and no part of the product should claim otherwise
 until Break 4 is.
 
+### The resident change here carries NO bake receipt, and nothing stopped it
+
+Said out loud because the mechanism that should have said it did not run.
+`ext/src/now_ext_act.c` changed in this thread, which is exactly the case
+`tools/ext-bake-gate` exists to catch — and `scripts/test-all` ended with:
+
+> **all gates passed — BUT THE COMMIT GATES ARE NOT ARMED IN THIS CLONE.**
+> Nothing refuses a commit here: not the main guardrail, not the ext bake
+> gate.
+
+So the deferral was typed (`TBT_DEFER_EXT_BAKE_REASON`) and **went
+nowhere**: `ext/stage-receipts.json` is untouched by every commit in this
+thread, because the hook that would have written it never ran. A
+deferral is supposed to be a written decision that lands in the same
+commit as the work it excuses; this one is written here instead, which is
+the only place left for it.
+
+The decision itself stands and is small: the resident under test was this
+tree's build, staged into a session-private clone and cold-booted —
+`scripts/spin-up-ppc`'s ordinary mode, recorded in that run's own
+`provenance.md` — and no shared image was baked or touched. What is
+missing is the receipt, not the evidence.
+
+Two things follow for whoever picks this up. **Bake before this lands on
+`main`**: `merge-check` refuses resident source covered by no bake, and
+it will be right to. And **`tools/setup-hooks` is per clone**, so an
+agent worktree under `/private/tmp` can be a clone where nothing is
+armed at all — a green `test-all` there means the tests pass and says
+nothing whatever about the guardrails. That warning is well-written and
+it is the only reason this was noticed.
+
 ### A gate, so the next conformer is not silently absent
 
 Nothing failed when `itemDragDriver` went unimplemented, because a
