@@ -608,6 +608,57 @@ connection dot, the status line. Absent: most sidebar module icons render
 as one generic plate. The zoom box the machine draws is absent; the grow
 box is drawn and the machine draws one too.
 
+## Axis 4 — the interactions, step by step
+
+### SEQ-A, panel — five steps, and the fourth is the report's headline
+
+Target: Appearance, opened through the anchor worker (the guest's own
+`launch` refuses a `cdev`; see S4 below). Warm-up scenes discarded; plane
+states after warm-up recorded: `structure active-current, semantics
+active-current, content INACTIVE, interaction active-current`.
+
+| step | what | act said | machine did | verdict | dispatch | settle |
+|---|---|---|---|---|---|---|
+| 1 | open the panel and anchor it | launched | rect `{167,70,631,400}`, **73 controls, 73 with refs** | **ok** | — | — |
+| 2 | find the tab control | — | ref minted, `role: tab`, value 1, min 1, max 6 | **ok** | — | — |
+| 3 | **switch the tab** | `Dispatch: dispatched-but-unconfirmed` | value **1 → 1**; strip **IDENTICAL (0 of 11,648 px)**; pane **IDENTICAL (0 of 120,960 px)** | **BROKE HERE** | **2,096 ms** | 21,719 ms |
+| 4 | change a control on the new pane (the "?" button) | `act-not-taken: armed, and the application never called TrackControl` / `settlement: timed-out` | **Mac Help opened and ran a search** | **✗ FALSE NEGATIVE** | 5,705 ms | 15,806 ms |
+| 5 | switch back | `element-not-found: no observation minted this reference, or it has expired` | value 1 → 1; first pane differs by 84,662 px (Help Viewer is over it) | **BROKE HERE** | 5 ms | 24,553 ms |
+
+Four things this table says that sweep C's did not:
+
+- **`ctlact part 0` has stopped claiming success.** Sweep C got
+  `Dispatch: click posted` with no settlement row over a machine where
+  nothing moved, and listed fixing that as its item 2. It now answers
+  **`dispatched-but-unconfirmed`**, which is the honest word. **Landed.**
+- **And it got 2.4× cheaper**: 5,067–5,078 ms in sweep C, **2,096 ms**
+  here. Sweep C's S6 ("dispatch cost varies 100× between `ctlact` forms")
+  is narrowed but not closed — `part 11` is still 5,705 ms.
+- **The tab still does not switch.** Sweep C's item 3 is open on a newer
+  tree: the press is accepted, the control's value does not move, and
+  **zero pixels change in either the strip or the pane.** Sweep B switched
+  this tab 1→4→1; C and D do not. Two sweeps running, unfixed.
+- **Step 5 is new, and it is a drivability finding.** The tab's reference,
+  minted at step 2 and used successfully at step 3, is
+  `element-not-found` by step 5 — about 45 seconds and roughly forty
+  intervening `scene.request`s later. The reference table holds 96
+  entries and **every settlement poll mints a fresh set**, so *the
+  instrument's own settlement loop evicts the reference it is about to
+  act on.* Sweep C's step 5 dispatched; here it cannot. A five-step
+  sequence cannot currently hold a reference across its own waiting.
+
+### Reliability and latency, in separate columns
+
+| operation | attempts to land | dispatch | settle |
+|---|---|---|---|
+| anchor `launch` of a control panel | 8/8 | — | ~10 s |
+| guest `launch` of a `cdev` / `APPD` | **0/2, refused honestly** | ~5 ms | — |
+| `front` | 1/1 | 6 ms | — |
+| `ctlact` tab (`part 0` + point) | 1/1 accepted, **0/1 landed** | **2,096 ms** | 21.7 s (never settled) |
+| `ctlact` (`part 11`) | **1/1 landed and was reported as not taken** | 5,705 ms | 15.8 s to `timed-out` |
+| `ctlact` on an evicted reference | refused in **5 ms** | 5 ms | — |
+| `scene.request` (full document) | ~120/120 | 20–900 ms | — |
+
 ## Rotated new target
 
 **Apple System Profiler**, at
