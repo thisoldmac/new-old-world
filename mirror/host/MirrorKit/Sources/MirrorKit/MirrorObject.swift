@@ -139,18 +139,79 @@ public enum MirrorObject: Equatable, Sendable {
         /// fixtures concise; ObjectResolver always supplies the wire verdict.
         public var isSemanticallyActionable: Bool
         public var semanticAction: String?
+        /// **The evidence a refusal has to quote.** Carried on the object
+        /// rather than looked up again, because the policy is pure and the
+        /// scene is not in scope by the time it declines.
+        ///
+        /// "The guest did not provide complete, authoritative semantics"
+        /// told a person nothing they could act on — it named a verdict,
+        /// not a missing fact. These three are the facts: which knowledge
+        /// level the guest reached, where the definition function came
+        /// from, and the `CDEF` id the Resource Manager named. All are
+        /// optional; a fixture that supplies none still gets the old
+        /// sentence, one word shorter.
+        public var semanticKnowledge: String?
+        public var semanticDefinition: String?
+        public var semanticCdef: Int?
 
         public init(ref: String, role: String, title: String, rect: Rect?,
                     value: Int?, min: Int?, max: Int?, isEnabled: Bool,
                     window: Window, part: Scrollbar.Part?,
                     isSemanticallyActionable: Bool = true,
-                    semanticAction: String? = "press") {
+                    semanticAction: String? = "press",
+                    semanticKnowledge: String? = nil,
+                    semanticDefinition: String? = nil,
+                    semanticCdef: Int? = nil) {
             self.ref = ref; self.role = role; self.title = title
             self.rect = rect; self.value = value; self.min = min
             self.max = max; self.isEnabled = isEnabled
             self.window = window; self.part = part
             self.isSemanticallyActionable = isSemanticallyActionable
             self.semanticAction = semanticAction
+            self.semanticKnowledge = semanticKnowledge
+            self.semanticDefinition = semanticDefinition
+            self.semanticCdef = semanticCdef
+        }
+
+        /// One sentence naming what was unavailable, and what still works.
+        ///
+        /// The three shapes it distinguishes are three different jobs for
+        /// whoever reads it: a control the guest could not classify at all
+        /// (a producer gap), one it classified but has no act for (a
+        /// driver gap), and one whose evidence was only partial.
+        public var missingSemanticFact: String {
+            var what: String
+            switch semanticKnowledge {
+            case "unknown", .none:
+                what = "the guest could not determine what kind of control "
+                    + "this is"
+                if let cdef = semanticCdef {
+                    /* NEVER A KIND. Naming the id says the lookup worked
+                       and the id was not enough — which is the difference
+                       between a gap someone can close and a gap nobody
+                       will look for. */
+                    what += ", only that its definition function is CDEF "
+                        + "\(cdef)"
+                    if cdef == 0 || cdef == 23 {
+                        what += " — the button family, which is a push "
+                            + "button, a check box or a radio button, and "
+                            + "the variation code that would say which "
+                            + "cannot be read from outside the owning "
+                            + "process"
+                    }
+                } else if let definition = semanticDefinition {
+                    what += ", only that its definition function is "
+                        + "\(definition)-defined"
+                }
+            case "inferred":
+                what = "the only evidence for this control is its drawing, "
+                    + "which is not enough to act on"
+            default:
+                what = semanticAction == nil
+                    ? "the guest reported no action this control answers to"
+                    : "the guest's evidence for this control is incomplete"
+            }
+            return what
         }
     }
 

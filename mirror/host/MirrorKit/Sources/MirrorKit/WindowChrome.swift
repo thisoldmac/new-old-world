@@ -42,6 +42,13 @@ public enum WindowChrome {
     /// all `kind == 2` and all draw a close box and a collapse box — so the
     /// hit-tester refused to find a widget the guest was plainly showing, and
     /// no control panel in the corpus could be closed from the mirror.
+    ///
+    /// Stated ONCE here because THREE places were each answering it, and they
+    /// answered it identically only by luck. (Round 8's merge found a second,
+    /// byte-identical copy of this function further down the same file: two
+    /// branches had each added it, and git kept both without a conflict. A
+    /// symbol census cannot see that — the name is present either way — so it
+    /// was the compiler that caught it.)
     public static func hasTitleBar(_ win: Scene.Window) -> Bool {
         !(win.kind == 2 && win.title.isEmpty)
     }
@@ -96,6 +103,72 @@ public enum WindowChrome {
         guard win.kind != 2, win.front else { return nil }
         let r = win.rect
         return Rect(l: r.r - growBoxSpan, t: r.b - growBoxSpan, r: r.r, b: r.b)
+    }
+
+    /// The chrome band a titleless dialog wears instead of a title bar:
+    /// a raised border with an inner hairline, drawn on all four sides.
+    public static let dialogBand = 6
+
+    /// **Where a window's content begins on screen, in guest coordinates.**
+    ///
+    /// A control's rect is content-relative, so this number is the whole
+    /// of the mapping between what the renderer DRAWS and what the hit
+    /// tester can FIND. There is exactly one of it for the same reason
+    /// `widgetBox` is shared: when the two sides each carried their own,
+    /// they drifted, and a control drew where it could not be clicked.
+    ///
+    /// It is `titlebarHeight` for EVERY window, including a titleless
+    /// dialog, because it is not a statement about chrome — it is the
+    /// guest's own rect convention, the one number here that is a
+    /// measurement rather than a drawing choice. The scene's window rect
+    /// is the content port grown up by exactly this much whether or not
+    /// anything is drawn in the band.
+    ///
+    /// **The renderer disagreed with it, and it cost a modal nobody could
+    /// dismiss.** Michelle, 2026-08-07, on Mail's Internet-setup alert:
+    /// *"the button labels are now correct, but the buttons still dont
+    /// work, and the modal is otherwise blank"*. `SceneRenderer` treated
+    /// the band as chrome it could shrink, and put a titleless dialog's
+    /// content 14 pixels HIGH and 6 pixels right of where the guest said
+    /// it was. Fourteen is more than half a push button, so aiming at the
+    /// middle of a drawn button hit-tested ABOVE every dialog item, fell
+    /// through to the user pane spanning the whole dialog, and was
+    /// refused for having no semantics. Nothing was wrong with the dialog
+    /// plane, the DITL, the refs, or the act: `ditemact` dismissed that
+    /// alert on the first try. The click never reached any of them.
+    ///
+    /// MEASURED, not assumed. Guest screendump and scene taken at the same
+    /// instant, 2026-08-07, emulated G4, guest build `e715b0a6a5d7`:
+    /// NOW's own "Take Screenshot" button is content-local (172, 423) in a
+    /// window at (28, 50), and the machine draws its box at (200, 493) —
+    /// rect plus (0, 20) exactly, on a TITLED window. Mail's alert puts
+    /// its three buttons at local y 85 in a window at t = 96, and the
+    /// machine draws them at y 201 — the same (0, 20), on a titleless one.
+    /// One convention, both classes.
+    ///
+    /// NO LONGER OFF IN THE TITLED RENDER. This paragraph used to say the
+    /// titled case was off by (1, 2) — `SceneRenderer` drawing content at
+    /// `Platinum.contentTop` = 22 and one pixel in, for a bevel and
+    /// hairline — and left it there because two pixels never lost a click.
+    /// A sibling branch removed the cause rather than the symptom: the
+    /// frame is drawn OUTSIDE the scene rect now, `Platinum.contentTop` is
+    /// 20, and the renderer counts off `PlatinumTitleBar.Row.contentTop`,
+    /// which is the same 20. Both classes agree with the machine.
+    ///
+    /// The correction is recorded here rather than deleted because the two
+    /// halves landed on different branches and this sentence auto-merged
+    /// clean while being wrong — prose restating a constant is a second
+    /// place to be wrong, which is the whole reason the constant is
+    /// derived and not restated.
+    public static func contentOrigin(_ win: Scene.Window) -> (x: Int, y: Int) {
+        (win.rect.l, win.rect.t + titlebarHeight)
+    }
+
+    /// The content box, for a renderer that has to fill and clip it.
+    public static func content(_ win: Scene.Window) -> Rect {
+        let origin = contentOrigin(win)
+        return Rect(l: origin.x, t: origin.y,
+                    r: win.rect.r, b: win.rect.b)
     }
 
     public static func center(_ rect: Rect) -> (x: Int, y: Int) {

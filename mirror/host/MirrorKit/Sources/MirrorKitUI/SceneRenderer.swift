@@ -779,8 +779,8 @@ public struct SceneRenderer {
     }
 
     private func drawWindow(_ ctx: GraphicsContext, _ win: MirrorKit.Scene.Window) {
-        let frame = rect(win.rect)
-        guard frame.width > 2, frame.height > 2 else { return }
+        guard win.rect.r - win.rect.l > 2,
+              win.rect.b - win.rect.t > 2 else { return }
         let active = win.front
         /* `kind` says WHO OWNS the window, not what it looks like. Both a
            modal alert and a titled assistant are windowKind 2, because
@@ -798,7 +798,7 @@ public struct SceneRenderer {
            no title, and anything the Window Manager gives a title bar
            has one to put in it. Same shape as the control-role rule - a
            titled thing is not the untitled kind. */
-        let isDialog = win.kind == 2 && win.title.isEmpty
+        let isDialog = !WindowChrome.hasTitleBar(win)
 
         /* TWO DECISIONS, NOT ONE, and collapsing them was a defect.
          *
@@ -835,26 +835,45 @@ public struct SceneRenderer {
         let windowFace = theme.face(forWindowKind: win.kind,
                                     untitled: win.title.isEmpty)
 
-        /* THE FRAME IS OUTSIDE THE CONTENT, and it is six pixels wide.
-           Measured on the left, right and bottom of eight windows, always the
-           same five colours reading outward: `000000`, then a raised band
-           `FFFFFF · CCCCCC · CCCCCC · 999999` lit from the top-left, then
-           `000000` again, then a one-pixel black drop shadow on the right and
-           bottom offset by one.
+        /* **TWO GEOMETRIES, AND EACH SIDE OF THIS MERGE OWNED ONE.**
+           (Round 8, 2026-08-07, resolved by reading rather than by keeping
+           both — the two branches disagreed about the same six lines.)
 
-           This used to be a one-pixel black rectangle ON the scene rect with a
-           translucent grey blur behind it, which put the frame INSIDE the
-           content the guest drew and lost twelve pixels of window furniture on
-           every window the mirror has ever shown. `frame` stays the scene rect
-           so every other consumer of it is unmoved; `structure` is what gets
-           painted. */
+           TITLED — the frame is OUTSIDE the content, six pixels wide.
+           Measured on the left, right and bottom of eight windows, always
+           the same five colours reading outward: `000000`, then a raised
+           band `FFFFFF · CCCCCC · CCCCCC · 999999` lit from the top-left,
+           then `000000` again, then a one-pixel black drop shadow on the
+           right and bottom offset by one. This used to be a one-pixel black
+           rectangle ON the scene rect with a translucent grey blur behind
+           it, which put the frame INSIDE the content the guest drew and
+           lost twelve pixels of window furniture on every window the mirror
+           has ever shown.
+
+           DIALOG — the CONTENT BOX is the fixed point and the chrome is
+           drawn around it. It used to be the other way round, so a titleless
+           dialog's content began 14 pixels above and 6 right of where the
+           guest put it. `HitTester` reads `WindowChrome.contentOrigin`, so
+           it could not find a button a person had just aimed at, and Mail's
+           Internet-setup alert became a modal nobody could dismiss. Both
+           sides now read that one function.
+
+           The titled case does NOT go through `WindowChrome.contentOrigin`
+           arithmetic here because it does not need to: `PlatinumTitleBar.
+           Row.contentTop` is the same 20, counted off the machine, and the
+           titled render is no longer off by the (1, 2) that WindowChrome's
+           note used to describe. */
         let content: CGRect
+        let frame: CGRect
         if isDialog {
-            /* A modal alert is NOT this frame and is left exactly as it was:
-               its WDEF variant draws a raised border with no title bar, and
-               the one capture of one in the corpus (`scene-ie-error-alert`)
-               does not agree with a document frame either. Nothing here was
-               measured for it, so nothing here changes it. */
+            content = rect(WindowChrome.content(win))
+            frame = content.insetBy(dx: -CGFloat(WindowChrome.dialogBand),
+                                    dy: -CGFloat(WindowChrome.dialogBand))
+            /* Modal dialog chrome: NO title bar — a raised border band with
+               an inner hairline, content face flush inside it. Its WDEF
+               variant is not a document frame and nothing here was measured
+               against one, so the painting is left exactly as it was; only
+               WHICH rectangle it is hung on has changed. */
             ctx.fill(Path(frame.offsetBy(dx: 2, dy: 2)),
                      with: .color(.black.opacity(0.35)))
             ctx.fill(Path(frame), with: .color(Platinum.g6))
@@ -869,10 +888,8 @@ public struct SceneRenderer {
                      with: .color(Platinum.g4))
             ctx.stroke(Path(innerFrame), with: .color(Platinum.g6),
                        lineWidth: 1)
-            content = CGRect(x: frame.minX + 6, y: frame.minY + 6,
-                             width: frame.width - 12,
-                             height: max(0, frame.height - 12))
         } else {
+            frame = rect(win.rect)
             /* THE INACTIVE FRAME IS THE SAME SHAPE IN DIFFERENT COLOURS —
                measured, not guessed, on 2026-08-07. See PlatinumTitleBar's
                "Inactive" section: the geometry is identical to a pixel and

@@ -1,4 +1,5 @@
 import SwiftUI
+import MirrorKit
 
 /// Platinum asset pack, ported from `attic/web/platinum.css` — which in turn
 /// took its seven grays from the guest's hand-drawn kit (`ui_theme.c`).
@@ -112,7 +113,10 @@ public enum Platinum {
 
     // Metrics (px in logical space).
     public static let menubarHeight: CGFloat = 20
-    public static let titlebarHeight: CGFloat = 20
+    /// Derived, not restated: `WindowChrome.titlebarHeight` is
+    /// `SceneBuilder.titleBarHeight`, and a second copy of a number is a
+    /// second place to be wrong.
+    public static let titlebarHeight = CGFloat(WindowChrome.titlebarHeight)
     /// Where the guest's own content starts inside a window's scene rect.
     ///
     /// **It is 20, not 22, and the two extra pixels were pure invention.**

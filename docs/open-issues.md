@@ -650,6 +650,136 @@ in this tree looked strict and none of them could have seen this.
   wait should get its own budget.
 
 
+## FIXED: the modal nobody could dismiss was fourteen pixels, not a classification (2026-08-07, `claude/019-dialog-buttons-act`)
+
+**Verification level: EMULATOR-VERIFIED, end to end and by mutation.** Own
+VM, lane block 230 (anchor 13840 / wire 13841), session-private clone of
+`now-mirror-stage.qcow2` carrying this checkout's build — the guest that
+dialled reported `e715b0a6a5d7`. Nothing here ran on the PowerBook.
+
+Michelle, driving the round-6 stack: *"the button labels are now correct,
+but the buttons still dont work and the modal is otherwise blank"*, on
+Mail's Internet-setup alert (**Yes / No / Set Up Now**), which she could
+not dismiss on a VM she had been handed headless. The status line read
+*"click a control: the guest did not provide complete, authoritative
+semantics for that control"*.
+
+**That sentence pointed at the CDEF refusal, and the CDEF refusal is not
+the cause.** Nothing about it was widened. The guest already authorises
+all three buttons through the DITL route — `knowledge: known`, `kind:
+pushButton`, `action: press`, a ref each, `authorizesAction` true — and
+the mitigation the CDEF lane predicted ("dialog windows lose nothing")
+holds exactly as written. `ditemact` on item 3 dismissed the alert on the
+first attempt.
+
+### The cause
+
+The scene's window rect is the content port **grown UP by
+`titlebarHeight`**, whether or not anything is drawn in the band.
+`HitTester` read it that way. `SceneRenderer` did not: for a **titleless
+dialog** it treated the band as chrome it could shrink to its six-pixel
+border, so it drew the content 14 pixels high and 6 right.
+
+Fourteen is more than half a push button. Aiming at the middle of a drawn
+button hit-tested **above** every dialog item, fell through to the
+`userPane` spanning the whole dialog — honestly `unknown`, no action —
+and was refused for having no semantics. The refusal was correct about
+the object it was handed and the object was wrong.
+
+That is the third appearance of one shape: two sides each keeping their
+own copy of a geometry constant. `WindowChrome` already existed to stop
+it ("a click can never land on a box the renderer drew somewhere else")
+and did not own this number. It does now, and both sides read it.
+
+### The numbers, measured rather than assumed
+
+Guest screendump and scene taken at the same instant:
+
+| | reported | content-local | machine draws it at |
+|---|---|---|---|
+| NOW "Take Screenshot" (titled, kind 8) | window (28, 50) | (172, 423) | **(200, 493)** = rect + (0, 20) |
+| Mail alert buttons (titleless, kind 2) | window t 96 | t 85 | **y 201** = rect + (0, 20) |
+
+One convention, both window classes.
+
+### What was watched
+
+A click at (326, 211) — the centre of where the renderer **draws** "Yes",
+read off the render by differencing it against the same scene with that
+item removed, not recomputed from the geometry under test — resolves
+through `HitTester` → `ObjectResolver` → `InteractionPolicy` to
+`.dialogItem(ref: now-element-4dbd013f…, item: 3)`. Sent to the guest as
+that exact plan: `dispatched-but-unconfirmed`, and six seconds later the
+guest's own screendump shows the alert gone and Outlook Express's Inbox
+behind it.
+
+Both guards were watched failing. Restoring the renderer's six-pixel
+content inset fails `testEachDrawnButtonIsTheButtonAClickReaches` naming
+the `userPane` by ref — Michelle's symptom, in the failure text.
+Restoring the old refusal sentence fails
+`testARefusedControlSaysWhatWasUnavailable` five times over.
+
+### And the refusal now names a fact
+
+*"The guest did not provide complete, authoritative semantics"* is a
+verdict; a person can do nothing with it, which is the same failure as
+the dead-hooks warning four lanes read and correctly ignored. A refused
+control now says which fact was unavailable and what still works:
+
+> the guest could not determine what kind of control this is, only that
+> its definition function is CDEF 23 — the button family, which is a push
+> button, a check box or a radio button, and the variation code that
+> would say which cannot be read from outside the owning process, so this
+> driver will not decide for it. Pressing it by position is still
+> possible and nothing here has done so.
+
+`MirrorObject.Control` carries `semanticKnowledge` / `semanticDefinition`
+/ `semanticCdef` for that sentence. **The id is never mapped to a kind** —
+naming it says the lookup worked and the id was not enough.
+
+### Still open, from the same capture
+
+- **A modal can still strand a person, and this only widens the road out
+  rather than closing the hole.** A dialog whose items are all `userItem`
+  or `resCtrl`, or whose window class the walk never enters, has no
+  authorised route at all, and every other window is unreachable behind
+  it. Nothing in the mirror treats "the front window is modal and I can
+  serve none of it" as different from any other refusal. Mail's alert is
+  now serveable; the class is not closed.
+
+  **And the cost is larger than a dialog you cannot dismiss.**
+  `tools/shutdown-guest.py`'s Finder route needs the Finder to own the
+  menu bar; a modal holds it, so the tool declines by name and falls back
+  to the applet, which is known to leave the HFS volume marked mounted
+  (measured by another lane the same day, on this defect). So a stuck
+  modal is also a dirty image waiting to happen for anyone who preserves
+  that clone — a wedged machine and a poisoned oracle from one refusal.
+- **The alert's message is `^0` and `^1`, so the modal really is blank.**
+  Items 5 and 6 are `staticText` whose DITL text is the **ParamText
+  placeholders**, and Mail substitutes at draw time via `ParamText`. The
+  guest reads the item's own handle (`dialog_text.h`) and gets the
+  template; the sentence a person must read to answer the question lives
+  in the Dialog Manager's four param strings and is not on the wire at
+  all. This is the second half of Michelle's report and it is a GUEST
+  gap, not a renderer one. (Sweep A saw the same items as raw pointer
+  bytes; that half is fixed, and this is what is underneath it.)
+- **Outlook Express's Setup Assistant publishes no `dialogItems` at
+  all** — `windowKind` 1445, an application-defined kind, so
+  `now_scene_walk_window` never enters the dialog branch and all 13 of
+  its radio buttons and check boxes arrive as `unknown` `cdef: 23`
+  controls. It is a DialogRecord by every other sign. The kind gate is
+  there for a real reason (a `DialogRecord`'s TEHandle sits past the end
+  of a plain `WindowRecord`), so widening it needs a different proof that
+  the record is a dialog — not a wider kind test.
+- ~~**A titled window's render is still off `contentOrigin` by (1, 2)**~~
+  — *(2026-08-07, round 8 merge: this stopped being true before it
+  landed.* `claude/019-window-flags-and-join`'s predecessor moved the
+  window frame OUTSIDE the scene rect, took `Platinum.contentTop` from 22
+  to 20, and the renderer now counts off `PlatinumTitleBar.Row.contentTop`
+  = 20. Both classes agree with the machine; the (1, 2) it describes is
+  gone with its cause, not left alone.*)
+
+
 ## FIXED: the drive loop's own instrument armed every plane except the one that draws interiors (2026-08-07, `claude/019-instrument-arms-content`)
 
 **Verification level: EMULATOR-VERIFIED, by mutation.** Own VM, lane block
