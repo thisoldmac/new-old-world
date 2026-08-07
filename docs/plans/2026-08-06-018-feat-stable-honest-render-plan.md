@@ -316,6 +316,81 @@ guest change, never by a return code — the Mirror is tested by driving
 it, and a green unit test for an act verb proves the wire, not the
 effect.
 
+### Slice 9 — The guest's real background (added 2026-08-07)
+
+Michelle raised this and scoped it herself: **desktop PICTURES are out
+of scope for now**, but a picture renders on top of a small repeated
+pattern, so the pattern layer is what shows wherever a picture does not
+reach — and getting it right is the durable half.
+
+Lane C established the shape of the problem: **`ppat` 16 is a shipped
+default that Appearance never updates**, so the renderer has been tiling
+a factory resource with no relationship to the current desktop. On the
+stage image the real desktop is an 800×600 picture drawn once at origin,
+so the render is wrong twice — wrong art, AND tiled where the machine
+does not tile. Lane C built the offline route (the pack manifest's
+`desktop` object) and named its own limit: it is true only for a guest
+booted from that image and unchanged since.
+
+This slice closes that with the **live** answer: `GetTheme` with
+`kThemeDesktopPatternTag` (CarbonLib 1.0+, inside our floor;
+`LMGetDeskCPat`/`SetDeskCPat` are NOT available in Carbon), carried
+through a verb serving both faces into the scene. Where it cannot be
+obtained, the honest fallback is the marked unknown, never a guessed
+pattern.
+
+### Slice 10 — Drag as an act primitive (added 2026-08-07)
+
+Michelle's vision is native drag between the two Macs: files on and off
+the Mirror's desktop, targeting the desktop, a Finder window, an open
+application or an app icon — plus ordinary intra-guest dragging to
+rearrange or move files, and drag as the way scroll bars and sliders
+actually work.
+
+**Split deliberately.** This slice takes only the **act-plane
+primitive** — sustained press → move → release — folded into slice 8's
+lane because it is the same plane and the same honesty problem.
+
+**Cross-machine FILE drag is held for its own plan**, for two reasons
+worth stating so the deferral is not mistaken for disinterest:
+
+- **It sits on geometry that is being repaired right now.** Dropping
+  onto a thing means identifying that thing; desktop items were
+  reporting screen coordinates while every other surface was
+  content-local (fixed in slice 4), and list rows still report saved
+  icon-grid positions. Building drop-targeting on that would encode
+  today's bugs into a new subsystem.
+- **It is an arc, not a slice** — file transfer, drag sessions, promise
+  types, and the guest's own Drag Manager.
+
+**And the primitive itself is sequenced behind slice 8's honesty
+work.** `as Buttons` currently dispatches cleanly and does nothing; a
+plane where a click can silently succeed will make a drag fail longer,
+in more intermediate states, and far less visibly. Two hazards to
+design against: a drag that dies mid-gesture must not leave the guest
+holding a mouse-down, and the primitive must not fight a human's own
+input at the machine.
+
+### Not taken: window chrome — VETOED to plan 016 (2026-08-07)
+
+Michelle proposed polishing title bars and their buttons. Declined as a
+slice here and routed to
+[016](2026-08-06-016-feat-platinum-from-the-source-plan.md), on two
+grounds:
+
+- **It is 016's exact mechanism.** Lane C's census found no tab bitmap
+  anywhere in `Apple platinum` because `DrawThemeTab` draws them
+  procedurally at run time. Title bars and their widgets are the same
+  family — there is nothing to extract, and the answer is 016's
+  "Appearance *answers*" route (`GetThemeMetric`,
+  `DrawThemeTitleBarWidget`). A slice here would fork chrome work
+  across two plans.
+- **Chrome is already the best-scoring axis.** Sweep A: CHROME 3 on
+  most targets, 2 on three of them — while Monitors and Finder icon
+  view sit at 0 on PLACEMENT and REGIONS, and the Finder's entire
+  interior renders as one hatch. Title bars are the most visible thing
+  that is not broken.
+
 ### Slice 6 — Sweep B and the verdict
 
 Re-run the sweep, same spec, same targets, same machine-shape. Output:
