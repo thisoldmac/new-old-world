@@ -910,6 +910,16 @@ public struct SceneRenderer {
             drawDialogItem(contentCtx, item, contentOrigin: content.origin,
                            windowFace: windowFace)
         }
+        /* AND SO DOES A GROUND CONTROL. See `controlIsGround`: the
+           chain's order is the application's, not a stacking order, and
+           a pane that happens to arrive last must not bury what came
+           before it. */
+        for control in win.controls where control.visible
+                && Self.controlIsGround(control)
+                && !dialogRefs.contains(control.ref) {
+            drawControl(contentCtx, control, contentOrigin: content.origin,
+                        isDefault: false, windowFace: windowFace)
+        }
         if let display = win.display {
             DisplayReplay.draw(display, in: contentCtx, content: content,
                                excluding: semanticFrames,
@@ -922,6 +932,7 @@ public struct SceneRenderer {
         }
         for control in win.controls where control.visible
                 && !dialogRefs.contains(control.ref)
+                && !Self.controlIsGround(control)
                 && (!displayOwnsVisuals || Self.semanticOwnsDisplay(control)
                     || Self.isWindowFurniture(control)) {
             drawControl(contentCtx, control, contentOrigin: content.origin,
@@ -1187,7 +1198,7 @@ public struct SceneRenderer {
     /// the rule is true independently of who is sending — **the claim
     /// must be no stronger than the evidence, and a CDEF id is not
     /// evidence about a string.**
-    static func semanticText(_ semantic: MirrorKit.Scene.Semantics?)
+    public static func semanticText(_ semantic: MirrorKit.Scene.Semantics?)
         -> String? {
         guard let semantic, semantic.knowledge == .known,
               let value = semantic.value, !value.isEmpty else { return nil }
@@ -1233,7 +1244,7 @@ public struct SceneRenderer {
     /// CDEF route classified outranks an item that carries **no kind at
     /// all**, and outranks nothing else. An item that knows what it is
     /// keeps the rectangle.
-    static func semanticOutranks(_ ctl: MirrorKit.Scene.Control,
+    public static func semanticOutranks(_ ctl: MirrorKit.Scene.Control,
                                  _ item: MirrorKit.Scene.DialogItem?)
         -> Bool {
         if Self.semanticSupersedesResource(ctl) { return true }
@@ -1601,7 +1612,7 @@ public struct SceneRenderer {
     /// contains one, and a corrupted read reliably does. This is a
     /// renderer-side defence, not a fix: the walk reporting an address as
     /// a string is a guest defect and belongs in docs/open-issues.md.
-    static func displayableTitle(_ title: String) -> String? {
+    public static func displayableTitle(_ title: String) -> String? {
         guard !title.isEmpty,
               !title.unicodeScalars.contains(where: {
                   $0.value < 0x20 || $0.value == 0x7f
@@ -1632,7 +1643,7 @@ public struct SceneRenderer {
     /// Deliberately not "substitute something plausible": a value this
     /// side invents is the confident wrong answer rung 4 exists to
     /// forbid, and the `^` is at least legibly broken.
-    static func holdsParamText(_ title: String) -> Bool {
+    public static func holdsParamText(_ title: String) -> Bool {
         var previous: Character?
         for character in title {
             if previous == "^", character.isNumber { return true }
@@ -1646,6 +1657,30 @@ public struct SceneRenderer {
     /// it: they may never silence the drawing under them
     /// (`dialogItemOwnsDisplay`), and they are drawn BEFORE the replay
     /// rather than after it, because that is where ground goes.
+    /// The control-plane spelling of ``dialogItemIsBackground``.
+    ///
+    /// A `userPane` is a REGION an application draws into. It fills a
+    /// rectangle and says nothing about what is in it, which is the
+    /// whole definition of ground — `isBackgroundKind` has listed it as
+    /// naming nothing since the ladder was written, and the DITL twin
+    /// `userItem` has declined to draw over its contents for as long.
+    ///
+    /// What was missing was the ORDER. Appearance's outermost control is
+    /// a user pane covering the entire content rect and it is LAST in
+    /// the chain, so its marked-unknown plate was painted after the six
+    /// tabs and erased every one of them (integration round 4, watched
+    /// on the emulator). The coverage guard in `drawControl` answers the
+    /// armed case; it cannot answer the unarmed one, where there is no
+    /// ink to yield to and the pane still buries the controls before it.
+    ///
+    /// Same fix as slice 16 made for the four background DITL kinds:
+    /// ground goes down FIRST, and the machine draws on it afterwards.
+    /// Not another exclusion — the plate still marks an honest absence
+    /// where nothing else reaches that rectangle.
+    public static func controlIsGround(_ ctl: MirrorKit.Scene.Control) -> Bool {
+        ctl.semantic?.kind == "userPane"
+    }
+
     static func dialogItemIsBackground(_ kind: String?) -> Bool {
         switch kind {
         case "panel", "placard", "selectionBand", "separator": return true
