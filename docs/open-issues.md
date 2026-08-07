@@ -484,6 +484,104 @@ And there is deliberately no verb the other way: the host drives the
 guest's windows through the act plane, and a `guest.show` would be a
 second, weaker route into it.
 
+## FIXED: one question, five answers — the process family, the scene and the front process (2026-08-07, `claude/019-one-answer-b`)
+
+Plan 019 slice 2, findings F3, F5 and F6 of the surface audit.
+
+**Five independent `GetNextProcess` walks** answered "what is running and
+which of it is faceless" — `process.list`, the `ps` console command, the
+Processes page, the scene plane and `observe` — and the
+`modeOnlyBackground` classification was copy-pasted into four of them.
+`commands.c` admitted it in a comment: *"the same test
+`serve_process_list` makes."* **The scene read the bit in none of them**,
+so at one instant `process.list` said `kind: background` about a process
+the scene called `ax_oracle_not_found`. Both were honest. A caller could
+not tell, and a driving agent that reads one answer and acts on another
+is the failure this exists to prevent.
+
+`now-guest-ppc/src/processes/proc_roster.{h,c}` is now the one walk and
+the one classifier. It is an **iterator, not a table**: a table of every
+process is a kilobyte of somebody's stack on a 56 MB machine, and the
+thing worth sharing is the sampling discipline. `now_proc_roster_begin`
+samples `GetFrontProcess` and `GetCurrentProcess` **once**, before the
+first row — so "one front process per reply" holds by construction
+rather than by care. `observe.c`'s `bind_target` read the front **per
+process** (F5) and could emit a reply in which two rows carried
+`front: true`; it now has no such call to make.
+
+**The headless lane's vocabulary is preserved and was the point**: the
+kind is the process's own `SIZE` declaration, never inferred from an
+empty window list, and the scene's `partial` coverage is derived from the
+roster's `unreadable` count rather than a flag each walk sets for itself.
+
+**F6 — three fronting implementations, three claims.** `SetFrontProcess`
+returning `noErr` means the switch was *scheduled*. The console `front`
+confirmed with its own loop; `mach activate` confirmed with a second copy
+of that loop; the **wire's `process.front` answered `ok:true` and never
+looked** — and `now_bring_to_front` over MCP rides that exact path, so an
+agent got the weakest of three claims with no way to tell; the anchor
+`cycle` called `SetFrontProcess` raw and counted **accepted requests** in
+a field its own header documents as *"applications actually brought
+forward"*. `now_proc_front_confirm` is that ask-and-re-read, once, and
+every caller now reports what happened.
+
+**DRIVEN, on an emulated mac99/OS 9.1 clone of the stage oracle** (lane
+block 502, anchor 16016 / wire 16017, guest build `d4f42b3753e7`), not
+merely tested:
+
+- Console `ps`, wire `process.list` and the **scene plane** agree on all
+  **8** rows of one machine in one connection — including the six
+  faceless ones, which the scene now reports as `backgroundOnly: true`
+  with window coverage `unavailable, reason: no-ui`. The scene's
+  `process-kind` coverage reads `complete`.
+- **The one remaining `ax_oracle_not_found` in that scene is the
+  Finder** — a faced process whose anchor genuinely could not be read on
+  a VM with no armed plane. That is the word doing its job: an error
+  about a failure, not about a normal condition.
+- `observe` returned 8 rows with **exactly one** `front: true`.
+- `process.front` on the Finder answered `ok:true`, and a
+  `process.list` taken immediately after named the Finder as front. The
+  verb's claim was checked against the machine rather than believed.
+
+**What is NOT verified, and matters.** The confirm's
+*accepted-but-unconfirmed* branch was **never exercised** — asking to
+front a faceless process on this machine took the `SetFrontProcess`
+refusal path instead, and a switch that is accepted and then does not
+land could not be staged deliberately. So that branch builds, reads
+correctly and has never run. Nothing here is metal-verified.
+
+**The contract change was NOT made.** `ProcessResult` is
+`additionalProperties: false` and carries only `ok` and `reason`; the
+audit's recommendation of an explicit `outcome: unconfirmed` needs the
+contract first. The wire now answers `ok: false` with a reason naming the
+unlanded switch, which is honest within the schema as written and
+strictly more informative than the unconditional `ok: true` it replaced —
+but it is a **behaviour change for any caller that read `ok` as "the
+request was accepted"**, and that is the thing to weigh before the field
+is added.
+
+`ProcessRosterSingleSourceTests` keeps it closed and **maintains no
+list**: it walks every `.c` under `now-guest-ppc/src` at test time and
+derives both sets from what it finds, so a sixth walk in a new directory
+fails the same day it is written. Its five substantive rules were each
+watched failing by mutation, and four of them **failed on their first
+run against real code** — naming `main.c`, `software.c`,
+`proc_actions.c`, `anchor_cycle.c` and `processes_layout.c`, all now
+closed. `software.c`'s Finder lookup matched the `'MACS'` creator alone,
+so a Finder identified by its `'FNDR'` **type** — which every other
+reader in this guest accepts — was not the Finder there.
+
+Removed on the way: `proc_kind_text`, which had a native test and **no
+caller in the product** — a fourth opinion on what the Finder is, held
+only by its own test. That is the shape [contract-coverage](contract-coverage.md)
+warns about: coverage that proves nothing.
+
+**Left for later, named rather than silently skipped:** F4 (two titles
+under one ref — the control's live title and the DITL's, reconciled only
+partially, `scene_walk.c:290-303`), F8 (`sw` sweeps live where
+`software.list` pages a cache that cannot say how old it is) and F12
+(eight hand-rolled frame codecs).
+
 ## FIXED: rig ports were assigned by hand, and three lanes paid for it in one day (2026-08-07)
 
 A dozen parallel lanes each wanted a guest VM and a host app, and the
