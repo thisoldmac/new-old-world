@@ -114,6 +114,7 @@ add_application(now-guest-ppc
     src/scene/scene_json.c
     src/scene/scene_phase.c
     src/scene/scene_collect.c
+    src/scene/front_order.c
     src/scene/scene_self.c
     src/workshop/control_kind.c
     src/scene/scene_walk.c

@@ -964,6 +964,12 @@ static void put_coverage(Sink *k, const NowScene *s)
        stay true-only: this says whether an absent key means "has a face"
        or "nobody asked". See NowScene.process_kind_coverage. */
     put_coverage_claim(k, "process-kind", NULL, s->process_kind_coverage, 0);
+    /* AND ONE FOR THE ORDER THE ARRAY ITSELF CARRIES. Every other claim
+       here is about a list's membership; this one is about its
+       SEQUENCE, which is meaning too - the front process is first - and
+       until now was the one piece of the scene that could be wrong with
+       nothing saying so. See NowScene.depth_coverage. */
+    put_coverage_claim(k, "depth", NULL, s->depth_coverage, 0);
     for (i = 0; i < s->proc_count; ++i) {
         const NowSceneProc *p = &s->procs[i];
 

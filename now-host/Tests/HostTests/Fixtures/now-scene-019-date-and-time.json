@@ -1,0 +1,2929 @@
+{
+ "apps": [
+  {
+   "front": false,
+   "incarnation": "process-93f7684a",
+   "name": "New Old World",
+   "psn": "0.29360131"
+  },
+  {
+   "backgroundOnly": true,
+   "front": false,
+   "incarnation": "process-5e7978c4",
+   "name": "Control Strip Extension",
+   "psn": "0.29491201"
+  },
+  {
+   "backgroundOnly": true,
+   "front": false,
+   "incarnation": "process-032bb040",
+   "name": "DVD AutoLauncher",
+   "psn": "0.29622273"
+  },
+  {
+   "backgroundOnly": true,
+   "front": false,
+   "incarnation": "process-fd257c78",
+   "name": "FBC Indexing Scheduler",
+   "psn": "0.29687809"
+  },
+  {
+   "backgroundOnly": true,
+   "front": false,
+   "incarnation": "process-28417a37",
+   "name": "Folder Actions",
+   "psn": "0.29753345"
+  },
+  {
+   "backgroundOnly": true,
+   "front": false,
+   "incarnation": "process-3f74d209",
+   "name": "tbt-appe",
+   "psn": "0.29818881"
+  },
+  {
+   "front": false,
+   "incarnation": "process-db43359d",
+   "name": "Finder",
+   "psn": "0.29949953"
+  },
+  {
+   "backgroundOnly": true,
+   "front": false,
+   "incarnation": "process-32ae91a5",
+   "name": "tbt-worker",
+   "psn": "0.30736386"
+  },
+  {
+   "front": true,
+   "incarnation": "process-a2d2e591",
+   "name": "Date & Time",
+   "psn": "0.35520514"
+  },
+  {
+   "front": false,
+   "incarnation": "process-de68814b",
+   "name": "Appearance",
+   "psn": "0.35979265"
+  }
+ ],
+ "capturedAt": 1786068495.0,
+ "menubar": {
+  "app": "Date & Time",
+  "menus": [
+   {
+    "apple": true,
+    "id": 128,
+    "items": [
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 1,
+      "mark": false,
+      "separator": false,
+      "title": "About Date & Time"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 2,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 3,
+      "mark": false,
+      "separator": false,
+      "title": "AirPort"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 4,
+      "mark": false,
+      "separator": false,
+      "title": "Apple DVD Player"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 5,
+      "mark": false,
+      "separator": false,
+      "title": "Apple System Profiler"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 6,
+      "mark": false,
+      "separator": false,
+      "title": "Calculator"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 7,
+      "mark": false,
+      "separator": false,
+      "title": "Chooser"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 8,
+      "mark": false,
+      "separator": false,
+      "title": "Control Panels"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 9,
+      "mark": false,
+      "separator": false,
+      "title": "Favorites"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 10,
+      "mark": false,
+      "separator": false,
+      "title": "Key Caps"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 11,
+      "mark": false,
+      "separator": false,
+      "title": "Network Browser"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 12,
+      "mark": false,
+      "separator": false,
+      "title": "Recent Applications"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 13,
+      "mark": false,
+      "separator": false,
+      "title": "Recent Documents"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 14,
+      "mark": false,
+      "separator": false,
+      "title": "Remote Access Status"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 15,
+      "mark": false,
+      "separator": false,
+      "title": "Scrapbook"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 16,
+      "mark": false,
+      "separator": false,
+      "title": "Sherlock 2"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 17,
+      "mark": false,
+      "separator": false,
+      "title": "Speakable Items"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 18,
+      "mark": false,
+      "separator": false,
+      "title": "Stickies"
+     }
+    ],
+    "left": 10,
+    "title": ""
+   },
+   {
+    "apple": false,
+    "id": 129,
+    "items": [
+     {
+      "cmd": "W",
+      "enabled": false,
+      "index": 1,
+      "mark": false,
+      "separator": false,
+      "title": "Close"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 2,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "Q",
+      "enabled": true,
+      "index": 3,
+      "mark": false,
+      "separator": false,
+      "title": "Quit"
+     }
+    ],
+    "left": 38,
+    "title": "File"
+   },
+   {
+    "apple": false,
+    "id": 130,
+    "items": [
+     {
+      "cmd": "Z",
+      "enabled": false,
+      "index": 1,
+      "mark": false,
+      "separator": false,
+      "title": "Undo"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 2,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "X",
+      "enabled": false,
+      "index": 3,
+      "mark": false,
+      "separator": false,
+      "title": "Cut"
+     },
+     {
+      "cmd": "C",
+      "enabled": false,
+      "index": 4,
+      "mark": false,
+      "separator": false,
+      "title": "Copy"
+     },
+     {
+      "cmd": "V",
+      "enabled": false,
+      "index": 5,
+      "mark": false,
+      "separator": false,
+      "title": "Paste"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 6,
+      "mark": false,
+      "separator": false,
+      "title": "Clear"
+     }
+    ],
+    "left": 73,
+    "title": "Edit"
+   },
+   {
+    "apple": false,
+    "id": -16490,
+    "items": [
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 1,
+      "mark": false,
+      "separator": false,
+      "title": "Help Center"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 2,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 3,
+      "mark": false,
+      "separator": false,
+      "title": "Show/Hide Balloons"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 4,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "?",
+      "enabled": true,
+      "index": 5,
+      "mark": false,
+      "separator": false,
+      "title": "Mac Help"
+     }
+    ],
+    "left": 110,
+    "title": "Help"
+   },
+   {
+    "apple": false,
+    "id": -16489,
+    "items": [
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 1,
+      "mark": false,
+      "separator": false,
+      "title": "Hide Date & Time"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 2,
+      "mark": false,
+      "separator": false,
+      "title": "Hide Others"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 3,
+      "mark": false,
+      "separator": false,
+      "title": "Show All"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 4,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 5,
+      "mark": false,
+      "separator": false,
+      "title": "Appearance"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 6,
+      "mark": true,
+      "separator": false,
+      "title": "Date & Time"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 7,
+      "mark": false,
+      "separator": false,
+      "title": "Finder"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 8,
+      "mark": false,
+      "separator": false,
+      "title": "New Old World"
+     }
+    ],
+    "left": 682,
+    "title": ""
+   }
+  ]
+ },
+ "meta": {
+  "coverage": [
+   {
+    "scope": "processes",
+    "status": "complete"
+   },
+   {
+    "scope": "process-kind",
+    "status": "complete"
+   },
+   {
+    "owner": "process-93f7684a",
+    "scope": "windows",
+    "status": "complete"
+   },
+   {
+    "owner": "process-5e7978c4",
+    "reason": "no-ui",
+    "scope": "windows",
+    "status": "unavailable"
+   },
+   {
+    "owner": "process-032bb040",
+    "reason": "no-ui",
+    "scope": "windows",
+    "status": "unavailable"
+   },
+   {
+    "owner": "process-fd257c78",
+    "reason": "no-ui",
+    "scope": "windows",
+    "status": "unavailable"
+   },
+   {
+    "owner": "process-28417a37",
+    "reason": "no-ui",
+    "scope": "windows",
+    "status": "unavailable"
+   },
+   {
+    "owner": "process-3f74d209",
+    "reason": "no-ui",
+    "scope": "windows",
+    "status": "unavailable"
+   },
+   {
+    "owner": "process-db43359d",
+    "scope": "windows",
+    "status": "complete"
+   },
+   {
+    "owner": "process-32ae91a5",
+    "reason": "no-ui",
+    "scope": "windows",
+    "status": "unavailable"
+   },
+   {
+    "owner": "process-a2d2e591",
+    "scope": "windows",
+    "status": "complete"
+   },
+   {
+    "owner": "process-de68814b",
+    "scope": "windows",
+    "status": "complete"
+   },
+   {
+    "owner": "process-a2d2e591",
+    "scope": "menubar",
+    "status": "complete"
+   }
+  ],
+  "errors": [
+   "controls omitted: a window's control list hit a bound or failed validation, so that window reports no controls rather than some of them",
+   "Appearance: control chain hit a bound or failed validation, so its controls are unknown rather than absent"
+  ],
+  "latencyMs": 0,
+  "phases": {
+   "clockReads": 88,
+   "clockUs": 414,
+   "faults": 0,
+   "us": {
+    "bind": 210,
+    "controls": 1524,
+    "encode": 862,
+    "enumerate": 942,
+    "menubar": 115,
+    "refs": 747,
+    "semantics": 395,
+    "windows": 1206
+   }
+  },
+  "plane": "peek anchors: processes, windows, controls, dialog text, and th"
+ },
+ "processes": [
+  {
+   "front": false,
+   "incarnation": "process-93f7684a",
+   "name": "New Old World",
+   "psn": "0.29360131",
+   "signature": "NOWo"
+  },
+  {
+   "backgroundOnly": true,
+   "front": false,
+   "incarnation": "process-5e7978c4",
+   "name": "Control Strip Extension",
+   "psn": "0.29491201",
+   "signature": "sdev"
+  },
+  {
+   "backgroundOnly": true,
+   "front": false,
+   "incarnation": "process-032bb040",
+   "name": "DVD AutoLauncher",
+   "psn": "0.29622273",
+   "signature": "dval"
+  },
+  {
+   "backgroundOnly": true,
+   "front": false,
+   "incarnation": "process-fd257c78",
+   "name": "FBC Indexing Scheduler",
+   "psn": "0.29687809",
+   "signature": "fbcb"
+  },
+  {
+   "backgroundOnly": true,
+   "front": false,
+   "incarnation": "process-28417a37",
+   "name": "Folder Actions",
+   "psn": "0.29753345",
+   "signature": "ssrv"
+  },
+  {
+   "backgroundOnly": true,
+   "front": false,
+   "incarnation": "process-3f74d209",
+   "name": "tbt-appe",
+   "psn": "0.29818881",
+   "signature": "TbtL"
+  },
+  {
+   "front": false,
+   "incarnation": "process-db43359d",
+   "name": "Finder",
+   "psn": "0.29949953",
+   "signature": "MACS"
+  },
+  {
+   "backgroundOnly": true,
+   "front": false,
+   "incarnation": "process-32ae91a5",
+   "name": "tbt-worker",
+   "psn": "0.30736386",
+   "signature": "TbNW"
+  },
+  {
+   "front": true,
+   "incarnation": "process-a2d2e591",
+   "name": "Date & Time",
+   "psn": "0.35520514",
+   "signature": "tim2"
+  },
+  {
+   "front": false,
+   "incarnation": "process-de68814b",
+   "name": "Appearance",
+   "psn": "0.35979265",
+   "signature": "apcp"
+  }
+ ],
+ "screen": {
+  "h": 600,
+  "w": 800
+ },
+ "seq": 18,
+ "source": "peek",
+ "version": 2,
+ "windows": [
+  {
+   "addr": 514676304,
+   "app": "Date & Time",
+   "controls": [
+    {
+     "enabled": false,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 246,
+      "l": 222,
+      "r": 341,
+      "t": 226
+     },
+     "ref": "now-element-4104ca0a-b2a2-54f3-315e-07787273fec9",
+     "role": "unknown",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-control-manager"
+     },
+     "title": "Server Options\u2026",
+     "value": 0,
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 268,
+      "l": 39,
+      "r": 203,
+      "t": 238
+     },
+     "ref": "now-element-c64b39a7-ab95-6d26-e99d-cab949321590",
+     "role": "unknown",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-control-manager"
+     },
+     "title": "",
+     "value": 0,
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "max": 0,
+     "min": 0,
+     "rect": {
+      "b": 233,
+      "l": 39,
+      "r": 203,
+      "t": 218
+     },
+     "ref": "now-element-f7868791-cacd-7268-1846-4133be89a50a",
+     "role": "unknown",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-control-manager"
+     },
+     "title": "",
+     "value": 0,
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 316,
+      "l": 222,
+      "r": 341,
+      "t": 296
+     },
+     "ref": "now-element-206a2368-44bc-178d-3b00-277e1793ad3b",
+     "role": "unknown",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-control-manager"
+     },
+     "title": "Clock Options\u2026",
+     "value": 0,
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 315,
+      "l": 107,
+      "r": 147,
+      "t": 297
+     },
+     "ref": "now-element-9b61ad4e-d75b-54e3-74c6-b3140099ec11",
+     "role": "unknown",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-control-manager"
+     },
+     "title": "Off",
+     "value": 0,
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 315,
+      "l": 58,
+      "r": 98,
+      "t": 297
+     },
+     "ref": "now-element-4b2c367e-137d-0883-6b9a-6ab8f2bcd87d",
+     "role": "unknown",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-control-manager"
+     },
+     "title": "On",
+     "value": 1,
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 180,
+      "l": 223,
+      "r": 342,
+      "t": 160
+     },
+     "ref": "now-element-309bef13-6ad9-cbea-51c3-cbdde45e783c",
+     "role": "unknown",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-control-manager"
+     },
+     "title": "Set Time Zone\u2026",
+     "value": 0,
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 188,
+      "l": 39,
+      "r": 203,
+      "t": 158
+     },
+     "ref": "now-element-a1b6bb8b-7d93-b51e-bd02-0af52601ed10",
+     "role": "unknown",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-control-manager"
+     },
+     "title": "",
+     "value": 0,
+     "visible": true
+    },
+    {
+     "enabled": false,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 156,
+      "l": 22,
+      "r": 340,
+      "t": 136
+     },
+     "ref": "now-element-3a303324-f52c-9fd5-5d28-94566ee53c0f",
+     "role": "unknown",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-control-manager"
+     },
+     "title": "Daylight-Saving Time is in effe",
+     "value": 0,
+     "visible": true
+    },
+    {
+     "enabled": false,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 138,
+      "l": 22,
+      "r": 340,
+      "t": 118
+     },
+     "ref": "now-element-0bff4b3b-9ca7-03a6-25e3-4f41561824c4",
+     "role": "unknown",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-control-manager"
+     },
+     "title": "Set Daylight-Saving Time Automa",
+     "value": 0,
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 83,
+      "l": 213,
+      "r": 332,
+      "t": 63
+     },
+     "ref": "now-element-60dcdf23-7411-185e-5148-a151dfc194a4",
+     "role": "unknown",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-control-manager"
+     },
+     "title": "Time Formats\u2026",
+     "value": 0,
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "max": 0,
+     "min": 0,
+     "rect": {
+      "b": 55,
+      "l": 213,
+      "r": 332,
+      "t": 32
+     },
+     "ref": "now-element-59aec017-8627-f4ae-feb0-939161f157f8",
+     "role": "unknown",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-control-manager"
+     },
+     "title": "",
+     "value": 2,
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 83,
+      "l": 36,
+      "r": 155,
+      "t": 63
+     },
+     "ref": "now-element-ebb0ac08-3884-5565-3abb-79ca45af814f",
+     "role": "unknown",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-control-manager"
+     },
+     "title": "Date Formats\u2026",
+     "value": 0,
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "max": 0,
+     "min": 0,
+     "rect": {
+      "b": 55,
+      "l": 36,
+      "r": 155,
+      "t": 32
+     },
+     "ref": "now-element-0e3fbd36-ed02-6b8b-99a6-3de44c501c71",
+     "role": "unknown",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-control-manager"
+     },
+     "title": "",
+     "value": 2,
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 298,
+      "l": 21,
+      "r": 126,
+      "t": 278
+     },
+     "ref": "now-element-0977a316-2d0d-c9f7-c283-e54ccf6316bd",
+     "role": "unknown",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-control-manager"
+     },
+     "title": "",
+     "value": 0,
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 274,
+      "l": 12,
+      "r": 353,
+      "t": 195
+     },
+     "ref": "now-element-5c1f7f44-d2f5-e475-12bd-bbc2b305d173",
+     "role": "unknown",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-control-manager"
+     },
+     "title": "Use a Network Time Server",
+     "value": 0,
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "max": 0,
+     "min": 0,
+     "rect": {
+      "b": 194,
+      "l": 12,
+      "r": 353,
+      "t": 100
+     },
+     "ref": "now-element-5e5fbd2b-cdd3-b016-9d59-4ae1a01795bc",
+     "role": "unknown",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-control-manager"
+     },
+     "title": "Time Zone",
+     "value": 0,
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "max": 0,
+     "min": 0,
+     "rect": {
+      "b": 97,
+      "l": 188,
+      "r": 353,
+      "t": 6
+     },
+     "ref": "now-element-af28dc88-f6ca-be01-0c1d-8d0600d823e7",
+     "role": "unknown",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-control-manager"
+     },
+     "title": "Current Time",
+     "value": 0,
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "max": 0,
+     "min": 0,
+     "rect": {
+      "b": 97,
+      "l": 12,
+      "r": 177,
+      "t": 6
+     },
+     "ref": "now-element-38139295-8bfa-aa0c-075f-dbcf901296be",
+     "role": "unknown",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-control-manager"
+     },
+     "title": "Current Date",
+     "value": 0,
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "max": 2,
+     "min": 0,
+     "rect": {
+      "b": 331,
+      "l": 10,
+      "r": 31,
+      "t": 311
+     },
+     "ref": "now-element-c5d867f7-7243-e5ee-2139-2f593fde8e18",
+     "role": "unknown",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-control-manager"
+     },
+     "title": "",
+     "value": 0,
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "max": 0,
+     "min": 0,
+     "rect": {
+      "b": 361,
+      "l": 0,
+      "r": 364,
+      "t": 0
+     },
+     "ref": "now-element-9554baf5-0261-8fa8-bbfa-f7c3b5a3cf4e",
+     "role": "unknown",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-control-manager"
+     },
+     "title": "",
+     "value": 0,
+     "visible": true
+    }
+   ],
+   "dialogItems": [
+    {
+     "enabled": true,
+     "number": 1,
+     "rect": {
+      "b": 331,
+      "l": 10,
+      "r": 31,
+      "t": 311
+     },
+     "ref": "now-element-c5d867f7-7243-e5ee-2139-2f593fde8e18",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-ditl"
+     },
+     "title": "",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 2,
+     "rect": {
+      "b": 97,
+      "l": 12,
+      "r": 177,
+      "t": 6
+     },
+     "ref": "now-element-38139295-8bfa-aa0c-075f-dbcf901296be",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-ditl"
+     },
+     "title": "Current Date",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 3,
+     "rect": {
+      "b": 97,
+      "l": 188,
+      "r": 353,
+      "t": 6
+     },
+     "ref": "now-element-af28dc88-f6ca-be01-0c1d-8d0600d823e7",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-ditl"
+     },
+     "title": "Current Time",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 4,
+     "rect": {
+      "b": 194,
+      "l": 12,
+      "r": 353,
+      "t": 100
+     },
+     "ref": "now-element-5e5fbd2b-cdd3-b016-9d59-4ae1a01795bc",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-ditl"
+     },
+     "title": "Time Zone",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 5,
+     "rect": {
+      "b": 274,
+      "l": 12,
+      "r": 353,
+      "t": 195
+     },
+     "ref": "now-element-5c1f7f44-d2f5-e475-12bd-bbc2b305d173",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-ditl"
+     },
+     "title": "Use a Network Time Server",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 6,
+     "rect": {
+      "b": 298,
+      "l": 21,
+      "r": 126,
+      "t": 278
+     },
+     "ref": "now-element-0977a316-2d0d-c9f7-c283-e54ccf6316bd",
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-ditl"
+     },
+     "title": "Menu Bar Clock",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 7,
+     "rect": {
+      "b": 55,
+      "l": 36,
+      "r": 155,
+      "t": 32
+     },
+     "ref": "now-element-0e3fbd36-ed02-6b8b-99a6-3de44c501c71",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-ditl"
+     },
+     "title": "\uf8ff<",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 8,
+     "rect": {
+      "b": 83,
+      "l": 36,
+      "r": 155,
+      "t": 63
+     },
+     "ref": "now-element-ebb0ac08-3884-5565-3abb-79ca45af814f",
+     "semantic": {
+      "action": "press",
+      "completeness": "complete",
+      "isDefault": false,
+      "kind": "pushButton",
+      "knowledge": "known",
+      "provenance": "guest-ditl"
+     },
+     "title": "Date Formats\u2026",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 9,
+     "rect": {
+      "b": 55,
+      "l": 213,
+      "r": 332,
+      "t": 32
+     },
+     "ref": "now-element-59aec017-8627-f4ae-feb0-939161f157f8",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-ditl"
+     },
+     "title": "\uf8ff=",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 10,
+     "rect": {
+      "b": 83,
+      "l": 213,
+      "r": 332,
+      "t": 63
+     },
+     "ref": "now-element-60dcdf23-7411-185e-5148-a151dfc194a4",
+     "semantic": {
+      "action": "press",
+      "completeness": "complete",
+      "isDefault": false,
+      "kind": "pushButton",
+      "knowledge": "known",
+      "provenance": "guest-ditl"
+     },
+     "title": "Time Formats\u2026",
+     "visible": true
+    },
+    {
+     "enabled": false,
+     "number": 11,
+     "rect": {
+      "b": 138,
+      "l": 22,
+      "r": 340,
+      "t": 118
+     },
+     "ref": "now-element-0bff4b3b-9ca7-03a6-25e3-4f41561824c4",
+     "semantic": {
+      "action": "press",
+      "completeness": "complete",
+      "kind": "checkBox",
+      "knowledge": "known",
+      "provenance": "guest-ditl",
+      "state": "off"
+     },
+     "title": "Set Daylight-Saving Time Automa",
+     "visible": true
+    },
+    {
+     "enabled": false,
+     "number": 12,
+     "rect": {
+      "b": 156,
+      "l": 22,
+      "r": 340,
+      "t": 136
+     },
+     "ref": "now-element-3a303324-f52c-9fd5-5d28-94566ee53c0f",
+     "semantic": {
+      "action": "press",
+      "completeness": "complete",
+      "kind": "checkBox",
+      "knowledge": "known",
+      "provenance": "guest-ditl",
+      "state": "off"
+     },
+     "title": "Daylight-Saving Time is in effe",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 13,
+     "rect": {
+      "b": 188,
+      "l": 39,
+      "r": 203,
+      "t": 158
+     },
+     "ref": "now-element-a1b6bb8b-7d93-b51e-bd02-0af52601ed10",
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-ditl"
+     },
+     "title": "",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 14,
+     "rect": {
+      "b": 180,
+      "l": 223,
+      "r": 342,
+      "t": 160
+     },
+     "ref": "now-element-309bef13-6ad9-cbea-51c3-cbdde45e783c",
+     "semantic": {
+      "action": "press",
+      "completeness": "complete",
+      "isDefault": false,
+      "kind": "pushButton",
+      "knowledge": "known",
+      "provenance": "guest-ditl"
+     },
+     "title": "Set Time Zone\u2026",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 15,
+     "rect": {
+      "b": 315,
+      "l": 58,
+      "r": 98,
+      "t": 297
+     },
+     "ref": "now-element-4b2c367e-137d-0883-6b9a-6ab8f2bcd87d",
+     "semantic": {
+      "action": "press",
+      "completeness": "complete",
+      "kind": "radioButton",
+      "knowledge": "known",
+      "provenance": "guest-ditl",
+      "state": "on"
+     },
+     "title": "On",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 16,
+     "rect": {
+      "b": 315,
+      "l": 107,
+      "r": 147,
+      "t": 297
+     },
+     "ref": "now-element-9b61ad4e-d75b-54e3-74c6-b3140099ec11",
+     "semantic": {
+      "action": "press",
+      "completeness": "complete",
+      "kind": "radioButton",
+      "knowledge": "known",
+      "provenance": "guest-ditl",
+      "state": "off"
+     },
+     "title": "Off",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 17,
+     "rect": {
+      "b": 316,
+      "l": 222,
+      "r": 341,
+      "t": 296
+     },
+     "ref": "now-element-206a2368-44bc-178d-3b00-277e1793ad3b",
+     "semantic": {
+      "action": "press",
+      "completeness": "complete",
+      "isDefault": false,
+      "kind": "pushButton",
+      "knowledge": "known",
+      "provenance": "guest-ditl"
+     },
+     "title": "Clock Options\u2026",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 18,
+     "rect": {
+      "b": 233,
+      "l": 39,
+      "r": 203,
+      "t": 218
+     },
+     "ref": "now-element-f7868791-cacd-7268-1846-4133be89a50a",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-ditl"
+     },
+     "title": "",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 19,
+     "rect": {
+      "b": 268,
+      "l": 39,
+      "r": 203,
+      "t": 238
+     },
+     "ref": "now-element-c64b39a7-ab95-6d26-e99d-cab949321590",
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-ditl"
+     },
+     "title": "",
+     "visible": true
+    },
+    {
+     "enabled": false,
+     "number": 20,
+     "rect": {
+      "b": 246,
+      "l": 222,
+      "r": 341,
+      "t": 226
+     },
+     "ref": "now-element-4104ca0a-b2a2-54f3-315e-07787273fec9",
+     "semantic": {
+      "action": "press",
+      "completeness": "complete",
+      "isDefault": false,
+      "kind": "pushButton",
+      "knowledge": "known",
+      "provenance": "guest-ditl"
+     },
+     "title": "Server Options\u2026",
+     "visible": true
+    }
+   ],
+   "front": true,
+   "id": "0.35520514/Date & Time#0",
+   "incarnation": "process-a2d2e591/window-1ead5650",
+   "kind": 2,
+   "psn": "0.35520514",
+   "rect": {
+    "b": 425,
+    "l": 217,
+    "r": 581,
+    "t": 64
+   },
+   "ref": "now-window-47bd8ea7-8316-ebbe-7057-45b93ed4ed38",
+   "text": {
+    "active": false,
+    "content": ""
+   },
+   "title": "Date & Time",
+   "visible": true,
+   "z": 0
+  },
+  {
+   "addr": 516659136,
+   "app": "New Old World",
+   "controls": [
+    {
+     "enabled": false,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 340,
+      "l": 135,
+      "r": 151,
+      "t": 10
+     },
+     "ref": "now-element-f423001c-b24d-2749-06af-13c2a0aeaf3f",
+     "role": "scrollbar",
+     "semantic": {
+      "action": "scroll",
+      "completeness": "complete",
+      "kind": "scrollBar",
+      "knowledge": "known",
+      "provenance": "guest-control-manager",
+      "value": "0"
+     },
+     "title": "",
+     "value": 0,
+     "visible": true
+    },
+    {
+     "enabled": false,
+     "max": 6,
+     "min": 1,
+     "rect": {
+      "b": 84,
+      "l": 518,
+      "r": 720,
+      "t": 64
+     },
+     "ref": "now-element-4eb2e12e-9e38-cb37-ae33-ede80fab4e61",
+     "role": "popup",
+     "semantic": {
+      "action": "choose",
+      "completeness": "complete",
+      "kind": "popupMenu",
+      "knowledge": "known",
+      "provenance": "guest-control-manager",
+      "value": "8-bit"
+     },
+     "title": "Depth:",
+     "value": 4,
+     "visible": true
+    },
+    {
+     "enabled": false,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 108,
+      "l": 520,
+      "r": 720,
+      "t": 92
+     },
+     "ref": "now-element-dbc6aec7-92fb-6f3a-f901-7605b2a08d38",
+     "role": "checkbox",
+     "semantic": {
+      "action": "press",
+      "completeness": "complete",
+      "kind": "checkBox",
+      "knowledge": "known",
+      "provenance": "guest-control-manager",
+      "state": "on"
+     },
+     "title": "Compress on wire (PackBits)",
+     "value": 1,
+     "visible": true
+    },
+    {
+     "enabled": false,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 150,
+      "l": 520,
+      "r": 720,
+      "t": 134
+     },
+     "ref": "now-element-a3f472dd-a0b3-6c48-c8f3-efdfb568666a",
+     "role": "checkbox",
+     "semantic": {
+      "action": "press",
+      "completeness": "complete",
+      "kind": "checkBox",
+      "knowledge": "known",
+      "provenance": "guest-control-manager",
+      "state": "off"
+     },
+     "title": "Predictive capture",
+     "value": 0,
+     "visible": true
+    },
+    {
+     "enabled": false,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 170,
+      "l": 520,
+      "r": 720,
+      "t": 154
+     },
+     "ref": "now-element-aa216b4f-1916-e466-4da6-af2d6bca387c",
+     "role": "checkbox",
+     "semantic": {
+      "action": "press",
+      "completeness": "complete",
+      "kind": "checkBox",
+      "knowledge": "known",
+      "provenance": "guest-control-manager",
+      "state": "off"
+     },
+     "title": "Interlaced fields",
+     "value": 0,
+     "visible": true
+    },
+    {
+     "enabled": false,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 238,
+      "l": 508,
+      "r": 520,
+      "t": 226
+     },
+     "ref": "now-element-bf9fd7c5-d336-1568-968b-eb77271872b2",
+     "role": "triangle",
+     "semantic": {
+      "action": "press",
+      "completeness": "complete",
+      "kind": "disclosureTriangle",
+      "knowledge": "known",
+      "provenance": "guest-control-manager",
+      "state": "off"
+     },
+     "title": "",
+     "value": 0,
+     "visible": true
+    },
+    {
+     "enabled": false,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 443,
+      "l": 172,
+      "r": 302,
+      "t": 423
+     },
+     "ref": "now-element-0c93b8b9-0028-f66c-15c6-a15ff61c9f42",
+     "role": "button",
+     "semantic": {
+      "action": "press",
+      "completeness": "complete",
+      "kind": "pushButton",
+      "knowledge": "known",
+      "provenance": "guest-control-manager"
+     },
+     "title": "Take Screenshot",
+     "value": 0,
+     "visible": true
+    },
+    {
+     "enabled": false,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 443,
+      "l": 312,
+      "r": 462,
+      "t": 423
+     },
+     "ref": "now-element-80cfb429-de4d-2244-0200-991f7db16a32",
+     "role": "button",
+     "semantic": {
+      "action": "press",
+      "completeness": "complete",
+      "kind": "pushButton",
+      "knowledge": "known",
+      "provenance": "guest-control-manager"
+     },
+     "title": "Send to 019-pair-capture",
+     "value": 0,
+     "visible": true
+    },
+    {
+     "enabled": false,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 443,
+      "l": 472,
+      "r": 622,
+      "t": 423
+     },
+     "ref": "now-element-7d77472f-df9f-73f2-1b03-5a5d02af0cf0",
+     "role": "button",
+     "semantic": {
+      "action": "press",
+      "completeness": "complete",
+      "kind": "pushButton",
+      "knowledge": "known",
+      "provenance": "guest-control-manager"
+     },
+     "title": "Start Streaming",
+     "value": 0,
+     "visible": true
+    }
+   ],
+   "dialogItems": [
+    {
+     "enabled": false,
+     "number": 1,
+     "rect": {
+      "b": 38,
+      "l": 160,
+      "r": 744,
+      "t": 0
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "placard",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "",
+     "visible": true
+    },
+    {
+     "enabled": false,
+     "number": 2,
+     "rect": {
+      "b": 478,
+      "l": 160,
+      "r": 744,
+      "t": 455
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "placard",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 3,
+     "rect": {
+      "b": 470,
+      "l": 8,
+      "r": 152,
+      "t": 8
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "panel",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 4,
+     "rect": {
+      "b": 375,
+      "l": 9,
+      "r": 151,
+      "t": 374
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "separator",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 5,
+     "rect": {
+      "b": 40,
+      "l": 9,
+      "r": 135,
+      "t": 10
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "selectionBand",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 6,
+     "rect": {
+      "b": 33,
+      "l": 17,
+      "r": 33,
+      "t": 17
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "icon",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Screenshots",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 7,
+     "rect": {
+      "b": 26,
+      "l": 39,
+      "r": 131,
+      "t": 13
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Screenshots",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 8,
+     "rect": {
+      "b": 39,
+      "l": 39,
+      "r": 131,
+      "t": 25
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Capture and stream",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 9,
+     "rect": {
+      "b": 63,
+      "l": 17,
+      "r": 33,
+      "t": 47
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "icon",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Files",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 10,
+     "rect": {
+      "b": 56,
+      "l": 39,
+      "r": 131,
+      "t": 43
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Files",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 11,
+     "rect": {
+      "b": 69,
+      "l": 39,
+      "r": 131,
+      "t": 55
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Browse and exchange",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 12,
+     "rect": {
+      "b": 93,
+      "l": 17,
+      "r": 33,
+      "t": 77
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "icon",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Console",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 13,
+     "rect": {
+      "b": 86,
+      "l": 39,
+      "r": 131,
+      "t": 73
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Console",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 14,
+     "rect": {
+      "b": 99,
+      "l": 39,
+      "r": 131,
+      "t": 85
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Local commands",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 15,
+     "rect": {
+      "b": 123,
+      "l": 17,
+      "r": 33,
+      "t": 107
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "icon",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Processes",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 16,
+     "rect": {
+      "b": 116,
+      "l": 39,
+      "r": 131,
+      "t": 103
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Processes",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 17,
+     "rect": {
+      "b": 129,
+      "l": 39,
+      "r": 131,
+      "t": 115
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Running applications",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 18,
+     "rect": {
+      "b": 153,
+      "l": 17,
+      "r": 33,
+      "t": 137
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "icon",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Hardware",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 19,
+     "rect": {
+      "b": 146,
+      "l": 39,
+      "r": 131,
+      "t": 133
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Hardware",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 20,
+     "rect": {
+      "b": 159,
+      "l": 39,
+      "r": 131,
+      "t": 145
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Census and probes",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 21,
+     "rect": {
+      "b": 183,
+      "l": 17,
+      "r": 33,
+      "t": 167
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "icon",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Software",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 22,
+     "rect": {
+      "b": 176,
+      "l": 39,
+      "r": 131,
+      "t": 163
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Software",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 23,
+     "rect": {
+      "b": 189,
+      "l": 39,
+      "r": 131,
+      "t": 175
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "What is installed",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 24,
+     "rect": {
+      "b": 213,
+      "l": 17,
+      "r": 33,
+      "t": 197
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "icon",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "MCP",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 25,
+     "rect": {
+      "b": 206,
+      "l": 39,
+      "r": 131,
+      "t": 193
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "MCP",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 26,
+     "rect": {
+      "b": 219,
+      "l": 39,
+      "r": 131,
+      "t": 205
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Who may drive this Mac",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 27,
+     "rect": {
+      "b": 243,
+      "l": 17,
+      "r": 33,
+      "t": 227
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "icon",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Diagnostics",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 28,
+     "rect": {
+      "b": 236,
+      "l": 39,
+      "r": 131,
+      "t": 223
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Diagnostics",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 29,
+     "rect": {
+      "b": 249,
+      "l": 39,
+      "r": 131,
+      "t": 235
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Measure this Mac",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 30,
+     "rect": {
+      "b": 273,
+      "l": 17,
+      "r": 33,
+      "t": 257
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "icon",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Networking",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 31,
+     "rect": {
+      "b": 266,
+      "l": 39,
+      "r": 131,
+      "t": 253
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Networking",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 32,
+     "rect": {
+      "b": 279,
+      "l": 39,
+      "r": 131,
+      "t": 265
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Link, address and ports",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 33,
+     "rect": {
+      "b": 303,
+      "l": 17,
+      "r": 33,
+      "t": 287
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "icon",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "iCloud",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 34,
+     "rect": {
+      "b": 296,
+      "l": 39,
+      "r": 131,
+      "t": 283
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "iCloud",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 35,
+     "rect": {
+      "b": 309,
+      "l": 39,
+      "r": 131,
+      "t": 295
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "The other Mac's cloud",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 36,
+     "rect": {
+      "b": 333,
+      "l": 17,
+      "r": 33,
+      "t": 317
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "icon",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Chat",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 37,
+     "rect": {
+      "b": 326,
+      "l": 39,
+      "r": 131,
+      "t": 313
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Chat",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 38,
+     "rect": {
+      "b": 339,
+      "l": 39,
+      "r": 131,
+      "t": 325
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Ask the other Mac's model",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 39,
+     "rect": {
+      "b": -55,
+      "l": 8,
+      "r": 24,
+      "t": -71
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "icon",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Mirror",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 40,
+     "rect": {
+      "b": 0,
+      "l": 30,
+      "r": 30,
+      "t": 0
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Mirror",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 41,
+     "rect": {
+      "b": 0,
+      "l": 30,
+      "r": 30,
+      "t": 0
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Its extensions and agent",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 42,
+     "rect": {
+      "b": 402,
+      "l": 17,
+      "r": 33,
+      "t": 386
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "icon",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Preferences",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 43,
+     "rect": {
+      "b": 395,
+      "l": 39,
+      "r": 147,
+      "t": 382
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Preferences",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 44,
+     "rect": {
+      "b": 408,
+      "l": 39,
+      "r": 147,
+      "t": 394
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "How this window behaves",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 45,
+     "rect": {
+      "b": 432,
+      "l": 17,
+      "r": 33,
+      "t": 416
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "icon",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Logs",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 46,
+     "rect": {
+      "b": 425,
+      "l": 39,
+      "r": 147,
+      "t": 412
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Logs",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 47,
+     "rect": {
+      "b": 438,
+      "l": 39,
+      "r": 147,
+      "t": 424
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "This launch's events",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 48,
+     "rect": {
+      "b": 462,
+      "l": 17,
+      "r": 33,
+      "t": 446
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "icon",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Connection",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 49,
+     "rect": {
+      "b": 455,
+      "l": 39,
+      "r": 147,
+      "t": 442
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Connection",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 50,
+     "rect": {
+      "b": 468,
+      "l": 39,
+      "r": 147,
+      "t": 454
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "019-pair-capture",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 51,
+     "rect": {
+      "b": 19,
+      "l": 172,
+      "r": 732,
+      "t": 4
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Screenshots",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 52,
+     "rect": {
+      "b": 35,
+      "l": 172,
+      "r": 642,
+      "t": 19
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Capture this Mac, send a still, or stream its screen.",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 53,
+     "rect": {
+      "b": 19,
+      "l": 612,
+      "r": 732,
+      "t": 4
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "019-pair-capture",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 54,
+     "rect": {
+      "b": 286,
+      "l": 172,
+      "r": 492,
+      "t": 46
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "picture",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Screenshot preview unavailable",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 55,
+     "rect": {
+      "b": 174,
+      "l": 188,
+      "r": 476,
+      "t": 158
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "No screenshot yet.",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 56,
+     "rect": {
+      "b": 130,
+      "l": 520,
+      "r": 720,
+      "t": 116
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Streaming",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 57,
+     "rect": {
+      "b": 240,
+      "l": 526,
+      "r": 732,
+      "t": 224
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Advanced Transport",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 58,
+     "rect": {
+      "b": 194,
+      "l": 520,
+      "r": 720,
+      "t": 178
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Rate: Automatic",
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "number": 59,
+     "rect": {
+      "b": 474,
+      "l": 170,
+      "r": 725,
+      "t": 458
+     },
+     "semantic": {
+      "completeness": "complete",
+      "kind": "staticText",
+      "knowledge": "known",
+      "provenance": "guest-workshop-model"
+     },
+     "title": "Ready.",
+     "visible": true
+    }
+   ],
+   "front": false,
+   "id": "0.29360131/New Old World#0",
+   "incarnation": "process-93f7684a/window-1ecb97c0",
+   "kind": 8,
+   "psn": "0.29360131",
+   "rect": {
+    "b": 555,
+    "l": 22,
+    "r": 779,
+    "t": 48
+   },
+   "ref": "now-window-57cde772-99f9-145b-c37b-5a981cee39d1",
+   "title": "New Old World",
+   "visible": true,
+   "z": 0
+  },
+  {
+   "addr": 11241888,
+   "app": "Finder",
+   "controls": [
+    {
+     "enabled": true,
+     "max": 60,
+     "min": -4,
+     "rect": {
+      "b": 204,
+      "l": 389,
+      "r": 405,
+      "t": 20
+     },
+     "ref": "now-element-4c43fce3-f4b8-53a2-301c-896d46589aac",
+     "role": "unknown",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-control-manager"
+     },
+     "title": "",
+     "value": -4,
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "max": -33,
+     "min": -33,
+     "rect": {
+      "b": 219,
+      "l": -1,
+      "r": 390,
+      "t": 203
+     },
+     "ref": "now-element-2034da87-af67-4f8e-a3ef-4029be50c388",
+     "role": "unknown",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-control-manager"
+     },
+     "title": "",
+     "value": -33,
+     "visible": true
+    },
+    {
+     "enabled": true,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 18,
+      "l": 2,
+      "r": 18,
+      "t": 2
+     },
+     "ref": "now-element-382ade54-a601-ccd1-8f4d-049ee0670d13",
+     "role": "unknown",
+     "semantic": {
+      "completeness": "complete",
+      "definition": "system",
+      "knowledge": "unknown",
+      "provenance": "guest-control-manager"
+     },
+     "title": "",
+     "value": 0,
+     "visible": false
+    }
+   ],
+   "front": false,
+   "id": "0.29949953/Macintosh HD#0",
+   "incarnation": "process-db43359d/window-00ab89a0",
+   "kind": 20,
+   "psn": "0.29949953",
+   "rect": {
+    "b": 321,
+    "l": 48,
+    "r": 452,
+    "t": 83
+   },
+   "ref": "now-window-65862c3a-1cb0-ec0b-61f9-d3c8af333dc9",
+   "title": "Macintosh HD",
+   "visible": true,
+   "z": 0
+  },
+  {
+   "addr": 10091088,
+   "app": "Finder",
+   "controls": [],
+   "front": false,
+   "id": "0.29949953/Desktop#1",
+   "incarnation": "process-db43359d/window-0099fa50",
+   "kind": 20,
+   "psn": "0.29949953",
+   "rect": {
+    "b": 600,
+    "l": 0,
+    "r": 800,
+    "t": 0
+   },
+   "ref": "now-window-074a5b86-30d6-1fc3-c134-a518e537a61d",
+   "title": "Desktop",
+   "visible": true,
+   "z": 1
+  },
+  {
+   "addr": 513002160,
+   "app": "Appearance",
+   "controls": [],
+   "front": false,
+   "id": "0.35979265/Appearance#0",
+   "incarnation": "process-de68814b/window-1e93cab0",
+   "kind": 2000,
+   "psn": "0.35979265",
+   "rect": {
+    "b": 400,
+    "l": 167,
+    "r": 631,
+    "t": 70
+   },
+   "ref": "now-window-19963d54-7f5d-05b9-3d45-a322743b8abf",
+   "title": "Appearance",
+   "visible": true,
+   "z": 0
+  }
+ ]
+}

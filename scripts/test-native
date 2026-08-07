@@ -415,6 +415,12 @@ run_c now-guest-ppc scene_digest_test.c      ""  src/scene/scene_digest.c \
       src/scene/scene_build.c src/scene/scene_json.c \
       src/scene/scene_phase.c src/core/json.c
 run_c now-guest-ppc scene_phase_test.c       ""  src/scene/scene_phase.c
+# Cross-application layer order, which the Window Manager cannot answer:
+# WindowList is a per-process low-memory global, so no chain reaches
+# another application's. The ledger watches GetFrontProcess transitions
+# instead, and the last block here replays the 019 capture run's real
+# fronting sequence against the layering its own screendump shows.
+run_c now-guest-ppc front_order_test.c      ""  src/scene/front_order.c
 run_py now-guest-ppc scene_self_menubar_source_test.py
 # The bridge between the ported walk and the scene's rules - the layer
 # the roadmap called "the ported walk has no caller". It is Toolbox-free

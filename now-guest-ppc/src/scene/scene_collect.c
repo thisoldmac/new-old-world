@@ -8,6 +8,7 @@
 
 #include "axprocess.h"
 #include "axwalk.h"
+#include "front_order.h"
 #include "observe.h"
 #include "obsref.h"
 #include "peek_read.h"
@@ -58,6 +59,29 @@ enum {
    unsigned subtraction across a wrap is exact. Carrying the high word
    would cost a 64-bit add per read to describe an hour nobody measures. */
 static int g_phase_clock_installed;
+
+/* THE LAYER LEDGER, and the only long-lived state in this file.
+   front_order.h carries the whole argument for why cross-application
+   depth has to be watched rather than read; this is the instance, and
+   now_scene_note_front_process below is the one call that feeds it. */
+static NowFrontOrder g_front_order;
+static int g_front_order_ready;
+
+void now_scene_note_front_process(void)
+{
+    ProcessSerialNumber front;
+
+    if (!g_front_order_ready) {
+        g_front_order_ready = 1;
+        now_front_order_reset(&g_front_order);
+    }
+    if (GetFrontProcess(&front) != noErr) {
+        return;                       /* nothing observed, nothing claimed */
+    }
+    now_front_order_note(&g_front_order,
+                         (unsigned long)front.highLongOfPSN,
+                         (unsigned long)front.lowLongOfPSN);
+}
 
 static unsigned long phase_clock_us(void)
 {
@@ -323,7 +347,6 @@ void now_scene_collect(NowScene *out, long seq,
     unsigned long t_start = TickCount();
     int rows = 0;
     int i;
-    int pass;
 
     if (out == NULL) {
         return;
@@ -420,17 +443,104 @@ void now_scene_collect(NowScene *out, long seq,
     now_scene_set_process_kind_coverage(
         out, it.unreadable > 0 ? kNowSceneCoveragePartial
                                : kNowSceneCoverageComplete);
-    /* Windows front process first, then the rest in Process Manager
-       order. Within a process the chain IS the stacking order and z says
-       so; ACROSS processes only the front app's position is knowable
-       from here, so that is the only cross-process claim the ordering
-       makes. */
-    for (pass = 0; pass < 2; ++pass) {
+    /* WINDOWS IN LAYER ORDER, FRONT FIRST - and the array's order is the
+       only place a scene has ever carried cross-application stacking.
+     *
+       Within a process the chain IS the stacking order and z says so.
+       Across processes there is nothing to read: WindowList is a
+       per-process low-memory global, so no application's chain reaches
+       another's. This used to fall back to Process Manager enumeration
+       after the front process, which is LAUNCH order - right often
+       enough to look right, and watched wrong on 2026-08-07 when the
+       render put NOW's sidebar over a Finder window the guest's own
+       screendump shows in front of it.
+     *
+       So the rest are ordered by when they were last seen coming to the
+       front, which on a machine that layers by application IS their
+       layer order (front_order.h carries the argument). A process this
+       ledger has never seen fronted has NO rank; those go behind
+       everything ranked, in Process Manager order, and the `depth`
+       coverage claim below says the order among them is a fallback
+       rather than a claim.
+     *
+       A selection sort over at most kNowSceneMaxProcs rows, not a
+       precomputed permutation: `collect_process` must be called in
+       emission order, and rows is small enough that the quadratic is
+       cheaper than the array it would otherwise need. */
+    {
+        Boolean done[kSceneCollectMaxPsns];
+        int emitted;
+        int ranked = 0;
+        int unranked = 0;
+
         for (i = 0; i < rows; ++i) {
-            if ((pass == 0) == (out->procs[i].front != 0)) {
-                collect_process(out, i, &psns[i], selves[i], &refs);
-            }
+            done[i] = false;
         }
+        for (emitted = 0; emitted < rows; ++emitted) {
+            int best = -1;
+            unsigned long best_seq = 0;
+
+            for (i = 0; i < rows; ++i) {
+                unsigned long seq;
+
+                if (done[i]) {
+                    continue;
+                }
+                /* The front process outranks every ledger entry. It is
+                   read from the machine at this instant; the ledger is a
+                   memory of transitions, and where the two could ever
+                   disagree the machine wins. */
+                if (out->procs[i].front) {
+                    best = i;
+                    break;
+                }
+                seq = now_front_order_seq(&g_front_order,
+                                          (unsigned long)psns[i].highLongOfPSN,
+                                          (unsigned long)psns[i].lowLongOfPSN);
+                if (seq > best_seq) {
+                    best_seq = seq;
+                    best = i;
+                }
+            }
+            if (best < 0) {
+                /* Everything left is unranked. Process Manager order for
+                   the remainder, which is what this walk did for every
+                   row before the ledger existed. */
+                for (i = 0; i < rows; ++i) {
+                    if (!done[i]) {
+                        best = i;
+                        break;
+                    }
+                }
+            }
+            if (best < 0) {
+                break;                /* cannot happen; not worth looping */
+            }
+            done[best] = true;
+            if (out->procs[best].front
+                || now_front_order_seq(
+                       &g_front_order,
+                       (unsigned long)psns[best].highLongOfPSN,
+                       (unsigned long)psns[best].lowLongOfPSN) != 0) {
+                ++ranked;
+            } else if (!out->procs[best].background_only) {
+                /* A faceless background application contributes nothing
+                   to the picture, so not knowing where it would sit is
+                   not a gap in the ORDER. Counting it would make every
+                   scene on every machine read `partial` forever, which
+                   is a coverage claim that has stopped saying anything.
+                   Read from `background_only`, which enumeration filled
+                   above, and NOT from a window count - collect_process
+                   has not run for this row yet, so the count is still
+                   zero and every process would look faceless. */
+                ++unranked;
+            }
+            collect_process(out, best, &psns[best], selves[best], &refs);
+        }
+        (void)ranked;
+        now_scene_set_depth_coverage(
+            out, unranked > 0 ? kNowSceneCoveragePartial
+                              : kNowSceneCoverageComplete);
     }
     now_semantic_client_end();
     now_observe_walk_end(&refs);
