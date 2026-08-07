@@ -1891,6 +1891,24 @@ public struct SceneRenderer {
             sysCentered("▼", ctx, centerX: frame.maxX - 10,
                         centerY: frame.midY, color: Platinum.g6)
         case "pushButton":
+            /* THE ONE BRANCH ON THIS PLANE THAT NEVER ASKED. Every other
+               case here has yielded to the replay since 2026-08-06 and
+               this one did not, so a dialog item classified `pushButton`
+               painted a filled Platinum pill over the machine's own ink
+               unconditionally — the same defect `019-sweepb-regressions`
+               fixed in `drawControl`, surviving in its twin. It is the
+               same question and it gets the same answer: a button
+               REPLACES its rectangle rather than annotating it, so where
+               the machine already drew there, rung 2 has nothing to add.
+
+               `words`, not `inked`: a DITL row is a slack box and a
+               button's rectangle holds a short run, so the area test
+               alone says no on exactly the rows this is about — the
+               `mostlyCovers`-is-the-rectangle's-question lesson, one
+               plane over. It also covers the radio-CDEF case that
+               reaches this plane, where OS 9 hands a radio back in the
+               button family. */
+            guard !words(frame) else { break }
             let ctl = MirrorKit.Scene.Control(
                 ref: item.ref ?? "", role: "button", title: item.title,
                 rect: item.rect, enabled: item.enabled, visible: item.visible,

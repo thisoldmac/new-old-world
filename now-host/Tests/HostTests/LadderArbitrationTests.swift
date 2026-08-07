@@ -358,4 +358,57 @@ final class LadderArbitrationTests: XCTestCase {
         }
         XCTAssertEqual(checked, 3, "the alert's three buttons")
     }
+
+    /// **AND THE DIALOG-ITEM PLANE'S BUTTON BRANCH ASKS THE SAME
+    /// QUESTION.** (`claude/019-integration-5`, 2026-08-07.)
+    ///
+    /// `019-sweepb-regressions` taught `drawControl` to consult
+    /// `Coverage` and left the identical hole standing in its twin: every
+    /// other branch of `drawDialogItem` has yielded to the replay since
+    /// 2026-08-06, and `pushButton` alone drew unconditionally. A filled
+    /// Platinum pill REPLACES its rectangle, so a DITL row classified
+    /// `pushButton` over ink the machine already laid down is rung 2
+    /// painting over rung 1 — the defect the whole ladder exists to stop,
+    /// surviving one plane over because nobody asked there.
+    ///
+    /// The measurement is the real capture against itself with ONE
+    /// classification changed: "Virtual Memory" is a `staticText` row
+    /// whose words the machine demonstrably drew (the R1/R2 gate above
+    /// measures that same rectangle), promoted to `pushButton` and
+    /// nothing else touched. The correct render is identical either way,
+    /// because both branches yield. No scene is constructed here — the
+    /// coverage side is sweep B's own drain.
+    ///
+    /// Watched failing by mutation: deleting the `guard !words(frame)`
+    /// from `drawDialogItem`'s `pushButton` branch puts the pill back and
+    /// this fails.
+    func testADialogItemButtonDoesNotPaintOverTheMachinesOwnInk() throws {
+        try skipUnlessAssetPack()
+        let plain = try memory()
+        var promoted = plain
+        let front = try XCTUnwrap(promoted.windows.firstIndex(where: \.front))
+        let row = try XCTUnwrap((promoted.windows[front].dialogItems ?? [])
+            .firstIndex { $0.title == "Virtual Memory" })
+        XCTAssertEqual(
+            promoted.windows[front].dialogItems?[row].semantic.kind,
+            "staticText",
+            "the row this promotes must start as the label the machine drew")
+        promoted.windows[front].dialogItems?[row].semantic.kind = "pushButton"
+
+        let box = try XCTUnwrap(Self.labels.first { $0.0 == "Virtual Memory" })
+                      .1
+        let a = try pixels(plain, in: box)
+        let b = try pixels(promoted, in: box)
+        XCTAssertEqual(a.count, b.count)
+        XCTAssertLessThanOrEqual(differing(a, b), a.count / 200, """
+            classifying one DITL row `pushButton` changed \(differing(a, b)) \
+            of \(a.count) pixels over a rectangle the machine had already \
+            drawn. A button fills its rectangle, so that branch must yield \
+            to the replay exactly as every other branch here does — and as \
+            drawControl's own pushButton branch does since sweep B. This \
+            is also the shape the radio-CDEF misclassification arrives in: \
+            OS 9 hands a radio back in the button family, and a pill over \
+            the machine's own radio is a confident wrong answer.
+            """)
+    }
 }
