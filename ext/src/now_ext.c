@@ -67,6 +67,7 @@ extern void now_ext_drag_abandon(NowPeekTable *table);
    input planes need, and routing it through the core would mean the core
    knowing what a click is. */
 extern void now_ext_cursor_boot(NowPeekTable *table);
+extern void now_ext_cursor_gne(NowPeekTable *table);
 
 /* The content plane (now_content.c), P3. Two entry points rather than
    P4's one, and the split is the plane's own: boot allocates and
@@ -336,6 +337,12 @@ void now_ext_gne_apply(void)
        whole verdict, arm and disarm both, lives in now_content_gne and
        this is the call that lets it run. Disarmed it is a load, a null
        check and a return. */
+    /* P8. Settles a redraw the drag vehicle owed from interrupt time -
+       the drawing route is QuickDraw and this is the first context since
+       the placement in which it may be called. Ungated on purpose: a
+       picture that disagrees with the machine is not made correct by
+       disarming a plane. Nothing owed costs a load and a return. */
+    now_ext_cursor_gne(table);
     now_content_gne(table);
     /* P5. Its own arm verdict, like P3's, because it also names an A5
        world. Disarmed it is a load, a null check and a return. */

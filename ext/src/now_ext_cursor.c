@@ -67,6 +67,7 @@
 #include <LowMem.h>
 #include <Traps.h>
 #include <Quickdraw.h>
+#include <CursorDevices.h>
 
 #include "peek_table.h"
 #include "now_cursor_logic.h"
@@ -101,12 +102,21 @@ extern long now_cdm_next_device(void **device);
 extern void now_cdm_crsr_task(void);
 
 static NowPeekTable *gTable = NULL;
-static void *gDevice = NULL;
+static CursorDevicePtr gDevice = NULL;
 static Point gLastPlaced;
 static unsigned long gForeignTicks = 0;
 static Boolean gBooted = false;
+/* A redraw this plane owes but could not perform where it was asked.
+   The drawing route is QuickDraw and needs a real context; the drag
+   vehicle runs at interrupt time and has none. So an interrupt-time
+   placement records the debt and the next jGNE pass settles it - the
+   same split P7 uses for its owed mouseUp, and for the same reason: the
+   part that must not fail runs where it cannot, and the part that needs
+   a context waits for one. */
+static Boolean gRedrawOwed = false;
 
 void now_ext_cursor_boot(NowPeekTable *table);
+void now_ext_cursor_gne(NowPeekTable *table);
 int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags);
 NowPeekCursorCell *now_ext_cursor_cell(NowPeekTable *table);
 
@@ -170,10 +180,24 @@ int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags)
     pt.h = (short)h;
     pt.v = (short)v;
 
-    /* Who moved it last? Asked BEFORE our own writes, or the answer is
-       always "us". */
-    raw = LMGetRawMouseLocation();
+    /* WHO MOVED IT LAST, asked of the MANAGER rather than of RawMouse.
+       It was RawMouse, and that was wrong in a way only driving found:
+       between placements, with nothing holding the globals, RawMouse
+       drifts back to the pointing device's own position - so every act
+       after any device motion looked like a person had just moved the
+       mouse, and the plane yielded forever. Four acts in a row reported
+       `yielded` on a machine nobody was sitting at (2026-08-07).
+
+       CursorData.where is the manager's own idea of the pointer. Only a
+       real device moves it, and our own CursorDeviceMoveTo, whose value
+       we already know. Asked BEFORE our writes, or the answer is always
+       "us". */
     now = (unsigned long)LMGetTicks();
+    if (gDevice != NULL && gDevice->whichCursor != NULL) {
+        raw = gDevice->whichCursor->where;
+    } else {
+        raw = LMGetRawMouseLocation();
+    }
     if (now_cursor_is_foreign((NowPeekI32)raw.h, (NowPeekI32)raw.v,
                               (NowPeekI32)gLastPlaced.h,
                               (NowPeekI32)gLastPlaced.v)) {
@@ -231,6 +255,7 @@ int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags)
         (void)now_cdm_move_to(gDevice, (long)h, (long)v);
         HideCursor();
         ShowCursor();
+        gRedrawOwed = false;
         route = kNowPeekCursorRouteQuickDraw;
         if (cell != NULL) {
             cell->by_device++;
@@ -246,6 +271,10 @@ int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags)
                it. */
             *gCrsrNew = *gCrsrCouple;
             now_cdm_crsr_task();
+            /* Neither of those draws - see the QuickDraw branch above.
+               The debt is what makes an interrupt-time placement visible
+               at all, at the next moment there is a context. */
+            gRedrawOwed = true;
             route = kNowPeekCursorRouteDevice;
             if (cell != NULL) {
                 cell->by_device++;
@@ -278,6 +307,45 @@ int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags)
         cell->seq++;                        /* even: settled */
     }
     return route;
+}
+
+/* Settle a redraw the interrupt-time caller could not perform.
+ *
+ * Called from the core's jGNE pass, in whatever process is pumping,
+ * which is the first moment since the placement that QuickDraw may be
+ * called at all. It is deliberately NOT gated on the act plane being
+ * armed: the debt is a picture that disagrees with the machine, and
+ * disarming the plane does not make the arrow correct again.
+ *
+ * The yield rule is re-checked here rather than trusted from the
+ * placement, because time has passed and a person may have taken the
+ * mouse in between - which is exactly the window this settles into. */
+void now_ext_cursor_gne(NowPeekTable *table)
+{
+    NowPeekCursorCell *cell;
+    Point where;
+
+    (void)table;
+    if (!gRedrawOwed) {
+        return;
+    }
+    gRedrawOwed = false;
+    if (gDevice != NULL && gDevice->whichCursor != NULL) {
+        where = gDevice->whichCursor->where;
+        if (now_cursor_is_foreign((NowPeekI32)where.h, (NowPeekI32)where.v,
+                                  (NowPeekI32)gLastPlaced.h,
+                                  (NowPeekI32)gLastPlaced.v)) {
+            return;                 /* somebody else has it now */
+        }
+    }
+    HideCursor();
+    ShowCursor();
+    cell = now_ext_cursor_cell(gTable);
+    if (cell != NULL) {
+        cell->seq++;
+        cell->route = (NowPeekU32)kNowPeekCursorRouteQuickDraw;
+        cell->seq++;
+    }
 }
 
 /* Ask the manager for a device, once, at boot.
@@ -342,7 +410,7 @@ void now_ext_cursor_boot(NowPeekTable *table)
     if (now_cdm_next_device(&device) != 0 || device == NULL) {
         return;
     }
-    gDevice = device;
+    gDevice = (CursorDevicePtr)device;
     cell->device_found = 1;
     table->caps |= (NowPeekU32)kNowPeekTableCapCursor;
 }
