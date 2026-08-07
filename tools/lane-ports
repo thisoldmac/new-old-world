@@ -88,6 +88,11 @@ import os
 import shutil
 import socket
 import subprocess
+
+# tools/shutdown-guest.py's "I never reached the guest" code. Named here
+# rather than compared as a bare 3, because the whole point of the code is
+# that a reader can tell it from a refusal.
+SHUTDOWN_RIG_MISSING = 3
 import sys
 import time
 
@@ -394,13 +399,27 @@ def reclaim(lane: dict, *, power_cut: bool, dry_run: bool) -> int:
         rc = subprocess.run([sys.executable, os.path.join(here, "tools",
                                                           "shutdown-guest.py"),
                              sock, "--port", anchor, "--timeout", "120"]).returncode
+        if rc == SHUTDOWN_RIG_MISSING:
+            # THE GUEST WAS NEVER ASKED. Reported apart from a refusal and
+            # WITHOUT the --power-cut suggestion, because the two want
+            # opposite responses: fix your own path, versus accept a dirty
+            # volume. Answering a host-side setup error with "re-run with
+            # --power-cut" is how a working VM gets a Disk First Aid boot.
+            print(f"  qmp {sock}: the shutdown tool could not start, so the"
+                  " guest was NOT asked (see above).")
+            print("    The VM is untouched and still running. Set"
+                  " NOW_LAB_ROOT and re-run reclaim.")
+            print("    Do NOT use --power-cut for this: nothing is wrong"
+                  " with the machine.")
+            return 1
         if rc != 0 and power_cut:
             print(f"  qmp {sock}: clean shutdown failed; POWER CUT (QMP quit)")
             print("    the volume will be dirty and the next boot of this"
                   " image runs Disk First Aid")
             qmp_quit(sock)
         elif rc != 0:
-            print(f"  qmp {sock}: clean shutdown FAILED and the VM is left up.")
+            print(f"  qmp {sock}: the GUEST did not shut down, and the VM is"
+                  " left up.")
             print("    Look at it, or re-run with --power-cut to accept a"
                   " dirty volume.")
             return 1

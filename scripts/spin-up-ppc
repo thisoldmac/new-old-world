@@ -71,15 +71,36 @@ NOW="$(cd "$HERE/.." && pwd)"
 # "tools/lib.sh: No such file or directory", which reads like a broken lab
 # install rather than the wrong starting point. So walk up to the checkout
 # that actually has the instruments.
+# ...and a worktree under /private/tmp has no shared ancestor with the lab
+# AT ALL, so that walk reaches / and finds nothing. That is the common case
+# for an agent lane, and it cost this scheme's first real user a manual
+# NOW_LAB_ROOT. When the walk comes up empty, ask git: a worktree's
+# --git-common-dir points at the MAIN clone's .git wherever it lives, and
+# the lab checkout is above that.
 LAB="${NOW_LAB_ROOT:-}"
-if [ -z "$LAB" ]; then
-    LAB="$NOW"
-    while [ "$LAB" != / ] && [ ! -f "$LAB/tools/lib.sh" ]; do
-        LAB="$(dirname "$LAB")"
+walk_up_to_lab() {
+    d="$1"
+    while [ "$d" != / ] && [ ! -f "$d/tools/lib.sh" ]; do
+        d="$(dirname "$d")"
     done
+    [ -f "$d/tools/lib.sh" ] && printf '%s' "$d"
+}
+if [ -z "$LAB" ]; then
+    LAB="$(walk_up_to_lab "$NOW" || true)"
 fi
-[ -f "$LAB/tools/lib.sh" ] || {
-    echo "no lab checkout above $NOW (set NOW_LAB_ROOT to the TimBotTu clone)"
+if [ -z "$LAB" ]; then
+    common="$(git -C "$NOW" rev-parse --path-format=absolute \
+                  --git-common-dir 2>/dev/null || true)"
+    [ -n "$common" ] && LAB="$(walk_up_to_lab "$(dirname "$common")" || true)"
+fi
+[ -n "$LAB" ] && [ -f "$LAB/tools/lib.sh" ] || {
+    echo "spin-up-ppc: no lab checkout found, and it is needed for the"
+    echo "  emulator, tools/qmp and the anchor-worker client."
+    echo "    started from: $NOW"
+    echo "    walked up to / and asked git for the main worktree; neither"
+    echo "    reached a directory containing tools/lib.sh."
+    echo "  Set NOW_LAB_ROOT to the TimBotTu clone, e.g."
+    echo "    NOW_LAB_ROOT=\$HOME/Lab/Code/timbottu scripts/spin-up-ppc"
     exit 1
 }
 cd "$LAB"                                  # lib.sh and tools/qmp are lab-relative
