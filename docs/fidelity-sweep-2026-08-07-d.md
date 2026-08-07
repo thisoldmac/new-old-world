@@ -129,6 +129,54 @@ doc comment cites for exactly this "kind cannot stand in" reason — gets no
 grow box from the hit-tester. Same wrong discriminator, same file, one
 function apart, fixed in one place. Not yet checked against the machine.
 
+## Method change: the BEFORE is measured, not remembered
+
+Claims 1 and 2 are "this changed" claims, and a sweep that only measures
+the after cannot score them. So this sweep re-ran its own rectangle
+instrument over **sweep C's stored artefacts** — the same guest
+screendumps and the same renders sweep C published, taken from the round-5
+tree — and reports the before and after side by side, derived twice by one
+script.
+
+That is a method change and it is declared: no earlier sweep re-measured
+an earlier sweep's pixels.
+
+The instrument is `rects.py` (in this sweep's artefact store). It samples
+the modal colour of a window's row `t-2 … t+21` across the window's own
+width, on the guest and on the render, and separately compares the three
+widget boxes `PlatinumTitleBar` defines. **No similarity score anywhere**
+— every number is a named row or a named box.
+
+### The BEFORE, sweep C's own eight targets, re-derived from its store
+
+`rects.py --sweep …/sweep-2026-08-07-c/p1 --renders …/r1`
+
+| target | guest's black rows | render's black rows | rows agreeing | widget px agreeing |
+|---|---|---|---|---|
+| appearance | `-2, +19` | `0` | 2/24 | 33/363 |
+| memory | `-2, +19` | `0` | 2/24 | 37/363 |
+| general-controls | `-2, +19` | `0` | 2/24 | 37/363 |
+| extensions-manager | `-2, +19` | `-1, 0` | 2/24 | 49/363 |
+| date-and-time | `-2, +19` | `0` | 2/24 | 37/363 |
+| simpletext | `-1, +19` | `0` | 2/24 | 43/363 |
+| finder | `+19` | `+20` | 0/22 | 0/341 |
+| new-old-world | `-2, +19, +20` | `0` | 2/24 | 42/363 |
+
+**Read the first two columns together and the claim is already visible in
+sweep C's own store.** The machine puts a black frame row two rows ABOVE
+the scene rect and another at `t+19`, on eight windows out of eight. Sweep
+C's render put one black row at `t+0` and drew no `t+19` frame at all —
+so the whole title band was two rows low and the content frame was
+missing. Twenty-two of twenty-four rows disagreed on every window.
+
+The widget columns are the same story from the other side: the three
+boxes are 363 pixels and between 33 and 49 of them agreed, which is what
+a widget drawn in the wrong place and (for `kind == 2`) not drawn at all
+looks like.
+
+**This is the number sweep D's captures have to beat**, and it is
+recorded here before the after was taken.
+
 ## Measurements taken so far
 
 Capture pass 1 was running when this checkpoint was written. See
