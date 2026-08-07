@@ -37,6 +37,13 @@ void now_act_menu_probe(const ProcessSerialNumber *psn, long menu, long item,
         if ((long)row.id != menu) {
             continue;
         }
+        /* Recorded the moment the row is matched, and BEFORE the item
+           walk can come back Unknown: where the menu was found, where
+           its title sits is known even if the items could not be read.
+           The identity check and the enablement check are separate
+           questions and only one of them needs the item. */
+        out->title_left = row.left;
+        out->title_left_known = 1;
         /* The item list is a packed variable-length walk with no index,
            so reaching item N means walking N-1 - and the same walk
            answers the marked-group question for free, which is why it
