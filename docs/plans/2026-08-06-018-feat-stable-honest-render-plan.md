@@ -574,6 +574,37 @@ The discriminator is the process's **own declaration**:
 exact inference that produced the false alarm, and it cannot tell "has
 no UI" from "we failed to look."
 
+**Refined the same day — it is three states, not two.** Michelle:
+
+> we also need to be sure to distinguish apps with no open windows from
+> truly headless app. im inclined to think that ax_oracle should see it
+> all and be able to classify appropriately.
+
+One error word is doing three jobs:
+
+1. **Headless by declaration** — can never have windows. Normal,
+   permanent.
+2. **A UI application with no windows open right now** — SimpleText with
+   every document closed. **Normal and transient**, and it changes from
+   moment to moment on a healthy machine, so folding it into either
+   neighbour is wrong half the time.
+3. **A UI application whose windows exist but we failed to observe
+   them.** The only genuine failure.
+
+The gap between 2 and 3 is **absence KNOWN versus absence UNKNOWN** —
+this arc's own distinction, moved from rectangles to processes. So the
+walk must report *"I enumerated this process and found zero windows"* as
+a **success**, distinct from *"I could not enumerate this process"* as a
+failure with a reason. Today those are the same answer, which is why
+nobody can tell them apart. Structurally identical to the question the
+anchor counters exist to settle — *armed and capturing nothing* versus
+*the filter never ran*.
+
+The oracle's job therefore changes from *"find windows, or fail"* to
+*"report what this process IS and what it HAS"*. An unclassifiable
+process is reported as **unclassified with a reason**, never silently
+folded into a normal state.
+
 Rendering anything for headless processes is explicitly out of scope;
 so is any change to the ladder.
 
