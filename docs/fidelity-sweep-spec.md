@@ -1,6 +1,6 @@
 # The fidelity sweep — standing specification
 
-**Version 2, 2026-08-07.** Version 1 lived inside plan 018 and asked one
+**Version 3, 2026-08-07.** Version 1 lived inside plan 018 and asked one
 question: *is this horribly broken?* It still asks that. But the answer
 is now mostly "no", and an instrument that only detects gross failure
 stops earning its cost the moment the product clears that bar.
@@ -21,9 +21,41 @@ result stands on its own. A human co-drive is *additional* signal — it
 catches what a rubric has no row for — and is scheduled when convenient,
 never as a precondition.
 
-## The three axes a sweep must cover
+## What version 3 adds, and why
 
-Version 1 covered only the first.
+**Version 2 mostly LOOKS. Version 3 also DOES.** Michelle, asking for it:
+
+> maybe even expanded to start to include more interactions on top of the
+> current sweep spec
+
+Version 2 already had a standing check reading *"a scrollbar scrolls. A
+tab switches. A list row selects."* Sweep B took all three and they
+passed — and that is exactly the limit being fixed here. Those are
+**single presses**, and a single press asks only *does this control
+respond*. The expensive defects are not there.
+
+Three things sweep B measured say where they are instead:
+
+- It timed **reads at 16–209 ms and settlement at 5–6 seconds**, and
+  concluded the perf complaint *"is settlement, not dispatch"*. That gap
+  is not felt while looking at a window. It is felt while **doing** things
+  in one, and nothing in version 2 spends time there.
+- Its list-row select **visibly worked and reported `timed-out`**. A
+  single-press check that asks "did the control respond" scores that a
+  pass on the pixels and never reads the act's own answer. A **false
+  negative on a landed act** is invisible to version 2 by construction.
+- Its tab switch was verified by the **tab control's value** moving
+  `1 → 4 → 1`. That is the strip. Nobody looked behind it. A tab whose
+  value moves and whose pane does not is a defect this instrument had no
+  way to see.
+
+So version 3 adds a fourth axis, below. It does not retire anything:
+**everything in version 2 still binds**, and a ✗ on a standing check still
+outranks any seam or any interaction finding.
+
+## The four axes a sweep must cover
+
+Version 1 covered only the first. Version 3 adds the fourth.
 
 ### 1. Targets — more, and weirder
 
@@ -83,6 +115,132 @@ Where two things should agree, **check that they do**:
   percentage only as colour.
 - **The same target twice** — pixel-identical, or the difference named.
 
+### 4. Interactions — the axis version 2 asked one press of
+
+**A single press is not an interaction.** It is the smallest possible one,
+and version 2's standing checks already take it. This axis is about what
+sits between presses.
+
+Three kinds, and a sweep should carry at least one of each. They are
+scored and reported separately because they fail differently.
+
+#### 4a. Sequences — because defects live between the steps
+
+**Open a window, scroll it, select something, act on the selection, close
+it.** Each step's precondition is the previous step's postcondition, and
+that is the whole point: a step-2 that works from a rested world and fails
+from step-1's world is invisible to any check that takes step 2 alone.
+
+A sequence is reported **step by step, with the step that broke named** —
+never as one pass/fail. A sequence that completes four of five steps has
+told you more than one that completes five, and a sequence reported only
+as "✗" has thrown that away.
+
+Sequences worth standing (extend the list; do not shorten it):
+
+- **Browse**: front a process → open a window → scroll it → select a row →
+  read the selection back from the machine → close the window → confirm
+  the window behind redrew.
+- **Panel**: open a control panel → switch a tab → change a control on the
+  new pane → confirm the guest's own value moved → switch back → confirm
+  the first pane's state survived the round trip.
+- **Modal**: open a window → raise a modal over it → dismiss the modal →
+  confirm the window beneath redrew and is addressable again. Sweep B
+  could not reach the last step (`ditemact` refused the reference) and the
+  modal stayed up for its whole run — that is a sequence failing at step
+  3, and reporting it that way is what makes it actionable.
+- **Text**: focus a field → set text → read it back → confirm the render
+  and the machine agree on what is in it.
+
+**Re-run the sequence from a rested world if it fails**, and say which
+attempt is being reported. A step that passes alone and fails in sequence
+is a *better* finding than one that fails both ways; do not smooth it into
+"flaky".
+
+#### 4b. State-changing interactions — see the change where it is VISIBLE
+
+An interaction that changes state must be confirmed **twice, in two
+places**, and both are required:
+
+1. **The machine's own value moved** — re-read it from the guest, not from
+   our record of what we asked for. `textget` after `textset`; the control
+   value after `ctlact`; the panel's own label after a list selection.
+2. **The rectangle that should have changed, changed** — checked per
+   rectangle, exactly as the render is (see "per rectangle, never a
+   whole-window score"). And the rectangle is the one a **person** would
+   look at, not the one the act names.
+
+The second is not redundant, and sweep B is the proof: it verified a tab
+switch by the **tab control's value** and never looked at the pane behind
+the strip. **A tab whose value moves and whose pane does not is a passing
+check and a broken product.** Same shape for a checkbox whose mark moves
+and whose dependent controls do not enable; same for a scroll whose
+thumb moves and whose content does not.
+
+State-changing interactions to stand: typing into a field and reading it
+back; toggling a checkbox and confirming the guest's own value moved;
+switching a tab and confirming **the pane behind it** changed; scrolling
+and confirming the **content** moved, not only the thumb.
+
+#### 4c. Refusals — and a refusal with a reason is a PASS
+
+The act plane was rebuilt this arc specifically so that a verb **cannot
+claim a success it did not verify**. That property is only real while
+something tests it, and nothing does unless a sweep poses the cases.
+
+**A refusal with a reason is a pass. A silent success is the failure.**
+Version 2 says this once, at the bottom of the standing checks; version 3
+makes it a class of interaction with its own cases, because the cases have
+to be *posed* and posing them takes setup a looking-only sweep never does.
+
+Cases to pose, each of which must refuse **and say why**:
+
+- A press at a control **whose position cannot be established**.
+- An act on a **stale reference** — take a reference, close or move the
+  window, then act.
+- A **drag with no trustworthy home** — a drag whose start or end cannot
+  be attributed to a rectangle.
+- An act on a window that has **gone away** between the scene and the act.
+
+**A refusal case that cannot be posed is itself a finding, and it is
+reported as one.** Sweep B found this: *"a press aimed at a menu whose
+position is unknown is refused, not armed at x=0"* has **no reachable
+case**, because `menuact` refuses first for a missing serial and once the
+serial is supplied the position is known by construction. A check with no
+reachable case reads green forever and guards nothing. When a sweep finds
+one, say so on the row and propose a case that *can* be posed, or propose
+the line's deletion.
+
+**The inverse failure is the one nobody sees.** A refusal on an act that
+actually landed is a **false negative**, and it is worse than a false
+positive because the pixels agree with the caller and only the act's own
+answer disagrees. Sweep B found exactly one (`Settlement: timed-out` on a
+list-row select that demonstrably worked). **So every interaction records
+the act's own verdict beside the observed outcome**, and the four
+combinations are distinguished:
+
+| act said | machine did | verdict |
+|---|---|---|
+| success | it happened | ✓ |
+| refusal, with a reason | nothing | ✓ — this is the plane working |
+| refusal / timed-out | **it happened** | **✗ false negative** — the expensive one |
+| success | **nothing** | **✗ the failure the act plane was rebuilt to prevent** |
+
+#### Timing every interaction — attempts-to-land beside time-to-settle
+
+Version 2 asks for these as separate columns. Version 3 makes them
+**per interaction step**, because that is where the split is felt and
+where it will be fixed. Report, per step:
+
+- **attempts to land** — how many tries, and what each refusal said.
+- **time to dispatch** — the act's own round trip.
+- **time to settle** — until the machine's value re-reads changed.
+
+Sweep B's numbers are the baseline to beat and to compare against:
+dispatch 16–209 ms, settlement 5–6 s. **An interaction whose dispatch and
+settlement are not reported separately has not measured the thing this
+project already knows is its worst number.**
+
 ## The standing checks — woven in, not a separate phase
 
 Version 2 hunts seams. It **also still asks whether anything is horribly
@@ -116,9 +274,23 @@ report — the line is the bug.
 
 Take each **where the target affords it**, and record ✓ / ✗ / n/a:
 
-- **A scrollbar scrolls.** A tab switches. A list row selects.
-- **A menu item lands where it was named** — and a press aimed at a menu
-  whose position is unknown is *refused*, not armed at x=0.
+- **A scrollbar scrolls.** A tab switches. A list row selects. **Each
+  confirmed where it is visible, not only in the control's value** — the
+  content moved, the pane behind the strip changed, the panel's own label
+  re-read. (Version 3; version 2's form of this line passed a tab switch
+  on the strip alone.)
+- **A menu item lands where it was named.** ~~and a press aimed at a menu
+  whose position is unknown is *refused*, not armed at x=0~~ — **the
+  second half is struck: sweep B found it has no reachable case.**
+  `menuact` refuses first for a missing serial, and with the serial
+  supplied the position is known by construction. It was a check that
+  could only ever read green. The refusal property it meant to guard is
+  now posed properly under axis 4c, against a *control* whose position
+  cannot be established. **Left visible rather than deleted**, because
+  the useful part of this line is the record that it was unposeable.
+- **An interaction SEQUENCE completes, or names the step it broke at.**
+- **A refusal names its reason** — and an act that landed is never
+  reported as refused or timed out (axis 4c's false-negative row).
 - **A window opens, closes, and the one behind it redraws.**
 - **Fronting a process makes it OBSERVABLE**, and `cycle` populates an
   undriven machine. **Not "makes its windows appear"** — an earlier draft
@@ -173,6 +345,83 @@ only while it is itself pumping events with the plane armed, so an
 undriven machine hands you the anchor defect and you will report it as a
 render defect.
 
+### The state no driving instrument can observe: REST
+
+**Anchor leases are 10 seconds.** Every rule above exists to keep a
+capture out of the acquisition hole — front it, cycle it, discard the
+warm-up. All of them work by **driving the machine continuously**, and
+that means a sweep run correctly is structurally incapable of seeing what
+the product does when nobody is driving it.
+
+Michelle saw a window that had been sitting show **an empty interior and
+`Content: Requested`**, and it cleared on its own. Every instrument in
+this tree would have missed it, because every instrument arms and captures
+inside one lease.
+
+So, standing, from version 3:
+
+- **Establish whether the resting state of an undriven Mirror is empty.**
+  Arm, then **stop driving** for longer than a lease — 15 s, 30 s, 60 s —
+  and capture *without* re-fronting or re-cycling first. Then drive once
+  and capture again.
+- **Report the resting state as its own row.** If an undriven Mirror rests
+  empty and refills on the first act, that is a **product defect nobody
+  has characterised**, and its whole significance is that it is invisible
+  to the instruments. If it rests full, that is worth writing down too,
+  because it retires a live suspicion.
+- **This measurement is deliberately taken in violation of the warm-up
+  rules above**, and must say so on the row. The rules exist so a capture
+  measures the render; this one is measuring the lease.
+
+A sweep that never stops driving has answered every question except the
+one a person asks by walking away from the machine and coming back.
+
+## An observation is only as good as the instrument that took it
+
+**Before believing a render finding — including an old one — establish
+which instrument produced the capture.** Two artifacts of this project
+make that non-obvious, and both have already produced wrong conclusions:
+
+- **`SceneBuilder.normalizeWindows` sets `display: nil` unconditionally**
+  (`SceneBuilder.swift:285`). **No scene envelope has ever carried content
+  ops.** An interior arrives only on a second artifact, a `qdtrace` drain.
+  So a render taken over an envelope alone shows an empty interior *no
+  matter what the guest or the renderer was doing*, and no amount of
+  arming changes what is on disk.
+- **The obvious fingerprint is the wrong one.** `<label>-guest.ppm` is
+  written by **both** `fidelity-sweep.py` and `local-pair-capture.py`, so
+  it separates nothing.
+
+**Fingerprint a stored capture by these, and record which in the report:**
+
+| signature | means |
+|---|---|
+| `manifest.json`, `<slug>-guest.png` | **pair capture** — no drain, interiors artefactual |
+| `sweep-summary.json`, `LIMITS.md`, `<label>.json` | **sweep** — drain present, interiors real |
+
+**And the hatch caption tells you which side it came from**, which is
+often faster than finding the store:
+
+- **"Guest content not reported"** (`SceneRenderer.swift:814`) — whole
+  interior, and what an **absent drain** produces. Suspect the instrument.
+- **"Bitmap unavailable"** (`DisplayReplay.swift:835`) — per rectangle,
+  emitted from the display replay, which cannot run without display ops.
+  **Positive proof the capture HAD a drain.** Suspect the product.
+- **"Visual unavailable"** — the semantic plane, drain-independent.
+
+**A live-reading instrument must ASSERT that the plane armed.**
+`fidelity-live.py` and `mirror-corpus` read the live host, which arms P3
+itself — and neither checks. A run against a host that never armed reports
+every window stably empty and **reads as a stability result**. Treat a
+`contentGeneration` of 0, or one that never advances across a provoked
+redraw, as a failed run. Same rule as `requireTheBuildUnderTest()`,
+applied to the plane instead of the build.
+
+**And a count you did not derive is not evidence.** Sweep C published an
+attribution table taken from a delegated agent without checking it, and
+had to withdraw it. Whoever signs the report derives the number, or the
+number does not go in the report.
+
 ## The guest's pixels are the truth — and how much to check
 
 Michelle, on the dose:
@@ -221,11 +470,19 @@ CHROME**, plus:
 - **STABILITY** — the same target twice; pixel-identical or the
   difference named.
 - **DRIVABILITY** — can the agent surface address what the pixels show?
+- **INTERACTION** (version 3) — of the sequences this target affords, how
+  many completed, and did the changes show where a person would look?
+  **Scored separately from DRIVABILITY**, which asks only whether the
+  surface can *address* what the pixels show. A target can be perfectly
+  addressable and still fail every sequence: sweep B's Appearance had
+  73/73 controls with references (DRIVE 3) and could not complete a single
+  round trip, because nothing checked behind the tab strip.
 
 **Reliability and latency are separate columns.** They moved in opposite
 directions once already ("most things are at least landing on the first
 or second try… perf is still meh"), and an average that mixes them hides
-both. Record attempts-to-land beside time-to-settle.
+both. Record attempts-to-land beside time-to-settle — and from version 3,
+**per interaction step**, not per operation class.
 
 **Mandatory free-text callouts per target, even when empty**: hatching
 and where, broken controls, missing labels, missing assets, redraw
@@ -241,6 +498,26 @@ report header. **Shut the guest down guest-clean** — never QMP `quit`,
 which is a power cut. A capture another session's guest could have
 answered is **void**, not annotated.
 
+**Copy artefacts out BEFORE reclaiming the lane block.** `lane-ports
+reclaim` deletes the run directory, and a lane lost its screendumps that
+way. Artefacts live out of git in `~/Lab/Assets/now-mirror-assets/` with
+sha256s in the report header.
+
+**An interaction changes the world, so hygiene is part of the rig, not a
+tidy-up.** Version 2's sweeps were mostly read-only and could afford a
+best-effort tidy; version 3 deliberately moves controls, sets text and
+opens modals. Two consequences:
+
+- **Record the world's state before and after each sequence**, and if the
+  sequence could not restore it, say which target inherited the mess.
+  Sweep B's contamination was found by a human reading a screendump.
+- **A hygiene routine must not GUESS at a dismissal.** Sweep B's pressed
+  DITL item 2 as "Cancel by convention"; on a modeless control panel that
+  was **"Set Time Zone…"**, so the cleanup step opened the modal it then
+  failed to close and contaminated every target after it. **A cleanup that
+  can act is more dangerous than one that leaves the world dirty**,
+  because its damage reads as the next target's own defect.
+
 ## Reporting
 
 A new dated document per sweep; **earlier sweeps are never edited** —
@@ -252,3 +529,20 @@ that is not a failure as long as it is declared.
 **Name the pain points to steer work still in flight.** That is what a
 sweep is for. A sweep whose findings arrive after everything has landed
 has measured history.
+
+**Report interactions step by step.** A sequence is a table of its own
+steps, each carrying what the act said, what the machine did, attempts to
+land, dispatch and settle. A sequence collapsed to one verdict has thrown
+away the only thing this axis was added to capture: **which step**.
+
+## Version history
+
+| Version | Date | What changed |
+|---|---|---|
+| 1 | inside plan 018 | *Is this horribly broken?* Targets only. |
+| 2 | 2026-08-07 | Seams, states, the standing checks, per-rectangle pixel comparison, the two honesty rules (agreement with the machine; zero is a pass). |
+| 3 | 2026-08-07 | **Axis 4, interactions**: sequences, state changes confirmed where visible, refusals as a posed class with the false-negative row, per-step timing. Plus the **REST** measurement, an **INTERACTION** score column, hygiene promoted into rig discipline, and the unposeable menu-refusal check struck with its record kept. |
+| 3.1 | 2026-08-07 | **"An observation is only as good as the instrument that took it"** — the capture fingerprints, the three hatch captions and what each implicates, the rule that a live-reading instrument must assert the plane armed, and the rule that a count you did not derive is not evidence. Added after sweep C withdrew an attribution table it had not checked. |
+
+**A version bump makes rows incomparable, and that is fine when
+declared.** Say per row where the method changed.
