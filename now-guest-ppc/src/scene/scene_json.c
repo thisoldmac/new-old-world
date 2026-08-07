@@ -975,6 +975,54 @@ static void put_coverage(Sink *k, const NowScene *s)
     }
 }
 
+/* meta.theme: the colours the MACHINE gave, as `#RRGGBB` strings.
+ *
+ * A string rather than a number because a colour read out of a capture
+ * by a person is going to be compared against a hex pixel, and
+ * `14540253` is not that. Every key is omitted when the ask failed, and
+ * the whole object is omitted when nothing was asked - so a consumer
+ * meeting no `theme` knows this producer did not ask, and one meeting
+ * `theme` without `alertBackground` knows the ask was made and refused.
+ * Those are different facts and the old single constant could carry
+ * neither. See scene.h, NowSceneTheme. */
+static void put_theme_key(Sink *k, int *first, const char *name, long rgb)
+{
+    char hex[10];
+
+    if (rgb < 0) {
+        return;
+    }
+    put(k, *first ? "" : ",");
+    put_str(k, name);
+    put(k, ":");
+    snprintf(hex, sizeof hex, "#%02lX%02lX%02lX",
+             (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+    put_str(k, hex);
+    *first = 0;
+}
+
+static void put_theme(Sink *k, const NowScene *s)
+{
+    int first = 1;
+
+    if (s->theme.dialog_background < 0 && s->theme.alert_background < 0
+        && s->theme.document_background < 0 && s->theme.highlight < 0) {
+        return;
+    }
+    put(k, ",\"theme\":{");
+    put_theme_key(k, &first, "dialogBackground", s->theme.dialog_background);
+    put_theme_key(k, &first, "alertBackground", s->theme.alert_background);
+    put_theme_key(k, &first, "documentBackground",
+                  s->theme.document_background);
+    put_theme_key(k, &first, "highlight", s->theme.highlight);
+    if (s->theme.depth >= 0) {
+        put(k, first ? "" : ",");
+        put(k, "\"depth\":");
+        put_num(k, (long)s->theme.depth);
+    }
+    put(k, "}");
+}
+
 /* meta.errors carries what the scene could not do, in upstream's
    "<name>: <token>" form, plus this producer's own truncation notices.
    A truncated walk that said nothing would be a partial scene delivered
@@ -1149,6 +1197,7 @@ static void put_meta(Sink *k, const NowScene *s)
     if (k->sp != NULL) {
         k->sp->tail_off = k->len;
     }
+    put_theme(k, s);
     if (s->plane[0] != '\0') {
         put(k, ",\"plane\":");
         put_str(k, s->plane);

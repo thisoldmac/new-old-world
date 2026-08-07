@@ -271,6 +271,13 @@ void now_scene_begin(NowScene *s, long seq, double captured_at,
     s->screen_w = screen_w;
     s->screen_h = screen_h;
     s->latency_ms = -1;               /* absent until measured */
+    /* memset gave these 0, which is BLACK - a legal colour, and so the
+       one value that cannot double as "not asked". */
+    s->theme.dialog_background = -1;
+    s->theme.alert_background = -1;
+    s->theme.document_background = -1;
+    s->theme.highlight = -1;
+    s->theme.depth = -1;
     s->now_ticks = now_ticks;
     s->stale_after_ticks = stale_after_ticks;
 }
@@ -367,6 +374,31 @@ void now_scene_set_plane(NowScene *s, const char *plane)
     if (s != NULL) {
         copy_bounded(s->plane, (long)sizeof s->plane, plane);
     }
+}
+
+/* One channel's worth of sanity. An RGBColor is 16 bits per channel on
+   this machine and the caller narrows it; anything that arrives outside
+   the 24-bit range did not come from that narrowing, so it is rejected
+   rather than masked - a masked colour is indistinguishable from a
+   measured one, which is the whole defect this field exists to end. */
+static long theme_channel(long v)
+{
+    return (v >= 0 && v <= 0xFFFFFFL) ? v : -1;
+}
+
+void now_scene_set_theme(NowScene *s, const NowSceneTheme *theme)
+{
+    if (s == NULL) {
+        return;
+    }
+    if (theme == NULL) {
+        return;
+    }
+    s->theme.dialog_background = theme_channel(theme->dialog_background);
+    s->theme.alert_background = theme_channel(theme->alert_background);
+    s->theme.document_background = theme_channel(theme->document_background);
+    s->theme.highlight = theme_channel(theme->highlight);
+    s->theme.depth = theme->depth;
 }
 
 int now_scene_add_window(NowScene *s, int proc, const char *title,

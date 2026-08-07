@@ -14,6 +14,7 @@
 #include "peek_read.h"
 #include "scene_phase.h"
 #include "scene_self.h"
+#include "scene_theme.h"
 #include "scene_walk.h"
 #include "semantic_client.h"
 
@@ -356,6 +357,16 @@ void now_scene_collect(NowScene *out, long seq,
                     (unsigned long)TickCount(), stale_after_ticks);
     now_scene_set_plane(out, "peek anchors: processes, windows, controls, "
                         "dialog text, and the front app's menu bar");
+    /* Asked once per scene, beside the screen size and for the same
+       reason: both describe the surface the consumer is redrawing, and a
+       theme can be switched while this guest runs. Four Toolbox calls
+       against a walk that already costs tens of milliseconds. */
+    {
+        NowSceneTheme theme;
+
+        now_scene_theme_ask(&theme);
+        now_scene_set_theme(out, &theme);
+    }
     now_semantic_client_begin((unsigned long)seq);
 
     have_front = GetFrontProcess(&front) == noErr;
