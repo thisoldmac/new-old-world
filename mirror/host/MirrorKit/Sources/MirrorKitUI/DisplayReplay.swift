@@ -308,11 +308,32 @@ public enum DisplayReplay {
             case "line":
                 guard let f = op.from, let t = op.to,
                       f.count == 2, t.count == 2 else { continue }
+                /* THE HALF PIXEL. QuickDraw's `MoveTo(h,v); LineTo(…)` with
+                   a 1×1 pen inks the PIXEL whose top-left corner is (h,v);
+                   Core Graphics strokes a line CENTRED on the coordinate.
+                   Stroking at an integer therefore spreads one black row
+                   across two rows at half coverage, and every 1-pixel frame
+                   and bevel in every window came out as two rows of mid
+                   grey. Measured on the Appearance panel's pane frame,
+                   2026-08-07: `#D9D9D9` where the machine draws `#000000`,
+                   and its two bevel rows `#EEEEEE`/`#F7F7F7` where the
+                   machine draws `#CCCCCC`/`#FFFFFF`. Moving to the pixel's
+                   centre is the whole fix, and it applies to the frame verb
+                   just above for the same reason. */
                 var path = Path()
-                path.move(to: pt(f[0], f[1]))
-                path.addLine(to: pt(t[0], t[1]))
+                path.move(to: pt(f[0], f[1]).applying(Self.pixelCentre))
+                path.addLine(to: pt(t[0], t[1]).applying(Self.pixelCentre))
                 let draw = drawingContext()
-                draw.stroke(path, with: .color(fg), lineWidth: 1)
+                /* AND A SQUARE CAP, for the other half of the same defect.
+                   `LineTo` inks BOTH endpoints, so a line from h to h2
+                   covers h2 - h + 1 pixels; a butt-capped stroke between
+                   their centres covers half a pixel less at each end. The
+                   Appearance panel's tab top edge lost its first and last
+                   column to exactly that — `#777777` where the machine has
+                   `#000000`, one pixel wide, at both ends of every line in
+                   every window. */
+                draw.stroke(path, with: .color(fg),
+                            style: StrokeStyle(lineWidth: 1, lineCap: .square))
                 coverage?.add(path.boundingRect.insetBy(dx: -0.5, dy: -0.5))
                 coverage?.attribute(path.boundingRect.insetBy(dx: -0.5, dy: -0.5), .ink)
                 drew = true
@@ -393,7 +414,8 @@ public enum DisplayReplay {
                    against it. */
                 switch op.verb ?? 0 {
                 case 0:   // frame
-                    draw.stroke(Path(rect), with: .color(fg), lineWidth: 1)
+                    draw.stroke(Path(rect.insetBy(dx: 0.5, dy: 0.5)),
+                                with: .color(fg), lineWidth: 1)
                     coverage?.add(rect)
                     coverage?.attribute(rect, .ink)
                     drew = true
@@ -422,6 +444,29 @@ public enum DisplayReplay {
             default:
                 break   // arc/poly remain unsupported structured ops
             }
+        }
+
+        /* TABS, AFTER EVERYTHING ELSE, AND THAT ORDER IS LOAD-BEARING.
+           `DrawThemeTab` leaks its label boxes, their bevel and their
+           titles through the bottlenecks but not its slanted end caps, so
+           the mirror has drawn tab labels floating on flat grey for as long
+           as anyone has looked (fidelity sweep 2026-08-07-a, verdict 4).
+           `DrawnTabStrip` recovers the caps' geometry from the boxes that
+           DID arrive; this places them.
+
+           It runs last because the front tab must ERASE one row of the
+           pane's own frame line, and the replay draws that line. Running
+           the pass earlier would put the caps down and then stroke the
+           pane straight through them. The title is protected by a clip
+           inside `PlatinumTab.draw`, not by ordering. */
+        for strip in MirrorKit.DrawnTabStrip.derive(from: ops) {
+            PlatinumTab.draw(strip, in: g,
+                             origin: { h, v in
+                                 CGPoint(x: content.minX + CGFloat(h),
+                                         y: content.minY + CGFloat(v))
+                             },
+                             coverage: coverage)
+            drew = true
         }
         return drew
     }
@@ -560,6 +605,10 @@ public enum DisplayReplay {
         light.addLine(to: CGPoint(x: frame.maxX - 1, y: frame.minY + 1))
         ctx.stroke(light, with: .color(Platinum.g0), lineWidth: 1)
     }
+
+    /// From a QuickDraw pixel's top-left corner to its centre — see the
+    /// note in the `line` case.
+    static let pixelCentre = CGAffineTransform(translationX: 0.5, y: 0.5)
 
     private static func rgb(_ c: [Int]) -> Color {
         Color(red: Double(c[0]) / 65535, green: Double(c[1]) / 65535,

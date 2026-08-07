@@ -128,6 +128,73 @@ and the drawn art.
   the theme may legitimately differ — which is itself a reason the
   numbers should be read rather than hardcoded.
 
+## AMENDED 2026-08-07 — a third route that neither half saw
+
+Michelle, 2026-08-07: *"os9 does a lot of procedural runtime drawing.
+rather than trying to import these assets, we need to figure out what
+that procedure is, either through inference or when necessary re'ing,
+and implement it host side."*
+
+This plan **stands, and its two halves both survive** — but a third
+source of parameters sits below both of them and is nearly free, and the
+first element done this way did not need either half.
+
+**The Appearance Manager leaks most of itself through the QuickDraw
+bottlenecks.** `DrawThemeTab` paints its label box, strokes three lines
+across its top and draws the title, all as ordinary captured ops
+carrying the machine's own `fg` colours. Only the shaped part — the two
+slanted end caps — goes by a route the content plane cannot see. So for
+that element the answers to *what height*, *what colour in each state*,
+*where the pane starts*, and even *what `kThemeMetricLargeTabCapsWidth`
+is* were all already in a capture this project had taken on 2026-08-07
+and not read. The method is
+[deriving-a-drawn-procedure.md](../deriving-a-drawn-procedure.md); the
+result is `DrawnTabStrip` + `PlatinumTab`, gated and measured.
+
+**Recommendation: AMEND, do not supersede.** The slice order changes:
+
+- **P0 (new, first) — read the drain before writing an applet.** For each
+  element, group a capture's ops by port, find the one the element drew
+  into, and write down what arrived. It is half an hour per element and
+  it decides whether P2 is needed at all. Doing this for the tab replaced
+  the whole of P2 *for the tab* and produced a per-machine caps width
+  that P2 could not have given, since `GetThemeMetric` reports a constant
+  where the spacing reports what this panel actually used.
+- **P2 keeps its value and narrows.** It is still the only route to
+  metrics for elements nothing on screen is currently drawing, to
+  `GetThemeAccentColors`' resolved answer, and to the fonts. But it is no
+  longer the first move, and its "report the differences" deliverable is
+  now cheaper to get for anything a capture contains.
+- **P3 is unchanged and is where this landed** — with one correction to
+  its premise. `PlatinumTheme.swift` is *not* where the tab's numbers
+  live, and should not be: they live in the capture, read per render.
+  Ported constants are the fallback, not the store.
+- **P4 (the art bake) is unchanged and now has a first real candidate.**
+  The tab's caps are anti-aliased with blend values classic QuickDraw
+  cannot produce, so AppearanceLib is compositing a prepared stencil.
+  That was not worth baking here — the geometry matches to a pixel and
+  the blends do not matter at 1×. Scroll-bar arrows probably are.
+- **P5's gate exists now, in the shape it should have.** Not "the render
+  is 97 % similar" — a whole-image percentage cannot see a systematic
+  one-pixel error, and one had been in the renderer for its whole life
+  (see below). The gate asserts WHERE an edge is, per row, against the
+  machine's own screendump.
+
+**The one thing this route cannot do**, and P2 must: it only knows about
+elements some application is currently drawing on screen. A theme metric
+for a control nobody has opened is still a question only the machine can
+answer.
+
+### And a defect this found on the way
+
+Every 1-pixel frame, bevel and separator the replay has ever drawn came
+out as **two rows of mid grey**: QuickDraw's pen inks the pixel whose
+top-left corner is `(h,v)`, Core Graphics strokes centred on the
+coordinate. Fixed in `DisplayReplay` (`pixelCentre`). It moved one
+measured region's exact-pixel agreement from 55.6 % to 69.5 % before any
+tab was drawn, and it is the reason a chrome plan should distrust
+similarity scores.
+
 ## Stop condition
 
 If the measured metrics turn out to match the ported constants
