@@ -346,13 +346,27 @@ def declared(root: str) -> list[Block]:
     blocks = []
     for rel in sorted(set(listing.split())):
         full = os.path.join(root, rel)
+        # A derived document is a document: `.md` only, and the marker must
+        # be at column 0 and outside a fenced block. Both restrictions were
+        # earned by tools/gate-impact-sweep, which found this gate refusing
+        # its OWN branch — its selftest carries the marker inside a Python
+        # string as fixture text, and discovery had happily adopted it as a
+        # declaration whose derivations then "failed to run". A gate that
+        # cannot be written about without arming itself is not usable.
+        if not rel.endswith(".md"):
+            continue
         if not os.path.exists(full):
             continue
         with open(full) as fh:
             lines = fh.read().splitlines()
         start = None
         found = 0
+        fenced = False
         for i, line in enumerate(lines):
+            if line.startswith("```"):
+                fenced = not fenced
+            if fenced:
+                continue
             if line.startswith(MARKER):
                 start = i
             elif start is not None and line.strip() == END:
