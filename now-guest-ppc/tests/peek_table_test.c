@@ -243,8 +243,20 @@ int main(void)
     check(offsetof(NowPeekTable, endpoint_os)
               == offsetof(NowPeekTable, channel_sends) + sizeof(NowPeekU32),
           "the endpoint OS string follows the channel block");
-    check(offsetof(NowPeekTable, endpoint_os) + 32 == sizeof(NowPeekTable),
-          "the endpoint OS string is the tail, so shorter means absent");
+    /* U11 appended P7's drag cell behind it, so the OS string is no
+       longer the tail - but its OFFSET is what endpoint_region_ready()
+       in peek.c gates on, and that is unchanged, which is the whole
+       accretive rule holding. The "is the tail" claim moves to whichever
+       region appended last and is asserted once, below. */
+    check(offsetof(NowPeekTable, endpoint_os) + 32
+              == offsetof(NowPeekTable, drag_format),
+          "the endpoint OS string keeps its place under an append");
+    check(offsetof(NowPeekTable, drag)
+              == offsetof(NowPeekTable, drag_format) + sizeof(NowPeekU32),
+          "the drag cell follows its format word");
+    check(offsetof(NowPeekTable, drag) + sizeof(NowPeekDragCell)
+              == sizeof(NowPeekTable),
+          "the drag cell is the tail, so shorter means absent");
 
     /* Reachability is not a dial, and the values are the contract rather
        than an ordering — a refusal carries the driver's own OSErr so that
