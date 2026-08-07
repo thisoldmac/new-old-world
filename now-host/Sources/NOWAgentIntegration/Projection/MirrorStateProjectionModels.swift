@@ -169,6 +169,15 @@ public struct AgentIntegrationMirrorMenu:
     }
 }
 
+/// A rectangle inside one window, **always local to that window's content**
+/// and never in screen coordinates.
+///
+/// Stated here because it was not stated anywhere, and a snapshot that mixed
+/// two conventions shipped: until 2026-08-07 a window's controls and dialog
+/// items were content-local while the desktop's icons were global screen
+/// positions, in the same `items` array, with nothing to tell them apart.
+/// Four honest integers either way — which is why only a written convention,
+/// and a producer that converts to it, can hold this.
 public struct AgentIntegrationMirrorRect: Codable, Equatable, Sendable {
     public let l: Int
     public let t: Int
@@ -193,8 +202,11 @@ public struct AgentIntegrationMirrorRect: Codable, Equatable, Sendable {
 /// radios rendered as push buttons.
 public struct AgentIntegrationMirrorSurfaceItem:
     Codable, Equatable, Sendable {
-    /// `control` or `dialogItem` — different actuation paths on the Mac,
-    /// so never flattened into one list without saying which.
+    /// `control`, `dialogItem` or `finderItem` — different actuation paths
+    /// on the Mac, so never flattened into one list without saying which.
+    /// A `finderItem` is a file the Finder draws, addressed BY NAME
+    /// (`finderSelect` / `finderOpen`), which is why its `ref` is always
+    /// absent; `rect` is absent too when the Finder did not place it.
     public let source: String
     public let ref: String?
     public let role: String?
