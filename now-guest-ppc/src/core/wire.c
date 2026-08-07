@@ -22,6 +22,7 @@
 #include "contract.h"
 #include "ot_carbon.h"
 #include "peek.h"
+#include "anchor_acquire.h"
 #include "peek_read.h"
 #include "prefs.h"
 #include "proc_actions.h"
@@ -2013,6 +2014,26 @@ static void serve_scene(const char *request)
      * arm handshake is unchanged; this only stops asking before it. */
     (void)now_peek_settle((unsigned long)kNowPeekCapAnchors,
                           kNowSceneArmSettleTicks);
+
+    /* AND THEN GIVE THE REST OF THE MACHINE A REASON TO PUMP.
+     *
+     * The plane is armed now, and an armed plane captures a process only
+     * when THAT process executes GetNextEvent - front-ness appears
+     * nowhere in the resident's rule. On a cooperatively scheduled
+     * Macintosh a background application with a long sleep does not
+     * execute one at all, so on a machine nobody has driven the filter
+     * made 451 armed passes and was inside a foreign process on none of
+     * them (open-issues.md, 2026-08-07). The Mirror could show you only a
+     * machine you had already driven.
+     *
+     * WakeUpProcess is the Process Manager's own primitive for the
+     * missing half: it makes a process eligible for time without
+     * fronting it, sending it anything, or changing one pixel of what a
+     * person is looking at. This is the one place it can be called from,
+     * because the wake is only worth anything while the plane is armed -
+     * which is HERE, between the settle above and the walk below, and
+     * nowhere else on this path. */
+    now_peek_anchor_acquire(1);
 
     now_scene_collect(scene, ++g_scene_seq, stale_ticks);
     /* Correlate subsequent acts with the normal-context observation a

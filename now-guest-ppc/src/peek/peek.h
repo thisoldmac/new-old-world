@@ -94,6 +94,14 @@ void now_peek_disconnect(void);
  * a ceiling, not a cost. */
 int now_peek_settle(unsigned long caps, unsigned long max_ticks);
 
+/* **Which writer session this application is in**, or 0 before it has
+ * taken the writer at all. It changes when this build claims the shared
+ * table from an absent or dead owner, which is the one moment anything
+ * cached ABOUT the machine — as opposed to about the table — stops being
+ * evidence. Exported so a cache can expire itself rather than being told
+ * to by peek.c, which would have to know about every cache there is. */
+unsigned long now_peek_session_epoch(void);
+
 /* **Where the resident should dial, and whether it should dial at all.**
  *
  * The optional resident component answers for the MACHINE while every

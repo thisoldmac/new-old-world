@@ -311,6 +311,11 @@ void now_peek_release(NowPeekOwner owner, unsigned long caps)
     publish_claims();
 }
 
+unsigned long now_peek_session_epoch(void)
+{
+    return (unsigned long)g_session_epoch;
+}
+
 void now_peek_disconnect(void)
 {
     now_peek_leases_disconnect(&g_leases);
