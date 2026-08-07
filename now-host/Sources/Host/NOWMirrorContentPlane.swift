@@ -849,6 +849,32 @@ final class NOWMirrorContentPlane {
         let dx = dst[0] - src[0] - (into.count == 2 ? into[0] : 0)
         let dy = dst[1] - src[1] - (into.count == 2 ? into[1] : 0)
 
+        /* A SOURCE THAT SET ITS OWN ORIGIN HAS ALREADY BEEN COUNTED, and
+           counting it twice is what put the Appearance panel's two theme
+           thumbnails — and the white erase that opens each of them — on
+           top of its `Themes` and `Appearance` tabs (2026-08-07).
+
+           `src` is read off the blit, so it is expressed in whatever
+           coordinate system the source port was in AT THE BLIT. When the
+           world called `SetOrigin(36,57)` to match its destination, both
+           `src` and every held op are in that shifted frame, and the two
+           terms cancel: a held coordinate `c` lands at `c + dst - src`
+           whatever the origin was. The rehome translated the held origin
+           op by `dx` and left the shift in, so every op was moved a
+           second time by the origin's full value and the world landed at
+           the content's top-left corner.
+
+           So the frame the whole run is expressed in is the source's
+           origin AT THE BLIT — the last one it set — and every replay
+           origin inside the run is stated relative to it. `oBlit` is
+           `[0,0]` for a world that never called `SetOrigin`, which is
+           every case this join was built against, so the arithmetic below
+           is unchanged for all of them. */
+        var oBlit = [0, 0]
+        for op in heldOps where op.op == "state" && op.kind == "origin" {
+            if let o = op.origin, o.count == 2 { oBlit = o }
+        }
+
         func stateOp(_ kind: String, _ build: (inout DisplayOp) -> Void)
             -> DisplayOp {
             var op = DisplayOp(op: "state", ticks: bits.ticks)
@@ -857,9 +883,16 @@ final class NOWMirrorContentPlane {
             return op
         }
 
+        /* The run opens in the source's UNSHIFTED frame — a world draws
+           before it sets an origin, and those ops are 0-based — so the
+           prologue states that frame relative to `oBlit`, and the clip is
+           `src` carried into it. */
         var out: [DisplayOp] = [
-            stateOp("origin") { $0.origin = [-dx, -dy] },
-            stateOp("clip") { $0.rect = src },
+            stateOp("origin") { $0.origin = [-oBlit[0] - dx, -oBlit[1] - dy] },
+            stateOp("clip") {
+                $0.rect = [src[0] - oBlit[0], src[1] - oBlit[1],
+                           src[2] - oBlit[0], src[3] - oBlit[1]]
+            },
         ]
         var touchedFg = false
         var touchedBg = false
@@ -868,7 +901,8 @@ final class NOWMirrorContentPlane {
                 switch op.kind {
                 case "origin":
                     if let o = op.origin, o.count == 2 {
-                        op.origin = [o[0] - dx, o[1] - dy]
+                        op.origin = [o[0] - oBlit[0] - dx,
+                                     o[1] - oBlit[1] - dy]
                     }
                 case "fg": touchedFg = true
                 case "bg": touchedBg = true
