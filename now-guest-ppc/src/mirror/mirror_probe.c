@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "content_table.h"
+#include "mirror_anchor.h"
 #include "event_tail.h"
 #include "peek.h"
 #include "peek_validate.h"
@@ -332,5 +333,12 @@ void now_mirror_probe(MirrorFacts *facts)
             }
         }
     }
+    /* P1's counters and slots, from the SAME table read as everything
+       above. One snapshot, one moment: these numbers are compared
+       against `arm_active` and the heartbeat beside them, and a second
+       read would be a second instant - which is precisely the mistake
+       an instrument for diagnosing a flapping plane must not make. */
+    now_mirror_anchor_read(table, (unsigned long)TickCount(), 0,
+                           &facts->anchors);
     fill_planes(facts, table, (unsigned long)TickCount());
 }

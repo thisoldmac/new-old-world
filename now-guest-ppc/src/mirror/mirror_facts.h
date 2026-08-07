@@ -8,11 +8,21 @@
 
 #include <MacTypes.h>
 
+/* The anchor slot cap is the RESIDENT's, stated once where both halves
+   read it. This file deliberately does not restate 32: the number that
+   matters is how many slots the extension actually allocated, and only
+   contract/peek_table.h knows it. AGENTS.md names the alternative as the
+   defect this project has paid most for. */
+#include "peek_table.h"
+
 enum {
     kMirrorFactsSchema = 1,
     kMirrorPlaneCount = 5,
     kMirrorIdentityWords = 5,
-    kMirrorReasonMax = 128
+    kMirrorReasonMax = 128,
+    /* Str31-derived: the resident captures CurApName into a fixed field
+       and this is that field, plus a terminator, as a C string. */
+    kMirrorAnchorNameMax = kNowPeekAnchorNameSize + 1
 };
 
 typedef enum {
@@ -63,6 +73,60 @@ typedef struct {
     char reason[kMirrorReasonMax];
 } MirrorPlaneFact;
 
+/* One captured anchor slot, as the reader sees it. The name is the
+   decisive field and not decoration: A5 and the stack base only bound an
+   address space, and a partition can be recycled, so the name out of the
+   captured context is the one value that says WHICH application the
+   resident was running inside when it wrote this slot. */
+typedef struct {
+    int slot;
+    char name[kMirrorAnchorNameMax];
+    unsigned long a5;
+    unsigned long window_list;
+    unsigned long stamp_ticks;
+    unsigned long age_ticks;
+} MirrorAnchorSlotFact;
+
+/* The P1 hot path's own account of itself.
+ *
+ * This exists because `ax_oracle_not_found` cannot be diagnosed without
+ * it. That verdict means "no slot claims this process's partition", and
+ * it is reached by three different roads - the resident never ran in
+ * that process's context, or it ran and the partition read disagreed, or
+ * there was no partition to read. Those are different defects with
+ * different fixes, and until these counters could be read out loud
+ * nothing on either side could tell them apart: the resident counted
+ * every one of these words and no face said them.
+ *
+ * `event_passes` is the load-bearing one, and it comes first for the
+ * same reason `transitions status` puts `passes` before the record
+ * count: it separates "the filter never ran while armed" from "it ran
+ * and captured nothing". */
+typedef struct {
+    /* False when the resident is older than these counters - reported,
+       never guessed, by the accretive length rule every other cell in
+       this struct follows. */
+    Boolean present;
+    unsigned long event_passes;
+    unsigned long slot_scans;
+    unsigned long full_publishes;
+    unsigned long change_publishes;
+    unsigned long cadence_publishes;
+    unsigned long last_publish_ticks;
+    /* Slots the filter maintains, as the RESIDENT counts them. Kept
+       beside the array below rather than derived from it, because the
+       two disagreeing is itself a fact worth seeing. */
+    unsigned long count;
+    unsigned long now_ticks;
+    /* Occupied slots, oldest field first. `slot_count` is how many were
+       READ; `slots_omitted` is how many were occupied and did not fit
+       the reply, because a short list presented as a whole one is the
+       error this project keeps paying for. */
+    int slot_count;
+    int slots_omitted;
+    MirrorAnchorSlotFact slots[kNowPeekMaxAnchors];
+} MirrorAnchorFacts;
+
 typedef struct MirrorFacts {
     MirrorLifecycle lifecycle;
     unsigned long resident_major;
@@ -100,6 +164,7 @@ typedef struct MirrorFacts {
     unsigned long source_manifest[kMirrorIdentityWords];
     unsigned long build_fingerprint[kMirrorIdentityWords];
     char reason[kMirrorReasonMax];
+    MirrorAnchorFacts anchors;
     MirrorPlaneFact planes[kMirrorPlaneCount];
 } MirrorFacts;
 
