@@ -230,7 +230,7 @@ final class MirrorPlanePolicyStore {
     private let defaults: UserDefaults
     private var sessions: [String: [MirrorPlaneID: Bool]] = [:]
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = ProductIdentity.defaults) {
         self.defaults = defaults
     }
 

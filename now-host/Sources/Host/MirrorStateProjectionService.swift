@@ -189,24 +189,114 @@ final class MirrorStateProjectionService {
         }.sorted {
             ($0.scope, $0.owner ?? "") < ($1.scope, $1.owner ?? "")
         }
-        let menus = (projection.scene.menubar?.menus ?? []).map { menu in
-            AgentIntegrationMirrorMenu(
-                id: menu.id, title: menu.title, apple: menu.apple,
-                left: menu.left,
-                items: menu.items.map {
+        /* **EVERY family is bounded, and each states its own true count.**
+
+           Two of the four used to be. `itemBudgetBytes` and
+           `contentBudgetBytes` were constants — 40 KB and 12 KB — chosen
+           against a stress fixture that has two entities, no menubar and
+           no coverage rows. Entities and menus were therefore governed by
+           nothing at all, and on a real OS 9 desktop they are not small: a
+           menubar carries nine menus and the Apple menu alone can hold 96
+           items. So the ceiling held in the test and broke on the machine,
+           and the reply could not be sent — which is how sweep C met
+           `snapshot` closing the connection, 3/3, on 2026-08-07.
+
+           The order below is by how much a caller loses without it:
+           entities are the ADDRESSING surface (an id that is not carried
+           cannot be acted on at all), menus are the second act lane, and
+           the window interiors come last because a caller that needs one
+           window's interior can ask for that window. Whatever is left
+           after the first two is split between items and content in the
+           10:3 ratio their measured worst cases established — separate
+           shares still, because one pool lets whichever family is served
+           first starve the other.
+
+           Every bound states the count it bounded: `entityTotal`,
+           a menu's `itemTotal`, a surface's `itemTotal` and
+           `displayTotal`. A truncated list that did not say so reads as a
+           Mac with fewer things on it, which is worse than an empty one
+           because it looks complete. */
+        let allEntities = (applications + windows).sorted { $0.id < $1.id }
+        let floor = AgentIntegrationMirrorSnapshot(
+            metadata: metadata(projection), coverage: coverage,
+            entities: [], menus: [],
+            screen: .init(w: projection.scene.screen.w,
+                          h: projection.scene.screen.h),
+            surfaces: [])
+        let fixed = (try? JSONEncoder().encode(floor).count) ?? 0
+
+        /* **Measured, then measured again — because reasoning about it is
+           what produced the hole.**
+
+           Charging each family for its own contents leaves every CONTAINER
+           uncharged: nine menu headers, and one wrapper per window carrying
+           its id, title, rect, z and totals. Measured on the fixture below,
+           48 window wrappers alone are 11.4 KB — a fifth of the ceiling
+           that no budget had ever seen, which is precisely the shape of
+           the omission this whole file keeps re-learning.
+
+           So the assembled snapshot is ENCODED and checked, and if it is
+           over, the shares are cut by the overshoot and it is built again.
+           A loop that verifies cannot be wrong about an accounting it
+           forgot; an arithmetic that reasons about wrapper sizes can be,
+           and was. It converges in one or two passes and stops either way
+           — and if it cannot fit at all, the transport's
+           `response-too-large` refusal is the floor beneath it, which is
+           an honest answer where the old silent close was not. */
+        var reserve = 0        // what the containers cost, once measured
+        var entityBytes = Self.entityBudgetBytes
+        var menuBytes = Self.menuBudgetBytes
+        var built = AgentIntegrationMirrorSnapshot(
+            metadata: floor.metadata, coverage: coverage,
+            entities: [], menus: [], screen: floor.screen)
+        for pass in 0..<4 {
+            var entityRoom = min(
+                max(0, Self.snapshotCeilingBytes - fixed), entityBytes)
+            let entities = Array(allEntities.prefix(
+                Self.affording(allEntities, within: &entityRoom)))
+            var menuRoom = menuBytes
+            let menus = (projection.scene.menubar?.menus ?? []).map { menu in
+                let items = menu.items.map {
                     AgentIntegrationMirrorMenuItem(
                         title: $0.title, index: $0.index,
                         separator: $0.separator, enabled: $0.enabled,
                         marked: $0.mark, command: $0.cmd)
-                })
+                }
+                let carried = Array(items.prefix(
+                    Self.affording(items, within: &menuRoom)))
+                return AgentIntegrationMirrorMenu(
+                    id: menu.id, title: menu.title, apple: menu.apple,
+                    left: menu.left, items: carried,
+                    itemTotal: items.count)
+            }
+            let spent = fixed + (entityBytes - entityRoom)
+                + (menuBytes - menuRoom) + reserve
+            let room = max(0, Self.snapshotCeilingBytes - spent)
+            var itemBytes = room * Self.itemShare
+                / (Self.itemShare + Self.contentShare)
+            var contentBytes = room - itemBytes
+            built = .init(
+                metadata: floor.metadata, coverage: coverage,
+                entities: entities, menus: menus, screen: floor.screen,
+                surfaces: surfaces(projection.scene,
+                                   itemBytes: &itemBytes,
+                                   contentBytes: &contentBytes),
+                entityTotal: allEntities.count)
+            let size = (try? JSONEncoder().encode(built).count) ?? 0
+            guard size > Self.snapshotCeilingBytes, pass < 3 else { break }
+            /* Shed from the two act lanes only after the interiors, which
+               the loop has already emptied by the time the shares reach
+               zero: an id that is not carried cannot be acted on at all,
+               and a window's interior can be asked for one window at a
+               time. */
+            let over = size - Self.snapshotCeilingBytes
+            if room > 0 {
+                reserve += over            // the containers, now paid for
+            } else {
+                menuBytes = max(0, menuBytes - over)
+            }
         }
-        return .init(
-            metadata: metadata(projection), coverage: coverage,
-            entities: (applications + windows).sorted { $0.id < $1.id },
-            menus: menus,
-            screen: .init(w: projection.scene.screen.w,
-                          h: projection.scene.screen.h),
-            surfaces: surfaces(projection.scene))
+        return built
     }
 
     /// **What the renderer draws, for the client that draws nothing.**
@@ -219,7 +309,9 @@ final class MirrorStateProjectionService {
     /// the workflow this arc exists for, confirm the state is there and
     /// only then implement the drawing, could not be run for anything but
     /// windows and menus.
-    private func surfaces(_ scene: MirrorKit.Scene)
+    private func surfaces(_ scene: MirrorKit.Scene,
+                          itemBytes: inout Int,
+                          contentBytes: inout Int)
         -> [AgentIntegrationMirrorSurface] {
         /* Bounded because the protocol caps one message at 64 KB and a
            Finder window can hold hundreds of rows. The cap is stated in
@@ -230,8 +322,6 @@ final class MirrorStateProjectionService {
         let perWindow = 64
         let budget = 240
         var spent = 0
-        var itemBytes = Self.itemBudgetBytes
-        var contentBytes = Self.contentBudgetBytes
         return scene.windows.map { window in
             let controls = window.controls.map { control in
                 AgentIntegrationMirrorSurfaceItem(
@@ -382,31 +472,56 @@ final class MirrorStateProjectionService {
         }
     }
 
-    /* **One ceiling, and every family gets a STATED share of it.**
+    /* **One ceiling, shared out AFTER the part nobody can shrink.**
 
-       The protocol caps a message at 64 KB, and past that the writer
-       throws and the connection closes with NO reply — so `snapshot`
-       stops answering while `status` still does, which reads as a broken
-       host rather than an oversized payload (open-issues, 2026-08-05).
+       The protocol caps a message at 64 KB. Past that the encode used to
+       fail and the connection closed with NO reply — so `snapshot` stopped
+       answering while `status` still did, which reads as a broken host
+       rather than an oversized payload (open-issues, 2026-08-05; met again
+       by sweep C on 2026-08-07). The transport no longer goes silent
+       either way: `AgentIntegrationLocalCodec.encodeOrRefusal` substitutes
+       a `response-too-large` refusal that names the size. **That is the
+       floor, not the fix** — a refusal is honest, an answer is useful, and
+       this is the half that keeps the answer.
 
-       These are byte budgets rather than counts because an element's size
-       is not something this side controls: a `text` draw op carries an
-       arbitrary DrawString, a TE body has no promised length, and a
+       The shares are BYTE budgets rather than counts because an element's
+       size is not something this side controls: a `text` draw op carries
+       an arbitrary DrawString, a TE body has no promised length, and a
        control's semantic value is whatever the panel put there. A count
        that comfortably fits three hundred short ops overflows the same
        ceiling on three hundred long strings.
 
-       They are also SEPARATE budgets rather than one shared pool, because
-       a shared pool would let the first family served starve the rest —
-       and the measured worst case says that is not hypothetical: the item
-       projection alone encoded 54.6 KB of the 64 KB ceiling before any of
-       this was added, so an independently-bounded addition of any size
-       overflowed it. Both numbers are pinned by
-       `testAWholeSceneOfItemsAndDrawOpsStillFitsOneMessage`, which
-       measures rather than reasons; the rest of the ceiling is the
-       snapshot's metadata, entities and menus. */
-    private static let itemBudgetBytes = 40 * 1024
-    private static let contentBudgetBytes = 12 * 1024
+       They are SEPARATE shares rather than one pool, because a pool lets
+       the first family served starve the rest — the item projection alone
+       once encoded 54.6 KB of the ceiling.
+
+       And they are DERIVED per scene rather than fixed, which is the
+       2026-08-07 change. Two constants summing to 52 KB left 12 KB for
+       everything they do not govern: metadata, coverage, every process and
+       window entity, and a menubar that can carry 96 items. That is ample
+       on the stress fixture, which has two entities and no menus, and not
+       ample on a real OS 9 desktop — so the ceiling held in the test and
+       broke on the machine. `snapshot(_:)` now encodes the ungoverned part
+       first and shares out what is left, in the ratio the two measured
+       worst cases established. */
+    private static let itemShare = 10
+    private static let contentShare = 3
+
+    /* Ceilings rather than shares, because these two are usually small and
+       taking a fixed proportion for them would starve the interiors on
+       every ordinary scene to insure against an extreme one. Unspent bytes
+       go back to the interiors. 12 KB of entities is roughly 90 windows
+       and processes; 12 KB of menu items is several hundred commands. */
+    private static let entityBudgetBytes = 12 * 1024
+    private static let menuBudgetBytes = 12 * 1024
+
+    /* The reserve is for what wraps the snapshot on the way out — the
+       response envelope, the read value's `intention`, and its `current`
+       metadata, which is the snapshot's metadata a second time. Measured
+       generously: an under-reserve here is paid for by the exact failure
+       this file is fixing. */
+    private static let snapshotCeilingBytes =
+        AgentIntegrationLocalProtocol.maximumMessageBytes - 4096
 
     /// The window's drawing, bounded — **newest last, oldest dropped
     /// first.**

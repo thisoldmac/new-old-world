@@ -176,6 +176,17 @@ class Live:
 
     def snapshot(self):
         reply = self.read("snapshot")
+        # A TRANSPORT refusal, which is not an unavailable reading and does
+        # not live under `mirrorReadResult`. Surfaced with its own code
+        # rather than collapsed into the empty-result path below: without
+        # this, `response-too-large` decoded as a result that simply was
+        # not there, and every frame would record a bare "unavailable" —
+        # a run that swallowed the one thing it needed to report. The
+        # closed socket this replaces (sweep C, 2026-08-07) at least
+        # crashed the tool honestly.
+        if reply.get("error"):
+            raise Unavailable(reply["error"].get("code") or "error",
+                              reply["error"].get("message") or "")
         result = reply.get("mirrorReadResult") or {}
         if not result.get("available", False):
             bad = result.get("unavailable") or {}

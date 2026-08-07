@@ -18,7 +18,7 @@ final class CloudModuleModel: ObservableObject {
 
     @Published private(set) var services: [CloudServiceEntry] = []
 
-    init(listener: GuestListener, defaults: UserDefaults = .standard,
+    init(listener: GuestListener, defaults: UserDefaults = ProductIdentity.defaults,
          driveURL: URL = DriveCloudProvider.iCloudDrive) {
         self.listener = listener
         self.defaults = defaults

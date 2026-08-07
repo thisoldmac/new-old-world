@@ -40,7 +40,7 @@ final class SidebarPreferences: ObservableObject {
     private static let collapsedKey = "sidebarCollapsed"
     private static let orderKey = "sidebarOrder"
 
-    init(defaults: UserDefaults = .standard, registry: ModuleRegistry) {
+    init(defaults: UserDefaults = ProductIdentity.defaults, registry: ModuleRegistry) {
         self.defaults = defaults
         compact = defaults.bool(forKey: Self.compactKey)
         collapsed = defaults.bool(forKey: Self.collapsedKey)

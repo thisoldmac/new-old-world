@@ -25,7 +25,7 @@ final class MirrorControlModel: ObservableObject, GuestScopedModel {
     private static let pendingTimeout: TimeInterval = 5
 
     init(guestProbe: MirrorGuestProbing,
-         defaults: UserDefaults = .standard,
+         defaults: UserDefaults = ProductIdentity.defaults,
          policyDidChange: @escaping @MainActor () -> Void = {}) {
         self.guestProbe = guestProbe
         self.policyStore = MirrorPlanePolicyStore(defaults: defaults)

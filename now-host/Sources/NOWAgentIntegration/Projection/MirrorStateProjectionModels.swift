@@ -190,14 +190,27 @@ public struct AgentIntegrationMirrorMenu:
     /// besides.
     public let left: Int?
     public let items: [AgentIntegrationMirrorMenuItem]
+    /// How many items this menu HAS, when `items` is a bounded prefix of
+    /// them. Absent means nothing was dropped.
+    ///
+    /// The Apple menu alone can carry 96 items and a menubar nine menus,
+    /// which is enough to fill a 64 KB message on its own — and until
+    /// 2026-08-07 nothing bounded them, so a menu-heavy desktop made the
+    /// whole snapshot unsendable. Same rule as `itemTotal` on a surface: a
+    /// truncated list that did not say so reads as a menubar with fewer
+    /// commands than the Mac is offering, which is worse than no menubar
+    /// because it looks complete.
+    public let itemTotal: Int?
 
     public init(id: Int, title: String, apple: Bool, left: Int?,
-                items: [AgentIntegrationMirrorMenuItem]) {
+                items: [AgentIntegrationMirrorMenuItem],
+                itemTotal: Int? = nil) {
         self.id = id
         self.title = title
         self.apple = apple
         self.left = left
         self.items = items
+        self.itemTotal = itemTotal
     }
 }
 
@@ -474,19 +487,28 @@ public struct AgentIntegrationMirrorSnapshot:
     /// read the state, confirm it is there, then implement the drawing —
     /// impossible for anything but windows and menus.
     public let surfaces: [AgentIntegrationMirrorSurface]
+    /// How many entities the Mirror HOLDS, when `entities` is a bounded
+    /// prefix. Absent means nothing was dropped.
+    ///
+    /// Entities are the addressing surface — an id that is not here cannot
+    /// be acted on — so a caller that got fewer than the Mac has must be
+    /// able to see that, rather than conclude the window is gone.
+    public let entityTotal: Int?
 
     public init(metadata: AgentIntegrationMirrorSnapshotMetadata,
                 coverage: [AgentIntegrationMirrorCoverage],
                 entities: [AgentIntegrationMirrorEntity],
                 menus: [AgentIntegrationMirrorMenu],
                 screen: AgentIntegrationMirrorScreen? = nil,
-                surfaces: [AgentIntegrationMirrorSurface] = []) {
+                surfaces: [AgentIntegrationMirrorSurface] = [],
+                entityTotal: Int? = nil) {
         self.metadata = metadata
         self.coverage = coverage
         self.entities = entities
         self.menus = menus
         self.screen = screen
         self.surfaces = surfaces
+        self.entityTotal = entityTotal
     }
 }
 

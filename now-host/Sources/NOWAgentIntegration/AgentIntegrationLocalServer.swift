@@ -363,7 +363,8 @@ public final class AgentIntegrationLocalServer {
                     requestID: request.requestID,
                     notImplemented: unavailable)
             }
-            finish(descriptor, response: response)
+            finish(descriptor, response: response,
+                   operation: request.operation.rawValue)
         }
     }
 
@@ -371,14 +372,23 @@ public final class AgentIntegrationLocalServer {
     /// in-flight count is decremented here rather than at each `return`
     /// above: a branch that forgot would leave a companion working forever
     /// on the pane.
+    /* **And it always writes something.** It used to encode with `try?`
+       and `return` on failure, which put the `defer` above straight into a
+       close — so a reply past the 64 KB ceiling reached the caller as a
+       hang-up with no error frame and no reason. That is the least
+       informative answer this transport can give, and every other refusal
+       in this tree names its cause. `encodeOrRefusal` substitutes a
+       bounded refusal that does, and the operation is passed in so it can
+       say WHICH answer did not fit. */
     private func finish(_ descriptor: Int32,
-                        response: AgentIntegrationLocalResponse) {
+                        response: AgentIntegrationLocalResponse,
+                        operation: String? = nil) {
         defer {
             close(descriptor)
             publish(companions.ended(at: Date()))
         }
-        guard let data = try? AgentIntegrationLocalCodec.encode(response)
-        else { return }
+        let data = AgentIntegrationLocalCodec.encodeOrRefusal(
+            response, operation: operation)
         try? AgentIntegrationUnixSocket.writeLine(data, to: descriptor)
     }
 

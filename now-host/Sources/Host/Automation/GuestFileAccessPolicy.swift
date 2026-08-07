@@ -19,7 +19,7 @@ final class GuestFileAccessPolicy {
     private(set) var snapshot: Snapshot
 
     init(
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = ProductIdentity.defaults,
         audit: ((String) -> Void)? = nil
     ) {
         let writeAudit = audit ?? {

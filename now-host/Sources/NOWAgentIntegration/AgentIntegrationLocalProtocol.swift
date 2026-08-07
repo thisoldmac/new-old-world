@@ -1562,6 +1562,66 @@ public enum AgentIntegrationLocalCodec {
         try bounded(makeEncoder().encode(response))
     }
 
+    /// **A reply that will not fit is still a reply.**
+    ///
+    /// The server's one exit used to encode with `try?` and return on
+    /// failure, and its `defer` closed the socket — so an answer past the
+    /// ceiling reached the caller as a hang-up: no error frame, no code, no
+    /// reason. On 2026-08-07 that was `mirror_read --intention snapshot`
+    /// closing the connection 3/3 while `status`, `metrics` and `find`
+    /// answered on the same path, which reads as a broken host rather than
+    /// an oversized payload, and it silently disabled the only instrument
+    /// that can measure live render flicker.
+    ///
+    /// Every refusal in this tree says what happened and why; a closed
+    /// socket is the least informative answer there is. So the encode never
+    /// fails silently: it returns either the response or a bounded refusal
+    /// naming the operation, the size it reached and the ceiling it met.
+    ///
+    /// This is the TRANSPORT's guarantee, which is why it lives here rather
+    /// than in the verb that was caught — the encode is the one exit every
+    /// served operation leaves by.
+    public static func encodeOrRefusal(
+        _ response: AgentIntegrationLocalResponse,
+        operation: String?) -> Data {
+        let encoder = makeEncoder()
+        let encoded = try? encoder.encode(response)
+        if let encoded,
+           encoded.count <= AgentIntegrationLocalProtocol.maximumMessageBytes {
+            return encoded
+        }
+        let cap = AgentIntegrationLocalProtocol.maximumMessageBytes
+        let named = operation ?? "this operation"
+        let reached = encoded.map { "reached \($0.count) bytes" }
+            /* Nil means the encoder itself refused the value, which is a
+               different fault from an oversized one and must not be
+               reported as a size. */
+            ?? "could not be encoded at all"
+        let refusal = AgentIntegrationLocalResponse(
+            requestID: response.requestID,
+            error: .init(
+                code: "response-too-large",
+                message: "The \(named) reply \(reached) and one agent "
+                    + "protocol message carries at most \(cap) bytes. "
+                    + "Nothing was sent and nothing was truncated; this "
+                    + "refusal is here so the connection does not simply "
+                    + "close. Ask for a narrower reading of \(named) — a "
+                    + "metadata-only or filtered intention where it has "
+                    + "one — or reduce what the host is being asked to "
+                    + "carry in one answer."))
+        if let data = try? encoder.encode(refusal), data.count <= cap {
+            return data
+        }
+        /* The floor beneath the floor: hand-built so it cannot itself be
+           the thing that fails to encode. A caller that reaches this still
+           gets a well-formed response with a code it can switch on. */
+        return Data("""
+        {"version":\(AgentIntegrationLocalProtocol.version),\
+        "error":{"code":"response-too-large",\
+        "message":"The reply exceeded \(cap) bytes and could not be sent."}}
+        """.utf8)
+    }
+
     public static func decodeRequest(_ data: Data) throws
         -> AgentIntegrationLocalRequest {
         let object = try strictObject(data, allowedKeys: [

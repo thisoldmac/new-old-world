@@ -274,7 +274,7 @@ final class FileLocationsStore {
 
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = ProductIdentity.defaults) {
         self.defaults = defaults
     }
 

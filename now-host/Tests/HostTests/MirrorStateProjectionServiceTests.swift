@@ -711,6 +711,135 @@ final class MirrorStateProjectionServiceTests: XCTestCase {
         }, "one window must receive both families, not one at the other's cost")
     }
 
+    /// **The ceiling, measured on the WHOLE reply and on a scene that has
+    /// the parts the budgets do not govern.**
+    ///
+    /// The row above pins the two family budgets and passed throughout,
+    /// while `mirror_read --intention snapshot` was closing the connection
+    /// on a live OS 9 session (sweep C, 2026-08-07, 3/3). It could pass
+    /// because its fixture has two entities, no menubar and no coverage
+    /// rows — none of which the item and content budgets bound — and
+    /// because it measured the SNAPSHOT rather than the message the
+    /// snapshot travels in.
+    ///
+    /// So this one adds the ungoverned families back: a full menubar, a
+    /// desktop's worth of processes and windows, coverage rows, and the
+    /// envelope. It is the shape that actually overflowed.
+    func testAMenuHeavyDesktopFitsTheWHOLEMessageNotJustTheSnapshot()
+        async throws {
+        var apps: [String] = []
+        var processes: [String] = []
+        var windows: [String] = []
+        for p in 0..<12 {
+            apps.append("""
+            {"psn":"0.\(p)","name":"Application Number \(p)",
+             "front":\(p == 0),"incarnation":"process-\(p)"}
+            """)
+            processes.append("""
+            {"psn":"0.\(p)","name":"Application Number \(p)",
+             "front":\(p == 0),"signature":"ap\(p)",
+             "incarnation":"process-\(p)"}
+            """)
+            for w in 0..<4 {
+                let controls = (0..<40).map { c in
+                    """
+                    {"ref":"r\(p)-\(w)-\(c)","role":"control",
+                     "title":"A control with a reasonably long label \(c)",
+                     "rect":{"l":1,"t":1,"r":2,"b":2},"enabled":true,
+                     "visible":true,
+                     "semantic":{"knowledge":"known","kind":"pushButton",
+                                 "value":"a value long enough to matter"}}
+                    """
+                }.joined(separator: ",")
+                let ops = (0..<200).map { index in
+                    """
+                    {"op":"text","ticks":\(index),
+                     "text":"\(String(repeating: "W", count: 120))",
+                     "pen":[1,\(index)],"font":3,"size":9,"face":0}
+                    """
+                }.joined(separator: ",")
+                windows.append("""
+                {"id":"0.\(p)/W\(w)#0","app":"Application Number \(p)",
+                 "psn":"0.\(p)","title":"A window with a long title \(w)",
+                 "rect":{"l":0,"t":0,"r":300,"b":200},
+                 "front":\(p == 0 && w == 0),"z":\(p * 4 + w),
+                 "visible":true,"ref":"win-\(p)-\(w)",
+                 "controls":[\(controls)],"display":[\(ops)],
+                 "incarnation":"process-\(p)/window-\(w)"}
+                """)
+            }
+        }
+        /* A real OS 9 menubar: nine menus, and the Apple menu alone can
+           carry ninety-six items. */
+        let menus = (0..<9).map { m in
+            let items = (0..<96).map { i in
+                """
+                {"title":"A menu item with a real name \(i)","index":\(i),
+                 "separator":false,"enabled":true,"mark":false,"cmd":""}
+                """
+            }.joined(separator: ",")
+            return """
+            {"id":\(m),"title":"Menu \(m)","apple":\(m == 0),
+             "left":\(m * 60),"items":[\(items)]}
+            """
+        }.joined(separator: ",")
+        let coverage = (0..<12).map { c in
+            """
+            {"scope":"windows","owner":"Application Number \(c)",
+             "status":"partial",
+             "reason":"a reason long enough to be a real sentence \(c)"}
+            """
+        }.joined(separator: ",")
+        let document = """
+        {"version":2,"seq":9,"capturedAt":9,"source":"peek",
+         "screen":{"w":800,"h":600},
+         "apps":[\(apps.joined(separator: ","))],
+         "processes":[\(processes.joined(separator: ","))],
+         "menubar":{"app":"Application Number 0","menus":[\(menus)]},
+         "windows":[\(windows.joined(separator: ","))],
+         "meta":{"errors":[],"coverage":[\(coverage)]}}
+        """
+        let scene = try JSONDecoder().decode(
+            Scene.self, from: Data(document.utf8))
+        let registry = MirrorStateEngineRegistry()
+        _ = registry.engine(for: key).accept(scene)
+        let result = await service(registry).read(.init(intention: .snapshot))
+
+        /* The MESSAGE, not the snapshot: the ceiling is on what the
+           transport carries, and the envelope repeats the metadata. This
+           is the assertion the old row could not make. */
+        let response = AgentIntegrationLocalResponse(
+            requestID: UUID(), mirrorReadResult: result)
+        let encoded = try AgentIntegrationLocalCodec.encode(response)
+        XCTAssertLessThanOrEqual(
+            encoded.count,
+            AgentIntegrationLocalProtocol.maximumMessageBytes)
+
+        /* And it still ANSWERS. A snapshot that fits by carrying nothing
+           would pass the line above and be useless — the defect this
+           replaces was a caller getting no scene at all. */
+        let snapshot = try XCTUnwrap(result.value?.snapshot)
+        XCTAssertEqual(snapshot.surfaces.count, 48)
+        XCTAssertFalse(snapshot.entities.isEmpty)
+        XCTAssertFalse(snapshot.menus.isEmpty)
+        XCTAssertFalse(snapshot.surfaces[0].items.isEmpty,
+                       "the front window is served first and is not starved")
+        for surface in snapshot.surfaces {
+            XCTAssertEqual(surface.itemTotal, 40)
+            XCTAssertEqual(surface.displayTotal, 200)
+        }
+
+        /* And every bound SAYS what it bounded. A caller that got a prefix
+           has to be able to tell it from a Mac with fewer things on it —
+           the whole reason the surfaces already carry `itemTotal`. */
+        XCTAssertEqual(snapshot.entityTotal, 60)   // 12 processes, 48 windows
+        for menu in snapshot.menus {
+            XCTAssertEqual(menu.itemTotal, 96)
+        }
+        XCTAssertTrue(snapshot.menus.contains { $0.items.count < 96 },
+                      "a menubar this large must be bounded somewhere")
+    }
+
     // MARK: - the omission CLASS, not one more instance of it
 
     func testEveryWindowFieldIsCarriedOrConsciouslyDeclined() async throws {
