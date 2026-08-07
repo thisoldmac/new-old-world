@@ -134,6 +134,8 @@ APP_BIN="${NOW_APP_BIN:-$OUT/ppc/New Old World.bin}"
 SHUTDOWN_BIN="${NOW_SHUTDOWN_BIN:-$OUT/shutdown/NowShutDown.bin}"
 
 [ -x "$QEMU" ] || { echo "no qemu-system-ppc at $QEMU (set TIMBOTTU_QEMU)"; exit 1; }
+[ -n "$BASE" ] || { echo "tools/base-image named no base — it, not this script, \
+is where the answer lives; run \`tools/base-image which\` to see why"; exit 1; }
 [ -f "$BASE" ] || { echo "no base image at $BASE (set NOW_SPIN_BASE)"; exit 1; }
 [ -f "$EXT_BIN" ] || { echo "no NowExt.bin at $EXT_BIN — run scripts/build-guests 68k"; exit 1; }
 [ -f "$APP_BIN" ] || { echo "no guest app at $APP_BIN — run scripts/build-guests ppc"; exit 1; }
@@ -495,6 +497,8 @@ echo
 echo "== the rig, for whatever report quotes this run =="
 echo "   $RUN/provenance.md    (paste-ready rig table)"
 echo "   $RUN/provenance.json  (the same facts, machine-readable)"
+echo "   $RUN/base-fitness.json (which base was designated, and every"
+echo "                          warning this run was told before it booted)"
 echo "A measurement with no rig table beside it is a number nobody can"
 echo "attribute later — this run's is written, so copy it rather than"
 echo "remembering which image was involved."
