@@ -6,6 +6,14 @@
    encoded document and knows nothing about a NowScene. */
 #include "scene_digest.h"
 
+/* For NowDesktopFacts, which meta.desktop carries. The struct is declared
+   above that header's Toolbox guard on purpose, so this header stays
+   compilable by the host cc for the native tests - and so the desktop
+   answer is ONE struct, gathered once, served to both the `desktop`
+   command and to every scene, rather than two producers of the same
+   fact drifting apart. */
+#include "desktop.h"
+
 /* The scene envelope: NOW's guest producing Mirror's frozen v1 scene IR
    over the part of the machine it can honestly walk today.
    (mirror/docs/IR-V1.md; docs/scene-producer.md for what is and is not
@@ -567,6 +575,16 @@ typedef struct {
     char source[kNowSceneSourceMax];
     short screen_w, screen_h;
     NowSceneTheme theme;
+    /* WHAT THE DESKTOP IS DRAWN FROM, asked of this machine.
+       Beside the theme and the screen size for the same reason all three
+       are here: they describe the surface a consumer is redrawing, and
+       any of them can be changed while this guest runs.
+       The renderer's alternative was the offline asset pack's record of
+       the image it was extracted from - true only for a guest booted from
+       that image and unchanged since, and silently wrong the moment
+       either stops holding. This is the live half; the pack is now the
+       declared fallback. `asked` 0 leaves the key off the wire entirely. */
+    NowDesktopFacts desktop;
     char plane[kNowScenePlaneMax];        /* meta.plane, a freeform note */
     long latency_ms;                      /* < 0 = absent */
 
@@ -774,6 +792,12 @@ void now_scene_set_plane(NowScene *s, const char *plane);
    0..0xFFFFFF is rejected to -1 rather than truncated, because a
    half-copied colour would ride the wire looking measured. */
 void now_scene_set_theme(NowScene *s, const NowSceneTheme *theme);
+
+/* meta.desktop - what the machine says its desktop is drawn from. Copies
+   whole. A NULL `facts`, or one whose `asked` is 0, leaves the scene's
+   copy unasked and the key off the wire; there is no way to publish a
+   desktop this producer did not ask for. */
+void now_scene_set_desktop(NowScene *s, const NowDesktopFacts *facts);
 
 /* The row index of the most recently admitted window, or -1 when the
    scene has none. The walk needs it: it fills a window's sub-planes

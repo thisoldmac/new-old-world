@@ -95,6 +95,36 @@ typedef struct {
     char note[kDesktopRowNoteCap];  /* one sentence, or empty */
 } DesktopAnswer;
 
+/* THE SAME ANSWER, SIZED FOR A SCENE RATHER THAN FOR A PERSON.
+ *
+ * `DesktopAnswer` is 17 rows of prose and up to 200 bytes of hex: right
+ * for someone typing `desktop` at the console, and about 2.6 KB of stack
+ * for something a scene walk does once per sweep on a 68K-era machine.
+ * More to the point, a renderer does not want the hex - the flattened
+ * `ppat` bytes are an identity, not drawable art, and the art comes from
+ * the asset pack either way. What a renderer needs is the NAME the
+ * machine chose and the source it chose it from.
+ *
+ * So the typed facts have a second, small carrier, gathered by the same
+ * Toolbox route through the same `read_tag`. One implementation, two
+ * shapes - not two producers of one answer, which is the seam this whole
+ * lane exists to close.
+ *
+ * `asked` is the looked-at-all bit, the same idiom as scene.h's
+ * `controls_present`: 0 means this producer never asked and a consumer
+ * must not read that as "no desktop". */
+enum { kDesktopNameCap = 64 };
+
+typedef struct {
+    int asked;
+    DesktopSource source;
+    int has_pattern;
+    int has_picture;
+    long pattern_bytes;             /* true length; -1 unknown */
+    char pattern_name[kDesktopNameCap];   /* empty when the tag was absent */
+    char picture_name[kDesktopNameCap];
+} NowDesktopFacts;
+
 /* --- pure (desktop_report.c; native-tested) ------------------------------ */
 
 const char *now_desktop_source_name(DesktopSource source);
@@ -123,6 +153,12 @@ long now_desktop_result_json(long id, const DesktopAnswer *answer,
    still produces an answer, with source unknown and rows saying which
    call refused and with what OSStatus. */
 void now_desktop_gather(DesktopAnswer *out);
+
+/* The typed facts alone, for the scene's `meta.desktop`. Always fills
+   `out`; sets `asked` to 1 even when the machine refuses, because "we
+   asked and it would not say" (source unknown) and "nobody asked" are
+   different facts and only one of them is a defect. */
+void now_desktop_facts_ask(NowDesktopFacts *out);
 
 /* The `desktop` command: gather, then serialize. Writes its own whole
    command.result, like the other verbs that own their reply. */

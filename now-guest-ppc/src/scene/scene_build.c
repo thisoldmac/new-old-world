@@ -408,6 +408,29 @@ void now_scene_set_theme(NowScene *s, const NowSceneTheme *theme)
     s->theme.depth = theme->depth;
 }
 
+void now_scene_set_desktop(NowScene *s, const NowDesktopFacts *facts)
+{
+    if (s == NULL || facts == NULL) {
+        return;
+    }
+    /* An unasked answer is not copied at all, so no caller can publish a
+       desktop by handing over a zeroed struct: the scene's own copy stays
+       unasked and put_desktop omits the key. */
+    if (!facts->asked) {
+        return;
+    }
+    s->desktop.asked = 1;
+    s->desktop.source = facts->source;
+    s->desktop.has_pattern = facts->has_pattern ? 1 : 0;
+    s->desktop.has_picture = facts->has_picture ? 1 : 0;
+    s->desktop.pattern_bytes = facts->pattern_bytes < 0 ? -1
+                                                        : facts->pattern_bytes;
+    copy_title(s->desktop.pattern_name, (long)sizeof s->desktop.pattern_name,
+               facts->pattern_name);
+    copy_title(s->desktop.picture_name, (long)sizeof s->desktop.picture_name,
+               facts->picture_name);
+}
+
 int now_scene_add_window(NowScene *s, int proc, const char *title,
                          short t, short l, short b, short r, int visible)
 {

@@ -489,6 +489,38 @@ operations:
       brush, the second says nobody looked. Neither is ever sent as
       black — 0x000000 is a legal colour and so is the one value that
       cannot double as "unknown".
+      WHAT THE DESKTOP IS DRAWN FROM, added 2026-08-07 as meta.desktop
+      and additive under the same accretive rule. `source` is one of
+      `pattern`, `picture` or `unknown`; `hasPattern` and `hasPicture`
+      are independent booleans, because a picture is drawn OVER the
+      pattern layer and a machine showing one still HAS the other;
+      `patternBytes` is the true length of the flattened pattern when it
+      could be read; `patternName` and `pictureName` are what the machine
+      CHOSE, when the theme collection names them.
+      WHY IT IS ON THE WIRE AT ALL. This is the same defect as the theme
+      constants above, on the largest rectangle in the picture. The
+      renderer's only source for the desktop was an offline asset pack's
+      record of the disk image it was extracted from — true for a guest
+      booted from that image and unchanged since, and silently wrong the
+      moment either stops holding, with nothing to notice. A guest-side
+      route to the live answer (GetTheme's desktop tags, Mac OS 9 only)
+      had already been built and served as the `desktop` command, and
+      nothing read it: two producers of one answer, one of them unread.
+      This key is the live one. The pack is now the DECLARED fallback,
+      and a render standing on it must say so.
+      WHAT IT IS NOT. It is not art. The flattened `ppat` bytes the
+      `desktop` command carries back as hex are an identity, not
+      something a renderer can draw, and the pixels come from the pack
+      either way. Naming is the job: it lets a consumer check whether the
+      art it holds is the art this machine is showing, instead of
+      assuming it.
+      AN ABSENT meta.desktop MEANS THE PRODUCER DID NOT ASK; `source`
+      `unknown` MEANS WE ASKED AND THIS MACHINE WOULD NOT SAY. Those are
+      different facts and the distinction is the whole point of the key:
+      the second is the marked unknown, and the first is the only state
+      in which a fallback may stand in at all. An absent `patternName` or
+      `pictureName` is an absent TAG, not a nameless desktop; neither is
+      ever sent as an empty string.
       WHAT A BOUNDED LEDGER FORGOT, added 2026-08-07 as
       meta.coverage[].evicted and additive: an older consumer reads the
       claim exactly as it did before. It is carried ONLY by the `depth`

@@ -1136,6 +1136,58 @@ static void put_theme(Sink *k, const NowScene *s)
     put(k, "}");
 }
 
+/* meta.desktop: what the MACHINE says its desktop is drawn from.
+ *
+ * The whole object is omitted when this producer never asked, which is
+ * the same absent-means-unknown rule meta.theme follows - and it is
+ * load-bearing here rather than tidy. The consumer's alternative source
+ * is an offline asset pack's record of the disk image it was extracted
+ * from, which is true only for a guest booted from that image and
+ * unchanged since. A consumer that cannot tell "the machine said so"
+ * from "nobody asked" cannot tell which of those two it is looking at,
+ * and would render the pack's answer as the machine's.
+ *
+ * `source: unknown` with `asked` true is a DIFFERENT fact and it does
+ * reach the wire: we asked, and this machine would not say. That one is
+ * the marked unknown; the absent key is the substitution.
+ *
+ * The names are what the machine CHOSE. They are not art - the flattened
+ * `ppat` bytes the command verb carries as hex are an identity, and the
+ * pixels come from the pack either way. Naming is exactly the job:
+ * it lets a consumer check whether the art it holds is the art this
+ * machine is showing, instead of assuming it. */
+static void put_desktop(Sink *k, const NowScene *s)
+{
+    if (!s->desktop.asked) {
+        return;
+    }
+    put(k, ",\"desktop\":{\"source\":");
+    switch (s->desktop.source) {
+    case kDesktopSourcePattern: put_str(k, "pattern"); break;
+    case kDesktopSourcePicture: put_str(k, "picture"); break;
+    default:                    put_str(k, "unknown"); break;
+    }
+    put(k, ",\"hasPattern\":");
+    put(k, s->desktop.has_pattern ? "true" : "false");
+    put(k, ",\"hasPicture\":");
+    put(k, s->desktop.has_picture ? "true" : "false");
+    if (s->desktop.pattern_bytes >= 0) {
+        put(k, ",\"patternBytes\":");
+        put_num(k, s->desktop.pattern_bytes);
+    }
+    /* An empty name is an ABSENT tag, not a nameless desktop, so it is
+       omitted rather than sent as "". */
+    if (s->desktop.pattern_name[0] != '\0') {
+        put(k, ",\"patternName\":");
+        put_str(k, s->desktop.pattern_name);
+    }
+    if (s->desktop.picture_name[0] != '\0') {
+        put(k, ",\"pictureName\":");
+        put_str(k, s->desktop.picture_name);
+    }
+    put(k, "}");
+}
+
 /* meta.errors carries what the scene could not do, in upstream's
    "<name>: <token>" form, plus this producer's own truncation notices.
    A truncated walk that said nothing would be a partial scene delivered
@@ -1311,6 +1363,7 @@ static void put_meta(Sink *k, const NowScene *s)
         k->sp->tail_off = k->len;
     }
     put_theme(k, s);
+    put_desktop(k, s);
     if (s->plane[0] != '\0') {
         put(k, ",\"plane\":");
         put_str(k, s->plane);

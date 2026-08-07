@@ -1536,8 +1536,127 @@ static void test_the_order_ledger_says_what_it_forgot(void)
     }
 }
 
+/* THE DESKTOP, AND THE THREE STATES IT HAS TO KEEP APART.
+ *
+ * The renderer's only source for the largest rectangle in the picture
+ * was an offline asset pack's record of the disk image it was extracted
+ * from - true for a guest booted from that image and unchanged since,
+ * and silently wrong otherwise. The live half now rides the scene, and
+ * the pack becomes the declared fallback. That only works if a consumer
+ * can tell these apart:
+ *
+ *   key absent          - nobody asked. The pack may stand in, and the
+ *                         render must say that it is standing in.
+ *   source "unknown"    - we asked; this machine would not say. The
+ *                         marked unknown, never a guessed pattern.
+ *   source pattern/pic  - the machine named it.
+ *
+ * Watched failing by mutation 2026-08-07: dropping the `if (!asked)`
+ * return from put_desktop puts a full `unknown` object into every scene
+ * that never asked, collapsing state 1 into state 2 - and the first two
+ * checks below name it. Dropping the same guard from
+ * now_scene_set_desktop lets a zeroed struct publish a desktop, which
+ * the third check names.
+ */
+static void test_the_desktop_says_which_of_three_things_happened(void)
+{
+    NowScene s;
+    NowDesktopFacts d;
+    char out[16384];
+
+    /* NEVER ASKED. No key at all - not an object saying `unknown`, which
+       is a claim about the machine rather than about us. */
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_absent(out, "\"desktop\"");
+
+    /* AND A ZEROED STRUCT CANNOT PUBLISH ONE EITHER. `asked` 0 is the
+       looked-at-all bit; a caller that forgets to gather must not be
+       able to assert a desktop by handing over its stack. */
+    memset(&d, 0, sizeof d);
+    d.pattern_bytes = -1;
+    now_scene_set_desktop(&s, &d);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_absent(out, "\"desktop\"");
+
+    /* ASKED AND REFUSED. The key IS present, and it says unknown - the
+       fact that this machine would not say is worth sending, because it
+       is what stops the pack silently standing in. */
+    memset(&d, 0, sizeof d);
+    d.asked = 1;
+    d.source = kDesktopSourceUnknown;
+    d.pattern_bytes = -1;
+    now_scene_set_desktop(&s, &d);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_present(out, "\"desktop\":{\"source\":\"unknown\"");
+    check_present(out, "\"hasPattern\":false");
+    check_present(out, "\"hasPicture\":false");
+    /* -1 is "we do not know how long it is", and that is an absent key
+       rather than a negative length on the wire. */
+    check_absent(out, "patternBytes");
+    check_absent(out, "patternName");
+    check_absent(out, "pictureName");
+    check(well_formed(out), "a refused desktop ask is valid JSON");
+
+    /* A PICTURE OVER A PATTERN - both layers reported, and `source` says
+       which one a person is actually looking at. */
+    memset(&d, 0, sizeof d);
+    d.asked = 1;
+    d.source = kDesktopSourcePicture;
+    d.has_pattern = 1;
+    d.has_picture = 1;
+    d.pattern_bytes = 32;
+    snprintf(d.pattern_name, sizeof d.pattern_name, "Waves");
+    snprintf(d.picture_name, sizeof d.picture_name, "Indigo Foam");
+    now_scene_set_desktop(&s, &d);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_present(out, "\"source\":\"picture\"");
+    check_present(out, "\"hasPattern\":true");
+    check_present(out, "\"hasPicture\":true");
+    check_present(out, "\"patternBytes\":32");
+    check_present(out, "\"patternName\":\"Waves\"");
+    check_present(out, "\"pictureName\":\"Indigo Foam\"");
+    check(well_formed(out), "a named desktop is valid JSON");
+
+    /* A PATTERN AND NO PICTURE. The picture name is an ABSENT TAG, not a
+       nameless picture, so it is omitted rather than sent empty - the
+       same rule the titles follow. */
+    memset(&d, 0, sizeof d);
+    d.asked = 1;
+    d.source = kDesktopSourcePattern;
+    d.has_pattern = 1;
+    d.pattern_bytes = 0;
+    snprintf(d.pattern_name, sizeof d.pattern_name, "Bubbles");
+    now_scene_set_desktop(&s, &d);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_present(out, "\"source\":\"pattern\"");
+    check_present(out, "\"hasPicture\":false");
+    /* Zero bytes is a MEASURED length and must survive, the way black
+       survives in the theme. */
+    check_present(out, "\"patternBytes\":0");
+    check_present(out, "\"patternName\":\"Bubbles\"");
+    check_absent(out, "pictureName");
+    check(well_formed(out), "a pattern desktop is valid JSON");
+
+    /* A NAME THAT IS NOT PUBLISHABLE is dropped, not escaped into the
+       document - foreign Str255 bytes reach this field straight off the
+       theme collection, and they go through the same title gate as every
+       other foreign string in this scene. */
+    memset(&d, 0, sizeof d);
+    d.asked = 1;
+    d.source = kDesktopSourcePattern;
+    d.has_pattern = 1;
+    d.pattern_bytes = 8;
+    snprintf(d.pattern_name, sizeof d.pattern_name, "bad\x01name");
+    now_scene_set_desktop(&s, &d);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_absent(out, "patternName");
+    check(well_formed(out), "an unpublishable pattern name is valid JSON");
+}
+
 int main(void)
 {
+    test_the_desktop_says_which_of_three_things_happened();
     test_the_order_ledger_says_what_it_forgot();
     test_theme_colours_reach_the_wire();
     test_coverage_and_incarnation_reach_the_wire();
