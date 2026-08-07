@@ -170,6 +170,46 @@ address**. The patch declines it rather than jumping to it.
 `inThumb` (129) is deliberately not driven: a thumb drag has no
 single-call semantics.
 
+### Which part codes can verify their own effect — the audit
+
+Asked because sweep C found `ctlact part 0` reporting `click posted` over
+a machine that had not moved, and named it as *"`part 0` has no
+settlement check, where `part 11` has an exemplary one"*. The audit's
+answer is that **the part code was never the axis**, and this table is
+here so nobody re-derives that.
+
+`ctlact` accepts any `part` in 0–255 and branches on the value exactly
+**once**: `part == 0` or not. Every named part takes the identical path.
+
+| `part` | Control Manager meaning | what the plane does | evidence it may be judged by |
+|---|---|---|---|
+| 0 | "no part" — let the application's own tracking decide | posts a real click at the point, and arms the patch with `part_code` 0 | **the control's own position**, watched for up to 120 ticks and stopped the moment it moves |
+| 10 | `kControlButtonPart` — a push button's body | arms the patch to answer 10 | the patch firing (= the application called `TrackControl`); a button has **no range**, so its position proves nothing |
+| 11 | `kControlCheckBoxPart` — checkbox / radio | same | the patch firing, **and** the value flipping |
+| 20, 21 | `inUpButton`, `inDownButton` | same | the patch firing, and the bar's value |
+| 22, 23 | `inPageUp`, `inPageDown` | same | the patch firing, and the bar's value |
+| 129 | `inThumb` — the indicator | same, with the action proc suppressed | the patch firing, and the bar's value |
+| everything else in 1–255 | not a documented part code | same generic path; the patch answers with whatever was named | the patch firing, which proves the application asked — **not** that the number meant anything (see the `part 12` mutation above) |
+
+Two things the table makes visible that a per-part reading hides:
+
+- **What decides verifiability is the CONTROL and the APPLICATION, not
+  the number.** Whether an act can be confirmed turns on (a) whether the
+  application routes that click through `TrackControl` at all — an
+  Appearance-era tab does not, and no patch is ever consulted — and (b)
+  whether the control has a live value range to re-read. A push button
+  driven by `part 10` is *unverifiable by this guest* and always was;
+  it now says `dispatched-but-unconfirmed` instead of `dispatched`.
+- **`part 0` arms a patch that would suppress the very click it posts.**
+  `now_act_control_answer` returns the armed `part_code`, so an
+  application that *does* call `TrackControl` on that control is told
+  **0** — the Control Manager's "released outside the control" — and
+  does nothing. Part 0 is therefore self-defeating on exactly the
+  controls a named part serves, and correct on the ones it does not.
+  Unfixed: the arming lives in the resident and changing it is a bake.
+  It is now at least *reported* honestly rather than as `click posted`.
+  ([open-issues.md](open-issues.md))
+
 ## Window acts — where a prediction was wrong
 
 The plan predicted `DragWindow` had `TrackControl`'s shape. **It does

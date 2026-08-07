@@ -139,6 +139,19 @@ const NowActSettlementRecord *now_act_last_settlement(void);
 void now_act_arm_menu_postcondition(long menu, long item);
 void now_act_clear_menu_postcondition(void);
 
+/* One cooperative yield of the act plane's own shape: pump the wire,
+   renew the writer lease, give the processor up without dequeuing an
+   event. Exposed so a verb can wait for ITS OWN evidence rather than for
+   a trap patch - `ctlact part 0` asks for no patch and must watch the
+   control instead (act_cmds.c). Never spin in its place; act_yield's
+   comment says why, and the spin guarantees the timeout it waits out. */
+void now_act_yield_once(void);
+
+/* Record what the APPLICATION itself observed about the act it just
+   sent: 1 when it proved the effect, 0 when it looked and could not.
+   Does nothing unless this command registered a correlation. */
+void now_act_note_observed(int confirmed);
+
 void now_act_begin_command(void);
 long now_act_encode_settlements(char *out, long cap);
 
