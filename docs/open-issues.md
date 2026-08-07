@@ -14,6 +14,84 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## BROKEN: `main` never received the gates, and the hooks were dead two ways at once (2026-08-07, `claude/019-hooks-diagnosis`)
+
+**Tested** (mutation, four states; no metal). The repair is **not applied** —
+it needs a decision only Michelle can make.
+
+Two explanations were in circulation and **both were right about a
+different half**, which is why neither fix would have worked alone.
+
+**Fault A — the config.** 48 of 246 worktrees carry a per-worktree
+`core.hooksPath` of the *absolute* `/Users/michelle/Lab/Code/timbottu/now/.githooks`
+in `.git/worktrees/<name>/config.worktree`, which shadows the shared
+config's correct relative `.githooks`. The shared checkout is parked on
+`claude/mirror-subproject` (042f41f2, 2026-08-02), which predates
+`.githooks`, so that absolute path names a directory that does not exist.
+
+**Fault B — the branch, and this is the root cause.** `.githooks` was
+added in 543b06af (2026-08-06 00:50) and **has never been an ancestor of
+`main`**. 109 of 411 branches carry it; `main` is not one of them. So a
+worktree cut off `main` has no `.githooks` to point at *whatever*
+`core.hooksPath` says, and `tools/hooks-doctor --fix` — which only rewrites
+config — cannot cure it.
+
+**`main` is not the head, and has not been since 2026-08-05 16:51.** It is
+13 commits ahead of the lane line and **802 behind**, and it lacks the
+entire gate apparatus, not merely the hooks: no `tools/ext-bake-gate`, no
+`tools/setup-hooks`, no `tools/hooks-doctor`, no
+`tools/receipts-merge-driver`, no `.gitattributes`, no
+`ext/stage-receipts.json`, no `tools/image-discipline-tests`, and a
+`scripts/test-all` that does not mention `hooks-doctor` at all. AGENTS.md
+says "`main` is the head — keep the shared checkout on it"; the checkout
+drifted, and this time the consequence was not a confusing diff but every
+gate in the repository going quiet.
+
+**Blast radius — what has not been refusing anything.** `.githooks/pre-commit`
+carries the main guardrail and `ext-bake-gate check`; `.githooks/pre-merge-commit`
+carries `ext-bake-gate merge-check`; `.githooks/post-merge` carries the
+stage-image `verify-image` announcement. In an affected worktree none ran.
+So: nothing refused a commit on `main`; a resident commit did not wait for
+the image that carries it; a `TBT_DEFER_EXT_BAKE` deferral wrote **no
+record**, because the gate that writes it is the gate that never ran; and a
+fast-forward that moved the stage receipts passed in silence. Fault A dates
+from the shared checkout being parked (2026-08-02); Fault B from
+`.githooks` landing off-main (2026-08-06).
+
+**Git says nothing when this happens.** Mutation-proved: with
+`core.hooksPath` at a non-existent path, `git commit` on `main` succeeds
+with no diagnostic of any kind. A dead hooks path is indistinguishable from
+having no hooks.
+
+**Why nothing caught it.** `scripts/test-all` *did* report it, at the top of
+every run and again at the bottom, and four lanes read it and correctly did
+nothing — the only repair it named rewrites config all 246 worktrees share.
+A warning everybody sees, believes, and is right not to act on is a broken
+warning. Worse, `hooks-doctor` recommended `--fix` even under Fault B, where
+`--fix` cannot work; a repair instruction that cannot work turns a live
+problem into one somebody believes they already tried. And a lane cut off
+`main` never saw the warning at all, because main's `test-all` does not call
+`hooks-doctor`.
+
+**Fixed here** (this branch): `test-all` now refuses instead of warning
+twice, naming the safe action (`git -c core.hooksPath=.githooks commit`)
+separately from the one that needs a person, with `TBT_ALLOW_UNARMED_HOOKS=1`
+as the open-decision override; and `hooks-doctor` distinguishes a config
+fault from a branch fault and stops offering `--fix` for the latter.
+
+**Still open — the actual repair, in order.** Neither step alone suffices:
+
+1. Land the gate arc on `main`, so a branch cut from it has `.githooks`
+   *and* the `tools/` the hooks invoke. This is a change to `main` and
+   joint with Michelle.
+2. Then `tools/hooks-doctor --fix` on the shared checkout, to strip the 48
+   per-worktree overrides, when no other session is mid-commit.
+3. Move the shared checkout off `claude/mirror-subproject` back to `main`.
+
+Until then, a lane gates its own commits with
+`git -c core.hooksPath=.githooks commit`, which changes nothing shared and
+works on any branch that carries `.githooks`.
+
 ## BROKEN: the machine will not say what a foreign control IS, and that is not a bug we can fix in the walk (2026-08-07, `claude/018-control-semantics`)
 
 Michelle, driving the integrated build: *"a lot of controls (such as
