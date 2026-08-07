@@ -535,6 +535,18 @@ void now_scene_set_window_kind(NowScene *s, int window, short kind)
     }
 }
 
+void now_scene_set_window_widgets(NowScene *s, int window,
+                                  int close_box, int zoom_box)
+{
+    NowSceneWindow *w = window_at(s, window);
+
+    if (w != NULL) {
+        w->has_close_box = close_box != 0;
+        w->has_zoom_box = zoom_box != 0;
+        w->widgets_known = 1;
+    }
+}
+
 int now_scene_open_controls(NowScene *s, int window)
 {
     NowSceneWindow *w = window_at(s, window);

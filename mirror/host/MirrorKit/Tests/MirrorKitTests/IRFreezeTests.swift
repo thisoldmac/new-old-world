@@ -82,6 +82,7 @@ final class IRFreezeTests: XCTestCase {
             ref: "now-window-probe",
             addr: 0x1EA2D3E0,
             incarnation: "process-12345678/window-1ea2d3e0",
+            closeBox: true, zoomBox: true,
             text: .init(content: "c", active: true),
             items: [item],
             display: [op],

@@ -486,7 +486,16 @@ final class MirrorStateProjectionService {
                    producer sends the word only where the array cannot
                    speak for itself and a caller must not have to know
                    that. */
-                controlsState: window.controlsKnowledge.rawValue)
+                controlsState: window.controlsKnowledge.rawValue,
+                /* **Which widgets the machine draws.** Passed through
+                   unresolved, three-valued, because nothing on this side
+                   can improve on it: `kind` is the substitute a caller
+                   would otherwise reach for and it is provably wrong —
+                   Extensions Manager and Memory are both `kind == 2` and
+                   only one has a zoom box. Guessing here does not earn a
+                   refusal; a click on a zoom box the machine never drew
+                   lands in the racing stripes and DRAGS the window. */
+                closeBox: window.closeBox, zoomBox: window.zoomBox)
         }
     }
 

@@ -411,6 +411,17 @@ public enum IRSchema {
            about that window and that asking again would answer. */
         "windows[].controlsState",
 
+        /* 2026-08-07. WHICH TITLE-BAR WIDGETS THE MACHINE DRAWS — the
+           WindowRecord's `goAwayFlag` and `spareFlag`. Additive, and
+           three-valued on purpose: absent means the producer did not read
+           the record, NOT that the window has no widgets, so a reader that
+           never sees them behaves exactly as it did yesterday. What it
+           replaces is an inference from `kind` that the corpus falsifies —
+           Extensions Manager is kind 2 and has a zoom box, Memory is kind 2
+           and has none — and that put a click into the racing stripes. */
+        "windows[].closeBox",
+        "windows[].zoomBox",
+
         "meta.coverage[].evicted",
     ]
 
@@ -437,6 +448,9 @@ public enum IRSchema {
         "Scene.Window.incarnation",
         // See windows[].controlsState in v2Additions.
         "Scene.Window.controlsState",
+        // See windows[].closeBox / windows[].zoomBox in v2Additions.
+        "Scene.Window.closeBox",
+        "Scene.Window.zoomBox",
         "Scene.Meta.coverage",
         "Scene.CoverageClaim.scope", "Scene.CoverageClaim.owner",
         "Scene.CoverageClaim.status", "Scene.CoverageClaim.reason",

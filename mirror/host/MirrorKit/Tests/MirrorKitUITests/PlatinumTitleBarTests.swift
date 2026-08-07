@@ -201,6 +201,88 @@ final class PlatinumTitleBarTests: XCTestCase {
                      "a background window's widgets are absent on the machine")
     }
 
+    /// **A zoom box is drawn where the guest PROVED one, and nowhere else.**
+    ///
+    /// The three states are three different facts and the middle one is the
+    /// whole point: `kind` cannot separate them, and this pair is the corpus
+    /// proof — Extensions Manager and Memory are both `kind == 2`.
+    ///
+    /// Watched failing by mutation: `win.zoomBox == true` relaxed to
+    /// `win.zoomBox != false` fails the Memory case naming it, and returning
+    /// the box unconditionally fails both the Memory and the unreported case.
+    func testAZoomBoxIsDrawnOnlyWhereTheGuestProvedOne() {
+        let rect = Rect(l: 150, t: 51, r: 622, b: 391)
+
+        var proven = Self.window(title: "Extensions Manager", kind: 2,
+                                 rect: rect)
+        proven.zoomBox = true
+        XCTAssertEqual(WindowChrome.widgetBox(proven, .zoom)?.l,
+                       PlatinumTitleBar.zoomBox(rect).l,
+                       "a proven zoom box lands where the machine draws one")
+
+        var denied = Self.window(title: "Memory", kind: 2, rect: rect)
+        denied.zoomBox = false
+        XCTAssertNil(WindowChrome.widgetBox(denied, .zoom),
+                     "the guest said the machine draws none — same kind as "
+                     + "Extensions Manager, opposite answer")
+
+        let unreported = Self.window(title: "Older guest", kind: 2, rect: rect)
+        XCTAssertNil(unreported.zoomBox, "the fixture reports nothing")
+        XCTAssertNil(WindowChrome.widgetBox(unreported, .zoom),
+                     "no answer is not a yes: an affordance the machine may "
+                     + "not offer is worse than a missing one")
+    }
+
+    /// A close box is withdrawn by a DENIAL and by nothing else.
+    ///
+    /// The asymmetry with the zoom box is deliberate and is asserted here so
+    /// that making the two symmetric fails a test naming the reason: every
+    /// window in the corpus has a close box, so an older producer that says
+    /// nothing must keep the one it has always been drawn.
+    func testACloseBoxIsWithdrawnOnlyByADenial() {
+        let rect = Rect(l: 150, t: 51, r: 622, b: 391)
+
+        let unreported = Self.window(title: "Older guest", kind: 2, rect: rect)
+        XCTAssertNotNil(WindowChrome.widgetBox(unreported, .close),
+                        "silence keeps the close box we always drew")
+
+        var denied = Self.window(title: "Alert-ish", kind: 2, rect: rect)
+        denied.closeBox = false
+        XCTAssertNil(WindowChrome.widgetBox(denied, .close),
+                     "the guest read the record and says there is none")
+    }
+
+    /// The two keys survive the wire. A field the producer emits and the
+    /// decoder drops is this project's most expensive defect class
+    /// (`two-halves-never-met-in-a-test`), and `windows[].ref` was dropped
+    /// exactly this way for months.
+    func testTheWidgetFlagsDecodeFromTheWire() throws {
+        let w = try JSONDecoder().decode(
+            Scene.Window.self,
+            from: Data("""
+            {"id":"w","app":"A","psn":"0.1","title":"Extensions Manager",
+             "kind":2,"rect":{"l":150,"t":51,"r":622,"b":391},"front":true,
+             "z":0,"visible":true,"controls":[],
+             "closeBox":true,"zoomBox":true}
+            """.utf8))
+        XCTAssertEqual(w.closeBox, true)
+        XCTAssertEqual(w.zoomBox, true)
+
+        let re = try JSONDecoder().decode(
+            Scene.Window.self, from: JSONEncoder().encode(w))
+        XCTAssertEqual(re.zoomBox, true, "and survive re-encoding")
+
+        let silent = try JSONDecoder().decode(
+            Scene.Window.self,
+            from: Data("""
+            {"id":"w","app":"A","psn":"0.1","title":"T","kind":2,
+             "rect":{"l":0,"t":0,"r":1,"b":1},"front":true,"z":0,
+             "visible":true,"controls":[]}
+            """.utf8))
+        XCTAssertNil(silent.zoomBox, "absent stays absent, never false")
+        XCTAssertNil(silent.closeBox)
+    }
+
     // MARK: - Pixels
 
     /// The honest measurement: this render against the machine's own pixels,
@@ -223,7 +305,17 @@ final class PlatinumTitleBarTests: XCTestCase {
         }
         for s in Self.samples {
             let guest = try Self.ppm(at: dir + "/" + s.guest)
-            let scene = try Self.scene(at: dir + "/" + s.scene)
+            var scene = try Self.scene(at: dir + "/" + s.scene)
+            /* THE GUEST'S OWN ANSWER, carried on captures that predate the
+               field. These stores were taken before `windows[].zoomBox`
+               existed, so the flag is injected here from `zoomLeft` — which
+               is itself counted out of the very PPM this test compares
+               against, not decided by the renderer. What is under test is
+               therefore "given the machine's answer, do we draw the machine's
+               pixels", on a window that has one and four that do not. */
+            for i in scene.windows.indices where scene.windows[i].rect == s.rect {
+                scene.windows[i].zoomBox = s.zoomLeft != nil
+            }
             let png = try RenderShot.png(scene: scene)
             let rep = try XCTUnwrap(NSBitmapImageRep(data: png))
 
@@ -258,6 +350,17 @@ final class PlatinumTitleBarTests: XCTestCase {
                   s.closeLeft - 1, R.t + 2, s.closeLeft + 12, R.t + 15)
             check("collapse box and its recess",
                   s.collapseLeft - 1, R.t + 2, s.collapseLeft + 12, R.t + 15)
+            /* THE ZOOM BOX, CHECKED ON EVERY WINDOW — including the four
+               where the machine draws NONE, which is the half that matters.
+               There the rectangle holds racing stripes and face, and the
+               only way to agree with it exactly is to have drawn nothing:
+               this is the assertion that fails if a zoom box is fabricated
+               again, and it fails on four windows at once. Where the machine
+               DOES draw one (Extensions Manager, the Finder) the same
+               rectangle prices the bevel, the ring and the glyph. */
+            let zoom = PlatinumTitleBar.zoomBox(R)
+            check("the zoom box's rectangle, drawn or not",
+                  zoom.l - 1, R.t + 2, zoom.l + 12, R.t + 15)
             /* The stripes are checked at their ENDS, thirty columns in from
                each, and the middle is left alone on purpose. The title patch
                is sized to the ink the renderer actually lays down, so while

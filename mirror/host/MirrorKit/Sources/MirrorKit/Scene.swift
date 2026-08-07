@@ -427,6 +427,29 @@ public struct Scene: Codable, Equatable, Sendable {
         /// for windows the guest cannot identify exactly (notably a Carbon
         /// application describing its own window through the Toolbox).
         public var incarnation: String? = nil
+        /// **Whether the machine draws a close box / a zoom box** — the
+        /// WindowRecord's own `goAwayFlag` and `spareFlag`, one byte each,
+        /// beside the `windowKind` the walk already reads.
+        ///
+        /// They exist because this side was INFERRING them from `kind`, and
+        /// `kind` cannot carry the answer. The corpus falsifies the inference
+        /// with a single pair: **Extensions Manager is `kind == 2` and HAS a
+        /// zoom box; Memory is `kind == 2` and has none.** Seven of eleven
+        /// windows were drawn one the machine does not draw, `HitTester`
+        /// reported it, and a zoom act therefore sent a click into the racing
+        /// stripes — which the Window Manager reads as the start of a DRAG.
+        ///
+        /// **nil is "not reported", never "no such widget."** A producer that
+        /// has not learned to send these leaves them absent, and a consumer
+        /// keeps whatever it did before rather than taking a close box away
+        /// from every older guest. `WindowChrome` is where that asymmetry is
+        /// spelled out: a zoom box needs proof, a close box needs only the
+        /// absence of a denial.
+        ///
+        /// There is no `growBox` companion — see ``WindowChrome/growBox(_:)``
+        /// and mirror/docs/IR-V2.md. The record holds no grow flag.
+        public var closeBox: Bool? = nil
+        public var zoomBox: Bool? = nil
         /// Dialog TextEdit content (`kind==2` windows only today).
         public var text: TextContent?
         /// Icon-view items for a Finder window, in WINDOW-LOCAL content
@@ -496,6 +519,7 @@ public struct Scene: Codable, Equatable, Sendable {
             case ref            // additive in v1 — see the declaration
             case addr           // additive in v1 — see the declaration
             case incarnation    // IR v2 durable reducer identity
+            case closeBox, zoomBox  // IR v2 — see the declarations
         }
 
         /// **What is known about this window's controls**, with the

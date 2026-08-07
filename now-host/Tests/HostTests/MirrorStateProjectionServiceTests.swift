@@ -1097,14 +1097,14 @@ extension MirrorStateProjectionServiceTests {
             "id":"","app":"","psn":"0.0","title":"","kind":0,
             "rect":{"l":0,"t":0,"r":0,"b":0},
             "front":false,"z":9,"visible":false,
-            "ref":"","addr":0,
+            "ref":"","addr":0,"closeBox":false,"zoomBox":false,
             "text":{"content":"","active":false},
             "controls":[],"dialogItems":[],"display":[],"items":[]
           },{
             "id":"","app":"","psn":"0.0","title":"","kind":0,
             "rect":{"l":0,"t":0,"r":0,"b":0},
             "front":false,"z":8,"visible":false,
-            "ref":"","addr":0,
+            "ref":"","addr":0,"closeBox":false,"zoomBox":false,
             "text":{"content":"","active":false},
             "controls":[],"dialogItems":[],"display":[],"items":[]
           }],
@@ -1136,6 +1136,7 @@ extension MirrorStateProjectionServiceTests {
             "front":true,"z":0,"visible":true,
             "ref":"win-save","addr":1234567,
             "incarnation":"process-st/window-save",
+            "closeBox":true,"zoomBox":true,
             "text":{"content":"Untitled","active":true},
             "controls":[
               {"ref":"ctl-save","role":"control","title":"Save",
@@ -1224,6 +1225,15 @@ extension MirrorStateProjectionServiceTests {
                 } == true
             },
             "ref": .carried { full($0)?.ref == "win-save" },
+            /* The two title-bar widgets, CARRIED rather than declined,
+               because a caller deciding whether a zoom act is available has
+               no other source and the obvious substitute is provably wrong:
+               Extensions Manager and Memory are both `kind == 2` and only
+               one has a zoom box. Guessing does not earn a refusal here — a
+               click on a zoom box the machine never drew lands in the racing
+               stripes and DRAGS the window. */
+            "closeBox": .carried { full($0)?.closeBox == true },
+            "zoomBox": .carried { full($0)?.zoomBox == true },
             "addr": .declined("""
                 The window record's own guest address. The IR carries it \
                 so a HARNESS can say which window it is comparing against \

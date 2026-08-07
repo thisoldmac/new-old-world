@@ -455,6 +455,21 @@ public struct AgentIntegrationMirrorSurface:
     /// Always present: this side resolves the producer's economy (the word
     /// rides only beside an empty array) rather than passing the gap on.
     public let controlsState: String
+    /// **Which title-bar widgets the machine actually draws** — the
+    /// WindowRecord's own `goAwayFlag` and `spareFlag`.
+    ///
+    /// Carried because a caller deciding whether to send a zoom act has no
+    /// other source, and the obvious substitute is wrong: `kind` cannot say.
+    /// Extensions Manager is `kind == 2` and has a zoom box; Memory is
+    /// `kind == 2` and has none. A click sent at a zoom box the machine does
+    /// not draw lands in the racing stripes, which the Window Manager reads
+    /// as the start of a window DRAG — so a caller guessing here does not
+    /// get a refusal, it gets a moved window.
+    ///
+    /// **nil is "the producer did not say", never "no such widget."** Absent
+    /// booleans are unknown, not false.
+    public let closeBox: Bool?
+    public let zoomBox: Bool?
 
     public init(entityID: String, title: String,
                 rect: AgentIntegrationMirrorRect?, z: Int, front: Bool,
@@ -464,7 +479,8 @@ public struct AgentIntegrationMirrorSurface:
                 displayTotal: Int? = nil, kind: Int? = nil,
                 ref: String? = nil,
                 text: AgentIntegrationMirrorWindowText? = nil,
-                controlsState: String = "unknown") {
+                controlsState: String = "unknown",
+                closeBox: Bool? = nil, zoomBox: Bool? = nil) {
         self.entityID = entityID
         self.title = title
         self.rect = rect
@@ -479,6 +495,8 @@ public struct AgentIntegrationMirrorSurface:
         self.ref = ref
         self.text = text
         self.controlsState = controlsState
+        self.closeBox = closeBox
+        self.zoomBox = zoomBox
     }
 }
 

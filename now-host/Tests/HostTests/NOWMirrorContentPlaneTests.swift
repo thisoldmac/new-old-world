@@ -348,20 +348,41 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
         XCTAssertFalse(update.sentence.contains("joined"))
     }
 
-    /// A held source is keyed by port AND generation: the same address in
-    /// a later arm generation is a DIFFERENT world (a disposed world's
-    /// address is reused by the next NewGWorld of the same size).
-    func testSourceAddressReuseAcrossGenerationsDoesNotJoin() throws {
+    /// **A RE-ARM BETWEEN A WORLD'S OPS AND ITS BLIT STILL JOINS.**
+    ///
+    /// The ops are recorded under the generation current when they were
+    /// DRAWN; the blit that places them arrives under whatever generation
+    /// the reader is standing in. Those differ whenever an arm renews in
+    /// between — which is not exotic: `join` renews every nine minutes
+    /// against a ten-minute guest TTL, so it happens routinely on a machine
+    /// nobody touched.
+    ///
+    /// The lookup used to quote the BITS record's generation, miss, and let
+    /// the bits op fall through to a hatch. That failure was at least honest
+    /// — a hatch says "pixels we cannot describe" — which is exactly why it
+    /// survived: it never looked like a bug, it looked like an interior the
+    /// content plane had not captured.
+    ///
+    /// Watched failing by mutation: restoring
+    /// `SourceKey(port: source, generation: record.generation)` at the join
+    /// site fails this test naming the hatch, and leaves every other test in
+    /// this file green.
+    func testARearmBetweenAWorldsOpsAndItsBlitStillJoins() throws {
         let model = plane()
         _ = model.apply(try drain("""
         {"cmd":"drain","ops":[
+          {"op":"worldborn","port":"0x1f472e60","ticks":1,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
+           "rect":[0,0,404,203]},
           {"op":"text","port":"0x1f472e60","ticks":1,
            "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
            "pen":[10,50],"font":3,"size":9,"face":0,
-           "len":5,"fullLen":5,"trunc":false,"text":"Stale"}],
-         "nextCursor":64,"records":1}
+           "len":13,"fullLen":13,"trunc":false,"text":"offscreen row"}],
+         "nextCursor":64,"records":2}
         """), to: try scene())
 
+        /* THE RENEWAL. Nothing about the machine changed; the host asked
+           P3 for another ten minutes and the guest's clock moved. */
         let update = model.apply(try drain("""
         {"cmd":"drain","ops":[
           {"op":"blitsrc","port":"0x1eba6800","ticks":2,
@@ -369,12 +390,128 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
            "srcPort":"0x1f472e60","srcPixmap":"0x00445566"},
           {"op":"bits","port":"0x1eba6800","ticks":2,
            "a5":"0x00100000","psn":"0.29949953","displayEpoch":4,"generation":8,
+           "src":[0,0,404,203],"dst":[4,24,408,227],"mode":0,
+           "srcRowBytes":1632}],
+         "nextCursor":160,"records":2}
+        """), to: try scene())
+
+        let display = try XCTUnwrap(update.scene.windows[0].display)
+        XCTAssertFalse(display.map(\.op).contains("bits"),
+                       "the composite joined across the renewal; a hatch "
+                         + "here is the defect, and it is a SILENT one")
+        XCTAssertEqual(display.first { $0.op == "text" }?.text,
+                       "offscreen row")
+        XCTAssertTrue(update.sentence.contains("joined 1 composite"))
+    }
+
+    /// **The same fix at the NESTED join site, which had no test at all.**
+    ///
+    /// Composition nests — Sherlock 2 draws its list into one offscreen
+    /// world, blits that into the world holding the whole interior, and
+    /// blits THAT into the window (measured 2026-08-06) — and the
+    /// world-into-world branch keyed its lookup exactly the way the window
+    /// branch did. Found by mutation rather than by reading: reverting that
+    /// second site alone left every test in this file and in
+    /// `NOWMirrorContentCoverageTests` green, so the two sites had one
+    /// defect and one of them had all the coverage.
+    ///
+    /// The re-arm lands between the inner world's drawing and the middle
+    /// world's blit, which is the harder placement: the outer blit is in the
+    /// new generation too, so nothing about the arithmetic differs — only
+    /// which bucket the inner ops are found in.
+    func testARearmBeforeANestedWorldToWorldBlitStillJoins() throws {
+        let model = plane()
+        _ = model.apply(try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"worldborn","port":"0x1f472e60","ticks":1,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
+           "rect":[0,0,404,203]},
+          {"op":"text","port":"0x1f472e60","ticks":1,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
+           "pen":[10,50],"font":3,"size":9,"face":0,
+           "len":10,"fullLen":10,"trunc":false,"text":"inner list"}],
+         "nextCursor":64,"records":2}
+        """), to: try scene())
+
+        let update = model.apply(try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"worldborn","port":"0x1f500000","ticks":2,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":4,"generation":8,
+           "rect":[0,0,404,203]},
+          {"op":"blitsrc","port":"0x1f500000","ticks":2,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":4,"generation":8,
+           "srcPort":"0x1f472e60","srcPixmap":"0x00445566"},
+          {"op":"bits","port":"0x1f500000","ticks":2,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":4,"generation":8,
+           "src":[0,0,404,203],"dst":[0,0,404,203],"mode":0,
+           "srcRowBytes":1632},
+          {"op":"blitsrc","port":"0x1eba6800","ticks":3,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":4,"generation":8,
+           "srcPort":"0x1f500000","srcPixmap":"0x00778899"},
+          {"op":"bits","port":"0x1eba6800","ticks":3,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":4,"generation":8,
+           "src":[0,0,404,203],"dst":[4,24,408,227],"mode":0,
+           "srcRowBytes":1632}],
+         "nextCursor":320,"records":5}
+        """), to: try scene())
+
+        let display = try XCTUnwrap(update.scene.windows[0].display)
+        XCTAssertEqual(display.first { $0.op == "text" }?.text, "inner list",
+                       "the inner world's drawing reached the window through "
+                         + "two blits and one renewal")
+        XCTAssertFalse(display.map(\.op).contains("bits"))
+    }
+
+    /// **A world the guest said DIED does not join a later blit, even at the
+    /// same address** — and that is now the whole of the address-reuse
+    /// guard, deliberately.
+    ///
+    /// This test replaces one that asserted a bare generation change voided
+    /// the join, on the ground that a disposed world's address is reused by
+    /// the next `NewGWorld` of the same size (measured 2026-08-06:
+    /// `0x1ea59e00` twice running). The hazard is real; that guard could not
+    /// see it. From the wire, "a re-arm happened in between" and "the world
+    /// was disposed and its address reused" are indistinguishable if
+    /// generation is all you consult — so it voided every join across a
+    /// renewal to catch a case it could not identify, and the renewal is the
+    /// common one.
+    ///
+    /// `worlddied` IS the discriminating evidence: it is the guest saying the
+    /// composite is gone, which beats any retention guess. Watched failing by
+    /// mutation: dropping the `sourceGeneration[address] = nil` and the
+    /// `removeValue` in the `worlddied` branch lets the dead world's ops join
+    /// and fails this test naming the text that should not be there.
+    func testADeadWorldDoesNotJoinEvenAtAReusedAddress() throws {
+        let model = plane()
+        _ = model.apply(try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"text","port":"0x1f472e60","ticks":1,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,"generation":7,
+           "pen":[10,50],"font":3,"size":9,"face":0,
+           "len":5,"fullLen":5,"trunc":false,"text":"Stale"},
+          {"op":"worlddied","port":"0x1f472e60","ticks":2,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":3,
+           "generation":7}],
+         "nextCursor":64,"records":2}
+        """), to: try scene())
+
+        let update = model.apply(try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"blitsrc","port":"0x1eba6800","ticks":3,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":4,"generation":8,
+           "srcPort":"0x1f472e60","srcPixmap":"0x00445566"},
+          {"op":"bits","port":"0x1eba6800","ticks":3,
+           "a5":"0x00100000","psn":"0.29949953","displayEpoch":4,"generation":8,
            "src":[0,0,50,50],"dst":[4,24,54,74],"mode":0,"srcRowBytes":100}],
          "nextCursor":160,"records":2}
         """), to: try scene())
 
         XCTAssertEqual(update.scene.windows[0].display?.map(\.op), ["bits"],
-                       "generation 7's ops must not join a generation 8 blit")
+                       "a disposed world's ops must not reach a later blit "
+                         + "at the address the next NewGWorld reused")
+        XCTAssertFalse(
+            update.scene.windows[0].display?.contains { $0.text == "Stale" }
+                ?? false)
     }
 
     /// The re-home transform composes in-stream origin changes with the

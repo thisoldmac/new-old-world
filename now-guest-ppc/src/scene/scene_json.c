@@ -992,6 +992,18 @@ static void put_windows(Sink *k, const NowScene *s)
             put(k, ",\"kind\":");
             put_num(k, w->kind);
         }
+        /* The title-bar widgets, and ONLY where a producer read them. The
+           consuming side had been inferring them from `kind`, which cannot
+           carry the answer: Extensions Manager is kind 2 and has a zoom box,
+           Memory is kind 2 and has none. Absent means "not reported" - never
+           "no such widget" - so a consumer keeps its old behaviour rather
+           than taking a close box away from every older producer. */
+        if (w->widgets_known) {
+            put(k, ",\"closeBox\":");
+            put(k, w->has_close_box ? "true" : "false");
+            put(k, ",\"zoomBox\":");
+            put(k, w->has_zoom_box ? "true" : "false");
+        }
         put_controls(k, s, w);
         put_dialog_items(k, s, w);
         if (w->text >= 0 && w->text < s->text_count) {

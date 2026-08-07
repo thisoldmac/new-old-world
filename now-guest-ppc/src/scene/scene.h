@@ -499,6 +499,15 @@ typedef struct {
     short kind;
     int kind_known;
 
+    /* WHICH TITLE-BAR WIDGETS THE MACHINE DRAWS — the WindowRecord's own
+       goAwayFlag and spareFlag. Separate known bit for the same reason
+       `kind_known` is separate: 0 is a legal answer, so a zero cannot mean
+       "not read". A consumer reads absence as "not reported" and keeps
+       whatever it did before; it does NOT read it as "no such widget". */
+    int widgets_known;
+    int has_close_box;
+    int has_zoom_box;
+
     /* The control plane for THIS window. `controls_present` is the
        looked-at-all bit: 1 with a zero count encodes "this window has no
        controls", which is a real answer; 0 encodes "this producer did
@@ -868,6 +877,13 @@ void now_scene_set_window_addr(NowScene *s, int index, unsigned long addr);
    row; until it is called the key stays absent, because 0 is a legal
    kind and cannot double as "not read". */
 void now_scene_set_window_kind(NowScene *s, int window, short kind);
+
+/* The title-bar widgets the machine draws, once a producer has read them
+   from the WindowRecord (or asked Carbon about its own window). Same
+   no-op-on-out-of-range and same absent-until-called policy as the kind
+   above, and for the same reason: false is a legal answer. */
+void now_scene_set_window_widgets(NowScene *s, int window,
+                                  int close_box, int zoom_box);
 
 /* Declares that this window's control list WAS walked. Returns 1 when
    the row accepted it, 0 for an out-of-range row. Calling it and adding

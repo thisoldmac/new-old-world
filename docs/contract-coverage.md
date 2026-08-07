@@ -184,6 +184,7 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `scene.request` | ✅ | ❌ | the semantic walk — the Mirror's whole input. **NOW-68K serves no scene at all**: it has no `scene/`, no `axwalk/`, no `peek/` and no `observe/`, so a `scene.request` falls through to its unknown-message path. This is the single largest declared asymmetry in the contract and it is a subsystem, not a row |
 | `scene.request` — TITLE AND RECT VALIDATION | ✅ | n/a | **A declared asymmetry INSIDE the row above, added 2026-08-07 (plan 018 slice 4).** The PPC walk now refuses to publish a title it cannot vouch for and clamps a rect outside the plausible QuickDraw range (`scene_build.c :: now_scene_title_is_publishable` / `now_scene_rect_is_sane`), and makes the live ControlRecord authoritative over a DITL's frozen text so the control walk and the dialog-item walk can never contradict each other on a shared ref. **NOW-68K has gained none of this**, and cannot: it serves no scene at all, so there is nothing there to validate. Recorded here rather than left to a merge, per Michelle's scoping call of 2026-08-06 — the 68K guest is out of scope for that arc. If NOW-68K ever grows a scene, it inherits this obligation with it |
 | `scene.request` — `apps[].backgroundOnly` (2026-08-07) | ✅ | ❌ | **A declared asymmetry that is NOT a gap in what the guests can tell apart.** The scene's new `backgroundOnly` key rides the scene family, which NOW-68K does not serve at all (row above), so only the PPC guest emits it. But the FACT is not PowerPC-only: both guests already classify a faceless process from the same `modeOnlyBackground` bit for `process.list` — `proc68.c:322` and `wire.c:5161` — so `kind: "background"` is symmetric today. Closing this asymmetry would mean giving NOW-68K a scene producer, not teaching it about headless processes |
+| `scene.request` — `windows[].closeBox` / `windows[].zoomBox` (2026-08-07) | ✅ | ❌ | **A declared asymmetry that NOW-68K cannot close, and the reason is the row three above rather than anything about a 68030.** The two keys are the WindowRecord's own `goAwayFlag` and `spareFlag` (`axwalk.c :: kNowAxWinGoAway` / `kNowAxWinSpare`, one byte each at 112 and 113), emitted by `scene_json.c` beside `kind` and asked of Carbon for NOW's own window (`scene_self.c :: GetWindowAttributes`). They ride the scene family, which NOW-68K does not serve at all — it has no `scene/` and no `axwalk/` — so there is nothing there to teach. **Unlike `backgroundOnly`, the underlying FACT is PowerPC-only too**: nothing in the 68K guest reads a foreign WindowRecord, so it has no second route to the same answer. Closing this means giving NOW-68K a scene producer, and the flags would arrive with it for free — the offsets are System-7-era and identical on a 68K Mac |
 | `scene.begin` / `scene.end` | — | — | **The ANSWERER's half, and neither guest handles one inbound.** The PPC guest SENDS them (`wire.c:1786` and the transfer it brackets); a host never sends them to a guest, so these can never grow guest-handling ticks. The answer's transfer pair. `scene.begin` gained `digest` / `delta` / `baseline` / `wholeBytes` on 2026-08-06 |
 | `scene.same` | — | — | Same: SENT by the PPC guest (`wire.c:1826`), handled by neither. The no-change answer, added 2026-08-06: a control frame with no transfer, sent only in answer to a request that quoted `since`. See [scene-deltas.md](scene-deltas.md) |
 | `agent.access` | ❌ | ❌ | neither guest HANDLES one — it is guest-to-host only, and a host never sends it. PPC SENDS it when its consent tier changes; 68K has no tier to change |
@@ -1277,7 +1278,7 @@ moved; the hash is the receipt, not the point.
 
 <!-- derived-doc v1
 sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
-sources-sha1: c9937be0e3de84b8a3a4c55a6d36819991c9502a
+sources-sha1: a1c87c6d2998ee14b9c4b3bb075ac10cca17dcda
 derive ppc-inbound-types sha256=c15c9c82d3460aa5288ca67ace049e5cbf47d7bf305be82c85e3a07cfe0ae5e2 lines=49 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
@@ -1303,4 +1304,5 @@ rederived: 2026-08-07T14:11:03-0400 4b54a5d2 sources
 rederived: 2026-08-07T13:51:56-0400 a309422b sources
 rederived: 2026-08-07T14:20:10-0400 ae89768d unchanged
 rederived: 2026-08-07T15:21:01-0400 07b89775 sources
+rederived: 2026-08-07T16:24:02-0400 1a35e96f sources
 -->
