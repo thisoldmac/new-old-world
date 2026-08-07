@@ -50,6 +50,54 @@ public struct SceneRenderer {
     /// An item travelling under the pointer, drawn over everything. nil = no
     /// item drag in flight.
     public let itemDrag: ProvisionalDrag?
+    /// A control the person is pressing, and how far the answer has got.
+    /// nil = nothing is being pressed.
+    public let pressed: PressedControl?
+
+    /// **A press in flight — the third telling of the same decision.**
+    ///
+    /// Like `ProvisionalDrag` above, this is VIEW state and must never be
+    /// folded back into the scene: a scene is what the guest said, and a
+    /// press is what a person is doing. The distinction is sharper here than
+    /// for the drag, because the guest cannot report a pressed control *even
+    /// in principle* — Platinum draws the pressed state inside the
+    /// application's `TrackControl` loop, which is precisely the state in
+    /// which the application has stopped calling `GetNextEvent`, so the
+    /// resident's scene walk cannot run to observe it. The IR gap is
+    /// structural rather than an oversight, and `Scene.Control` accordingly
+    /// carries no `hilite` field for this to be confused with.
+    public struct PressedControl: Equatable {
+        /// The ax2 ref of the control being pressed — the same identity the
+        /// scene uses, so "is it still there?" is answerable.
+        public var ref: String
+        /// Content-relative, like every other control rect.
+        public var frame: Rect
+        /// Draw the face pressed. False once the press has settled.
+        public var showsPressed: Bool
+        /// Draw the wait indicator. `.waiting` only.
+        public var showsSpinner: Bool
+        /// 0...1 through `PressSession.patience`, for the determinate arc.
+        public var progress: Double
+
+        public init(ref: String, frame: Rect, showsPressed: Bool,
+                    showsSpinner: Bool, progress: Double) {
+            self.ref = ref
+            self.frame = frame
+            self.showsPressed = showsPressed
+            self.showsSpinner = showsSpinner
+            self.progress = progress
+        }
+
+        /// Build one from the core session, which is the only supported
+        /// route — the flags are derived there so the renderer cannot
+        /// disagree with the state machine about what a phase means.
+        public init(_ session: PressSession, now: Date) {
+            self.init(ref: session.ref, frame: session.frame,
+                      showsPressed: session.showsPressed,
+                      showsSpinner: session.showsSpinner,
+                      progress: session.waitProgress(now: now))
+        }
+    }
 
     /// **An item in flight, and whether the guest has confirmed it yet.**
     ///
@@ -82,13 +130,15 @@ public struct SceneRenderer {
     public init(scene: MirrorKit.Scene, openMenu: Int? = nil,
                 hoveredItem: Int? = nil, selectedItem: String? = nil,
                 dragOutline: Rect? = nil,
-                itemDrag: ProvisionalDrag? = nil) {
+                itemDrag: ProvisionalDrag? = nil,
+                pressed: PressedControl? = nil) {
         self.scene = scene
         self.openMenu = openMenu
         self.hoveredItem = hoveredItem
         self.selectedItem = selectedItem
         self.dragOutline = dragOutline
         self.itemDrag = itemDrag
+        self.pressed = pressed
     }
 
     /// The guest screen: the scene's own dimensions, falling back to the
@@ -2062,6 +2112,21 @@ public struct SceneRenderer {
             light.addLine(to: CGPoint(x: inner.maxX - 2, y: inner.minY))
             ctx.stroke(light, with: .color(Platinum.g0), lineWidth: 1)
         }
+        /* THE PRESS, over the button's own drawing and under its label.
+           `PressedVisual` decides what it looks like and this decides only
+           WHEN — the same split `drawItemDrag` keeps, and for the same
+           reason: a second place deciding the appearance is how the marked
+           unknown ended up with two copies of its fill.
+
+           Over the face rather than instead of it, because this is NOT a
+           mirrored Platinum pressed state. The guest never draws one for a
+           synthesized press — it answers `act-not-taken: armed, and the
+           application never called TrackControl` — so replacing the face
+           with an imitation would assert a machine state that does not
+           exist. See `PressedVisual`. */
+        if isPressed(ctl) {
+            PressedVisual.drawPressed(in: ctx, frame: frame)
+        }
         let color = ctl.enabled ? Platinum.g6 : Platinum.g3
         let mark = ctl.checked ? "✓ " : ""
         let markW = mark.isEmpty ? 0 : 10
@@ -2074,6 +2139,24 @@ public struct SceneRenderer {
                      at: CGPoint(x: frame.midX - sysWidth(ctl.title) / 2 - 4,
                                  y: frame.midY), anchor: .center)
         }
+        /* The wait bar LAST, so it sits over the label's descenders rather
+           than under them. It is drawn inside the button's own lower edge and
+           never covers the title — a person who cannot read which button is
+           busy has been told less, not more. */
+        if let pressed, pressed.ref == ctl.ref, pressed.showsSpinner {
+            PressedVisual.drawWait(in: ctx, frame: frame,
+                                   progress: pressed.progress)
+        }
+    }
+
+    /// Whether this control is the one under the person's finger.
+    ///
+    /// Matched by `ref` — the scene's own identity — rather than by rect or
+    /// title. Two buttons in one dialog can share a title ("OK" in a stack of
+    /// sheets) and a rect moves when the window does; a ref is what the act
+    /// itself names, so the thing that lights up is the thing that was sent.
+    private func isPressed(_ ctl: MirrorKit.Scene.Control) -> Bool {
+        pressed?.ref == ctl.ref && pressed?.showsPressed == true
     }
 
     private func drawGeneric(_ ctx: GraphicsContext, _ ctl: MirrorKit.Scene.Control,

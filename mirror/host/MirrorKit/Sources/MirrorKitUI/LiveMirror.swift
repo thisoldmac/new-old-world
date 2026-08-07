@@ -64,6 +64,22 @@ public protocol MirrorSceneSource: ObservableObject {
     /// driver that can talk to the Finder by name overrides it and serves
     /// the two cases no action case can name.
     func perform(_ interaction: Interaction)
+
+    /// **The same dispatch, but say what became of it.**
+    ///
+    /// A press is drawn pressed from the gesture onward, and something has to
+    /// end that drawing. `answer` is called at most once, with what the guest
+    /// actually said.
+    ///
+    /// The default forwards to `perform(_:)` and **never answers**, which is
+    /// not an oversight. A driver with no settlement lane genuinely does not
+    /// learn the outcome, and the honest rendering of that is
+    /// `PressSession`'s deadline naming it — *"asked X and never learned the
+    /// answer"*. A default that answered `.confirmed` on send completion
+    /// would be the exact shape of the AppleScript lie this arc replaced,
+    /// reintroduced in every conformer at once.
+    func perform(_ interaction: Interaction,
+                 answer: @escaping (PressAnswer) -> Void)
 }
 
 public extension MirrorSceneSource {
@@ -91,6 +107,15 @@ public extension MirrorSceneSource {
             }
             perform(actions, label: InteractionBridge.label(for: interaction))
         }
+    }
+
+    /// See the protocol: this deliberately drops `answer` on the floor rather
+    /// than inventing a verdict. The press then ends at its deadline, saying
+    /// so.
+    func perform(_ interaction: Interaction,
+                 answer: @escaping (PressAnswer) -> Void) {
+        _ = answer
+        perform(interaction)
     }
 }
 
@@ -144,6 +169,19 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
     /// `ItemDragSession` in the core; this view feeds it a pointer and draws
     /// what it says.
     @State private var itemDrag: ItemDragSession?
+
+    /// A button the person is pressing. Same split as `itemDrag` above and
+    /// for the same reason: the transitions live in `PressSession`, where a
+    /// test can drive them without a window on screen, and this view only
+    /// feeds it events and draws what it says.
+    @State private var press: PressSession?
+    /// Drives `PressSession.tick` while a press is in flight — the thing
+    /// that makes the spinner's end ARRIVE rather than merely be defined.
+    ///
+    /// A view that only redrew on scene arrivals would leave a press
+    /// spinning through a silent guest, which is the failure the deadline
+    /// exists to prevent, reached by forgetting to look at the clock.
+    @State private var pressClock: Date = .distantPast
 
     /// A live drag in progress, carrying the dragged window's original rect.
     ///

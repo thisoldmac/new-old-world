@@ -11,17 +11,20 @@ public struct SceneView: View {
     public let selectedItem: String?
     public let dragOutline: Rect?
     public let itemDrag: SceneRenderer.ProvisionalDrag?
+    public let pressed: SceneRenderer.PressedControl?
 
     public init(scene: MirrorKit.Scene, openMenu: Int? = nil,
                 hoveredItem: Int? = nil, selectedItem: String? = nil,
                 dragOutline: Rect? = nil,
-                itemDrag: SceneRenderer.ProvisionalDrag? = nil) {
+                itemDrag: SceneRenderer.ProvisionalDrag? = nil,
+                pressed: SceneRenderer.PressedControl? = nil) {
         self.scene = scene
         self.openMenu = openMenu
         self.hoveredItem = hoveredItem
         self.selectedItem = selectedItem
         self.dragOutline = dragOutline
         self.itemDrag = itemDrag
+        self.pressed = pressed
     }
 
     public var body: some View {
@@ -30,7 +33,8 @@ public struct SceneView: View {
                           hoveredItem: hoveredItem,
                           selectedItem: selectedItem,
                           dragOutline: dragOutline,
-                          itemDrag: itemDrag)
+                          itemDrag: itemDrag,
+                          pressed: pressed)
                 .draw(in: ctx, size: size)
         }
         .background(Color(hex: 0x222222))
@@ -48,12 +52,13 @@ public enum RenderShot {
                            hoveredItem: Int? = nil,
                            selectedItem: String? = nil,
                            itemDrag: SceneRenderer.ProvisionalDrag? = nil,
+                           pressed: SceneRenderer.PressedControl? = nil,
                            size: CGSize? = nil) throws -> Data {
         let size = size ?? SceneRenderer(scene: scene).logicalSize
         let view = SceneView(scene: scene, openMenu: openMenu,
                              hoveredItem: hoveredItem,
                              selectedItem: selectedItem,
-                             itemDrag: itemDrag)
+                             itemDrag: itemDrag, pressed: pressed)
             .frame(width: size.width, height: size.height)
         let renderer = ImageRenderer(content: view)
         renderer.scale = 1

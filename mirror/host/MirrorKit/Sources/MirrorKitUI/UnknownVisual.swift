@@ -333,3 +333,125 @@ public enum ProvisionalVisual {
         ctx.stroke(path, with: .color(markInk), lineWidth: 1)
     }
 }
+
+/// **The press — the same decision a third time, and the one where the
+/// machine turned out to have no opinion at all.**
+///
+/// `UnknownVisual` says *we do not know this*; `ProvisionalVisual` says *we
+/// do not know this yet*, for an item under the pointer. This says it for a
+/// button: the person pressed, and until the guest answers we are showing
+/// their intent rather than the machine's state.
+///
+/// ## What the machine says about its own pressed buttons: nothing
+///
+/// This drawing was supposed to be measured. The brief was to compare
+/// against the guest's own pixels, because Platinum's pressed state is a
+/// specific drawn procedure and not a darken filter. Three things were
+/// found instead, on a live guest on 2026-08-07
+/// (`tools/local-pressed-capture.py`, image sha256 `c466baa9…`):
+///
+/// 1. **No such capture exists anywhere**, and none can be taken the usual
+///    way: every route screendumps *around* an act, and the one tool that
+///    holds the button down never screendumps.
+/// 2. **Holding the button down on a real push button changed zero pixels.**
+///    The first run appeared to show 65 px of change; all of it was the
+///    mouse cursor arriving in the rectangle, and it vanished when the
+///    comparison was taken against a shot with the cursor in the same place.
+///    A rig artefact that looked exactly like the answer being sought.
+/// 3. **The guest says why, in its own words.** `ctlact` answers
+///    `act-not-taken: armed, and the application never called TrackControl`,
+///    and `"this application does not route it through TrackControl at all"`.
+///    A Platinum pressed face is drawn by the application inside
+///    `TrackControl`; an application that never enters that loop never draws
+///    one, and `Scene.Control` accordingly has no `hilite` field for it to
+///    be reported through.
+///
+/// So there is no guest-side pressed state to mirror, and the honest
+/// conclusion is not "draw a Platinum pressed button anyway". **A drawing
+/// that imitates the machine's own pressed face would be the mirror
+/// asserting a state the machine is not in** — the same confident wrong
+/// answer plan 018 removes everywhere else, and unfalsifiable besides,
+/// since nothing can contradict it.
+///
+/// The mark is therefore deliberately the **provisional family's**, not
+/// Platinum's: it is the host saying *we have your press and we are waiting*,
+/// in the vocabulary this codebase already uses for exactly that claim. It
+/// borrows `ProvisionalVisual`'s ink and `UnknownVisual`'s lattice so a
+/// person who has learned what the stipple means anywhere learns it
+/// everywhere.
+///
+/// Bounded to this application. NOW's own Carbon window is what was driven;
+/// another application that *does* call `TrackControl` might well draw a
+/// pressed face, and if someone photographs one this file is where the
+/// measured drawing goes.
+public enum PressedVisual {
+
+    // MARK: - The definition (swap here, nowhere else)
+
+    /// The pressed face, over the button's own drawing.
+    ///
+    /// A wash rather than a replacement: the button underneath still reads as
+    /// itself, which matters because the person must see WHICH button they
+    /// pressed. Deliberately NOT Platinum's own pressed grey — see above.
+    public static let wash = Color(hex: 0x8899BB).opacity(0.28)
+
+    /// The border that says "this one". `ProvisionalVisual`'s edge, because
+    /// it is the same statement about the same kind of doubt.
+    public static let edge = ProvisionalVisual.edge
+
+    /// The wait indicator's ink and its track.
+    public static let indicatorInk = ProvisionalVisual.markInk
+    public static let indicatorTrack = UnknownVisual.stipple
+
+    /// Height of the wait bar, and its inset from the button's bottom edge.
+    public static let indicatorHeight: CGFloat = 3
+    public static let indicatorInset: CGFloat = 2
+
+    // MARK: - Drawing
+
+    /// The pressed face: a wash and a firmer edge, over whatever the button
+    /// already drew.
+    public static func drawPressed(in ctx: GraphicsContext, frame: CGRect) {
+        guard frame.width > 2, frame.height > 2 else { return }
+        let path = Path(roundedRect: frame, cornerRadius: 7)
+        ctx.fill(path, with: .color(wash))
+        ctx.stroke(Path(roundedRect: frame.insetBy(dx: 0.5, dy: 0.5),
+                        cornerRadius: 7),
+                   with: .color(edge), lineWidth: 1)
+    }
+
+    /// **The wait, drawn as a bar that fills toward a deadline the code
+    /// actually honours.**
+    ///
+    /// Not a barber's pole and not a spinning gear. An indeterminate
+    /// indicator says "working" forever and can never be wrong, which makes
+    /// it precisely the wrong instrument here: the whole point of
+    /// `PressSession.patience` is that the wait ENDS, and the indicator
+    /// should show the person the end coming. A bar at 90% is a promise that
+    /// something is about to be said.
+    ///
+    /// Drawn inside the button's own lower edge rather than floating over the
+    /// middle, so it never covers the button's label — a person who cannot
+    /// read which button is busy has been told less, not more.
+    public static func drawWait(in ctx: GraphicsContext, frame: CGRect,
+                                progress: Double) {
+        let w = frame.width - indicatorInset * 2
+        guard w > 4, frame.height > indicatorHeight + indicatorInset * 2 else {
+            /* Too small to carry the bar honestly. The wash is still the
+               marking, which is the same bargain the marked unknown strikes
+               with its caption and the provisional plate with its corner
+               mark. */
+            return
+        }
+        let track = CGRect(x: frame.minX + indicatorInset,
+                           y: frame.maxY - indicatorInset - indicatorHeight,
+                           width: w, height: indicatorHeight)
+        ctx.fill(Path(track), with: .color(indicatorTrack))
+        let done = Swift.min(1, Swift.max(0, progress))
+        guard done > 0 else { return }
+        ctx.fill(Path(CGRect(x: track.minX, y: track.minY,
+                             width: (track.width * done).rounded(),
+                             height: track.height)),
+                 with: .color(indicatorInk))
+    }
+}

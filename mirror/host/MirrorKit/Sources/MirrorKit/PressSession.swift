@@ -51,6 +51,19 @@ import Foundation
 /// other exit — refusal, deadline, contradiction — is a *worse* verdict than
 /// confirmed, which is the direction it is safe for this side to move on its
 /// own. A press cannot talk itself into having worked.
+/// What the guest said about a press.
+///
+/// Two cases, deliberately the same shape as `ItemDragAnswer` and for the
+/// same stated reason: a press has exactly two honest outcomes, and "no
+/// answer yet" is a state of the view rather than a value here. The wait,
+/// and its bounded end, belong to `PressSession`.
+public enum PressAnswer: Equatable, Sendable {
+    case confirmed
+    /// Said in words a person reads — it goes on the status line beside the
+    /// button coming back up.
+    case refused(String)
+}
+
 public struct PressSession: Equatable {
 
     /// How long a press may sit unanswered before the wait itself becomes
