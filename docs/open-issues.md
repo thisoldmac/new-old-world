@@ -14,6 +14,68 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED: an act could report success it had not verified, and a window could go silent without naming itself (2026-08-07, lane D of plan 018)
+
+Sweep A found `as Buttons` "dispatched cleanly twice and never produced
+button view", and scored Appearance DRIVABILITY 0. Driving the machine
+settled both, and neither was what it looked like.
+
+**`as Buttons` works, and did all along.** Emulator-verified on a private
+clone (anchor 1760, wire 5310, build pinned with `--expect-build`): all
+three Finder View items switched the `Macintosh HD` window, the
+checkmark moved with each, and the pixels agree. What Sweep A actually
+met is that the plane could not TELL. Every menu act carried
+`kNowActPostNone`, and `act_settlement.c` skips observation for those, so
+a menu act could never leave `dispatched-but-unconfirmed` — the act
+switched the view and reported unconfirmed with the proof sitting in the
+very next scene. An observer cannot distinguish "it silently failed" from
+"the instrument cannot see it", which is why one honest sweep read it as
+a silent success.
+
+**The silent success is real, and it is elsewhere.** Reproduced
+deterministically: pressing the Finder's `File > Print` with nothing
+selected returned `ok: true`, `Dispatch: dispatched`, and did nothing.
+MenuSelect returns whatever the plane answers with, so a press on a
+DISABLED item always "succeeds" and the application's handler ignores it.
+`act_menu_probe.c` now reads the item out of the target's own MenuList
+first and refuses with `menu-item-disabled` / `menu-item-separator` /
+`menu-item-absent` / `menu-absent`. A probe that cannot READ never
+refuses — an unbound process comes back Unknown and the act dispatches as
+before, because "I could not look" is not "no".
+
+**Appearance was never unreadable; the bound was ours.** Its window
+publishes zero controls because its control chain is **73 controls long**
+and `kNowSceneWalkMaxControls` is 48, so the whole plane is correctly
+dropped rather than delivered as a prefix. Nothing said so: `controls: []`
+is emitted for a dropped plane and for a genuinely empty window alike,
+and the only note was a scene-wide sentence naming no window. Windows now
+carry a `walk_verdict` and `meta.errors` names them, distinguishing our
+bound from a chain that left the readable zones — different errands, and
+lumping them sent a reader to widen a memory validation that was never
+the problem.
+
+### STILL OPEN, and it is a sizing decision rather than a defect
+
+Appearance remains undrivable. Making it drivable means raising
+`kNowSceneWalkMaxControls` (48, per window) past 73 and
+`kNowSceneMaxControls` (96, pooled across the scene) past the ~133 a
+desktop with Appearance, Mouse, a Finder window and NOW open already
+wants. Measured cost: `sizeof(NowSceneControl)` is 320 bytes, so
+`NowScene` is 147 KB today and every 32 pool slots add 10 KB. That
+budget is shared by every window in the scene and is pinned by
+`scene_json_test.c :: test_size_against_the_control_cap`, so it is a
+deliberate decision for whoever owns the scene plane, not a number to
+raise in passing.
+
+### NOT what Sweep A thought, for Mouse
+
+Mouse scored DRIVABILITY 0 and is **addressable**: 38 controls each with
+a reference and a content-local rect, and 38 dialog items carrying kinds
+and references. What it lacks is NAMES — 37 of 38 control titles empty,
+every role `unknown`, and its DITL titles arriving as pointer bytes.
+That is the pointer-title defect (everywhere, slice 4) plus element-kind
+coverage, not an addressing problem, and no fix belongs in the act plane.
+
 ## FIXED: the live render was worse than every fixture render, and no gate could see it (2026-08-06, evening)
 
 Reported against a running session: the Mirror "looks largely regressed"
