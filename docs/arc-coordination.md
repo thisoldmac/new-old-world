@@ -296,6 +296,49 @@ of them paid for:
   because another session holds the machine has worked correctly. Wait;
   do not set the override.
 
+### Blocks 590-599 are a person's, and no lane can have them
+
+**Ports 16720-16799 are the reserved human range.** `tools/lane-ports`
+skips them in `allocate()`, so there is no sequence of calls by any lane
+that ends with one; asking for one by number is an error that names why,
+and `--force` does not open it. `tools/lane-ports human` reports the
+block read-only. Michelle's stack lives on **block 591** — anchor
+`16728`, wire `16729`.
+
+It is written in code and named here because the failure it prevents
+happened with the rule already implied. On 2026-08-07 her VM was running
+on 16728/16729 and the hash handed block 591 — exactly those ports — to a
+lane. Nothing was misconfigured and nobody was careless: **allocation had
+reserved a NAME while the collision happened on a SOCKET.** A comment
+saying "leave 591 alone" is read by every agent and enforced by none.
+
+**And a port block is not isolation. Saying otherwise is worse than
+saying nothing.** Three separate mechanisms exist and each covers a
+different thing:
+
+| knob | what it isolates | what it does NOT |
+| --- | --- | --- |
+| `lane-ports` block | TCP ports a lane may bind | anything reached without binding one |
+| `NOW_AGENT_SOCKET_SUFFIX` | the `now-agent` UNIX socket | ports; preferences |
+| `NOW_PREFS_SUFFIX` | the whole `UserDefaults` store | ports; the agent socket |
+
+The hijack that prompted the reservation went through **none** of the
+ports. Michelle's app was already running and already pointed at her own
+VM, and a lane retargeted it: there is one `now-agent` socket per user
+and it reaches whichever host holds it. `NOW_PREFS_SUFFIX` was the
+narrower half of the answer and, until 2026-08-07, narrower than its own
+name — it scoped four call sites while thirteen others wrote to
+`UserDefaults.standard`, including `mirror.appPath`, `mirror.qmpSocket`
+and `mirror.forwardedAgentPort`, which are precisely the settings that
+decide what a Mirror is looking at. A "suffixed" run isolated its port
+and wrote into the real preferences live. Fixed via one
+`ProductIdentity.defaults`.
+
+So: **a lane sets all three.** Unset, they all fall back to the shared
+default, which is the product's behaviour and correct for a person's
+stack — and it means carelessness lands on the shared default rather than
+on hers.
+
 ## Derived things are re-derived at the merge, never merged
 
 Coverage tables, counts, and any hand-maintained enumeration. Two lanes
