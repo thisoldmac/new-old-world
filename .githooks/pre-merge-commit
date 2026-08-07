@@ -35,4 +35,22 @@ if [ -n "${NOW_DERIVED_DOC_GATE:-}" ] && [ -x "$root/tools/derived-doc-gate" ]; 
     "$root/tools/derived-doc-gate" check || exit 1
 fi
 
+# merge-census-gate — BUILT, TESTED, AND DELIBERATELY NOT ARMED, for the
+# same reason and by the same rule as the line above: arming a gate into a
+# live fleet is a change to every branch at once, made by somebody who is
+# not on any of them.
+#
+# What it refuses, when armed: a merge that loses a definition NEITHER side
+# removed (the keep-both truncation), and a merge that imports a commit
+# reverting its own predecessor in silence (`fe4d8179`, 2026-08-07). What
+# it never refuses: a deletion a side actually made — those are listed and
+# attributed instead.
+#
+# HOW TO ARM IT, when the fleet is quiet: delete the NOW_MERGE_CENSUS_GATE
+# test on the next two lines and the matching one in .githooks/pre-commit.
+# Budget about 20 seconds per merge on a tree this size.
+if [ -n "${NOW_MERGE_CENSUS_GATE:-}" ] && [ -x "$root/tools/merge-census-gate" ]; then
+    "$root/tools/merge-census-gate" pending || exit 1
+fi
+
 exit 0

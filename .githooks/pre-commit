@@ -75,4 +75,13 @@ if [ -n "${NOW_DERIVED_DOC_GATE:-}" ] && [ -x "$root/tools/derived-doc-gate" ]; 
     "$root/tools/derived-doc-gate" check || exit 1
 fi
 
+# merge-census-gate — the pre-merge-commit half of the pair, here for the
+# CONFLICTED merge: git commits that one through `git commit`, so this hook
+# runs with MERGE_HEAD present and the other never fires. `pending` is a
+# no-op when there is no MERGE_HEAD, so an ordinary commit pays nothing.
+# Unarmed for the same reason as the block above; see .githooks/pre-merge-commit.
+if [ -n "${NOW_MERGE_CENSUS_GATE:-}" ] && [ -x "$root/tools/merge-census-gate" ]; then
+    "$root/tools/merge-census-gate" pending || exit 1
+fi
+
 exit 0

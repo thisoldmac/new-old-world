@@ -1,0 +1,19 @@
+#!/bin/sh
+# The one hook that has both the staged content AND the message, which is
+# the pair self-revert-gate's verdict is made of: a commit that undoes its
+# own predecessor is only a defect when the message does not say so.
+# pre-commit is too early — there is no message there yet.
+#
+# self-revert-gate — BUILT, TESTED, AND DELIBERATELY NOT ARMED, by the same
+# rule as the derived-doc-gate block in .githooks/pre-commit: arming a gate
+# into a live fleet is a change to every branch at once. Measured false
+# positives over this arc are 7 of 1014 commits (tools/self-revert-gate).
+#
+# HOW TO ARM IT, when the fleet is quiet: delete the NOW_SELF_REVERT_GATE
+# test on the next two lines.
+root=$(git rev-parse --show-toplevel)
+if [ -n "${NOW_SELF_REVERT_GATE:-}" ] && [ -x "$root/tools/self-revert-gate" ]; then
+    "$root/tools/self-revert-gate" pending "$1" || exit 1
+fi
+
+exit 0

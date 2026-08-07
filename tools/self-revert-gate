@@ -1,0 +1,392 @@
+#!/usr/bin/env python3
+"""A commit that undoes the commit before it, in a message about something
+else.
+
+    tools/self-revert-gate check [<commit>] [--quiet]   # one commit
+    tools/self-revert-gate scan <range-or-branch>       # a whole lane
+    tools/self-revert-gate sweep <pattern>              # every branch matching
+    tools/self-revert-gate pending <msgfile>            # the commit being written
+
+WHY IT EXISTS. On 2026-08-07, `fe4d8179` on `claude/019-asset-packs` --
+subject "feat(contract): hello says which Macintosh, in fields rather
+than in prose" -- reverted the CDEF-attribution work that its own
+immediate predecessor `9c219366` had landed eleven minutes earlier. Seven
+files, 117 lines of `docs/open-issues.md`, and the restored code included
+the test rows whose own comment warns that "a later reader who 'restores'
+the family table will reintroduce exactly the shipped bug". The commit
+body describes only the `hello.machine` work and never mentions the
+revert. Nothing in this repository could see it; an integrator found it
+by reading.
+
+The mechanism was a shared worktree checked out under a running lane, and
+this gate is not the cure for that. It makes the damage VISIBLE, which is
+a different and smaller claim.
+
+WHAT IT ASSERTS, and it is deliberately narrow. For a commit C it walks
+back C's own first-parent ancestors -- the same lane, not a sibling -- and
+for each ancestor A asks one arithmetic question: how many of the lines A
+ADDED does C REMOVE, in the same file, byte for byte? Then it flags only
+when all four hold:
+
+  * the overlap is at least MIN_LINES lines (default 12),
+  * it is at least MIN_FRACTION of everything A added (default 0.55) --
+    so C undoes most of A rather than adjusting part of it,
+  * A is NEAR: within MAX_BACK commits and MAX_HOURS hours, because a
+    lane that revisits its own work a week later is doing its job, and
+  * C's message never mentions A -- not by hash, and not with the word
+    "revert" anywhere in it.
+
+The last condition is the one that makes this fair to refuse on, and it is
+the ext-bake-gate's test: is satisfying it fully in the committer's power?
+It is. A commit that means to undo its predecessor says so in one line and
+this gate goes quiet. It is not asking anyone to do different work; it is
+asking a message to describe the diff it carries.
+
+THE FALSE POSITIVE IS A LANE REWORKING ITS OWN APPROACH across two
+commits, and it looks nearly identical -- C removes most of what A added.
+The fraction and the adjacency are what separate them in practice, and
+they are thresholds rather than a proof, so a rework that trips this is
+cured the same way a revert is: by saying so. Measured over every
+`claude/019-*` branch in this tree (`sweep claude/019-`), the defaults
+flag exactly one commit, and it is `fe4d8179`.
+
+WHAT IT DOES NOT COVER:
+
+  * A revert that RETYPES rather than restores. The comparison is byte
+    exact on whole lines, so re-indenting or rewording while reverting the
+    behaviour makes it invisible here.
+  * A revert of a SIBLING lane's work. C's ancestry is the search space,
+    on purpose: "same branch, near-adjacent, one undoing the other" is a
+    strong signal, and widening it to every branch in the fleet turns a
+    named accusation into a similarity score. Cross-branch loss at a merge
+    is `tools/merge-census-gate`'s half of this pair.
+  * Deletions of code nobody recently added. A commit that removes a
+    two-year-old function is invisible to this and should be: that is an
+    ordinary deletion.
+  * A partial revert. Undoing three of A's twelve lines is below both
+    thresholds and stays below them. The gate is built for the shape that
+    actually shipped -- a whole predecessor undone -- and a smaller revert
+    is left to review.
+
+MEASURED FALSE POSITIVES, so the thresholds are a number and not a hope.
+`sweep claude/019- main` over this arc: 7 of 1014 distinct commits
+flagged across 56 branches, 0.7%. `fe4d8179` is one of them. Of the other
+six, `1de856e3` removes all 48 substantial lines `39191398` added
+fourteen minutes before -- a whole `scene_self.c`/`scene_self.h` feature
+and its source test, undone in a commit titled "drive system actions
+through guest state" -- which nobody had noticed. Whether the remaining
+five are reworks or reverts is a reading, and that is the point: the gate
+hands a reader seven commits to read instead of a thousand.
+
+Mutation evidence: `tools/mirror-gate-tests/test_self_revert_gate.py`, in
+`scripts/test-native`. It replays `fe4d8179` itself, and every threshold
+above has a case built by moving that one number.
+"""
+
+import os
+import re
+import subprocess
+import sys
+
+MIN_LINES = int(os.environ.get("NOW_SELF_REVERT_MIN_LINES", "12"))
+MIN_FRACTION = float(os.environ.get("NOW_SELF_REVERT_MIN_FRACTION", "0.55"))
+MAX_BACK = int(os.environ.get("NOW_SELF_REVERT_MAX_BACK", "20"))
+MAX_HOURS = float(os.environ.get("NOW_SELF_REVERT_MAX_HOURS", "24"))
+
+SAYS_SO = re.compile(r"\brevert|\bre-?applies\b|\bundo(es|ing)?\b|\brestor(e|es|ing)\b",
+                     re.IGNORECASE)
+HEXISH = re.compile(r"\b[0-9a-f]{7,40}\b")
+
+# Skipped for the same reason merge-census-gate skips them: five nested agent
+# checkouts under mirror/ carrying their own copy of everything, so a line
+# "added" and "removed" there is six lines of noise per real one.
+SKIP_PREFIXES = ("mirror/.claude/", "archive/", "qemu/", ".claude/worktrees/")
+
+
+def run(args, cwd=None):
+    return subprocess.run(args, check=True, capture_output=True,
+                          text=True, cwd=cwd).stdout
+
+
+def interesting(path):
+    return not any(path.startswith(p) or ("/" + p) in path
+                   for p in SKIP_PREFIXES)
+
+
+def substantial(line):
+    """Is this line distinctive enough that matching it means something?
+
+    A closing brace, a `*/`, an `#endif` and a blank line appear in every
+    diff in the repository. Counting them would let any two commits that
+    touched the same file look like a revert of each other, so the floor is
+    eight characters of stripped text with a letter in it. That is a
+    threshold and it is worth knowing it is one: it is why a revert of
+    twelve short lines is under this gate's floor.
+    """
+    s = line.strip().lstrip("*").strip()
+    return len(s) >= 8 and any(c.isalpha() for c in s)
+
+
+_CHANGED = {}
+_EPOCH = {}
+
+
+def changed_lines(commit, root=None):
+    """(added, removed) as {path: set(line)} for one non-merge commit.
+
+    Whole lines, byte exact, deduplicated per file. Deduplicating matters:
+    a file with the same line twice would otherwise let one removal count
+    as two, and every threshold below is a count.
+
+    Memoised because `scan` and `sweep` ask for the same commit up to
+    MAX_BACK times -- once as the commit under test, then again as the
+    ancestor of each of the next twenty. Without the cache a sweep of this
+    arc is twenty thousand `git show` calls, which is the difference
+    between a measurement someone re-runs and one nobody does.
+    """
+    if commit in _CHANGED:
+        return _CHANGED[commit]
+    text = run(["git", "show", "--format=", "--no-color", "-U0",
+                "--no-renames", commit], cwd=root)
+    added, removed = {}, {}
+    path = None
+    for line in text.split("\n"):
+        if line.startswith("+++ b/"):
+            path = line[6:]
+            continue
+        if line.startswith("--- ") or line.startswith("diff --git"):
+            if line.startswith("diff --git"):
+                path = None
+            continue
+        if path is None or not interesting(path):
+            continue
+        if line.startswith("+") and not line.startswith("+++"):
+            if substantial(line[1:]):
+                added.setdefault(path, set()).add(line[1:])
+        elif line.startswith("-") and not line.startswith("---"):
+            if substantial(line[1:]):
+                removed.setdefault(path, set()).add(line[1:])
+    _CHANGED[commit] = (added, removed)
+    return added, removed
+
+
+def mentions(message, sha):
+    if SAYS_SO.search(message):
+        return True
+    for m in HEXISH.finditer(message.lower()):
+        if sha.startswith(m.group(0)) or m.group(0).startswith(sha[:7]):
+            return True
+    return False
+
+
+def ancestors(commit, root=None):
+    """C's own first-parent line, nearest first, stopping at a merge.
+
+    Stopping at a merge is what keeps 'the same branch' honest: past a
+    merge the first parent is the integration line, and a commit there is
+    somebody else's predecessor, not this lane's.
+    """
+    out = []
+    cur = commit
+    for _ in range(MAX_BACK):
+        parents = run(["git", "rev-list", "-1", "--parents", cur],
+                      cwd=root).split()[1:]
+        if len(parents) != 1:
+            break
+        cur = parents[0]
+        pp = run(["git", "rev-list", "-1", "--parents", cur],
+                 cwd=root).split()[1:]
+        out.append(cur)
+        if len(pp) != 1:
+            break
+    return out
+
+
+def epoch(commit, root=None):
+    if commit not in _EPOCH:
+        _EPOCH[commit] = int(run(["git", "log", "-1", "--format=%ct", commit],
+                                 cwd=root).strip())
+    return _EPOCH[commit]
+
+
+def findings(commit, root=None):
+    """Every ancestor this commit substantially undoes without saying so."""
+    parents = run(["git", "rev-list", "-1", "--parents", commit],
+                  cwd=root).split()[1:]
+    if len(parents) != 1:
+        return []           # a merge is merge-census-gate's business
+
+    _, removed = changed_lines(commit, root)
+    if not removed:
+        return []
+    message = run(["git", "log", "-1", "--format=%B", commit], cwd=root)
+    c_time = epoch(commit, root)
+
+    out = []
+    for anc in ancestors(commit, root):
+        gap_h = (c_time - epoch(anc, root)) / 3600.0
+        if gap_h > MAX_HOURS:
+            break
+        added, _ = changed_lines(anc, root)
+        total = sum(len(v) for v in added.values())
+        if total == 0:
+            continue
+        overlap = {}
+        for path, lines in added.items():
+            hit = lines & removed.get(path, set())
+            if hit:
+                overlap[path] = hit
+        n = sum(len(v) for v in overlap.values())
+        if n < MIN_LINES or n / float(total) < MIN_FRACTION:
+            continue
+        if mentions(message, run(["git", "rev-parse", anc],
+                                 cwd=root).strip()):
+            continue
+        out.append({
+            "ancestor": anc,
+            "lines": n,
+            "of": total,
+            "gap_minutes": (c_time - epoch(anc, root)) / 60.0,
+            "files": overlap,
+        })
+    return out
+
+
+def describe(commit, found, root, quiet=False, emit=print):
+    short = run(["git", "rev-parse", "--short", commit], cwd=root).strip()
+    subject = run(["git", "log", "-1", "--format=%s", commit],
+                  cwd=root).strip()
+    for f in found:
+        ashort = run(["git", "rev-parse", "--short", f["ancestor"]],
+                     cwd=root).strip()
+        asubject = run(["git", "log", "-1", "--format=%s", f["ancestor"]],
+                       cwd=root).strip()
+        emit("[self-revert] %s \"%s\"" % (short, subject))
+        emit("    removes %d of the %d lines %s added %.0f minutes earlier,"
+              % (f["lines"], f["of"], ashort, f["gap_minutes"]))
+        emit("    and never mentions it.")
+        emit("      %s  \"%s\"" % (ashort, asubject))
+        if not quiet:
+            for path, lines in sorted(f["files"].items(),
+                                      key=lambda kv: -len(kv[1])):
+                emit("        %-56s %d lines" % (path, len(lines)))
+            emit("    If undoing it is what you meant, say so: name %s in the"
+                  % ashort)
+            emit("    message, or use the word 'revert'. This gate goes quiet")
+            emit("    on either, because what it is asking for is a message")
+            emit("    that describes the diff it carries -- not different work.")
+
+
+def cmd_check(args):
+    root = run(["git", "rev-parse", "--show-toplevel"]).strip()
+    quiet = "--quiet" in args
+    args = [a for a in args if not a.startswith("--")]
+    commit = args[0] if args else "HEAD"
+    found = findings(commit, root)
+    if not found:
+        return 0
+    describe(commit, found, root, quiet)
+    return 1
+
+
+def cmd_scan(args):
+    root = run(["git", "rev-parse", "--show-toplevel"]).strip()
+    if not args:
+        print("usage: self-revert-gate scan <range-or-branch>",
+              file=sys.stderr)
+        return 2
+    commits = run(["git", "rev-list", "--no-merges"] + args,
+                  cwd=root).split()
+    hits = 0
+    for c in commits:
+        found = findings(c, root)
+        if found:
+            hits += 1
+            describe(c, found, root)
+    print("[self-revert] %d of %d commits flagged" % (hits, len(commits)))
+    return 1 if hits else 0
+
+
+def cmd_sweep(args):
+    """Every branch whose name starts with the pattern, each against its
+    own fork point. This is the false-positive measurement, and it is a
+    subcommand rather than a note so the next reader can re-run it."""
+    root = run(["git", "rev-parse", "--show-toplevel"]).strip()
+    pattern = args[0] if args else "claude/"
+    trunk = args[1] if len(args) > 1 else "main"
+    branches = [b.strip().lstrip("* ") for b in
+                run(["git", "branch", "--format=%(refname:short)"],
+                    cwd=root).split("\n") if b.strip()]
+    branches = [b for b in branches if b.startswith(pattern)]
+    seen, hits, total = set(), 0, 0
+    for b in branches:
+        try:
+            base = run(["git", "merge-base", trunk, b], cwd=root).strip()
+        except subprocess.CalledProcessError:
+            continue
+        for c in run(["git", "rev-list", "--no-merges",
+                      "%s..%s" % (base, b)], cwd=root).split():
+            if c in seen:
+                continue
+            seen.add(c)
+            total += 1
+            found = findings(c, root)
+            if found:
+                hits += 1
+                describe(c, found, root, quiet=True)
+    print("[self-revert] sweep %s: %d of %d distinct commits flagged "
+          "across %d branches" % (pattern, hits, total, len(branches)))
+    return 0
+
+
+def cmd_pending(args):
+    """The commit being written right now, from a commit-msg hook.
+
+    `check` needs a commit object; at commit-msg time there is none. So one
+    is BUILT -- `write-tree` for the staged content, HEAD as its parent,
+    and the message file the hook was handed -- and put through the same
+    code path as any other commit. A second implementation reading the
+    index directly would be a second thing to be wrong.
+
+    commit-msg rather than pre-commit is not a detail: this gate's entire
+    verdict turns on what the MESSAGE says, and pre-commit runs before
+    there is one.
+    """
+    root = run(["git", "rev-parse", "--show-toplevel"]).strip()
+    if not args:
+        print("usage: self-revert-gate pending <message-file>",
+              file=sys.stderr)
+        return 2
+    message = open(args[0]).read()
+    if os.path.exists(os.path.join(root, ".git", "MERGE_HEAD")):
+        return 0                       # a merge is the sibling's business
+    tree = run(["git", "write-tree"], cwd=root).strip()
+    try:
+        head = run(["git", "rev-parse", "HEAD"], cwd=root).strip()
+    except subprocess.CalledProcessError:
+        return 0                       # the first commit has no predecessor
+    pending = run(["git", "commit-tree", tree, "-p", head, "-m", message],
+                  cwd=root).strip()
+    found = findings(pending, root)
+    if not found:
+        return 0
+    describe(pending, found, root)
+    return 1
+
+
+def main(argv):
+    if len(argv) < 2:
+        print(__doc__)
+        return 2
+    cmds = {"check": cmd_check, "scan": cmd_scan, "sweep": cmd_sweep,
+            "pending": cmd_pending}
+    fn = cmds.get(argv[1])
+    if fn is None:
+        print("unknown subcommand: %s" % argv[1], file=sys.stderr)
+        print(__doc__)
+        return 2
+    return fn(argv[2:])
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
