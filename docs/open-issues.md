@@ -68,6 +68,33 @@ believed, increments `census_refused` and hooks nothing; the product then
 renders the same honest gaps it does today. There is no new hard
 dependency and a resident that cannot run it is not a broken product.
 
+### The image this was baked into, and what landing still owes
+
+The resident is baked and verified into a **private lane image**, not the
+shared oracle:
+
+| | |
+|---|---|
+| image | `~/Lab/Assets/os91-qemu/agent-stage/now-stage-arm-census.qcow2` |
+| sha256 | `1bd2b5c67d1dc05408451fd5a7bc16f95e2a381959b4c5718d074774d93c4e51` |
+| ext digest | `3e6296d2192281609092bc8331ae9e50bf4ebb7d` |
+| build fingerprint (**the guest's own word**) | `875078a0d995d4b371c4d61737e249c6673ad01b` |
+| resident | `lifecycle active`, capabilities `127` |
+| `qemu-img check` / volume / shutdown | clean / **clean** / guest-clean |
+
+The shared oracle was **not** touched: it is still
+`c466baa9a5455c343908e12197d68e57ffc7f07c140276a90c97a5ae2a137d70`,
+byte-identical to what it was before this lane started, and
+`ext/stage-receipts.json` is unmodified — a throwaway receipt in that file
+would claim the oracle contains this resident, which it does not.
+
+**So landing this branch still owes the oracle a `--shared` bake**, and
+that is a decision to announce rather than a step to run. Verified by
+asking the gate rather than by reasoning about it: with an `ext/` path
+staged, `tools/ext-bake-gate` refuses, naming the shared image's receipt
+as being for a different resident. A private bake proves the resident
+works; only a shared one makes it what everybody else clones.
+
 ### Still open, from the same run
 
 - **Monitors is a DIFFERENT defect, and the sweep's reading of it was
