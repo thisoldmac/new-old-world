@@ -191,7 +191,7 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 
 PPC handles **48** inbound types; NOW-68K handles **23**. **That count
 understates the difference** — see the next two sections, where two of
-these rows open into 42 command verbs and 14 hardware probes.
+these rows open into 43 command verbs and 14 hardware probes.
 
 (An earlier version of this file said 33 for the PowerPC guest and was
 wrong: the number had been hand-counted. It is derived now, and that is
@@ -221,7 +221,7 @@ hides most of what a machine can be asked — the hardware, network, RAM
 and ROM facts do not have message types of their own. They live behind
 `gestalt` and `census`, one row each above and a whole subsystem below.
 
-The registry is `x-commands` in the contract: **42 verbs.** Sixteen of
+The registry is `x-commands` in the contract: **43 verbs.** Sixteen of
 them landed on 2026-07-31 and are grouped at the foot of the table; the
 Dialog Manager act joined that group on 2026-08-03: the
 act plane, the reference layer that mints what it addresses, two verbs
@@ -265,6 +265,7 @@ number here has been found wrong by re-deriving it.
 | `put` | send a file from the guest | console only | ✅ |
 | `cancel` | stop the transfer in flight, either way | via UI / `file.cancel` | ✅ |
 | `putstat` | transfer diagnostics | ✅ | ❌ |
+| `desktop` | what the desktop is actually drawn from — the Appearance Manager's theme collection, not the `ppat` resource nobody updates | ✅ | ❌ — declared asymmetry, see below |
 | `wirestat` | how long this Mac takes to NOTICE a request — **and the only verb in the registry that CHANGES the machine's scheduling**; a subsystem, expanded below | ✅ | ❌ |
 | `observe` | walk the elements on screen, minting a reference for each | ✅ | ❌ |
 | `axtree` | the same walk, to look at rather than to act on | ✅ | ❌ |
@@ -483,6 +484,30 @@ So the asymmetry is: **the PowerPC guest serves `hide`, NOW-68K does not,
 and it stays that way until the selector's presence under System 7.1 comes
 from a document rather than from an experiment.** That is a decision with a
 reason, not a to-do.
+
+### `desktop` is PowerPC-only, and the 68K answer would be a different one
+
+The PowerPC guest serves `desktop` through the Appearance Manager's theme
+collection — `GetTheme` into a `Collection`, then the desktop tags in it.
+NOW-68K does not serve it, and this is a **scoping decision** (Michelle,
+2026-08-06: NOW-68K is out of scope for the 018 arc) recorded here rather
+than left as a silent absence.
+
+It is worth writing down what the 68K answer would have to be, because it
+is not the same answer with a different compiler. System 7.1 has no
+Appearance Manager at all, so there is no theme collection to read; its
+desktop is the black-and-white or `ppat` desk pattern the Control Panel
+sets, reachable through low memory (`DeskPattern`, `DeskCPat`) — which is
+the route Carbon removed and the reason the PowerPC guest cannot use it.
+So the two guests would answer this question through *opposite* mechanisms:
+the one that exists on 68K is the one Carbon deleted, and the one that
+exists on PowerPC did not ship until Appearance 1.1.
+
+That makes a shared implementation impossible rather than merely unwritten,
+and it means the eventual 68K verb would carry a different output shape —
+`hasPicture` cannot be false-or-true on a System 7.1 machine, it is
+meaningless. Whoever adds it should expect to declare that, not to reuse
+this.
 
 ### `software.list` — one message, two amounts of answer
 
@@ -935,12 +960,12 @@ without anyone noticing, and how `key` and `net` sat here twice. Run
 these from the repository root:
 
 ```sh
-# the registry — 42
+# the registry — 43
 awk '/^  x-commands:$/{f=1;next} f&&/^  [^ ]/{f=0} \
      f&&/^    [a-z][a-z0-9]*:$/{gsub(/[ :]/,"");print}' \
     contract/asyncapi.yaml | sort -u
 
-# what the PowerPC guest serves — 39
+# what the PowerPC guest serves — 40
 grep -oE 'strcmp\(name, *"[a-z0-9]+"\)' \
     now-guest-ppc/src/commands/commands.c \
   | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
@@ -965,10 +990,34 @@ command written down rather than retyped each time.
 > is this file's own rule working exactly as written: a hand-carried
 > count drifts, a derivation does not.
 
+## Re-derived 2026-08-07 (`claude/018-desktop-pattern`)
+
+The three commands at the foot were run again against this tree while
+adding `desktop`:
+
+| | Derived | Was |
+|---|---|---|
+| PowerPC inbound message types | **48** | 48 |
+| NOW-68K inbound message types | **23** | 23 |
+| `x-commands` registry | **43** | 42 |
+| PowerPC verbs served | **40** | 39 |
+| NOW-68K verbs served | **13** | 13 |
+
+`desktop` is the only change: one registry entry, one PowerPC verb, and a
+declared 68K asymmetry with its own section above. The three verbs the
+PowerPC guest still does not serve are unchanged (`put`, `cancel`,
+`shotdiag`). Nothing else had drifted.
+
+**This lane touched a sibling lane's territory and must be re-derived at
+the merge.** Plan 018 runs several lanes in parallel and at least one
+other may land a verb; two honest derivations hours apart is exactly the
+2026-08-05 shape this file records, where both authors were right when
+they wrote and wrong on arrival.
+
 ## Re-derived 2026-08-06
 
 Every command above was run again against this tree. What the numbers
-are today:
+were then:
 
 | | Derived | Was |
 |---|---|---|
