@@ -97,6 +97,19 @@ QEMU="${TIMBOTTU_QEMU:-$LAB/qemu/build/qemu-system-ppc}"
 # ones tools/base-image knows: ordinary work, or the inner run of a bake.
 # It changes which base is designated and how strictly the checks read.
 PURPOSE="${NOW_SPIN_PURPOSE:-ppc-work}"
+# And `oracle` is refused here rather than passed on, because this script
+# ALWAYS stages a fresh resident into the clone — so a run declaring
+# itself a measurement of the BAKED one would be a lie told to the gate,
+# and `--stages-resident` below is what the whole severity table hangs
+# off. If you want to measure what is baked into an image, boot it
+# without staging; `tools/base-image fit <image> --purpose oracle` is the
+# check for that caller.
+case "$PURPOSE" in
+    ppc-work|bake) ;;
+    *) echo "NOW_SPIN_PURPOSE=$PURPOSE is not something this script can be: \
+it stages this checkout's ext and app into every clone, so only \
+'ppc-work' or 'bake' is true of it." >&2; exit 64 ;;
+esac
 BASE="${NOW_SPIN_BASE:-$("$NOW/tools/base-image" which --purpose "$PURPOSE")}"
 # A PER-VM RUN DIRECTORY, for the same reason rule 4 makes the ports
 # per-VM. It was one fixed directory, so a second spin-up in the same
