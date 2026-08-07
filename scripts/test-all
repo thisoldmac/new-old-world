@@ -39,6 +39,16 @@ fail () {
     exit 1
 }
 
+# Before anything else: are the commit gates even WIRED? This does not fail
+# the run, and the reason is the whole point of where it sits. On 2026-08-06
+# core.hooksPath was found pointing at a directory that does not exist, so
+# NO pre-commit hook had ever run in any worktree — and every gate that
+# depends on one read green by never running. A person cannot fix that
+# mid-commit and arming it is a sequencing decision, so this SHOUTS and the
+# final line of this script stops saying the gates passed.
+hooks_armed=yes
+"$script_dir/../tools/hooks-doctor" --quiet || hooks_armed=no
+
 echo "==> [1/5] staged-image discipline gates"
 # First because it is cheap, and because a broken image gate is the one
 # failure that makes every LATER result unattributable rather than wrong:
@@ -79,4 +89,12 @@ echo "==> [5/5] host gate"
 echo "==> host gate passed"
 
 echo
-echo "==> all gates passed (TESTED; not metal-verified)"
+if [ "$hooks_armed" = yes ]; then
+    echo "==> all gates passed (TESTED; not metal-verified)"
+else
+    echo "==> all gates passed — BUT THE COMMIT GATES ARE NOT ARMED IN THIS"
+    echo "    CLONE (see the top of this run). Nothing refuses a commit here:"
+    echo "    not the main guardrail, not the ext bake gate. Green above means"
+    echo "    the tests pass, NOT that the gates are running."
+    echo "    Repair, when no other session is mid-commit: tools/hooks-doctor --fix"
+fi

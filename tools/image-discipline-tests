@@ -488,6 +488,107 @@ def _(tmp):
 
 
 # --------------------------------------------------------------------------
+# 6. The gates are only gates if git actually runs them. Watched end to end
+#    through a REAL `git commit`, because for weeks nothing did.
+# --------------------------------------------------------------------------
+
+@case("hooks: a real git commit is refused by the wired pre-commit hook")
+def _(tmp):
+    r = Repo(tmp, "hk")
+    os.makedirs(os.path.join(r.path, ".githooks"))
+    shutil.copy(os.path.join(ROOT, ".githooks", "pre-commit"),
+                os.path.join(r.path, ".githooks", "pre-commit"))
+    os.chmod(os.path.join(r.path, ".githooks", "pre-commit"), 0o755)
+    img = os.path.join(tmp, "stage.qcow2")
+    fake_image(img, b"THE ORACLE")
+    env = {"NOW_STAGE_IMAGE": img}
+
+    # UNWIRED — the state this repository was actually in. The commit goes
+    # through and nothing says a word.
+    r.write("ext/src/now_ext.c", "int resident(void) { return 4; }\n")
+    r.git("add", "--", "ext/src/now_ext.c")
+    unwired = r.git("commit", "-qm", "resident change, no gate", env=env)
+    must(unwired.returncode == 0,
+         "with no hooksPath the commit must succeed — that IS the bug")
+
+    # WIRED, relative, the way tools/setup-hooks sets it.
+    sh("git", "-C", r.path, "config", "core.hooksPath", ".githooks")
+    # On a branch, because the OTHER half of that hook is the main
+    # guardrail and it fires first — which this test watched happen.
+    r.git("checkout", "-qb", "claude/whoever")
+    r.write("ext/src/now_ext.c", "int resident(void) { return 5; }\n")
+    r.git("add", "--", "ext/src/now_ext.c")
+    wired = r.git("commit", "-qm", "resident change, gated", env=env)
+    must(wired.returncode != 0,
+         "the wired hook must refuse a resident commit with no bake:\n"
+         + wired.stdout + wired.stderr)
+    must("ext-bake-gate" in wired.stderr, wired.stderr)
+
+    # And the deferral, through the same hook, must LEAVE A RECORD — the
+    # thing that silently did not happen for the at-arm census lane.
+    env2 = dict(env)
+    env2["TBT_DEFER_EXT_BAKE"] = "1"
+    env2["TBT_DEFER_EXT_BAKE_REASON"] = "sequenced behind the census work"
+    ok = r.git("commit", "-qm", "resident change, deferred", env=env2)
+    must(ok.returncode == 0, ok.stdout + ok.stderr)
+    defers = [x for x in r.read_receipts()["receipts"]
+              if x.get("kind") == "deferral"]
+    must(len(defers) == 1, f"the deferral must be written down: {defers}")
+    must("census" in defers[0]["reason"], defers[0])
+
+
+@case("hooks-doctor names an absolute hooksPath and repairs it")
+def _(tmp):
+    r = Repo(tmp, "hd")
+    shutil.copy(os.path.join(ROOT, "tools", "hooks-doctor"),
+                os.path.join(r.path, "tools", "hooks-doctor"))
+    os.chmod(os.path.join(r.path, "tools", "hooks-doctor"), 0o755)
+    os.makedirs(os.path.join(r.path, ".githooks"))
+    for hook in ("pre-commit", "pre-merge-commit", "post-merge"):
+        shutil.copy(os.path.join(ROOT, ".githooks", hook),
+                    os.path.join(r.path, ".githooks", hook))
+        os.chmod(os.path.join(r.path, ".githooks", hook), 0o755)
+    doctor = os.path.join(r.path, "tools/hooks-doctor")
+
+    unset = sh(sys.executable, doctor, cwd=r.path)
+    must(unset.returncode == 1, "an unset hooksPath must not read as armed")
+    must("NOT ARMED" in unset.stdout, unset.stdout)
+
+    # THE MUTATION: the exact live defect — absolute, pointing nowhere.
+    sh("git", "-C", r.path, "config", "core.hooksPath",
+       "/nowhere/that/exists/.githooks")
+    bad = sh(sys.executable, doctor, cwd=r.path)
+    must(bad.returncode == 1, bad.stdout)
+    must("ABSOLUTE" in bad.stdout, bad.stdout)
+    must("does not exist" in bad.stdout, bad.stdout)
+
+    fixed = sh(sys.executable, doctor, "--fix", cwd=r.path)
+    must(fixed.returncode == 0, fixed.stdout + fixed.stderr)
+    good = sh(sys.executable, doctor, cwd=r.path)
+    must(good.returncode == 0, good.stdout)
+    must("armed" in good.stdout, good.stdout)
+
+    # A hook that exists but cannot execute is skipped by git in silence —
+    # so the doctor must not call that armed either.
+    os.chmod(os.path.join(r.path, ".githooks", "pre-commit"), 0o644)
+    chmod = sh(sys.executable, doctor, cwd=r.path)
+    must(chmod.returncode == 1, "a non-executable hook must not read as armed")
+    must("not executable" in chmod.stdout, chmod.stdout)
+
+
+@case("defer can be recorded directly, without a working hook")
+def _(tmp):
+    r = Repo(tmp, "df")
+    out = r.gate("defer", "--reason",
+                 "the PowerBook is off; baking tomorrow morning")
+    must(out.returncode == 0, out.stdout + out.stderr)
+    defers = [x for x in r.read_receipts()["receipts"]
+              if x.get("kind") == "deferral"]
+    must(len(defers) == 1, f"{defers}")
+    must("PowerBook" in defers[0]["reason"], defers[0])
+
+
+# --------------------------------------------------------------------------
 
 def main() -> int:
     print("==> staged-image discipline gates")

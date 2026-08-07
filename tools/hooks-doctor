@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+"""Are this clone's commit gates actually WIRED? Ask, rather than assume.
+
+    tools/hooks-doctor            # report; exit 1 if the gates cannot fire
+    tools/hooks-doctor --fix      # repair the wiring (see below)
+    tools/hooks-doctor --quiet    # one line unless something is wrong
+
+WHY THIS EXISTS, and it is the sharpest example this repository has of its
+own thesis. On 2026-08-06 `core.hooksPath` was found set to the ABSOLUTE
+path `/Users/michelle/Lab/Code/timbottu/now/.githooks` — a directory that
+does not exist. `now/` is a stale checkout parked on a commit from before
+`.githooks/` was added, and it is the container the worktrees live in. So:
+
+  * **no pre-commit hook has ever run in any NOW worktree.** Not the
+    main-guardrail, not the ext-bake-gate.
+  * A lane deferred a bake twice, honestly, with written reasons —
+    `TBT_DEFER_EXT_BAKE=1 TBT_DEFER_EXT_BAKE_REASON="…"` — and **nothing
+    was written**, because the mechanism that writes the deferral is the
+    gate that never ran. An honest decision left no record.
+  * Every gate that depends on the hook read green by never running, which
+    is precisely the hole `scripts/test-mirrorkit` was added to `test-all`
+    to close: *a gate that quietly declines to run is how this one came to
+    be missing in the first place.*
+
+AN ABSOLUTE hooksPath IS WRONG BY CONSTRUCTION HERE, not merely wrong
+today. `core.hooksPath` is one setting shared by every worktree (and can
+additionally be shadowed per worktree — 17 worktrees carried their own
+copy of the same broken value). An absolute path aims all of them at ONE
+checkout's copy of the hooks, so every worktree runs a version of the gates
+that belongs to some other branch — or, as here, to no branch at all. The
+relative value `.githooks` is the only form that resolves to the hooks the
+worktree actually has checked out. `tools/setup-hooks` has always set the
+relative form; something else set the absolute one.
+
+WHAT --fix DOES: removes every per-worktree `core.hooksPath` override,
+sets the relative value in the shared config, and configures the receipts
+merge driver. It never edits a working tree. Arming gates on a repository
+where other sessions are mid-commit is a sequencing decision, which is why
+it is a flag and not a side effect of the report.
+"""
+
+from __future__ import annotations
+
+import argparse
+import glob
+import os
+import subprocess
+import sys
+
+HOOKS = ("pre-commit", "pre-merge-commit", "post-merge")
+
+
+def git(*args: str, root: str = ".") -> str:
+    return subprocess.run(["git", "-C", root, *args], capture_output=True,
+                          text=True).stdout.strip()
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--fix", action="store_true")
+    ap.add_argument("--quiet", action="store_true")
+    args = ap.parse_args(argv[1:])
+
+    root = git("rev-parse", "--show-toplevel")
+    if not root:
+        print("not a git checkout", file=sys.stderr)
+        return 2
+    common = git("rev-parse", "--path-format=absolute", "--git-common-dir",
+                 root=root) or git("rev-parse", "--git-common-dir", root=root)
+    problems: list[str] = []
+    notes: list[str] = []
+
+    configured = git("config", "--get", "core.hooksPath", root=root)
+    if not configured:
+        problems.append(
+            "core.hooksPath is UNSET — git looks in .git/hooks, which carries "
+            "only samples.\n    None of this repository's gates can fire.")
+    elif os.path.isabs(configured):
+        problems.append(
+            f"core.hooksPath is ABSOLUTE: {configured}\n"
+            "    That aims every worktree at one checkout's copy of the hooks "
+            "— stale at best,\n"
+            "    and in this repository it has pointed at a directory that "
+            "does not exist.\n"
+            "    The only correct value here is the relative `.githooks`.")
+    elif configured != ".githooks":
+        notes.append(f"core.hooksPath is {configured!r}, not '.githooks'.")
+
+    # WHERE it is set matters as much as what it says: a per-worktree
+    # override shadows the shared value silently, and 17 of them existed.
+    overrides = []
+    for path in glob.glob(os.path.join(common, "worktrees", "*",
+                                       "config.worktree")):
+        try:
+            with open(path) as fh:
+                if "hooksPath" in fh.read():
+                    overrides.append(path)
+        except OSError:
+            pass
+    if overrides:
+        notes.append(f"{len(overrides)} worktree(s) carry their own "
+                     f"core.hooksPath, which shadows the shared one.")
+
+    # Does the path RESOLVE, from this worktree, to hooks that can execute?
+    resolved = configured if os.path.isabs(configured or "") \
+        else os.path.join(root, configured or ".git/hooks")
+    if not os.path.isdir(resolved):
+        problems.append(f"the hooks directory does not exist: {resolved}")
+    else:
+        for hook in HOOKS:
+            full = os.path.join(resolved, hook)
+            if not os.path.exists(full):
+                notes.append(f"no {hook} hook in {resolved}")
+            elif not os.access(full, os.X_OK):
+                problems.append(f"{full} is not executable — git skips it "
+                                "SILENTLY.")
+
+    driver = git("config", "--get", "merge.nowreceipts.driver", root=root)
+    if not driver:
+        notes.append("merge.nowreceipts.driver is not configured: "
+                     "ext/stage-receipts.json will merge textually instead of "
+                     "conflicting (pre-merge-commit is the backstop).")
+
+    if args.fix:
+        for path in overrides:
+            subprocess.run(["git", "config", "--file", path, "--unset-all",
+                            "core.hooksPath"], capture_output=True)
+        subprocess.run(["git", "config", "--file",
+                        os.path.join(common, "config"), "core.hooksPath",
+                        ".githooks"], check=True)
+        subprocess.run(["git", "config", "--file",
+                        os.path.join(common, "config"),
+                        "merge.nowreceipts.name",
+                        "stage-image receipts — always conflict, a person "
+                        "must decide"], check=True)
+        subprocess.run(["git", "config", "--file",
+                        os.path.join(common, "config"),
+                        "merge.nowreceipts.driver",
+                        f"{root}/tools/receipts-merge-driver %O %A %B %L %P"],
+                       check=True)
+        print(f"[hooks-doctor] armed: core.hooksPath = .githooks (relative), "
+              f"{len(overrides)} worktree override(s) removed, receipts merge "
+              f"driver configured.")
+        print("  Re-run without --fix to confirm.")
+        return 0
+
+    if problems:
+        print("")
+        print("########################################################"
+              "################")
+        print("#  THE COMMIT GATES ARE NOT ARMED IN THIS CLONE.        "
+              "               #")
+        print("########################################################"
+              "################")
+        for p in problems:
+            print(f"  * {p}")
+        for n in notes:
+            print(f"  - {n}")
+        print("")
+        print("  Nothing refuses a commit here: not the main guardrail, not "
+              "the ext bake")
+        print("  gate. A deferral written with TBT_DEFER_EXT_BAKE is not "
+              "recorded either,")
+        print("  because the gate that records it never runs.")
+        print("  Repair (a sequencing decision — other sessions may be "
+              "mid-commit):")
+        print("      tools/hooks-doctor --fix")
+        print("")
+        return 1
+
+    if not args.quiet:
+        print(f"[hooks-doctor] armed: core.hooksPath = {configured} -> "
+              f"{resolved}")
+        for hook in HOOKS:
+            mark = "x" if os.access(os.path.join(resolved, hook), os.X_OK) else "-"
+            print(f"  [{mark}] {hook}")
+        print(f"  [{'x' if driver else '-'}] receipts merge driver")
+    for n in notes:
+        print(f"  - {n}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

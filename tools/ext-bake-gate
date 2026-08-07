@@ -813,6 +813,25 @@ def main(argv: list[str]) -> int:
         return merge_check(root)
     if cmd == "note-image":
         return note_image(root, argv[2:])
+    if cmd == "defer":
+        # Recording a deferral WITHOUT going through the hook. Added
+        # 2026-08-06, when core.hooksPath was found pointing at a directory
+        # that does not exist: a lane had deferred twice with honest
+        # written reasons and nothing was written down, because the gate
+        # that writes the record is the gate that never ran. A decision
+        # whose only trace is a shell variable in a dead process is not a
+        # written decision. This makes the record reachable directly.
+        reason = ""
+        it = iter(argv[2:])
+        for arg in it:
+            if arg == "--reason":
+                reason = next(it, "")
+            elif arg.startswith("--reason="):
+                reason = arg.split("=", 1)[1]
+        os.environ["TBT_DEFER_EXT_BAKE"] = "1"
+        os.environ["TBT_DEFER_EXT_BAKE_REASON"] = reason
+        paths = staged_paths(root) or tracked(root)
+        return defer(root, paths, digest(root, "worktree"))
     print(__doc__, file=sys.stderr)
     return 64
 
