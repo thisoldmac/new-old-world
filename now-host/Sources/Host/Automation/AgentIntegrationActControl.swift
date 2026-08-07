@@ -628,6 +628,122 @@ final class AgentIntegrationActControl {
         }
     }
 
+    // MARK: - dragpress / dragmove / dragrelease
+
+    /// What the guest said about one step of a drag.
+    ///
+    /// Deliberately two cases and not a receipt type. Everything a drag
+    /// receipt would carry — the session, the deadlines in force, the tick
+    /// count — is state the GUEST owns and re-reports on every step, so a
+    /// snapshot of it on this side would be a copy that ages. What crosses
+    /// here is the only thing the caller can act on: it happened, or it did
+    /// not and here is the machine's sentence. `ItemDragAnswer` in MirrorKit
+    /// is the same two cases for the same reason.
+    enum DragStep: Equatable {
+        /// The guest did the thing this step asked for. `session` is
+        /// present only for a press, which is the only step that mints one.
+        case done(session: Int?)
+        /// Said in words a person reads: it goes on the status line.
+        case refused(String)
+    }
+
+    /// Put the button down inside `window`, at `point`, and leave it down.
+    ///
+    /// **`window` and not `element`, and that is the whole repair.** A
+    /// Finder icon is not a Control Manager object, so no observation ever
+    /// minted an element reference for one and every item drag a person
+    /// made had nothing to name. `dragpress` therefore also accepts the
+    /// CONTAINER — a folder window, or the Finder's own `Desktop` window,
+    /// both of which the element walk has been naming all along — and the
+    /// guest refuses a point that falls outside it. See
+    /// docs/open-issues.md, 2026-08-07.
+    ///
+    /// **The deadlines are not sent from here.** The resident clamps
+    /// whatever arrives and reports what is actually in force; a host that
+    /// chose them would be stating a policy it cannot enforce. The one
+    /// thing this side must never do is treat the absence of a release as
+    /// safe — it is not this side's dead-man.
+    func dragPress(window: String, h: Int, v: Int) async -> DragStep {
+        guard AgentIntegrationActPolicy.isValidWindowReference(window) else {
+            return .refused(
+                "A drag press names one now-window-… reference from a "
+                    + "current observation — the container the press "
+                    + "happens inside — and the point to press at")
+        }
+        return await dragStep(
+            verb: "dragpress",
+            args: ["window": .text(window), "h": .number(h),
+                   "v": .number(v)],
+            readsSession: true)
+    }
+
+    /// Publish a new pointer position. A WANT, not a promise: the resident
+    /// samples it at its own cadence, so a caller moving faster than the
+    /// vehicle fires will see positions skipped.
+    func dragMove(session: Int, h: Int, v: Int) async -> DragStep {
+        await dragStep(
+            verb: "dragmove",
+            args: ["session": .number(session), "h": .number(h),
+                   "v": .number(v)],
+            readsSession: false)
+    }
+
+    /// ASK the resident to let go. It reports that it asked, never that it
+    /// released — its own deadline may have got there first — so a caller
+    /// that needs to know which reads `Ended` back.
+    func dragRelease(session: Int) async -> DragStep {
+        await dragStep(verb: "dragrelease",
+                       args: ["session": .number(session)],
+                       readsSession: false)
+    }
+
+    /// One step, forwarded and rendered. Not `dispatch()`: the three drag
+    /// verbs answer `pressed` / `want-published` / `release-asked` in their
+    /// `Dispatch` row rather than `dispatched`, because none of them is a
+    /// completed act — which is exactly the distinction that helper exists
+    /// to protect, so borrowing it would have quietly widened what
+    /// "dispatched" means.
+    private func dragStep(verb: String, args: [String: CommandArg],
+                          readsSession: Bool) async -> DragStep {
+        guard let sessionID = currentSessionID() else {
+            return .refused("no Macintosh is paired")
+        }
+        let outcome = await run(verb: verb, args: args)
+        guard currentSessionID() == sessionID else {
+            audit(.warn, "\(verb): the paired guest changed mid-gesture")
+            return .refused(
+                "the paired Macintosh changed while the drag was in "
+                    + "progress")
+        }
+        switch outcome {
+        case .timedOut:
+            audit(.warn, "\(verb): no answer in time")
+            return .refused("the Macintosh did not answer the drag in time")
+        case .result(let result) where !result.ok:
+            audit(.warn, "\(verb) refused: "
+                      + Self.sanitized(result.error?.message ?? ""))
+            return .refused(Self.bounded(
+                result.error?.message ?? "the Macintosh refused the drag"))
+        case .result(let result):
+            let rows = Self.rows(from: result, verb: verb)
+            guard !readsSession else {
+                /* A press with no session is not a press this side can
+                   build on: dragmove and dragrelease both name the nonce,
+                   so a "yes" without one leaves a button down that nothing
+                   here can ask about. */
+                guard let session = rows["Session"].flatMap(Int.init) else {
+                    audit(.warn, "dragpress: answered without a session")
+                    return .refused(
+                        "the Macintosh put the button down without saying "
+                            + "which gesture it belongs to")
+                }
+                audit(.info, "dragpress session \(session)")
+                return .done(session: session)
+            }
+            return .done(session: nil)
+        }
+    }
+
     // MARK: - The wire
 
     private func run(verb: String, args: [String: CommandArg]) async
