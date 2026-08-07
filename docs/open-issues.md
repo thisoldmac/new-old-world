@@ -14,6 +14,32 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED: `HostAppStateWiringTests` spent one deadline on two waits (2026-08-07, `claude/019-housekeeping`)
+
+**Verification level: TESTED, by mutation — the flake was reproduced
+deliberately before the fix was believed.**
+
+The test renders nothing. It binds a listener, connects a `FakeGuest`
+over a real socket and polls at 20 ms for two independent events: the
+listener becoming ready, then the guest's hello arriving. Both polled
+against **one `deadline` computed once**, so a slow bind spent the second
+wait's budget — and when it was fully spent the second loop's condition
+was checked zero times, failing on a connection that was merely late.
+0.06 s in isolation, 8.4 s under a loaded Mac.
+
+The fix is to compute the deadline **inside** `wait`, giving each its
+own. Watched against the failure it claims to fix, both halves:
+
+- pre-fix shape (shared deadline) plus a 9 s sleep standing in for a
+  loaded Mac between the two waits: **failed in 9.564 s**, four
+  assertions, the first reading `listening(port: 34977)` where
+  `connected(guestName: "PowerBook 1400")` was expected — the second wait
+  never polled;
+- per-wait deadline, **same 9 s sleep left in place** so the fix is the
+  only difference: **passed in 9.128 s**.
+
+Restored clean, it passes in 0.059 s.
+
 ## OPEN: this tree cites corpus findings that are not in the corpus (2026-08-07, `claude/019-housekeeping`)
 
 **Verification level: TESTED.** Four citations were corrected to say

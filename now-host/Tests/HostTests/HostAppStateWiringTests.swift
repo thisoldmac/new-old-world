@@ -25,8 +25,15 @@ final class HostAppStateWiringTests: XCTestCase {
            for whatever runs next. */
         defer { state.stopListening() }
 
-        let deadline = Date().addingTimeInterval(8)
+        /* A budget PER wait, not one shared by both. The two waits are
+           independent events — a listener coming ready, then a guest's hello
+           arriving — and a single deadline computed once means the first one
+           spends the second one's time: on a loaded Mac a slow bind left the
+           hello wait with a deadline already past, so it polled zero times
+           and the test failed on a connection that was merely late. Same run
+           took 0.06 s in isolation and 8.4 s under load. */
         func wait(_ cond: @escaping () -> Bool) async throws {
+            let deadline = Date().addingTimeInterval(8)
             while !cond(), Date() < deadline {
                 try await Task.sleep(nanoseconds: 20_000_000)
             }
