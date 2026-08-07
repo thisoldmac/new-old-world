@@ -66,6 +66,7 @@ host holds the guest.
 """
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -193,6 +194,54 @@ class Live:
             raise Unavailable(bad.get("code") or "unavailable",
                               bad.get("message") or "")
         return (result.get("value") or {})
+
+
+def read_expected_build(repo):
+    """The build hash READ from this checkout's products rather than
+    typed. Deliberately the same derivation `fidelity-sweep.py` uses —
+    not a second one, because two spellings of "which build is mine" is
+    two places to be wrong about the answer this exists to give."""
+    out = os.path.join(os.environ.get("TMPDIR", "/tmp"), "now-guest-builds",
+                       hashlib.sha1(repo.encode()).hexdigest()[:12])
+    gen = os.path.join(out, "ppc", "build_stamp_gen.h")
+    with open(gen) as handle:
+        for line in handle:
+            if "NOW_SRC_HASH" in line:
+                return line.split('"')[1]
+    raise SystemExit("no NOW_SRC_HASH in %s — run scripts/build-guests" % gen)
+
+
+def assert_build(live, expect):
+    """WHICH GUEST ANSWERED. The same rule the metal gates carry, arriving
+    over the agent socket instead of the wire — and it binds harder here,
+    because this tool deliberately binds nothing: it reads whichever host
+    owns the one per-user agent socket, and that host may be holding
+    another lane's VM. A flicker count taken off a neighbour's build is
+    not a weaker measurement, it is a measurement of something else."""
+    reply = live.call({"operation": "session_health"})
+    health = (reply.get("result") or {}).get("health") or {}
+    guest = health.get("guest") or {}
+    seen = {"state": health.get("state"), "guest": guest.get("name"),
+            "build": guest.get("build"), "version": guest.get("version"),
+            "session": (guest.get("reference") or {}).get("session")}
+    if expect in (None, "-"):
+        seen["buildCheck"] = "skipped"
+        return seen
+    if not guest.get("build"):
+        raise SystemExit(
+            "the host's session_health reports NO guest build "
+            "(state %r). Nothing can be attributed to a build that was "
+            "never named; give --expect-build - to proceed anyway and "
+            "say so in the report." % health.get("state"))
+    if not guest["build"].startswith(expect):
+        raise SystemExit(
+            "WRONG GUEST. session_health says build %s; this checkout "
+            "built %s. The agent socket is one per user, so this is the "
+            "host that owns it — probably another lane's. Refusing "
+            "rather than measuring somebody else's render."
+            % (guest["build"], expect))
+    seen["buildCheck"] = "matched %s" % expect
+    return seen
 
 
 def screendump(qmp_path, out_path):
@@ -370,6 +419,56 @@ def _returns(changes):
     return events
 
 
+def plane_evidence(frames):
+    """**Did the content plane write a drain into THIS trace?**
+
+    AGENTS.md: an instrument that reads a live machine must assert that
+    the plane armed, and the assertion is about the ARTIFACT, not the
+    intent — "I armed it" is not the assertion; "the artifact carries
+    it" is. `fidelity-live.py` did not implement it, and the failure it
+    is missing is specific and it has happened: this tool reads the live
+    host, which arms P3 itself, so a run against a host that never armed
+    reports every window stably empty and READS AS A STABILITY RESULT.
+    Zero flicker and no content look identical from the number alone.
+
+    The projection makes the distinction for us and it costs one field.
+    `AgentIntegrationMirrorSurface.displayTotal` is:
+
+        None  the plane was never traced for this window
+        0     traced, and proven to have drawn nothing
+        > 0   traced, and it carries ops — a DRAIN reached this artifact
+
+    So `windowsWithOps` is the assertion. `windowsTraced` is kept beside
+    it because the two failures are different repairs: nothing traced at
+    all is a host that never armed, while traced-everywhere-and-empty is
+    a guest that drew nothing (or a plane that armed and lost its
+    records), and a run that collapsed them would send the reader to the
+    wrong half of the system."""
+    traced, with_ops, frames_with_ops = set(), set(), 0
+    max_total = 0
+    for frame in frames:
+        any_here = False
+        for wid, win in (frame.get("windows") or {}).items():
+            total = win.get("displayTotal")
+            if total is None:
+                continue
+            traced.add(wid)
+            if total > 0:
+                with_ops.add(wid)
+                any_here = True
+                max_total = max(max_total, total)
+        if any_here:
+            frames_with_ops += 1
+    return {
+        "windowsTraced": len(traced),
+        "windowsWithOps": len(with_ops),
+        "framesCarryingOps": frames_with_ops,
+        "maxDisplayTotal": max_total,
+        # The one boolean a reader is allowed to quote.
+        "drainInArtifact": bool(with_ops),
+    }
+
+
 def analyse(frames, provoked_at, settle_quiet):
     if not frames:
         return {"error": "no frames read"}
@@ -460,6 +559,7 @@ def analyse(frames, provoked_at, settle_quiet):
     gens = [(f["sceneGeneration"], f["contentGeneration"]) for f in frames]
     return {
         "framesRead": len(frames),
+        "planeEvidence": plane_evidence(frames),
         "snapshotIDs": {"first": min(ids) if ids else None,
                         "last": max(ids) if ids else None,
                         "missed": missed},
@@ -542,6 +642,18 @@ def main():
                              "the frame index of each is recorded — which "
                              "is what makes the three views one instant "
                              "here where sweep A had three phases.")
+    parser.add_argument("--allow-no-drain", action="store_true",
+                        help="accept a trace in which the content plane "
+                             "never wrote a drain. The default is to "
+                             "REFUSE, because such a run reports every "
+                             "window stably empty and reads as a "
+                             "stability result — see plane_evidence().")
+    parser.add_argument("--expect-build", default="auto",
+                        help="refuse a guest whose build is not this "
+                             "checkout's. `auto` reads NOW_SRC_HASH out "
+                             "of the products scripts/build-guests just "
+                             "wrote; `-` skips the check and says so in "
+                             "the report.")
     parser.add_argument("--repeat", type=int, default=1,
                         help="issue the provocation N times; each is "
                              "measured and the run reports the worst and "
@@ -556,6 +668,14 @@ def main():
     print("")
 
     live = Live(args.timeout)
+    expect = args.expect_build
+    if expect == "auto":
+        expect = read_expected_build(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        print("expecting guest build %s" % expect, flush=True)
+    rig = assert_build(live, expect)
+    print("rig: %s\n" % json.dumps(rig), flush=True)
+
     frames = []
     shots = []
     seen_ids = set()
@@ -651,6 +771,7 @@ def main():
     report = analyse(usable, provoked_at, args.settle_quiet)
     report.update({
         "label": args.label,
+        "rig": rig,
         "provocations": provocations,
         "idle": bool(args.idle),
         "preChanges": max(0, pre_changes - 1),
@@ -673,11 +794,39 @@ def main():
     for key in ("framesRead", "snapshotIDs", "settled", "msToSettle",
                 "framesToSettle", "distinctStatesAfterProvocation",
                 "intermediateStates", "flickerEvents", "flickerBreakdown",
-                "generations", "voidReason"):
+                "planeEvidence", "generations", "voidReason"):
         print("  %-32s %s" % (key, json.dumps(report.get(key))))
     if report.get("voidReason"):
         print("\n!! VOID: %s" % report["voidReason"])
         return 2
+
+    # THE ARTIFACT ASSERTION, last because it is the one that decides
+    # whether the numbers above mean anything. It is written into the
+    # report either way — a run allowed through without a drain must
+    # carry that fact wherever its number is quoted.
+    evidence = report.get("planeEvidence") or {}
+    if not evidence.get("drainInArtifact"):
+        report["planeEvidence"]["verdict"] = (
+            "allowed by --allow-no-drain" if args.allow_no_drain
+            else "REFUSED: no drain in the artifact")
+        with open(out, "w") as handle:
+            json.dump(report, handle, indent=1)
+        message = (
+            "NO DRAIN IN THIS ARTIFACT. %d windows were traced by the "
+            "content plane and %d of them carry ops, so this trace cannot "
+            "tell a stable render from a plane that never armed — every "
+            "window would read stably empty and the flicker number would "
+            "read as a stability result."
+            % (evidence.get("windowsTraced", 0),
+               evidence.get("windowsWithOps", 0)))
+        if args.allow_no_drain:
+            print("\n!! %s\n   Allowed by --allow-no-drain; the report "
+                  "carries it." % message)
+        else:
+            print("\n!! %s\n   Open the Mirror, front a window with content, "
+                  "and run again — or pass --allow-no-drain if absence is "
+                  "what you meant to measure." % message)
+            return 3
     print("\nwrote %s" % out)
     return 0
 

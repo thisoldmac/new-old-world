@@ -224,8 +224,65 @@ check("owner_of/typed-but-empty",
                      "kind": "pushButton"}, ops),
       "unknown")
 
+# -- 10. the artifact assertion: was there anything to see? ---------------
+# AGENTS.md's rule for an instrument that reads a live machine, and the
+# three cases it must keep apart. Zero flicker over a plane that never
+# armed and zero flicker over a live render produce the SAME number, so
+# the number alone cannot be quoted; only this can say which it was.
+#
+# The distinction is `displayTotal`'s own: None = never traced, 0 =
+# traced and proven empty, >0 = a drain reached the artifact.
+
+
+def untraced_window(**kw):
+    win = window(**kw)
+    win["displayTotal"] = None
+    return win
+
+
+never_armed = [frame(t, 200 + t, {"w1": untraced_window()})
+               for t in range(0, 6)]
+evidence = live.analyse(never_armed, provoked_at=0,
+                        settle_quiet=5)["planeEvidence"]
+check("never-armed/drain", evidence["drainInArtifact"], False)
+check("never-armed/traced", evidence["windowsTraced"], 0)
+check("never-armed/withOps", evidence["windowsWithOps"], 0)
+
+# Traced and honestly empty is NOT the same failure and must not read as
+# the same one: this is a guest that drew nothing, and the repair is in
+# the other half of the system.
+armed_but_empty = [frame(t, 300 + t, {"w1": window(display_total=0)})
+                   for t in range(0, 6)]
+evidence = live.analyse(armed_but_empty, provoked_at=0,
+                        settle_quiet=5)["planeEvidence"]
+check("armed-empty/drain", evidence["drainInArtifact"], False)
+check("armed-empty/traced", evidence["windowsTraced"], 1)
+check("armed-empty/withOps", evidence["windowsWithOps"], 0)
+
+drained = [frame(t, 400 + t, {"w1": window(display_total=7),
+                              "w2": untraced_window()})
+           for t in range(0, 6)]
+evidence = live.analyse(drained, provoked_at=0,
+                        settle_quiet=5)["planeEvidence"]
+check("drained/drain", evidence["drainInArtifact"], True)
+check("drained/traced", evidence["windowsTraced"], 1)
+check("drained/withOps", evidence["windowsWithOps"], 1)
+check("drained/frames", evidence["framesCarryingOps"], 6)
+check("drained/max", evidence["maxDisplayTotal"], 7)
+
+# One drained frame in a trace that is otherwise dark still counts: the
+# question is whether the artifact carries a drain AT ALL, and a plane
+# that armed for one instant was reachable.
+flickered = [frame(0, 500, {"w1": untraced_window()}),
+             frame(1, 501, {"w1": window(display_total=3)}),
+             frame(2, 502, {"w1": untraced_window()})]
+evidence = live.analyse(flickered, provoked_at=0,
+                        settle_quiet=5)["planeEvidence"]
+check("partial/drain", evidence["drainInArtifact"], True)
+check("partial/frames", evidence["framesCarryingOps"], 1)
+
 if FAILURES:
     for failure in FAILURES:
         print("FAIL %s" % failure)
     sys.exit(1)
-print("ok: flicker analysis (%d properties)" % (26 + 3))
+print("ok: flicker analysis (%d properties)" % (26 + 3 + 14))
