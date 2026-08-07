@@ -1,5 +1,32 @@
 # Running a fanned-out arc without lying about it
 
+## Where this is going
+
+Michelle, 2026-08-07, going to bed:
+
+> what id like to be doing tomorrow is saying how good everything looks
+> and feels so we can land this in main and start cleaning up for public
+> alpha. but maybe thats optimistic.
+
+**That is the destination: land on `main`, then clean up for a public
+alpha.** Her hedge is hers and it stays — this is a direction to steer
+by, not a promise anyone made.
+
+Read it as a filter on what to do next. Work that moves the product
+toward *"looks and feels good enough to land"* outranks work that is
+merely interesting, and there has been a great deal of the interesting
+kind. Two consequences worth holding:
+
+- **A thing that looks wrong to a person outranks a thing that measures
+  wrong to an instrument.** She could not sign off on a layout while
+  every test was green.
+- **Landing on `main` has prerequisites nobody has done**, and they are
+  not features: `.githooks` does not exist there, so the commit gates
+  cannot be armed; several corpus findings cite `now/docs/` files that
+  live only on lane branches; and the arc is a long way ahead of main
+  with the merge never yet attempted in that direction.
+
+
 A coordinating session that has a dozen lanes in flight cannot hold their
 state in its head. The failure mode is not forgetting a lane — it is
 **confidently misreporting one**, which is worse, because a person acts
