@@ -277,6 +277,108 @@ static void a_cycle_is_retracted(void)
     check(s.controls_truncated == 1, "and the bound is reported");
 }
 
+/* THE LENGTH, not just the fact of the bound.
+ *
+   A retracted plane that says only "our bound" leaves the next question
+   open, and answering it by hand is what the Appearance investigation
+   had to do. These three cases are the three answers a reader can act on
+   differently: a chain that fits, one that is merely longer than the cap
+   (raise it, and by this much), and one that never ends (raising it
+   would reach nothing).
+
+   Laid out in the fixture's own arena: records 384 bytes apart, because
+   the control read validates 296 of them, and handles parked above the
+   records so neither table walks into the other. */
+enum {
+    kLongCtlRec = 0x00102000UL,   /* record i at +i*0x180 */
+    kLongCtlRecStride = 0x180UL,
+    kLongCtlHandles = 0x0010E000UL, /* handle i at +i*4 */
+    kLongChain = 120              /* comfortably past the carrying cap */
+};
+
+static void build_long_chain(AxFixture *f, int n, int cyclic)
+{
+    int i;
+
+    for (i = 0; i < n; ++i) {
+        unsigned long handle = kLongCtlHandles + (unsigned long)i * 4UL;
+        unsigned long record = kLongCtlRec
+                             + (unsigned long)i * kLongCtlRecStride;
+        unsigned long next;
+
+        if (i + 1 < n) {
+            next = kLongCtlHandles + (unsigned long)(i + 1) * 4UL;
+        } else {
+            next = cyclic ? kLongCtlHandles : 0UL;
+        }
+        build_control(f, handle, record, next, "Tab", 0, 0, 10, 10, 0, 0);
+    }
+}
+
+static void a_long_chain_reports_its_length(void)
+{
+    AxFixture f;
+    NowAxMemory m;
+    NowScene s;
+
+    axfix_init(&f, &m);
+    build_window(&f, 8, kLongCtlHandles, 0, 0, 40, 60, 200, 400);
+    build_long_chain(&f, kLongChain, 0);
+
+    one_window(&s, kNowSceneAnchorOk);
+    now_scene_walk_window(&s, 0, &m, kWin, NULL);
+
+    check(s.windows[0].controls_present == 0,
+          "a chain past the cap is retracted, never shipped as a prefix");
+    check(s.control_count == 0, "and the pool is returned");
+    check(s.windows[0].walk_verdict == kNowSceneWalkControlsBound,
+          "the verdict says the bound was ours");
+    check(s.windows[0].control_chain_len == kLongChain,
+          "and it says how long the chain actually was");
+    check(s.windows[0].control_chain_len_exact == 1,
+          "exactly, because the chain ended on its own sentinel");
+}
+
+static void a_cycle_is_not_a_long_chain(void)
+{
+    AxFixture f;
+    NowAxMemory m;
+    NowScene s;
+
+    axfix_init(&f, &m);
+    build_window(&f, 8, kLongCtlHandles, 0, 0, 40, 60, 200, 400);
+    build_long_chain(&f, kLongChain, 1);
+
+    one_window(&s, kNowSceneAnchorOk);
+    now_scene_walk_window(&s, 0, &m, kWin, NULL);
+
+    check(s.windows[0].walk_verdict == kNowSceneWalkControlsCyclic,
+          "a chain that never terminates is cyclic, not merely long - "
+          "reported as a bound it would argue forever for a bigger cap");
+    check(s.windows[0].control_chain_len_exact == 0,
+          "and its length is a floor, never a length");
+}
+
+static void a_complete_chain_reports_its_length_too(void)
+{
+    AxFixture f;
+    NowAxMemory m;
+    NowScene s;
+
+    axfix_init(&f, &m);
+    build_window(&f, 8, kCtl1H, 0, 0, 40, 60, 200, 400);
+    build_control(&f, kCtl1H, kCtl1, kCtl2H, "OK", 10, 20, 30, 90, 0, 1);
+    build_control(&f, kCtl2H, kCtl2, 0, "Cancel", 10, 100, 30, 170, 255, 0);
+
+    one_window(&s, kNowSceneAnchorOk);
+    now_scene_walk_window(&s, 0, &m, kWin, NULL);
+
+    check(s.windows[0].control_chain_len == 2,
+          "the ordinary path records the length too, so a reader never "
+          "has to infer it from the absence of a note");
+    check(s.windows[0].control_chain_len_exact == 1, "and exactly");
+}
+
 /* An unreadable window record claims NOTHING. The row keeps exactly what
    peek_read.c established for it. */
 static void an_unreadable_record_claims_nothing(void)
@@ -837,6 +939,9 @@ int main(void)
     empty_is_not_absent();
     a_broken_chain_is_retracted();
     a_cycle_is_retracted();
+    a_long_chain_reports_its_length();
+    a_cycle_is_not_a_long_chain();
+    a_complete_chain_reports_its_length_too();
     an_unreadable_record_claims_nothing();
     dialog_text();
     dialog_items_are_guest_semantics();
