@@ -196,3 +196,76 @@ Related: every commit in this repository is authored as the human, with
 the agent as co-author. Attribution in the log is therefore not evidence
 of who made a decision — the commit *body* is, and in this case it was
 honest and complete. That is worth preserving.
+
+---
+
+## Part 4 — what the islands actually touched (derived 2026-08-07)
+
+Part 3 asked three questions and said they must be established rather than
+guessed. Here are the answers, and the first one is not the one the
+analysis expected.
+
+### 1. Which captures in the corpus carry a non-nil `island`?
+
+**None. Not one, and none could have.**
+
+Two facts settle it, and each is derivable rather than remembered:
+
+- **`island` was populated only by `ScenePoller.attachIslands`.** Every
+  construction of a `ScenePoller` in this tree is in Mirror's own
+  development tooling — `MirrorApp/main.swift` (×2), `MirrorApp/Serve.swift`,
+  `MirrorApp/Battery.swift`, `MirrorOracleKit/LiveMirrorController.swift`.
+  **`now-host` constructs none.** (`grep -rn 'ScenePoller(' now-host/Sources`
+  is empty; `GuestScreenIsOneAnswerGateTests` already asserts the pairing
+  over the same set.)
+- **NOW's host builds its scenes from NOW's own wire**, not from
+  `ScenePoller`, and `island` was never encoded — so a scene decoded from a
+  guest reply always had `island == nil`.
+
+Measured against the corpus itself (`~/Lab/Assets/now-mirror-assets/`):
+**107 scene JSONs, 148 scene records, every one `"source": "peek"`.** Not a
+single `axtree` or `observe` scene — those are the two planes `ScenePoller`
+produces. `grep -rl island --include='*.json'` over the whole corpus
+returns nothing.
+
+### 2. Which scored rows rest on those captures?
+
+**None.** Sweeps A, B, C and D and the integration rounds all ran
+`spin-up-ppc` plus the NOW host app (their `provenance.json` files record
+it), so every scored row was taken over a render that had no island in it
+to begin with.
+
+| Claim | Capture | Islanded | Status |
+|---|---|---|---|
+| Sweep A rows | `sweep-2026-08-07-a/agent/*.json` | no — `source: peek` | **unchanged** |
+| Sweep B rows | `sweep-2026-08-07-b/**` | no | **unchanged** |
+| Sweep C rows | `sweep-2026-08-07-c/**` | no | **unchanged** |
+| Sweep D (title-bar chrome) | `sweep-2026-08-07-d/**` | no — and the island never drew chrome anyway | **unchanged** |
+| Integration rounds 1–9 LOOKs | `019-integration*`, `018-integration` | no | **unchanged** |
+| Michelle's 32-minute drive | host build `2af13c079980` | no | **unchanged** |
+| Mirror's own `MirrorApp --islands` / `serve` `shot` renders | not in this corpus | **yes** | **void, and none of it was ever cited here** |
+
+**So the fear in Part 3 was larger than the fact, and saying so is the
+point of deriving it.** The pixel islands were live in the *sibling
+project's own development oracle*, not in NOW's product. What they voided
+was Mirror's own tooling output, which this arc never scored against.
+
+That is still worth the removal, and for two reasons that have nothing to
+do with rescuing old scores: the code was in the product's render path one
+`ScenePoller` away from being used, and a rule that is not enforced is a
+rule that gets crossed by the next import. It is now gated
+(`GuestPixelsGateTests`).
+
+### 3. What do those windows look like with the island gone?
+
+Unchanged in NOW's host, necessarily — see above. The visible difference
+is confined to Mirror's own dev tool, where a window with no item roster
+now draws the honest "content unavailable" hatch instead of a photograph.
+
+### The correction to Part 3, stated plainly
+
+Part 3 said the islands "potentially inflate every render score this arc
+has produced". **They did not inflate any of them.** The reasoning was
+sound and the conclusion was wrong, because it reasoned from the code
+without checking which binary ran. That is worth keeping visible: the
+analysis and the derivation disagreed, and the derivation won.
