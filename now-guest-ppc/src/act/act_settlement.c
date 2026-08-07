@@ -83,6 +83,33 @@ static int effect_seen(const NowActSettlementRecord *r, const NowScene *scene)
     if (spec->postcondition == kNowActPostFrontProcess)
         return scene->procs[proc].front != 0;
 
+    if (spec->postcondition == kNowActPostMenuMark) {
+        /* The menu bar is the FRONT process's and there is one per
+           machine, so a mark read while another application is front
+           would be a different application's menu wearing this one's id.
+           Checked rather than assumed: `activate` and a person's own
+           click both change who owns the bar between the act and the
+           scene that observes it. */
+        if (!scene->menubar_present || scene->menubar_proc != proc)
+            return 0;
+        for (i = 0; i < scene->menu_count; i++) {
+            const NowSceneMenu *menu = &scene->menus[i];
+            int j;
+
+            if ((long)menu->id != (long)(NowPeekI32)spec->post_object
+                || !menu->items_present)
+                continue;
+            for (j = 0; j < menu->item_count; j++) {
+                const NowSceneMenuItem *it =
+                    &scene->menu_items[menu->first_item + j];
+                if (it->index == (short)spec->expected_a)
+                    return it->mark != 0;
+            }
+            return 0;
+        }
+        return 0;
+    }
+
     if (spec->postcondition == kNowActPostWindow) {
         const NowSceneWindow *found = NULL;
         for (i = 0; i < scene->window_count; i++) {

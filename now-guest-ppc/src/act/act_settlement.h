@@ -23,7 +23,16 @@ typedef enum {
     kNowActPostNone = 0,
     kNowActPostWindow = 1,
     kNowActPostText = 2,
-    kNowActPostFrontProcess = 3
+    kNowActPostFrontProcess = 3,
+    /* THE MENU'S OWN CHECKMARK. A menu that marks one of its items is
+       stating which one is current - the Finder's View menu is the
+       canonical case - so after a press on such a menu, the mark landing
+       on the item pressed is the application's own confirmation that its
+       handler ran. Before this, EVERY menu act carried kNowActPostNone
+       and could therefore never be confirmed: `as Buttons` switched the
+       window and reported `dispatched-but-unconfirmed` with the proof
+       sitting in the very next scene (watched 2026-08-07). */
+    kNowActPostMenuMark = 4
 } NowActPostcondition;
 
 typedef struct {

@@ -129,6 +129,16 @@ NowActStatus now_act_submit(const NowActTarget *target,
 void now_act_note_scene_generation(unsigned long generation);
 void now_act_observe_scene(const NowScene *scene);
 const NowActSettlementRecord *now_act_last_settlement(void);
+
+/* Arm the MENU MARK postcondition for the next act submitted, or clear
+   it. Only the verb that has walked the menu knows whether the mark is
+   meaningful there, so it decides; this file holds the cell and would
+   otherwise have to re-derive what menuact already read. Cleared as the
+   request is described, so an act that never reaches now_act_submit
+   cannot leave a postcondition behind for the next one. */
+void now_act_arm_menu_postcondition(long menu, long item);
+void now_act_clear_menu_postcondition(void);
+
 void now_act_begin_command(void);
 long now_act_encode_settlements(char *out, long cap);
 

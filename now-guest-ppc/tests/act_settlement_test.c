@@ -183,12 +183,113 @@ static void test_wire_encoding_is_bounded(void)
           "a short buffer refuses instead of truncating JSON");
 }
 
+/* THE MENU MARK POSTCONDITION.
+ *
+ * Before it existed, every menu act carried kNowActPostNone and could
+ * therefore never leave `dispatched-but-unconfirmed`. Watched on an
+ * emulator clone 2026-08-07: the Finder's `as Buttons` switched the
+ * window, and the reply said unconfirmed with the proof - the checkmark
+ * on menu 259 item 2 - sitting in the very next scene. */
+static void menubar_scene(NowScene *scene, long seq, short menu_id,
+                          short marked_item, int menubar_proc)
+{
+    memset(scene, 0, sizeof *scene);
+    scene->seq = seq;
+    scene->now_ticks = (unsigned long)(seq * 10);
+    scene->proc_count = 1;
+    scene->procs[0].psn.hi = 0;
+    scene->procs[0].psn.lo = 42;
+    scene->menubar_present = 1;
+    scene->menubar_proc = (short)menubar_proc;
+    scene->menu_count = 1;
+    scene->menus[0].id = menu_id;
+    scene->menus[0].items_present = 1;
+    scene->menus[0].first_item = 0;
+    scene->menus[0].item_count = 3;
+    scene->menu_item_count = 3;
+    scene->menu_items[0].index = 1;
+    scene->menu_items[1].index = 2;
+    scene->menu_items[2].index = 3;
+    scene->menu_items[marked_item - 1].mark = 1;
+}
+
+static NowActSettlementSpec menu_spec(unsigned long correlation, long scene,
+                                       short menu_id, short item)
+{
+    NowActSettlementSpec spec;
+    memset(&spec, 0, sizeof spec);
+    spec.correlation_hi = 7;
+    spec.correlation_lo = correlation;
+    spec.writer_epoch = 3;
+    spec.target_psn_low = 42;
+    spec.request_scene = (NowPeekU32)scene;
+    spec.kind = kNowPeekActKindMenu;
+    spec.operation = kNowPeekActOpMenu;
+    spec.postcondition = kNowActPostMenuMark;
+    spec.post_object = (NowPeekU32)menu_id;
+    spec.expected_a = item;
+    return spec;
+}
+
+static void test_menu_mark_postcondition(void)
+{
+    NowActSettlementStore store;
+    NowActSettlementSpec spec;
+    NowActSettlementRecord *r;
+    NowScene scene;
+
+    now_act_settlement_reset(&store, 3);
+    spec = menu_spec(1, 10, 259, 2);
+    r = now_act_settlement_begin(&store, &spec, 100);
+    now_act_settlement_note_resident(&store, 7, 1, kNowPeekActStageFired);
+
+    /* The mark still on the item that had it: the press has not landed. */
+    menubar_scene(&scene, 11, 259, 1, 0);
+    now_act_settlement_observe_scene(&store, &scene, 3);
+    CHECK(r->status != kNowActSettleConfirmed,
+          "a mark still on the OLD item does not confirm the press");
+
+    /* Another application owns the menu bar. One bar per machine, so a
+       menu with this id under a different process is a different menu. */
+    menubar_scene(&scene, 12, 259, 2, 1);
+    now_act_settlement_observe_scene(&store, &scene, 3);
+    CHECK(r->status != kNowActSettleConfirmed,
+          "a mark in ANOTHER process's menu bar cannot confirm this act");
+
+    menubar_scene(&scene, 13, 259, 2, 0);
+    now_act_settlement_observe_scene(&store, &scene, 3);
+    CHECK(r->status == kNowActSettleConfirmed,
+          "the mark landing on the item pressed confirms the menu act");
+    CHECK(r->confirmed_scene == 13, "and names the scene that settled it");
+}
+
+static void test_menu_mark_needs_the_resident_to_have_fired(void)
+{
+    NowActSettlementStore store;
+    NowActSettlementSpec spec;
+    NowActSettlementRecord *r;
+    NowScene scene;
+
+    /* The visual postcondition is necessary and not sufficient, exactly
+       as for a window act: a menu whose mark already sat where we want it
+       must not confirm an act the resident never fired. */
+    now_act_settlement_reset(&store, 3);
+    spec = menu_spec(2, 10, 259, 2);
+    r = now_act_settlement_begin(&store, &spec, 100);
+    menubar_scene(&scene, 11, 259, 2, 0);
+    now_act_settlement_observe_scene(&store, &scene, 3);
+    CHECK(r->status != kNowActSettleConfirmed,
+          "a matching mark alone never confirms an act that did not fire");
+}
+
 int main(void)
 {
     test_late_success_and_reuse();
     test_postconditions_and_session();
     test_text_uses_postcondition_window();
     test_wire_encoding_is_bounded();
+    test_menu_mark_postcondition();
+    test_menu_mark_needs_the_resident_to_have_fired();
     if (failures) return 1;
     puts("act_settlement: ok");
     return 0;

@@ -203,6 +203,15 @@ Two findings the table understates:
   scroll bar and a button, and not one of them is enumerable. That is
   the only DRIVE 0 caused by silence rather than by missing refs, and it
   is why the tab-edge complaint cannot be worked around by an agent.
+
+  **EXPLAINED 2026-08-07 (lane D).** Not unreadable: its control chain is
+  **73 controls** long and the per-window walk bound is 48, so the whole
+  plane is correctly dropped rather than shipped as a prefix. The silence
+  was the reporting — `controls: []` reads identically for a dropped
+  plane and an empty window, and the only note was scene-wide and named
+  no window. Windows now carry a walk verdict and `meta.errors` names
+  them. Appearance is still undrivable, and what is left is a sizing
+  decision with a measured cost (docs/open-issues.md).
 - **Desktop items carry screen coordinates and zero size.** Every one of
   the 19 is a point (`l == r`, `t == b`) at a screen position, while
   every other surface's rects are content-local. Two conventions in one
@@ -283,6 +292,23 @@ Attempts: 2 capture passes × 15 targets, plus ~12 live snapshots.
   cleanly twice and the machine stayed in icon view both times, while
   item 3 (`as List`) worked on the first try. Two attempts. Unexplained —
   index mapping or a Finder refusal; not chased.
+
+  **CORRECTED 2026-08-07 (lane D of plan 018).** Chased on a private
+  clone with the build pinned: `as Buttons` **works**, and did here too.
+  All three View items switch the window, the checkmark moves with each,
+  and the pixels agree — `as Buttons` is `enabled` in the walk, so
+  neither index mapping nor a Finder refusal. What this sweep actually
+  met is that the act plane **could not tell**: every menu act carried
+  `kNowActPostNone`, which the settlement store skips when observing
+  scenes, so a menu act could never leave `dispatched-but-unconfirmed`
+  no matter what it did. The reading above is exactly what an honest
+  observer gets from a plane that reports the same word for "it worked"
+  and "it did nothing" — which is the finding, and it is now fixed:
+  a press on a marked menu settles against the mark landing on the item
+  pressed. The silent success this sweep was right to name is real and
+  lives one door over — a press on a DISABLED item (`File > Print` with
+  an empty selection) returned `ok: true` and did nothing, and now
+  refuses with a reason.
 - **"List rendered once then a hatched overlay" and "new view drawn on
   top of old": NOT REPRODUCED**, and cannot be by this rig — the Finder's
   list and button views have no host render at all here (the deviation
