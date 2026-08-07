@@ -184,6 +184,18 @@ Both: comments say **why**, not what. Match the surrounding density.
 by mutation: reintroduce the bug and see it named. And a test that
 constructs the message it then parses tests one half twice.
 
+**A test watched to fail against ONE mutation is not watched to fail.**
+Watch it fail against the mutation it *claims* to catch, and confirm the
+mutation actually built and the test actually ran. Both halves have been
+paid for here on the same day: two render guards passed the exact
+mutation they were written for — each having been watched failing against
+a *different* one — and a stability gate passed its mutation twice, for
+two unrelated reasons, before it was right; separately, a mutation
+harness watching only for `Test Case … failed` read a **build failure**
+as no failures, which is a green that never ran. A guard is green for
+whatever reason it likes, and only the mutation it names distinguishes
+those reasons.
+
 ## Verification is a status, not an adjective
 
 Three levels, and say which one you mean:

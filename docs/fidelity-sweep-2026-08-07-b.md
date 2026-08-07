@@ -156,7 +156,8 @@ Finder as the **plain generic document icon**, a blank white page with a
 folded corner and no art. It was already in view; nothing was
 manufactured. That is the machine being correct and looking exactly like a
 renderer giving up, which is the point of
-`an-appearance-check-flags-correct-absences`. Two other cases sit beside it
+`an-appearance-check-flags-correct-absences` (unlanded: it is on the
+parent's `claude/018-findings` branch, not on its `main`). Two other cases sit beside it
 in the same window: `tbt-worker` with a real custom icon, and
 `runner-0.2b-retired` as an alias (italic name, arrow badge).
 

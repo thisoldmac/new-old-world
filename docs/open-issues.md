@@ -474,6 +474,72 @@ a read, and it needs a gated surface. Short of that, nothing available to a
 foreign memory walk can say.
 
 
+## FIXED: `HostAppStateWiringTests` spent one deadline on two waits (2026-08-07, `claude/019-housekeeping`)
+
+**Verification level: TESTED, by mutation — the flake was reproduced
+deliberately before the fix was believed.**
+
+The test renders nothing. It binds a listener, connects a `FakeGuest`
+over a real socket and polls at 20 ms for two independent events: the
+listener becoming ready, then the guest's hello arriving. Both polled
+against **one `deadline` computed once**, so a slow bind spent the second
+wait's budget — and when it was fully spent the second loop's condition
+was checked zero times, failing on a connection that was merely late.
+0.06 s in isolation, 8.4 s under a loaded Mac.
+
+The fix is to compute the deadline **inside** `wait`, giving each its
+own. Watched against the failure it claims to fix, both halves:
+
+- pre-fix shape (shared deadline) plus a 9 s sleep standing in for a
+  loaded Mac between the two waits: **failed in 9.564 s**, four
+  assertions, the first reading `listening(port: 34977)` where
+  `connected(guestName: "PowerBook 1400")` was expected — the second wait
+  never polled;
+- per-wait deadline, **same 9 s sleep left in place** so the fix is the
+  only difference: **passed in 9.128 s**.
+
+Restored clean, it passes in 0.059 s.
+
+## OPEN: this tree cites corpus findings that are not in the corpus (2026-08-07, `claude/019-housekeeping`)
+
+**Verification level: TESTED.** Four citations were corrected to say
+where the finding actually is; the class behind them is not closed.
+
+`docs/` said, in the completed past tense, that four findings had been
+**graduated to the corpus**. They are not on the parent's `main`. They
+sit on `claude/018-findings`, which holds **26 unlanded findings** — so
+the repository was telling a reader they could go and read something that
+is not where it says. Landing that branch is a `main` decision and was
+not taken here; the citations were made honest instead, each naming the
+branch and saying it has not landed:
+
+| Finding | Cited in |
+|---|---|
+| `charcoal-ships-scalable-only-no-bitmap-strike` | `docs/plans/2026-08-07-020-accounting.md` |
+| `hdmx-is-apples-own-per-ppem-advance-table` | `docs/plans/2026-08-07-020-accounting.md` |
+| `headless-is-declared-not-observed` | `docs/plans/2026-08-07-020-accounting.md` |
+| `an-appearance-check-flags-correct-absences` | `docs/fidelity-sweep-2026-08-07-b.md` |
+
+**The sweep that found the fourth also found a worse class, and it is
+left open.** Comparing every finding-shaped slug cited anywhere in
+`docs/`, `README.md`, `AGENTS.md` and `CONTRIBUTING.md` against the
+parent corpus turned up six more that are on **neither** `main` **nor**
+`claude/018-findings` — `deriving-a-drawn-procedure`,
+`pb1400-vram-read-bandwidth`, `qdtrace-drain-sweep-sound`,
+`postevent-modifiers-need-ppostevent`, `now-four-face-capability-cost`,
+`now-large-transfer-pacing-collapse`. Two of those are honest on their
+face (`now-large-transfer-pacing-collapse` says *"working slug"*); the
+rest read as references to something that exists. They were not corrected
+because each needs its own check — a slug may have been renamed on the
+way in rather than never written — and guessing would replace one wrong
+claim with another.
+
+**Nothing gates any of this.** A citation into another repository's
+corpus is prose, and prose that names an artifact is the shape this
+project has been bitten by repeatedly; the durable fix is a check that
+resolves cited slugs against the corpus, not a sweep repeated by hand.
+
+
 ## OPEN: a lane can revert a sibling's work in a commit whose message never mentions it (2026-08-07, round 7 integration)
 
 **Verification level: TESTED.** Found by reading a merge, not by any gate,
@@ -566,27 +632,52 @@ has the same shape of defect — an explanation written on a failure path
 surviving into a success, specifically a live watch loop that ticks
 without clearing a note a refused press left standing. Nobody has looked.
 
-## OPEN: five complete nested agent worktrees are checked in under `mirror/` (2026-08-07, round 7 integration)
+## FIXED: five complete nested agent worktrees were checked in under `mirror/` (2026-08-07, `claude/019-housekeeping`)
 
-**Verification level: TESTED (measured, not acted on).**
+**Verification level: TESTED.**
 
-`mirror/.claude/worktrees/` holds five whole checkouts —
+`mirror/.claude/worktrees/` held five whole checkouts —
 `confident-tu-60f97b`, `funny-khorana-e67807`, `gallant-ritchie-d78731`,
 `jolly-lamarr-d3cd03`, `wizardly-bardeen-e2b6dc` — **3,789 tracked files,
 ignored by nothing**, each carrying its own `Package.swift` and its own
 copy of MirrorKit.
 
-They are stale in a way that matters for exactly the reason this
-repository states limits once: each carries
+They were stale in a way that matters for exactly the reason this
+repository states limits once: each carried
 `Platinum.contentTop: CGFloat = 22` where the live tree says `20`. A
-reader who greps this tree for a constant gets six answers, five of them
-wrong, and no gate reads them at all.
+reader who grepped this tree for that constant got six answers, five of
+them wrong, and no gate read them at all.
 
 Round 7's merge touched none of them (checked: zero paths under
 `mirror/.claude/` in `git diff claude/019-integration-6 HEAD`). Deleting
-them is not an integrator's call mid-merge, and it is somebody's — either
-a `.gitignore` entry plus a `git rm -r --cached`, or a decision that they
-are worth keeping and a note saying why.
+them was not an integrator's call mid-merge; it was taken separately,
+after checking the three things that make a deletion safe:
+
+- **Nothing live reads them.** The only references anywhere in the tree
+  are the ones that describe the problem — this entry and
+  [asset-pack.md](asset-pack.md). No script, no `Package.swift`, no test
+  resolves a path under `mirror/.claude/`.
+- **They are not registered worktrees.** `git worktree list` names none
+  of them, and none carries a `.git` file. They are five plain
+  directories that were once checkouts, so there is no branch whose
+  working tree this disturbs and no unmerged index to lose.
+- **They hold nothing that exists nowhere else.** Comparing tracked
+  paths against the live `mirror/`, each worktree had 202 paths the live
+  tree does not: 200 of them the Platinum asset pack, which
+  [asset-pack.md](asset-pack.md) removed from the index by decision and
+  verified by sha256 against
+  `~/Lab/Assets/now-mirror-assets/pack-2026-08-06`, and two source files
+   — `ActionDispatcher.swift` and `QmpClient.swift` — that had simply
+  MOVED, into `Sources/MirrorOracleKit/`. `QmpClient.swift` is byte-identical
+  to the live copy; `ActionDispatcher.swift` differs as an ancestor does,
+  the live one carrying the plane model, the renamed `deviceClick` /
+  `thumbTracking` cases and an explicit refusal arm the old one has no
+  concept of. Nothing was unique, so nothing was stopped on.
+
+The cure is a `.gitignore` entry for `.claude/worktrees/` at any depth
+plus a `git rm -r`; history still holds the 25 MB, which is the same
+reversible move [asset-pack.md](asset-pack.md) took and the same
+unresolved question about a rewrite.
 
 ## BROKEN: every rule in this repository is scoped by accident, and three of them are scoped wrong (2026-08-07, `claude/019-scope-hooks`)
 
@@ -628,6 +719,15 @@ holds 3789 files across five expired agent worktrees, landed in `0443ab2b`
 `.claude/worktrees`. Not removed here — deleting 3789 files during a
 seven-round integration would cost more in conflicts than it saves — but
 it should go with a `.gitignore` rule the moment the arc is quiet.
+
+*(2026-08-07, round 8 merge: this paragraph has stopped being true.
+`claude/019-housekeeping` removed all 3,789 from the index and added the
+`.gitignore` rule, on a separate branch rather than inside a merge —
+which is what "the moment the arc is quiet" asked for. The FIXED entry
+above carries the three checks that made the deletion safe. Both this
+branch and that one wrote the same finding down independently and neither
+could see the other; the duplication is left visible because it is the
+merge hazard this round was called to look for.)*
 
 **Still open, and joint with Michelle:** the landing plan's steps 1-6 in
 [docs/rule-scopes.md](rule-scopes.md). Steps 2 and 3 must be minutes
@@ -5641,14 +5741,12 @@ index — 0 missing, 0 mismatched, 0 extra.
   reversible move; taking it out of history is a rewrite, and every
   worktree and branch off this repository would have to be re-cut. Not
   taken.
-- **Four other copies of the same bitmaps are still tracked**, none of
-  them touched: `mirror/assets/platinum-pack/` (385 files, 1.9 MB), and
-  five vendored `mirror/.claude/worktrees/*` trees which between them
-  hold five more copies of both the pack and the platinum-pack — 3,789
-  tracked files and 25 MB, carried in whole by `0443ab2b vendor: Mirror
-  whole as a subproject`. That those are in git at all is a larger and
-  separate question than the pack: they are another project's agent
-  worktrees, and nothing in this tree builds from them.
+- **Another copy of the same bitmaps is still tracked**, untouched:
+  `mirror/assets/platinum-pack/` (385 files, 1.9 MB). The other five —
+  the vendored `mirror/.claude/worktrees/*` trees, 3,789 tracked files
+  and 25 MB carried in whole by `0443ab2b vendor: Mirror whole as a
+  subproject` — were removed from the index on 2026-08-07; see the
+  nested-worktrees entry above.
 
 ## MEASURED: the capture fixtures had no dead weight — 94% of the bulk was whitespace (2026-08-06)
 

@@ -81,6 +81,10 @@ Verify a new guard by mutation: reintroduce the bug and check that the
 test names it. A test that constructs the message it then parses tests
 one half twice.
 
+That is necessary and not sufficient — which mutation you watched decides
+what you proved. [AGENTS.md](AGENTS.md) > Testing states the rest of the
+rule; it is stated there only, so this door cannot drift from it.
+
 New native tests must be added to `scripts/test-native`'s manifest, which
 fails the run if a test file is not listed. A test nobody runs reads as
 coverage in a directory listing and proves nothing.

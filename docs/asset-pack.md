@@ -134,20 +134,19 @@ by reading it.
   which is a different and much heavier decision (every worktree and
   branch off this repository has to be rebased or re-cut). That is
   Michelle's call, another day. Nothing here forecloses it.
-- **The pack is in git in four other places**, none of them touched
-  here, and all of them the same question:
+- **The pack is still in git in one other place**, untouched here:
 
   | Path | Files | Size |
   |---|---|---|
   | `mirror/assets/platinum-pack/` | 385 | 1.9 MB |
-  | `mirror/.claude/worktrees/*/host/MirrorKit/Sources/MirrorKitUI/Resources/` | ×5 copies | part of 25 MB |
-  | `mirror/.claude/worktrees/*/assets/platinum-pack/` | ×5 copies | part of 25 MB |
 
-  The five vendored `mirror/.claude/worktrees/` trees are 3,789 tracked
-  files and 25 MB — whole checkouts of another project's agent
-  worktrees, carried in by `vendor: Mirror whole as a subproject`. They
-  are a larger and separate decision than the pack, and they hold five
-  more copies of the same Apple bitmaps.
+  It held five more copies until 2026-08-07, inside the vendored
+  `mirror/.claude/worktrees/*` trees — whole checkouts of another
+  project's agent worktrees, carried in by `vendor: Mirror whole as a
+  subproject`. Those were removed from the index (and `.claude/worktrees/`
+  gitignored at any depth) as a separate decision from the pack;
+  [open-issues.md](open-issues.md) records what was checked first. As
+  with the pack, history still holds them.
 
 ## The reference copy
 
