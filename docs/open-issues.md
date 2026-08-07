@@ -12173,3 +12173,56 @@ including which stage, if any, needed a `--skip` and why.
 Nothing in this closing pass changed behaviour. Nothing in it is
 metal-verified, and the live host application has still never been
 watched composing an interior.
+
+### What slice 4 closed, and the two halves it did not (2026-08-07)
+
+Plan 018 slice 4 closed the title and rect defect classes at the point
+they are created — the PPC walk refuses to publish a title it cannot
+vouch for, clamps an implausible rect, and makes the live ControlRecord
+authoritative over a DITL's frozen text. Measured on the emulator
+against the build under test: Memory 21 pointer titles → 0 (and 18
+out-of-port rects → 0), Monitors 13 → 0, Mouse 12 → 0, General Controls
+7 → 0, and the application-switcher menu's `'\x01\x1f@"\xcf'` → omitted.
+Date & Time was the fifth target and its capture did not complete before
+the run was stopped; its 6 are unmeasured.
+
+Two things are still open, and both are named here rather than left to
+be re-derived.
+
+**The Finder's items are still not addressable, and the remaining half
+is host-side.** Sweep A read this as a guest-walk defect. It is not: the
+guest emits no Finder items at all (`scene.h` declares `items[]` and
+`desktopItems[]` absent by design). They are AppleScript to the Finder,
+run through the `script` verb, parsed in `NOWMirrorSource.readIcons` and
+flattened by `MirrorStateProjectionService`. Slice 4 fixed the geometry
+there — one coordinate space, a real 32x32 target box, no rect at all
+for an item the Finder did not place. What it did NOT fix:
+
+- **Refs.** `ref: nil` is a deliberate host policy: these are addressed
+  by name, and `finderSelect` / `finderOpen` already work that way. If
+  they should carry refs, that is a decision, not a bug fix.
+- **List view.** `NOWMirrorSource.iconItemsScript` asks `position of
+  every item` whatever view the window is in, and in a list view the
+  Finder answers with the SAVED icon grid — which is why sweep A saw ten
+  rows at `l ∈ {1,129,257}` on a machine drawing a list. The honest fix
+  is to read the window's view and mark the items unplaced when it is
+  not a spatial one (`placed: false` already means exactly that, and
+  both the hit tester and the projection already honour it). It was not
+  done because **the OS 9 Finder's `view of window` vocabulary has not
+  been measured**, and guessing it would put a plausible wrong answer in
+  the one lane that must not have one. One AppleScript against a live
+  guest settles it.
+
+**Why the walk is slow, as a reading of the code and NOT a
+measurement.** Slice 4's own cost is negligible and was not measured
+separately: it adds a scan of each title's bytes (strings already being
+copied) and four comparisons per rect. The ~1.9 s walk sweep A measured
+is structural. Per window, `scene_walk.c` makes three passes over the
+control chain — read, name, join — and the read pass costs one handle
+read plus a **296-byte** foreign read per control; Memory has 44
+controls and 44 dialog items, and the dialog-item walk then reads the
+item list again and calls the Memory Manager once per static-text item
+for its live handle. So the cost is dominated by the number of
+cross-boundary reads, not by anything per-byte. If someone takes perf,
+that is where to look first — and they should measure before believing
+this paragraph.

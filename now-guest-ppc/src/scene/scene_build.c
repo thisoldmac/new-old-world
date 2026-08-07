@@ -20,6 +20,156 @@ static void copy_bounded(char *out, long cap, const char *src)
     out[n] = '\0';
 }
 
+/* --- title hygiene ----------------------------------------------------
+ *
+ * A title reaches this file having been read out of foreign memory at a
+ * literal byte offset. When the offset is right the bytes are a Pascal
+ * string; when the record is not what the walk believed it to be, the
+ * SAME bytes are whatever else lives there - most often the high half of
+ * a 68K address, because pointers are what fill a Toolbox record.
+ *
+ * Sweep A (docs/fidelity-sweep-2026-08-07-a.md) priced that: Memory 21,
+ * Monitors 13, Mouse 12, General Controls 7, Date & Time 6, Set Time
+ * Zone 5, and the application-switcher menu's own title arriving as
+ * '\x01\x1f@"\xcf'. The host renders whatever it is handed, so eight
+ * bytes of address became a label a person read.
+ *
+ * The rule, and it is deliberately one-way: a title the guest cannot
+ * vouch for is OMITTED. An absent title says "this element has no name I
+ * could read", which is true and which the host already draws as an
+ * unnamed row. A present-but-wrong title is the confident wrong answer
+ * plan 018 rule 1 forbids, and no consumer can detect it. */
+int now_scene_title_is_publishable(const char *title)
+{
+    long i;
+
+    if (title == NULL || title[0] == '\0') {
+        return 1;                     /* absent is honest */
+    }
+    /* THE ONE DOCUMENTED EXCEPTION. The Apple menu's title in the system
+       font is the single byte 0x14 - a Menu Manager convention, not
+       corruption, and now_scene_fill_blank_system_apple() finds that menu
+       by exactly this byte. Dropping it would take the Apple menu's
+       identity with it. */
+    if ((unsigned char)title[0] == 0x14 && title[1] == '\0') {
+        return 1;
+    }
+    for (i = 0; title[i] != '\0'; ++i) {
+        unsigned char c = (unsigned char)title[i];
+
+        /* Control bytes and DEL are not text. Everything from 0x80 up
+           IS: MacRoman spends that half on accented letters, the Apple
+           glyph's siblings and the box-drawing characters, all of which
+           appear in real Mac OS 9 labels.
+
+           A menu title beginning 0x01 or 0x05 is the Menu Manager's
+           icon-title convention rather than a string; it fails here for
+           the same reason and with the same consequence - the title is
+           omitted, and the menu is still addressable by id. */
+        if (c < 0x20 || c == 0x7F) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* Titles go through here and nothing else does. copy_bounded still
+   serves refs, provenance and values, which are minted by this side and
+   are not foreign bytes. */
+static void copy_title(char *out, long cap, const char *src)
+{
+    if (!now_scene_title_is_publishable(src)) {
+        out[0] = '\0';
+        return;
+    }
+    copy_bounded(out, cap, src);
+}
+
+/* --- rect hygiene -----------------------------------------------------
+ *
+ * The same corruption reaches the geometry: sweep A found l = 16584 and
+ * l = 16504 in Energy Saver and eighteen out-of-port rects in Memory,
+ * the 16xxx family being the top half of an address read as a short.
+ *
+ * kNowSceneCoordSane is stated once, here. Classic Mac OS QuickDraw is a
+ * 16-bit coordinate space and a real control lives on a screen; the
+ * largest display any of these machines drives is under 2048 pixels on
+ * its long edge, so a coordinate past 4096 in either direction is not a
+ * position, it is a misread. The bound is generous on purpose - this is
+ * a lie detector, not a layout rule, and a control legitimately scrolled
+ * out of view must survive it. */
+enum { kNowSceneCoordSane = 4096 };
+
+static int coord_sane(short v)
+{
+    return v > -kNowSceneCoordSane && v < kNowSceneCoordSane;
+}
+
+int now_scene_rect_is_sane(short t, short l, short b, short r)
+{
+    return coord_sane(t) && coord_sane(l) && coord_sane(b) && coord_sane(r)
+        && t <= b && l <= r;
+}
+
+static short clamp_coord(short v, short lo, short hi)
+{
+    if (v < lo) {
+        return lo;
+    }
+    if (v > hi) {
+        return hi;
+    }
+    return v;
+}
+
+/* An insane rect is clamped into the box it claims to sit in, which
+   makes it a degenerate rect at that box's edge: it draws as nothing and
+   hit-tests as nothing. That is the honest reading of "we do not know
+   where this is" in a wire that has no way to say so - and it is
+   strictly better than shipping l = 16555, which hit-tests as somewhere.
+   A rect that IS sane is passed through untouched; nothing here moves a
+   control that was merely scrolled away. */
+static void sanitize_rect(NowSceneRect *rect, short height, short width)
+{
+    if (now_scene_rect_is_sane(rect->t, rect->l, rect->b, rect->r)) {
+        return;
+    }
+    if (height < 0) {
+        height = 0;
+    }
+    if (width < 0) {
+        width = 0;
+    }
+    rect->t = clamp_coord(rect->t, 0, height);
+    rect->b = clamp_coord(rect->b, 0, height);
+    rect->l = clamp_coord(rect->l, 0, width);
+    rect->r = clamp_coord(rect->r, 0, width);
+    if (rect->b < rect->t) {
+        rect->b = rect->t;
+    }
+    if (rect->r < rect->l) {
+        rect->r = rect->l;
+    }
+}
+
+/* The content box a content-relative rect must live in, derived from the
+   window row the scene already holds. */
+static void window_extent(const NowSceneWindow *w, short *height,
+                          short *width)
+{
+    long h = (long)w->rect.b - (long)w->rect.t;
+    long v = (long)w->rect.r - (long)w->rect.l;
+
+    if (h < 0 || h > kNowSceneCoordSane) {
+        h = 0;
+    }
+    if (v < 0 || v > kNowSceneCoordSane) {
+        v = 0;
+    }
+    *height = (short)h;
+    *width = (short)v;
+}
+
 const char *now_scene_anchor_error(NowSceneAnchor a)
 {
     switch (a) {
@@ -200,7 +350,7 @@ int now_scene_add_window(NowScene *s, int proc, const char *title,
     memset(w, 0, sizeof *w);
     w->text = -1;                     /* memset would say "text row 0" */
     w->proc = (short)proc;
-    copy_bounded(w->title, (long)sizeof w->title, title);
+    copy_title(w->title, (long)sizeof w->title, title);
     w->rect.t = t;
     w->rect.l = l;
     w->rect.b = b;
@@ -324,11 +474,17 @@ int now_scene_add_control(NowScene *s, int window, const char *title,
     }
     c = &s->controls[s->control_count];
     memset(c, 0, sizeof *c);
-    copy_bounded(c->title, (long)sizeof c->title, title);
+    copy_title(c->title, (long)sizeof c->title, title);
     c->rect.t = t;
     c->rect.l = l;
     c->rect.b = b;
     c->rect.r = r;
+    {
+        short height, width;
+
+        window_extent(w, &height, &width);
+        sanitize_rect(&c->rect, height, width);
+    }
     c->enabled = enabled ? 1 : 0;
     c->visible = visible ? 1 : 0;
     c->value = value;
@@ -475,7 +631,7 @@ int now_scene_add_control_list_cell(NowScene *s, int window, int index,
     cell->row = row;
     cell->column = column;
     cell->selected = selected ? 1 : 0;
-    copy_bounded(cell->text, (long)sizeof cell->text, text);
+    copy_title(cell->text, (long)sizeof cell->text, text);
     ++c->list_cell_count;
     ++s->list_cell_count;
     return 1;
@@ -587,11 +743,17 @@ int now_scene_add_dialog_item(NowScene *s, int window, short number,
     memset(item, 0, sizeof *item);
     item->number = number;
     item->kind = kind;
-    copy_bounded(item->title, (long)sizeof item->title, title);
+    copy_title(item->title, (long)sizeof item->title, title);
     item->rect.t = t;
     item->rect.l = l;
     item->rect.b = b;
     item->rect.r = r;
+    {
+        short height, width;
+
+        window_extent(w, &height, &width);
+        sanitize_rect(&item->rect, height, width);
+    }
     item->enabled = enabled ? 1 : 0;
     item->visible = visible ? 1 : 0;
     copy_bounded(item->provenance, (long)sizeof item->provenance,
@@ -704,7 +866,7 @@ int now_scene_add_menu(NowScene *s, const char *title, short id, short left)
     }
     m = &s->menus[s->menu_count];
     memset(m, 0, sizeof *m);
-    copy_bounded(m->title, (long)sizeof m->title, title);
+    copy_title(m->title, (long)sizeof m->title, title);
     m->id = id;
     m->left = left;
     m->first_item = s->menu_item_count;
@@ -736,7 +898,7 @@ int now_scene_add_menu_item(NowScene *s, int menu, const char *title,
     }
     it = &s->menu_items[s->menu_item_count];
     memset(it, 0, sizeof *it);
-    copy_bounded(it->title, (long)sizeof it->title, title);
+    copy_title(it->title, (long)sizeof it->title, title);
     it->index = index;
     it->separator = separator ? 1 : 0;
     it->enabled = enabled ? 1 : 0;

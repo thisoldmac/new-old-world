@@ -403,6 +403,64 @@ static void dialog_items_are_guest_semantics(void)
           "defaultness applies to push buttons, not resource controls");
 }
 
+/* THE TWO WALKS MUST NOT CONTRADICT EACH OTHER.
+ *
+ * Mail's Internet-setup alert, as sweep A found it on 2026-08-07: the
+ * control walk reported Yes / No / Set Up Now and the dialog-item walk
+ * reported OK / Cancel / Don't Save - the same three refs, the same
+ * three rects, three different names. A DITL carries the RESOURCE's
+ * title, frozen when the dialog was built; SetControlTitle writes to the
+ * ControlRecord and never back. So both walks were reporting honestly
+ * from two different moments, and a driving agent reading one label and
+ * clicking the other control is the worst outcome this surface has.
+ *
+ * The fixture arranges exactly that divergence and asserts there is one
+ * answer. It is also the reason the last case exists: a live control
+ * with NO title must not fall back to the resource's text, or the
+ * contradiction returns from the other side. */
+static void the_two_walks_agree_on_a_shared_ref(void)
+{
+    AxFixture f;
+    NowAxMemory m;
+    NowScene s;
+    unsigned long at;
+
+    axfix_init(&f, &m);
+    build_window(&f, 2, kCtl1H, 0, 0, 40, 60, 300, 500);
+    /* What the machine says NOW. */
+    build_control(&f, kCtl1H, kCtl1, kCtl2H, "Yes", 150, 300, 170, 380,
+                  0, 0);
+    build_control(&f, kCtl2H, kCtl2, kCtl3H, "Set Up Now", 150, 100, 170,
+                  260, 0, 0);
+    build_control(&f, kCtl3H, kCtl3, 0, "", 180, 100, 200, 260, 0, 0);
+
+    axfix_put32(&f, kWin + 156, kDitlH);
+    axfix_put_handle(&f, kDitlH, kDitl);
+    axfix_put16(&f, kDitl, 2);               /* three items */
+    at = kDitl + 2;
+    /* What the RESOURCE said when the dialog was built. */
+    at = put_ditem(&f, at, kCtl1H, 4, 150, 300, 170, 380, "OK");
+    at = put_ditem(&f, at, kCtl2H, 4, 150, 100, 170, 260, "Don't Save");
+    (void)put_ditem(&f, at, kCtl3H, 4, 180, 100, 200, 260, "Cancel");
+    axfix_put16(&f, kWin + 164, -1);
+    axfix_put16(&f, kWin + 168, 1);
+
+    one_window(&s, kNowSceneAnchorOk);
+    now_scene_walk_window(&s, 0, &m, kWin, NULL);
+
+    check(s.windows[0].dialog_item_count == 3, "three items reach the scene");
+    check(strcmp(s.dialog_items[0].title, "Yes") == 0,
+          "the live control wins over the DITL's stale 'OK'");
+    check(strcmp(s.dialog_items[1].title, "Set Up Now") == 0,
+          "...and over 'Don't Save'");
+    check(strcmp(s.dialog_items[2].title, "") == 0,
+          "a live control with no title publishes none, rather than "
+          "reinstating the resource's 'Cancel'");
+    check(strcmp(s.controls[0].title, "Yes") == 0
+          && strcmp(s.controls[1].title, "Set Up Now") == 0,
+          "and the control walk says the same thing it always did");
+}
+
 static void malformed_ditl_retracts_the_plane(void)
 {
     AxFixture f;
@@ -840,6 +898,7 @@ int main(void)
     an_unreadable_record_claims_nothing();
     dialog_text();
     dialog_items_are_guest_semantics();
+    the_two_walks_agree_on_a_shared_ref();
     malformed_ditl_retracts_the_plane();
     text_is_gated_on_the_kind();
     menubar_complete();

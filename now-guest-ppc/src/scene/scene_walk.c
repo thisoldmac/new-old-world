@@ -284,9 +284,13 @@ static void walk_dialog_items(NowScene *s, int window,
                        == kNowAxOk) {
                 char live[kNowSceneDialogTitleMax];
 
+                /* Validated on the way in, like every other title: this
+                   path writes into the row directly and so is the one
+                   place the assembly function's own gate cannot see. */
                 if (now_scene_dialog_item_text(
                         source.handle, live,
-                        (short)sizeof live) > 0) {
+                        (short)sizeof live) > 0
+                    && now_scene_title_is_publishable(live)) {
                     strcpy(item->title, live);
                 }
             }
@@ -302,12 +306,36 @@ static void walk_dialog_items(NowScene *s, int window,
             if (control->ref[0] != '\0') {
                 strcpy(item->ref, control->ref);
             }
-            if (control->title[0] != '\0'
-                && (item->kind == kNowSceneSemanticPopupMenu
-                    || item->title[0] == '\0')) {
+            /* THE LIVE CONTROL WINS, ALWAYS, and this used to be an
+               "only if the DITL said nothing" rule.
+             *
+             * A DITL item's text is the RESOURCE's title, frozen at the
+             * moment the dialog was built; SetControlTitle and ParamText
+             * write to the ControlRecord and never back to the item list.
+             * So the two walks describe the same ref from two different
+             * moments, and sweep A caught exactly that on Mail's
+             * Internet-setup alert: the control walk said Yes / No /
+             * Set Up Now, the dialog-item walk said OK / Cancel /
+             * Don't Save, same three refs, same three rects.
+             *
+             * That is the worst shape a defect can take here - an agent
+             * reads one label and clicks another control - and it cannot
+             * be fixed by making the host prefer one walk, because the
+             * host cannot tell which one is stale. It is fixed by there
+             * being one answer: after creation the ControlRecord is
+             * authoritative for a control-backed item, the same rule the
+             * `enabled` flag two lines above already follows. */
+            if (control->title[0] != '\0') {
                 strncpy(item->title, control->title,
                         sizeof item->title - 1);
                 item->title[sizeof item->title - 1] = '\0';
+            } else if (item->kind == kNowSceneSemanticPushButton
+                       || item->kind == kNowSceneSemanticCheckBox
+                       || item->kind == kNowSceneSemanticRadioButton) {
+                /* The control is live and genuinely unnamed. Keeping the
+                   resource's old text here would reinstate the same
+                   contradiction from the other side. */
+                item->title[0] = '\0';
             }
             if (item->kind == kNowSceneSemanticCheckBox
                 || item->kind == kNowSceneSemanticRadioButton) {
@@ -331,8 +359,10 @@ static void walk_dialog_items(NowScene *s, int window,
             item->focused = source.number == cursor.edit_item;
             if (item->focused && text != NULL) {
                 item->value_known = 1;
-                strncpy(item->value, text->text, sizeof item->value - 1);
-                item->value[sizeof item->value - 1] = '\0';
+                if (now_scene_title_is_publishable(text->text)) {
+                    strncpy(item->value, text->text, sizeof item->value - 1);
+                    item->value[sizeof item->value - 1] = '\0';
+                }
                 item->selection_known = 1;
                 item->selection_start = (short)text->selection_start;
                 item->selection_end = (short)text->selection_end;
@@ -514,7 +544,11 @@ int now_scene_fill_blank_system_apple(NowScene *s,
             const NowAxMenuItem *src = &rows[start + j];
 
             memset(dst->title, 0, sizeof dst->title);
-            strncpy(dst->title, src->title, sizeof dst->title - 1);
+            /* Same gate as every other title. This copy writes into the
+               row directly, so the assembly function never sees it. */
+            if (now_scene_title_is_publishable(src->title)) {
+                strncpy(dst->title, src->title, sizeof dst->title - 1);
+            }
             dst->separator = item_is_separator(src);
             dst->enabled = src->enabled ? 1 : 0;
             dst->mark = src->mark != 0;
