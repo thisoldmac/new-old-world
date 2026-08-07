@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# Where the arc actually stands — DERIVED, never remembered.
+#
+# This exists because a coordinating session that has fanned out a dozen
+# lanes cannot hold their state in its head, and the failure mode is not
+# forgetting a lane — it is CONFIDENTLY MISREPORTING one. On 2026-08-07
+# the coordinator told Michelle a slice was dispatched when only its task
+# had been created, and separately reported an integration branch as
+# having merged nothing when it had merged nothing YET. Both were honest
+# and both were wrong, and both were one command away from being right.
+#
+# So: run this at every merge, before every handoff, and any time you are
+# about to tell a person what is done. Its output is evidence; your
+# recollection is not.
+#
+# Usage:  tools/arc-status [integration-branch]     (default: the newest
+#                                                    claude/*integration*)
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+INT="${1:-}"
+if [ -z "$INT" ]; then
+    INT="$(git for-each-ref --sort=-committerdate --format='%(refname:short)' \
+             'refs/heads/claude/*integration*' | head -1)"
+fi
+[ -n "$INT" ] || { echo "no integration branch found; pass one" >&2; exit 64; }
+
+echo "=== integration branch: $INT"
+echo "    head: $(git log -1 --format='%h %s' "$INT")"
+echo
+
+echo "=== LANDED (merged into $INT)"
+landed=0
+for b in $(git branch --list 'claude/01[0-9]-*' --format='%(refname:short)'); do
+    [ "$b" = "$INT" ] && continue
+    if git merge-base --is-ancestor "$b" "$INT" 2>/dev/null; then
+        printf '    %s\n' "${b#claude/}"
+        landed=$((landed + 1))
+    fi
+done
+[ "$landed" -gt 0 ] || echo "    (none)"
+echo
+
+echo "=== NOT LANDED — each of these is work that exists and is not in the tree"
+notlanded=0
+for b in $(git branch --list 'claude/01[0-9]-*' --format='%(refname:short)'); do
+    [ "$b" = "$INT" ] && continue
+    git merge-base --is-ancestor "$b" "$INT" 2>/dev/null && continue
+    n=$(git rev-list --count "$(git merge-base "$b" "$INT")..$b" 2>/dev/null || echo '?')
+    # A dirty worktree means an agent is probably still typing into it.
+    state="idle"
+    wt=$(git worktree list --porcelain | awk -v br="refs/heads/$b" '
+        /^worktree /{w=$2} $0=="branch "br{print w}')
+    if [ -n "$wt" ] && [ -d "$wt" ]; then
+        d=$(git -C "$wt" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+        [ "$d" != "0" ] && state="IN FLIGHT ($d files dirty)"
+    fi
+    printf '    %-30s %4s commits   %s\n' "${b#claude/}" "$n" "$state"
+    notlanded=$((notlanded + 1))
+done
+[ "$notlanded" -gt 0 ] || echo "    (none — everything is in)"
+echo
+
+echo "=== CONFLICTS each unlanded branch would hit against $INT"
+for b in $(git branch --list 'claude/01[0-9]-*' --format='%(refname:short)'); do
+    [ "$b" = "$INT" ] && continue
+    git merge-base --is-ancestor "$b" "$INT" 2>/dev/null && continue
+    c=$(git merge-tree --write-tree --name-only "$INT" "$b" 2>/dev/null \
+          | grep -c '^CONFLICT' || true)
+    [ "${c:-0}" -gt 0 ] && printf '    %-30s %s conflicts\n' "${b#claude/}" "$c"
+done
+echo
+
+echo "=== MAIN"
+ahead=$(git rev-list --count "$INT"..main 2>/dev/null || echo '?')
+behind=$(git rev-list --count main.."$INT" 2>/dev/null || echo '?')
+echo "    main is $ahead commits $INT does not have"
+echo "    $INT is $behind commits ahead of main"
+mc=$(git merge-tree --write-tree --name-only main "$INT" 2>/dev/null | grep -c '^CONFLICT' || true)
+echo "    merging main would hit ${mc:-0} conflicts"
+echo
+
+echo "=== MACHINE"
+vms=$(pgrep -f qemu-system-ppc 2>/dev/null | wc -l | tr -d ' ')
+hosts=$(pgrep -f 'New Old World' 2>/dev/null | wc -l | tr -d ' ')
+echo "    $vms guest VM(s), $hosts host app(s) running"
+du -sh /private/tmp/nowvm-*/ 2>/dev/null | awk '{s+=$1} END {if (NR) print "    " NR " run dir(s)"}'
+echo
+
+echo "=== GATE FRESHNESS — a green you did not watch is not a green"
+echo "    build-guests will SKIP silently without .env.lab:"
+if [ -f "$(git rev-parse --git-common-dir)/../.env.lab" ] || [ -f .env.lab ]; then
+    echo "      .env.lab present — cross-builds should genuinely run"
+else
+    echo "      *** .env.lab MISSING — every guest build is a skip reading as ok ***"
+fi
+echo "    commit hooks:"
+hp=$(git config core.hooksPath || echo '(unset)')
+if [ "$hp" = "(unset)" ]; then
+    echo "      hooksPath unset — default .git/hooks"
+elif [ -d "$hp" ]; then
+    echo "      armed at $hp"
+else
+    echo "      *** hooksPath points at $hp which DOES NOT EXIST — gates are dead ***"
+fi

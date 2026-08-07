@@ -860,6 +860,88 @@ Rules this slice inherits:
   answer, so this is capture-layer work in the sense
   [019](2026-08-07-019-feat-the-surface-as-a-foundation-plan.md) means.
 
+### Where the arc stands, 2026-08-07 ~02:30 (derived)
+
+Derived with `tools/arc-status`, not recalled. **Re-derive before quoting
+any of it** — half of it was true for ten minutes.
+
+**LANDED** into the integration branch, which also now carries `main`
+(zero conflicts, zero commits behind): lanes A–E, slice 3, guest walk
+hygiene, assets and the quiet unknown, list-view selection, desktop
+pattern, arm census, procedural chrome, visibility, headless processes,
+image discipline, scene caps, open-Mirror, the surface audit, anchor
+acquisition/`cycle`, the drag vehicle, drag targeting, MCP revival, and
+per-lane port ranges.
+
+**NOT LANDED — work that exists and is not in the tree:**
+
+| Lane | Commits | State |
+|---|--:|---|
+| `018-render-defects` | 8 | in flight |
+| `018-control-semantics` | 6 | in flight |
+| `019-one-answer-a` | 11 | in flight |
+| `019-one-answer-b` | 9 | in flight |
+| `019-conformance` | 7 | idle, ready |
+| `019-cursor-follow` | 18 | idle, ready |
+| `019-embed-mirror` | — | in flight |
+| `019-embed-scope` | 1 | idle (the scope doc) |
+
+Each would hit 1–2 conflicts against the integration branch. None is
+large.
+
+**NOT STARTED, and named so they are not mistaken for done:** Charcoal
+rasterisation (no bitmap strike exists; needs TTF rasterising, and it is
+the largest remaining text-fidelity gap); Monitors' repaint escalation;
+the five unobserved `ThemeTabStyle` states; the **deep** anchor fix (the
+`cycle` verb is a deliberate workaround, and the open question — why NOW
+contributes almost no armed passes after another app fronts — is
+probably the lever); audit findings **F8** (`sw` live vs a cache that
+cannot state its age) and **F12** (eight hand-rolled frame codecs); the
+reference walk's frame budget being spent on our own process, so
+`observe --scope all` truncates after ONE of eight; and three answers a
+healthy host gives that contradict the machine (`now_mirror_lifecycle`
+saying no Mac is connected while eighteen tools serve from it, a
+four-byte upload refused for staging space, `now_reveal_item` not
+finding the System Folder on an OS 9 volume).
+
+**PARTIALLY DONE:** the drag vehicle is emulator-verified but **nothing
+has been dragged at a Finder item** — `DragGrayRgn` is still unmeasured;
+targeting and presentation are built and **have never reached a guest**.
+Slice 18's controls are dispatched, not fixed. And the commit hooks are
+built and **deliberately not armed**, because lanes with `ext/` changes
+could not comply.
+
+### The cadence, written down so it is not improvised
+
+Two rhythms, and they are not the same thing. Both are specified in
+[arc-coordination.md](../arc-coordination.md), with the triggers and the
+stop rule.
+
+**MERGE, TEST, DRIVE** — frequent. Land what is finished, run the gates,
+boot a guest, look at pixels. Fires when three or more lanes have landed,
+or one touched something everything builds on, or `main` moved, or
+anything touched `ext/`, or a lane reports a defect in another lane's
+landed work. Its job is to prevent "fifteen slices and nobody tested them
+together", which cannot be backed out of once reached.
+
+**FULL SWEEP** — rare, scored, with a person driving a parallel build.
+Its job is to name the pain points that steer work **still in flight**,
+so it must not wait for everything to land. Sweep a **frozen commit**
+while the other lanes keep running.
+
+**The next full sweep (B) is gated on three lanes**, and no others:
+`019-integration-2`, `018-render-defects`, `018-control-semantics`.
+Rationale: the render defects dominate every render axis, and controls
+that render but cannot be used would make a scored sweep re-measure one
+known cause across every target. Everything else lands into Sweep C.
+
+**Sweep B will not be strictly comparable to A on some rows**, and that
+must be declared rather than smoothed: A was taken before anchor
+acquisition was understood, so several of its targets were measured
+undriven — which is why Appearance scored DRIVABILITY 0 for a reason
+that turned out not to be its cap. B fronts or `cycle`s each target
+first.
+
 ### Slice 6 — Sweep B and the verdict
 
 Re-run the sweep, same spec, same targets, same machine-shape. Output:
