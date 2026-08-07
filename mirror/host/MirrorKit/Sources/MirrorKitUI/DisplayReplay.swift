@@ -93,8 +93,51 @@ public enum DisplayReplay {
         }
 
         /// Whether the replay drew anything inside `frame`.
+        ///
+        /// The question a PLACEHOLDER asks: any ink at all means the
+        /// visual was available and is underneath, so "unavailable" over
+        /// it would be a false claim rather than a weak one.
         public func covers(_ frame: CGRect) -> Bool {
             inked.contains { $0.intersects(frame) }
+        }
+
+        /// Whether the replay drew the SUBSTANCE of `frame` — a single
+        /// inked rectangle covering at least half of it.
+        ///
+        /// A different question from ``covers(_:)``, and separating them
+        /// cost Date & Time both of its check boxes. A semantic row that
+        /// would otherwise duplicate the machine's own drawing must yield
+        /// to it — but the row's little mark box sits a pixel from the
+        /// group box's left frame line, and "does any ink intersect this
+        /// 12×12 square" answers yes to a line that merely runs past it.
+        /// The label beside it is genuinely covered by the text run and
+        /// genuinely must yield; the box is not and must not.
+        ///
+        /// Half, and a single rectangle rather than a union, because the
+        /// union of a hundred small rects is expensive to compute per
+        /// row and the cases this decides are not close: a replayed text
+        /// run covers its row almost exactly, and a frame line clipping
+        /// a corner covers a few per cent.
+        ///
+        /// **And the ink must be ABOUT this rectangle.** A window-scale
+        /// paint — the panel face, which every control panel opens with —
+        /// covers every row in the window completely, and counting it
+        /// would silence the whole semantic plane on the grounds that
+        /// something was painted underneath it. That is the same mistake
+        /// `isBackgroundKind` refuses one plane over: a background names
+        /// nothing. So an inked rectangle more than four times the area
+        /// of the piece is swept-over ground rather than evidence about
+        /// it. Date & Time's two check boxes are what measured the rule:
+        /// their only "cover" was the panel's own 366×343 face.
+        public func mostlyCovers(_ frame: CGRect) -> Bool {
+            let area = frame.width * frame.height
+            guard area > 0 else { return false }
+            return inked.contains {
+                guard $0.width * $0.height <= area * 4 else { return false }
+                let hit = $0.intersection(frame)
+                guard !hit.isNull else { return false }
+                return hit.width * hit.height >= area / 2
+            }
         }
     }
 
@@ -154,30 +197,36 @@ public enum DisplayReplay {
             return draw
         }
 
+        /* ONLY AN UNJOINED BLIT MAY BE SILENCED, which is rung 1's own
+           exclusion said in code.
+           `docs/render-composition.md` states the ladder as "rung 1 beats
+           rung 2", and "the reversal is safe because of what rung 1
+           excludes: an unjoined blit is not ink". This predicate was the
+           half that never got there: it silenced TEXT, LINES and SHAPES
+           inside a semantic rectangle too, and those are the machine's
+           own drawing — the strongest evidence there is about what the
+           window looks like.
+
+           What it cost, and why it is the most dangerous of the five
+           defects slice 16 found: NOW's own Workshop sidebar drew
+           "Capture and stre…" on the guest — the application's own
+           `TruncString`, because the row is 92 points wide — and the
+           mirror printed "Capture and stream", because the DITL row that
+           silenced the drawn run carries the untruncated title. The
+           render looked BETTER than the machine and was a divergence
+           from it, which nobody would report as a bug.
+
+           The second gate is unchanged and still separate: whether a
+           semantic row may DRAW OVER ink is `Coverage`'s question, not
+           this one (`SceneRenderer.drawDialogItem`). A row that no
+           longer silences the drawing must not then paint on top of it,
+           or the two answers stack. */
         func semanticOwns(_ op: MirrorKit.DisplayOp) -> Bool {
-            func owns(_ bounds: CGRect) -> Bool {
-                semanticFrames.contains { $0.contains(bounds) }
-            }
-            switch op.op {
-            case "text":
-                guard let p = op.pen, p.count == 2 else { return false }
-                let point = pt(p[0], p[1])
-                return semanticFrames.contains { $0.contains(point) }
-            case "line":
-                guard let from = op.from, let to = op.to,
-                      from.count == 2, to.count == 2 else { return false }
-                let a = pt(from[0], from[1])
-                let b = pt(to[0], to[1])
-                return semanticFrames.contains { $0.contains(a) && $0.contains(b) }
-            case "bits":
-                guard let r = op.dst, r.count == 4 else { return false }
-                return owns(rectFrom(r, pt: pt))
-            case "rect", "rrect", "oval", "rgn":
-                guard let r = op.rect, r.count == 4 else { return false }
-                return owns(rectFrom(r, pt: pt))
-            default:
+            guard op.op == "bits", let r = op.dst, r.count == 4 else {
                 return false
             }
+            let bounds = rectFrom(r, pt: pt)
+            return semanticFrames.contains { $0.contains(bounds) }
         }
 
         var drew = false
@@ -210,6 +259,15 @@ public enum DisplayReplay {
             guard op.op == "bits", let d = op.dst, d.count == 4 else {
                 continue
             }
+            /* A BLIT THIS PASS WILL NOT ANSWER MUST NOT BE RECORDED AS
+               INKED. The second loop yields an unjoined blit to the
+               semantic row that contains it and draws nothing; this loop
+               recorded coverage for it anyway, so `Coverage.covers` said
+               "the replay drew here" about a rectangle nothing had
+               drawn. Date & Time's two check boxes vanished on exactly
+               that: the row yielded to a claim of ink, and the ink was
+               never put down. */
+            guard !semanticOwns(op) else { continue }
             var draw = g
             if let bitsClip, bitsClip.count == 4 {
                 let bounded = rectFrom(bitsClip, pt: bitsPoint)
@@ -443,7 +501,40 @@ public enum DisplayReplay {
                     break
                 }
             default:
-                break   // arc/poly remain unsupported structured ops
+                /* AN OP THIS RENDERER CANNOT DRAW IS STILL SOMETHING THE
+                   MACHINE DREW, and until now it left no trace at all.
+                   `poly` is the arrow family — Memory's fourteen are
+                   8x4 and 8x5 paints, which is a stepper's two triangles
+                   and a popup's chevron — so every stepper, scroll and
+                   popup arrow in the corpus simply was not there. Slice
+                   2 deleted the size-based classification that used to
+                   paint a document icon over them, which was right, and
+                   left nothing in its place, which was not: "an arrow
+                   that draws nothing where it used to draw a wrong
+                   document icon is progress, but rung 4 should still
+                   mark it" (plan 018 slice 16, defect 5).
+
+                   The marked unknown and NOT a triangle. The op carries
+                   a bounding rect and a verb and no shape, so drawing a
+                   triangle in it is the region defect one family over: a
+                   plausible guess with no evidence, on a rectangle small
+                   enough that the guess would read as fact. Rung 4 says
+                   the true thing — something is drawn here and this host
+                   cannot say what — and the deferred-op inventory keeps
+                   counting it so the gap stays measurable.
+
+                   An ERASE is exempt, for the same reason `Coverage`
+                   does not count one: it removes rather than adds, and
+                   marking it would claim missing content where the
+                   machine cleared the ground. */
+                guard op.verb != 2, let r = op.rect, r.count == 4 else {
+                    break
+                }
+                let frame = rectFrom(r, pt: pt)
+                drawUnavailableBits(in: drawingContext(), frame: frame)
+                coverage?.add(frame)
+                coverage?.attribute(frame, .unknown)
+                drew = true
             }
         }
 

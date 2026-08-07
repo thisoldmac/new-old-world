@@ -109,12 +109,42 @@ public enum UnknownVisual {
         guard frame.width > 1, frame.height > 1 else { return }
         var clipped = ctx
         clipped.clip(to: Path(frame))
-        clipped.fill(Path(frame), with: .tiledImage(tile))
+        let small = frame.width < minCaptionWidth
+            || frame.height < minCaptionHeight
+        clipped.fill(Path(frame),
+                     with: .tiledImage(small ? closeTile : tile))
         clipped.stroke(Path(frame.insetBy(dx: 0.5, dy: 0.5)),
-                       with: .color(edge), lineWidth: 1)
+                       with: .color(small ? closeEdge : edge), lineWidth: 1)
     }
 
-    /// The 2x2 lattice cell: one stipple dot, three ground.
+    /// **The loudness budget is per RECTANGLE, and it scales with area.**
+    ///
+    /// The quiet style above was chosen against the Monitors panel, where
+    /// eight unknowns each 200×40 or larger read as damage. At icon
+    /// scale it fails the other half of its own brief: a 32×32 square of
+    /// 0xDC dots on 0xEF, with no room for a caption, is not
+    /// distinguishable from a flat plate at reading distance — and a flat
+    /// plate is candidate B, the one rejected because *it lies*. Michelle
+    /// read nine Finder folders and both `?` buttons as blank plates on
+    /// 2026-08-07 and filed them as "a plate claims something is there";
+    /// they were already rung 4, drawn exactly as this file specifies.
+    ///
+    /// So the DOTS and the EDGE step up on a rectangle too small to carry
+    /// a caption — the same texture, enough contrast to read as texture —
+    /// and every rectangle large enough for the word is untouched, which
+    /// is precisely the population the quiet style was chosen for. One
+    /// style, graded by the only thing that made it too loud in the first
+    /// place: how much of the picture it covers.
+    public static let closeStipple = Color(hex: 0xC4C4C4)
+    public static let closeEdge = Color(hex: 0xB8B8B8)
+
+    private static let closeTile = lattice(dot: 0xC4C4C4)
+
+    /// The quiet tile — the one every rectangle large enough for a caption
+    /// wears. See `lattice(dot:)` for why it is an image rather than strokes.
+    private static let tile: Image = lattice(dot: 0xDCDCDC)
+
+    /// The 2×2 lattice cell: one dot, three ground.
     ///
     /// Built as an image and tiled rather than drawn. The first attempt
     /// stroked hairlines on even rows with a `[1, 1]` dash to get the same
@@ -129,7 +159,7 @@ public enum UnknownVisual {
     /// anchored to the CONTEXT's origin, not to the rectangle, so a
     /// rectangle that moves a pixel between frames does not make its
     /// texture crawl and two adjacent unknowns share one field.
-    private static let tile: Image = {
+    private static func lattice(dot: UInt32) -> Image {
         let cell = 2
         var bytes = [UInt8](repeating: 0, count: cell * cell * 4)
         func put(_ i: Int, _ hex: UInt32) {
@@ -138,7 +168,7 @@ public enum UnknownVisual {
             bytes[i * 4 + 2] = UInt8(hex & 0xFF)
             bytes[i * 4 + 3] = 0xFF
         }
-        put(0, 0xDCDCDC); put(1, 0xEFEFEF)
+        put(0, dot); put(1, 0xEFEFEF)
         put(2, 0xEFEFEF); put(3, 0xEFEFEF)
         let provider = CGDataProvider(data: Data(bytes) as CFData)!
         let cg = CGImage(
@@ -148,8 +178,11 @@ public enum UnknownVisual {
                 CGImageAlphaInfo.premultipliedLast.rawValue),
             provider: provider, decode: nil, shouldInterpolate: false,
             intent: .defaultIntent)!
+        // `.interpolation(.none)` is not decoration: a 2×2 tile resampled
+        // smooth stops being a lattice and becomes a grey wash, which is
+        // candidate B (the flat plate) arrived at by accident.
         return Image(decorative: cg, scale: 1).interpolation(.none)
-    }()
+    }
 
     /// The lattice cell, shared with `ProvisionalVisual` — which is the whole
     /// reason it is not `private` any more. Two textures for one idea is the

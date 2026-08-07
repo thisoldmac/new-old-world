@@ -50,6 +50,33 @@ the drawing that was the only thing anyone knew about those rectangles.
 
 The reversal is safe because of what rung 1 excludes.
 
+**And for a day the code only half did it.** `DisplayReplay.semanticOwns`
+silenced text, lines and shapes inside a semantic rectangle as well as
+blits, so the reversal above was true of the document and not of the
+render. NOW's Workshop sidebar drew `Capture and stre…` on the guest —
+the application's own `TruncString` — and the mirror printed `Capture and
+stream`, because the DITL row that silenced the drawn run carries the
+untruncated title. **A render that looks better than the machine is a
+divergence from it**, and it is the kind nobody reports. Fixed 2026-08-07;
+`IslandRenderTests` held the pre-ladder rule as an assertion until the
+same day and now states this one.
+
+Two things had to move with it, because the two gates are separate:
+
+- **A row that no longer silences the drawing must not paint over it.**
+  Asked per PIECE, not per row: a check box's label arrives as a text op
+  and its little mark box does not, and a row-wide test took both.
+  `Coverage.mostlyCovers` is the duplication question — half the piece,
+  by one rectangle no more than four times its area — while `covers`
+  stays the placeholder question. The area bound is what stops a control
+  panel's own window-scale face paint from counting as evidence about
+  every row inside it.
+- **Ground goes down first.** `panel`, `placard`, `selectionBand` and
+  `separator` fill a rectangle and say nothing about it; they were drawn
+  AFTER the replay, which was invisible only while the first gate
+  silenced everything under them. Backgrounds under the replay,
+  furniture over it.
+
 ### An unjoined blit is NOT ink
 
 A blit carries geometry and no pixels. Where it joined, it IS the machine's
@@ -190,8 +217,60 @@ It exists because "the render was stable" and "the render was stable AND
 every rectangle had the same owner both times" are different claims, and
 only the second is what plan 018 promised.
 
+## Two things rung 4 had to learn (2026-08-07, slice 16)
+
+**A marker a person cannot see is a flat plate wearing a texture's name.**
+Nine Finder folders and both `?` buttons were reported as blank grey
+plates. Sampling them returns 0xEFEFEF ground, 0xDCDCDC stipple at
+exactly 25%, 0xD2D2D2 edge: they were already rung 4, drawn precisely as
+`UnknownVisual` specifies. The style was chosen against Monitors, where
+eight unknowns of 200×40 and larger read as damage — and at 32×32, with
+no room for the caption, 19 levels of contrast is indistinguishable from
+candidate B, the flat plate rejected for lying about a region being
+empty. **The loudness budget scales with the area it covers**: below the
+caption thresholds the dots and edge step up, above them nothing changes.
+
+**An op the renderer cannot draw is still something the machine drew.**
+The replay's `default:` branch dropped `poly` and `arc` silently. The
+Memory panel's fourteen polys are 8×4 and 8×5 paints — a stepper's two
+triangles and a popup's chevron — so every stepper, scroll and popup
+arrow in the corpus was absent, and the ladder had no record of it.
+Deleting the size-based rule that used to paint a document icon over
+them was right; leaving nothing in its place was not. They mark as rung
+4 at their reported bounds, never as a triangle: the op carries a box, a
+verb and no shape, and inventing the shape is the region defect one
+family over. An erase is exempt, for the same reason `Coverage` does not
+count one.
+
 ## What is still disjointed, and named rather than hidden
 
+- **The system font substitution has a second symptom, and it reads as a
+  frame defect.** Date & Time's group-box titles were reported as
+  "frames stroked through their own labels". They are not: the guest
+  erases a band behind its title so the frame is interrupted, the replay
+  reproduces the band and both frame stubs correctly, and what crosses
+  the label is the label's OWN last glyph — Chicago standing in for
+  Charcoal is wider, so "Current Date" overruns the band the machine
+  sized for Charcoal and meets the frame where it resumes. Same cause as
+  "…Time Serve" below, in a place that looks nothing like it. **A pack
+  gap, not a renderer bug**, and the fix is an extractor run for
+  Charcoal.
+- **A window's `z` is a per-application index, not a stacking order.**
+  `scene_build.c :: w->z = p->window_count` — the window's position in
+  its OWN process's list. Every application's front window therefore
+  reports 0, and the scene carries no cross-application depth at all.
+  The renderer draws `scene.windows.reversed()`, so array order (front
+  app first, from the process walk) is the only ordering in the picture.
+  It is right often enough to look right and cannot be right in general.
+  **Capture-side**: nothing on this side can sort by a number that was
+  never sent, and dressing array order up as a stacking order would be a
+  confident wrong answer about what the person is looking at.
+- **A control panel's content face renders white.** `Platinum.g0` for a
+  non-dialog window, against the guest's 0xDDDDDD, so everything the
+  captured pass did not repaint shows white rather than face grey — and
+  a group-box title's erased band, which IS repainted, then reads as a
+  grey plate on white. Chrome-lane, not the ladder, and named here
+  because it is what makes the panels look unfinished in every pair.
 - **The Finder's interior is still a gap when its world is not hooked.** The
   Finder composites offscreen and blits the whole interior in one op. When
   the world is hooked at birth the blit joins and the interior renders —
