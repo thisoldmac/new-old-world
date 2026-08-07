@@ -1,6 +1,7 @@
 import SwiftUI
 import CoreGraphics
 import ImageIO
+import MirrorKit
 
 /// A Tier-2 Platinum bitmap font: a packed glyph sheet + per-glyph metrics
 /// from the extracted platinum-pack (`fonts/<face>-<size>.{png,json}`). Draws
@@ -339,6 +340,184 @@ public enum DesktopPattern {
             return .pattern(art)
         default:
             return .unknown("the pack does not name a desktop kind")
+        }
+    }
+
+    // MARK: - The live answer, and the pack as a declared fallback
+
+    /// **Who said what this desktop is.**
+    ///
+    /// The pack standing in is not a defect — it is often the only art
+    /// there is, since the guest can name its desktop but cannot hand over
+    /// a drawable copy of it. What WAS a defect is that a render standing
+    /// on the pack was byte-identical to one standing on the machine, so
+    /// nothing downstream could tell a fresh answer from a record of a
+    /// disk image that may have been re-baked, re-themed or replaced. This
+    /// is that distinction, made explicit and carried to the renderer.
+    public enum Provenance: Equatable {
+        /// The running machine named this desktop, and the pack held the
+        /// art it named. The strongest thing this side can say.
+        case machine
+        /// The machine did not name it — either it was never asked, or it
+        /// confirmed a picture without naming one — and the pack's record
+        /// of the staged image is standing in. **The render must say so.**
+        case assetPack
+        /// Nobody could say. Nothing is substituted; the unknown is marked.
+        case none
+    }
+
+    /// A desktop, and the account of how it was decided.
+    public struct Resolved: Equatable {
+        public var answer: Answer
+        public var provenance: Provenance
+        /// One sentence, for a diagnostic rather than for the picture.
+        public var why: String
+
+        public init(answer: Answer, provenance: Provenance, why: String) {
+            self.answer = answer
+            self.provenance = provenance
+            self.why = why
+        }
+    }
+
+    /// The pack's `desktop` record, or nil when it has none.
+    private static func packDesktop() -> [String: Any]? {
+        manifest?["desktop"] as? [String: Any]
+    }
+
+    /// **Resolve the desktop from the machine first, the pack second.**
+    ///
+    /// Rules, in the order they are applied and for the reasons stated:
+    ///
+    /// 1. **No `meta.desktop` at all** — this producer never asked. That is
+    ///    the only state in which the pack may stand in unchallenged, and
+    ///    it stands in as ``Provenance/assetPack``.
+    /// 2. **`source: unknown`** — we asked and this machine would not say.
+    ///    The pack is NOT consulted. A fallback here would take a positive
+    ///    "I do not know" and turn it back into a confident answer, which
+    ///    is precisely the substitution this key exists to prevent.
+    /// 3. **`source: pattern` with a name** — the machine chose it, so the
+    ///    machine's name selects the art. A named pattern the pack does not
+    ///    hold is an unknown, not an excuse to draw a different one.
+    /// 4. **`source: picture`** — measured on the 9.1 runner (2026-08-07):
+    ///    the picture NAME tag was absent while the ALIAS tag carried the
+    ///    file. So a machine routinely confirms that a picture is set
+    ///    without naming which. Kind agreement is then all we have: the
+    ///    pack's picture is drawn, and it is drawn as ``assetPack``,
+    ///    because "a picture is set" and "this picture is set" are not the
+    ///    same claim. When the machine DOES name one and the pack holds a
+    ///    different one, that is a disagreement and it renders unknown.
+    ///
+    /// The screen-size test in ``answer(screen:)`` still applies to every
+    /// picture that gets drawn; nothing here bypasses it.
+    public static func resolve(scene: MirrorKit.Scene,
+                               screen: CGSize) -> Resolved {
+        guard let live = scene.meta.desktop else {
+            let fallback = answer(screen: screen)
+            if case .unknown(let why) = fallback {
+                return Resolved(answer: fallback, provenance: .none,
+                                why: "the guest did not report a desktop, and "
+                                     + why)
+            }
+            return Resolved(answer: fallback, provenance: .assetPack,
+                            why: "the guest did not report what its desktop "
+                                 + "is; the asset pack's record of the staged "
+                                 + "image is standing in")
+        }
+
+        switch live.source {
+        case "unknown":
+            return Resolved(
+                answer: .unknown("this machine was asked what its desktop is "
+                                 + "and would not say"),
+                provenance: .none,
+                why: "the guest reported source `unknown`; a fallback here "
+                     + "would turn a measured 'I do not know' back into a "
+                     + "confident answer")
+
+        case "pattern":
+            guard let name = live.patternName, !name.isEmpty else {
+                let fallback = answer(screen: screen)
+                if case .pattern = fallback {
+                    return Resolved(answer: fallback, provenance: .assetPack,
+                                    why: "the guest reports a pattern desktop "
+                                         + "but its theme names none; the "
+                                         + "pack's pattern is standing in")
+                }
+                return Resolved(
+                    answer: .unknown("this machine's desktop is a pattern it "
+                                     + "did not name"),
+                    provenance: .none,
+                    why: "the guest reports a pattern and names none, and the "
+                         + "pack does not hold a pattern either")
+            }
+            guard let art = image("patterns/appearance/\(name).png") else {
+                /* NOT a licence to draw the pack's own pattern. The machine
+                   named this one; drawing a different one would be a
+                   confident wrong answer with the machine on record
+                   contradicting it. */
+                return Resolved(
+                    answer: .unknown("this machine's desktop is the pattern "
+                                     + "\"\(name)\", which is not in the "
+                                     + "asset pack"),
+                    provenance: .none,
+                    why: "the machine named a pattern the pack does not hold")
+            }
+            return Resolved(answer: .pattern(art), provenance: .machine,
+                            why: "the machine named the pattern \"\(name)\" "
+                                 + "and the pack holds it")
+
+        case "picture":
+            let pack = packDesktop()
+            let packName = pack?["name"] as? String
+            let named = live.pictureName.flatMap { $0.isEmpty ? nil : $0 }
+            guard (pack?["kind"] as? String) == "picture" else {
+                return Resolved(
+                    answer: .unknown("this machine's desktop is a picture and "
+                                     + "the asset pack does not hold one"),
+                    provenance: .none,
+                    why: "the machine and the pack disagree about the kind of "
+                         + "desktop this guest has")
+            }
+            if let named, let packName, named != packName {
+                return Resolved(
+                    answer: .unknown("this machine's desktop is the picture "
+                                     + "\"\(named)\" and the asset pack holds "
+                                     + "\"\(packName)\""),
+                    provenance: .none,
+                    why: "the machine and the pack name different pictures")
+            }
+            let fallback = answer(screen: screen)
+            guard case .picture = fallback else {
+                if case .unknown(let why) = fallback {
+                    return Resolved(answer: fallback, provenance: .none,
+                                    why: "the machine reports a picture, and "
+                                         + why)
+                }
+                return Resolved(answer: fallback, provenance: .none,
+                                why: "the machine reports a picture and the "
+                                     + "pack answered with something else")
+            }
+            if let named, named == packName {
+                return Resolved(answer: fallback, provenance: .machine,
+                                why: "the machine named the picture "
+                                     + "\"\(named)\" and the pack holds it")
+            }
+            /* A PICTURE IS SET, BUT NOT WHICH. The alias tag says one is
+               configured; the name tag was absent on the machine we
+               measured. Kind agreement is a weaker claim than identity and
+               is labelled as one. */
+            return Resolved(answer: fallback, provenance: .assetPack,
+                            why: "the machine confirms a picture desktop but "
+                                 + "did not name it; the pack's picture is "
+                                 + "standing in")
+
+        default:
+            return Resolved(
+                answer: .unknown("this machine reported a desktop source this "
+                                 + "renderer does not know"),
+                provenance: .none,
+                why: "unrecognised source \"\(live.source)\"")
         }
     }
 

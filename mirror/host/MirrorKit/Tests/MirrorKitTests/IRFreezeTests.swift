@@ -119,7 +119,16 @@ final class IRFreezeTests: XCTestCase {
                 theme: .init(dialogBackground: "#DDDDDD",
                              alertBackground: "#DDDDDD",
                              documentBackground: "#FFFFFF",
-                             highlight: "#97A1DE", depth: 32)))
+                             highlight: "#97A1DE", depth: 32),
+                /* Maximal for the same reason: a machine that names no
+                   pattern encodes no `patternName`, and the freeze would
+                   then pin a shape the real answer does not have. Both
+                   names and both layer bits are filled even though a real
+                   desktop rarely carries all four at once. */
+                desktop: .init(source: "picture", hasPattern: true,
+                               hasPicture: true, patternBytes: 32,
+                               patternName: "Waves",
+                               pictureName: "Indigo Foam")))
     }
 
     // MARK: - 1. The shape does not drift

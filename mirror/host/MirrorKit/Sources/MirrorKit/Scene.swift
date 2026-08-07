@@ -707,6 +707,65 @@ public struct Scene: Codable, Equatable, Sendable {
         }
     }
 
+    /// **What the guest says its desktop is drawn from.**
+    ///
+    /// The renderer's only source for the largest rectangle in the picture
+    /// was the offline asset pack's `manifest.json` — a record of the disk
+    /// image the pack was extracted from. That is true for a guest booted
+    /// from that image and unchanged since, and silently wrong the moment
+    /// either stops holding, with nothing anywhere to notice. A guest-side
+    /// route to the live answer had been built and served as the `desktop`
+    /// command, and nothing on this side had ever read it.
+    ///
+    /// This is that answer, on the wire. The pack is now the *declared*
+    /// fallback: `DesktopPattern.resolve(scene:screen:)` returns which of
+    /// the two spoke, and a render standing on the pack must say so.
+    ///
+    /// **It is not art.** The flattened `ppat` bytes the command verb
+    /// carries as hex are an identity, not something drawable, and the
+    /// pixels come from the pack either way. Naming is the job: it lets
+    /// this side check whether the art it holds is the art that machine is
+    /// showing, instead of assuming it.
+    ///
+    /// **Absence is the whole point.** A nil `Meta.desktop` means the
+    /// producer did not ask, and is the only state in which the pack may
+    /// stand in at all. `source == "unknown"` means we asked and that
+    /// machine would not say — the marked unknown, never a guessed
+    /// pattern. See `contract/asyncapi.yaml`, "WHAT THE DESKTOP IS DRAWN
+    /// FROM".
+    public struct Desktop: Codable, Equatable, Sendable {
+        /// `pattern`, `picture`, or `unknown`. Left a `String` rather than
+        /// an enum for the same reason the rest of this IR is: a value
+        /// this decoder has never heard of must survive decoding, not
+        /// fail the whole scene.
+        public var source: String
+        /// Whether a pattern could be read at all. True beside
+        /// `source: picture` is normal — a picture is drawn OVER the
+        /// pattern layer, and that layer shows wherever it does not reach.
+        public var hasPattern: Bool
+        /// Whether a desktop picture is configured, from the picture ALIAS
+        /// tag rather than the name tag. Independent of `hasPattern`.
+        public var hasPicture: Bool
+        /// True length of the flattened pattern. Absent when unknown —
+        /// never a negative length on the wire.
+        public var patternBytes: Int?
+        /// What the machine CHOSE. Absent means the tag was absent, not
+        /// that the desktop is nameless.
+        public var patternName: String?
+        public var pictureName: String?
+
+        public init(source: String, hasPattern: Bool, hasPicture: Bool,
+                    patternBytes: Int? = nil, patternName: String? = nil,
+                    pictureName: String? = nil) {
+            self.source = source
+            self.hasPattern = hasPattern
+            self.hasPicture = hasPicture
+            self.patternBytes = patternBytes
+            self.patternName = patternName
+            self.pictureName = pictureName
+        }
+    }
+
     public struct Meta: Codable, Equatable, Sendable {
         public var latencyMs: Double?
         public var bytes: Int?
@@ -718,6 +777,9 @@ public struct Scene: Codable, Equatable, Sendable {
         public var coverage: [CoverageClaim]? = nil
         /// What the guest's Appearance Manager actually draws with.
         public var theme: Theme? = nil
+        /// What the guest says its desktop is drawn from. nil means this
+        /// producer did not ask — see `Scene.Desktop`.
+        public var desktop: Desktop? = nil
     }
 }
 

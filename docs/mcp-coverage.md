@@ -1118,7 +1118,7 @@ first, and the gate names the difference.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
-sources-sha1: 1d7ed22aeedbddb6f6a79964ca925cf8c3b71fe6
+sources-sha1: ed4124fade0358a15b08ce66c52a25df61c852c4
 derive ppc-inbound-types sha256=c15c9c82d3460aa5288ca67ace049e5cbf47d7bf305be82c85e3a07cfe0ae5e2 lines=49 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
@@ -1148,4 +1148,5 @@ rederived: 2026-08-07T03:52:39-0400 d17ca9eb unchanged (count the lists, not jus
 rederived: 2026-08-07T03:52:58-0400 d17ca9eb unnoticed-from-table 8->9, unnoticed-from-prose 8->9 (the prose derivation now counts the LISTS, because two lists whose union matches the table is the 2026-08-05 rot)
 rederived: 2026-08-07T04:05:51-0400 dd520b71 unchanged
 rederived: 2026-08-07T12:06:16-0400 c76fea99 sources, ppc-inbound-types 48->49, disposition-census 3->3, unnoticed-from-table 9->14, unnoticed-from-prose 9->14
+rederived: 2026-08-07T13:30:46-0400 40ab79b6 sources
 -->
