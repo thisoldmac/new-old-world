@@ -320,6 +320,54 @@ documented to read the trap dispatch table at call time. That is the
 precondition plan 014's trap patch rests on, and it is now measured
 rather than assumed for the two applications that beat the chase.
 
+## 8c. Enumerating the worlds that already exist (2026-08-07, measured)
+
+There is no public registry of GWorlds, and a resident that only patches
+`NewGWorld` sees none of the ones that predate it. A **linear sweep of
+the armed process's application zone** finds them, and the signature that
+works is built entirely out of §6's lesson:
+
+| Test | Why it survives relocation |
+|---|---|
+| `portVersion & 0xC000 == 0xC000` | a bit, not a pointer |
+| `portPixMap` nonzero and even | a handle is never odd |
+| pixmap `rowBytes & 0x8000` | QuickDraw's own PixMap flag |
+| **`portRect == pixmap bounds`** | shape; the GWorld invariant |
+| stride ≥ one row at 1 bpp | shape |
+
+**The fourth test is the one that does the work**, and it also excludes
+every window port in the machine without a list walk: a window's
+`portRect` is LOCAL while its `portPixMap` is the SCREEN's, whose bounds
+are global and the size of the display. The two disagree, so a window
+never matches. (A full-screen window at the origin is the one case where
+they could agree, so WindowList membership is still checked — after the
+match, where it costs nothing.)
+
+Nothing in the signature is a `baseAddr`, a dereferenced pointer or a
+late-recovered handle, because §6 measured all three to be snapshots of a
+block `LockPixels` has moved.
+
+**The one non-shape is a liveness gate.** Everything above can be
+satisfied by the bytes a freed block happens to still hold, and hooking
+WRITES four bytes into it. §3 measured that a GWorld's port is an
+always-locked relocatable block — `RecoverHandle` on the port itself
+returns a handle — so a live world recovers and dead bytes do not.
+Measured cost of the gate: one refusal per sweep, no coverage lost.
+
+**What a sweep costs, measured on this rig** (68K resident, PowerPC
+application's heap, QEMU mac99):
+
+| Heap | span | blocks dereferenced | worlds found | time |
+|---|--:|--:|--:|--:|
+| Finder | 955 KiB | 99 | 2 | **68.9 ms** |
+| Monitors | 997 KiB | 209 | 3 | **186.5 ms** |
+
+Roughly 70–190 µs per KiB, the spread being how many blocks get past the
+cheap first filter. So a whole-heap enumeration is a tenth of a second
+for a typical application and is affordable **once**, at arm — and is not
+affordable per repaint, which is the measured reason the sight-then-chase
+route below stays an experiment.
+
 ## 9. What is still open
 
 - Whether the fix (recovering the handle at sight time) makes the

@@ -14,6 +14,83 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## ANSWERED: a window opened BEFORE arming now composes — the census (2026-08-07, plan 018)
+
+**Emulator-verified.** QEMU mac99, Mac OS 9.1, guest build `288944aab6b8`,
+wire 5340. Nothing here touched the PowerBook.
+
+The 2026-08-07 fidelity sweep's worst single result was the Finder's
+whole interior rendering as one "Bitmap unavailable" hatch. Lane A
+established it was capture-side. This is the mechanism, watched live on
+both sides of the fix, same rig, same conditions, ten minutes apart:
+
+| | records | window port | offscreen world | text ops |
+|---|--:|---|---|--:|
+| **before** | 22 | 1 `bits`, **no `blitsrc`** | none (`offscreenPorts 0`) | 1, the menu clock |
+| **after** | 219 | 1 `bits` + **1 `blitsrc`** | `0x1f472e60`, hooked | **10, the filenames** |
+
+The ten are `10 items, 3.21 GB available`, `System Folder`,
+`Applications (Mac OS 9)`, `Documents`, `Late Breaking News`,
+`Rumpus PRO 2.0`, `TBT`, `TBT-paced-dev`, `TBT-sndbuf-dev`, `TimBotTu` —
+item for item what the guest's own QMP screendump shows in that window.
+
+**The trap patch contributed nothing to the fixed run**: `qdext.born` was
+**0**. Not one world was created during the pass. Every one of those 219
+records exists because the census found a world that was already there.
+
+What it is: at arm, once per armed identity and BEFORE the redraw arming
+itself requests, the resident sweeps the armed process's own application
+zone and hooks every live offscreen graphics world it finds, through
+exactly the path a birth takes. It emits the same `worldBorn` record, so
+the join, the retention and the ladder cannot tell a censused world from
+a born one and **the wire contract gains nothing**.
+`ext/src/now_content.c :: content_census_run`, verdict in
+`now_content_logic.c :: now_content_census_match`.
+
+**Cost, measured rather than estimated.** Finder 955 KiB / **68.9 ms**;
+Monitors 997 KiB / **186.5 ms**. Roughly 70–190 µs per KiB, the spread
+being how many blocks got past the cheap filter into a dereference (99
+against 209). The budget is 4 MiB — about three quarters of a second
+worst case, once, at a moment that already costs the target a full
+repaint. **The truncation path has never run**: no heap measured so far
+came near the cap.
+
+**How it survives a moving heap.** Every test is a shape or a
+discriminator bit, because `LockPixels` relocates the PixMap record
+(toolbox-and-gworld.md §6) and any pointer is a snapshot of a block that
+has moved. The one non-shape is a `RecoverHandle` liveness gate standing
+between a match on the bytes a freed block happens to hold and a
+four-byte write into it — it fired once in each run (`unrecoverable: 1`,
+then `2`) and cost no coverage either time.
+
+**It degrades honestly.** No zone, or a zone whose own bounds cannot be
+believed, increments `census_refused` and hooks nothing; the product then
+renders the same honest gaps it does today. There is no new hard
+dependency and a resident that cannot run it is not a broken product.
+
+### Still open, from the same run
+
+- **Monitors is a DIFFERENT defect, and the sweep's reading of it was
+  incomplete.** Its window port is hooked and emits **zero ops of every
+  family over 16 seconds**, in count mode and record mode alike — so
+  "zero on its own window port" is not a hooking failure, the
+  application simply does not draw there. The census does reach its heap
+  (`found: 3, hooked: 1`), but Monitors then disposes that world, and
+  `qdext born 12 / died 12` **per event-loop pass** says why: it is a
+  create-and-destroy-per-pass application, the Sherlock 2 shape, already
+  covered by the birth patch. Its interior is missing because nothing
+  makes it repaint while observed — the escalation problem
+  `tools/fidelity-sweep.py` already documents at its own
+  `force_repaint` branch. Not a census gap.
+- **A censused world that dies is not re-censused.** The row is correctly
+  forgotten when the world goes, and the sweep does not run again for the
+  same armed identity, so a replacement world is caught only by the birth
+  patch. That is the right division for an application that recreates its
+  world every pass, and it is unproven for one that recreates it rarely.
+- **The 4 MiB truncation path is untested** on a heap large enough to hit
+  it.
+- Nothing here has run on the PowerBook.
+
 ## FIXED: the live render was worse than every fixture render, and no gate could see it (2026-08-06, evening)
 
 Reported against a running session: the Mirror "looks largely regressed"

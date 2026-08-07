@@ -1065,7 +1065,20 @@ void now_content_qdext_died(GrafPtr port)
  * PIXELS - the port itself stays in the application heap (§3), which is
  * the memory this walks.
  */
-#define kNowContentCensusMaxBytes 0x00800000UL   /* 8 MiB, see census_truncated */
+/* THE BUDGET, SET FROM A MEASUREMENT AND NOT FROM A ROUND NUMBER.
+   Measured on the QEMU mac99 rig 2026-08-07, this 68K resident sweeping
+   a PowerPC application's heap: the Finder's 955 KiB zone cost 68.9 ms
+   and the Monitors panel's 997 KiB cost 186.5 ms - call it 70 to 190
+   microseconds per KiB, the spread being how many blocks got past the
+   cheap filter into a dereference (99 against 209).
+   4 MiB is therefore a worst case of roughly three quarters of a
+   second, ONCE, at arm - a moment that already costs the target an
+   invalidate and a full repaint. Eight would have been one and a half,
+   which on a cooperatively scheduled machine is a visible stall for a
+   window that is about to be redrawn anyway. A heap past the budget is
+   swept as far as it reaches and says so in `census_truncated`; that
+   path has not been exercised on a real large heap. */
+#define kNowContentCensusMaxBytes 0x00400000UL   /* 4 MiB, see census_truncated */
 
 /* Defined with the chase, below, and shared with it on purpose: the two
    walk the same heaps and a second opinion about which addresses are
