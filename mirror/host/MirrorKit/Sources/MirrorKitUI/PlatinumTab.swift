@@ -36,6 +36,18 @@ import MirrorKit
 /// are neither in the stream nor in `Appearance.h`. They are measured, they
 /// are named, and they are the only place this drawer is guessing.
 ///
+/// **Only one of the two is pinned by a gate, and that is a fact about the
+/// shape rather than a hole in the test.** Widening `cornerWidth` from 5 to
+/// 7 moves the outline's column by 3 and
+/// `PlatinumTabTests.testAgainstTheGuestsOwnPixels` fails naming it.
+/// Raising `cornerHeight` from 4 to 6 changes nothing the machine's pixels
+/// can distinguish: with the control point fixed, the quad passes within a
+/// pixel of the same columns either way. The two are not independent — what
+/// the guest's corner determines is the CURVE, and `cornerWidth` is the
+/// parameter that carries it. Do not add a contrived gate for
+/// `cornerHeight`; it would be asserting a number nothing on screen depends
+/// on.
+///
 /// ## The residual, stated up front
 ///
 /// Apple's caps are ANTI-ALIASED — the diagonal carries `#222222`, `#444444`,

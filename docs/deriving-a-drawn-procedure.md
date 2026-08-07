@@ -239,8 +239,23 @@ percentage cannot:
 
 1. The anti-aliased diagonal, above — 2 columns wide, both caps, every
    tab.
+1b. **The corner's topmost row is two columns wide of the machine's**, and
+   only that row; every row below it is within one. Two attempts to close
+   it — moving the quad's control point beside its end point, and letting
+   the flat top run a pixel past the label box — each fixed the top row and
+   took the worst flat-region residual from **34 to 165**, so both were
+   reverted. The measurement is the reason they are not in the tree, and
+   the reason this line exists instead.
 2. The inner highlight, by up to one pixel, worth one grey step.
-3. **States nobody has measured, because no capture contains one.**
+3. **`Shape.cornerHeight` is not pinned by any gate**, and deliberately
+   not. `cornerWidth` is — widening it 5 → 7 fails the geometry assertion
+   naming it. Raising `cornerHeight` 4 → 6 changes no pixel the machine can
+   distinguish, because with the control point fixed the quad passes within
+   a pixel of the same columns either way. The two constants are not
+   independent; only `cornerWidth` carries the curve. A gate for the other
+   would be asserting a number nothing on screen depends on, which is its
+   own kind of lie.
+4. **States nobody has measured, because no capture contains one.**
    Every control panel and application in sweep A was scanned for the
    tab signature and exactly two have tabs, both with their window
    ACTIVE and FRONT. So there is no capture of an inactive tab strip
@@ -250,7 +265,7 @@ percentage cannot:
    the drawer is written for them, and **neither has ever been seen**.
    That is the honest state: the seven `ThemeTabStyle` states are two
    measured and five unmeasured.
-4. Tab direction. `DrawThemeTab` takes `kThemeTabNorth/South/East/West`;
+5. Tab direction. `DrawThemeTab` takes `kThemeTabNorth/South/East/West`;
    everything here is North, and nothing refuses the others — they would
    simply be drawn as North and be wrong. A capture of one has never been
    seen either.

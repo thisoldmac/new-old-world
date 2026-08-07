@@ -264,7 +264,16 @@ public enum DisplayReplay {
                 path.move(to: pt(f[0], f[1]).applying(Self.pixelCentre))
                 path.addLine(to: pt(t[0], t[1]).applying(Self.pixelCentre))
                 let draw = drawingContext()
-                draw.stroke(path, with: .color(fg), lineWidth: 1)
+                /* AND A SQUARE CAP, for the other half of the same defect.
+                   `LineTo` inks BOTH endpoints, so a line from h to h2
+                   covers h2 - h + 1 pixels; a butt-capped stroke between
+                   their centres covers half a pixel less at each end. The
+                   Appearance panel's tab top edge lost its first and last
+                   column to exactly that — `#777777` where the machine has
+                   `#000000`, one pixel wide, at both ends of every line in
+                   every window. */
+                draw.stroke(path, with: .color(fg),
+                            style: StrokeStyle(lineWidth: 1, lineCap: .square))
                 coverage?.add(path.boundingRect.insetBy(dx: -0.5, dy: -0.5))
                 drew = true
             case "bits":

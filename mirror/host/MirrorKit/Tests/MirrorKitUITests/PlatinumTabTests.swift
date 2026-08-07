@@ -492,7 +492,11 @@ final class PlatinumTabTests: XCTestCase {
            were wrong this drifts immediately, and a percentage would have
            hidden it. */
         var offBy: [Int] = []
-        for y in 102...120 {
+        // From the tab's own top row, so the CORNER is inside the gate and
+        // not only the straight slant. It was not, at first: raising
+        // `Shape.cornerHeight` from 4 to 6 passed a gate that started at
+        // 102, because the corner is entirely above that.
+        for y in 100...120 {
             // The leftmost dark column, which on these rows is the outline
             // and nothing else — the title starts at x 182.
             guard let mine = (168...181).first(where: { pixel(rep, $0, y).0 < 110 }),
@@ -500,9 +504,13 @@ final class PlatinumTabTests: XCTestCase {
             else { continue }
             offBy.append(abs(mine - theirs))
         }
-        XCTAssertEqual(offBy.count, 19, "every row of the cap was found")
-        XCTAssertLessThanOrEqual(offBy.max() ?? 99, 1,
+        XCTAssertEqual(offBy.count, 21, "every row of the cap was found")
+        XCTAssertLessThanOrEqual(offBy.max() ?? 99, 2,
             "the front tab's left slant sits where the machine draws it: \(offBy)")
+        // …and only the corner's very top row is allowed the 2. Everything
+        // below it is the straight slant and must be within one.
+        XCTAssertLessThanOrEqual(offBy.dropFirst().max() ?? 99, 1,
+            "below the corner's top row, within a pixel everywhere: \(offBy)")
         // 13 of the 19 rows land on the machine's own column and the other
         // six are one pixel out — measured 2026-08-07. The bound is the
         // measurement plus room for a rounding change, not a target.
