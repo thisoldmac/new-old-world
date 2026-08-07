@@ -712,6 +712,80 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
                tick / 60 % 60, tick % 60)
     }
 
+    /* The coverage rule is allowed to keep an op it could have dropped
+       and is never allowed to drop one still on the guest's screen, so
+       these four are the ones that matter. Each fails if the
+       corresponding conservatism is removed. */
+
+    func testCoverageKeepsWhatItCannotMeasureOrProve() {
+        func text(_ s: String, at pen: [Int]) -> DisplayOp {
+            var op = DisplayOp(op: "text", ticks: 1)
+            op.text = s; op.pen = pen; op.size = 9; op.fullLen = s.count
+            return op
+        }
+        func rect(verb: Int, _ r: [Int]) -> DisplayOp {
+            var op = DisplayOp(op: "rect", ticks: 2)
+            op.verb = verb; op.rect = r
+            return op
+        }
+
+        // A FRAME does not replace pixels, so it covers nothing.
+        let framed = [text("Label", at: [20, 40]),
+                      rect(verb: 0, [0, 0, 400, 200])]
+        XCTAssertEqual(NOWMirrorContentPlane.coalesce(framed).count, 2)
+
+        // An erase that covers the label DOES drop it.
+        let erased = [text("Label", at: [20, 40]),
+                      rect(verb: 2, [0, 0, 400, 200])]
+        XCTAssertEqual(NOWMirrorContentPlane.coalesce(erased).count, 1)
+
+        // Partial coverage is not coverage: the label runs past the erase.
+        let clipped = [text("A very long label indeed", at: [20, 40]),
+                       rect(verb: 2, [0, 0, 60, 200])]
+        XCTAssertEqual(NOWMirrorContentPlane.coalesce(clipped).count, 2)
+
+        // An oval does not fill its bounding rectangle, so it covers
+        // nothing even when it paints.
+        var oval = DisplayOp(op: "oval", ticks: 2)
+        oval.verb = 1; oval.rect = [0, 0, 400, 200]
+        XCTAssertEqual(
+            NOWMirrorContentPlane.coalesce([text("Label", at: [20, 40]), oval])
+                .count, 2)
+    }
+
+    func testAnEraseIsNotCreditedBeyondItsOwnClip() {
+        var clip = DisplayOp(op: "state", ticks: 1)
+        clip.kind = "clip"; clip.rect = [0, 0, 100, 100]
+        var label = DisplayOp(op: "text", ticks: 1)
+        label.text = "Outside"; label.pen = [200, 40]; label.size = 9
+        label.fullLen = 7
+        var erase = DisplayOp(op: "rect", ticks: 2)
+        erase.verb = 2; erase.rect = [0, 0, 400, 400]
+        // The erase names the whole window but is clipped to a corner, so
+        // the label outside that corner survives.
+        XCTAssertEqual(
+            NOWMirrorContentPlane.coalesce([clip, label, erase]).count, 3)
+    }
+
+    func testCoverageIsJudgedInAbsoluteSpaceNotPortLocalNumbers() {
+        var shift = DisplayOp(op: "state", ticks: 1)
+        shift.kind = "origin"; shift.origin = [0, 200]
+        var label = DisplayOp(op: "text", ticks: 1)
+        label.text = "Row"; label.pen = [20, 40]; label.size = 9
+        label.fullLen = 3
+        var restore = DisplayOp(op: "state", ticks: 2)
+        restore.kind = "origin"; restore.origin = [0, 0]
+        var erase = DisplayOp(op: "rect", ticks: 2)
+        erase.verb = 2; erase.rect = [0, 0, 400, 100]
+        /* The label is drawn under an origin of [0,200] — absolutely at
+           y ≈ -160 — while the erase after it is drawn at the port's own
+           origin covering y 0…100. The port-local numbers say "covered";
+           the machine says otherwise, and the machine is right. */
+        XCTAssertEqual(
+            NOWMirrorContentPlane.coalesce([shift, label, restore, erase])
+                .count, 4)
+    }
+
     func testProcessSerialParsesOnlyTheTwoPartWireShape() {
         XCTAssertEqual(NOWMirrorContentPlane.serial("0.29360131")?.hi, 0)
         XCTAssertEqual(NOWMirrorContentPlane.serial("0.29360131")?.lo,
