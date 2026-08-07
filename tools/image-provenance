@@ -279,6 +279,15 @@ def render(p: dict) -> str:
         L.append("               Something wrote this image without leaving a receipt,")
         L.append("               or a receipt landed on another branch. Until it is")
         L.append("               re-baked, no result from a clone of it is attributable.")
+    note = p.get("imageNote")
+    if note:
+        import textwrap
+        L.append(f"  note         {note.get('at')} on {note.get('branch')}")
+        for chunk in textwrap.wrap(note.get("reason", ""), 56):
+            L.append(f"               {chunk}")
+        L.append("               A NOTE IS NOT A BAKE. It says how the file got")
+        L.append("               here. What resident is inside it is whatever was")
+        L.append("               inside when it was made — only a bake asks a guest.")
     side = p.get("sidecar")
     if side:
         L.append(f"  private bake {side.get('at')} by {side.get('branch')}"
@@ -330,6 +339,11 @@ def markdown(p: dict) -> str:
                      f"`{str(m.get('commit'))[:12]}`; extDigest "
                      f"`{str(m.get('extDigest'))[:12]}`, volumeClean "
                      f"`{m.get('volumeClean')}`"))
+    if p.get("imageNote"):
+        n = p["imageNote"]
+        rows.append(("Provenance note",
+                     f"{n.get('at')} on `{n.get('branch')}` — {n.get('reason')} "
+                     "**Not a bake:** no guest was asked what resident is in it."))
     if p["verdict"] == "UNACCOUNTED":
         n = p.get("newestReceipt") or {}
         rows.append(("Receipt", "**none matches these bytes.** Newest receipt "

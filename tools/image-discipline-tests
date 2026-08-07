@@ -406,6 +406,48 @@ def _(tmp):
 
 
 # --------------------------------------------------------------------------
+# 5. A hand-installed image can be accounted for — but a note is not a bake,
+#    and the gates must keep saying so.
+# --------------------------------------------------------------------------
+
+@case("note-image accounts for a hand-installed oracle without certifying it")
+def _(tmp):
+    r = Repo(tmp, "n")
+    img = os.path.join(tmp, "stage.qcow2")
+    fake_image(img, b"ROLLED BACK BY HAND")
+    r.receipts([receipt(r.digest(), img, "f" * 64)])
+    env = {"NOW_STAGE_IMAGE": img}
+    prov = os.path.join(r.path, "tools/image-provenance")
+
+    before = sh(sys.executable, prov, img, "--repo", r.path, env=env)
+    must("UNACCOUNTED FOR" in before.stdout, before.stdout)
+
+    thin = r.gate("note-image", "--reason", "rolled back", env=env)
+    must(thin.returncode == 1, "a one-word reason must be refused")
+    must("needs a --reason" in thin.stderr, thin.stderr)
+
+    ok = r.gate("note-image", "--reason",
+                "rolled back to the last volume-clean image; see "
+                "docs/open-issues.md 2026-08-06", env=env)
+    must(ok.returncode == 0, ok.stderr)
+
+    after = sh(sys.executable, prov, img, "--repo", r.path, env=env)
+    must("PLACED BY HAND AND RECORDED" in after.stdout, after.stdout)
+    must("NO BAKE" in after.stdout, after.stdout)
+
+    # THE POINT: it must NOT let a resident commit through. A note says who
+    # put the file there, not what is in it, and the 01:19 receipt is the
+    # standing reminder that a check adjacent to the question reads exactly
+    # like an answer to it.
+    r.write("ext/src/now_ext.c", "int resident(void) { return 3; }\n")
+    r.git("add", "--", "ext/src/now_ext.c")
+    gated = r.gate("check", env=env)
+    must(gated.returncode == 1,
+         "a note must never satisfy the bake gate:\n" + gated.stdout)
+    must("DIFFERENT resident source" in gated.stderr, gated.stderr)
+
+
+# --------------------------------------------------------------------------
 
 def main() -> int:
     print("==> staged-image discipline gates")
