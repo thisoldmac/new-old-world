@@ -8,6 +8,8 @@
 
 #include "input_args.h"
 #include "json.h"
+#include "peek.h"
+#include "peek_table.h"
 
 /* ---- replies ----------------------------------------------------------
  *
@@ -150,6 +152,61 @@ static int arg_int_malformed(const char *json, const char *key)
  * in the act plane answers for it) and which the Finder names for free
  * through `script`. The full ruling, and what to do if a click verb is
  * ever built anyway, is docs/input-plane-decisions.md. */
+/* What the RESIDENT did to the drawn cursor, appended to this verb's
+   rows when P8 is present.
+ *
+ * Here rather than in a verb of its own, and the placement is the
+ * argument. `mouseloc` is where the pointer IS; P8 is the reason the
+ * pointer's PICTURE is anywhere in particular, and until it landed the
+ * two answers could differ by hundreds of pixels with nothing on either
+ * face able to say so. A caller reading this verb to calibrate a hop is
+ * exactly the caller who needs to know whether the sprite followed.
+ *
+ * `route` is the row that matters and is why these are rows rather than
+ * a capability bit. A plane that is present, armed and silently taking
+ * the LOW-MEMORY route looks identical to one that is working - both
+ * report a position, neither errors - and only one of them moves the
+ * picture. That was the defect P8 was built to fix, so it is the one
+ * this guest must never be unable to see again.
+ *
+ * Absent resident, absent plane and a table too short to hold the cell
+ * all add NOTHING rather than zeros: a row saying `asked 0` would claim
+ * a plane that is not there. */
+static void cursor_rows(InputRows *rows)
+{
+    const NowPeekTable *t = now_peek_table();
+    const NowPeekCursorCell *c;
+    const char *route;
+
+    if (t == NULL || t->magic != (NowPeekU32)kNowPeekTableMagic) {
+        return;
+    }
+    if (t->length < (NowPeekU32)(offsetof(NowPeekTable, cursor)
+                                 + sizeof(NowPeekCursorCell))) {
+        return;
+    }
+    if (t->cursor_format != (NowPeekU32)kNowPeekCursorFormatV1) {
+        return;
+    }
+    c = &t->cursor;
+    switch (c->route) {
+    case kNowPeekCursorRouteDevice:  route = "device";  break;
+    case kNowPeekCursorRouteLowMem:  route = "lowmem";  break;
+    case kNowPeekCursorRouteYielded: route = "yielded"; break;
+    default:                         route = "none";    break;
+    }
+    row_add(rows, "cursor route", route);
+    row_add(rows, "cursor device",
+            c->device_found ? "found" : "none");
+    row_addl(rows, "cursor at x", (long)c->at_h);
+    row_addl(rows, "cursor at y", (long)c->at_v);
+    row_addl(rows, "cursor asked", (long)c->asked);
+    row_addl(rows, "cursor by device", (long)c->by_device);
+    row_addl(rows, "cursor by lowmem", (long)c->by_lowmem);
+    row_addl(rows, "cursor yielded", (long)c->yielded);
+    row_addl(rows, "cursor last err", (long)c->last_err);
+}
+
 void now_input_run_mouseloc(const char *request_json, long id,
                             char *out, long cap)
 {
@@ -164,6 +221,7 @@ void now_input_run_mouseloc(const char *request_json, long id,
     rows_reset(&rows);
     row_addl(&rows, "x", (long)where.h);
     row_addl(&rows, "y", (long)where.v);
+    cursor_rows(&rows);
     reply_rows(out, cap, id, "mouseloc", &rows);
 }
 

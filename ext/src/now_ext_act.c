@@ -101,6 +101,11 @@ extern void now_act_growwindow_patch(void);
 extern void now_act_trackbox_patch(void);
 extern void now_act_trackgoaway_patch(void);
 
+/* P8, the cursor plane. Declared rather than included for the same
+   reason the core declares the planes it boots: this file knows one
+   entry point and nothing about how the sprite is moved. */
+extern int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags);
+
 /* Documented trap numbers, from the ONEWORDINLINE on each declaration
    (Universal Interfaces 3.4) - not from memory and not from a
    disassembly. TrackBox is in the 0xA8xx range and the rest in 0xA9xx;
@@ -608,11 +613,23 @@ static int act_post_click(NowPeekActCell *cell)
         pt.v = (short)cell->click_v;
     }
 
-    /* Cosmetic, plus applications that re-read GetMouse. The
-       authoritative location is stamped per event below. */
-    LMSetMouseTemp(pt);
-    LMSetRawMouseLocation(pt);
-    LMSetMouseLocation(pt);
+    /* Where the pointer is, and - new with P8 - where it LOOKS like it
+       is. This was three low-memory writes with a comment calling them
+       cosmetic; the writes are unchanged and still are cosmetic for the
+       click itself, whose `where` is stamped per event below. What is
+       not cosmetic is the second half P8 adds: the drawn cursor moving
+       to the point we are about to click on, so that a screendump is
+       evidence of WHERE we acted, software that draws relative to the
+       pointer stops being a special case, and a person watching sees a
+       machine being operated rather than a possessed one.
+
+       `owned` is 0, and that is the whole safety story: if the pointer
+       has moved since we last placed it - a person at the machine - P8
+       declines to move the sprite for a second and counts the decline,
+       while these three writes still happen so the click lands exactly
+       where the act says it does. The act never yields; only the picture
+       does. */
+    (void)now_ext_cursor_place((NowPeekI32)pt.h, (NowPeekI32)pt.v, 0u);
 
     LMSetMouseButtonState(0x00);              /* button down */
     if (PPostEvent(mouseDown, 0, &down) != noErr || down == NULL) {

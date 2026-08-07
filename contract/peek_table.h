@@ -137,7 +137,26 @@ enum {
 
        A build without this bit refuses a drag rather than arming a
        vehicle that cannot fire. */
-    kNowPeekTableCapDrag = 1u << 7
+    kNowPeekTableCapDrag = 1u << 7,
+    /* P8: the drawn cursor follows what the plane acts on.
+
+       A COSMETIC-SOUNDING PLANE THAT IS NOT COSMETIC. Until it, the
+       guest's sprite sat wherever it was last really drawn while every
+       act and every drag happened somewhere else — so a screendump was
+       evidence of what the machine looked like and never evidence of
+       where we acted, software that draws relative to the pointer was a
+       permanent special case, and a person at the machine watched a
+       possessed Macintosh click on things with the arrow parked
+       elsewhere.
+
+       Its own bit rather than a part of P7's because it is a different
+       call to a different manager, and because it must be able to be
+       ABSENT: the bit is published only when `_CursorDeviceDispatch` is
+       implemented AND the Cursor Device Manager owned up to a device.
+       Without it every act and every drag behaves exactly as before,
+       which is the resident-component charter's rule, and the picture is
+       the only thing missing. */
+    kNowPeekTableCapCursor = 1u << 8
 };
 
 /* P3 asked for 1u << 2 and for its field at the head of the appended
@@ -754,6 +773,83 @@ typedef struct {
     NowPeekU32 button_down;
 } NowPeekDragCell;
 
+/* Which route the resident used to put the drawn cursor somewhere. */
+enum {
+    kNowPeekCursorRouteNone = 0,   /* no vehicle: the sprite is unmoved */
+    kNowPeekCursorRouteDevice = 1, /* CursorDeviceMoveTo — the one that
+                                      actually redraws */
+    kNowPeekCursorRouteLowMem = 2, /* the CrsrNew/CrsrCouple recipe: the
+                                      Toolbox follows, the picture does
+                                      not. Kept as a fallback, and
+                                      REPORTED as a distinct route so a
+                                      machine falling back is not read as
+                                      a machine that worked. */
+    kNowPeekCursorRouteYielded = 3, /* declined: somebody else is driving
+                                       this pointer */
+    /* HideCursor/ShowCursor, from the target application's own context.
+       The only route measured to actually move the picture on Mac OS 9;
+       the other two set state the drawing path does not consult. It
+       needs a real context and so is unreachable from interrupt time,
+       which is why there is still a device route and why a DRAG is
+       expected to report `device` and stay invisible. */
+    kNowPeekCursorRouteQuickDraw = 4
+};
+
+/* What the caller knows about the context it is calling from. Both facts
+   are the CALLER's and neither can be worked out here, which is why they
+   are passed rather than inferred - the first version inferred the
+   second from the first, because the drag happened to be the only
+   interrupt-time caller, and an accidental coupling like that is a
+   defect waiting for the second one. */
+enum {
+    /* The caller holds the pointer for the length of a gesture and must
+       never yield to another mover - mid-drag, the plane IS the mover. */
+    kNowCursorPlaceOwned = 1u << 0,
+    /* No Toolbox beyond low-memory accessors may be called. */
+    kNowCursorPlaceInterrupt = 1u << 1
+};
+
+enum {
+    kNowPeekCursorFormatV1 = 1,
+    /* How long the resident refuses to move the sprite after motion it
+       did not cause. Sixty ticks — one second. The number is small on
+       purpose: this is not a lock, it is a courtesy, and a long one
+       would make the cursor stop following for reasons nobody watching
+       could explain. */
+    kNowPeekCursorYieldTicks = 60
+};
+
+/* P8. Where the drawn cursor was last put, by which route, and how often
+   the resident declined to put it anywhere.
+ *
+ * THE COUNTERS ARE THE POINT, not the position. A cursor plane that is
+ * present, armed and silently taking the LOW-MEMORY route looks exactly
+ * like one that is working, because both report a position and neither
+ * throws an error — and only one of them moves the picture. That is the
+ * defect this cell exists to make visible, and it is the defect this
+ * plane was built to fix, so it would be the easiest one in the tree to
+ * reintroduce without noticing. */
+typedef struct {
+    NowPeekU32 seq;            /* odd while the resident writes         */
+    NowPeekU32 route;          /* kNowPeekCursorRoute*, the LAST one    */
+    NowPeekI32 at_h;           /* where it was last asked to go         */
+    NowPeekI32 at_v;
+    NowPeekU32 asked;          /* placements requested                  */
+    NowPeekU32 by_device;      /* served by CursorDeviceMoveTo          */
+    NowPeekU32 by_lowmem;      /* served by the low-memory recipe       */
+    /* Declined because the pointer had moved since we last placed it,
+       and recently. A person at the machine is the case this counts, and
+       counting it is what makes "we do not fight a human's pointer" a
+       claim somebody can check rather than a sentence in a document. */
+    NowPeekU32 yielded;
+    NowPeekI32 last_err;       /* the CDM's last OSErr, 0 when none     */
+    /* Non-zero when _CursorDeviceDispatch is implemented AND the manager
+       answered with a device. Separate from the capability bit because
+       the bit is published once at boot and this is what it was
+       published FROM. */
+    NowPeekU32 device_found;
+} NowPeekCursorCell;
+
 /* One process's anchors, captured by the jGNE filter while that
    process's context is current - the only place its low-memory
    Window/Menu state is visible (finding observe-process-local-ui).
@@ -1299,6 +1395,12 @@ typedef struct {
        tail and an absent tail have to look different. */
     NowPeekU32 drag_format;   /* kNowPeekDragFormat* */
     NowPeekDragCell drag;
+    /* U12 P8 append. **Where the drawn cursor was last put, and by
+       which route.** Same accretive rule as the drag cell above it: a
+       reader must check `length` AND `cursor_format`, because a zeroed
+       tail and an absent tail have to look different. */
+    NowPeekU32 cursor_format; /* kNowPeekCursorFormat* */
+    NowPeekCursorCell cursor;
 } NowPeekTable;
 
 /* What the resident's own liveness channel is doing. Values are the
@@ -1549,8 +1651,18 @@ _Static_assert(offsetof(NowPeekTable, drag_format)
 _Static_assert(offsetof(NowPeekTable, drag)
                    == offsetof(NowPeekTable, drag_format) + 4,
                "drag cell offset");
-_Static_assert(sizeof(NowPeekTable)
+_Static_assert(sizeof(NowPeekCursorCell) == 40, "cursor cell size");
+_Static_assert(offsetof(NowPeekCursorCell, yielded) == 28,
+               "the yield counter's offset");
+_Static_assert(offsetof(NowPeekTable, cursor_format)
                    == offsetof(NowPeekTable, drag) + sizeof(NowPeekDragCell),
-               "the drag cell is the new tail");
+               "the cursor plane appends behind the drag cell");
+_Static_assert(offsetof(NowPeekTable, cursor)
+                   == offsetof(NowPeekTable, cursor_format) + 4,
+               "cursor cell offset");
+_Static_assert(sizeof(NowPeekTable)
+                   == offsetof(NowPeekTable, cursor)
+                          + sizeof(NowPeekCursorCell),
+               "the cursor cell is the new tail");
 
 #endif /* NOW_PEEK_TABLE_H */

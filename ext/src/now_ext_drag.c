@@ -70,36 +70,22 @@
 #include "peek_table.h"
 #include "now_drag_logic.h"
 
-/* CrsrNew and CrsrCouple are not in this toolchain's LowMem.h, which
-   stops at CrsrBusy (0x08CD). Their addresses are Inside Macintosh's and
-   are stated ONCE, here, rather than spelled inline at the use site -
-   the same rule the act plane's part codes follow after a day was lost
-   to two similarly-named constant sets.
-   ------------------------------------------------------------------
-   Why they are needed at all: writing MouseLocation moves what GetMouse
-   reports, but NOT what the person watching sees. The cursor is redrawn
-   by the VBL cursor task, which acts when CrsrNew is set - and the
-   documented way to ask for that is to copy CrsrCouple into CrsrNew
-   after staging the point in MTemp. Without it a drag is invisible on a
-   screendump, and a gesture nobody can watch is a gesture nobody can
-   verify. */
-/* Reached through VOLATILE POINTER VARIABLES rather than cast constants,
-   and that is not style either. GCC folds `*(volatile UInt8 *)0x08CE`
-   into a dereference of a known-tiny address and rejects it under
-   -Werror=array-bounds as "likely at address zero" - a diagnostic that
-   is correct about every C program except one running inside a
-   Macintosh's low memory. Making the POINTER volatile means the compiler
-   must load it before each use and cannot reason about its value, which
-   is the narrowest possible way to say "I mean this address" - narrower
-   than -Wno-array-bounds on the file, which would also silence the
-   diagnostic on every real bug in it.
+/* THE CURSOR IS NOT THIS FILE'S JOB ANY MORE.
+   It was: this vehicle wrote MTemp, RawMouse and MouseLocation and then
+   copied CrsrCouple into CrsrNew, which is Inside Macintosh's recipe for
+   asking the cursor VBL task to redraw. The recipe drives everything the
+   Toolbox READS and does not move the picture - measured on 2026-08-07,
+   five moves and five screendump pairs, zero pixels each. The reason is
+   not this plane's and the cure is not either: on Mac OS 8/9 the Cursor
+   Device Manager owns the sprite. So placement moved out to P8
+   (now_ext_cursor.c), which owns both halves - the low-memory writes a
+   tracking loop reads AND the manager call that redraws - and this file
+   asks for a point rather than spelling how to get there.
 
-   The addresses cannot come from LowMem.h: that header stops at CrsrBusy
-   (0x08CD), and its accessor macros expand to nothing under GCC (they
-   are 68K inline traps for other compilers), so declaring siblings that
-   way would produce undefined symbols rather than instructions. */
-static volatile UInt8 *volatile gCrsrNew = (volatile UInt8 *)0x08CEUL;
-static volatile UInt8 *volatile gCrsrCouple = (volatile UInt8 *)0x08CFUL;
+   The two addresses went with it. Two files spelling 0x08CE is exactly
+   how a pair drifts, and the one that was left behind would have been
+   the one still being read. */
+extern int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags);
 
 typedef struct {
     TMTask task;                /* first: the Time Manager owns this */
@@ -144,19 +130,16 @@ NowPeekDragCell *now_ext_drag_cell(NowPeekTable *table)
 }
 
 /* Put the pointer somewhere, and make the machine agree that it is
-   there. All four writes, in the order the cursor VBL expects: stage in
-   MTemp, publish as Raw, publish as the Event Manager's, then ask for a
-   redraw. */
+   there. P8 does both halves; `owned` is 1 because THIS PLANE IS THE
+   THING DRIVING THE POINTER for the length of the gesture, so P8's
+   "somebody else is moving it, leave the sprite alone" courtesy must not
+   apply - mid-drag it would strand the sprite halfway through a gesture
+   the application is already tracking. */
 static void drag_place(NowPeekI32 h, NowPeekI32 v)
 {
-    Point pt;
-
-    pt.h = (short)h;
-    pt.v = (short)v;
-    LMSetMouseTemp(pt);
-    LMSetRawMouseLocation(pt);
-    LMSetMouseLocation(pt);
-    *gCrsrNew = *gCrsrCouple;
+    (void)now_ext_cursor_place(h, v,
+                               kNowCursorPlaceOwned
+                                   | kNowCursorPlaceInterrupt);
 }
 
 /* The two writes that are the button, and nothing else. Separated from

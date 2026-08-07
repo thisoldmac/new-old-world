@@ -76,11 +76,21 @@ add_executable(NowExt
     # No trap patches at all - four low-memory writes and a deadline.
     src/now_ext_drag.c
     src/now_ext_drag_tm.S
+    # P8, the cursor plane, and its two Cursor Device Manager calls.
+    # Its own translation unit because it is the one place in this
+    # extension that owns the DRAWN pointer, and because the assembly
+    # beside it exists only because CursorDevices.h declares the whole
+    # manager as TWOWORDINLINE traps this compiler ignores.
+    src/now_ext_cursor.c
+    src/now_ext_cursor_cdm.S
     src/now_content_qdext.S
     ../now-guest-shared/src/now_act_guard.c
     # P7's decisions, where the host cc can compile them and
     # scripts/test-native can watch the dead-man fire.
     ../now-guest-shared/src/now_drag_logic.c
+    # P8's one decision - "is somebody else driving this pointer" - where
+    # the host cc can compile it and a test can watch it yield.
+    ../now-guest-shared/src/now_cursor_logic.c
     ../now-guest-shared/src/now_semantic_guard.c)
 add_dependencies(NowExt generate_now_ext_identity)
 set_source_files_properties(src/now_ext.c

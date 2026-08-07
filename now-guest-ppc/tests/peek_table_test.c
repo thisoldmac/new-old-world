@@ -254,9 +254,19 @@ int main(void)
     check(offsetof(NowPeekTable, drag)
               == offsetof(NowPeekTable, drag_format) + sizeof(NowPeekU32),
           "the drag cell follows its format word");
-    check(offsetof(NowPeekTable, drag) + sizeof(NowPeekDragCell)
+    /* U12 appended P8's cursor cell behind the drag cell, so the "is
+       the tail" claim moves again - which is exactly what the comment
+       above predicted it would do, and is the reason it is asserted in
+       ONE place rather than restated beside every region. */
+    check(offsetof(NowPeekTable, cursor_format)
+              == offsetof(NowPeekTable, drag) + sizeof(NowPeekDragCell),
+          "the cursor plane appends behind the drag cell");
+    check(offsetof(NowPeekTable, cursor)
+              == offsetof(NowPeekTable, cursor_format) + sizeof(NowPeekU32),
+          "the cursor cell follows its format word");
+    check(offsetof(NowPeekTable, cursor) + sizeof(NowPeekCursorCell)
               == sizeof(NowPeekTable),
-          "the drag cell is the tail, so shorter means absent");
+          "the cursor cell is the tail, so shorter means absent");
 
     /* Reachability is not a dial, and the values are the contract rather
        than an ordering — a refusal carries the driver's own OSErr so that
