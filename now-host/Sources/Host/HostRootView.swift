@@ -93,10 +93,14 @@ struct HostRootView: View {
         .padding(.horizontal, sidebar.collapsed ? 0 : 12)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity)
-        // Opaque for the same reason the footer is: rows scroll UNDER a
-        // safe-area inset, and an inset with nothing behind it renders on
-        // top of whatever is passing beneath.
-        .background(.bar)
+        /* Backed for the same reason the footer is: rows scroll UNDER a
+           safe-area inset, and an inset with nothing behind it renders on
+           top of whatever is passing beneath. Glass keeps that promise —
+           it blurs what passes under it rather than letting it through —
+           and falls back to the `.bar` material this used to name outright
+           below macOS 26, or when the person has asked for less
+           translucency. */
+        .nowGlassBar()
     }
 
     /// Right-click anywhere in the sidebar. The density and the reset live
@@ -147,8 +151,14 @@ struct HostRootView: View {
            It did not show until 2026-08-01 because the module list was
            short enough never to scroll. Adding Networking made it
            scroll, and a latent bug became a visible one - so this is a
-           fix for every module added after it, not for that one. */
-        .background(.bar)
+           fix for every module added after it, not for that one.
+
+           `nowGlassBar` is backed on every path it has, which is why it
+           can stand here: glass on macOS 26, which diffuses what scrolls
+           beneath rather than admitting it, and the exact `.bar` material
+           this line used to name outright on anything older or under
+           Reduce Transparency. The invariant survives both. */
+        .nowGlassBar()
     }
 
     /// The List only knows about the modules it draws; a footer selection
@@ -204,6 +214,9 @@ struct HostRootView: View {
                                onStart: { state.startListening() },
                                onStop: { state.stopListening() })
         default:
+            // A card rather than a full-bleed pane: this is the one detail
+            // state that is not a module, and reading as something floating
+            // in an empty pane says so without a sentence of explanation.
             VStack(spacing: 10) {
                 Image(systemName: "questionmark.app")
                     .font(.system(size: 40))
@@ -211,6 +224,8 @@ struct HostRootView: View {
                 Text("Module Unavailable")
                     .font(.title2.weight(.semibold))
             }
+            .padding(28)
+            .nowGlassPanel()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
