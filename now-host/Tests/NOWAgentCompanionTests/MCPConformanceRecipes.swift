@@ -118,6 +118,20 @@ enum MCPConformanceRecipes {
 
         // MARK: Mirror
 
+        /* First of the family, and that is a chain rather than tidiness:
+           every other `now_mirror_*` row reads a state engine that only
+           runs while the Mirror is open, and a conformance host launched
+           without `--open-mirror` has none. Its own descriptor says so.
+
+           It arrived here at the 019 integration round 3 rather than with
+           the row: `018-open-mirror` landed the capability and
+           `019-conformance` landed this recipe book, on branches neither
+           of which could see the other. The gate named it on the merge —
+           which is the whole reason it checks the surface BOTH ways
+           instead of sampling. */
+        "now_mirror_open": .fixed(
+            "Needs nothing. Opening a Mirror loses no work and asking "
+                + "twice leaves one, so a conformance run may take it."),
         "now_mirror_status": .fixed("Needs nothing."),
         "now_mirror_snapshot": .fixed("Needs nothing."),
         "now_mirror_find": .fixed(
@@ -358,6 +372,9 @@ enum MCPConformanceRecipes {
         "now_session_health",
         "now_session_capabilities",
         "now_list_processes",
+        // Before every other Mirror row, for the reason its recipe gives:
+        // they read an engine that does not run until this has been asked.
+        "now_mirror_open",
         "now_mirror_snapshot",
         "now_observe_elements",
         "now_software_inventory",
