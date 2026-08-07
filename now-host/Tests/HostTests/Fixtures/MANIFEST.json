@@ -18,6 +18,23 @@
    }
   },
   {
+   "path": "now-host/Tests/HostTests/Fixtures/now-scene-019-date-and-time.json",
+   "sha256": "f51ee143eaa3cadc1fe984f41d71c31f787f25bfd0c4653004251b175fb1150d",
+   "bytes": 58946,
+   "ops": null,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "source": "peek",
+    "capturedAt": 1786068495.0,
+    "version": 2,
+    "build": "caf2b0e157b9",
+    "vm": "019-pair-capture",
+    "run": "019 integration pair, target date-and-time",
+    "guest": "Power Mac G4 / OS 9 emulated",
+    "note": "the guest screendump taken in the same connection is 019-integration/date-and-time-guest.png; the panel face measurement in PanelFaceRenderTests was counted off it"
+   }
+  },
+  {
    "path": "now-host/Tests/HostTests/Fixtures/now-scene-desktop-bare.json",
    "sha256": "ce5e55bc003db96cf2a7520a87b7db232a43478e74c7a6de157974c48c0989d5",
    "bytes": 38081,
