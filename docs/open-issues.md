@@ -14,6 +14,59 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED / RE-DIAGNOSED: four of slice 16's five render defects (2026-08-07, `claude/018-render-defects`)
+
+Worked against the sweep-A capture corpus offline — `LiveShapedRenderTests`
+composes each capture onto its OWN scene and writes a PNG, so every defect
+below was reproduced, changed and re-watched against the guest's own
+screendump in about a second per pass. **Emulator-capture-verified, not
+metal-verified**; nothing here ran on the PowerBook.
+
+- **1 — Appearance's front tab. FIXED, and it was not the tab pass.**
+  `rehome` assumed every offscreen world is born at (0,0). Appearance's
+  two theme thumbnails are born `[36,57,213,182]` — `NewGWorld` takes a
+  rect and an application composing a piece of its own window passes that
+  piece's rect in window coordinates — so the origin was counted twice
+  and both worlds, opening white erase included, landed at the content's
+  top-left corner, which is where the `Themes` and `Appearance` tabs are.
+  The frame is the world's BIRTH rect and deliberately not its live
+  origin: Sherlock 2 shifts its composite's origin per element and never
+  restores it, and reading the frame off that moves its whole interior.
+- **2 — blank grey plates. RE-DIAGNOSED, then fixed as legibility.** They
+  were already rung 4: sampling returns `UnknownVisual`'s exact three
+  colours at exactly 25% stipple. The defect was that rung 4 is invisible
+  at 32×32. The loudness budget now scales with area.
+- **3 — the render printing text the machine truncated. FIXED.** The
+  ladder's own rule, implemented at last: only an unjoined blit may be
+  silenced by a semantic rectangle. Two consequences had to move with it
+  — a row that no longer silences must not paint over, asked per piece;
+  and the four background DITL kinds are ground and are drawn BEFORE the
+  replay, not after.
+- **4 — group-box frames "stroked through their labels". RE-DIAGNOSED,
+  NOT FIXED, and it is not a frame defect.** The frame is interrupted
+  correctly on both sides. What crosses the label is the label's own last
+  glyph: Chicago standing in for Charcoal is wider, so the title overruns
+  the band the machine sized for Charcoal. The same pack gap as
+  "…Time Serve", in a place that looks nothing like it. Needs an
+  extractor run for Charcoal; no renderer change would be honest.
+- **5 — missing arrows. FIXED in the half that was missing.** `poly` is
+  the arrow family and the replay dropped it silently. Marked as rung 4
+  at its reported bounds, never as a triangle.
+
+**Handed back, capture-side: a window's `z` is a per-application index.**
+`now-guest-ppc/src/scene/scene_build.c:396` sets `w->z = p->window_count`,
+so every application's front window reports 0 and the scene carries no
+cross-application depth. The renderer draws `scene.windows.reversed()`;
+array order (front app first) is the only ordering in the picture. Right
+often enough to look right, never right in general, and not fixable on
+this side.
+
+**Named while measuring, not chased:** a control panel's content face
+renders white (`Platinum.g0`) against the guest's 0xDDDDDD, so everything
+the captured pass did not repaint shows white. It is what makes the
+panels look unfinished in every pair, and it is chrome-lane rather than
+ladder.
+
 ## BROKEN: the first watch of the INTEGRATED render, and what it shows (2026-08-07, `claude/018-integration`)
 
 Seventeen plan-018 lanes merged into one tree, then the tree was
