@@ -12,35 +12,49 @@ Michelle, 2026-08-07:
 > mirror specific. if we have mirror specific hooks, rules and skills that
 > should be landed with a mirror domain rather than treated as global
 
-## The three scopes, and the one that does not exist yet
+## Read this first: `now/` is a separate repository, and nothing crosses in
+
+This is the structural fact the rest of the page rests on. **A reader who
+misses it will design something impossible**, which is exactly how the
+outage below happened.
+
+`now/` is excluded from the parent TimBotTu checkout —
+`/Users/michelle/Lab/Code/timbottu/.git/info/exclude:22` — so it is not a
+subdirectory, not a submodule, and not part of that repository in any way
+git or Claude Code can see. It is an independent repo that happens to sit
+inside another one's working directory.
+
+Three consequences, and together they are the whole shape of the problem:
+
+- A NOW session's `$CLAUDE_PROJECT_DIR` is **this tree**. The parent's
+  `.claude/settings.json` and `.claude/hooks/` are never loaded here. The
+  parent's main guardrail has never once run for a NOW session.
+- `core.hooksPath` is **per clone**, and resolves inside one worktree's
+  checked-out tree. There is no cross-repository form of it, and an
+  absolute value is wrong by construction (`tools/hooks-doctor` carries
+  why).
+- `~/.claude/settings.json` is the only true machine scope, and it carries
+  no `hooks` block at all.
+
+**So there is no working lab scope for enforcement today.** "Lab-scoped"
+here can only mean one of exactly two things, and every entry below says
+which: **(a)** it lives in `~/.claude` or `~/.codex` and is genuinely
+shared — this is how all nine skills already work, correctly — or **(b)**
+it is deliberately duplicated into each repository from one named source,
+with the source named in both copies. **There is no third option.**
+Assuming there was one is what left `AGENTS.md` claiming a PreToolUse
+guard this repository did not have.
+
+## The three scopes
 
 - **LAB-SCOPED** — true of any project on this machine, or of any
-  retro-Mac work. Wants to be inherited by every repository.
+  retro-Mac work. Wants to be inherited by every repository — and, per the
+  section above, can only get there by (a) or (b).
 - **NOW-SCOPED** — true of this repository: both guests, the host, the
   contract, the resident. Belongs on `main`, so every branch and worktree
   cut from `main` inherits it.
 - **MIRROR-SCOPED** — specific to the Mirror subsystem. Lands under
   `mirror/`, and must not sit anywhere a non-Mirror worktree depends on.
-
-**There is no working lab scope for enforcement today, and that is a
-finding rather than an oversight.** Three separate mechanisms are in play
-and none of them reaches across repositories:
-
-- Git hooks are `core.hooksPath`, which is *per clone* and resolves inside
-  one worktree's checked-out tree. There is no cross-repo form.
-- Claude Code project hooks are `$CLAUDE_PROJECT_DIR/.claude/settings.json`
-  — per project directory. `now/` is excluded from the parent TimBotTu
-  checkout (`.git/info/exclude:22`), so it is a **separate repository** and
-  inherits none of the parent's `.claude/`.
-- `~/.claude/settings.json` is the only true machine scope, and it carries
-  no `hooks` block at all.
-
-So "lab-scoped" here means one of exactly two things, and the entry says
-which: **(a)** it lives in `~/.claude` or `~/.codex` and is genuinely
-shared (this is how the skills already work), or **(b)** it is deliberately
-duplicated into each repository from one named source, with the source
-named in both copies. There is no third option, and pretending otherwise
-is what produced the fault below.
 
 ## The concrete failure this page exists to prevent
 
@@ -80,6 +94,15 @@ done
 
 Derived 2026-08-07 against `claude/019-integration-6` (55 arc branches,
 424 branches total).
+
+**Do not quote these numbers — re-run the loop.** The denominator moves on
+its own, because lanes are still being cut: the same `arc-status` row was
+honestly reported as **18/48** earlier the same day and is **25/55** here,
+and neither figure was wrong when it was written. That is the ordinary
+derived-document rot AGENTS.md describes, arriving inside a page *about*
+where rules live, and it will happen again to whoever reads this next. The
+shape of the answer — a fleet-wide coordination rule that most of the
+fleet cannot reach — is what is stable; the fraction is not.
 
 ## The inventory
 
@@ -282,8 +305,9 @@ works on any branch that carries `.githooks`.
 
 Findings go to the parent's corpus (`data/findings/`, validated with
 `tools/data check`). The bar is a mechanism that has been *paid for*, more
-than once, with the second firing not a repeat of the first. Three clear,
-two candidates, one no.
+than once, with the second firing not a repeat of the first. Four clear,
+two candidates — and a note at the end on how the fourth was nearly missed,
+which is worth more than the count.
 
 **Rules.**
 
@@ -312,16 +336,56 @@ two candidates, one no.
    place to be wrong*, and a sentence naming seven of eight rows is a more
    convincing error than a wrong number.
 
+4. **One worktree per lane — because a shared worktree silently
+   reattributes commits to whichever branch is checked out.** Three
+   firings on 2026-08-07, and the third is the one that makes this a rule
+   rather than an etiquette note:
+
+   - A lane's `act_client.c` edits were reverted under it by another lane
+     in the same worktree, which then committed over its branch. Its own
+     reflog is the record: `13:02 checkout -b cdef-memory-radios` →
+     `13:14 checkout → ctlact-settlement (not me)` → `13:17 commit ← mine`
+     → `13:22 checkout → asset-packs (not me)` → `13:28 commit ← mine`.
+   - The consequence: **one lane's emitter change landed on
+     `claude/019-ctlact-settlement` and its matching test update on
+     `claude/019-asset-packs`** — one coherent change split across two
+     unrelated branches by somebody else's checkout between two of its own
+     commits. That is the red `scene_json_test` that blocked every lane
+     inheriting `361c50ec` and cost a dedicated lane to unblock.
+   - A third lane had three edits reverted mid-work
+     (`scripts/test-native`, `commands.h`, `commands.c`), **two of which
+     surfaced only as a link error.**
+
+   **Nothing looked wrong to anybody at the time.** `git log -1` showed
+   the right hash on every commit and the main guardrail was satisfied,
+   because from inside the lane every individual operation was correct.
+   The damage appeared later, on a different branch, as an unexplained red
+   test — so the cost was paid by a lane that had done nothing wrong and
+   could not see the cause.
+
+   **The counter-reading, stated because it is defensible.** These are
+   three symptoms of one root cause on one day, and by the discriminator
+   used for candidate 6 below — "one day, one mechanism" — that would make
+   this a candidate, not a rule. Two things decide it the other way.
+   First, they are not one mechanism: *edits clobbered* and *commits
+   reattributed to a foreign branch* are different failures with different
+   cures, and the second is the one no guard here detects. Second, and
+   this is the deciding fact, the reattribution produces **damage
+   displaced in time and place from its cause, with no local signal at
+   all** — which is a categorically worse failure than "two lanes collided
+   and both noticed". That is the same test applied to rule 1: not how
+   many times, but how many independent routes to the same conclusion.
+
 **Candidates — the mechanism is general, the evidence is one event.**
 
-4. **A repair instruction that cannot work is worse than no instruction.**
+5. **A repair instruction that cannot work is worse than no instruction.**
    `hooks-doctor` recommended `--fix` under Fault B, where `--fix` rewrites
    config and the fault was a missing branch. Four lanes read the warning,
    believed it, and correctly did nothing. That turns a live problem into
    one somebody believes they already tried. One firing, but the shape is
    sharp and cheap to state.
 
-5. **Per-lane resource reservation derived from the worktree path.** Ports
+6. **Per-lane resource reservation derived from the worktree path.** Ports
    assigned by hand failed three ways in one day — an orphaned VM holding a
    block, a guard that could say "something holds this" and nothing more,
    and an agent re-diagnosing a busy machine as a defect in their own
@@ -330,12 +394,24 @@ two candidates, one no.
    for the lane's life, and knowable with no coordinator) rather than as a
    law.
 
-**Not yet a rule.**
+**The standard, and a correction to how it was applied.**
 
-6. **One worktree per lane.** It is a convention this project follows and
-   nothing here records a failure caused by violating it. A rule that has
-   fired once is not yet a rule; a rule that has fired zero times is a
-   preference. Leave it in AGENTS.md.
+*A rule that has fired once is not yet a rule; one that has fired zero
+times is a preference.* That bar stays. But a first draft of this page put
+one-worktree-per-lane under "not yet a rule" on the grounds that *nothing
+here records a failure caused by violating it* — and that was wrong on the
+evidence, not on the standard. It had fired three times that day. The
+reports were in lane handoffs rather than in `docs/`, so a grep of this
+repository found nothing and the absence was mistaken for a negative.
+
+**An unfired rule and an unsearched record look identical from here.** So
+the bar needs a second half: *say where you looked*. This page's evidence
+comes from `docs/open-issues.md`, the tools' own header comments and git
+history — none of which contains a lane's report of another lane
+overwriting its work, because that is not a defect in any file. Anything
+whose failures are only ever narrated between agents is invisible to the
+method used here, and that class is exactly where the shared-machine rules
+live.
 
 **Also not for the corpus: the scope question itself.** "Lab-scoped or
 NOW-scoped" is a judgement about one machine's directory layout, and the
