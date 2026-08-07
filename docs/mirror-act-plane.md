@@ -660,15 +660,49 @@ question the whole design rests on and is **unanswered**. Live proof
 needs a private bake and three wire verbs the contract does not declare —
 see [docs/open-issues.md](open-issues.md).
 
-### The presentation half, still unbuilt
+### The presentation half, built — and with nothing to drive it
 
 Independent of the vehicle and honest without it: show the dragged item
 moving with the pointer immediately, marked as PROVISIONAL until a select
 confirms, and snap it home on release-before-confirm or on a failed
-select. **Snap-back needs a defensible "home", and today most items do
-not have one** — only the `FinderItems.merge` path carries the Finder's
-own drawn box, and it runs for folder windows only. Desktop items still
-report the saved `fdLocation` grid, and `ScenePoller.placeVolumes`
-*invents* a position and sets `placed = true`. So `placed` is not a trust
-signal, and an item whose position we cannot trust must **refuse the
-drag** before it starts rather than guess a return address.
+select. Built 2026-08-07 (slice 10.5), host-side, gate-green, and **not
+one gesture has reached a guest** — `dragpress` / `dragmove` /
+`dragrelease` are still undeclared, so `ItemDragDriver` has no conformer
+and the live view answers an item drag with "this mirror cannot hold the
+mouse button down".
+
+**Snap-back needed a defensible "home", and that was the blocker.**
+`placed` was three provenances wearing one boolean: the Finder's own
+drawn box (`FinderItems.merge`, folder windows only), the saved
+`fdLocation` grid (`SceneBuilder.desktopItems`), and a top-right stack
+`ScenePoller.placeVolumes` **invented**. "Refuse rather than guess" would
+have refused every desktop drag.
+
+Closed by carrying the provenance —
+`Scene.DesktopItem.origin` is `drawn` / `saved` / `unknown`, and
+`homeIsTrustworthy` is `drawn` alone — and by asking the desktop the same
+question every other surface is asked: a desktop clause in
+`FinderItems.windowsScript` reads `bounds of` every item of the desktop
+and every disk, inside the script call the folder windows already pay
+for. Emulator-verified; see [docs/open-issues.md](open-issues.md) for
+what the run said, including a guest that served no `list` at all.
+
+The four pieces, and where each lives:
+
+| Piece | Where | What it owns |
+|---|---|---|
+| provenance | `Scene.DesktopItem.origin` | may an item be returned here |
+| targeting | `DragTargeting` | subject, destination, intent, refusals |
+| the contract's rules | `ItemDragSession` | move / confirm / release / refused |
+| the marking | `ProvisionalVisual` | how "not yet real" looks |
+
+`ProvisionalVisual` sits in `UnknownVisual.swift`, one file, because they
+are one idea in two tenses. **The anchoring is the one place they
+differ and it is deliberate**: the marked unknown's stipple is anchored
+to the CONTEXT so a static rectangle's texture does not crawl; a
+provisional item moves with the pointer, so its lattice is anchored to
+the RECTANGLE or the texture would flow through the object. One rule
+underneath both — the texture belongs to whatever the reader perceives as
+holding still. `ProvisionalDragRenderTests` asserts the pair, because a
+later edit unifying them "for consistency" would otherwise show up
+nowhere.

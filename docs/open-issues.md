@@ -59,16 +59,84 @@ and load-bearing:
    baked, and `scripts/bake-ext-image` is private-by-default and was not
    run.
 
-### And the presentation half is blocked on geometry, not on the vehicle
+### And the presentation half was blocked on geometry — that half is CLOSED
 
-Slice 10.5's snap-back needs a defensible "home". **`placed == true` is
-not a trust signal**: only `FinderItems.merge` sets it from the Finder's
-own drawn box, and that path runs for **folder windows only**.
-`SceneBuilder.desktopItems` derives it from the saved `fdLocation` grid,
-and `ScenePoller.placeVolumes` invents a position and sets it true. So
-today a desktop drag has no trustworthy return address and the rule
-"refuse rather than guess" would refuse every one of them. Closing that
-is a geometry lane, not a drag lane.
+**Superseded 2026-08-07 by the targeting lane.** What it said: slice
+10.5's snap-back needs a defensible "home", and `placed == true` was not
+a trust signal — only `FinderItems.merge` set it from the Finder's own
+drawn box, and that path ran for folder windows only, while
+`SceneBuilder.desktopItems` derived it from the saved `fdLocation` grid
+and `ScenePoller.placeVolumes` **invented** a position and set it true.
+So "refuse rather than guess" would have refused every desktop drag.
+
+Closed both ways at once:
+
+- `Scene.DesktopItem.origin` carries `drawn` / `saved` / `unknown`, and
+  `homeIsTrustworthy` is `drawn` alone. Absent means the producer did not
+  say and reads as untrustworthy. `placeVolumes` still draws the disk it
+  laid out — an absent disk is worse than a displaced one — and now says
+  `.unknown` over the coordinates it makes up, so no act may aim with
+  them.
+- The desktop is asked the same question every other surface is asked. A
+  desktop clause in `FinderItems.windowsScript` reads `bounds of` every
+  item of the desktop and every disk, in global coords, inside the one
+  script call the folder windows already pay for.
+
+Emulator-verified on a private clone (anchor 1920 / wire 5470, build
+`1a8ffb91f636`, OS 9.1 on mac99). Two things the run said that were not
+predicted:
+
+- **That guest served neither `list` nor `volumes`** (`unknown-command`),
+  so without the clause its desktop arrives EMPTY. The saved grid was not
+  a weaker source there; it was no source at all. The **Trash** is on the
+  desktop and is not in the Desktop Folder, so the catalog path could
+  never have reported it under any circumstances.
+- `items of desktop` and `disks` both report `Macintosh HD`, with the
+  **same box**, which is what makes "first record wins" inert.
+
+And the live claim was watched rather than reasoned: `set position of` on
+a desktop file moved it and `bounds of` followed — 608,92,640,124 →
+120,320 → 240,548 — with a QMP screendump showing the icon in its new
+place.
+
+## UNVERIFIED: targeting and provisional presentation, with nothing to drive them (2026-08-07, slice 10.5 of plan 018)
+
+The host half of the drag is built and gate-green, and **not one gesture
+has reached a guest**, because the vehicle above is still unreachable:
+`dragpress` / `dragmove` / `dragrelease` do not exist on the wire, so
+`ItemDragDriver` — the seam the view calls — has no conformer at all.
+Today the live view answers an item drag with "this mirror cannot hold
+the mouse button down", which is honest and is not the feature.
+
+What IS proven: `DragTargeting` resolves subjects, destinations and
+intents against the geometry above, including against a **recorded real
+desktop** from the run named earlier; `ItemDragSession` carries the four
+presentation rules and each was watched failing under a mutation;
+`ProvisionalDragRenderTests` reads the pixels back.
+
+What is NOT proven, and needs the vehicle:
+
+- **That a drop lands where the targeting says it will.** Every
+  destination is derived from the hit tester, which is well exercised for
+  clicks — and a click is a point while a drop is a point plus a thing
+  being carried, and the Finder decides the second one.
+- **That a rearrangement inside a Finder window behaves as one.** The
+  intent is computed; nothing has watched an icon shuffle.
+- **The snap-back as a person sees it.** The state machine returns the
+  ghost to `home`; whether that reads as "it went back" or as a flicker
+  is a question for a hand on a trackpad.
+- **The provisional style at speed.** The stipple is anchored to the
+  rectangle so the texture rides with the item; that was verified in a
+  render test at two positions, not at 60 frames a second under a moving
+  pointer.
+
+One gap deliberately left open: a desktop item whose position is
+`.unknown` — a disk the Finder would not place — is still **clickable**
+at its invented position. Drags refuse it and clicks do not, which is
+today's behaviour left unchanged rather than a decision. It sends a click
+to bare desktop, so it deselects rather than doing damage; closing it
+means teaching the click path the same provenance the drag path now
+reads.
 
 ## FIXED: an act could report success it had not verified, and a window could go silent without naming itself (2026-08-07, lane D of plan 018)
 
