@@ -246,10 +246,24 @@ final class IslandRenderTests: XCTestCase {
                        "CopyBits placeholders must remain behind structured ops")
     }
 
-    /// P2 semantics own exact control rectangles while P3 owns the surrounding
-    /// content. This prevents both CopyBits placeholders and raw QuickDraw
-    /// titles from painting underneath a control we can render and actuate.
-    func testSettledDisplayClipsOutSemanticControlPixels() throws {
+    /// **A semantic control does not silence the machine's own drawing —
+    /// it draws over it.**
+    ///
+    /// This test used to assert the opposite, and it was the last place
+    /// the pre-ladder rule survived in code. `docs/render-composition.md`
+    /// reversed it: rung 1 is ink, rung 2 is semantics, and ink wins,
+    /// because "somebody drew this and we have the drawing" is stronger
+    /// evidence than any description of the same rectangle. The old rule
+    /// cost Date & Time its date, its time, both group boxes and every
+    /// field on 2026-08-06, and NOW's Workshop sidebar printed "Capture
+    /// and stream" where the machine had drawn "Capture and stre…"
+    /// (plan 018 slice 16, defect 3) — a render that looked BETTER than
+    /// the machine and diverged from it.
+    ///
+    /// What survives of the original intent, and is asserted below: the
+    /// control's own rectangle still ends up P2's, because P2 draws last.
+    /// Only what falls OUTSIDE it stays the machine's.
+    func testSemanticControlsDrawOverInkRatherThanSilencingIt() throws {
         let r = Rect(l: 100, t: 100, r: 500, b: 400)
         var semanticOnly = window(title: "Generic App", front: true, z: 0,
                                   rect: r, island: nil)
@@ -270,11 +284,38 @@ final class IslandRenderTests: XCTestCase {
         label.pen = [25, 46]
         label.font = 0
         label.size = 12
+        /* A run the control's rectangle does NOT contain: the pen sits
+           inside the button, the glyphs run past its right edge. Under
+           the old rule the whole run was silenced by the rectangle its
+           pen fell in; under the ladder it is drawn, and the part the
+           button covers is then painted over. */
+        label.text = "Wrong copy that runs well past the button"
         withDisplay.display = [fill, label]
 
-        XCTAssertEqual(try RenderShot.png(scene: scene([withDisplay])),
-                       try RenderShot.png(scene: scene([semanticOnly])),
-                       "P3 must not paint beneath a P2-owned control rectangle")
+        XCTAssertNotEqual(
+            try RenderShot.png(scene: scene([withDisplay])),
+            try RenderShot.png(scene: scene([semanticOnly])),
+            "the machine's own run is drawn, not silenced by a control "
+            + "rectangle its pen happens to fall in")
+
+        /* And the control still owns its own rectangle, because it draws
+           last. Same scene with the run REMOVED inside the button's box
+           only: the button's pixels must be identical either way. */
+        var outsideOnly = withDisplay
+        var farLabel = label
+        farLabel.pen = [25, 200]
+        outsideOnly.display = [fill, farLabel]
+        let a = try NSBitmapImageRep(
+            data: RenderShot.png(scene: scene([withDisplay])))
+        let b = try NSBitmapImageRep(
+            data: RenderShot.png(scene: scene([outsideOnly])))
+        for y in 130..<152 {
+            for x in 120..<240 {
+                XCTAssertEqual(a?.colorAt(x: x, y: y),
+                               b?.colorAt(x: x, y: y),
+                               "the button's own rectangle is P2's at (\(x),\(y))")
+            }
+        }
     }
 
     func testGuestEraseMakesRepeatedRepaintsReplacePriorDrawing() throws {

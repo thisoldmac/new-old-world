@@ -743,6 +743,28 @@ public struct SceneRenderer {
            docs/render-composition.md > "the rule for anyone adding a
            placeholder". */
         let replayCoverage = DisplayReplay.Coverage()
+        /* A BACKGROUND IS GROUND, SO IT GOES DOWN FIRST. `panel`,
+           `placard`, `selectionBand` and `separator` are the four DITL
+           kinds that fill a rectangle and say nothing about what is in
+           it — which is why `dialogItemOwnsDisplay` already refuses to
+           let them silence the drawing under them. They were still drawn
+           AFTER the replay, and that was invisible only for as long as
+           the first gate silenced every drawn run inside them: the
+           moment rung 1 stopped yielding, NOW's Workshop sidebar
+           replayed all fifteen of its rows and then had its own `panel`
+           painted flat white over the lot.
+
+           Order, not another exclusion. The machine paints its ground
+           and then draws on it, and so does this: backgrounds under the
+           replay, the Control Manager's furniture over it. A coverage
+           test could not stand in for that — `covers` intersects, so one
+           inked pixel anywhere would suppress a whole panel. */
+        for item in win.dialogItems ?? [] where item.visible
+                && Self.dialogItemIsBackground(item.semantic.kind)
+                && (item.ref.map { !semanticControlRefs.contains($0) }
+                    ?? true) {
+            drawDialogItem(contentCtx, item, contentOrigin: content.origin)
+        }
         if let display = win.display {
             DisplayReplay.draw(display, in: contentCtx, content: content,
                                excluding: semanticFrames,
@@ -773,6 +795,7 @@ public struct SceneRenderer {
             rect($0.rect).offsetBy(dx: content.minX, dy: content.minY)
         } ?? []
         for item in win.dialogItems ?? [] where item.visible
+                && !Self.dialogItemIsBackground(item.semantic.kind)
                 && (item.ref.map { !semanticControlRefs.contains($0) }
                     ?? true) {
             drawDialogItem(contentCtx, item, contentOrigin: content.origin,
@@ -1314,6 +1337,18 @@ public struct SceneRenderer {
         return title
     }
 
+    /// The DITL kinds that are GROUND — they fill a rectangle and say
+    /// nothing about what is inside it. Named once because two rules read
+    /// it: they may never silence the drawing under them
+    /// (`dialogItemOwnsDisplay`), and they are drawn BEFORE the replay
+    /// rather than after it, because that is where ground goes.
+    static func dialogItemIsBackground(_ kind: String?) -> Bool {
+        switch kind {
+        case "panel", "placard", "selectionBand", "separator": return true
+        default: return false
+        }
+    }
+
     static func dialogItemOwnsDisplay(_ item: MirrorKit.Scene.DialogItem)
         -> Bool {
         switch item.semantic.kind {
@@ -1337,6 +1372,22 @@ public struct SceneRenderer {
         let frame = rect(item.rect).offsetBy(dx: contentOrigin.x,
                                              dy: contentOrigin.y)
         guard frame.width > 0, frame.height > 0 else { return }
+        /* RUNG 1 BEATS RUNG 2, PIECE BY PIECE. Two branches — `icon` and
+           the placeholder default — already yielded to what the replay
+           had inked; the rest drew their own label over the machine's,
+           and Date & Time printed "Set Daylight-Saving Time
+           Automatically" twice, one string over the other, the moment
+           the replay stopped being silenced (`DisplayReplay.semanticOwns`).
+
+           It is asked PER PIECE and not once for the whole row, and the
+           difference is visible: a check box's LABEL arrives as a text
+           op and its little box does not, so a row-wide test drew
+           neither and Date & Time lost both of its check boxes. `covers`
+           intersects, so the question has to be put about the rectangle
+           the piece is about to fill. */
+        func inked(_ piece: CGRect) -> Bool {
+            replayed?.mostlyCovers(piece) == true
+        }
         switch item.semantic.kind {
         case "panel":
             ctx.fill(Path(frame), with: .color(Platinum.g0))
@@ -1349,6 +1400,20 @@ public struct SceneRenderer {
         case "separator":
             ctx.fill(Path(frame), with: .color(Platinum.g4))
         case "staticText":
+            /* AND THE MACHINE'S OWN RUN OUTRANKS THE LABEL. The two
+               gates are separate — whether a row may SILENCE P3, and
+               whether it may DRAW OVER it — and this branch answered the
+               first and never the second. It did not show while the
+               first gate silenced every drawn run inside a DITL
+               rectangle; the moment rung 1 stopped yielding (see
+               `DisplayReplay.semanticOwns`) both strings would land in
+               the same place.
+               The drawn run is the better answer wherever it exists: it
+               is what the application actually put on screen, truncation
+               and all. NOW's Workshop sidebar is the case — the guest
+               drew "Capture and stre…" and this row says "Capture and
+               stream". */
+            guard !inked(frame) else { break }
             appText(item.semantic.value
                     ?? Self.displayableTitle(item.title) ?? "",
                     ctx, x: frame.minX,
@@ -1356,6 +1421,7 @@ public struct SceneRenderer {
                         + CGFloat(FontBook.app?.ascent ?? 10),
                     color: item.enabled ? Platinum.g6 : Platinum.g3)
         case "editText":
+            guard !inked(frame) else { break }
             ctx.fill(Path(frame), with: .color(Platinum.g0))
             ctx.stroke(Path(frame), with: .color(Platinum.g6), lineWidth: 1)
             appText(item.semantic.value
@@ -1371,18 +1437,26 @@ public struct SceneRenderer {
                                  width: 12, height: 12)
             let shape = item.semantic.kind == "radioButton"
                 ? Path(ellipseIn: markBox) : Path(markBox)
-            ctx.fill(shape, with: .color(Platinum.g0))
-            ctx.stroke(shape, with: .color(Platinum.g6), lineWidth: 1)
-            if item.semantic.state == "on" {
-                let dot = markBox.insetBy(dx: 3, dy: 3)
-                ctx.fill(item.semantic.kind == "radioButton"
-                         ? Path(ellipseIn: dot) : Path(dot),
-                         with: .color(Platinum.g6))
+            if !inked(markBox) {
+                ctx.fill(shape, with: .color(Platinum.g0))
+                ctx.stroke(shape, with: .color(Platinum.g6), lineWidth: 1)
+                if item.semantic.state == "on" {
+                    let dot = markBox.insetBy(dx: 3, dy: 3)
+                    ctx.fill(item.semantic.kind == "radioButton"
+                             ? Path(ellipseIn: dot) : Path(dot),
+                             with: .color(Platinum.g6))
+                }
             }
-            appText(item.title, ctx, x: frame.minX + 16,
-                    baselineY: frame.midY + 4,
-                    color: item.enabled ? Platinum.g6 : Platinum.g3)
+            let label = CGRect(x: frame.minX + 16, y: frame.minY,
+                               width: max(0, frame.width - 16),
+                               height: frame.height)
+            if !inked(label) {
+                appText(item.title, ctx, x: frame.minX + 16,
+                        baselineY: frame.midY + 4,
+                        color: item.enabled ? Platinum.g6 : Platinum.g3)
+            }
         case "popupMenu":
+            guard !inked(frame) else { break }
             ctx.fill(Path(frame), with: .color(Platinum.g1))
             ctx.stroke(Path(frame), with: .color(Platinum.g6), lineWidth: 1)
             appText(item.semantic.value ?? item.title, ctx,
