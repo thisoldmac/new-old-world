@@ -14,6 +14,197 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED: two capabilities and their gate had never met, and one integration found both (2026-08-07, `claude/019-integration-3`)
+
+`scripts/test-all` failed at the host gate on the round-3 merge, twice,
+on the same row and for two different reasons. Neither lane was wrong;
+both were written against a surface that did not yet contain the other.
+
+**One: no argument.** `MCPClientConformanceTests` — landed by
+`019-conformance` — checks its recipe book against `tools/list` **both
+ways** and failed naming `now_mirror_open`, a capability
+`018-open-mirror` had landed before that lane forked. Fixed with a
+recipe: it takes no arguments and its own annotations declare it
+idempotent and non-destructive, so a conformance run may take it. It
+goes in `producersFirst` ahead of the other `now_mirror_*` rows because
+its own descriptor says they read a state engine that does not run until
+the Mirror is open.
+
+**Two: a fourth name for one question.** With an argument, the driver
+then read its reply as *"a structured result in no shape this driver can
+read: alreadyOpen, detail, showing, unavailable"*.
+`AgentIntegrationMirrorOpenResult` says availability with **`showing:
+Bool`** beside the same `unavailable` payload the other envelopes carry
+— which makes four spellings of one question on this surface:
+`available` (session health), `hostAvailable` (guest files), `ok`, and
+now `showing`. The driver's verdict was the correct thing to say about
+that surface.
+
+Taught to the driver rather than renamed, because renaming a shipped MCP
+result field is a surface change and not an integration's to make.
+**The consolidation is the open item**, and it belongs to plan 019's
+"one implementation per question": either these four become one envelope,
+or the reason there are four is written down where a fifth would be
+added. Until then every new capability with its own availability word
+fails this gate on arrival — which is the gate working, and is also four
+times more often than it should have to.
+
+**What makes this the round's most valuable finding.** Both defects were
+invisible on both branches and green on both. A gate that samples would
+have missed the first; a gate that read only the declaration — which is
+what `MCPCoverageTests` does, and it was green throughout — would have
+missed both, because `now_mirror_open` was declared correctly the whole
+time. Only speaking to the surface the way a client does found them, and
+only the merge put the client and the capability in one tree.
+
+## NOT MERGED: `018-cdef-classify` moved out from under the round-3 integration (2026-08-07, `claude/019-integration-3`)
+
+`tools/arc-status` computed the lane as **idle** at 9 commits and it was
+merged at that tip (`f3f7c7f3` and its ancestors — the reason strings, the
+`018-control-semantics` findings, the scene tests). Three further commits
+landed on it **while this round was gating**:
+
+    601cb07f  feat(scene): the CDEF resource id, as a third knowledge state
+    62e82470  feat(act): ctlact takes a POINT, and a console face that works
+    58e9e5e5  build: the four new sources compile into the guest
+
+Those three are the lane's namesake — the CDEF fallback the merged
+`018-control-semantics` entry recommends as the next slice, plus the click
+POINT that entry says tabs and list rows need. **They are not in this
+integration.** The lane was in flight at the moment it was read as idle,
+and merging a moving tip would have produced a gate result nobody could
+attribute — the same class of problem as a derived count that was true
+when it was derived.
+
+So the merged `018-control-semantics` entry's "what did NOT land, and why"
+section is accurate about this tree and already stale about that branch.
+The lane lands next round.
+
+**The general shape, which is worth more than this instance:** `idle`
+is a property of a branch at the moment it is computed, and an
+integration takes an hour. `arc-status` reports it once, at the start,
+and nothing re-checks it at the merge — so a lane can be honestly idle
+when the round begins and in flight when it ends. Re-reading the tips
+before the final gate would name it, the way re-deriving the coverage
+tables at the merge names their drift.
+
+## FIXED: an integration had truncated the entry it was recording itself in (2026-08-07, `claude/019-integration-3`)
+
+The `018-integration` entry — "the first watch of the INTEGRATED render,
+and what it shows", six numbered defects across five targets — exists on
+`claude/018-integration` and on `claude/019-cursor-follow` and **did not
+exist on `claude/019-integration-2`**. What survived there was the
+thirteen-line status addendum a later round had added *on top* of it,
+under the same heading, with the body gone. `grep -c "Seventeen plan-018
+lanes merged"` answered 1, 1 and 0.
+
+It was restored at this merge by folding the two: the addendum, then the
+body it was an addendum to. Nobody deleted it deliberately — a keep-both
+resolution had kept the newer heading and dropped the older text under
+it, and because the heading survived, every later reader saw an entry
+that looked complete.
+
+That is the failure mode of resolving a documentation conflict by
+keeping headings: **a heading is not the entry**, and a ledger whose
+entries can lose their bodies while keeping their titles reads exactly
+like a ledger that is fine. Round 2 caught its own splice truncating
+`HostAppState.swift` from 447 lines to 295 by counting lines; nothing
+counts the lines of a prose entry, and this one had been short for a
+round before anyone noticed.
+
+## ANSWERED: LIST VIEW IS WATCHED, and the round-2 pair that claimed it was icon view (2026-08-07, `claude/019-integration-3`)
+
+Two rounds recorded list view as blocked. It is not, and the block named
+in the entry below — `menuact` on View > "as List" answering
+`no-such-process` — **did not reproduce**. On the round-3 integrated
+tree, against a private baked image (resident `4d0988e8e891`,
+capabilities 511), with the Finder fronted and the anchor cycle run
+first:
+
+    menuact menu=259 item=3 titleLeft=110 psn=0.29949953
+      Dispatch      dispatched
+      Mechanism     the application's own MenuSelect
+      Identity      checked: the press is where this application's own
+                    menu bar puts that menu's title
+      Settlement    dispatched-but-unconfirmed
+      Correlation   4F976E8D-00000002
+
+and the next scene carried `as Icons  mark=false` / `as List
+mark=true`. The guest's own menu state is the confirmation, not a look
+at the pixels — and the pixels agree: ten rows with Name and Date
+Modified columns.
+
+**The round-2 baseline for this target is void.**
+`~/Lab/Assets/now-mirror-assets/019-integration/finder-list-guest.png`
+shows the Finder in **icon** view — same window, same ten icons, byte
+-for-byte the same content as `finder-icon-guest.png` beside it. The
+view was never switched and the file was named for what the run meant to
+capture rather than for what it got. Nothing about that pair can be
+compared against; the round-3 pair is the first list-view evidence this
+project has.
+
+That is the second time in three days a target has been named for its
+intent. It is the same failure as deploying a build under the name it
+was meant to be (AGENTS.md > Deploying), arriving in the assets
+directory instead of on the PowerBook.
+
+**Not fixed by anything, and that is the useful half.** No lane in this
+merge touched the anchor bind. Either the earlier refusal was a
+consequence of the rig — a guest that had not run its acquisition cycle,
+or an application not pumping with the plane armed — or it is
+intermittent. Both readings are live, and a refusal nobody can reproduce
+is not a closed defect.
+
+## BROKEN: the integrated render at round 3 — six targets, and the content plane reached none of them (2026-08-07, `claude/019-integration-3`)
+
+Seven lanes merged, then the tree was watched composing. Pairs in
+`/tmp/pairs-int3-p2` (guest pixels via QMP screendump after the walk
+returned, host render via `MirrorApp --render-scene` over the same
+envelope). Emulated mac99/OS 9.1, private image `now-stage-int3`,
+resident `4d0988e8e891`. Nothing here is metal-verified.
+
+**Steady state was confirmed, not assumed.** Pass 1 discarded — its
+scenes carry two to four windows because the control panels were still
+opening. Pass 2 is the measurement: every scene carries all five
+windows. Pass 3 re-took two targets and the semantic answer was
+identical (21 and 73 controls, all `knowledge: unknown`), which is the
+test that distinguishes steady state from the warm-up defect: a warm-up
+scene reports NOW's **own** nine controls as unknown too, and here they
+classify correctly every time — button, checkbox, scrollbar, popup,
+triangle.
+
+| Target | Against round 2 | What it looks like |
+|---|---|---|
+| Workshop | **unchanged, and the best of the six** | Layout, text, buttons, window chrome and the disabled/enabled split all right. Sidebar module icons are a generic page glyph rather than each module's own; the sidebar's scrollbar and the preview box's outline are not drawn |
+| Desktop | **unchanged** | NOW's window with the Finder frontmost; the render correctly greys every control of the inactive window, which is the part most likely to have been got wrong |
+| Finder icon view | **unchanged** | Frame, title, scrollbars and grow box right; the interior is empty and says *"Guest content not reported"*. Identical to the round-2 render |
+| Finder list view | **BETTER — new ground** | First ever capture (above). The render draws the **Name / Date Modified column headers**, which the icon-view render does not — so the renderer does distinguish the two views. The rows themselves are absent, same content gap |
+| Date & Time | **unchanged** | Still **no group boxes at all**. "Current Date", "Current Time", "Time Zone", "Use a Network Time Server" arrive with correct rects and correct titles and no kind, so there is nothing to draw them as. Text fields are empty grey slabs. Buttons, radio buttons and the menu-bar clock group are right |
+| Appearance | **unchanged, and still the one a person would call broken** | No tab strip at all, three scrollbars stacked, interior *"Guest content not reported"* |
+
+**One cause under four of those rows.** `content: false` on **every
+window of every target**, ours included. The content plane is
+`supported: true, requested: false, active: false` throughout, so every
+interior that says "Guest content not reported" is reporting the truth
+about a plane nothing armed. This rig arms it no more than round 2's
+did, so the comparison is fair — but four of the six "unchanged" verdicts
+are one unarmed plane rather than four defects, and a look that arms it
+would say something none of these six can.
+
+**`z: 0` is still true, and the render still draws in array order.**
+Every window in all six scenes reports `z: 0` except the Finder's
+Desktop window, which reports `1`. The renders happen to look right
+because the scene's array order is front-first and tracks the front
+application — so the defect is invisible in exactly the captures that
+would expose it, and stays invisible until two windows of the SAME
+process need ordering.
+
+**`acquired: 0` on every cycle, in all three passes**, with
+`count` settling at 4 and `armed: true`. The cycle reports "every
+application got its turn" and acquires nothing new because the four are
+already anchored; it is not obviously wrong, and it is not obviously
+right either, and no run here distinguishes them.
+
 ## ANSWERED: the list-view lane is still unwatched, and the reason is NOT the one recorded (2026-08-07, `claude/019-integration-2`)
 
 The 018 integration could not get a list-view pair and recorded that
