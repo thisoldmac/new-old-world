@@ -342,6 +342,23 @@ void now_mirror_probe(MirrorFacts *facts)
         facts->channel_result = 0;
         facts->channel_sends = 0;
     }
+    /* And a fourth independent gate, for the reason the third one gives:
+       a resident with the channel and without the rest word is exactly the
+       build that shipped before this one, and it must read as "did not
+       say" rather than as "nothing is installed". Those are opposite
+       claims, and defaulting a missing word to zero would assert the
+       reassuring one about a machine that never answered. */
+    if (table->length >= (unsigned long)(offsetof(NowPeekTable, gne_passes)
+                                         + sizeof(NowPeekU32))
+        && table->rest_format == kNowPeekRestFormatV1) {
+        facts->has_rest_state = 1;
+        facts->rest_state = table->rest_state;
+        facts->gne_passes = table->gne_passes;
+    } else {
+        facts->has_rest_state = 0;
+        facts->rest_state = 0;
+        facts->gne_passes = 0;
+    }
     {
         NowPeekBuildIdentity identity;
         if (now_peek_build_identity(&identity)) {

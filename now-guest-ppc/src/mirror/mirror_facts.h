@@ -177,6 +177,31 @@ typedef struct MirrorFacts {
     unsigned long channel_state;
     long channel_result;
     unsigned long channel_sends;
+    /* WHAT THE RESIDENT IS STILL HOLDING, which is a third question from
+       `capabilities` and `active_bits` and was for a long time answered by
+       neither.
+       ------------------------------------------------------------------
+       `capabilities` says what this binary CAN do; `active_bits` says what
+       the wire asked for and got. Both are about intent. Neither answers
+       the question a person asks before deciding to keep a system
+       extension installed: with nothing running, what is still hooked?
+
+       The sharpest thing it reports cannot be undone. Once the act plane
+       has armed even once, six trap patches are in this machine's
+       dispatch table until it reboots — they are bypassed, not removed,
+       because unpatching from the middle of a chain another extension may
+       have joined is how a Macintosh jumps into freed code. That is a
+       true and durable fact about the machine in front of the user and it
+       belongs on the page, not in a source comment.
+
+       `gne_passes` is the denominator beside it: bumped on every filter
+       pass whether or not anything is armed, so a page showing every
+       plane's counter at zero can distinguish a resident at rest from one
+       that never ran. Zero here on a resident that reports active is
+       itself the interesting reading. */
+    unsigned long rest_state;
+    unsigned long gne_passes;
+    Boolean has_rest_state;
     Boolean has_build_identity;
     unsigned long source_manifest[kMirrorIdentityWords];
     unsigned long build_fingerprint[kMirrorIdentityWords];

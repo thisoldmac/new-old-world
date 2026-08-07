@@ -114,13 +114,27 @@ enum {
        application on the guest for over 90 s, past the host's silence
        window, and the wire died against a healthy Macintosh. */
     kNowPeekTableCapLiveness = 1u << 5,
-    /* P6, the second half: the resident has a TRANSPORT and a stream on
-       it. Separate from the bit above because the two are separately
-       true — the vehicle shipped and was proven on an emulator for a day
-       before anything could dial — and because capabilities are bits and
-       are never inferred from a version. A build that gains the channel
-       says so with its own bit rather than by the vehicle's changing
-       meaning underneath a reader. */
+    /* P6, the second half: this binary CAN reach a transport and dial.
+       Separate from the bit above because the two are separately true —
+       the vehicle shipped and was proven on an emulator for a day before
+       anything could dial — and because capabilities are bits and are
+       never inferred from a version.
+
+       **Corrected 2026-08-07, and the correction is the rule this enum
+       already stated.** It used to be set only once a TCP stream actually
+       existed, which made it a state word wearing a capability's name. It
+       read correctly for as long as the resident opened its transport
+       unconditionally at boot; the moment that became conditional on an
+       application asking, a resting machine advertised one fewer
+       capability than its binary had, and the bake gate — which derives
+       the expected word from this enum — called it a plane that failed to
+       arm. It was not: nothing had asked it to.
+
+       So this says what the BINARY can do, like every bit beside it.
+       Whether a stream exists right now is `channel_state`, and whether
+       one is being held is `kNowPeekRestTransport`. Three questions,
+       three words, which is the same separation `rest_state` exists to
+       make. */
     kNowPeekTableCapLivenessNet = 1u << 6
 };
 

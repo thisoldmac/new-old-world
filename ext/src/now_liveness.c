@@ -356,14 +356,6 @@ void now_liveness_probe_transport(NowPeekTable *table)
        the open above is. A refused driver hands it 0 and it records a
        machine with no transport rather than trying anyway. */
     now_liveness_net_prepare(table, (err == noErr) ? gTransportRefNum : 0);
-    /* The channel's own capability bit, and it is a SECOND bit rather
-       than a widening of the vehicle's: capabilities are bits and are
-       never inferred from a version, so "there is a resident here that
-       ticks" and "there is one that can speak" stay separately
-       answerable. Set only when a stream actually exists. */
-    if (table->channel_state != kNowPeekChannelNoTransport) {
-        table->caps |= kNowPeekTableCapLivenessNet;
-    }
     /* What this machine is now HOLDING, as distinct from what it can do.
        The driver open and the stream are the durable half of this plane —
        neither is given back — so they are reported rather than left to be
@@ -423,9 +415,16 @@ void now_liveness_install(NowPeekTable *table)
        first thing to reach for: a `return` at the top of this function. */
     InsTime((QElemPtr)&gLivenessTask.task);
     gTaskInstalled = true;
-    /* The capability bit says the VEHICLE is here, which is all it has
-       ever claimed: capabilities are bits and never inferred from a
-       version, so a later build that gains the transport says so with
-       its own bit rather than by this one changing meaning. */
-    table->caps |= kNowPeekTableCapLiveness;
+    /* Both capability bits, at boot, because both are facts about this
+       BINARY: it has a vehicle, and it has code that can reach MacTCP and
+       dial. Neither says anything is running — the vehicle is not even
+       primed at this point, and no transport has been touched.
+
+       The channel bit moved here on 2026-08-07 from the transport probe,
+       where it was set only once a stream existed. That made it a state
+       word with a capability's name, and it survived only because the
+       probe used to run unconditionally at boot. See its comment in
+       contract/peek_table.h: what is RUNNING is `channel_state`, what is
+       HELD is `rest_state`, and this is what the binary CAN do. */
+    table->caps |= kNowPeekTableCapLiveness | kNowPeekTableCapLivenessNet;
 }

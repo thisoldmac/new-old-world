@@ -14,6 +14,64 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## CORRECTED: the extension does not hook every draw at rest — but it did hold a MacTCP stream on machines that never ran NOW (2026-08-07, `claude/019-ext-rests-when-unused`)
+
+The landing question was whether the resident hooks every app draw and
+every app state change while nothing is mirroring. **The premise is
+false, and what is true instead was in a different plane.** The full
+census is [docs/resident-components.md](resident-components.md) >
+"What each plane costs at rest"; this entry is the ledger line.
+
+**False: draws.** No `grafProcs` is installed into any port and no
+QuickDraw trap is patched until P3 is armed for a named A5 *and* a named
+window. `now_content_boot` builds the hook table and installs nothing.
+A machine that never opens the Mirror never executes a draw hook.
+
+**False: app state.** Anchors are arm-gated, and the writer lease
+(`kNowPeekWriterLeaseTicks`, 180 ticks) force-clears the arm word within
+three seconds of the application going away — so standing down does not
+depend on any shutdown path being correct, and a machine whose user never
+launched NOW has been dark since boot.
+
+**True, and nobody named it: P6.** A Time Manager task was installed and
+primed at boot unconditionally, re-firing every five seconds forever; and
+the first event-loop pass after every boot opened MacTCP's `.IPP` driver
+and created a TCP stream with a receive buffer. Neither was arm-gated or
+lease-gated. The *dialling* was correctly gated on the application
+publishing an endpoint — so nothing ever went on the wire — but the
+driver, the stream and the interrupt were held on behalf of an
+application nobody had started. Fixed on this branch: both now wait for
+the endpoint, and the task retires by declining to re-prime.
+
+**Two things remain unfixed, both deliberate, and both are the reason
+this entry is CORRECTED rather than closed.**
+
+- **P4's trap patches are one-way.** Once the act plane has armed even
+  once, six patches are in the dispatch table until reboot. They are
+  bypassed rather than removed because unpatching from the middle of a
+  chain another extension may have joined is unsafe on this OS. This is
+  the one place the restart-to-apply answer is genuinely forced — and it
+  is forced only for *removal*, since a disarmed patch already chains
+  straight through and costs a fall-through dispatch, paid only by a
+  machine that has actually used the plane. `kNowPeekRestActPatched`
+  reports it rather than leaving it to a source comment.
+- **P3 holds ~64 KiB of system heap from boot**, armed or not, so that
+  arming never has to allocate inside a foreign process. Making it lazy
+  is possible — the first leased filter pass is non-interrupt time, which
+  is exactly where P6 already allocates — but it moves `content_block`
+  and the capability bit into a two-step discovery the application also
+  has to learn, and 64 KiB is not what the landing question was about.
+  **Decided, not forgotten:** deferred, and the design is written down in
+  the census section rather than left to be rediscovered.
+
+**What is NOT yet known.** Emulator evidence only. Nothing here has been
+watched on the PowerBook, and the resting cost has been established by
+counter rather than by stopwatch — `gne_passes` climbing while every
+plane's counters stay flat proves the filter runs and the planes do not,
+which is the question that was asked; it does not put a microsecond
+figure on the filter body itself. A per-pass timing number on a 33 MHz
+68030 remains unmeasured, and `NOW_METAL` is where it would come from.
+
 ## BROKEN: the machine will not say what a foreign control IS, and that is not a bug we can fix in the walk (2026-08-07, `claude/018-control-semantics`)
 
 Michelle, driving the integrated build: *"a lot of controls (such as

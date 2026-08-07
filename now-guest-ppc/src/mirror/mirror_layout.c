@@ -176,3 +176,67 @@ void now_mirror_status_text(const MirrorFacts *facts, char *out, long cap)
 {
     now_mirror_lifecycle_text(facts, out, cap);
 }
+
+/*
+ * What this machine is still HOLDING, in a sentence.
+ *
+ * The order is by how hard each thing is to undo, worst first, because a
+ * person reading one line reads the front of it. Trap patches lead: they
+ * are in this machine's dispatch table until it restarts, since
+ * unpatching from the middle of a chain another extension may have joined
+ * is unsafe — so "Restart to clear" is the honest end of that sentence
+ * and it is the only place on this page those words appear.
+ *
+ * "Nothing but the event hook" is the resting answer and it is stated
+ * positively rather than as an empty list, because an empty list reads
+ * like a question that failed. The event hook is always there and saying
+ * so is not an apology: it is what would notice the next arm.
+ */
+void now_mirror_rest_text(const MirrorFacts *facts, char *out, long cap)
+{
+    unsigned long bits;
+    int n = 0;
+
+    if (cap <= 0) {
+        return;
+    }
+    out[0] = '\0';
+    /* A resident too old to carry the word must not be reported as
+       holding nothing. "Did not say" and "nothing" are opposite claims
+       and the reassuring one would be the invented one. */
+    if (!facts->has_rest_state) {
+        snprintf(out, (size_t)cap, "This resident does not report it");
+        return;
+    }
+    bits = facts->rest_state;
+    if ((bits & kNowPeekRestActPatched) != 0) {
+        n += snprintf(out + n, (size_t)(cap - n),
+                      "Trap patches in (restart to clear)");
+    }
+    if ((bits & kNowPeekRestQDExtPatched) != 0 && n < cap) {
+        n += snprintf(out + n, (size_t)(cap - n), "%sNewGWorld patched",
+                      n > 0 ? ", " : "");
+    }
+    if ((bits & kNowPeekRestContentHooks) != 0 && n < cap) {
+        n += snprintf(out + n, (size_t)(cap - n), "%sdraw hooks live",
+                      n > 0 ? ", " : "");
+    }
+    if ((bits & kNowPeekRestLivenessTicking) != 0 && n < cap) {
+        n += snprintf(out + n, (size_t)(cap - n), "%sliveness ticking",
+                      n > 0 ? ", " : "");
+    }
+    if ((bits & kNowPeekRestTransport) != 0 && n < cap) {
+        n += snprintf(out + n, (size_t)(cap - n), "%sMacTCP stream open",
+                      n > 0 ? ", " : "");
+    }
+    if (n == 0) {
+        /* The block is not listed as a holding when it is the only one:
+           it is allocated on every machine that has the plane at all, so
+           naming it here would make the resting state look busy. The
+           count beside it is what proves the filter is running rather
+           than stopped. */
+        snprintf(out, (size_t)cap,
+                 "Nothing but the event hook (%lu passes)",
+                 facts->gne_passes);
+    }
+}
