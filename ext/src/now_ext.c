@@ -59,6 +59,14 @@ extern void now_ext_act_apply(NowPeekTable *table);
 /* P7's vehicle (now_ext_drag.c). */
 extern void now_ext_drag_boot(NowPeekTable *table);
 extern void now_ext_drag_abandon(NowPeekTable *table);
+/* P8's cursor placement (now_ext_cursor.c). One entry point at boot,
+   like P7's; the other one is called by P4 and P7 rather than by the
+   core, which is the single exception this extension makes to "planes
+   talk only through the core" and is made deliberately: putting the
+   pointer somewhere is not a plane's own errand, it is a service both
+   input planes need, and routing it through the core would mean the core
+   knowing what a click is. */
+extern void now_ext_cursor_boot(NowPeekTable *table);
 
 /* The content plane (now_content.c), P3. Two entry points rather than
    P4's one, and the split is the plane's own: boot allocates and
@@ -416,6 +424,12 @@ void _start(void)
        publishes kNowPeekTableCapDrag only if the install succeeded, so an
        application never arms a vehicle that cannot fire. */
     now_ext_drag_boot(table);
+    /* P8, and it must come after P7 for no reason other than reading
+       order - it installs nothing and primes nothing. It asks the Cursor
+       Device Manager for a device once, and publishes
+       kNowPeekTableCapCursor only if it got one, so an application never
+       believes the sprite will follow on a machine where it cannot. */
+    now_ext_cursor_boot(table);
     table->act_format = kNowPeekActFormatV2;
     table->act_text_max = (NowPeekU16)kNowPeekActTextMax;
     table->identity_format = kNowPeekIdentityFormatV1;
