@@ -4927,8 +4927,23 @@ components:
     # of four core Apple Events. See now-guest-ppc/src/input/input_cmds.h.
     mouseloc:
       description: >
-        Where this Mac's pointer IS — which is not where anything asked
-        it to go.
+        Where this Mac's pointer IS, and — since P8 — where its PICTURE
+        was last put. Two answers, and until 2026-08-07 they could differ
+        by hundreds of pixels with nothing on either face able to say so.
+
+        The first is not where anything asked it to go, and the second is
+        not always where the first is: the resident writes the pointer's
+        position on every act and every drag, and moving the DRAWN cursor
+        is a separate act that can be declined. The extra rows say which
+        route drew it (`device`, `lowmem`, `quickdraw`, `yielded`),
+        whether the Cursor Device Manager gave this Mac a device at all,
+        and the counters. `route` is the row that matters: a cursor plane
+        that is present, armed and silently taking the low-memory route
+        reports a position, raises no error, and does not move the
+        picture — which is the exact defect P8 was built to fix. They are
+        absent, rather than zero, on a guest with no resident or no
+        plane: a row saying `asked 0` would claim something that is not
+        there. See docs/cursor-follow.md.
 
         The instrument the act plane is measured WITH rather than a part
         of it. An emulator's relative mouse is acceleration-distorted, so

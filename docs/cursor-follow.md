@@ -229,6 +229,22 @@ say so. Absent resident, absent plane and a too-short table all add
 **nothing** rather than zeros: a row saying `asked 0` would claim a plane
 that is not there.
 
+## Provenance
+
+The resident this page describes was baked **privately**, never over the
+shared oracle:
+
+```
+~/Lab/Assets/os91-qemu/agent-stage/now-stage-cursor.qcow2
+sha256 e634a32c1bce65232e904ba0d3a3351e209743359e3f178509e42573b2881eb6
+```
+
+The guest itself was asked and answered `lifecycle=active`,
+`capabilities=511`, fingerprint `4d0988e8e891` — matching the local
+build — with `qemu-img check` clean and the HFS volume cleanly
+unmounted. `ext/stage-receipts.json` is deliberately **not** written: a
+receipt there is a claim about the shared file, and this is not it.
+
 ## Diagnostics
 
 - `tools/local-cursor-mechanism.py` — finds the low-memory window, reads
