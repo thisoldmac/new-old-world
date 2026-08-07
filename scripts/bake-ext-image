@@ -200,7 +200,13 @@ echo "   local build fingerprint: $WANT_BUILD"
 echo
 echo "== bake: clone the base, stage, cold boot, and let the guest speak =="
 rm -rf "$RUN"
+# NOW_SPIN_PURPOSE, so the inner run asks the base-image question as a
+# BAKE rather than as ordinary work. Without it a bake from a private
+# base would be told, correctly but uselessly, that its base is not the
+# designated one for a sweep — and a gate that reports the normal case as
+# a finding is one nobody reads by the end of the week.
 NOW_SPIN_BASE="$BASE_IMAGE" NOW_SPIN_RUN="$RUN" NOW_WIRE_PORT="$WIRE" \
+    NOW_SPIN_PURPOSE=bake \
     "$NOW/scripts/spin-up-ppc"
 
 ANCHOR="$(cut -d' ' -f1 "$RUN/ports")"

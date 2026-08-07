@@ -93,7 +93,11 @@ QEMU="${TIMBOTTU_QEMU:-$LAB/qemu/build/qemu-system-ppc}"
 # one layer down where no gate was watching. A limit is stated ONCE, where
 # every reader of it looks (AGENTS.md > The contract is the source of
 # truth); tools/base-image is that place, and every clone site asks it.
-BASE="${NOW_SPIN_BASE:-$("$NOW/tools/base-image" which --purpose ppc-work)}"
+# NOW_SPIN_PURPOSE says what this run IS, and the honest values are the
+# ones tools/base-image knows: ordinary work, or the inner run of a bake.
+# It changes which base is designated and how strictly the checks read.
+PURPOSE="${NOW_SPIN_PURPOSE:-ppc-work}"
+BASE="${NOW_SPIN_BASE:-$("$NOW/tools/base-image" which --purpose "$PURPOSE")}"
 # A PER-VM RUN DIRECTORY, for the same reason rule 4 makes the ports
 # per-VM. It was one fixed directory, so a second spin-up in the same
 # checkout bound the same socket NAMES: the newer QEMU took them, every
@@ -161,7 +165,7 @@ mkdir -p "$RUN"
 # so what was baked into the base is not what is under test. That is why a
 # stale-resident base WARNS here instead of refusing, and it would be a lie
 # to pass this flag from a site that only boots.
-"$NOW/tools/base-image" fit "$BASE" --purpose ppc-work --stages-resident \
+"$NOW/tools/base-image" fit "$BASE" --purpose "$PURPOSE" --stages-resident \
     --json "$RUN/base-fitness.json" || exit $?
 
 # --- WHICH RIG IS THIS? Said out loud, before anything boots -------------
