@@ -229,9 +229,21 @@ class EveryCallerPassesTheCleanRoute(unittest.TestCase):
         self.assertIn("--wire $WIRE", stop)
 
     def test_lane_ports_reclaim_passes_wire(self):
-        """MUTATION: remove "--wire", wire from the argv and this fails."""
+        """MUTATION: remove "--wire", wire from the argv and this fails.
+
+        Anchored on the argv LITERAL rather than on the first mention of
+        the filename. It used to slice from `text.index("shutdown-guest.py")`
+        and that broke at the round 7 merge without either lane being
+        wrong: a sibling lane added a `SHUTDOWN_RIG_MISSING` constant whose
+        comment names the same tool eighty lines above the call, so the
+        slice began in a comment and the assertion read a region with no
+        argv in it. A locator that any new PROSE can move is not a locator.
+        """
         text = (TOOLS / "lane-ports").read_text()
-        call = text[text.index("shutdown-guest.py"):]
+        marker = '"shutdown-guest.py")'      # the argv element, not a mention
+        self.assertIn(marker, text,
+                      "reclaim must invoke tools/shutdown-guest.py by name")
+        call = text[text.index(marker):]
         call = call[:call.index("returncode")]
         self.assertIn('"--wire"', call)
 

@@ -2,6 +2,8 @@
 """The visible Mirror spin must not manufacture an unclean OS 9 boot."""
 
 from pathlib import Path
+import subprocess
+import sys
 import unittest
 
 
@@ -31,12 +33,43 @@ class SpinUpPPCShutdownTests(unittest.TestCase):
 
         A caller that wants the plain base asks by name through
         NOW_SPIN_BASE. The default is the oracle.
+
+        THE PROPERTY MOVED, AND THIS TEST MOVED WITH IT. This used to
+        assert the literal `now-mirror-stage.qcow2` on the BASE= line,
+        which was right while that line named an image. `019-base-image-guards`
+        landed the deeper fix in the same round: the answer to "which base"
+        is stated ONCE, in `tools/base-image`, and every clone site asks
+        it — so the BASE= line now names no image at all and the literal
+        assertion went red against code that is strictly better.
+
+        The two halves are asserted separately rather than dropped,
+        because they are two different claims and only one of them lives
+        here now: this script must DELEGATE and hardcode nothing, and
+        what it delegates to must still designate the stage image.
+        `tools/image-discipline-tests` > "base: which names the stage
+        image, and no clone site hardcodes another" is the same pair at
+        the layer that owns it.
         """
         text = SCRIPT.read_text()
         default = [l for l in text.split("\n") if l.startswith("BASE=")]
         self.assertEqual(len(default), 1, f"expected one BASE=, got {default}")
-        self.assertIn("now-mirror-stage.qcow2", default[0])
-        self.assertNotIn("os91-runner.qcow2", default[0])
+        self.assertIn("base-image", default[0],
+                      "the base must come from tools/base-image, not a "
+                      f"literal in this script: {default[0]}")
+        self.assertNotIn(".qcow2", default[0],
+                         "a clone site must not hardcode a base of its own: "
+                         f"{default[0]}")
+
+        designated = subprocess.run(
+            [sys.executable, str(ROOT / "tools" / "base-image"),
+             "which", "--purpose", "ppc-work"],
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(designated.returncode, 0,
+                         designated.stdout + designated.stderr)
+        self.assertTrue(
+            designated.stdout.strip().endswith("now-mirror-stage.qcow2"),
+            "the designated PPC base must still be the stage oracle: "
+            f"{designated.stdout!r}")
 
     def test_the_run_says_which_base_it_cloned(self):
         """The defect was not only that the default went stale — defaults
