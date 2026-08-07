@@ -443,6 +443,32 @@ Two things follow, and the second is the one that costs something:
   gate the pair or delete one. A sentence naming seven of eight rows is
   not a smaller error than a wrong number; it is a more convincing one.
 
+**A derived document now declares itself, and the declaration is
+machine-readable.** `docs/contract-coverage.md` and `docs/mcp-coverage.md`
+each carry a `derived-doc` block beside their published commands: the
+runnable derivations, the sha256 of each answer, and a digest of the
+source files they read. `tools/derived-doc-gate` re-runs them —
+`rederive` rewrites the block and logs what moved, `check` refuses a
+**merge** commit whose derivations were not re-run. Three properties are
+the point rather than the hashing:
+
+- **The source digest is checked separately from the answers**, because a
+  count is blind to a change of shape: two lanes added new *arguments* to
+  existing verbs and every count held.
+- **The prose list is derived too.** `mcp-coverage.md`'s "unnoticed rows,
+  named together" is asserted equal to the table's own column, and both
+  sides emit how many lists there are — two lists whose union matches the
+  table is exactly the rot that shipped.
+- **A confirmation is worth its line.** A re-run that finds nothing
+  writes `unchanged` with the sha it ran at, because a derived table
+  unmoved by 99 commits looks exactly like a derivation nobody ran.
+
+It is **built and not armed** — `NOW_DERIVED_DOC_GATE=1` switches the
+hooks on, and the arming procedure is in `.githooks/pre-commit`. Arming a
+gate into a live fleet is a change to every branch at once.
+`tools/derived-doc-gate-selftest` is the mutation evidence, in a
+throwaway repository with two lanes and a real merge.
+
 Durable technical claims that outlive this repository go to the parent's
 corpus as findings (`data/findings/`), validated with `tools/data check`.
 The platform lessons from here already live there:

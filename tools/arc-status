@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+# Where the arc actually stands — DERIVED, never remembered.
+#
+# This exists because a coordinating session that has fanned out a dozen
+# lanes cannot hold their state in its head, and the failure mode is not
+# forgetting a lane — it is CONFIDENTLY MISREPORTING one. On 2026-08-07
+# the coordinator told Michelle a slice was dispatched when only its task
+# had been created, and separately reported an integration branch as
+# having merged nothing when it had merged nothing YET. Both were honest
+# and both were wrong, and both were one command away from being right.
+#
+# So: run this at every merge, before every handoff, and any time you are
+# about to tell a person what is done. Its output is evidence; your
+# recollection is not.
+#
+# Usage:  tools/arc-status [integration-branch]     (default: the newest
+#                                                    claude/*integration*)
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+INT="${1:-}"
+if [ -z "$INT" ]; then
+    INT="$(git for-each-ref --sort=-committerdate --format='%(refname:short)' \
+             'refs/heads/claude/*integration*' | head -1)"
+fi
+[ -n "$INT" ] || { echo "no integration branch found; pass one" >&2; exit 64; }
+
+echo "=== integration branch: $INT"
+echo "    head: $(git log -1 --format='%h %s' "$INT")"
+echo
+
+echo "=== LANDED (merged into $INT)"
+landed=0
+for b in $(git branch --list 'claude/01[0-9]-*' --format='%(refname:short)'); do
+    [ "$b" = "$INT" ] && continue
+    if git merge-base --is-ancestor "$b" "$INT" 2>/dev/null; then
+        printf '    %s\n' "${b#claude/}"
+        landed=$((landed + 1))
+    fi
+done
+[ "$landed" -gt 0 ] || echo "    (none)"
+echo
+
+echo "=== NOT LANDED — each of these is work that exists and is not in the tree"
+notlanded=0
+for b in $(git branch --list 'claude/01[0-9]-*' --format='%(refname:short)'); do
+    [ "$b" = "$INT" ] && continue
+    git merge-base --is-ancestor "$b" "$INT" 2>/dev/null && continue
+    n=$(git rev-list --count "$(git merge-base "$b" "$INT")..$b" 2>/dev/null || echo '?')
+    # A dirty worktree means an agent is probably still typing into it.
+    state="idle"
+    wt=$(git worktree list --porcelain | awk -v br="refs/heads/$b" '
+        /^worktree /{w=$2} $0=="branch "br{print w}')
+    if [ -n "$wt" ] && [ -d "$wt" ]; then
+        d=$(git -C "$wt" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+        [ "$d" != "0" ] && state="IN FLIGHT ($d files dirty)"
+    fi
+    printf '    %-30s %4s commits   %s\n' "${b#claude/}" "$n" "$state"
+    notlanded=$((notlanded + 1))
+done
+[ "$notlanded" -gt 0 ] || echo "    (none — everything is in)"
+echo
+
+echo "=== CONFLICTS each unlanded branch would hit against $INT"
+for b in $(git branch --list 'claude/01[0-9]-*' --format='%(refname:short)'); do
+    [ "$b" = "$INT" ] && continue
+    git merge-base --is-ancestor "$b" "$INT" 2>/dev/null && continue
+    c=$(git merge-tree --write-tree --name-only "$INT" "$b" 2>/dev/null \
+          | grep -c '^CONFLICT' || true)
+    [ "${c:-0}" -gt 0 ] && printf '    %-30s %s conflicts\n' "${b#claude/}" "$c"
+done
+echo
+
+echo "=== MAIN"
+ahead=$(git rev-list --count "$INT"..main 2>/dev/null || echo '?')
+behind=$(git rev-list --count main.."$INT" 2>/dev/null || echo '?')
+echo "    main is $ahead commits $INT does not have"
+echo "    $INT is $behind commits ahead of main"
+mc=$(git merge-tree --write-tree --name-only main "$INT" 2>/dev/null | grep -c '^CONFLICT' || true)
+echo "    merging main would hit ${mc:-0} conflicts"
+echo
+
+echo "=== MACHINE"
+vms=$(pgrep -f qemu-system-ppc 2>/dev/null | wc -l | tr -d ' ')
+hosts=$(pgrep -f 'New Old World' 2>/dev/null | wc -l | tr -d ' ')
+echo "    $vms guest VM(s), $hosts host app(s) running"
+du -sh /private/tmp/nowvm-*/ 2>/dev/null | awk '{s+=$1} END {if (NR) print "    " NR " run dir(s)"}'
+echo
+
+conf="$root/docs/arc-triggers.conf"
+if [ -f "$conf" ]; then
+    cfg () { grep -E "^$1=" "$conf" | tail -1 | cut -d= -f2-; }
+    cfgall () { grep -E "^$1=" "$conf" | cut -d= -f2-; }
+
+    idle=0; unl_commits=0; maxconf=0; ext_touched=0; found_touched=""
+    for b in $(git branch --list 'claude/01[0-9]-*' --format='%(refname:short)'); do
+        [ "$b" = "$INT" ] && continue
+        git merge-base --is-ancestor "$b" "$INT" 2>/dev/null && continue
+        mb=$(git merge-base "$b" "$INT")
+        n=$(git rev-list --count "$mb..$b" 2>/dev/null || echo 0)
+        unl_commits=$((unl_commits + n))
+        wt=$(git worktree list --porcelain | awk -v br="refs/heads/$b" '
+            /^worktree /{w=$2} $0=="branch "br{print w}')
+        dirty=0
+        [ -n "$wt" ] && [ -d "$wt" ] && \
+            dirty=$(git -C "$wt" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+        [ "${dirty:-0}" = "0" ] && idle=$((idle + 1))
+        c=$(git merge-tree --write-tree --name-only "$INT" "$b" 2>/dev/null \
+              | grep -c '^CONFLICT' || true)
+        [ "${c:-0}" -gt "$maxconf" ] && maxconf=$c
+        files=$(git diff --name-only "$mb..$b" 2>/dev/null || true)
+        while IFS= read -r p; do
+            [ -z "$p" ] && continue
+            if printf '%s\n' "$files" | grep -q "^$p"; then
+                found_touched="$found_touched ${b#claude/}:$p"
+                case "$p" in ext/|contract/peek_table.h) ext_touched=1;; esac
+            fi
+        done <<EOF
+$(cfgall FOUNDATION)
+EOF
+    done
+
+    echo "=== VERDICT — computed from docs/arc-triggers.conf, not judgement"
+    fired=0
+    t=$(cfg MERGE_IDLE_LANES);      [ "$idle" -ge "${t:-99}" ] && \
+        { echo "    MERGE: $idle idle unlanded lanes (>= $t)"; fired=1; }
+    t=$(cfg MERGE_UNLANDED_COMMITS);[ "$unl_commits" -ge "${t:-9999}" ] && \
+        { echo "    MERGE: $unl_commits unlanded commits (>= $t)"; fired=1; }
+    t=$(cfg MERGE_LANE_CONFLICTS);  [ "$maxconf" -ge "${t:-99}" ] && \
+        { echo "    MERGE: a lane would hit $maxconf conflicts (>= $t)"; fired=1; }
+    [ "$(cfg MERGE_ON_MAIN_AHEAD)" = "1" ] && [ "${ahead:-0}" != "0" ] && \
+        { echo "    MERGE: main has $ahead commits we do not"; fired=1; }
+    [ "$(cfg MERGE_ON_EXT_TOUCHED)" = "1" ] && [ "$ext_touched" = "1" ] && \
+        { echo "    MERGE: an unlanded lane touched ext/ or peek_table.h — a bake is owed"; fired=1; }
+    if [ -n "$found_touched" ]; then
+        echo "    MERGE: unlanded lanes touch foundation paths:"
+        for f in $found_touched; do echo "           $f"; done
+        fired=1
+    fi
+    [ "$fired" = "0" ] && echo "    merge: no trigger fired"
+
+    missing=""
+    for g in $(cfgall SWEEP_GATE); do
+        git rev-parse --verify "$g" >/dev/null 2>&1 || { missing="$missing $g(absent)"; continue; }
+        git merge-base --is-ancestor "$g" "$INT" 2>/dev/null || missing="$missing ${g#claude/}"
+    done
+    if [ -z "$missing" ]; then
+        echo "    SWEEP: every gate branch is landed — sweep after one merge-test-drive round"
+    else
+        echo "    sweep: BLOCKED on$missing"
+    fi
+    echo
+fi
+
+echo "=== KNOWLEDGE — work that is not written down did not happen"
+undoc=0
+for b in $(git branch --list 'claude/01[0-9]-*' --format='%(refname:short)'); do
+    [ "$b" = "$INT" ] && continue
+    git merge-base --is-ancestor "$b" "$INT" 2>/dev/null && continue
+    mb=$(git merge-base "$b" "$INT")
+    d=$(git diff --name-only "$mb..$b" -- docs/ 2>/dev/null | wc -l | tr -d ' ')
+    c=$(git diff --name-only "$mb..$b" 2>/dev/null | grep -cE '\.(swift|c|h|py)$' || true)
+    if [ "${c:-0}" -gt 0 ] && [ "${d:-0}" -eq 0 ]; then
+        printf '    *** %-26s %s code files, NO docs ***\n' "${b#claude/}" "$c"
+        undoc=$((undoc + 1))
+    fi
+done
+[ "$undoc" -eq 0 ] && echo "    every unlanded lane touched docs/"
+
+# The corpus outlives this repository; in-repo docs do not. A finding that
+# is only in docs/ is a finding the next project pays for again.
+corpus="${TBT_CORPUS:-/Users/michelle/Lab/Code/timbottu/data/findings}"
+if [ -d "$corpus" ]; then
+    newest=$(ls -t "$corpus"/*.md 2>/dev/null | head -1)
+    if [ -n "$newest" ]; then
+        age=$(( ( $(date +%s) - $(stat -f %m "$newest") ) / 3600 ))
+        echo "    newest corpus finding: $(basename "$newest") (${age}h ago)"
+        [ "$age" -gt 12 ] && \
+            echo "    *** nothing graduated to the corpus in ${age}h — durable lessons are evaporating ***"
+    fi
+    untracked=$(cd "$corpus" && git status --porcelain . 2>/dev/null | grep -c '^??' || true)
+    [ "${untracked:-0}" -gt 0 ] && \
+        echo "    *** $untracked corpus finding(s) UNTRACKED — one checkout from oblivion ***"
+fi
+echo
+
+echo "=== GATE FRESHNESS — a green you did not watch is not a green"
+echo "    build-guests will SKIP silently without .env.lab:"
+if [ -f "$(git rev-parse --git-common-dir)/../.env.lab" ] || [ -f .env.lab ]; then
+    echo "      .env.lab present — cross-builds should genuinely run"
+else
+    echo "      *** .env.lab MISSING — every guest build is a skip reading as ok ***"
+fi
+echo "    commit hooks:"
+hp=$(git config core.hooksPath || echo '(unset)')
+if [ "$hp" = "(unset)" ]; then
+    echo "      hooksPath unset — default .git/hooks"
+elif [ -d "$hp" ]; then
+    echo "      armed at $hp"
+else
+    echo "      *** hooksPath points at $hp which DOES NOT EXIST — gates are dead ***"
+fi

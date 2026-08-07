@@ -729,6 +729,263 @@ drawing — which became **slice 11**. Title bars remain out of scope
 here; when slice 11's method is proven on the tab, they are the natural
 next application of it, in 016 or its successor.
 
+### Slice 16 — What the integrated tree actually looked like (added 2026-08-07)
+
+The first time anyone watched the **integrated** tree compose a window.
+Five targets, guest pixels beside the host's own composition path; pairs
+in `~/Lab/Assets/now-mirror-assets/018-integration/`.
+
+**Better, and worth recording as the baseline moved:** Date & Time,
+Finder icon view and NOW's Workshop all compose recognisably — group
+boxes framed and labelled, buttons titled, radio and check states right,
+the selected Finder row correctly inverted, desktop pattern drawn.
+**No hatching in any of the five.** Michelle, driving it: *"its looking
+and feeling much much better."*
+
+Five defects, ordered by what a wrong answer costs:
+
+1. **Appearance's front tab is destroyed.** Slice 11's fix survives for
+   four of six tabs and **inverts on the two a person always looks at** —
+   `Themes` (front) and `Appearance` render as stray diagonals. A
+   regression on the most-looked-at element is worse than an untouched
+   gap.
+2. **Icons render as blank grey plates** — 9 Finder folders, 13 NOW
+   sidebar rows, both `?` buttons. **A plate claims something is
+   there**; `UnknownVisual`'s honest ground is what rung 4 exists to
+   draw. This is the arc's own rule broken by the arc's own renderer.
+3. **The render prints text the machine truncated.** The sidebar reads
+   "Capture and stream" where the guest drew "Capture and stre…" — the
+   semantic title is being drawn instead of the run being replayed.
+   **A ladder inversion**: rung 2 winning where rung 1 has ink. It looks
+   like an improvement and is a divergence, which makes it the most
+   dangerous kind.
+4. **Group-box frames stroked through their own labels** — same shape as
+   the tab-cap defect.
+5. **Framed rects and every arrow widget go missing** — NOW's screenshot
+   preview box, popup/scroll/stepper arrows, the `«` button.
+
+**Two gaps named rather than glossed:** no list-view pair, because
+`script` answered `osaErr -1753` to *every* AppleScript on that rig
+including `get name of front window`, and `menuact` hit the known
+anchor-bind `no-such-process`. **The list-view lane is unwatched, not
+disproved.**
+
+**And a merge hazard nobody had named.** `tools/ext-bake-gate` and
+`tools/image-provenance` conflicted because two lanes made *the same
+change on divergent bases*; a keep-both merge produced **six duplicate
+function definitions that still parsed as valid Python**. Caught by a
+duplicate-`def` check, aborted, re-merged whole-file. That is the
+keep-both truncation hazard wearing a language where the damage compiles.
+
+Both derived doc counts were **wrong on arrival** (registry 44 not 43,
+PPC verbs 41 not 40, message types 49 not 48), and `mcp-coverage.md`
+reproduced the 2026-08-05 defect exactly: the "unnoticed rows, named
+together" list had become **two** lists, one naming `desktop`, the other
+`cycle`, neither naming both.
+
+### Slice 17 — Sweep B, and the cadence after it (added 2026-08-07)
+
+Supersedes the original slice 6 sweep, and changes how it is run.
+
+**Sweep B waits for the load-bearing work to land** rather than being
+taken the moment the merge is green — a sweep of a tree still moving
+underneath it measures nothing durable.
+
+**It is driven in parallel by a person.** Michelle: *"ill drive a
+parallel build while the agent runs."* Two independent readings of the
+same tree, one instrumented and one human, is a stronger result than
+either — and the human one catches what a rubric has no row for, which
+is how every defect in slice 16 was found.
+
+Its job is not only to score. **It identifies the pain points to be
+addressed during ongoing work and resolved before Sweep C**, so the
+A/B/C sequence measures a tree that is being deliberately steered rather
+than one that happens to have changed.
+
+**Perf is a named concern now, not just a recorded column.** Michelle,
+after driving the integrated build: *"perf is still meh. but most things
+are at least landing on the first or second try which is better than the
+wedge generator we had this afternoon."* So **reliability improved and
+latency did not**, and the two must be reported separately — an average
+that mixes them hides both. Sweep B records latency per action beside
+the attempts-to-land count.
+
+### Slice 18 — Authoritative control semantics (added 2026-08-07)
+
+**The biggest red area in the live product**, found by Michelle driving
+the integrated build:
+
+> a lot of controls (such as scrollbars and tabs) and basically all
+> lists say the guest did not provide complete authoritative semantics.
+> so like lists, scrollbars and tabs render now but they cant be used
+
+**Rendered but not usable** is the exact split this arc keeps producing,
+and this is its largest instance. Three earlier reports each hit it and
+none named it as the cause of unusability:
+
+- **Slice 3**: *"the guest reports all 21 of that window's controls as
+  `role: unknown` with no semantic, so `semanticSupersedesResource` can
+  never fire."*
+- **Slice 8**: Mouse is fully addressable — 38 controls, each with a ref
+  and a content-local rect — and **37 of 38 titles are empty with every
+  role `unknown`.** It was scored DRIVABILITY 0 for want of *names*, not
+  addressing.
+- **Slice 16**: the render now draws these controls correctly, which is
+  what makes the gap visible — you can see a scrollbar and not use it.
+
+So the defect is **capture**, not render and not the act plane: the walk
+does not report what a control IS.
+
+**The mechanism this plan first proposed does NOT exist on our floor, and
+the correction is the finding.** `GetControlKind` is **Mac OS X only** —
+Universal Interfaces `Controls.h:2310` says so in Apple's own words, and
+CarbonLib 1.6 does not export it. The working substitute is
+`GetControlData(…, kControlKindTag, …)`, and **the resident already does
+exactly that** (`ext/src/now_semantic.c :: classify_member`). Nothing was
+missing from the implementation.
+
+**What the Control Manager actually answers** (emulator-verified, warm-up
+scene discarded, passes 2–19 identical):
+
+| Window | Controls | Answer |
+|---|--:|---|
+| Appearance | 73 | 62 *unsupported custom control*, 5 *classification unavailable*, 4 unreached, **2** classified |
+| Date & Time | 21 | **21** *unsupported custom control* |
+| NOW's Workshop | 9 | **9** classified, with actions |
+
+*Unsupported custom control* means the resident asked and **the Control
+Manager declined.** So the plane is **reached and cannot read them** —
+which settles the question the integration round left open, and inverts
+the reading of its 169-of-169.
+
+**The ownership split is a consequence, not a cause.** We classify our
+own controls from the procID we recorded when we made them.
+`kControlKindTag` is answered only for controls built through the
+Appearance-era `Create*Control` APIs; **OS 9's own panels are
+`CNTL`-resource controls from `GetNewControl`**, and the machine will not
+substitute an answer for them. So **the authoritative answer does not
+exist for the windows this product most needs it for.**
+
+Two consequences worth stating plainly:
+
+- **Missing chrome and a refused act are one defect in two costumes.**
+  "Current Date", "Current Time" and "Time Zone" are four of Date &
+  Time's 21 refusals — correct rects, correct titles, no kind, so the
+  renderer has nothing to draw them as.
+- **The list taxonomy resolved**, and only one of the three is a
+  classification problem: `kControlKindListBox` classifies fine and is
+  refused for an unrelated reason (`control_action` returns no action for
+  `listBox`, and selecting a row needs a click *point* where `ctlact`
+  presses the centre); a bare `ListHandle` is not a control and the walk
+  will never see it; the Finder's lists are its own drawing, answered by
+  `FinderItems`.
+
+**The route that can work — slice 19.** The control's **CDEF resource ID**
+via `GetResInfo` on `contrlDefProc`, which the walk already reads raw and
+already reports as `system` for all 73. A system-heap CDEF with a
+documented id is **the machine stating an answer rather than us guessing**,
+and it is the only route that reaches OS 9's own panels. It needs its own
+provenance and a **weaker knowledge level**, so the uncertainty stays
+visible rather than being laundered into the same confidence as a
+`kControlKindTag` answer.
+
+Rules this slice inherits:
+
+- **A kind the machine did not state is `unknown`, never a guess.** The
+  point is authoritative semantics; an inferred role that is usually
+  right is exactly the plausible wrong answer the arc forbids, and it
+  would be worse here because an act would then address the wrong kind
+  of thing.
+- **"Lists" are not one thing.** A `kControlKindListBox` is a control;
+  a classic List Manager `ListHandle` is not; the Finder draws its own.
+  Say which of those the render is refusing and handle them
+  separately rather than under one word.
+- It feeds **both** products: a native host-side Finder needs the same
+  answer, so this is capture-layer work in the sense
+  [019](2026-08-07-019-feat-the-surface-as-a-foundation-plan.md) means.
+
+### Where the arc stands, 2026-08-07 ~02:30 (derived)
+
+Derived with `tools/arc-status`, not recalled. **Re-derive before quoting
+any of it** — half of it was true for ten minutes.
+
+**LANDED** into the integration branch, which also now carries `main`
+(zero conflicts, zero commits behind): lanes A–E, slice 3, guest walk
+hygiene, assets and the quiet unknown, list-view selection, desktop
+pattern, arm census, procedural chrome, visibility, headless processes,
+image discipline, scene caps, open-Mirror, the surface audit, anchor
+acquisition/`cycle`, the drag vehicle, drag targeting, MCP revival, and
+per-lane port ranges.
+
+**NOT LANDED — work that exists and is not in the tree:**
+
+| Lane | Commits | State |
+|---|--:|---|
+| `018-render-defects` | 8 | in flight |
+| `018-control-semantics` | 6 | in flight |
+| `019-one-answer-a` | 11 | in flight |
+| `019-one-answer-b` | 9 | in flight |
+| `019-conformance` | 7 | idle, ready |
+| `019-cursor-follow` | 18 | idle, ready |
+| `019-embed-mirror` | — | in flight |
+| `019-embed-scope` | 1 | idle (the scope doc) |
+
+Each would hit 1–2 conflicts against the integration branch. None is
+large.
+
+**NOT STARTED, and named so they are not mistaken for done:** Charcoal
+rasterisation (no bitmap strike exists; needs TTF rasterising, and it is
+the largest remaining text-fidelity gap); Monitors' repaint escalation;
+the five unobserved `ThemeTabStyle` states; the **deep** anchor fix (the
+`cycle` verb is a deliberate workaround, and the open question — why NOW
+contributes almost no armed passes after another app fronts — is
+probably the lever); audit findings **F8** (`sw` live vs a cache that
+cannot state its age) and **F12** (eight hand-rolled frame codecs); the
+reference walk's frame budget being spent on our own process, so
+`observe --scope all` truncates after ONE of eight; and three answers a
+healthy host gives that contradict the machine (`now_mirror_lifecycle`
+saying no Mac is connected while eighteen tools serve from it, a
+four-byte upload refused for staging space, `now_reveal_item` not
+finding the System Folder on an OS 9 volume).
+
+**PARTIALLY DONE:** the drag vehicle is emulator-verified but **nothing
+has been dragged at a Finder item** — `DragGrayRgn` is still unmeasured;
+targeting and presentation are built and **have never reached a guest**.
+Slice 18's controls are dispatched, not fixed. And the commit hooks are
+built and **deliberately not armed**, because lanes with `ext/` changes
+could not comply.
+
+### The cadence, written down so it is not improvised
+
+Two rhythms, and they are not the same thing. Both are specified in
+[arc-coordination.md](../arc-coordination.md), with the triggers and the
+stop rule.
+
+**MERGE, TEST, DRIVE** — frequent. Land what is finished, run the gates,
+boot a guest, look at pixels. Fires when three or more lanes have landed,
+or one touched something everything builds on, or `main` moved, or
+anything touched `ext/`, or a lane reports a defect in another lane's
+landed work. Its job is to prevent "fifteen slices and nobody tested them
+together", which cannot be backed out of once reached.
+
+**FULL SWEEP** — rare, scored, with a person driving a parallel build.
+Its job is to name the pain points that steer work **still in flight**,
+so it must not wait for everything to land. Sweep a **frozen commit**
+while the other lanes keep running.
+
+**The next full sweep (B) is gated on three lanes**, and no others:
+`019-integration-2`, `018-render-defects`, `018-control-semantics`.
+Rationale: the render defects dominate every render axis, and controls
+that render but cannot be used would make a scored sweep re-measure one
+known cause across every target. Everything else lands into Sweep C.
+
+**Sweep B will not be strictly comparable to A on some rows**, and that
+must be declared rather than smoothed: A was taken before anchor
+acquisition was understood, so several of its targets were measured
+undriven — which is why Appearance scored DRIVABILITY 0 for a reason
+that turned out not to be its cap. B fronts or `cycle`s each target
+first.
+
 ### Slice 6 — Sweep B and the verdict
 
 Re-run the sweep, same spec, same targets, same machine-shape. Output:

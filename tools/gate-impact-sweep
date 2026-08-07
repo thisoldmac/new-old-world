@@ -52,7 +52,17 @@ for b in "${branches[@]}"; do
         && git -C "$d" reset -q --soft HEAD~1
     staged=$(git -C "$d" diff --cached --name-only | wc -l | tr -d ' ')
 
-    base_out=$(cd "$d" && TBT_GATE_ROOT="$d" "./$GATE" check 2>&1); base_rc=$?
+    # A gate the branch does not carry AT ALL has a baseline of pass: the
+    # world the branch was written in had no such refusal. Without this a
+    # NEW gate reports 127 for every branch and every row reads "same",
+    # which is the sweep answering a question nobody asked.
+    if [ -x "$d/$GATE" ]; then
+        base_out=$(cd "$d" && TBT_GATE_ROOT="$d" "./$GATE" check 2>&1); base_rc=$?
+    else
+        base_out="(the branch does not carry $GATE)"; base_rc=0
+    fi
+    mkdir -p "$d/$(dirname "$GATE")"
+    cp "$NOW/$GATE" "$d/$GATE" 2>/dev/null; chmod +x "$d/$GATE" 2>/dev/null
     cp "$NOW/tools/ext-bake-gate" "$NOW/tools/image-provenance" "$d/tools/" 2>/dev/null
     chmod +x "$d/tools/ext-bake-gate" "$d/tools/image-provenance" 2>/dev/null
     new_out=$(cd "$d" && TBT_GATE_ROOT="$d" "./$GATE" check 2>&1); new_rc=$?
