@@ -12230,6 +12230,94 @@ Two smaller things worth keeping:
   it is measured. A sweep that measured a target it had not yet driven
   would be measuring this defect and calling it a renderer score.
 
+### Stating the rule exactly, because two nearly-right versions of it point at fixes that cannot work
+
+The rule is **not** "frontmost after NOW arms", and it is not "a context
+change the filter observes". Both were proposed while this entry was
+being written, and both are close enough to sound settled.
+
+**A process acquires a slot when it itself executes a `GetNextEvent` or
+`WaitNextEvent` at a moment when `arm_request` has the anchors bit set.**
+`now_ext_gne_apply` runs in whatever process is pumping, and
+`capture_anchor` (`ext/src/now_ext.c:184`, gated at :279) reads that
+caller's own `LMGetCurrentA5()`. Front-ness appears nowhere in it. Being
+frontmost is the PROXIMATE CAUSE via scheduling — a front application is
+scheduled promptly inside the short armed window and a background one
+with nothing to do is not — and the distinction matters, because
+"frontmost" invites a fix that watches the front process, which is the
+one process already covered.
+
+**And there is no single arming moment.** `arm_request` is set and
+cleared repeatedly: `mirror` reads `requested: 0` between scene requests
+and `requested: 7` during one, in every capture taken here. Any fix
+reasoning about "after arming" as a boundary is reasoning about a latch
+that does not exist.
+
+**`anchor_slot_scans` counts TRANSITIONS, not distinct contexts.**
+`gLastA5` is a single global in resident BSS (`now_ext.c:90`) and is
+never reset, so the counter increments whenever this armed pass's A5
+differs from *the previous armed pass's*. The cold boot's value of 1 is
+the very first pass — `gLastA5` starts at 0, NOW's A5 does not match,
+one scan — followed by 450 consecutive matches. Two processes
+alternating would climb it steadily. Read as "how many distinct
+processes has the filter seen" it is wrong, and it is wrong in the
+flattering direction.
+
+### THE OPEN QUESTION, and it reframes the defect
+
+After the flip, `anchor_slot_scans` stayed at **2 across 362 further
+armed passes**, while NOW's slot aged to 1485 ticks and the Finder's
+stayed at 127. Since the counter would climb on every alternation,
+essentially EVERY armed pass in that window was in the Finder's context —
+and **NOW contributed almost none, even though NOW is the process that
+arms the plane and serves the scene requests.**
+
+Nothing measured here explains that. It is written down as the open
+question it is, because it changes what the defect is: the armed window
+is spent wherever the CPU is, not where the arming happens. A design
+that assumes the arming process is among the sampled ones is assuming
+something this machine did not do.
+
+### "Rescan at arm time" cannot work
+
+Worth stating in those words, because it is the first fix anyone
+proposes. A rescan runs in NOW's own context and re-samples the one
+process that is already covered. `find_anchor_slot` is not the
+bottleneck — `anchor_event_passes` is, and passes only happen where the
+CPU is. The fix has to make the plane armed across a window in which
+OTHER processes are scheduled, or find a hook that fires in a foreign
+context.
+
+This also makes the Process Manager enumeration work **complementary
+rather than duplicative**: enumeration can say a process exists, but only
+something running inside that process can capture its A5, its window list
+and its `CurApName`. Those are two different halves of one answer.
+
+### The cheap experiment nobody has run
+
+**Launch a background-only process and read
+`mirror.extension.anchors`.** `tbt-appe` and `tbt-worker` are launched
+background processes and never acquire a slot on any machine here — but
+they are faceless and may simply never call `GetNextEvent` at all, which
+is a different case with a different fix. The measurements in this entry
+cannot separate:
+
+- *never acquires because it never pumps* — nothing can help it, and the
+  honest answer is that such a process has no observable interface; from
+- *never acquires because it is never scheduled while armed* — which is
+  the same defect as the Finder's and is fixed by whatever fixes that.
+
+`Application Switcher` is no help as a specimen: it left the process list
+entirely after the `activate`.
+
+Two further things NOT tested here, and inferred rather than measured:
+that fronting several applications in turn accumulates all of them (the
+mechanism plus the observed persistence say yes, and Sweep A's six
+anchored processes are exactly its six driven ones — but no app cycle was
+ever driven deliberately), and whether an application launched after an
+arm acquires without being fronted, which in practice is hard to separate
+because a launched application usually takes the front by itself.
+
 Verification level: **emulator-verified** (QEMU mac99, OS 9.1, run dirs
 `/private/tmp/nowvm-vis18` and `-vis18b`, anchor 1810 / wire 5360, guest
 builds `59dce8562ad4` and `f3db46a66630`, both asserted on the hello).
