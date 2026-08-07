@@ -294,6 +294,18 @@ wrong one:
   there: a derivation that runs beside the replay and feeds it, rather
   than an arbitration path competing for a rectangle.
 
+**A merge note, because these two lanes were cut from the same commit.**
+This work is branched from `70b87b09`, which predates the ladder, so
+`DisplayReplay.swift` will conflict — lane A refactored the same file
+around `ProvenanceLadder` while this added a pass at the end of it. The
+resolution is small and there is only one right shape for it: keep lane
+A's structure, and re-attach the tab pass **after** the whole replay,
+including after the ladder's own rung 4 pass. The ordering is
+load-bearing and the reason is in `DisplayReplay`'s own comment — the
+front tab has to erase one row of a pane frame the replay draws. The
+half-pixel fixes here (`pixelCentre`, `lineCap: .square`) are two lines
+in the `line` and frame-verb cases and apply unchanged.
+
 So `DrawnTabStrip` + `PlatinumTab` is a **rung-1 producer**, and it adds
 no precedence rule: it never claims a rectangle another plane claims, it
 clips the label box out so it cannot paint over the guest's own bevel or
