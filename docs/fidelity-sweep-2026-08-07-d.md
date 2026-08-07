@@ -86,9 +86,28 @@ Each is a rectangle to look at, not a vibe.
 
 - **Mail's modal has unclickable buttons** — correct labels, no action,
   "the guest did not provide complete, authoritative semantics." A lane
-  owns it. Note what a wedged modal blocks.
+  owns it. **Mail was NOT opened this sweep**, so this report adds no
+  evidence about it; sweep A's account is still the most recent.
+  <br>**But an equivalent wedge happened anyway and it is worth reading
+  across.** Date & Time's `Set Time Zone` modal was left open by target 3
+  and stayed up for the rest of both passes. What a modal nobody can
+  dismiss actually cost, measured rather than imagined:
+  - it **voided the Date & Time stability row**, because pass 2 fronted
+    the modal and the two passes captured different windows under one
+    label;
+  - it **contaminated five later targets**' scenes with two extra
+    windows, which the tool declared but which no score can subtract;
+  - and it **blocked the clean-shutdown route**: `shutdown-guest.py`
+    reported *"Date & Time is still front; shutting down over it"* and had
+    to fall back from the Finder route — the one route measured to leave
+    a clean volume — to the staged applet, which the tool's own text calls
+    "a fallback, not a plan". **An undismissable modal reaches all the way
+    to whether the next clone boots into Disk First Aid.**
 - **One interior at a time** is the built behaviour; a screenshot with one
-  live interior and the rest hatched is not a defect.
+  live interior and the rest hatched is not a defect. **Consistent with
+  what was seen**: no render in either pass carried a whole-interior
+  "Guest content not reported" hatch, and background windows were drawn
+  from their semantics rather than hatched.
 
 ## ✗ FIRST — a FALSE NEGATIVE on an act that landed, caught in the guest's own pixels
 
