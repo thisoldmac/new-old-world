@@ -11,8 +11,8 @@ throwaway repository with a source file, a document that declares itself
 derived from it, and two lanes that each do everything right; then it
 merges them and asserts that the gate names the resulting lie.
 
-Seven cases, and the second and third are the ones that would have been
-missed by an obvious implementation:
+Eight cases. The second and third are the ones an obvious
+implementation misses; the eighth is the wiring rather than the gate:
 
   1. TWO HONEST RE-DERIVATIONS, MERGED. The headline. Each branch's count
      is correct on its own branch; the merge keeps one and the merged tree
@@ -35,6 +35,10 @@ missed by an obvious implementation:
   7. NOT A MERGE. The same staleness on an ordinary commit is REPORTED
      and not refused, on purpose: a gate that blocks an in-flight lane at
      2am converts this repository's most expensive risk into a certainty.
+  8. THE HOOKS THEMSELVES. Installed into the fixture repo and driven
+     through `git commit`: inert as shipped, refusing with the gate's own
+     text when NOW_DERIVED_DOC_GATE=1. A gate whose wiring nobody drove
+     is a gate nobody has.
 
 Every case ends by curing the defect and asserting the gate goes green,
 because a check that fails for everything is not a check.
@@ -329,6 +333,49 @@ def case_7_ordinary_commit_is_not_refused(tmp: str) -> None:
     expect("7. …and the identical tree IS refused as a merge", rc_m != 0)
 
 
+def case_8_the_hook_wiring(tmp: str) -> None:
+    """The hooks: inert as shipped, refusing a real merge when armed."""
+    repo = base_repo(tmp)
+    hooks = os.path.join(repo, ".githooks")
+    os.makedirs(hooks)
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for name in ("pre-commit", "pre-merge-commit"):
+        src = os.path.join(here, ".githooks", name)
+        dst = os.path.join(hooks, name)
+        with open(src) as fh, open(dst, "w") as out:
+            out.write(fh.read())
+        os.chmod(dst, 0o755)
+    os.makedirs(os.path.join(repo, "tools"), exist_ok=True)
+    with open(GATE) as fh, open(os.path.join(repo, "tools",
+                                             "derived-doc-gate"), "w") as out:
+        out.write(fh.read())
+    os.chmod(os.path.join(repo, "tools", "derived-doc-gate"), 0o755)
+    git(repo, "config", "core.hooksPath", ".githooks")
+    git(repo, "checkout", "-q", "-b", "lane")   # main-guardrail is in there
+
+    add_verb(repo, "net")                       # stale: the doc is not re-derived
+    git(repo, "add", "guest.c")
+
+    env = dict(os.environ)
+    env.pop("NOW_DERIVED_DOC_GATE", None)
+    env["NOW_DERIVED_DOC_FORCE_MERGE"] = "1"
+    unarmed = subprocess.run(("git", "-C", repo, "commit", "-q", "-m", "x"),
+                             capture_output=True, text=True, env=env)
+    expect("8. as shipped the hook is INERT — the commit is allowed",
+           unarmed.returncode == 0, unarmed.stdout + unarmed.stderr)
+
+    add_verb(repo, "script")
+    git(repo, "add", "guest.c")
+    env["NOW_DERIVED_DOC_GATE"] = "1"
+    armed = subprocess.run(("git", "-C", repo, "commit", "-q", "-m", "y"),
+                           capture_output=True, text=True, env=env)
+    out = armed.stdout + armed.stderr
+    expect("8. armed, the hook refuses through git itself",
+           armed.returncode != 0, out)
+    expect("8. …with the gate's own text, not a bare exit code",
+           "refusing this MERGE" in out, out)
+
+
 def main() -> int:
     cases = [case_1_two_honest_rederivations,
              case_2_shape_change_no_count_moves,
@@ -336,7 +383,8 @@ def main() -> int:
              case_4_prose_loses_a_row,
              case_5_published_command_vanishes,
              case_6_derivation_breaks,
-             case_7_ordinary_commit_is_not_refused]
+             case_7_ordinary_commit_is_not_refused,
+             case_8_the_hook_wiring]
     for fn in cases:
         print((fn.__doc__ or fn.__name__).strip().splitlines()[0])
         with tempfile.TemporaryDirectory() as tmp:

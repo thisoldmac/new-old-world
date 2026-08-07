@@ -1,0 +1,17 @@
+#!/bin/sh
+# Git runs THIS hook for a merge that auto-resolved. A merge with
+# conflicts, resolved by hand, is committed by `git commit` and runs
+# pre-commit instead — so a refusal that is about merges has to live in
+# both, and the pair is the unit. Neither half catches the other's case.
+#
+# derived-doc-gate — BUILT, TESTED, AND DELIBERATELY NOT ARMED. It is
+# inert until NOW_DERIVED_DOC_GATE=1 is set; the arming procedure and the
+# reason it ships unarmed are in .githooks/pre-commit, stated once.
+
+root=$(git rev-parse --show-toplevel)
+
+if [ -n "${NOW_DERIVED_DOC_GATE:-}" ] && [ -x "$root/tools/derived-doc-gate" ]; then
+    "$root/tools/derived-doc-gate" check || exit 1
+fi
+
+exit 0
