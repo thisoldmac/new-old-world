@@ -412,6 +412,45 @@ still reporting saved icon-grid positions. Where home is not
 trustworthy, **refuse the drag rather than guess a snap-back target**: an
 item returned to the wrong place is worse than a drag that never began.
 
+### Slice 10.6 — The cursor is ours, not the host OS's (added 2026-08-07)
+
+Michelle:
+
+> we currently get the select cursor from the host os over certain
+> elements. ideally, we should integrate with the cursor behavior from
+> the guest's element. for now id say: use the normal pointer everywhere
+> and just focus on getting the text cursor over editable text areas.
+> that should be a tight enough scope
+
+**The same bug class as everything else in this arc.** The I-beam
+appearing today is **the host OS deciding**, a side effect of what the
+Mirror view is made of — it asserts "you can select text here" over
+elements where you cannot. A confident wrong answer we did not author
+and cannot explain.
+
+Scope, deliberately tight: **arrow everywhere by default; I-beam over
+editable text areas only.** Nothing else — no resize cursors, no
+crosshairs, no watch, no guest cursor mirroring. Taking control and
+defaulting to the arrow is the honest baseline; the I-beam then becomes
+a claim made deliberately, from the scene's own semantics.
+
+Driven from the **same rectangles the hit tester uses**, never a
+parallel set — a second traversal of one truth is how two halves of a
+rule drift, which this arc has now hit twice (the double-walk
+contradiction in slice 4, and two copies of the unknown fill in slice
+5).
+
+Folded into lane D rather than given its own agent: it lives in the
+Mirror view's pointer handling, the same file as the drag work, and a
+separate worktree would collide at merge. Lowest priority within that
+lane — it must not displace the honesty work.
+
+**Not in scope, though it is the stated ideal:** integrating with the
+GUEST's own cursor behaviour. The groundwork exists (the pack now
+carries 43 extracted `CURS` resources) but it needs the guest to report
+its current cursor — capture-side, and a contract change. A later
+slice.
+
 ### Slice 11 — Procedures, not assets (added 2026-08-07)
 
 A strategy call from Michelle:
