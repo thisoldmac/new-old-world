@@ -88,6 +88,104 @@ rather than a new defect. `cycle` itself worked and reported honestly
 (`armed`, `complete`, `restored`, 8 considered, 6 `backgroundOnly` —
 the headless lane's classification, live).
 
+## EMULATOR-VERIFIED: the drawn cursor follows what we act on, and the documented way to do it does not work (2026-08-07, plan 019, P8)
+
+**Watched, cropped and looked at.** A screendump pair either side of a
+617,443 → 180,160 placement changes **194 pixels** in a box spanning both
+points; the arrow is at 617,443 in the first and at 180,160 in the
+second, with 617,443 empty. The emulated device's own move — the positive
+control — changes **194 pixels** for the same motion. Reproduced across
+two cold boots. Rig: private clone of `os91-runner.qcow2`, anchor 1960 /
+wire 5510, resident `active`, **caps=511** (bit 8 =
+`kNowPeekTableCapCursor`, which no build before today can set), table
+length 6116. Design and evidence: [docs/cursor-follow.md](cursor-follow.md).
+
+### The emulator was NOT the obstacle, and that is the durable half
+
+The standing suspicion was that QEMU's pointing device reported over the
+top of the resident's writes — which would have meant the documented
+technique was fine and **metal was the easy case and the emulator the
+hard one**. It is not so, and the refutation is direct: read from outside
+the guest with nothing touching the host pointer, `MTemp`, `RawMouse` and
+`MouseLocation` held our value unchanged across seconds; the machine
+profile has no tablet at all (`-M mac99,via=pmu -device usb-kbd`); and
+every precondition the `CrsrNew`/`CrsrCouple` recipe needs was met —
+`CrsrCouple` 0xff, `CrsrState` 0, `CrsrObscure` 0, `CrsrBusy` 0 — with
+`CrsrNew` reading back **consumed**. The cursor task ran and did not draw.
+
+So none of what follows is a rig workaround, and metal is not expected to
+differ.
+
+### Three routes, and only the third draws
+
+| Route | Result |
+|---|---|
+| low memory (`MTemp`/`RawMouse`/`MouseLocation` + `CrsrNew`←`CrsrCouple`) | position right, **sprite unmoved** |
+| `CursorDeviceMoveTo`, then the cursor task via `JCrsrTask` (0x08EE) | `noErr`, manager's own `CursorData.where` reads back **exactly** the requested point (760,520 — checked from outside), **sprite unmoved** at 419,333 |
+| `HideCursor()` / `ShowCursor()` | **the sprite moves** |
+
+The first two are kept, because they are what makes the machine *agree*
+about where the pointer is; only the third is what a person sees. On
+Mac OS 9 the Cursor Device Manager owns the position and the blit lives
+somewhere in the pointing device's own interrupt path that neither the
+manager's state nor the compatibility vector reaches.
+
+### Two defects the DRIVING found that no reading would have
+
+1. **`CrsrObscure` had to be cleared, and we are the thing that clears
+   it.** `ObscureCursor` is what every text application calls on every
+   keystroke — hide the arrow until the mouse moves — and the device
+   driver clears it on its next report. Without the resident doing the
+   same, P8 drew faithfully into an invisible cursor: `route` correct,
+   `by_device` climbing, **zero pixels**, which is indistinguishable from
+   the plane not working. It would have worked perfectly in an empty
+   Finder and vanished in every application anybody actually drives.
+2. **"Somebody else moved the pointer" cannot be asked of `RawMouse`.**
+   Between placements, with nothing holding the globals, `RawMouse`
+   drifts back to the pointing device's position — so every act after any
+   device motion looked like a person had just touched the mouse and the
+   plane yielded forever (four acts in a row reporting `yielded` on a
+   machine nobody was sitting at). It asks the manager's own
+   `CursorData.where` now.
+
+### ANSWERED: the guest's cursor SHAPE already tracks our position
+
+SimpleText launched, text area 4,20–619,581, the resident placed the
+pointer at 311,100 inside it — and the sprite drawn there is an
+**I-beam**. Nothing in this plane knows what an I-beam is: SimpleText
+read `GetMouse`, was told our point, and chose the cursor for it.
+
+**So cursor-shape mirroring needs nothing further from the guest.** The
+remaining work for the deferred "mirror the guest's own cursor" feature
+is on the HOST — read the current `Cursor` and draw it — and that is a
+much smaller thing than it looked.
+
+### STILL BROKEN, and it is the act plane rather than this one
+
+**A `ctlact` places the cursor at 0,0.** The act cell's `click_h`/
+`click_v` are zero for controls the scene walk reports with real bounds,
+so P8 is asked to put the pointer at the origin and then declines because
+the origin is not where it left it. This is the SAME defect the drag lane
+found and named for the geometry lane, arriving in a second place:
+`dragpress` now takes its point from the caller and refuses rather than
+guessing, and an act still does not. Until an act carries a real point,
+**the cursor follows a drag and does not follow a click** — which is the
+half of the ask that matters most.
+
+### NOT WATCHED
+
+- **Metal.** Nothing here has run on the PowerBook. The mechanism is an
+  OS fact rather than an emulator one, so the expectation is that it
+  behaves the same; that is an expectation.
+- **A real drag.** During `DragGrayRgn` the application never returns to
+  `GetNextEvent`, so the owed redraw cannot be settled and the sprite is
+  expected to freeze for the length of the gesture and jump at the end.
+  The runs above pressed on controls the application does not track, so
+  the jGNE pass was always available. **This is a declared asymmetry, not
+  a measurement.**
+- **A person's pointer.** The yield rule was watched failing by mutation
+  as pure logic; nobody has sat at the machine and fought it.
+
 ## EMULATOR-VERIFIED: the drag vehicle fires, and the resident lets go by itself (2026-08-07, slice 10 of plan 018)
 
 **Driven on a guest, watched, and measured.** P7 — a mouse button that
