@@ -811,7 +811,7 @@ public struct SceneRenderer {
             || win.island != nil
         if !hasReportedContent {
             drawUnavailableVisual(contentCtx, content,
-                                  "Guest content not reported")
+                                  Self.absentContentCaption(win))
         }
 
         // M3 pixel island: when we hold the guest's real pixels for this
@@ -2008,6 +2008,34 @@ public struct SceneRenderer {
         ctx.stroke(Path(box), with: .color(Platinum.selection), lineWidth: 1)
         ctx.stroke(Path(box.insetBy(dx: 1, dy: 1)),
                    with: .color(Platinum.selection), lineWidth: 1)
+    }
+
+    /// **What an empty interior is allowed to CLAIM.**
+    ///
+    /// "Guest content not reported" is a statement about the machine, and it
+    /// was drawn over two situations that are not the same one:
+    ///
+    /// - the content plane was armed on this window and the guest drew
+    ///   nothing this host could express — the sentence is true; and
+    /// - the content plane was never armed on this window at all, because
+    ///   P3 is a per-window spotlight and something else holds it — the
+    ///   sentence is a claim about a guest we never asked.
+    ///
+    /// A window nobody looked at rendered identically to a window whose
+    /// interior genuinely failed, so no screenshot of this product could
+    /// distinguish a design limit from a defect. That is the whole reason
+    /// this exists; see ``ContentPlaneAttention`` and docs/open-issues.md,
+    /// "one window interior at a time".
+    ///
+    /// `nil` attention keeps the old sentence deliberately: a scene from a
+    /// host with no content plane, or a window with no exact guest address,
+    /// has no second answer to offer and inventing one would be the same
+    /// class of mistake in the other direction.
+    static func absentContentCaption(_ win: MirrorKit.Scene.Window) -> String {
+        switch win.contentPlane {
+        case .notAttempted: return "Interior not captured — one window at a time"
+        case .armed, .none: return "Guest content not reported"
+        }
     }
 
     private func drawUnavailableVisual(_ ctx: GraphicsContext,
