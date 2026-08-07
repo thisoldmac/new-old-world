@@ -11,6 +11,7 @@
 #include "axtext.h"
 #include "json.h"
 #include "obsref.h"
+#include "peek.h"
 
 enum {
     /* Bounds on one answer. They are about the FRAME, not about the
@@ -63,6 +64,59 @@ void now_observe_init(void)
               ^ now_seconds;
     now_obs_registry_init(&g_registry, seed_hi, seed_lo);
     g_armed = 1;
+}
+
+/* --- the plane this walk reads through ---------------------------------
+ *
+ * **THE WALK ARMS ITS OWN PLANE, and until 2026-08-07 it armed nothing.**
+ *
+ * Every foreign read below goes through the anchor plane, and this file
+ * never claimed it. It worked only when somebody ELSE happened to be
+ * holding the plane up — the scene, whose owner lease is ten seconds
+ * (`peek.c :: kNowPeekOwnerLeaseTicks`) and is renewed by host traffic
+ * only once a `scene.request` has been served on the link, or the
+ * Processes page, which claims while it is the visible module.
+ *
+ * Two consequences, and the second is the one that was reported:
+ *
+ *   - A headless caller that never asks for a scene — an MCP client
+ *     calling `now_observe_elements` — had NO claim at all, and every
+ *     walk answered `no-plane` for every foreign process, for ever.
+ *   - A caller with a Mirror polling beside it got an INTERMITTENT
+ *     answer: `no-plane` seconds after a `reveal`, `ok` on a later poll,
+ *     depending on where the walk fell against somebody else's poll
+ *     cadence and that ten-second lease. An intermittent false negative
+ *     is the worse of the two — it teaches a caller to retry blindly and
+ *     makes every result downstream of it probabilistic.
+ *
+ * So: claim, then WAIT briefly for the resident's echo, which is the
+ * scene's own pattern and for its own reason (`wire.c :: serve_scene`).
+ * A claim is a request; the resident echoes it into `arm_active` on its
+ * next pass, and a walk that reads before the echo gates itself off and
+ * reports "I could not look" for the whole machine. `now_peek_settle`
+ * returns as soon as the echo lands (~15 ms measured) and gives up after
+ * half a second; the walk proceeds either way, because a walk that says
+ * "not observed" is still the honest answer when the plane genuinely is
+ * not armed.
+ *
+ * The lease is the claim's, not this call's: ten seconds, held across
+ * requests. That is the number a caller acting at HUMAN speed needs —
+ * an agent that observes, decides and acts is inside it, and an agent
+ * that has stopped for ten seconds is one whose next answer should be
+ * re-armed rather than served off a plane nobody wanted. It is not
+ * released at the end of the walk on purpose: releasing would drop the
+ * plane between two calls of a caller who is plainly still using it,
+ * which is the flap this whole comment is about.
+ *
+ * The tree bit rides along because the walk emits controls and menus. */
+enum { kNowObsArmSettleTicks = 30 };   /* half a second, the scene's bound */
+
+static void arm_anchor_plane(void)
+{
+    now_peek_claim(kNowPeekOwnerObserve,
+                   (unsigned long)(kNowPeekCapAnchors | kNowPeekCapTree));
+    (void)now_peek_settle((unsigned long)kNowPeekCapAnchors,
+                          kNowObsArmSettleTicks);
 }
 
 /* --- binding one process ----------------------------------------------- */
@@ -869,6 +923,7 @@ static void walk_reply(const char *key, const char *scope, long id,
                                       && strcmp(scope, "front") == 0);
 
     now_observe_init();
+    arm_anchor_plane();
     if (!append(out, cap, &used,
                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
                 "\"output\":{\"%s\":{\"scope\":\"%s\",\"processes\":[",
@@ -998,6 +1053,7 @@ void now_observe_axsnap_command(const char *request_json, long id, char *out,
 
     (void)request_json;
     now_observe_init();
+    arm_anchor_plane();
     if (GetFrontProcess(&front) != noErr) {
         fail(out, cap, id, "no-front", "no front process");
         return;
@@ -1042,6 +1098,10 @@ void now_observe_handle_command(const char *request_json, long id, char *out,
     long         used = 0;
 
     now_observe_init();
+    /* Revalidation reads the same plane the walk that minted the
+       reference did. Without this, "is this reference still good?" could
+       answer no for the one reason that is not about the reference. */
+    arm_anchor_plane();
     reference[0] = '\0';
     if (request_json == NULL
         || !now_json_find_string(request_json, "ref", reference,

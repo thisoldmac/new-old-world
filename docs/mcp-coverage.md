@@ -911,6 +911,79 @@ host ask.
 |---|---|---|
 | `census.request` | `censusExchange` (`action: send`) | Symmetric by definition; in practice the host asks and the guest — the machine with hardware worth asking about — serves. |
 
+## Declared versus exercised
+
+Everything above this line is **declared**: what the registry says a
+projection reaches, derived from source and gated by a test. That column
+was correct on every row while seven tools were dead and all forty-one
+were unreachable to any real client, and it is worth saying plainly why
+it could not have been otherwise — *a declaration is a claim about the
+catalog, and a dead lane is a fact about the machine.*
+
+**Exercised** is the second column, and it is filled by running the
+surface rather than reading it:
+
+```
+# The gate. No host is reached: the companion is pointed at an endpoint
+# nothing binds, which is CI's shape.
+swift test --filter MCPClientConformanceTests
+
+# The measurement. Needs a host and a guest, and asserts WHICH guest
+# before believing a row.
+NOW_AGENT_SOCKET_SUFFIX=<yours> NOW_MCP_CONFORMANCE_LIVE=1 \
+  NOW_MCP_CONFORMANCE_BUILD=<build prefix> \
+  swift test --filter MCPClientConformanceTests
+```
+
+Both print the table. Four verdicts, and the fourth is the one a
+three-verdict table would have hidden:
+
+| Verdict | Means |
+| --- | --- |
+| `served` | the tool answered with its own success |
+| `refused` | this host, the guest or the machine said no, **and said why** |
+| `failed` | no answer, an unreadable one, or an answer a healthy host contradicts |
+| `uncovered` | advertised, and this surface can construct no legal argument for it |
+
+A second column says whether the argument was `real` — built from this
+run's own earlier answers — or `synthetic`, a syntactically valid
+reference deliberately never minted. It decides what a refusal proves: a
+synthetic row exercises the lane and the guest's revalidation, and says
+nothing about the capability. Several rows are synthetic **on purpose**
+and not for want of trying — `now_text_set` replaces a field with no undo,
+`now_control_act` presses whatever control it was handed, `now_request_quit`
+would end a process the rest of the run reads.
+
+### Exercised, 2026-08-07
+
+Two runs of the same driver, on `claude/019-conformance`.
+
+| Condition | served | refused | failed | uncovered |
+| --- | --- | --- | --- | --- |
+| No host (the gate) | 0 | 40 | 0 | 1 |
+| Live, Mac OS 9 under QEMU, guest build `20ba2e29bff1` | 19 | 21 | 0 | 1 |
+
+**`now_transfer_approved_artifact` is the uncovered row, and the only
+one.** An approval receipt is minted by a person approving a transfer in
+the host's own UI; no MCP tool produces one, so a headless caller cannot
+reach that capability at all. Sending it a receipt nobody issued would
+have exercised a regular expression and scored a refusal, which is why
+the fourth verdict exists.
+
+Three answers the live run surfaced that no derivation over declarations
+could have, recorded here and in `open-issues.md`:
+
+- `now_mirror_lifecycle` refused with *"No Mac is connected, so no
+  resident has answered"* **while a Mac was connected** — a false
+  sentence from a healthy host, which is the class of defect this plan is
+  named for.
+- `now_guest_files_upload_begin` refused a **four-byte** upload with
+  *"Private staging cannot reserve the declared upload"*.
+- `now_reveal_item` refused *"nothing named System Folder to reveal"* on
+  a Mac OS 9 volume that has one.
+
+None was chased here.
+
 ## Status
 
 **Tested, not metal-verified.** The tables are a derivation over source and a
@@ -934,6 +1007,18 @@ control, not a text element"* — which proves the reference vocabulary is
 shared but is not a completed reading; a window carrying a discoverable
 `TEHandle` was not open on that machine. Nothing here has run on real
 hardware.
+
+**The completed text reading was taken later the same day**, on
+`claude/019-conformance`, through the companion binary over JSON-RPC. A
+window with a discoverable `TEHandle` is a *dialog's*, not a document's —
+the contract says so — so SimpleText's Find dialog was opened, and
+`now_observe_elements` minted the text reference the walk carries under
+`windows[].text.ref`. `now_text_get` answered `completed` with
+`text: "New Old World"` and `truncated: false`; `now_text_set` wrote
+`"read through MCP"`; a second walk and a second `now_text_get` read that
+back. So the pair is now emulator-verified as a round trip rather than as
+reachability, and the earlier refusal is exactly what it said it was — a
+control reference, not a text one.
 
 The test is proven by mutation: adding a registry row without a table entry,
 and declaring a gap for a capability a projection exposes, both fail naming the
