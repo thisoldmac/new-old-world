@@ -14,6 +14,123 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED / MEASURED: the title bar was never drawn from the machine, and the inactive one had never been seen (2026-08-07, `claude/019-titlebar-fidelity`)
+
+Michelle: *"in terms of platinum fidelity, i want someone to focus on the
+titlebar itself and the buttons on it"*, and a side-by-side showing
+Extensions Manager and Sherlock 2 with no widgets at all.
+
+### The first finding is about the METHOD, and it is a negative
+
+`docs/deriving-a-drawn-procedure.md` says to read the QuickDraw drain
+before writing anything, because `DrawThemeTab` leaks nearly all of
+itself through the bottlenecks. **The title bar leaks NOTHING.** Fourteen
+captures across three sweeps, 4,550 ops for one control panel, and not
+one op is in a title bar: every port in every drain is window-LOCAL
+(origin 0,0, bounded by the content rect), no port carries screen-global
+coordinates, and no `text` op anywhere in the corpus draws a window's own
+title. `qdtrace` hooks an application's ports and the WDEF does not draw
+into one.
+
+That is worth knowing before the next piece of chrome: **rung 3 answers
+window CONTENT and nothing the Window Manager draws.** Scroll bars,
+grow boxes and menu bars are the same class of question. The title bar
+was derived entirely at rung 4 — the guest's own pixels — on eleven front
+windows.
+
+### It was a PER-CLASS defect, not a universal one, and the rule is exact
+
+`WindowChrome.widgetBox` opened with `guard win.kind != 2`. Dialog
+Manager–owned windows are `kind == 2`, and that is what most control
+panels are — so **Extensions Manager, Memory, Date & Time, General
+Controls and Mouse were given no widgets at all**, while `kind == 8`,
+`kind == 20` and `kind == 2000` windows always had them. Confirmed by
+rendering the corpus with the old build and counting ink in the band:
+Extensions Manager and Memory show only face and frame; Appearance,
+Finder and Sherlock 2 show a widget's bevel. Michelle's "control panels
+especially" is the whole rule, not an impression.
+
+Sherlock 2 is `kind == 20000` and DOES get a widget from the old build
+when it is the front window, so its absence in her screenshot is not this
+defect. Either it was not front in that scene, or the `front` flag
+disagreed with the machine — **that is unexplained and belongs to whoever
+owns which window is front.**
+
+### Everything the drawer had wrong, measured
+
+| what | the renderer | the machine |
+|---|---|---|
+| band | 18 rows from `t+1` | **22 rows from `t-2`**, black frame row and lit row above the face |
+| stripes | white lines every 2 px, full width | `FFFFFF`/**`777777`** alternating, 12 rows, `t+2 … t+13` |
+| stripe field | edge to edge | `l+15` to seven px clear of the first right widget |
+| stripe phase | none | **dark rows sit one pixel right**, patch and all |
+| close box | `l+1`, top `t+2` | `l-1`, top `t+3` |
+| collapse box | `r-14` | `r-10`, right edge exactly `r` |
+| zoom box | `r-29` | `r-26` *where the machine draws one* |
+| widget face | flat, plain bevel | recessed `888888`/`FFFFFF`, `222222` ring, 7×7 anti-diagonal ramp |
+| collapse glyph | one centred line | two bars, local rows 4 and 6 |
+| zoom glyph | 5×5 stroked square | 7×7 square sharing the ring's top and left |
+| title patch | `ink + 16`, centred on the bar | `ink + 8`, centred on the window |
+| window frame | 1 px black ON the scene rect | **6 px OUTSIDE it**, `000000 · FFFFFF · CCCCCC · CCCCCC · 999999 · 000000`, plus a 1 px shadow |
+| content top | `t + 22` | `t + 20` |
+
+Exact-pixel agreement, per rectangle, old build → new, on five windows:
+widgets 11–15 % → **100.0 %**, stripes 0–4 % → **100.0 %**, the frame row
+and lit edge 0–3 % → **100.0 %**, the bar's bottom edge 0.2 % → **100.0
+%**, the whole band 17–22 % → 89–97 %. The band's residual is the title
+text, where Chicago stands in for Charcoal.
+
+### The inactive bar had never been observed, and now has been
+
+Every background window in all fourteen sweep captures is fully occluded;
+a scan of every screendump in the private store found the front window
+and nothing else. So one was photographed: a lane-private guest, two
+control panels, one screendump
+(`titlebar-inactive-2026-08-07/PROVENANCE.md`).
+
+**The geometry does not change at all.** Three colours move — frame
+`000000 → 555555`, the whole band `→ DDDDDD` flat, title ink `→ 777777` —
+and the widgets and stripes are simply absent. The baseline stays `t+13`.
+
+### STILL BROKEN, and named rather than worked around
+
+1. **IR v1 cannot say whether a window has a ZOOM box**, and `kind`
+   cannot stand in: **Extensions Manager is `kind == 2` and has one;
+   Memory is `kind == 2` and has none.** Seven of eleven windows were
+   being drawn one the machine does not draw, and `HitTester` reported it
+   — so a zoom act sent a click into the racing stripes, which the Window
+   Manager reads as the start of a DRAG. `WindowChrome.zoomBox` now
+   answers nil and nothing draws it. The WindowRecord already carries the
+   answer beside the `windowKind` the walk reads: `spareFlag` is the zoom
+   flag and `goAwayFlag` the close flag, one byte each. **Contract field
+   first, then the guest read, then both guests.** Until then four windows
+   in the corpus have a real affordance the mirror does not offer.
+2. **`WindowChrome.growBox` still guards on `kind != 2`** and has the
+   same problem in the other direction — Extensions Manager is resizable
+   and gets no grow box. Same fix, same field.
+3. **A single pixel at `(432, t+19)`** on the inactive window — where the
+   frame ring around the content meets the bar's last row — renders
+   `696969` against the machine's `555555`. A blend at a junction of two
+   integer fills; its four neighbours are exact. The gate excludes exactly
+   that pixel and says so, rather than widening a tolerance that would
+   hide the next real defect.
+4. **Semantic control frames are STROKED, and Core Graphics centres a
+   stroke on the coordinate** — the same half-pixel `DisplayReplay`'s
+   `pixelCentre` was written for, still unfixed in the control drawer. A
+   list's boundary reads 128 rather than 0, and which pixel carries it
+   moves with the content origin. Two `IslandRenderTests` were pinned to
+   the old landing and now take the darkest of the corner's four pixels.
+5. **The title's text is anti-aliased by the machine and aliased here.**
+   The pixel gate reads the stripes at their ends and the inactive band
+   right of the title for exactly this reason. Chicago-for-Charcoal is an
+   accepted product decision; this is where it shows up as a number.
+6. **Modal alert chrome is untouched and unmeasured.** The `isDialog`
+   path keeps its old drawing because nothing here was measured for it,
+   and the one alert in the corpus does not agree with a document frame
+   either.
+7. **Nothing here is metal-verified.** Emulator only, against QEMU
+   screendumps of Mac OS 9.1.
+
 ## LOOK: round 5's five checks, and the one thing four lanes claimed that a picture had to settle (2026-08-07, `claude/019-integration-5`)
 
 Emulator-capture-verified, on the lane's own VM (block 591, anchor 16728 /

@@ -381,3 +381,62 @@ boxes and separators (probably entirely in the stream already — check
 before writing anything), placards, list headers, disclosure triangles,
 scroll-bar arrows (likely the least — a genuine shape, and the first
 case that may actually want plan 016's guest-side bake).
+
+## The second one, and the boundary it found (2026-08-07, the title bar)
+
+**Rung 3 answers window CONTENT, and nothing the Window Manager draws.**
+
+The title bar was the next element attempted and step 2 above returned
+*nothing at all*. Fourteen captures across three sweeps, 4,550 ops for one
+control panel, and not one op is in a title bar: every port in every drain
+is window-LOCAL — origin (0,0), bounded by the content rect — no port
+carries screen-global coordinates, and no `text` op anywhere in the corpus
+draws a window's own title. `qdtrace` hooks an application's ports, and
+the WDEF does not draw into one.
+
+That took fifteen minutes to establish and it is worth doing first every
+time, because the answer partitions the remaining chrome:
+
+| element | who draws it | does rung 3 see it |
+|---|---|---|
+| tabs, group boxes, placards, list headers, controls | the application, into its own port | **yes** |
+| title bar, window frame, grow box, the desktop | the Window Manager / WDEF | **no** |
+| the menu bar | the Menu Manager, into its own port | yes — a `[0,0,709,20]` port is in two captures |
+
+So for a WDEF element the ladder skips to rung 4 and the work is counting
+pixels. That is slower per element but not much slower, and it has one
+compensation the drain does not offer: **a screendump shows every state
+that is on the screen at once**, so an inactive window's chrome is
+measurable from the same picture as an active one — if you can get one on
+screen at all.
+
+Which was the whole difficulty. The corpus had **no visible inactive title
+bar anywhere**: every background window in all fourteen captures is fully
+occluded, and a scan of every screendump for the signature returned the
+front window every time. A capture had to be taken on purpose, and the
+cheapest rig turned out to be two control panels opened through the anchor
+worker's `launch` verb on a lane-private guest — no input posted, no host
+app, one screendump, four minutes.
+
+**The lesson that generalises: a state that no capture contains is not a
+hard state to measure, it is an unphotographed one.** The tab's five
+unmeasured `ThemeTabStyle` states are in exactly that position, and the
+same rig would settle at least the inactive pair.
+
+Two more things the title bar added to the method:
+
+- **Look for a phase, not just a pattern.** Every light stripe row starts
+  at `l+15` and every dark row at `l+16`, on eleven windows, without
+  exception — the whole striped field, and the title patch punched out of
+  it, sit one pixel right on alternate rows. No amount of reasoning
+  produces that; an RLE of twelve consecutive rows shows it immediately.
+  It is still unexplained and it is still reproduced, because reproducing
+  the machine does not require understanding it.
+- **Check the element's neighbours before believing its offsets.** The
+  widget offsets had been calibrated by eye against two windows in July
+  and were 2–4 px out on all eleven. What made the new ones trustworthy
+  was that each is expressible against a DIFFERENT landmark and both
+  agree: the close box is `l-1` and also six pixels left of where the
+  stripes start; the collapse box is `r-10` and also has its right edge
+  exactly on `r`. That is the caps-width rule again — two independent
+  routes agreeing is what ends a derivation.
