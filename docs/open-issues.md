@@ -75,6 +75,109 @@ and references. What it lacks is NAMES — 37 of 38 control titles empty,
 every role `unknown`, and its DITL titles arriving as pointer bytes.
 That is the pointer-title defect (everywhere, slice 4) plus element-kind
 coverage, not an addressing problem, and no fix belongs in the act plane.
+## ANSWERED: a window opened BEFORE arming now composes — the census (2026-08-07, plan 018)
+
+**Emulator-verified.** QEMU mac99, Mac OS 9.1, guest build `288944aab6b8`,
+wire 5340. Nothing here touched the PowerBook.
+
+The 2026-08-07 fidelity sweep's worst single result was the Finder's
+whole interior rendering as one "Bitmap unavailable" hatch. Lane A
+established it was capture-side. This is the mechanism, watched live on
+both sides of the fix, same rig, same conditions, ten minutes apart:
+
+| | records | window port | offscreen world | text ops |
+|---|--:|---|---|--:|
+| **before** | 22 | 1 `bits`, **no `blitsrc`** | none (`offscreenPorts 0`) | 1, the menu clock |
+| **after** | 219 | 1 `bits` + **1 `blitsrc`** | `0x1f472e60`, hooked | **10, the filenames** |
+
+The ten are `10 items, 3.21 GB available`, `System Folder`,
+`Applications (Mac OS 9)`, `Documents`, `Late Breaking News`,
+`Rumpus PRO 2.0`, `TBT`, `TBT-paced-dev`, `TBT-sndbuf-dev`, `TimBotTu` —
+item for item what the guest's own QMP screendump shows in that window.
+
+**The trap patch contributed nothing to the fixed run**: `qdext.born` was
+**0**. Not one world was created during the pass. Every one of those 219
+records exists because the census found a world that was already there.
+
+What it is: at arm, once per armed identity and BEFORE the redraw arming
+itself requests, the resident sweeps the armed process's own application
+zone and hooks every live offscreen graphics world it finds, through
+exactly the path a birth takes. It emits the same `worldBorn` record, so
+the join, the retention and the ladder cannot tell a censused world from
+a born one and **the wire contract gains nothing**.
+`ext/src/now_content.c :: content_census_run`, verdict in
+`now_content_logic.c :: now_content_census_match`.
+
+**Cost, measured rather than estimated.** Finder 955 KiB / **68.9 ms**;
+Monitors 997 KiB / **186.5 ms**. Roughly 70–190 µs per KiB, the spread
+being how many blocks got past the cheap filter into a dereference (99
+against 209). The budget is 4 MiB — about three quarters of a second
+worst case, once, at a moment that already costs the target a full
+repaint. **The truncation path has never run**: no heap measured so far
+came near the cap.
+
+**How it survives a moving heap.** Every test is a shape or a
+discriminator bit, because `LockPixels` relocates the PixMap record
+(toolbox-and-gworld.md §6) and any pointer is a snapshot of a block that
+has moved. The one non-shape is a `RecoverHandle` liveness gate standing
+between a match on the bytes a freed block happens to hold and a
+four-byte write into it — it fired once in each run (`unrecoverable: 1`,
+then `2`) and cost no coverage either time.
+
+**It degrades honestly.** No zone, or a zone whose own bounds cannot be
+believed, increments `census_refused` and hooks nothing; the product then
+renders the same honest gaps it does today. There is no new hard
+dependency and a resident that cannot run it is not a broken product.
+
+### The image this was baked into, and what landing still owes
+
+The resident is baked and verified into a **private lane image**, not the
+shared oracle:
+
+| | |
+|---|---|
+| image | `~/Lab/Assets/os91-qemu/agent-stage/now-stage-arm-census.qcow2` |
+| sha256 | `1bd2b5c67d1dc05408451fd5a7bc16f95e2a381959b4c5718d074774d93c4e51` |
+| ext digest | `3e6296d2192281609092bc8331ae9e50bf4ebb7d` |
+| build fingerprint (**the guest's own word**) | `875078a0d995d4b371c4d61737e249c6673ad01b` |
+| resident | `lifecycle active`, capabilities `127` |
+| `qemu-img check` / volume / shutdown | clean / **clean** / guest-clean |
+
+The shared oracle was **not** touched: it is still
+`c466baa9a5455c343908e12197d68e57ffc7f07c140276a90c97a5ae2a137d70`,
+byte-identical to what it was before this lane started, and
+`ext/stage-receipts.json` is unmodified — a throwaway receipt in that file
+would claim the oracle contains this resident, which it does not.
+
+**So landing this branch still owes the oracle a `--shared` bake**, and
+that is a decision to announce rather than a step to run. Verified by
+asking the gate rather than by reasoning about it: with an `ext/` path
+staged, `tools/ext-bake-gate` refuses, naming the shared image's receipt
+as being for a different resident. A private bake proves the resident
+works; only a shared one makes it what everybody else clones.
+
+### Still open, from the same run
+
+- **Monitors is a DIFFERENT defect, and the sweep's reading of it was
+  incomplete.** Its window port is hooked and emits **zero ops of every
+  family over 16 seconds**, in count mode and record mode alike — so
+  "zero on its own window port" is not a hooking failure, the
+  application simply does not draw there. The census does reach its heap
+  (`found: 3, hooked: 1`), but Monitors then disposes that world, and
+  `qdext born 12 / died 12` **per event-loop pass** says why: it is a
+  create-and-destroy-per-pass application, the Sherlock 2 shape, already
+  covered by the birth patch. Its interior is missing because nothing
+  makes it repaint while observed — the escalation problem
+  `tools/fidelity-sweep.py` already documents at its own
+  `force_repaint` branch. Not a census gap.
+- **A censused world that dies is not re-censused.** The row is correctly
+  forgotten when the world goes, and the sweep does not run again for the
+  same armed identity, so a replacement world is caught only by the birth
+  patch. That is the right division for an application that recreates its
+  world every pass, and it is unproven for one that recreates it rarely.
+- **The 4 MiB truncation path is untested** on a heap large enough to hit
+  it.
+- Nothing here has run on the PowerBook.
 
 ## FIXED: the live render was worse than every fixture render, and no gate could see it (2026-08-06, evening)
 

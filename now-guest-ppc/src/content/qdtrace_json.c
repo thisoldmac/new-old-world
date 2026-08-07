@@ -322,6 +322,24 @@ void now_qdtrace_status_json(const NowQDStatus *st, long id,
             (unsigned long)st->qdext_died,
             (unsigned long)st->qdext_born_missed);
     }
+    if (st->has_census) {
+        ok = ok && emit(&e,
+            ",\"census\":{\"runs\":%lu,\"bytes\":%lu,\"usecs\":%lu,"
+            "\"examined\":%lu,\"found\":%lu,\"hooked\":%lu,"
+            "\"windows\":%lu,\"already\":%lu,\"unrecoverable\":%lu,"
+            "\"refused\":%lu,\"truncated\":%lu}",
+            (unsigned long)st->census_runs,
+            (unsigned long)st->census_bytes,
+            (unsigned long)st->census_usecs,
+            (unsigned long)st->census_examined,
+            (unsigned long)st->census_found,
+            (unsigned long)st->census_hooked,
+            (unsigned long)st->census_windows,
+            (unsigned long)st->census_already,
+            (unsigned long)st->census_unrecoverable,
+            (unsigned long)st->census_refused,
+            (unsigned long)st->census_truncated);
+    }
 
     e.reserve = 0;
     ok = ok && emit(&e, "}}}");

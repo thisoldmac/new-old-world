@@ -49,6 +49,11 @@
 #include <MacWindows.h>
 #include <OSUtils.h>
 #include <QuickDraw.h>
+/* Microseconds(), for the census's own cost. LMGetTicks is 1/60 s and
+   the whole question about a heap sweep on a cooperative machine is
+   whether it lands under or over a frame - a unit that cannot resolve
+   the answer is not a measurement. */
+#include <Timer.h>
 
 #include "content_table.h"
 
@@ -178,6 +183,12 @@ static short gProbeSeenCount = 0;
 /* The pending sighting's dst area, so a later, bigger blit can take the
    slot from it. Reset when the slot is serviced or the identity changes. */
 static long gProbePendingArea = 0;
+
+/* The armed identity the census has already swept for. A sweep is a
+   whole-heap walk and must happen exactly once per identity, not once
+   per event-loop pass; these two fields are what "once" means here. */
+static NowPeekU32 gCensusGeneration = 0;
+static NowPeekU32 gCensusA5 = 0;
 
 /* Cheap change-detect for the repair sweep, so a 33 MHz machine is not
    charged a WindowList walk on every single event-loop pass. */
@@ -1015,6 +1026,204 @@ void now_content_qdext_died(GrafPtr port)
 }
 
 
+/* ---- the arm-time census: the worlds that were already there --------
+ *
+ * WHAT IT IS FOR. The trap patch above hooks a world at the instant it
+ * is born, which reaches every world created after arming and no world
+ * created before it. Measured on this rig 2026-08-07, and it is the
+ * whole reason this function exists: a Finder window opened BEFORE
+ * `qdtrace start` emits its repaint as one 344x238 `bits` op on the
+ * window port with `offscreenPorts` at ZERO - the composite's source
+ * world was born minutes earlier, no row names it, the host's join
+ * refuses to guess and the interior renders as one honest hatch. That
+ * was the largest visible defect in the 2026-08-07 fidelity sweep.
+ *
+ * WHY A CENSUS RATHER THAN A FIRST-USE HOOK. The alternative is to
+ * register an unknown world when a blit first names it - which is
+ * exactly the sight-then-chase probe two hundred lines below, and it
+ * stays probe-only for two measured reasons. It scans at DRAW time,
+ * once per unseen pixmap, inside another application's paint path; and
+ * it can only ever attribute a composite AFTER the drawing that built
+ * it has already happened, so the very repaint that revealed the world
+ * is the one whose ops are lost. The census runs once per armed
+ * identity, before the redraw that arming itself requests, so the next
+ * repaint lands in a hooked world and is captured whole.
+ *
+ * HOW IT SURVIVES A MOVING HEAP. It asks nothing that relocation can
+ * change. `LockPixels` moves the PixMap RECORD (toolbox-and-gworld.md
+ * §6), so a baseAddr, a dereferenced pointer or a late-recovered handle
+ * are all snapshots of a block that has moved; what survives is SHAPE,
+ * and now_content_census_match is written entirely in shapes and
+ * discriminator bits. Nothing here allocates, and nothing calls a
+ * Toolbox routine that can move memory, so the heap cannot move
+ * underneath the sweep either.
+ *
+ * WHAT IT DOES NOT DO. It sweeps the ARMED PROCESS'S application zone
+ * only. A world whose port lives in the system heap is out of reach,
+ * and that is a stated limit rather than an oversight: the system zone
+ * is shared, far larger, and `useTempMem` was measured to move only the
+ * PIXELS - the port itself stays in the application heap (§3), which is
+ * the memory this walks.
+ */
+/* THE BUDGET, SET FROM A MEASUREMENT AND NOT FROM A ROUND NUMBER.
+   Measured on the QEMU mac99 rig 2026-08-07, this 68K resident sweeping
+   a PowerPC application's heap: the Finder's 955 KiB zone cost 68.9 ms
+   and the Monitors panel's 997 KiB cost 186.5 ms - call it 70 to 190
+   microseconds per KiB, the spread being how many blocks got past the
+   cheap filter into a dereference (99 against 209).
+   4 MiB is therefore a worst case of roughly three quarters of a
+   second, ONCE, at arm - a moment that already costs the target an
+   invalidate and a full repaint. Eight would have been one and a half,
+   which on a cooperatively scheduled machine is a visible stall for a
+   window that is about to be redrawn anyway. A heap past the budget is
+   swept as far as it reaches and says so in `census_truncated`; that
+   path has not been exercised on a real large heap. */
+#define kNowContentCensusMaxBytes 0x00400000UL   /* 4 MiB, see census_truncated */
+
+/* Defined with the chase, below, and shared with it on purpose: the two
+   walk the same heaps and a second opinion about which addresses are
+   safe to read is the defect that guard already exists to prevent. */
+static Boolean content_probe_addr_ok(NowPeekU32 addr, unsigned long size);
+
+static void content_census_run(NowPeekU32 a5, NowPeekU32 generation)
+{
+    THz zone;
+    unsigned char *p;
+    unsigned char *limit;
+    unsigned char *stop;
+    WindowPeek head;
+    UnsignedWide t0;
+    UnsignedWide t1;
+    unsigned long span;
+
+    if (gBlock == NULL || !content_mode_records()) {
+        return;
+    }
+    zone = ApplicationZone();
+    if (zone == NULL) {
+        gBlock->census_refused++;      /* degrade honestly: no zone, no census */
+        return;
+    }
+    p = (unsigned char *)&zone->heapData;
+    limit = (unsigned char *)zone->bkLim;
+    if (limit <= p || (unsigned long)(limit - p) > 0x04000000UL) {
+        gBlock->census_refused++;      /* a zone that cannot be believed */
+        return;
+    }
+    span = (unsigned long)(limit - p);
+    if (span > kNowContentCensusMaxBytes) {
+        limit = p + kNowContentCensusMaxBytes;
+        span = kNowContentCensusMaxBytes;
+        gBlock->census_truncated++;
+    }
+    stop = limit - sizeof(CGrafPort);
+    head = (WindowPeek)LMGetWindowList();
+    gBlock->census_runs++;
+    Microseconds(&t0);
+
+    for (; p <= stop; p += 2) {
+        CGrafPtr cand = (CGrafPtr)p;
+        PixMapHandle ph;
+        PixMap *pm;
+        short slot;
+
+        /* The cheapest kill first: this test runs once per even address
+           in the heap and IS the cost of the sweep. */
+        if (((unsigned short)cand->portVersion & 0xC000U) != 0xC000U) {
+            continue;
+        }
+        /* The same range discipline the chase learned by crashing the
+           Finder: `ph` is read out of arbitrary heap bytes and is any
+           32-bit value at all until this says otherwise. Reads outside
+           mapped RAM are a bus error taken inside somebody else's
+           application. */
+        ph = cand->portPixMap;
+        if (!content_probe_addr_ok((NowPeekU32)ph, sizeof(Ptr))) {
+            continue;
+        }
+        pm = (PixMap *)*(NowPeekU32 *)ph;
+        if (!content_probe_addr_ok((NowPeekU32)pm, sizeof(PixMap))) {
+            continue;
+        }
+        gBlock->census_examined++;
+        if (!now_content_census_match(
+                (NowContentU16)cand->portVersion,
+                (NowContentU32)ph,
+                cand->portRect.left, cand->portRect.top,
+                cand->portRect.right, cand->portRect.bottom,
+                (NowContentU32)pm->baseAddr,
+                (NowContentU16)pm->rowBytes,
+                pm->bounds.left, pm->bounds.top,
+                pm->bounds.right, pm->bounds.bottom)) {
+            continue;
+        }
+        gBlock->census_found++;
+        /* The one case the shape test cannot exclude by itself: a
+           full-screen window at the origin, whose local portRect and
+           global screen pixmap bounds would agree. A window port is not
+           this function's business - it is already hooked by name - and
+           marking one `offscreen` would put it under the lifecycle rules
+           for a port that is on no list, which would evict it. */
+        if (content_port_is_live((GrafPtr)cand, head)) {
+            gBlock->census_windows++;
+            continue;
+        }
+        if (content_slot_for((GrafPtr)cand, a5) >= 0) {
+            gBlock->census_already++;
+            continue;
+        }
+        /* THE LIVENESS GATE, and it is the one thing here that is not a
+           shape. Everything above can be satisfied by the bytes a freed
+           block happens to still hold, and the next step WRITES four
+           bytes into the block. A GWorld's port is an always-locked
+           relocatable block (§3, measured by RecoverHandle on the port
+           itself), so a live world recovers and dead bytes do not.
+           Counted rather than silent, because if this ever costs real
+           coverage the number is where it will show. */
+        if (RecoverHandle((Ptr)cand) == NULL) {
+            gBlock->census_unrecoverable++;
+            continue;
+        }
+        content_install_port((GrafPtr)cand, a5, generation);
+        slot = content_slot_for((GrafPtr)cand, a5);
+        if (slot < 0) {
+            gBlock->census_refused++;  /* table full, or foreign grafProcs */
+            continue;
+        }
+        gPorts[slot].offscreen = 1;
+        gPorts[slot].pixmap = (NowPeekU32)cand->portPixMap;
+        gBlock->census_hooked++;
+        gBlock->probe_offscreen_ports++;
+        /* THE SAME RECORD A BIRTH EMITS, deliberately. A censused world
+           and a born world are the same thing arriving by two routes,
+           and the host's join, its retention and its provenance ladder
+           should not be able to tell them apart - so the contract gains
+           no message and the renderer gains no case. */
+        {
+            NowContentWorldPayload wp;
+
+            wp.port = (NowPeekU32)cand;
+            wp.pixmap = gPorts[slot].pixmap;
+            wp.l = cand->portRect.left;
+            wp.t = cand->portRect.top;
+            wp.r = cand->portRect.right;
+            wp.b = cand->portRect.bottom;
+            content_stamp();
+            (void)now_content_ring_put(gBlock, kNowContentOpWorldBorn, 0,
+                                       (NowPeekU32)cand, &wp, sizeof(wp));
+        }
+        if (gPortCount >= kNowContentMaxPorts) {
+            break;                     /* nothing left to hook it into */
+        }
+    }
+
+    Microseconds(&t1);
+    /* The low word alone: a sweep this long cannot span 4295 seconds, and
+       a 64-bit subtraction in a flat 68K INIT buys nothing. */
+    gBlock->census_usecs = (NowPeekU32)(t1.lo - t0.lo);
+    gBlock->census_bytes = (NowPeekU32)span;
+}
+
 static void content_install_exact_window(NowPeekU32 a5,
                                          NowPeekU32 window,
                                          NowPeekU32 generation)
@@ -1649,6 +1858,18 @@ void now_content_gne(NowPeekTable *table)
 
         content_install_exact_window(a5, gBlock->active_window,
                                      generation);
+        /* THE CENSUS, ONCE PER ARMED IDENTITY AND BEFORE THE REDRAW.
+           Order is the whole point: the redraw below is what makes the
+           application repaint, and a world hooked after that repaint has
+           already missed it. `gCensusGeneration` is compared against the
+           generation rather than a bare flag so a re-arm of a different
+           window - or of the same one after a disarm - sweeps again,
+           which is what the caller means by re-arming. */
+        if (gCensusGeneration != generation || gCensusA5 != a5) {
+            gCensusGeneration = generation;
+            gCensusA5 = a5;
+            content_census_run(a5, generation);
+        }
         content_request_redraw(a5, gBlock->active_window, generation);
         window_list = (NowPeekU32)LMGetWindowList();
         /* A WindowList head change catches opens and head closes at once;

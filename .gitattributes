@@ -1,0 +1,14 @@
+# ext/stage-receipts.json must never merge quietly.
+#
+# It is a set of claims about ONE shared mutable file on disk (the stage
+# image every Mirror sweep clones). Two branches can each append an honest
+# receipt and git will combine them without complaint — producing a file
+# whose LAST bake entry, which every gate reads as "the newest bake", is
+# whichever line sorted last rather than whichever bake happened last.
+#
+# The driver body lives in per-clone git config (tools/setup-hooks writes
+# it), so a clone that has not run setup-hooks gets git's ordinary text
+# merge instead. That is the reason .githooks/pre-merge-commit re-checks
+# the result: an enforcement that lives only in a config a contributor may
+# not have is a rule again, not a gate.
+ext/stage-receipts.json merge=nowreceipts
