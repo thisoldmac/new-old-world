@@ -14,6 +14,52 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## BROKEN: the plain base image has been dirty on disk since 19 July, so every clone of it boots into Disk First Aid (2026-08-07, `claude/019-integration-2`)
+
+`scripts/spin-up-ppc`'s default base,
+`~/Lab/Assets/os91-qemu/os91-runner.qcow2`, carries an HFS+ volume header
+with `kHFSVolumeUnmountedBit` **clear**. Read out of the image itself
+rather than inferred from a boot:
+
+| image | volume attributes | clean |
+|---|---|---|
+| `os91-runner.qcow2` | `0x00000000` | **NO** |
+| `now-mirror-stage.qcow2` | `0x00000100` | yes |
+
+So a fresh, session-private clone shows *"Your computer did not shut down
+properly"* on its **first** boot — before any staging, before any
+shutdown, before the script has done anything a run could get wrong. The
+modal dialog then sits over the Finder and the anchor worker never comes
+up, so the spin-up stalls at "boot a fresh, session-private clone" with
+no error. It reads exactly like a hung boot.
+
+**This is not the failure the spin-up header warns about**, and that is
+the reason to write it down. That header's rule 1 is about a QMP `quit`
+being a power cut and dirtying the volume *at the cold-reboot step*, and
+anybody meeting this screen will reach for that explanation first and go
+looking for a shutdown applet that failed. The applet is fine. The bytes
+were already dirty, and have been since the file's mtime of
+2026-07-19T13:52:17 — which means every run off the plain base since then
+has paid a Disk First Aid pass at boot, silently, including runs whose
+slowness was noticed and attributed elsewhere.
+
+**Workaround, and it is the one this integration used:**
+`NOW_SPIN_BASE=$HOME/Lab/Assets/os91-qemu/now-mirror-stage.qcow2`, which
+boots clean. That is a workaround and not the fix — it makes every run
+carry the Mirror oracle's resident whether or not the run wants it.
+
+**The fix is to clean the base once**: boot it, let Disk First Aid
+finish, shut the guest down through `tools/shutdown-guest.py`, and keep
+the result. Nobody should do that mid-flight while other lanes are
+cloning it.
+
+**What would have caught it:** the readiness check has no assertion about
+the volume's clean bit, and rule 2g of
+[mirror-drive-loop.md](mirror-drive-loop.md) already says in prose that a
+private clone is not automatically a clean clone. Reading two bytes of
+the volume header before boot is cheap and would name this in a second
+instead of presenting as a stall.
+
 ## EMULATOR-VERIFIED: the drag vehicle fires, and the resident lets go by itself (2026-08-07, slice 10 of plan 018)
 
 **Driven on a guest, watched, and measured.** P7 — a mouse button that
