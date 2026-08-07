@@ -79,7 +79,11 @@ int now_obs_resolve_window(const NowAxMemory *memory,
 
 /* The one place a `why` becomes a verdict. A table rather than a
    judgement at each call site: the mapping IS the policy, and a policy
-   spread over fifteen returns is a policy that drifts. */
+   spread over fifteen returns is a policy that drifts.
+
+   It is PUBLIC (now_obs_verdict_for_why, at the foot of this file) so
+   that anything stating a verdict and a reason together can derive both
+   from the one value. See obsresolve.h. */
 static NowObsVerdict verdict_for(NowObsWhy why)
 {
     switch (why) {
@@ -245,6 +249,11 @@ void now_obs_resolve(const NowObsRegistry *registry, NowObsKind kind,
     out->verdict = kNowObsOk;
     out->why = kNowObsWhyNone;
     out->resolved = resolved;
+}
+
+NowObsVerdict now_obs_verdict_for_why(NowObsWhy why)
+{
+    return verdict_for(why);
 }
 
 const char *now_obs_verdict_name(NowObsVerdict verdict)

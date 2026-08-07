@@ -116,4 +116,16 @@ void now_obs_resolve(const NowObsRegistry *registry, NowObsKind kind,
 const char *now_obs_verdict_name(NowObsVerdict verdict);
 const char *now_obs_why_text(NowObsWhy why);
 
+/* THE MAPPING, in public. A verdict and its reason are ONE value seen
+   two ways, not two values that happen to agree - so anything that
+   states both must derive both from the `why` rather than carry a second
+   copy alongside it and hope the two stay in step. A reply whose verdict
+   said `ok` beside a reason explaining a refusal would read as a failure
+   to everyone quoting it, and the only structural defence against that
+   is to make the pair unrepresentable.
+
+   `now_obs_verdict_for_why(kNowObsWhyNone)` is the only Ok, by
+   construction, and obsresolve_test.c pins that over the whole enum. */
+NowObsVerdict now_obs_verdict_for_why(NowObsWhy why);
+
 #endif /* NOW_OBSRESOLVE_H */

@@ -500,6 +500,13 @@ run_c now-guest-ppc obsresolve_test.c       ""  src/observe/obsresolve.c \
 run_py now-guest-ppc one_minter_source_test.py
 run_py now-guest-ppc self_window_act_source_test.py
 run_py now-guest-ppc self_menu_act_source_test.py
+# The other property observe.c's missing host test cannot see: that
+# `handle` - the ONLY reply in either guest that states a reason inside an
+# ok:true frame - derives its verdict, its reason and `resolved` from one
+# value rather than from two fields that happen to agree. An ok verdict
+# beside a sentence explaining a refusal reads as a failure to whoever
+# quotes it, and this file compiles clean either way.
+run_py now-guest-ppc handle_reason_source_test.py
 # The seam the SCENE walk mints through. It is the one test in the tree
 # that mints a reference and then RESOLVES it, which is the only way to
 # tell an address from a decoration: a `ref` that is well formed and
