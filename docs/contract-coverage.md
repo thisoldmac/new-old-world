@@ -991,3 +991,41 @@ next to it, so it is the part most worth re-running.
 `qdtrace` is now expanded as a subsystem above, per this file's own rule.
 It was ticked as one row while its record vocabulary had grown by three
 and its `status` by a whole object.
+
+## The machine half: this file declares itself derived
+
+Everything above is derived, and this section is the part a hook can
+read. The `derived-doc` block below carries the same commands as runnable
+text, the sha256 of each one's answer, and a digest of the source files
+they read. `tools/derived-doc-gate` refuses a **merge** commit that
+touches this file, or any of those sources, unless the commands were
+re-run and still produce what is recorded here.
+
+It exists for the merge specifically. Two lanes re-deriving honestly, on
+two branches, produce two correct numbers and one merged lie — which is
+this file's own "re-derive at the MERGE" rule, with something checking
+it. Re-derive with `tools/derived-doc-gate rederive`, then read what
+moved; the hash is the receipt, not the point.
+
+<!-- derived-doc v1
+sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
+sources-sha1: 4ef3f3b249b947c22cab3312933850f1924d5a9f
+derive ppc-inbound-types sha256=37fc462e78256c4de7150c6ad4be1594722e4d872131387de4ee4c8801480f1f lines=48 published
+    grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
+      | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
+derive 68k-inbound-types sha256=17315f30f1d8e258d705add272b55c2aa1635ebc4d1ec9f5dd9de67e5e149047 lines=23 published
+    grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
+      | sed 's/.*"\(.*\)".*/\1/' | sort -u
+derive x-commands-registry sha256=37b0fe5ed498218762060d37035ab15059d91f5b7080b02b2afd0968250b298c lines=42 published
+    awk '/^  x-commands:$/{f=1;next} f&&/^  [^ ]/{f=0} \
+         f&&/^    [a-z][a-z0-9]*:$/{gsub(/[ :]/,"");print}' \
+        contract/asyncapi.yaml | sort -u
+derive ppc-verbs sha256=205252e1afa343f534eaf23e08f784a91a7968565c56cf51b8323b978c128de6 lines=39 published
+    grep -oE 'strcmp\(name, *"[a-z0-9]+"\)' \
+        now-guest-ppc/src/commands/commands.c \
+      | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
+derive 68k-verbs sha256=70a32cc1ffb1933862444e2c0a0d7972fb6f1b68e40d34a2fd6bb5ef729e78d2 lines=13 published
+    grep -oE '\{ *"[a-z0-9]+"' now-guest-68k/src/commands/commands68.c \
+      | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
+rederived: 2026-08-07T03:49:51-0400 8c1e3d94 sources, ppc-inbound-types 0->48, 68k-inbound-types 0->23, x-commands-registry 0->42, ppc-verbs 0->39, 68k-verbs 0->13 (first declaration)
+-->
