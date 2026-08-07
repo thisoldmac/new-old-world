@@ -155,3 +155,55 @@ a pre-ladder tree.
   now three independent sittings (sweep A, live A, live B) with no
   recovery observed, through a Finder window opening and a view switch,
   with `sceneGeneration` reaching 11.
+
+## Fourth: the idle watch across the renewal boundary, completed
+
+The content plane's renewal fires on a **9-minute timer** against a
+10-minute guest TTL (`NOWMirrorContentPlane`), so it arrives with the
+machine untouched and looks exactly like the picture decaying on its own.
+Re-arming bumps the guest's `display_epoch` and starts an empty op list
+while the window still holds every pixel it drew; before the carry-forward
+that meant the interior collapsed to whatever happened to be redrawn next.
+The decay lane fixed that at unit level **and said so** — the live watch
+had never been completed.
+
+It has now. `idle-renewal-b`: **700 seconds of provoking nothing.**
+
+| | |
+|---|---|
+| Frames | 6,857 over 669 s of trace |
+| **Missed** | **17** |
+| Flicker events | 383 — `coverageStatusFlips` **383**, hatch **0**, content dropouts **0**, rectOwner **0**, presence **0** |
+| Drain in artifact | yes, in **all 6,857 frames**; 2 windows traced, both with ops |
+| `displayTotal` (`Macintosh HD`) | 845 → **1,140** at +200.9 s, and held for the remaining 7½ minutes |
+| `contentGeneration` | 7 → 8, one bump; `sceneGeneration` 11 → 23 |
+| `baseComplete` | `false` in all 6,857 |
+
+**The picture did not decay.** Across eleven minutes with nothing asked
+of the machine, no window hatched, no window's content dropped out, and
+the op count only ever **grew** — the shape carrying forward is exactly
+what the fix predicts, and a renewal that restarted from nothing would
+have shown the op count collapsing toward a handful.
+
+**What this does NOT prove, stated plainly.** The trace cannot point at
+the renewal and say "there it is": the plane's `armedAt` is host-internal
+and reaches no projection, so the +200.9 s epoch bump is a *candidate*
+rather than an identified renewal. What the run establishes is the
+weaker, and still unmet, claim it was asked for — **eleven idle minutes
+across the interval in which a renewal must fall, with no collapse in any
+window.** Naming the moment needs the plane to say when it armed, and
+nothing on this surface does.
+
+## What a C side should run
+
+1. **`--idle` first, again.** Two idle traces here (`idle-b`,
+   `reselect-b`, the latter idle by accident) and the long one all agree,
+   and it is one command.
+2. **The view switch, on a pre-ladder tree**, to settle whether the
+   roster bounce is a regression or something the A side's 6 missed
+   snapshots hid. That is the single highest-value hour left in this arc.
+3. **Quote the breakdown, never the total** — `view-list-b`'s 67 is 27
+   of one defect and 40 of a completely different one.
+4. **Report `missed`.** Every count on this page is a floor.
+5. **Let the tool refuse.** A run that reports no drain is not a stable
+   render; it is a run that could not have seen one.
