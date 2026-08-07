@@ -14,14 +14,27 @@ import SwiftUI
 /// and the classic Mac's screen is the document.
 ///
 /// So the arrangement is the ordinary Mac one, grouped by how often a
-/// control is reached rather than by what it belongs to:
+/// control is reached rather than by what it belongs to — and then, in a
+/// second round, by **what SHAPE each piece of content is**:
 ///
 /// - a **toolbar** across the top for the things a person acts with —
-///   Start/Stop, Detach, and the zoom stop;
+///   Start/Stop, Detach, the zoom stop, and the two drawers;
 /// - the **Mirror** filling everything under it;
-/// - a **trailing inspector**, closed by default, for the things a person
-///   looks up when something is wrong: the planes, the resident's
-///   lifecycle, the act and cycle clocks.
+/// - an **event drawer** beneath the picture, full width, closed by
+///   default. The acts and scene cycles are a time-ordered TABLE — glyph,
+///   label, duration, outcome — and a 260-point column cannot hold one
+///   without truncating the label, which is the one part a person reads.
+///   `drag "Read Me" to the Trash` fits whole here and does not in a
+///   sidebar; that is the whole argument.
+/// - a **trailing inspector**, also closed by default, for labelled
+///   facts: the resident's lifecycle, the planes with their switches, the
+///   last scene's counts, the cycle baselines. These are names and values
+///   and are perfectly happy narrow.
+///
+/// **Both closed by default, and the pair of defaults is the decision.**
+/// With both shut this module is exactly the toolbar and the Macintosh
+/// that was already accepted, so neither drawer can ever be something a
+/// person did not ask for.
 ///
 /// Whether it is *running* is orthogonal to all of this. The poll keeps
 /// going while another module is showing, while this pane is destroyed,
@@ -38,6 +51,14 @@ struct MirrorModuleView: View {
     let connectedMachineName: String
     @ObservedObject var timeline: MirrorActTimeline
     @ObservedObject var cycles: MirrorCycleTimeline
+
+    /// The event drawer's height. Fixed rather than draggable, and the
+    /// reason is the review loop rather than taste: a `VSplitView` is the
+    /// obvious way to let a person size it and **does not rasterize
+    /// offscreen at all** (`MirrorReviewRendering`), so a resizable
+    /// drawer could only ever be reviewed by somebody sitting at the
+    /// machine. 190 points is six rows and the header.
+    private static let drawerHeight: CGFloat = 190
 
     var body: some View {
         VStack(spacing: 0) {
@@ -58,10 +79,16 @@ struct MirrorModuleView: View {
                    detail column's own floor — `HostRootView` declares
                    `minWidth: 480` — or the pair overflows the pane and
                    both ends are clipped, which is what 380 + 260 did. */
-                content
-                    .frame(minWidth: 280, maxWidth: .infinity,
-                           maxHeight: .infinity)
-                    .layoutPriority(1)
+                VStack(spacing: 0) {
+                    content
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if !presentation.isDetached {
+                        eventDrawer
+                    }
+                }
+                .frame(minWidth: 280, maxWidth: .infinity,
+                       maxHeight: .infinity)
+                .layoutPriority(1)
                 if presentation.inspectorShown {
                     Divider()
                     /* A FIXED width, and the content takes the rest.
@@ -70,7 +97,7 @@ struct MirrorModuleView: View {
                        room as the Macintosh. */
                     MirrorControlView(model: model, run: run,
                                       presentation: presentation,
-                                      timeline: timeline, cycles: cycles)
+                                      source: source, cycles: cycles)
                         .frame(width: 260)
                 }
             }
@@ -103,6 +130,51 @@ struct MirrorModuleView: View {
         } else {
             MirrorPaneView(source: source, presentation: presentation,
                            container: .modulePane)
+        }
+    }
+
+    /// **The drawer, and its own header even when it is shut.**
+    ///
+    /// The closed state is a one-line strip rather than nothing at all.
+    /// A drawer with no handle is a feature a person has to be told
+    /// about, and the toolbar toggle alone would make the events
+    /// something you have to already know exist.
+    @ViewBuilder
+    private var eventDrawer: some View {
+        Divider()
+        Button {
+            presentation.eventsShown.toggle()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: presentation.eventsShown
+                      ? "chevron.down" : "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("Events").font(.callout.weight(.medium))
+                Spacer()
+                /* The lane, on the closed strip too. It is the one fact
+                   the drawer holds that a person needs WITHOUT opening
+                   it: a gesture that appears to have done nothing is
+                   either a slow Mac or a queue, and this says which. */
+                if !presentation.eventsShown, timeline.depth > 0 {
+                    Text(MirrorLaneDepth.sentence(timeline.depth))
+                        .font(.caption)
+                        .foregroundStyle(timeline.depth > 1
+                                         ? .primary : .secondary)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.bar)
+        .help("What this Mac has been asked to do, and what became of it.")
+        if presentation.eventsShown {
+            Divider()
+            MirrorEventStreamView(timeline: timeline, cycles: cycles,
+                                  filter: $presentation.eventFilter)
+                .frame(height: Self.drawerHeight)
         }
     }
 
