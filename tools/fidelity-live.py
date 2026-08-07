@@ -141,6 +141,25 @@ LIMITS = {
         "the frame index of each screendump is recorded. What still "
         "cannot join is fidelity-sweep.py's qdtrace capture, which "
         "needs the wire the host is holding."),
+    "the-plane-must-have-armed": (
+        "This reads the LIVE host, and the live host arms the content "
+        "plane itself — so a run against a host that never armed would "
+        "report every window stably empty and READ AS A STABILITY "
+        "RESULT. Every run therefore states `planeEvidence`, derived "
+        "from the artifact rather than from intent: `displayTotal` is "
+        "null where the plane never traced a window, 0 where it traced "
+        "and the window drew nothing, and above 0 where a drain reached "
+        "this trace. Without a drain the run REFUSES unless "
+        "--allow-no-drain was given, and that decision is recorded "
+        "beside the number."),
+    "which-guest-answered": (
+        "There is one agent socket per user and this tool binds "
+        "nothing, so it reads whichever host owns that socket — "
+        "possibly another lane's, holding another lane's VM. Every run "
+        "checks the guest build in the host's `session_health` against "
+        "this checkout's own products (`--expect-build`, `auto` by "
+        "default) before its first frame, and records what it saw in "
+        "`rig`."),
     "one-host-one-run": (
         "There is one agent socket per user. If two host copies are "
         "running, this reaches whichever owns the socket. The run "
