@@ -86,9 +86,23 @@ enum {
 static const char kDefaultPortText[]    = N68_STR(kNowDefaultHostPort);
 static const char kDefaultTimeoutText[] = N68_STR(kConnTimeoutDefaultSecs);
 
-/* 512x300 leaves the whole page visible on the 180c's 640x480 panel with the
- * menu bar above it, and still fits a 512x342 compact screen if this ever
- * runs on one. */
+/* 512x300 at (40,60) leaves the whole page visible on the 180c's 640x480
+ * panel with the menu bar above it: right 552, bottom 360, both inside 640x480.
+ *
+ * It does NOT fit a 512x342 compact screen, and this comment used to say it
+ * did. The claim was arithmetic about the SIZE with the ORIGIN left out —
+ * 512 wide does fit 512 across, but placed at x=40 it ends at 552, and 300
+ * tall placed at y=60 ends at 360 on a 342-line screen. Both edges land
+ * offscreen and the window cannot be dragged back from a title bar that is
+ * itself partly off the right edge.
+ *
+ * Recorded rather than silently corrected because a wrong declaration is
+ * worse than none: it is what stops the next reader checking. The placement
+ * is unclamped (window_init below), so a real fix reads the screen —
+ * health_static()->screen_width/height are already sampled before the first
+ * draw — and clamps origin+size to it. That is a behaviour change nobody has
+ * watched on a 512x342 machine, so it is in docs/open-issues.md rather than
+ * done blind here. The supported floor today is 640x480. */
 #define kWinLeft    40
 #define kWinTop     60
 #define kWinWidth   512

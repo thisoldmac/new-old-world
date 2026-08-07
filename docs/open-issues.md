@@ -14,6 +14,127 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## SWEPT: hardcoded machine facts — the whole class, mapped (2026-08-07, `claude/019-no-hardcoded-machine-facts`)
+
+Michelle, approving a fix to one instance: *"yes this should be dynamic
+and learned from the actual machine, never hard coded."*
+
+A **hardcoded machine fact** is a value that claims to describe the
+machine and describes the build, or the developer's desk, instead. It is
+uniquely nasty here because it is **always plausible** — right on the
+machine it was written on, right in every test, and silently wrong the
+first time somebody runs it somewhere else. No test that runs on one
+machine can catch it, and every test we have runs on one machine.
+
+The sweep covered both guests, `ext/`, the host, MirrorKit and the
+tooling. Four categories, and the third is the largest and the point:
+
+1. **DEFECT** — a machine fact stated as a constant where the machine
+   could answer.
+2. **DELIBERATE, DECLARED** — correct, knowingly, with a comment saying
+   why. Left alone.
+3. **DELIBERATE, UNDECLARED** — correct today, nothing says so. This is
+   what turns into category 1 the next time somebody edits nearby.
+4. **UNKNOWABLE** — the machine genuinely cannot answer, so the constant
+   must read as an assumption rather than a fact.
+
+### The table
+
+| # | Site | Fact stated | Cat | Disposition |
+|---|---|---|---|---|
+| 1 | `now-guest-ppc/src/commands/commands.c:256` | addressing is 32-bit | 1 | **FIXED** — asked Gestalt, discarded the answer, printed a literal. Now tests the bit. |
+| 2 | `now-guest-ppc/src/workshop/workshop_window.c:54` | this Mac is a PowerBook | 1 | **FIXED** — "this PowerBook" → "this Mac", matching all 8 sibling blurbs. |
+| 3 | `tools/stage-ext.py:84` | guest volume is `Macintosh HD` | 1 | **FIXED** — `NOW_GUEST_EXTENSIONS`, matching `DEV` on the next line. |
+| 4 | `now-guest-ppc/src/peek/peek.c:384` | guest OS is `"9"` | 1 | **NOT OURS** — the `hello` twin. Its own comment says if hello becomes computed this must read the same source, and hello is being computed now. See below. |
+| 5 | `now-guest-68k/src/ui/window.c:92-95` | screen ≥ 552×360 | 1 | **DECLARED FALSELY** — comment claimed a 512×342 fit that the arithmetic denies. Corrected; clamp still open (below). |
+| 6 | `now-guest-68k/src/console/conwin.c:83-86` | screen ≥ 520×360 | 1 | Same. Comment's own arithmetic added height to the *left* edge. Corrected. |
+| 7 | `now-host/Sources/Host/NOWMirrorWindow.swift:30` | guest screen is 800×600 | 1 | **OPEN** — see "three answers" below. |
+| 8 | `mirror/…/MirrorKit/Sources/MirrorKit/ScenePoller.swift:16,27,440` | guest screen is 800×600 | 1 | **OPEN** — same fact, same value. |
+| 9 | `mirror/…/MirrorKitUI/PlatinumTheme.swift:43` | guest screen is 1024×768 | 1 | **OPEN** — same fact, *different* value. |
+| 10 | `now-host/Sources/Host/Chat/ChatSystemPrompt.swift:97` | guest is a 68030 with 8 MB | 1 | **OPEN** — told to the model unconditionally; `situation()` in the same file already composes per-guest from real facts. |
+| 11 | `now-host/…/ChatSystemPrompt.swift:119` | guest screen is 640×480 | 1 | **OPEN** — same fact, a *third* value. |
+| 12 | `now-host/Sources/Host/DiagnosticsModuleView.swift:228,230` | which guest serves a verb | 1 | **OPEN** — enablement is derived correctly; only the explanatory prose asserts. The `.vprobe` arm 6 lines above states the right rule. |
+| 13 | `now-host/Sources/Host/NetworkingModuleView.swift:62` | PowerPC guest serves `net` | 1 | **OPEN** — same shape. |
+| 14 | `now-host/…/Projection/{GuestLogTail,MachineFacts,GuestDiagnostics,SoftwareInventory}Projection.swift` | per-guest command tables | 1 | **OPEN** — model-facing prose asserting what the gates derive. |
+| 15 | `now-host/Sources/Host/NOWMirrorSource.swift:2306` | System Folder child is named `Apple Menu Items` | 1 | **OPEN** — breaks on a localized System; Finder's `apple menu items folder` specifier is the ask-the-machine form. |
+| 16 | `mirror/tools/stage-{agent,mirror}.py`, `mirror/tools/extract-assets/{pull,iconpack}.py`, `scripts/probes/*.py` | guest volume / OS-bearing paths | 1 | **OPEN** — `scripts/probes/oracles.py:45-57` already demonstrates the fix and says why. |
+| 17 | `tools/fidelity-sweep.py:327` | guest is mac99/OS 9.1 | 4 | **FIXED** — now reads "assumed … (not read from the guest)". Every other field in that provenance block was measured. |
+| 18 | `now-guest-ppc/src/core/prefs.c:177` | screen is 8-bit | 3 | **DECLARED** — it is a capture *policy*, not a reading. Comment added, no behaviour change. |
+| 19 | `now-guest-ppc/src/census/census_probes.c:617` | CPU is PowerPC | 3 | **DECLARED** — true by construction (a CFM/PPC binary cannot load elsewhere), but on a census page. |
+| 20 | `now-guest-ppc/src/core/prefs.c:175` | peer is at `10.0.2.2` | 2 | Left — declared twice already (`prefs.c:125`, `prefs.h:107`). |
+| 21 | `now-guest-ppc/src/main.c:250`, `workshop_window.c:143` | desktop is 800×600, menu bar 20 | 3 | **OPEN, minor** — dead fallback branch; `GetMainDevice()` and `GetMBarHeight()` would answer, and `GetMBarHeight` appears nowhere in the tree. |
+| 22 | `now-guest-68k/src/census/vprobe68.c:138` | System ≥ 7.0, so `Microseconds()` exists | 2 | Left — declared, dated, reasoned, with a "confirm on metal" action. The gate would fail closed on a machine where the trap works. |
+| 23 | `now-guest-68k/src/main.c:214` | desktop is the main screen | 3 | **OPEN, minor** — `DragWindow` bounded by `qd.screenBits.bounds`; `(*GetGrayRgn())->rgnBBox` covers all GDevices. |
+| 24 | `now-guest-68k/now-guest-68k.r:60` | machine has 4 MB | 4 | Left — a `SIZE` resource is read by the Process Manager *before* the app runs. Genuinely unanswerable, and declared. |
+| 25 | `now-guest-68k/src/core/screen68.c:239` | depth is 1 | 2 | Not a defect — reached only when Color QuickDraw is absent, where `screenBits` is a `BitMap` and 1-bit by definition. |
+| 26 | `tools/fakeguest.py:128` | a guest's OS and capabilities | 2 | Not a defect — it is a test double; hardcoding is its job and it cites the source lines it mimics. |
+
+### One fact, three host-side answers
+
+Rows 7–11 are the sharpest structural finding, and they are one issue:
+**how big is the guest's screen?** The host answers 800×600, MirrorKit
+answers 800×600 in one file and 1024×768 in another, and the chat prompt
+tells the model 640×480. Each is a plausible default and no two agree.
+
+This is the failure AGENTS.md already names — *state a limit once, where
+both sides read it* — arriving as a machine fact rather than a buffer
+size. The guest sends `scene.screen.w/h`; `fitToGuestScreen()` already
+uses it, once. Nothing was fixed here because the fix is a seam across
+two packages and belongs to whoever owns the Mirror window's sizing, not
+to a sweep.
+
+### `hello.os` and its twin (row 4)
+
+`peek.c:384` writes `"9"` into the resident endpoint table, and its
+comment (`peek.c:381-383`) says the quiet part: *"one string in two
+places is exactly the drift this project has paid for, so if that one
+ever becomes computed this must read the same source."* `hello.os` **is
+becoming computed** on `claude/019-asset-packs`. So the condition that
+comment sets has now been met, and `peek.c` is the half that will be left
+behind. Named here rather than fixed because the header it must read from
+is that lane's, mid-flight.
+
+### What is gated, and what is not
+
+`MachineFactProbeGateTests` (`now-host/Tests/HostTests/`) fails the build
+when a guest asks the machine a question and discards the answer — the
+exact shape of row 1:
+
+```c
+if (Gestalt(gestaltAddressingModeAttr, &v) == noErr) {
+    add_row(rows, &n, max, "cpu", "Addressing", "32-bit");   /* v unused */
+}
+```
+
+It derives both sides from source, keeps no list, and needs no allowlist:
+a probe that only cares whether a selector *exists* has two forms already
+used in this codebase that say so in code — the `== noErr` ternary and the
+Boolean assignment — and neither is block form, so neither is examined.
+The escape hatch cannot be a comment, because the gate reads through
+`GateSource` with comments stripped. Mutation-verified: reinstating the
+bug fails it by file and line. 35 probes found; the second test fails if
+that count collapses, because a scanner that has gone blind reports every
+guest clean.
+
+**It does not cover the class**, and the table above is mostly outside
+it. It sees only `Gestalt`, only the `== noErr` block form, and says
+nothing about whether any other constant is true — deciding which
+literals are machine facts is not mechanically decidable. Rows 7–17 are
+exactly the part no gate catches, which is why they are written down.
+
+### Open, in priority order
+
+1. Rows 7–11: one guest screen size, three host-side answers, none asked.
+2. Row 4: `peek.c`'s OS literal, once `guest_identity.h` lands.
+3. Rows 12–14: per-guest capability claims surviving in prose the gates
+   no longer make.
+4. Rows 5–6: the 68K windows are placed unclamped and do not fit a
+   512×342 screen. `health_static()->screen_width/height` is sampled
+   before the first draw, so the fix is a clamp — but it is a behaviour
+   change nobody has watched on a compact screen, so it is parked rather
+   than done blind. **Supported floor today is 640×480.**
+5. Rows 15–16: guest volume names and localized System Folder children.
+
 ## BROKEN: the machine will not say what a foreign control IS, and that is not a bug we can fix in the walk (2026-08-07, `claude/018-control-semantics`)
 
 Michelle, driving the integrated build: *"a lot of controls (such as
