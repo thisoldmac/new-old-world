@@ -99,6 +99,7 @@ static void read_controls(NowScene *s, int window, const NowAxMemory *memory,
                has been collected is a PREFIX of this window's controls
                with nothing beside it to say so. */
             now_scene_retract_controls(s, window);
+            now_scene_set_walk_verdict(s, window, kNowSceneWalkControlsBound);
             return;
         }
         if (now_ax_read_control(memory, win, handle, &control) != kNowAxOk) {
@@ -106,6 +107,8 @@ static void read_controls(NowScene *s, int window, const NowAxMemory *memory,
                refusal rather than a bound, and it drops the plane for
                the same reason: what stands is a prefix. */
             now_scene_retract_controls(s, window);
+            now_scene_set_walk_verdict(s, window,
+                                       kNowSceneWalkControlsInvalid);
             return;
         }
         /* BACK TO CONTENT-RELATIVE, which is what the IR names.

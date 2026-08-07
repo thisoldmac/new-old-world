@@ -319,7 +319,14 @@ enum {
     kNowSceneWalkRecordUnreadable = 1,  /* the WindowRecord failed validation */
     kNowSceneWalkControlsRetracted = 2, /* the chain broke or hit its bound */
     kNowSceneWalkDialogItemsRetracted = 3,
-    kNowSceneWalkControlsAndItemsRetracted = 4
+    kNowSceneWalkControlsAndItemsRetracted = 4,
+    /* The two causes of a control retraction, kept apart because they
+       are different errands: a chain longer than the scene carries is
+       OUR bound, and a chain that failed validation is the machine
+       being unreadable where we looked. Lumping them sends whoever
+       reads the note to raise a cap that was never the problem. */
+    kNowSceneWalkControlsBound = 5,
+    kNowSceneWalkControlsInvalid = 6
 };
 
 typedef struct {
@@ -640,6 +647,10 @@ void now_scene_retract_dialog_items(NowScene *s, int window);
    attempted. Distinct from a retraction: nothing was walked, rather than
    walked and dropped, and the two send a reader to different places. */
 void now_scene_note_window_unreadable(NowScene *s, int window);
+
+/* Refine a verdict a retraction has already set. Only ever narrows -
+   the retraction says a plane was dropped, this says why. */
+void now_scene_set_walk_verdict(NowScene *s, int window, short verdict);
 
 /* A window's TextEdit content. `truncated` says the TERec was longer
    than what is carried. No-op for an out-of-range row; sets

@@ -1024,6 +1024,16 @@ static void put_meta(Sink *k, const NowScene *s)
                   "plane was attempted - absent here means unknown, "
                   "not empty";
             break;
+        case kNowSceneWalkControlsBound:
+            why = "control chain is longer than this scene carries, so its "
+                  "controls are unknown rather than absent - the bound is "
+                  "ours, not the machine's";
+            break;
+        case kNowSceneWalkControlsInvalid:
+            why = "control chain failed validation: a record left the "
+                  "readable zones, so its controls are unknown rather than "
+                  "absent and the fault is where we are allowed to look";
+            break;
         case kNowSceneWalkControlsRetracted:
             why = "control chain hit a bound or failed validation, so its "
                   "controls are unknown rather than absent";

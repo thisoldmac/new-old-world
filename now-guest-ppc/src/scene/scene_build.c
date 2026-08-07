@@ -531,6 +531,15 @@ void now_scene_retract_controls(NowScene *s, int window)
                     : kNowSceneWalkControlsRetracted;
 }
 
+void now_scene_set_walk_verdict(NowScene *s, int window, short verdict)
+{
+    NowSceneWindow *w = window_at(s, window);
+
+    if (w != NULL && w->walk_verdict != kNowSceneWalkOk) {
+        w->walk_verdict = verdict;
+    }
+}
+
 void now_scene_note_window_unreadable(NowScene *s, int window)
 {
     NowSceneWindow *w = window_at(s, window);
