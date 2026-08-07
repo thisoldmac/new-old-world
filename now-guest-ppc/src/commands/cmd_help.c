@@ -206,6 +206,30 @@ static const char *const d_ctlact[] = {
     "  22 page-up, 23 page-down, and 129 is the indicator.",
     NULL
 };
+static const char *const d_dragpress[] = {
+    "  Presses the mouse button on the element and LEAVES IT DOWN,",
+    "  handing the gesture to the resident's drag vehicle. Returns a",
+    "  session nonce that dragmove and dragrelease must name.",
+    "  The resident carries its own deadline and will release the",
+    "  button whether or not anyone asks - idle and cap set how long,",
+    "  in ticks, and it clamps both, so neither can switch it off.",
+    NULL
+};
+static const char *const d_dragmove[] = {
+    "  Publishes a new pointer position for a held drag. The resident's",
+    "  Time Manager task applies it; the application being dragged in is",
+    "  inside its own tracking loop and is not reading events at all.",
+    "  Also relays that the caller is still alive, which is what holds",
+    "  the resident's idle deadline open.",
+    NULL
+};
+static const char *const d_dragrelease[] = {
+    "  Asks the resident to release a held drag. It reports that it",
+    "  ASKED, never that it released: the resident performs it on its",
+    "  next tick through the same path its deadline uses, and that",
+    "  deadline may already have got there first. Read the ended row.",
+    NULL
+};
 static const char *const d_ditemact[] = {
     "  Selects one 1-based DITL item through the application's own",
     "  dialog event path. The item number and observation-minted",
@@ -591,6 +615,12 @@ const NowCommandDoc kNowCommandDocs[] = {
       "textset <element> <text>", d_textset },
     { "ctlact", 1, "act on one control",
       "ctlact <element> <part>", d_ctlact },
+    { "dragpress", 1, "press and hold the mouse button on an element",
+      "dragpress <element> [idle] [cap]", d_dragpress },
+    { "dragmove", 1, "move a held drag to a point",
+      "dragmove <session> <h> <v>", d_dragmove },
+    { "dragrelease", 1, "ask the resident to release a held drag",
+      "dragrelease <session>", d_dragrelease },
     { "ditemact", 1, "select one Dialog Manager item",
       "ditemact <element> <item>", d_ditemact },
     { "menuact", 1, "perform one menu command",

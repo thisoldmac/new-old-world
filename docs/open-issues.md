@@ -88,6 +88,81 @@ rather than a new defect. `cycle` itself worked and reported honestly
 (`armed`, `complete`, `restored`, 8 considered, 6 `backgroundOnly` —
 the headless lane's classification, live).
 
+## EMULATOR-VERIFIED: the drag vehicle fires, and the resident lets go by itself (2026-08-07, slice 10 of plan 018)
+
+**Driven on a guest, watched, and measured.** P7 — a mouse button that
+stays down across a gesture, and a resident that releases it whether or
+not anybody asks. Design in [docs/mirror-act-plane.md](mirror-act-plane.md)
+> "Drag"; driver is `tools/local-drag-vehicle.py`.
+
+Private bake `now-stage-drag.qcow2`, resident `active`, capabilities
+**255** (bit 7 = `kNowPeekTableCapDrag`, published only when the Time
+Manager task installed), table length 6072. Both numbers are unique to
+this build and are the run's `requireTheBuildUnderTest()`.
+
+What was watched:
+
+| Claim | Evidence |
+|---|---|
+| The Time Manager task fires | `ticks_served` 2 → 31 → 59 → 66 across one gesture, ~16 ms apart, which is the cadence it was primed at |
+| A press holds the button | `State=held`, `Button=down`, and it stayed so across seconds of wire traffic |
+| Motion is applied | `moves_applied` 0 → 1 → 2; `at` followed 143,175 → 300,200 → 380,260 |
+| **The dead-man fires without being told** | `idle=60` ticks, **nothing sent**, the drag ended by itself in **~1.0 s** |
+| The cell recovers | a fresh press succeeded immediately afterwards |
+| A stale session is refused | a move after the release answered `conflict` |
+| An untrustworthy press point is refused | `unsupported`, naming the missing rectangle |
+
+### The one thing that does NOT work: the drag is invisible
+
+`CrsrNew`/`CrsrCouple` do not move the drawn cursor on QEMU/mac99. Two
+QMP screendumps either side of a 143,175 → 620,450 drag differ by **zero
+pixels** — and moving the emulated pointing device changes 22, so the
+screendump does capture the sprite and the sprite simply did not follow.
+
+**Everything the Toolbox reads did follow.** The guest's own `mouseloc`
+reported 143,175, then 400,350, then 620,450 — exactly the points the
+vehicle was given. So the vehicle drives `GetMouse` and `StillDown`,
+which is what a tracking loop consults and therefore what a drag needs;
+it does not drive the picture.
+
+That split matters in two directions and neither is settled:
+
+- **For the mechanism it is probably fine** — `DragGrayRgn` reads the
+  globals, not the sprite.
+- **For a person it is not** — a drag nobody can see is a drag nobody
+  can verify by looking, and the Mirror is a human-facing product. Why
+  the documented technique does not work here is **not known**.
+
+### Still not proven: whether the Finder tracks it
+
+Nothing in this run aimed at a Finder item, so `DragGrayRgn` remains
+untested. The evidence is now *favourable* — the globals it reads are
+the globals the vehicle demonstrably sets — but favourable is not
+measured, and this is the claim the whole design rests on.
+
+### Two defects the DRIVING found that no gate did
+
+1. **The v2 identity guard refused every press.** Its check switches on
+   `operation_kind`, and a new op with no case falls through to a
+   refusal. Fixed by `kNowPeekActKindDrag`, which binds to the session
+   nonce rather than the point.
+2. **The press landed at 0,0.** The guest's resolver leaves
+   `detail.control` zeroed for controls the scene walk reports with real
+   bounds. Harmless for `ctlact`, whose patch answers for the handle;
+   fatal for a drag, where the point is the operation. `dragpress` now
+   takes the point from the caller and refuses rather than guessing.
+
+**That second one is a live finding for the geometry lane**, and it is
+larger than this plane: `handle.detail.control` and the scene walk
+disagree about where a control is, and only one of them is right.
+
+### Phases 2 and 3 remain undone, deliberately
+
+Targeting and the provisional presentation are blocked on geometry, not
+on the vehicle: `placed == true` is not a trust signal, because
+`ScenePoller.placeVolumes` invents a position and sets it. "Refuse
+rather than guess" would today refuse every desktop drag.
+
 ## FIXED: an act could report success it had not verified, and a window could go silent without naming itself (2026-08-07, lane D of plan 018)
 
 Sweep A found `as Buttons` "dispatched cleanly twice and never produced

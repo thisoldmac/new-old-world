@@ -1184,3 +1184,293 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
     settlement_rows(&rows);
     reply_rows(out, cap, id, "menuact", &rows);
 }
+
+/* ---- dragpress / dragmove / dragrelease (P7) ---------------------------
+ *
+ * THREE VERBS FOR ONE GESTURE, and the asymmetry between them is the
+ * plane's central fact rather than an interface wart.
+ *
+ * `dragpress` is an act request. It resolves an element, opens its
+ * process, and submits through the same cell every other act uses,
+ * because the press needs the target's own context, its identity check
+ * and its A5 world.
+ *
+ * `dragmove` and `dragrelease` are NOT act requests and could not be.
+ * The instant the button is down the target is inside DragGrayRgn or
+ * TrackControl and has stopped calling GetNextEvent, so the jGNE filter
+ * that serves act requests is never entered again until the gesture
+ * ends. They write the drag cell and return; the resident's Time Manager
+ * task is what reads them.
+ *
+ * WHAT THEY PROMISE. `dragpress` promises the button was put down.
+ * `dragmove` promises a want was published. `dragrelease` promises the
+ * resident was ASKED - never that it released, because the resident's
+ * own deadline may have got there first and the honest answer to "did my
+ * release happen" is a re-read of end_reason. That is lane D's rule
+ * (an act that cannot verify itself says so) applied to a plane where
+ * the verifying party is a Time Manager task. */
+
+static void drag_state_rows(ActRows *rows, const NowPeekDragCell *drag)
+{
+    const char *state = "unknown";
+    const char *reason = NULL;
+
+    switch (drag->state) {
+    case kNowPeekDragStateIdle:  state = "idle"; break;
+    case kNowPeekDragStateHeld:  state = "held"; break;
+    case kNowPeekDragStateEnded: state = "ended"; break;
+    default: break;
+    }
+    row_add(rows, "State", state);
+    row_addf(rows, "Session", "%ld", (long)drag->session);
+    row_addf(rows, "At h", "%ld", (long)drag->at_h);
+    row_addf(rows, "At v", "%ld", (long)drag->at_v);
+    row_add(rows, "Button", drag->button_down ? "down" : "up");
+    /* Evidence the vehicle RAN, in the shape liveness_ticks is: a count,
+       not a timestamp, because a stopped clock and a stopped task look
+       identical in a timestamp. Zero ticks with the button down is the
+       one reading that says the Time Manager task never fired - which is
+       exactly the failure this plane cannot otherwise distinguish from a
+       Finder that ignores the writes. */
+    row_addf(rows, "Vehicle ticks", "%ld", (long)drag->ticks_served);
+    row_addf(rows, "Moves applied", "%ld", (long)drag->moves_applied);
+    /* The clamped deadlines actually in force. Reported because a clamp
+       nobody can observe is indistinguishable from a caller being right. */
+    row_addf(rows, "Idle deadline", "%ld", (long)drag->idle_in_force);
+    row_addf(rows, "Gesture cap", "%ld", (long)drag->cap_in_force);
+
+    switch (drag->end_reason) {
+    case kNowPeekDragEndNone: break;
+    case kNowPeekDragEndReleased: reason = "released-as-asked"; break;
+    /* The two dead-man codes stay separate all the way out to the
+       caller. An idle expiry says the host stopped talking; a cap expiry
+       says it never stopped and never finished. Collapsing them into
+       "timed out" would throw away which repair to make. */
+    case kNowPeekDragEndDeadManIdle: reason = "dead-man-idle"; break;
+    case kNowPeekDragEndDeadManCap: reason = "dead-man-cap"; break;
+    case kNowPeekDragEndSessionLost: reason = "session-lost"; break;
+    default: reason = "unknown"; break;
+    }
+    if (reason != NULL) {
+        row_add(rows, "Ended", reason);
+    }
+}
+
+void now_act_run_dragpress(const char *request_json, long id,
+                           char *out, long cap)
+{
+    NowObsHandle     handle;
+    NowPeekActCell  *cell;
+    NowPeekDragCell *drag;
+    ActRows          rows;
+    char             ref[kNowObsTokenMax];
+    NowActStatus     st;
+    NowPeekU32       session;
+    long             idle = 0;
+    long             gcap = 0;
+    long             h = 0;
+    long             v = 0;
+    int              have_point;
+
+    now_act_begin_command();
+    if (arg_int_malformed(request_json, "idle")
+        || arg_int_malformed(request_json, "cap")
+        || arg_int_malformed(request_json, "h")
+        || arg_int_malformed(request_json, "v")) {
+        reply_error(out, cap, id, "bad-request",
+                    "dragpress's idle, cap, h and v are present but are "
+                    "not JSON numbers");
+        return;
+    }
+    (void)arg_int(request_json, "idle", &idle);
+    (void)arg_int(request_json, "cap", &gcap);
+    have_point = arg_int(request_json, "h", &h)
+              && arg_int(request_json, "v", &v);
+
+    if (!resolve_for_act(request_json, id, out, cap, kNowObsKindElement,
+                         &handle, ref, 0)) {
+        return;
+    }
+    /* Refuse BEFORE pressing, never after. A resident with a cell but no
+       vehicle would take the press and never let go of it, which is the
+       one outcome this whole plane exists to make impossible. */
+    if (!now_act_drag_available()) {
+        reply_error(out, cap, id, "unsupported",
+                    "this resident has no drag vehicle, so a button it "
+                    "pressed could never be released");
+        return;
+    }
+    drag = now_act_drag_cell();
+    if (drag->state == (NowPeekU32)kNowPeekDragStateHeld) {
+        reply_error(out, cap, id, "conflict",
+                    "a drag is already holding the mouse button down, and "
+                    "there is only one");
+        return;
+    }
+    cell = now_act_cell();
+    if (cell == NULL) {
+        reply_status(out, cap, id, now_act_why_no_cell());
+        return;
+    }
+
+    if (!have_point) {
+        /* Fall back to the resolver's own rectangle for the element -
+           but only if it HAS one. Found by driving: the resolver leaves
+           detail.control zeroed for controls the scene walk reports with
+           real bounds, so this silently pressed at 0,0.
+
+           For ctlact that would be harmless, because its patch answers
+           for the HANDLE the request names and where the click landed
+           decides nothing. For a drag the point is the entire operation.
+           So this refuses rather than guesses - the same rule that says
+           an item whose home we cannot trust must not be dragged at
+           all. A caller that knows the point passes h and v. */
+        h = (handle.detail.control.left + handle.detail.control.right) / 2;
+        v = (handle.detail.control.top + handle.detail.control.bottom) / 2;
+        if (handle.detail.control.right <= handle.detail.control.left
+            || handle.detail.control.bottom <= handle.detail.control.top) {
+            reply_error(out, cap, id, "unsupported",
+                        "this element resolves to no rectangle, so there "
+                        "is no trustworthy point to press. Pass h and v "
+                        "from an observation that does know where it is");
+            return;
+        }
+    }
+
+    session = now_act_drag_next_session();
+    cell->op = kNowPeekActOpDragPress;
+    /* The session nonce and the two deadlines ride in existing 32-bit
+       fields with no meaning for this op - the accretive rule asking for
+       reuse rather than three new ones. The RESIDENT clamps the
+       deadlines regardless of what arrives here. */
+    cell->control_handle = session;
+    cell->win_h = (NowPeekI32)idle;
+    cell->win_v = (NowPeekI32)gcap;
+    cell->click_h = (NowPeekI32)h;
+    cell->click_v = (NowPeekI32)v;
+
+    st = now_act_submit(&g_target, &g_snap);
+    if (st == kNowActRefused) {
+        reply_plane_error(out, cap, id, &g_snap);
+        return;
+    }
+    if (st != kNowActOk) {
+        reply_registered_status(out, cap, id, st);
+        return;
+    }
+    if (!g_snap.fired) {
+        now_act_withdraw();
+        reply_registered_error(out, cap, id, "act-not-taken",
+                               "the resident plane did not begin the drag");
+        return;
+    }
+    now_act_withdraw();
+
+    rows_reset(&rows);
+    row_add(&rows, "Element", ref);
+    row_add(&rows, "Dispatch", "pressed");
+    row_add(&rows, "Point from", have_point ? "the caller" : "the resolver");
+    drag_state_rows(&rows, drag);
+    now_log(kLogInfo, "act", "#%ld dragpress session %ld", id,
+            (long)session);
+    settlement_rows(&rows);
+    reply_rows(out, cap, id, "dragpress", &rows);
+}
+
+void now_act_run_dragmove(const char *request_json, long id,
+                          char *out, long cap)
+{
+    NowPeekDragCell *drag;
+    ActRows          rows;
+    long             h = 0;
+    long             v = 0;
+    long             session = 0;
+
+    now_act_begin_command();
+    if (arg_int_malformed(request_json, "h")
+        || arg_int_malformed(request_json, "v")
+        || arg_int_malformed(request_json, "session")) {
+        reply_error(out, cap, id, "bad-request",
+                    "dragmove's h, v and session are present but are not "
+                    "JSON numbers");
+        return;
+    }
+    if (!arg_int(request_json, "h", &h) || !arg_int(request_json, "v", &v)
+        || !arg_int(request_json, "session", &session)) {
+        reply_error(out, cap, id, "bad-request",
+                    "dragmove requires session, h and v: the nonce "
+                    "dragpress returned, and a global point");
+        return;
+    }
+    drag = now_act_drag_cell();
+    if (drag == NULL) {
+        reply_error(out, cap, id, "unsupported",
+                    "this resident has no drag vehicle");
+        return;
+    }
+    if (!now_act_drag_move((NowPeekU32)session, h, v)) {
+        /* One refusal for three conditions, and they are one condition
+           from the caller's side: the session it named is not the one
+           holding the button. Which of the three it is, is a fact about
+           the cell, and the rows below carry it. */
+        rows_reset(&rows);
+        drag_state_rows(&rows, drag);
+        reply_error(out, cap, id, "conflict",
+                    "no drag is holding the button under that session - "
+                    "it may have ended, and end_reason says how");
+        return;
+    }
+    rows_reset(&rows);
+    row_add(&rows, "Dispatch", "want-published");
+    row_addf(&rows, "Want h", "%ld", h);
+    row_addf(&rows, "Want v", "%ld", v);
+    drag_state_rows(&rows, drag);
+    now_log(kLogInfo, "act", "#%ld dragmove %ld,%ld", id, h, v);
+    reply_rows(out, cap, id, "dragmove", &rows);
+}
+
+void now_act_run_dragrelease(const char *request_json, long id,
+                             char *out, long cap)
+{
+    NowPeekDragCell *drag;
+    ActRows          rows;
+    long             session = 0;
+
+    now_act_begin_command();
+    if (arg_int_malformed(request_json, "session")) {
+        reply_error(out, cap, id, "bad-request",
+                    "dragrelease's session is present but is not a JSON "
+                    "number");
+        return;
+    }
+    if (!arg_int(request_json, "session", &session)) {
+        reply_error(out, cap, id, "bad-request",
+                    "dragrelease requires session: the nonce dragpress "
+                    "returned");
+        return;
+    }
+    drag = now_act_drag_cell();
+    if (drag == NULL) {
+        reply_error(out, cap, id, "unsupported",
+                    "this resident has no drag vehicle");
+        return;
+    }
+    if (!now_act_drag_release((NowPeekU32)session)) {
+        rows_reset(&rows);
+        drag_state_rows(&rows, drag);
+        reply_error(out, cap, id, "conflict",
+                    "no drag is holding the button under that session - "
+                    "the resident's own deadline may have released it "
+                    "already, and end_reason says so");
+        return;
+    }
+    rows_reset(&rows);
+    /* "asked", not "released". The resident performs it on its next
+       tick, through the same path its dead-man uses - and that path may
+       already have fired. A verb that answered "released" here would be
+       asserting an outcome it did not observe. */
+    row_add(&rows, "Dispatch", "release-asked");
+    drag_state_rows(&rows, drag);
+    now_log(kLogInfo, "act", "#%ld dragrelease session %ld", id, session);
+    reply_rows(out, cap, id, "dragrelease", &rows);
+}

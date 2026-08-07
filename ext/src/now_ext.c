@@ -56,6 +56,9 @@ extern void now_ext_gne_filter(void);
 /* The act plane (now_ext_act.c), P4. Declared rather than included: the
    core knows one entry point and nothing else about it. */
 extern void now_ext_act_apply(NowPeekTable *table);
+/* P7's vehicle (now_ext_drag.c). */
+extern void now_ext_drag_boot(NowPeekTable *table);
+extern void now_ext_drag_abandon(NowPeekTable *table);
 
 /* The content plane (now_content.c), P3. Two entry points rather than
    P4's one, and the split is the plane's own: boot allocates and
@@ -311,6 +314,13 @@ void now_ext_gne_apply(void)
         table->arm_active |= kNowPeekTableCapAct;
     } else if (table->arm_active & kNowPeekTableCapAct) {
         table->arm_active &= ~(NowPeekU32)kNowPeekTableCapAct;
+        /* P7: disarming the act plane while a button is held must not
+           leave it held. The vehicle's own dead-man would get there
+           within a second anyway - this is the same release, arriving at
+           the moment the intent is withdrawn rather than at the deadline,
+           and recorded as SessionLost so nothing downstream reads a
+           withdrawn gesture as one that completed. */
+        now_ext_drag_abandon(table);
     }
     /* P3, the content plane. Unlike the two above, the arm handshake is
        not decided here: this plane's request names an A5 world, and only
@@ -399,6 +409,13 @@ void _start(void)
        an extension that predates the plane reports a shorter `length`,
        and the application refuses rather than writing off the end of a
        system-heap block it did not size. */
+    /* P7's vehicle, and its position here is the same argument P3's is:
+       it installs a Time Manager task and publishes its own capability
+       bit, so it must run before `magic` commits. It does NOT prime the
+       task - a machine that never drags anything pays nothing - and it
+       publishes kNowPeekTableCapDrag only if the install succeeded, so an
+       application never arms a vehicle that cannot fire. */
+    now_ext_drag_boot(table);
     table->act_format = kNowPeekActFormatV2;
     table->act_text_max = (NowPeekU16)kNowPeekActTextMax;
     table->identity_format = kNowPeekIdentityFormatV1;

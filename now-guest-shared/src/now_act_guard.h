@@ -103,7 +103,13 @@ enum {
     kNowActServeRefused = 5,   /* refused; status and error are written  */
     kNowActServeDialogItem = 6,/* validate and queue one DITL press      */
     kNowActServeSelect = 7,    /* the hook must call SelectWindow        */
-    kNowActServeVisibility = 8 /* queue a Process Manager visibility key */
+    kNowActServeVisibility = 8, /* queue a Process Manager visibility key */
+    /* P7. Hand the gesture to the drag vehicle: press, and leave the
+       button down. The ONLY drag verdict there is - motion and release
+       are not served here and could not be, because from the press until
+       the release the application is inside its own tracking loop and
+       the filter this verdict comes from is never entered again. */
+    kNowActServeDragPress = 9
 };
 
 /* Claim the request if it names THIS A5 world, and say what to do with
