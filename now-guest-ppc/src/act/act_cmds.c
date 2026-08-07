@@ -566,7 +566,10 @@ void now_act_run_winact(const char *request_json, long id, char *out, long cap)
         /* The press was queued by the resident plane, in the target's
            own context, at the moment it armed - see act_client.h for
            why it is not queued from here. */
-        st = now_act_await_fired(&g_snap);
+        /* TERMINAL here, unlike ctlact: this arm ends the act on the
+           expiry and the counters below are the whole account of it, so
+           the settlement's terminal word is the right one. */
+        st = now_act_await_fired(&g_snap, 1);
         if (st != kNowActOk) {
             char detail[320];
 
@@ -838,6 +841,10 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
     long                part = 0;
     long                point_h = 0, point_v = 0;
     int                 has_point = 0;
+    /* Did the patch answer? Only ever reported as an absence, never as a
+       verdict - see the `part != 0` arm. Starts 1 because part 0 asks no
+       patch at all, and its receipt must not claim one was silent. */
+    int                 track_answered = 1;
     char                line[kNowCtlactLineMax];
     char                rebuilt[kNowCtlactLineMax];
 
@@ -1046,11 +1053,60 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
            so it still needs one to get there - but where it lands
            decides nothing, because the patch answers with the part we
            named and refuses any control but this one. */
-        st = now_act_await_fired(&g_snap);
-        if (st != kNowActOk) {
-            reply_registered_error(
-                out, cap, id, "act-not-taken",
-                "armed, and the application never called TrackControl");
+        st = now_act_await_fired(&g_snap, 0);
+        if (st == kNowActNotTaken) {
+            /* THE ABSENCE OF ONE TRAP CALL IS NOT A FACT ABOUT THE
+             * MACHINE, and this arm phrased it as one for a day.
+             *
+             * It answered `act-not-taken` - "armed, and the application
+             * never called TrackControl" - which reads as a conclusion
+             * that nothing happened. It is an INFERENCE from a single
+             * missing observation, and fidelity sweep D caught it being
+             * wrong (SEQ-A step 4): the Appearance panel's help "?"
+             * button, pressed with `part: 11`, answered exactly that
+             * while the guest's own screendumps show no Help Viewer
+             * before and Mac Help frontmost, having searched
+             * "Appearance", after. A Carbon control actuated by any
+             * other route - and a Help button on CarbonLib is a prime
+             * candidate - lands without TrackControl ever being called.
+             *
+             * WHY IT IS WORSE THAN A WRONG WORD. An agent that believes
+             * a refusal presses again, and the second press lands too.
+             * A false negative in an act plane produces DUPLICATED
+             * actions; on a destructive verb that is worse than a crash.
+             *
+             * WHETHER THE TWO CASES CAN BE TOLD APART - and the honest
+             * answer is NO, which is why the weaker verdict is now given
+             * every time. Sweep C scored this identical message as a
+             * clean refusal, and it may well have been one; nothing in
+             * the reply distinguished them then and nothing can now.
+             * Everything that COULD establish "nothing happened" is
+             * already checked above and returns its own status: the
+             * plane refusing (`reply_plane_error`), the request never
+             * reaching the machine (`act_reached_the_machine` answering
+             * no, one branch above), the reference not resolving. Past
+             * those, the press was queued inside the target's own
+             * context and this application cannot see what the target
+             * did with it. So there is no positive evidence of absence
+             * left to gather, and `act-not-taken` has nothing to be
+             * reserved FOR on this path - it is removed rather than
+             * narrowed.
+             *
+             * What remains is `dispatched-but-unconfirmed`, which this
+             * verb's part-0 form already answers and which is the honest
+             * shape: it went, and this side cannot prove what it did.
+             * The control watch below can still upgrade it to
+             * `confirmed` on a control that publishes a position - so a
+             * press that moved something is still reported as landing,
+             * and only a press whose effect is invisible from here stays
+             * unconfirmed. */
+            track_answered = 0;
+        } else if (st != kNowActOk) {
+            /* Not a timeout: the plane itself went away between arming
+               and waiting. That is a plane-health status with its own
+               vocabulary, and reporting it as a verdict about the act
+               would send a reader to the wrong half of the system. */
+            reply_registered_status(out, cap, id, st);
             return;
         }
     }
@@ -1081,8 +1137,19 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
         row_add(&rows, "Mechanism",
                 "a real click at the point; this form asks no patch to "
                 "answer, so the control's own position is the evidence");
-    } else {
+    } else if (track_answered) {
         row_add(&rows, "Mechanism", "the application's own TrackControl");
+    } else {
+        /* NAMED AS AN ABSENCE, not as an outcome. The receipt has to say
+           which witness was silent, or `dispatched-but-unconfirmed`
+           here is indistinguishable from the same words after a patch
+           that answered and a control with no range. */
+        row_add(&rows, "Mechanism",
+                "armed for the application's own TrackControl, which it "
+                "did not call before the deadline. That is the absence "
+                "of one trap call and nothing more - a control actuated "
+                "by another route lands without it - so it is not "
+                "evidence the act was not taken");
     }
     if (has_point) {
         char point[64];
@@ -1399,7 +1466,7 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
         reply_registered_status(out, cap, id, kNowActNotArmed);
         return;
     }
-    st = now_act_await_fired(&g_snap);
+    st = now_act_await_fired(&g_snap, 1);
     if (st != kNowActOk) {
         reply_registered_error(
             out, cap, id, "act-not-taken",

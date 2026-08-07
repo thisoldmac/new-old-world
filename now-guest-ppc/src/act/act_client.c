@@ -543,7 +543,8 @@ NowActStatus now_act_submit(const NowActTarget *target,
     return kNowActOk;
 }
 
-NowActStatus now_act_await_fired(NowPeekActCell *snapshot)
+NowActStatus now_act_await_fired(NowPeekActCell *snapshot,
+                                 int timeout_is_terminal)
 {
     NowPeekActCell *cell = act_cell_raw();
     unsigned long   deadline;
@@ -561,9 +562,28 @@ NowActStatus now_act_await_fired(NowPeekActCell *snapshot)
     }
     act_snapshot(cell, snapshot);
     if (!snapshot->fired) {
+        /* WHOSE VERDICT IS THIS WAIT? `timed-out` is a terminal word -
+           `act_settlement.c` latches it and refuses every later note - so
+           it may only be written by a caller for whom the patch not
+           answering IS the answer.
+         *
+           `ctlact part 11` is not such a caller and said so for a day:
+           it reported `act-not-taken` / `timed-out` over a press that
+           opened Mac Help and ran a search (fidelity sweep D, SEQ-A step
+           4). It goes on to watch the control itself, so this wait is one
+           observation of several and its expiry settles nothing. Writing
+           the terminal word from here would latch the reply shut before
+           the evidence that could open it was gathered.
+         *
+           So a NON-terminal caller records `dispatched-but-unconfirmed`,
+           which is exactly what it has: the press went, and this
+           particular witness did not see it arrive. The status returned
+           is unchanged - the CALLER decides what the absence means. */
         now_act_settlement_note(&g_settlements, g_last_correlation_hi,
                                 g_last_correlation_lo,
-                                kNowActSettleTimedOut,
+                                timeout_is_terminal
+                                    ? kNowActSettleTimedOut
+                                    : kNowActSettleDispatchedUnconfirmed,
                                 (NowPeekU32)TickCount());
         now_act_withdraw();
         return kNowActNotTaken;

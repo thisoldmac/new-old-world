@@ -14,6 +14,16 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+
+**There is a third category, and it is not on this page.**
+[known-wrong.md](known-wrong.md) is the register of things NOW knowingly
+ships that disagree with the machine, or knowingly does not do — each
+with the measurement, the argument for leaving it, what closing it would
+cost, and who decided. Several of its rows draw their evidence from
+entries here and link back rather than restating them. The split is by
+what the reader is being told: broken-or-unverified means nobody chose
+this, and a row over there means somebody did.
+
 ## OPEN: a symbol census cannot see a duplicated definition, and round 8 landed one (2026-08-07, `claude/019-integration-8`)
 
 **Verification level: TESTED.** `scripts/test-all` GATE_EXIT=0 on the
@@ -174,6 +184,11 @@ the real auto-merge load-bearing rather than decorative.
 
 ## BROKEN: `ctlact part 11` reports `act-not-taken` over a press that landed (2026-08-07, fidelity sweep D)
 
+**CLOSED 2026-08-07 by `claude/019-kw01-kw06`, landed in round 9.** The
+entry that records the fix is *"FIXED and EMULATOR-VERIFIED: `ctlact part
+11` reported a refusal over presses that landed"*, above. This text is
+left standing because the page is not corrected by editing it.
+
 The full argument, with the two screendumps, is in
 [docs/fidelity-sweep-2026-08-07-d.md](fidelity-sweep-2026-08-07-d.md).
 The short form:
@@ -228,6 +243,14 @@ an ordering artefact nobody is subtracting, and any pixel-exact render
 test in this tree is passing because of where its file happens to sit.
 
 ## OPEN: `WindowChrome.growBox` still uses the discriminator `hasTitleBar` was corrected off (2026-08-07, fidelity sweep D)
+
+**CLOSED 2026-08-07 by `claude/019-kw01-kw06`, landed in round 9.**
+`growBox` now answers nil everywhere; the entry that records it, and the
+cost it names (the windows that really do have one lose it too), is
+*"FIXED and EMULATOR-VERIFIED: the render invented a grow box on windows
+the machine leaves plain"*, above. Note this entry's claim that the
+defect is one-directional is itself superseded: the closing measurement
+found it wrong in **both** directions.
 
 `hasTitleBar` was fixed from `win.kind != 2` because every
 Dialog-Manager-owned window was getting no widgets.
@@ -594,6 +617,126 @@ corpus is prose, and prose that names an artifact is the shape this
 project has been bitten by repeatedly; the durable fix is a check that
 resolves cited slugs against the corpus, not a sweep repeated by hand.
 
+## FIXED and EMULATOR-VERIFIED: `ctlact part 11` reported a refusal over presses that landed (2026-08-07, `claude/019-kw01-kw06`)
+
+**Verification level: emulator-verified, driven, with the old build
+driven on the same rig as the control.** Closes the register row that was
+`KW-06` — *"`ctlact part 11` reports `act-not-taken` over presses that
+landed"* — which is deleted rather than left claiming a defect the plane
+no longer produces.
+
+The verb inferred "the act was not taken" from **one** observation — the
+application never called `TrackControl` — and phrased it as a conclusion
+about the machine. A Carbon control actuated by any other route lands
+without that trap ever being called, and a Help button on CarbonLib is a
+prime candidate.
+
+**Driven on this lane's clone**, the Appearance panel's help "?" button,
+identical target and part to sweep D's SEQ-A step 4, twice — once with
+the pre-fix guest restaged onto the same running clone as the control:
+
+| guest build | reply | the machine, in its own screendumps |
+|---|---|---|
+| `d9a78b62a414` (pre-fix) | `ok: false`, `act-not-taken` / "armed, and the application never called TrackControl" / `settlement: timed-out` | **Mac Help opened, frontmost, having searched "Appearance", ten results** |
+| `99bfc1d30364` (this tree) | `ok: true`, `Dispatch: dispatched-but-unconfirmed`, `Settlement: dispatched-but-unconfirmed` | the same — Mac Help opened and searched |
+
+The screendumps before each press show no Help Viewer anywhere. So the
+press landed both times and only the verdict changed, which is the whole
+claim.
+
+**Why it is a correctness problem rather than a reporting one.** An agent
+that believes the refusal presses again, and the second press lands too.
+A false negative in an act plane produces DUPLICATED ACTIONS; on a
+destructive verb that is worse than a crash.
+
+**Can a correct refusal be told from a false negative here? No — and
+that is why the weaker verdict is now given every time.** Sweep C scored
+this identical message as "REFUSED CLEANLY" and listed the act plane's
+refusal vocabulary among the things to leave alone. It may well have been
+a correct refusal in that run; nothing in the reply distinguished the two
+then and nothing could now. Everything that can POSITIVELY establish that
+nothing happened already returns earlier with its own status — the plane
+refusing, the request never reaching the machine, the reference not
+resolving. Past those, the press was queued inside the target's own
+context and this application cannot see what the target did with it. So
+`act-not-taken` had nothing left to be reserved for on that path and was
+removed rather than narrowed.
+
+**`settlement: timed-out` was the other half**, and it is latched:
+`act_settlement.c` refuses every later note once it is written, so a
+`confirmed` arriving afterwards would have been swallowed.
+`now_act_await_fired` therefore gained `timeout_is_terminal` — a caller
+that ends the act on the expiry writes the terminal word; a caller that
+goes on gathering evidence writes `dispatched-but-unconfirmed`. `winact`
+and `menuact` pass 1 and are unchanged; `ctlact` passes 0. The status
+returned is untouched, so the caller still decides what an absence means.
+
+**NOT FIXED, and the same shape — named rather than widened to
+unmeasured.** `winact`'s and `menuact`'s arms also infer from a silent
+trap patch. `winact` at least reports its trap counters, which are
+evidence about the patch rather than about the machine. Neither has been
+driven against a press that landed, and this lane did not extend a
+correction into a case nobody has measured.
+
+**Guard:** `now-guest-ppc/tests/ctlact_verdict_source_test.py`, in the
+`scripts/test-native` manifest — a source test because `act_cmds.c`
+includes Carbon and cannot be linked by a host cc. Watched to fail
+against three mutations: the `act-not-taken` reply restored, the wait
+made terminal again, and `act_client.c` taking the flag and writing
+`timed-out` regardless.
+
+## FIXED and EMULATOR-VERIFIED: the render invented a grow box on windows the machine leaves plain (2026-08-07, `claude/019-kw01-kw06`)
+
+**Verification level: emulator-verified, per rectangle, in both
+directions.** Closes the register row that was `KW-01` — *"a grow box is
+drawn on windows the machine leaves plain, and withheld from windows it
+draws one on"* — which is deleted rather than left claiming a defect the
+product no longer has.
+
+`WindowChrome.growBox` opened `guard win.kind != 2`, one function below
+the `zoomBox` that was withdrawn for exactly this. Sweep D measured the
+discriminator wrong **in both directions at once**, and this lane
+re-derived both on its own clone (lane block 398, `now-mirror-stage`
+clone, this tree's guest and ext), per rectangle at each window's
+bottom-right 15x15:
+
+| window | kind | machine draws one? | render BEFORE | render AFTER |
+|---|---|---|---|---|
+| Appearance | 2000 | **no** | a hatched plate — **0 of 225 px agree** | plain — **186/225** |
+| Extensions Manager | 2 | **yes** | none (15/225) | none (15/225) |
+| New Old World (Workshop) | 8 | **yes** | one (119/225) | none (16/225) |
+
+Read the first row and the third together, because they are the whole
+trade. Appearance was being drawn **an affordance the machine does not
+offer**, and `HitTester` reported it as a drag target — so
+`mirror.act.window op: resize` dragged inside a live application's
+content region. That is gone. The Workshop row is the price: `kind == 8`
+happened to be right, and answering "we cannot say" everywhere loses it.
+Extensions Manager is the proof the old rule was wrong in the second
+direction as well — `kind == 2` was denied a grow box before and after,
+so nothing was lost there and the row's claim is confirmed rather than
+quoted.
+
+**Why the withdrawal rather than a better discriminator.** There is no
+field to improve on. The WindowRecord carries `goAwayFlag` (close) and
+`spareFlag` (zoom) and **no grow flag at all** — resizability is a WDEF
+variant, and the variation code in `windowDefProc`'s high byte is
+ambiguous without the WDEF's resource id, which a foreign walk holding a
+Handle cannot name. The route that closes it properly is `FindWindow`'s
+`inGrow`, which is an **act** and needs an armed, gated surface rather
+than the passive scene walk every other chrome fact comes from. Still
+open; the register row for it is gone, so this entry is where it lives.
+
+`Serve` answers `element_not_found` naming why, and the battery records a
+skip rather than grading a drag at a corner it cannot establish.
+
+**Guards:** `GrowBoxTests` (three, posed as a property over window shapes
+rather than as two constants) plus the grow half of
+`HitActionTests.testFrontWindowWidgetsAndGrowBox`. Watched to fail
+against three mutations: `kind != 2` restored, `kind == 2` inverted, and
+no discriminator at all. **The inverted one is why the property test
+exists** — the fixture-based test passed vacuously against it, because
+its fixture window is not `kind == 2`.
 
 ## OPEN: a lane can revert a sibling's work in a commit whose message never mentions it (2026-08-07, round 7 integration)
 
@@ -2394,9 +2537,12 @@ and the widgets and stripes are simply absent. The baseline stays `t+13`.
    flag and `goAwayFlag` the close flag, one byte each. **Contract field
    first, then the guest read, then both guests.** Until then four windows
    in the corpus have a real affordance the mirror does not offer.
-2. **`WindowChrome.growBox` still guards on `kind != 2`** and has the
+2. **`WindowChrome.growBox` used to guard on `kind != 2`** and had the
    same problem in the other direction — Extensions Manager is resizable
-   and gets no grow box. Same fix, same field.
+   and got no grow box. **FIXED 2026-08-07** by withdrawal, not by a
+   better field: see "the render invented a grow box on windows the
+   machine leaves plain" above, which carries the per-rectangle numbers
+   in both directions and what the withdrawal costs.
 3. **A single pixel at `(432, t+19)`** on the inactive window — where the
    frame ring around the content meets the bar's last row — renders
    `696969` against the machine's `555555`. A blend at a junction of two

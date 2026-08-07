@@ -366,11 +366,24 @@ final class HitActionTests: XCTestCase {
                 on: .widget(windowID: front.id, kind: kind, x: ax, y: ay)),
                 [.deviceClick(x: c.x, y: c.y)])
         }
-        // Grow box at the bottom-right corner.
-        let grow = WindowChrome.growBox(front)!
-        let gc = WindowChrome.center(grow)
-        guard case .growBox = HitTester.hitTest(scene, x: gc.x, y: gc.y) else {
-            return XCTFail("expected the grow box")
+        /* The grow box is DELIBERATELY absent too, and this test force-
+           unwrapped it until 2026-08-07 for the same reason it force-unwrapped
+           the zoom box. `growBox` guarded on `kind != 2`, which fidelity sweep
+           D measured wrong in BOTH directions against the guest's own pixels:
+           Appearance (kind 2000) was drawn one the machine does not draw,
+           Extensions Manager (kind 2) was denied one it does. Resizability is
+           a WDEF variant and IR v1 does not carry it. See WindowChrome.growBox
+           and docs/known-wrong.md's history. */
+        XCTAssertNil(WindowChrome.growBox(front),
+                     "a grow box the guest has not reported is not offered")
+        let r = front.rect
+        let corner = (x: r.r - WindowChrome.growBoxSpan / 2,
+                      y: r.b - WindowChrome.growBoxSpan / 2)
+        if case .growBox = HitTester.hitTest(scene, x: corner.x, y: corner.y) {
+            XCTFail("the hit-tester still reports a grow box target at the "
+                    + "bottom-right corner. Nothing may offer one while "
+                    + "WindowChrome.growBox cannot establish it — a drag from "
+                    + "there is a drag inside the content region.")
         }
     }
 
