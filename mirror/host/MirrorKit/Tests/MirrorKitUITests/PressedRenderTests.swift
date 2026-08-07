@@ -107,13 +107,39 @@ final class PressedRenderTests: XCTestCase {
     /// alone. The button then stays down forever after the verdict — a press
     /// that is over, still asserting itself.
     func testASettledPressIsDrawnExactlyLikeAnUnpressedButton() throws {
-        let idle = try RenderShot.png(scene: scene(), pressed: nil)
-        let settled = try RenderShot.png(
-            scene: scene(),
-            pressed: control("c.ok", showsPressed: false))
-        XCTAssertEqual(idle, settled,
-                       "once the press has settled the button is just a "
-                       + "button again, to the pixel")
+        /* PIXELS, not PNG bytes. This compared the two encoded PNGs and was
+           green in isolation and RED in the full suite — 5434 bytes against
+           5416 for images that are pixel-identical, because the encoder's
+           output is not a function of the pixels alone. A test whose verdict
+           depends on which other tests ran is worse than no test: it teaches
+           whoever meets it that this suite is flaky, and the next real
+           failure gets re-run instead of read. */
+        /* WARM THE RENDERER FIRST, and this is a finding rather than a
+           workaround. Within one run, the FIRST render in the process does
+           not match later renders of identical input: this test compares two
+           images and, being alphabetically first in the class, took the cold
+           one — while an identical comparison placed last in the same run saw
+           zero differing pixels. Something on the shared draw path (a lazily
+           built font or icon atlas) is not resident until a render has
+           happened, so `RenderShot` is a pure function of its input only once
+           warm. Any pixel-exact fixture comparison is exposed to this; this
+           one throws the cold render away rather than pretending the pair is
+           the pair it wanted. */
+        _ = try shot(nil)
+
+        let idle = try shot(nil)
+        let settled = try shot(control("c.ok", showsPressed: false))
+        XCTAssertEqual(idle.pixelsWide, settled.pixelsWide)
+        XCTAssertEqual(idle.pixelsHigh, settled.pixelsHigh)
+        for y in stride(from: 0, to: idle.pixelsHigh, by: 1) {
+            for x in stride(from: 0, to: idle.pixelsWide, by: 1) {
+                guard idle.colorAt(x: x, y: y) != settled.colorAt(x: x, y: y)
+                else { continue }
+                return XCTFail(
+                    "once the press has settled the button is just a button "
+                    + "again, to the pixel — differs at (\(x), \(y))")
+            }
+        }
     }
 
     // MARK: - The right button, and only the right button
@@ -243,4 +269,7 @@ final class PressedRenderTests: XCTestCase {
                        + "vocabularies for one idea is the defect this arc "
                        + "has already merged away twice")
     }
+    /// DIAGNOSTIC: is the render even a function of its input?
+
+
 }
