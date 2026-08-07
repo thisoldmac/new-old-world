@@ -14,6 +14,127 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED: a reply that would not fit closed the socket, and every verb had it (2026-08-07, `claude/019-snapshot-refusal`)
+
+Sweep C's headline: `mirror_read --intention snapshot` **closed the
+connection without replying**, 3/3, while `status`, `metrics` and `find`
+answered normally on the same path. It silently disabled
+`tools/fidelity-live.py` — the only instrument that can see live render
+flicker — and it was the one refusal in this tree with no reason attached.
+
+**It was not a defect in `mirror_read`.**
+`AgentIntegrationLocalServer.finish` encoded the response with `try?` and
+returned on failure, and its `defer` closed the socket. So **any**
+operation whose answer passed the 64 KB ceiling hung up with no error
+frame, no code and no reason. One verb was seen doing it; every verb
+could. Fixed at the transport, where the one exit is:
+`AgentIntegrationLocalCodec.encodeOrRefusal` substitutes a bounded
+`response-too-large` refusal naming the operation, the size the answer
+reached and the ceiling it met.
+
+**Why the snapshot overflowed at all, which is the more instructive
+half.** Four families make up a snapshot and only two were bounded.
+`itemBudgetBytes` (40 KB) and `contentBudgetBytes` (12 KB) were constants
+chosen against a stress fixture that has two entities, no menubar and no
+coverage rows — so entities and menus were governed by nothing, and on a
+real OS 9 desktop they are not small: nine menus, and the Apple menu alone
+can hold 96 items. **The ceiling held in the test and broke on the
+machine.**
+
+Then charging each family for its contents still left every CONTAINER
+uncharged — 48 window wrappers measured **11.4 KB**, a fifth of the
+ceiling no budget had ever seen. That is the same omission shape this file
+already carries three instances of, arriving a fourth time. So the
+assembled snapshot is now **encoded and checked**, and a pass that does
+not fit adds the miss to a reserve and rebuilds. A loop that verifies
+cannot be wrong about an accounting it forgot; the arithmetic that reasons
+about wrapper sizes can be, and was — twice, inside this one change.
+
+Every bound states its count: `entityTotal`, a menu's `itemTotal`, beside
+the surfaces' existing `itemTotal` and `displayTotal`.
+
+**Watched fail, three ways.** Both new socket tests died with the
+transport's own `io("read")` — the closed socket — before the change. The
+new menu-heavy fixture threw `messageTooLarge` under the old constants
+**and** under the first, unreserved arithmetic. 61 663 bytes of 65 536
+after.
+
+**Emulator-verified for the serving half**: on this lane's own VM (block
+127, anchor 13016 / wire 13017, guest build `113f1b176035
+2026-08-07T17:19:58Z`), `snapshot` answered **3/3** where sweep C got
+three hang-ups, and a six-control-panel scene — 6 surfaces, 205 elements,
+close to sweep C's 180 — served in **52 354 bytes**.
+
+### What is NOT verified, and why
+
+**The B/C-side flicker measurement was not taken.** It was the second half
+of this lane's brief and it is still owed. The run was stopped mid-teardown
+on a report that an agent had reached a human's running host; that turned
+out not to be so (next entry), but the stop was correct and the
+measurement needs a host launched under the isolation the next entry
+fixes. **The A-side baseline therefore still has no B or C side** — no
+longer for the reason sweep C recorded, which is now closed.
+
+**The rect-owner-flip question — zero on the A side — remains unanswered.**
+
+## FIXED: `NOW_PREFS_SUFFIX` isolated the port and almost nothing else (2026-08-07, `claude/019-snapshot-refusal`)
+
+Found while establishing whether this lane had reached a human's running
+host application. **It had not**, and the evidence is worth keeping
+because the alarm was raised twice on two different theories and both were
+wrong:
+
+- Each guest was paired with its own host throughout. At teardown,
+  `qemu 13498` (the human's VM) held two ESTABLISHED connections to
+  `Host 17303` on **16729**; this lane's `qemu 42122` held two to this
+  lane's `Host 77496` on **13017**. No crossing, in either direction.
+- The two hosts held **different** agent sockets —
+  `…now-agent-501-int5/host.sock` and `…now-agent-501-snapref/host.sock`.
+  Every `now-agent` call this lane made carried
+  `NOW_AGENT_SOCKET_SUFFIX`.
+- The human's settings suite (`…settings.int5.plist`) was last written at
+  **12:41:08**, 59 minutes before this lane wrote anything, and the base
+  suite (`…settings.plist`) at **19:28 the previous day**. This lane wrote
+  only `…settings.snapref.plist`.
+
+**But the isolation a lane relies on is much narrower than its name, and
+nothing said which half it covered.** `ProductIdentity.preferencesSuite`
+scoped four call sites. **Thirteen** others defaulted to
+`UserDefaults.standard` — the application's own bundle-id domain, **one
+store shared by every host copy on this Mac**. A run launched with
+`NOW_PREFS_SUFFIX` therefore isolated its listening port while its Mirror
+app path, QMP socket, forwarded agent port, plane policy store, file
+locations, host share directory, cloud settings, screenshot settings and
+sidebar still pointed at the desk's real preferences — and wrote into
+them, live, with somebody's session open. `mirror.appPath`,
+`mirror.qmpSocket` and `mirror.forwardedAgentPort` are in that shared
+domain, and they are exactly the settings that decide what a Mirror is
+looking at.
+
+One accessor decides it now, `ProductIdentity.defaults`, and it **is**
+`.standard` when no suffix is set, so a shipped launch is unchanged and no
+existing preference moves. The guard reads the source, because the defect
+is a **default parameter value** and is invisible at every call site that
+relies on it; it named all thirteen before the change.
+
+### Still open, and it is the design question underneath
+
+**A host application cannot tell whose agent is talking to it, and the
+person at the machine gets no signal about what their session is pointed
+at.** `requireTheBuildUnderTest()` exists because any guest can answer
+your listener. This is the mirror image and nothing covers it: a guest
+dials a port by number and cannot tell whose host answered, and a host
+accepts whatever dials in. Isolation here is entirely by convention —
+suffixes and a port block — and **allocation is not possession**: a lane
+that reserves a port has reserved a name, not a socket.
+
+Worth proposing, none of it built: a session identity carried on the agent
+socket handshake; a refusal to serve a host that has a live human-driven
+session; and — cheapest and most valuable — **the app stating in its own
+UI what it is pointed at and who pointed it there**. The failure mode this
+lane's alarm assumed is not currently detectable by the human at all: an
+app that got repointed would keep running and look entirely normal.
+
 ## LOOK: round 5's five checks, and the one thing four lanes claimed that a picture had to settle (2026-08-07, `claude/019-integration-5`)
 
 Emulator-capture-verified, on the lane's own VM (block 591, anchor 16728 /
