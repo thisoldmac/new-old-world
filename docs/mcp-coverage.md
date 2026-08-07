@@ -916,4 +916,5 @@ equal: unnoticed-from-table unnoticed-from-prose
 rederived: 2026-08-07T03:50:12-0400 8c1e3d94 sources, ppc-inbound-types 0->48, 68k-inbound-types 0->23, disposition-census 0->3, unnoticed-from-table 0->8, unnoticed-from-prose 0->8 (first declaration)
 rederived: 2026-08-07T03:52:39-0400 d17ca9eb unchanged (count the lists, not just their union)
 rederived: 2026-08-07T03:52:58-0400 d17ca9eb unnoticed-from-table 8->9, unnoticed-from-prose 8->9 (the prose derivation now counts the LISTS, because two lists whose union matches the table is the 2026-08-05 rot)
+rederived: 2026-08-07T04:05:51-0400 dd520b71 unchanged
 -->

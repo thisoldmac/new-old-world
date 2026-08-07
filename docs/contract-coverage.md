@@ -1028,4 +1028,5 @@ derive 68k-verbs sha256=70a32cc1ffb1933862444e2c0a0d7972fb6f1b68e40d34a2fd6bb5ef
     grep -oE '\{ *"[a-z0-9]+"' now-guest-68k/src/commands/commands68.c \
       | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
 rederived: 2026-08-07T03:49:51-0400 8c1e3d94 sources, ppc-inbound-types 0->48, 68k-inbound-types 0->23, x-commands-registry 0->42, ppc-verbs 0->39, 68k-verbs 0->13 (first declaration)
+rederived: 2026-08-07T04:05:51-0400 dd520b71 unchanged
 -->
