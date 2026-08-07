@@ -628,9 +628,20 @@ to exist:
 
 ### The unnoticed rows, named together
 
-**`axsnap`, `handle`, `actselftest`, `aesend`, `desktop`, `hide`, `net`,
-`script` and `mirror`** — all served by the PowerPC guest, none decided
-either way. Their rows above say what a decision would have to settle.
+**`actselftest`, `aesend`, `axsnap`, `cycle`, `desktop`, `handle`,
+`hide`, `mirror`, `net` and `script`** — ten rows, all served by the
+PowerPC guest, none decided either way. Their rows above say what a
+decision would have to settle.
+
+*(This list was **two** lists for the length of one merge. The
+`018-desktop-pattern` and `018-anchor-acquisition` lanes each added a
+verb and each honestly rewrote this paragraph; a clean textual merge
+kept both, and the result named `desktop` in one and `cycle` in the
+other with neither naming both — the exact 2026-08-05 defect the
+[AGENTS.md](../AGENTS.md) section "Enumerated lists rot at merges" was
+written about, reproduced two days later by two authors who did nothing
+careless. It is derived from the Disposition column above now:*
+`awk -F'|' '/^\| `[a-z]/ && $5 ~ /unnoticed/ {gsub(/[ `]/,"",$2); print $2}' docs/mcp-coverage.md | sort -u`*.)*
 
 `desktop` joined on 2026-08-07, and it is the only one here whose
 undecidedness is about **what kind of thing this surface is for**: every
@@ -639,9 +650,6 @@ other row is a capability with an effect or an inventory of hardware, and
 consumed — the host reads it to draw the mirror — so unlike the rest, the
 question is not whether the capability is safe to expose but whether a
 caller wants it for anything the render does not already do.
-**`axsnap`, `handle`, `actselftest`, `aesend`, `hide`, `net`, `script`,
-`mirror` and `cycle`** — all served by the PowerPC guest, none decided
-either way. Their rows above say what a decision would have to settle.
 
 `mirror` joined on 2026-08-02, the day its verb landed, and it is the only
 one here whose undecidedness is about WHOSE MACHINE rather than about risk

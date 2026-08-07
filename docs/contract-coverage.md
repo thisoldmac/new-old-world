@@ -194,7 +194,7 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 
 PPC handles **49** inbound types; NOW-68K handles **23**. **That count
 understates the difference** — see the next two sections, where two of
-these rows open into 43 command verbs and 14 hardware probes.
+these rows open into 44 command verbs and 14 hardware probes.
 
 (An earlier version of this file said 33 for the PowerPC guest and was
 wrong: the number had been hand-counted. It is derived now, and that is
@@ -224,7 +224,7 @@ hides most of what a machine can be asked — the hardware, network, RAM
 and ROM facts do not have message types of their own. They live behind
 `gestalt` and `census`, one row each above and a whole subsystem below.
 
-The registry is `x-commands` in the contract: **43 verbs.** Sixteen of
+The registry is `x-commands` in the contract: **44 verbs.** Sixteen of
 them landed on 2026-07-31 and are grouped at the foot of the table; the
 Dialog Manager act joined that group on 2026-08-03: the
 act plane, the reference layer that mints what it addresses, two verbs
@@ -428,7 +428,7 @@ produced the first live sighting of the sampler's own stated limit — a
 backgrounded and its event passes never saw the change. See
 [open-issues.md](open-issues.md).
 
-**PPC serves 39 of 42.** `put` is console-only there and `cancel` is
+**PPC serves 41 of 44.** `put` is console-only there and `cancel` is
 not a verb at all, both deliberately: the host reaches those
 capabilities through the `file.*` families and that guest's own
 Workshop. `shotdiag` is the third, and the newest: it diagnoses a raw
@@ -992,6 +992,39 @@ command written down rather than retyped each time.
 > settled by RUNNING the commands below against the merged tree, which
 > is this file's own rule working exactly as written: a hand-carried
 > count drifts, a derivation does not.
+
+## Re-derived at the plan-018 integration merge, 2026-08-07 (`claude/018-integration`)
+
+**This is the derivation that supersedes every one below it.** Seventeen
+018 lanes were merged into one tree and the five commands at the foot
+were run against the RESULT, not against any lane. That distinction is
+the whole point of this section: the `desktop-pattern` re-derivation
+immediately below was honest and is now wrong, because it counted a tree
+that did not yet contain `cycle`.
+
+| | Derived here | `018-desktop-pattern` said | Moved by |
+|---|---|---|---|
+| PowerPC inbound message types | **49** | 48 | `host.shown` (`018-open-mirror`) |
+| NOW-68K inbound message types | **23** | 23 | — |
+| `x-commands` registry | **44** | 43 | `cycle` (`018-anchor-acquisition`) |
+| PowerPC verbs served | **41** | 40 | `cycle` |
+| NOW-68K verbs served | **13** | 13 | — |
+
+The three registry verbs the PowerPC guest still does not serve are
+unchanged: `put`, `cancel`, `shotdiag`.
+
+**Two verbs that landed in this arc are deliberately absent from these
+numbers, and a reader who goes looking for them should stop here.**
+
+- `showmirror` is a **console verb, not an x-command**, so it is
+  correctly absent from the registry and from the served list. Its
+  second face is the Mirror page's button rather than a wire verb — the
+  declared asymmetry is in [command-parity.md](command-parity.md) and
+  `CommandParityTests` carries it.
+- `host.show` is **sent** by the PPC guest and served by the host, so it
+  appears in the contract but never in the inbound-type grep. Only its
+  answer, `host.shown`, is inbound — and that is the one that moved the
+  count from 48 to 49.
 
 ## Re-derived 2026-08-07 (`claude/018-desktop-pattern`)
 
