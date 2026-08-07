@@ -155,6 +155,25 @@ Both: comments say **why**, not what. Match the surrounding density.
   is reclaimable by its owner alone (`tools/lane-ports reclaim` — through
   QMP by socket path, never `kill` on what `lsof` named).
   [docs/lane-ports.md](docs/lane-ports.md).
+- **An instrument that READS a live machine must assert that the plane
+  armed** — the same shape of rule as the two above, and it has already
+  cost this project four durable sentences. A metal gate asks *which
+  build answered* because the alternative reads green having reached
+  nothing; an observing rig must ask *was there anything to see*,
+  because the alternative reports absence and defect in the same words.
+  Integration rounds 2 and 3 rendered over a scene envelope, and
+  `SceneBuilder.normalizeWindows` sets `display: nil` unconditionally —
+  so no interior was ever on disk, every window looked empty, and the
+  emptiness was written down as four separate render defects. The check
+  is cheap and it is about the ARTIFACT, not the intent: a stored
+  capture proves the content plane was reachable only if it wrote a
+  drain, whatever the guest was doing. **"I armed it" is not the
+  assertion; "the artifact carries it" is.** The dated correction is in
+  [docs/open-issues.md](docs/open-issues.md) and the re-derivation in
+  [docs/fidelity-sweep-2026-08-07-c.md](docs/fidelity-sweep-2026-08-07-c.md).
+  Its companion: **a count you did not derive is not evidence** — the
+  honest unit is the store you can check, not sentences agreeing with
+  each other across five documents.
 - `GuestWireConformanceTests` reads `now-guest-ppc/src/**/*.c` and checks every
   message the guest can emit against this side's decoder and the
   contract's required fields. **If you add a message built across
@@ -232,15 +251,25 @@ in, so the resident it holds is whatever was baked — not whatever this
 checkout last compiled, and staging a fresh INIT into a throwaway clone
 changes the clone, never the image.
 
-**It is not what an ordinary run uses, and believing otherwise has already
-produced a wrong conclusion.** `scripts/spin-up-ppc` clones
-`os91-runner.qcow2`, stages *this checkout's* ext and app into the clone
-and cold-boots, so the resident under test there is the tree's build. This
-paragraph used to say the opposite ("every Mirror sweep and every
-`scripts/spin-up-ppc` clones it"), and on 2026-08-06 a coordinating session
-read it, told the human an arc's measurements were suspect because the
-stage image was stale, and had to be corrected by a lane that read the
-script.
+**What an ordinary run clones is not something to remember — ask
+`tools/base-image which`.** That is the one place the answer lives, keyed
+by purpose, and every clone site consults it (`spin-up-ppc`,
+`bake-ext-image`, `q800-68k`); a test fails if a new one does not. It also
+answers whether a base is **fit** to clone — designated, volume clean, and
+whether its baked resident predates this checkout's `ext/` — refusing or
+warning per check, with the argument for each in
+[docs/staged-images.md](docs/staged-images.md).
+
+Two things this page got wrong in two days, and both are why the answer
+moved into a tool. It once said the stage image is what every sweep clones;
+on 2026-08-06 a coordinating session read that, told the human an arc's
+measurements were suspect, and had to be corrected by a lane that read the
+script. Then `spin-up-ppc` defaulted `BASE` to `os91-runner.qcow2` in one
+line of shell — so on 2026-08-07 a whole arc cloned a 19 July image, which
+is the same stale-oracle failure one layer below every gate. Note that
+`spin-up-ppc` stages *this checkout's* ext and app into the clone and
+cold-boots either way, so the resident under test there is the tree's
+build; that is why a stale base warns rather than refusing.
 
 [docs/staged-images.md](docs/staged-images.md) is the page: which mode to
 bake in, what each gate can honestly assert versus imply, and how to hand

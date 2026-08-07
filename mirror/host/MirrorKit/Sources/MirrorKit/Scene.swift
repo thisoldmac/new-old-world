@@ -229,10 +229,36 @@ public struct Scene: Codable, Equatable, Sendable {
         }
     }
 
+    /// **The guest's screen, and the only place its size is stated.**
+    ///
+    /// One machine, one answer: the guest measures its own `gdRect` and
+    /// sends `scene.screen.w/h`, and every consumer reads it from here.
+    /// Nothing on this side may decide for itself what size the other
+    /// machine's screen is — four places once did (800×600 in the host
+    /// window, 800×600 in the poller, 1024×768 in the theme, 640×480 in
+    /// the chat prompt), and a wrong screen is not cosmetic: it decides
+    /// hit-test mapping, what "fit" means, and what a model is told it
+    /// is looking at.
+    ///
+    /// `unknown` is a state, not a missing value. It means the guest has
+    /// not said yet — never "assume something plausible". A caller that
+    /// cannot proceed without a size refuses and says so.
     public struct ScreenSize: Codable, Equatable, Sendable {
         public var w: Int
         public var h: Int
         public init(w: Int, h: Int) { self.w = w; self.h = h }
+
+        /// No guest has said. Distinct from a real screen, and the wire's
+        /// own encoding of absence — a scene with no `screen` object
+        /// decodes to zeroes.
+        public static let unknown = ScreenSize(w: 0, h: 0)
+
+        public var isKnown: Bool { w > 0 && h > 0 }
+
+        /// The size, or nil when no guest has said. The form a consumer
+        /// should reach for, because it cannot be used without deciding
+        /// what to do about `unknown`.
+        public var known: ScreenSize? { isKnown ? self : nil }
     }
 
     public struct AppRef: Codable, Equatable, Sendable {
@@ -317,6 +343,32 @@ public struct Scene: Codable, Equatable, Sendable {
         public var cmd: String
     }
 
+    /// **Which kind of empty an empty `controls` array is.**
+    ///
+    /// `controls` is required by the IR, so `[]` has carried three
+    /// different facts since the plane was written and there was nowhere
+    /// beside it to say which. The producer's own verdict prose named two
+    /// of them in a sentence in `meta.errors`, keyed on a window title —
+    /// readable by a person and by nothing else.
+    ///
+    /// `notFetched` is the one that had no name at all. The guest's
+    /// control pool is shared across every window in a scene; a window
+    /// walked after it filled is refused a slot and retracts, so a panel
+    /// with twenty controls arrives as `[]` for a reason that has nothing
+    /// to do with that panel.
+    ///
+    /// - `empty` is a fact about the MACHINE and the only one of the four
+    ///   that licenses drawing a bare window.
+    /// - `unknown` is the machine being unreadable where we may look.
+    /// - `notFetched` is a fact about US, and the only one asking again
+    ///   could answer.
+    public enum ControlsState: String, Codable, Equatable, Sendable {
+        case complete
+        case empty
+        case unknown
+        case notFetched
+    }
+
     public struct Window: Codable, Equatable, Sendable {
         /// Stable-ish: psn + title + occurrence index.
         public var id: String
@@ -334,6 +386,14 @@ public struct Scene: Codable, Equatable, Sendable {
         /// and action models decide what to do with an invisible window.
         public var visible: Bool
         public var controls: [Control]
+        /// **Which kind of empty `controls` is** — see ``ControlsState``.
+        ///
+        /// The producer sends it only where the array cannot speak for
+        /// itself, so `nil` beside a NON-empty array means `complete` and
+        /// `nil` beside an empty one means `unknown`. Read it through
+        /// ``controlsKnowledge``, never directly; the raw optional exists
+        /// to keep an unrecognised future word decodable.
+        public var controlsState: String? = nil
         /// Live Dialog Manager items, distinct from the structural Control
         /// Manager chain because edit/static items do not share its identity
         /// or actuation path. nil means not reported; [] means proven empty.
@@ -431,11 +491,42 @@ public struct Scene: Codable, Equatable, Sendable {
         /// pass the freeze gate.
         enum CodingKeys: String, CodingKey {
             case id, app, psn, title, kind, rect, front, z, visible
-            case controls, dialogItems, text, display
+            case controls, controlsState, dialogItems, text, display
             case items          // additive in v1 — see the declaration
             case ref            // additive in v1 — see the declaration
             case addr           // additive in v1 — see the declaration
             case incarnation    // IR v2 durable reducer identity
+        }
+
+        /// **What is known about this window's controls**, with the
+        /// producer's economy undone in one place.
+        ///
+        /// The word rides only where the array is empty, so this applies
+        /// the three rules that make absence unambiguous:
+        ///
+        /// 1. A non-empty `controls` is `complete`. No other state can
+        ///    produce one, so the producer does not spend 28 bytes per
+        ///    window saying so — measured at 900 bytes against a 64 KB
+        ///    scene ceiling the guest already touches.
+        /// 2. An empty `controls` WITH the word means the word.
+        /// 3. An empty `controls` WITHOUT it is `unknown`, because it came
+        ///    from a producer that does not report this and therefore
+        ///    could not tell us. Reading it as `empty` would be the
+        ///    conflation the field exists to end, one layer up.
+        ///
+        /// A word this build has never heard of is also `unknown` — a
+        /// newer guest saying something we cannot interpret is precisely
+        /// the case for admitting we do not know.
+        public var controlsKnowledge: ControlsState {
+            if !controls.isEmpty { return .complete }
+            guard let raw = controlsState,
+                  let state = ControlsState(rawValue: raw) else {
+                return .unknown
+            }
+            /* `complete` beside an empty array is not a state this
+               producer can be in; taking it at its word would assert
+               "walked, and here they are" over nothing. */
+            return state == .complete ? .unknown : state
         }
     }
 
@@ -736,6 +827,65 @@ public struct Scene: Codable, Equatable, Sendable {
         }
     }
 
+    /// **What the guest says its desktop is drawn from.**
+    ///
+    /// The renderer's only source for the largest rectangle in the picture
+    /// was the offline asset pack's `manifest.json` — a record of the disk
+    /// image the pack was extracted from. That is true for a guest booted
+    /// from that image and unchanged since, and silently wrong the moment
+    /// either stops holding, with nothing anywhere to notice. A guest-side
+    /// route to the live answer had been built and served as the `desktop`
+    /// command, and nothing on this side had ever read it.
+    ///
+    /// This is that answer, on the wire. The pack is now the *declared*
+    /// fallback: `DesktopPattern.resolve(scene:screen:)` returns which of
+    /// the two spoke, and a render standing on the pack must say so.
+    ///
+    /// **It is not art.** The flattened `ppat` bytes the command verb
+    /// carries as hex are an identity, not something drawable, and the
+    /// pixels come from the pack either way. Naming is the job: it lets
+    /// this side check whether the art it holds is the art that machine is
+    /// showing, instead of assuming it.
+    ///
+    /// **Absence is the whole point.** A nil `Meta.desktop` means the
+    /// producer did not ask, and is the only state in which the pack may
+    /// stand in at all. `source == "unknown"` means we asked and that
+    /// machine would not say — the marked unknown, never a guessed
+    /// pattern. See `contract/asyncapi.yaml`, "WHAT THE DESKTOP IS DRAWN
+    /// FROM".
+    public struct Desktop: Codable, Equatable, Sendable {
+        /// `pattern`, `picture`, or `unknown`. Left a `String` rather than
+        /// an enum for the same reason the rest of this IR is: a value
+        /// this decoder has never heard of must survive decoding, not
+        /// fail the whole scene.
+        public var source: String
+        /// Whether a pattern could be read at all. True beside
+        /// `source: picture` is normal — a picture is drawn OVER the
+        /// pattern layer, and that layer shows wherever it does not reach.
+        public var hasPattern: Bool
+        /// Whether a desktop picture is configured, from the picture ALIAS
+        /// tag rather than the name tag. Independent of `hasPattern`.
+        public var hasPicture: Bool
+        /// True length of the flattened pattern. Absent when unknown —
+        /// never a negative length on the wire.
+        public var patternBytes: Int?
+        /// What the machine CHOSE. Absent means the tag was absent, not
+        /// that the desktop is nameless.
+        public var patternName: String?
+        public var pictureName: String?
+
+        public init(source: String, hasPattern: Bool, hasPicture: Bool,
+                    patternBytes: Int? = nil, patternName: String? = nil,
+                    pictureName: String? = nil) {
+            self.source = source
+            self.hasPattern = hasPattern
+            self.hasPicture = hasPicture
+            self.patternBytes = patternBytes
+            self.patternName = patternName
+            self.pictureName = pictureName
+        }
+    }
+
     public struct Meta: Codable, Equatable, Sendable {
         public var latencyMs: Double?
         public var bytes: Int?
@@ -747,6 +897,9 @@ public struct Scene: Codable, Equatable, Sendable {
         public var coverage: [CoverageClaim]? = nil
         /// What the guest's Appearance Manager actually draws with.
         public var theme: Theme? = nil
+        /// What the guest says its desktop is drawn from. nil means this
+        /// producer did not ask — see `Scene.Desktop`.
+        public var desktop: Desktop? = nil
     }
 }
 

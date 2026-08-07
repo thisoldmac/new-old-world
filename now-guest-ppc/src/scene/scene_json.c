@@ -562,6 +562,34 @@ static void put_controls(Sink *k, const NowScene *s, const NowSceneWindow *w)
        than subtly informative. What was lost is recovered where it
        belongs - meta carries the truncation note when a list was
        dropped, and a window nobody could walk reports none. */
+    /* WHAT IS KNOWN ABOUT THEM, beside the list rather than inside it.
+     *
+       The array below cannot carry this. It is required by the IR, so
+       "not looked at" and "looked at, none there" both arrive as `[]`,
+       and since 2026-08-07 a third fact has been hiding in the same two
+       characters: a window walked after the shared pool filled reports
+       `[]` for a reason that has nothing to do with that window. The
+       verdict prose in meta.errors says which, in a sentence, keyed on a
+       window TITLE - readable by a person and by nothing else.
+       This is the same knowledge as a word a consumer branches on.
+
+       EMITTED ONLY WHERE THE ARRAY CANNOT SPEAK FOR ITSELF - that is,
+       whenever it is empty. A non-empty array is `complete` by
+       construction and no other state can produce one, so spending 28
+       bytes per window to say so costs 900 of a 64 KB ceiling this scene
+       already touches (measured: the ceiling case went to 66447 bytes
+       and the gate caught it). This is scene.h's own `backgroundOnly`
+       rule, made for the same arithmetic - and it is safe here for the
+       reason that one had to argue: absence is not ambiguous, because
+       the array beside it decides which reading applies. */
+    if (!(w->controls_present && w->control_count > 0)) {
+        put(k, ",\"controlsState\":");
+        switch (now_scene_controls_state(w)) {
+        case kNowSceneControlsEmpty:   put_str(k, "empty"); break;
+        case kNowSceneControlsUnknown: put_str(k, "unknown"); break;
+        default:                       put_str(k, "notFetched"); break;
+        }
+    }
     put(k, ",\"controls\":[");
     if (!w->controls_present) {
         put(k, "]");
@@ -1158,6 +1186,58 @@ static void put_theme(Sink *k, const NowScene *s)
     put(k, "}");
 }
 
+/* meta.desktop: what the MACHINE says its desktop is drawn from.
+ *
+ * The whole object is omitted when this producer never asked, which is
+ * the same absent-means-unknown rule meta.theme follows - and it is
+ * load-bearing here rather than tidy. The consumer's alternative source
+ * is an offline asset pack's record of the disk image it was extracted
+ * from, which is true only for a guest booted from that image and
+ * unchanged since. A consumer that cannot tell "the machine said so"
+ * from "nobody asked" cannot tell which of those two it is looking at,
+ * and would render the pack's answer as the machine's.
+ *
+ * `source: unknown` with `asked` true is a DIFFERENT fact and it does
+ * reach the wire: we asked, and this machine would not say. That one is
+ * the marked unknown; the absent key is the substitution.
+ *
+ * The names are what the machine CHOSE. They are not art - the flattened
+ * `ppat` bytes the command verb carries as hex are an identity, and the
+ * pixels come from the pack either way. Naming is exactly the job:
+ * it lets a consumer check whether the art it holds is the art this
+ * machine is showing, instead of assuming it. */
+static void put_desktop(Sink *k, const NowScene *s)
+{
+    if (!s->desktop.asked) {
+        return;
+    }
+    put(k, ",\"desktop\":{\"source\":");
+    switch (s->desktop.source) {
+    case kDesktopSourcePattern: put_str(k, "pattern"); break;
+    case kDesktopSourcePicture: put_str(k, "picture"); break;
+    default:                    put_str(k, "unknown"); break;
+    }
+    put(k, ",\"hasPattern\":");
+    put(k, s->desktop.has_pattern ? "true" : "false");
+    put(k, ",\"hasPicture\":");
+    put(k, s->desktop.has_picture ? "true" : "false");
+    if (s->desktop.pattern_bytes >= 0) {
+        put(k, ",\"patternBytes\":");
+        put_num(k, s->desktop.pattern_bytes);
+    }
+    /* An empty name is an ABSENT tag, not a nameless desktop, so it is
+       omitted rather than sent as "". */
+    if (s->desktop.pattern_name[0] != '\0') {
+        put(k, ",\"patternName\":");
+        put_str(k, s->desktop.pattern_name);
+    }
+    if (s->desktop.picture_name[0] != '\0') {
+        put(k, ",\"pictureName\":");
+        put_str(k, s->desktop.picture_name);
+    }
+    put(k, "}");
+}
+
 /* meta.errors carries what the scene could not do, in upstream's
    "<name>: <token>" form, plus this producer's own truncation notices.
    A truncated walk that said nothing would be a partial scene delivered
@@ -1263,6 +1343,12 @@ static void put_meta(Sink *k, const NowScene *s)
             why = "control chain hit a bound or failed validation, so its "
                   "controls are unknown rather than absent";
             break;
+        case kNowSceneWalkControlsPoolFull:
+            why = "the scene's shared control pool was already full when "
+                  "this window was walked, so its controls were NOT FETCHED "
+                  "rather than unknown - nothing here is a fact about this "
+                  "window, and asking again with room would answer it";
+            break;
         case kNowSceneWalkDialogItemsRetracted:
             why = "dialog item list hit a bound or failed validation, so "
                   "its items are unknown rather than absent";
@@ -1284,7 +1370,11 @@ static void put_meta(Sink *k, const NowScene *s)
         if (w->control_chain_len > 0
             && (w->walk_verdict == kNowSceneWalkControlsBound
                 || w->walk_verdict == kNowSceneWalkControlsInvalid
-                || w->walk_verdict == kNowSceneWalkControlsCyclic)) {
+                || w->walk_verdict == kNowSceneWalkControlsCyclic
+                /* The pool-full case measures its chain too, and for the
+                   sharper reason: sizing the pool needs the DISTRIBUTION
+                   across the windows that lost, not one panel's number. */
+                || w->walk_verdict == kNowSceneWalkControlsPoolFull)) {
             snprintf(line, sizeof line, "%s: %s (chain is %s%d, this scene "
                      "carries %d)",
                      w->title[0] != '\0' ? w->title : "(untitled window)",
@@ -1333,6 +1423,7 @@ static void put_meta(Sink *k, const NowScene *s)
         k->sp->tail_off = k->len;
     }
     put_theme(k, s);
+    put_desktop(k, s);
     if (s->plane[0] != '\0') {
         put(k, ",\"plane\":");
         put_str(k, s->plane);

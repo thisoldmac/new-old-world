@@ -80,6 +80,13 @@ final class ChatModuleModel: ObservableObject {
         agentIntegration: AgentIntegrationHostAdapter,
         guestFiles: GuestFilesCommandService,
         agentActivity: AgentActivityModel?,
+        /* The connected Mac's screen, or nil for "nobody has measured
+           it". Injected rather than looked up, because the thing that
+           knows is the live Mirror and this model must not construct
+           one — and because nil has to survive all the way into the
+           prompt as `unknown`. */
+        guestScreen: @escaping @Sendable () async -> ChatSystemPrompt.Screen?
+            = { nil },
         store: ChatCredentialStore = KeychainChatCredentialStore(),
         transport: ChatHTTPTransport = URLSessionChatTransport(),
         defaults: UserDefaults = UserDefaults(
@@ -114,7 +121,8 @@ final class ChatModuleModel: ObservableObject {
                 ).addressing(selector)
             },
             audit: ChatAuditSink(
-                adapter: agentIntegration, activity: agentActivity))
+                adapter: agentIntegration, activity: agentActivity),
+            guestScreen: guestScreen)
         /* NO Keychain read here, deliberately. This init runs on the
            main actor inside HostAppState — including in every test that
            builds one — and a Keychain item created by a differently-

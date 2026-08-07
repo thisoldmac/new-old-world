@@ -1,7 +1,8 @@
 import SwiftUI
 import MirrorKit
 
-/// Draws a `Scene` into a `GraphicsContext` on the 1024×768 logical surface.
+/// Draws a `Scene` into a `GraphicsContext` on the guest's own logical
+/// surface — the size the guest measured and sent, never one chosen here.
 /// Port of `attic/web/mirror.js` + `platinum.css`; rendering rules mirror the
 /// guest's `ui_theme.c`: only the front window gets racing stripes and
 /// widgets; dialogs (kind==2) draw modal chrome (no title bar) over the gray
@@ -91,12 +92,17 @@ public struct SceneRenderer {
         self.itemDrag = itemDrag
     }
 
-    /// The guest screen: the scene's own dimensions, falling back to the
-    /// theme default when a fixture carries none.
-    public var logicalSize: CGSize {
-        scene.screen.w > 0 && scene.screen.h > 0
-            ? CGSize(width: scene.screen.w, height: scene.screen.h)
-            : Platinum.logicalSize
+    /// The guest screen: the scene's own dimensions, and **nil when the
+    /// scene carries none**.
+    ///
+    /// There is no fallback, because there is nothing true to fall back
+    /// to. The rects in a scene are in the guest's screen space; without
+    /// that space a drawn window has no position and a click has no
+    /// destination. Callers refuse rather than draw into an invented
+    /// coordinate system — a mirror that letterboxes a guessed surface
+    /// looks right and aims wrong.
+    public var logicalSize: CGSize? {
+        scene.screen.known.map { CGSize(width: $0.w, height: $0.h) }
     }
 
     static func shouldSynthesizeAppleMenu(_ menus: [MirrorKit.Scene.Menu])
@@ -118,7 +124,13 @@ public struct SceneRenderer {
         // Fit the logical surface into the drawable — the SAME transform the
         // input inverts (FitTransform), so drawn pixels and click targets
         // register exactly.
-        let logical = logicalSize
+        guard let logical = logicalSize else {
+            /* The guest has not said how big its screen is, so every rect
+               in this scene is in a space we do not have. Say that,
+               rather than draw it somewhere plausible. */
+            drawScreenUnknown(ctx, size)
+            return
+        }
         let fit = FitTransform(logical: logical, view: size)
         var ctx = ctx
         ctx.translateBy(x: fit.offset.x, y: fit.offset.y)
@@ -197,6 +209,21 @@ public struct SceneRenderer {
                    style: StrokeStyle(lineWidth: 2, dash: [3, 2]))
     }
 
+    /// **Unknown, said out loud.** Not an error and not an empty mirror:
+    /// the machine may be answering perfectly while this particular fact
+    /// has not arrived. A person reading a blank grey rectangle would
+    /// reasonably conclude the guest was down.
+    private func drawScreenUnknown(_ ctx: GraphicsContext, _ size: CGSize) {
+        ctx.fill(Path(CGRect(origin: .zero, size: size)),
+                 with: .color(Platinum.g6))
+        sysCentered("Screen size unknown", ctx,
+                    centerX: size.width / 2, centerY: size.height / 2 - 8,
+                    color: .black)
+        sysCentered("Waiting for the Mac to say how big its screen is.", ctx,
+                    centerX: size.width / 2, centerY: size.height / 2 + 10,
+                    color: .black)
+    }
+
     // MARK: - Text (Tier-2 bitmap, mock fallback)
 
     /// Draw system (Chicago) text, left-aligned at a baseline. Falls back to
@@ -256,7 +283,19 @@ public struct SceneRenderer {
     /// Rung 3 draws art the pack IDENTIFIED; rung 4 marks the rest. A
     /// plausible wrong purple is exactly what rule 1 forbids.
     private func drawDesktop(_ ctx: GraphicsContext, _ bounds: CGRect) {
-        switch DesktopPattern.answer(screen: bounds.size) {
+        /* THE MACHINE FIRST, THE PACK SECOND, AND SAY WHICH. Until the
+           guest's own desktop answer reached the scene this could only ask
+           the pack — a record of the disk image it was extracted from, and
+           byte-identical whether that record still held or not. `resolve`
+           asks the scene first and reports who answered; the plate below
+           is what makes a substitution legible instead of silent. */
+        let resolved = DesktopPattern.resolve(scene: scene, screen: bounds.size)
+        defer {
+            if resolved.provenance == .assetPack {
+                drawSubstitutionPlate(ctx, bounds)
+            }
+        }
+        switch resolved.answer {
         case .picture(let art):
             /* ONCE, AT THE ORIGIN, UNSCALED — the operation the machine
                performs. `answer` has already refused any picture whose
@@ -288,6 +327,49 @@ public struct SceneRenderer {
             _ = why
             drawUnavailableVisual(ctx, bounds, "")
         }
+    }
+
+    /// **The mark that says this desktop is the pack's, not the machine's.**
+    ///
+    /// The honesty requirement this whole seam exists for: when the live
+    /// answer arrives, the desktop came from the machine; when the pack is
+    /// standing in, that has to be LEGIBLE rather than silently identical.
+    /// A render that looks the same either way is how the pack's record of
+    /// a disk image went on being trusted for as long as it did.
+    ///
+    /// It is a plate in the bottom-left corner rather than a wash over the
+    /// surface, and that is a deliberate trade. The desktop is the largest
+    /// rectangle in the picture and a fidelity sweep compares it pixel for
+    /// pixel; tinting or hatching it would make every substituted render
+    /// fail a comparison for a reason that has nothing to do with what is
+    /// being compared. A bounded plate in a corner windows do not usually
+    /// reach says the same thing and costs a known, small region.
+    ///
+    /// Nothing marks ``DesktopPattern/Provenance/machine`` — an unmarked
+    /// desktop means the machine named it, and that is the point.
+    private func drawSubstitutionPlate(_ ctx: GraphicsContext,
+                                       _ bounds: CGRect) {
+        let caption = "desktop from asset pack, not this machine"
+        let ascent = CGFloat(FontBook.small?.ascent ?? 8)
+        let inset: CGFloat = 6
+        let pad = UnknownVisual.captionInset
+        let textW = CGFloat(FontBook.small?.width(caption)
+                            ?? Int(CGFloat(caption.count) * 6))
+        let plate = CGRect(x: bounds.minX + inset,
+                           y: bounds.maxY - inset - (ascent + pad * 2),
+                           width: min(textW + pad * 2,
+                                      max(bounds.width - inset * 2, 0)),
+                           height: ascent + pad * 2)
+        guard plate.width > pad * 2, plate.height > 0,
+              bounds.contains(plate.origin) else { return }
+        var clipped = ctx
+        clipped.clip(to: Path(plate))
+        clipped.fill(Path(plate), with: .color(UnknownVisual.ground))
+        clipped.stroke(Path(plate), with: .color(UnknownVisual.edge),
+                       lineWidth: 1)
+        appText(caption, clipped, x: plate.minX + pad,
+                baselineY: plate.minY + pad + ascent,
+                color: UnknownVisual.caption, small: true)
     }
 
     // MARK: - Desktop icons
@@ -753,44 +835,93 @@ public struct SceneRenderer {
         let windowFace = theme.face(forWindowKind: win.kind,
                                     untitled: win.title.isEmpty)
 
-        // Drop shadow, frame, face, raised bevel.
-        ctx.fill(Path(frame.offsetBy(dx: 2, dy: 2)),
-                 with: .color(.black.opacity(0.35)))
-        ctx.fill(Path(frame), with: .color(Platinum.g6))
-        let face = frame.insetBy(dx: 1, dy: 1)
-        ctx.fill(Path(face), with: .color(Platinum.g2))
-        bevel(ctx, face,
-              light: active ? Platinum.g0 : Platinum.g1,
-              shadow: active ? Platinum.g4 : Platinum.g3)
+        /* THE FRAME IS OUTSIDE THE CONTENT, and it is six pixels wide.
+           Measured on the left, right and bottom of eight windows, always the
+           same five colours reading outward: `000000`, then a raised band
+           `FFFFFF · CCCCCC · CCCCCC · 999999` lit from the top-left, then
+           `000000` again, then a one-pixel black drop shadow on the right and
+           bottom offset by one.
 
-        let contentTop: CGFloat
+           This used to be a one-pixel black rectangle ON the scene rect with a
+           translucent grey blur behind it, which put the frame INSIDE the
+           content the guest drew and lost twelve pixels of window furniture on
+           every window the mirror has ever shown. `frame` stays the scene rect
+           so every other consumer of it is unmoved; `structure` is what gets
+           painted. */
+        let content: CGRect
         if isDialog {
-            // Modal dialog chrome: NO title bar — a raised border band with
-            // an inner hairline, content face flush beneath.
+            /* A modal alert is NOT this frame and is left exactly as it was:
+               its WDEF variant draws a raised border with no title bar, and
+               the one capture of one in the corpus (`scene-ie-error-alert`)
+               does not agree with a document frame either. Nothing here was
+               measured for it, so nothing here changes it. */
+            ctx.fill(Path(frame.offsetBy(dx: 2, dy: 2)),
+                     with: .color(.black.opacity(0.35)))
+            ctx.fill(Path(frame), with: .color(Platinum.g6))
+            let face = frame.insetBy(dx: 1, dy: 1)
+            ctx.fill(Path(face), with: .color(Platinum.g2))
+            bevel(ctx, face,
+                  light: active ? Platinum.g0 : Platinum.g1,
+                  shadow: active ? Platinum.g4 : Platinum.g3)
             let innerFrame = face.insetBy(dx: 4, dy: 4)
             ctx.fill(Path(CGRect(x: innerFrame.minX, y: innerFrame.minY,
                                  width: innerFrame.width, height: 1)),
                      with: .color(Platinum.g4))
             ctx.stroke(Path(innerFrame), with: .color(Platinum.g6),
                        lineWidth: 1)
-            contentTop = 6
+            content = CGRect(x: frame.minX + 6, y: frame.minY + 6,
+                             width: frame.width - 12,
+                             height: max(0, frame.height - 12))
         } else {
-            drawTitlebar(ctx, win, face: face, active: active)
-            contentTop = Platinum.contentTop
+            /* THE INACTIVE FRAME IS THE SAME SHAPE IN DIFFERENT COLOURS —
+               measured, not guessed, on 2026-08-07. See PlatinumTitleBar's
+               "Inactive" section: the geometry is identical to a pixel and
+               only the inks move. */
+            let edge = Color(rgb: active ? PlatinumTitleBar.frame
+                                         : PlatinumTitleBar.inactiveFrame)
+            let outer = CGRect(
+                x: frame.minX - 6,
+                y: frame.minY + CGFloat(PlatinumTitleBar.Row.outerFrame),
+                width: frame.width + 12,
+                height: frame.height + 6
+                        - CGFloat(PlatinumTitleBar.Row.outerFrame))
+            // The drop shadow: one pixel, right and bottom, offset one.
+            ctx.fill(Path(CGRect(x: outer.maxX, y: outer.minY + 1,
+                                 width: 1, height: outer.height)),
+                     with: .color(edge))
+            ctx.fill(Path(CGRect(x: outer.minX + 1, y: outer.maxY,
+                                 width: outer.width, height: 1)),
+                     with: .color(edge))
+            ctx.fill(Path(outer), with: .color(edge))
+            let band = outer.insetBy(dx: 1, dy: 1)
+            ctx.fill(Path(band),
+                     with: .color(Color(rgb: active
+                                        ? PlatinumTitleBar.face
+                                        : PlatinumTitleBar.inactiveFace)))
+            if active {
+                bevel(ctx, band,
+                      light: Color(rgb: PlatinumTitleBar.lit),
+                      shadow: Color(rgb: PlatinumTitleBar.bandShadow))
+            }
+            content = CGRect(
+                x: frame.minX,
+                y: frame.minY + CGFloat(PlatinumTitleBar.Row.contentTop),
+                width: frame.width,
+                height: max(0, frame.height
+                               - CGFloat(PlatinumTitleBar.Row.contentTop)))
+            ctx.fill(Path(CGRect(x: content.minX - 1, y: content.minY - 1,
+                                 width: content.width + 2,
+                                 height: content.height + 2)),
+                     with: .color(edge))
+            drawTitlebar(ctx, win, active: active)
         }
-
-        // Content area beneath the chrome.
-        let content = CGRect(x: frame.minX + (isDialog ? 6 : 1),
-                             y: frame.minY + contentTop,
-                             width: frame.width - (isDialog ? 12 : 2),
-                             height: max(0, frame.height - contentTop
-                                            - (isDialog ? 6 : 1)))
+        /* The content face, and NOTHING on top of it. There used to be a
+           `g4` rule along the content's first row, standing in for the title
+           bar's bottom edge. The machine puts that edge in the FRAME — the
+           `999999` shadow row and the black row above the content — so the
+           rule was a second copy of it, painted one row INTO the guest's own
+           drawing. It ate the first row of every window's content. */
         ctx.fill(Path(content), with: .color(windowFace))
-        if !isDialog {
-            ctx.fill(Path(CGRect(x: content.minX, y: content.minY,
-                                 width: content.width, height: 1)),
-                     with: .color(Platinum.g4))
-        }
 
         var contentCtx = ctx
         contentCtx.clip(to: Path(content))
@@ -1014,63 +1145,210 @@ public struct SceneRenderer {
         }
     }
 
+    /// The Platinum title bar, drawn the way the machine draws it.
+    ///
+    /// Every colour and every distance here is MEASURED off the guest's own
+    /// QMP screendumps and lives once, in `MirrorKit.PlatinumTitleBar`, which
+    /// carries the evidence. Read that file before changing a number here.
+    ///
+    /// **The drain could not help with this one.** For the tab strip the
+    /// Appearance Manager leaked its parameters through the QuickDraw
+    /// bottlenecks; for the title bar it leaks nothing at all — the WDEF does
+    /// not draw into an application port, and fourteen captures contain no
+    /// title-bar op and no window title anywhere in their text ops. So this is
+    /// rung 4 of `docs/deriving-a-drawn-procedure.md`, pixels only.
+    ///
+    /// What this replaced, and what each was wrong about:
+    ///
+    /// * the band was 18 rows starting at `t+1`; the machine's is 22 starting
+    ///   at `t-2`, with a black frame row and a lit row above the face;
+    /// * the stripes were white lines every two pixels on the face, full
+    ///   width. The machine alternates `FFFFFF` and **`777777`** — a grey the
+    ///   ported palette does not contain — for exactly twelve rows, and the
+    ///   field stops six pixels clear of the close box and seven clear of the
+    ///   first right-hand widget rather than running under them;
+    /// * the title patch was `width + 16` and centred on the bar; the
+    ///   machine's is `width + 8` centred on the window;
+    /// * the widgets were flat bevelled squares in the wrong places.
     private func drawTitlebar(_ ctx: GraphicsContext, _ win: MirrorKit.Scene.Window,
-                              face: CGRect, active: Bool) {
-        let bar = CGRect(x: face.minX + 1, y: face.minY + 1,
-                         width: face.width - 2,
-                         height: Platinum.titlebarHeight - 2)
-        ctx.fill(Path(bar), with: .color(Platinum.g2))
+                              active: Bool) {
+        let r = win.rect
+        let L = CGFloat(r.l), R = CGFloat(r.r), T = CGFloat(r.t)
+
+        /* The band, top to bottom. It starts TWO ROWS ABOVE the scene rect:
+           `Scene.Window.rect` is the content port grown up by 20, and the
+           machine's outer frame is 22 above the content on every window
+           measured. The two rows above `t` are the window's own frame and its
+           lit edge, and without them a Platinum window has no top edge at
+           all — which is why every render has read as a floating grey slab. */
+        let band = CGRect(x: L, y: T + CGFloat(PlatinumTitleBar.Row.outerFrame),
+                          width: R - L,
+                          height: CGFloat(PlatinumTitleBar.Row.contentTop
+                                          - PlatinumTitleBar.Row.outerFrame))
+        ctx.fill(Path(band),
+                 with: .color(Color(rgb: active ? PlatinumTitleBar.face
+                                                : PlatinumTitleBar.inactiveFace)))
+        let edge = active ? PlatinumTitleBar.frame
+                          : PlatinumTitleBar.inactiveFrame
+        row(ctx, band, PlatinumTitleBar.Row.outerFrame, T, edge)
+        row(ctx, band, PlatinumTitleBar.Row.contentFrame, T, edge)
         if active {
-            // Platinum racing stripes: 1px g0 lines every 2px.
-            var y = bar.minY + 3
-            while y < bar.maxY - 2 {
-                ctx.fill(Path(CGRect(x: bar.minX + 2, y: y,
-                                     width: bar.width - 4, height: 1)),
-                         with: .color(Platinum.g0))
-                y += 2
-            }
+            row(ctx, band, PlatinumTitleBar.Row.litEdge, T, PlatinumTitleBar.lit)
+            row(ctx, band, PlatinumTitleBar.Row.bandShadow, T,
+                PlatinumTitleBar.bandShadow)
         }
 
-        // Centered title on a face-colored patch (breaks the racing stripes).
         let title = win.title.isEmpty ? "untitled" : win.title
-        let w = min(sysWidth(title), bar.width * 0.7)
-        let patch = CGRect(x: bar.midX - w / 2 - 8, y: bar.minY,
-                           width: w + 16, height: bar.height)
-        ctx.fill(Path(patch), with: .color(Platinum.g2))
-        var titleCtx = ctx
-        titleCtx.clip(to: Path(patch))
-        sysCentered(title, titleCtx, centerX: bar.midX, centerY: bar.midY,
-                    color: active ? Platinum.g6 : Platinum.g4)
+        let titleWidth = Int(sysWidth(title).rounded())
 
-        guard active else { return }   // inactive windows hide the widgets
+        /* AN INACTIVE TITLE BAR IS A DIFFERENT DRAWING, not a dimmed one —
+           and this is now MEASURED rather than inferred. Nothing in the
+           private asset store had ever contained one: every background window
+           in all fourteen sweep captures is fully occluded. So one was
+           photographed on 2026-08-07 on a lane-private guest, two control
+           panels deep, and it says the geometry is unchanged to a pixel while
+           three colours move and two things vanish. `PlatinumTitleBar`'s
+           "Inactive" section and the capture's own PROVENANCE.md carry it.
+
+           No stripes, no widgets, and no title PATCH: with the band flat there
+           is nothing to punch the title out of, and the machine punches
+           nothing. The title's baseline does not move. */
+        guard active else {
+            var titleCtx = ctx
+            titleCtx.clip(to: Path(band))
+            let patch = PlatinumTitleBar.titlePatch(r, titleWidth: titleWidth,
+                                                    dark: false)
+            sysText(title, titleCtx,
+                    x: CGFloat(patch.l + PlatinumTitleBar.patchPad),
+                    baselineY: T + CGFloat(PlatinumTitleBar.titleBaseline),
+                    color: Color(rgb: PlatinumTitleBar.inactiveTitle))
+            return
+        }
+
+        // The striped field runs between the close box and the first
+        // right-hand widget; the title patch is punched out of it, and BOTH
+        // sit one pixel right on the dark rows.
+        let firstRightWidgetLeft =
+            (WindowChrome.widgetBox(win, .zoom) ?? PlatinumTitleBar.collapseBox(r)).l
+        for k in 0..<PlatinumTitleBar.stripeRows {
+            let dark = k % 2 == 1
+            let y = T + CGFloat(PlatinumTitleBar.Row.stripesTop + k)
+            let run = PlatinumTitleBar.stripeRun(
+                r, firstRightWidgetLeft: firstRightWidgetLeft, dark: dark)
+            let patch = PlatinumTitleBar.titlePatch(r, titleWidth: titleWidth,
+                                                    dark: dark)
+            let ink = Color(rgb: dark ? PlatinumTitleBar.stripeDark
+                                      : PlatinumTitleBar.lit)
+            stripe(ctx, from: run.from, to: min(run.to, patch.l - 1), y: y,
+                   color: ink)
+            stripe(ctx, from: max(run.from, patch.r), to: run.to, y: y,
+                   color: ink)
+        }
+
+        let patch = PlatinumTitleBar.titlePatch(r, titleWidth: titleWidth,
+                                                dark: true)
+        var titleCtx = ctx
+        titleCtx.clip(to: Path(rect(patch)))
+        sysText(title, titleCtx, x: CGFloat(patch.l + PlatinumTitleBar.patchPad),
+                baselineY: T + CGFloat(PlatinumTitleBar.titleBaseline),
+                color: Color(rgb: PlatinumTitleBar.frame))
 
         // Boxes come from WindowChrome (guest coords) — the exact rects the
-        // hit-tester checks, so what's drawn is what's clickable.
-        drawWbox(ctx, win, .close)
-        drawWbox(ctx, win, .zoom)
-        drawWbox(ctx, win, .collapse)
+        // hit-tester checks, so what's drawn is what's clickable. `.zoom`
+        // answers nil until the guest reports the WDEF variant; a widget the
+        // machine may not have is not drawn.
+        for widget in WindowChrome.Widget.allCases {
+            drawWbox(ctx, win, widget)
+        }
     }
 
+    /// One full-width row of the title-bar band, at `offset` from `t`.
+    private func row(_ ctx: GraphicsContext, _ band: CGRect, _ offset: Int,
+                     _ T: CGFloat, _ rgb: UInt32) {
+        ctx.fill(Path(CGRect(x: band.minX, y: T + CGFloat(offset),
+                             width: band.width, height: 1)),
+                 with: .color(Color(rgb: rgb)))
+    }
+
+    /// One run of one stripe row, in guest pixels, inclusive of both ends —
+    /// `LineTo` inks both endpoints and so does this.
+    private func stripe(_ ctx: GraphicsContext, from: Int, to: Int,
+                        y: CGFloat, color: Color) {
+        guard to >= from else { return }
+        ctx.fill(Path(CGRect(x: CGFloat(from), y: y,
+                             width: CGFloat(to - from + 1), height: 1)),
+                 with: .color(color))
+    }
+
+    /// A title-bar widget: a recess, a ring, and a diagonal ramp.
+    ///
+    /// The machine's widget is **sunk into the bar** — one pixel of `888888`
+    /// along its top and left, one of `FFFFFF` along its bottom and right,
+    /// each a pixel outside the button. Inside the `222222` ring the 7×7 core
+    /// is an anti-diagonal ramp through the seven greys, one step every two
+    /// diagonals, dark at the top-left and white at the bottom-right. The old
+    /// drawer had a flat face with a plain bevel and no ramp at all.
+    ///
+    /// The glyphs, also counted: the close box has **none**; the zoom box is a
+    /// 7×7 square outline sharing the ring's own top and left edges; the
+    /// collapse box is two full-width bars at local rows 4 and 6 — not the one
+    /// centred line this used to draw.
     private func drawWbox(_ ctx: GraphicsContext,
                           _ win: MirrorKit.Scene.Window,
                           _ widget: WindowChrome.Widget) {
-        guard let guestBox = WindowChrome.widgetBox(win, widget) else { return }
-        let box = rect(guestBox)
-        ctx.fill(Path(box), with: .color(Platinum.g6))
+        guard let g = WindowChrome.widgetBox(win, widget) else { return }
+        let box = rect(g)
+        let recess = rect(PlatinumTitleBar.widgetRecess(g))
+        let shadow = Color(rgb: PlatinumTitleBar.recessShadow)
+        let lit = Color(rgb: PlatinumTitleBar.lit)
+        // Recess: shadow along top+left, highlight along bottom+right, each
+        // one pixel outside the button and offset by one along its run.
+        ctx.fill(Path(CGRect(x: recess.minX, y: recess.minY,
+                             width: recess.width - 1, height: 1)), with: .color(shadow))
+        ctx.fill(Path(CGRect(x: recess.minX, y: recess.minY,
+                             width: 1, height: recess.height - 1)), with: .color(shadow))
+        ctx.fill(Path(CGRect(x: recess.minX + 1, y: recess.maxY - 1,
+                             width: recess.width - 1, height: 1)), with: .color(lit))
+        ctx.fill(Path(CGRect(x: recess.maxX - 1, y: recess.minY + 1,
+                             width: 1, height: recess.height - 1)), with: .color(lit))
+
+        let ink = Color(rgb: PlatinumTitleBar.widgetInk)
+        ctx.fill(Path(box), with: .color(ink))
+        // Inside the ring: a light edge top+left, a shadow edge bottom+right,
+        // and the ramp in the middle.
         let inner = box.insetBy(dx: 1, dy: 1)
-        ctx.fill(Path(inner), with: .color(Platinum.g2))
-        bevel(ctx, inner, light: Platinum.g0, shadow: Platinum.g4)
+        ctx.fill(Path(inner), with: .color(Color(rgb: PlatinumTitleBar.face)))
+        ctx.fill(Path(CGRect(x: inner.maxX - 1, y: inner.minY + 1,
+                             width: 1, height: inner.height - 1)), with: .color(shadow))
+        ctx.fill(Path(CGRect(x: inner.minX + 1, y: inner.maxY - 1,
+                             width: inner.width - 1, height: 1)), with: .color(shadow))
+        ctx.fill(Path(CGRect(x: inner.minX, y: inner.minY, width: 1, height: 1)),
+                 with: .color(lit))
+        for v in 0..<7 {
+            for u in 0..<7 {
+                let step = PlatinumTitleBar.widgetRamp[
+                    PlatinumTitleBar.widgetRampIndex(u: u, v: v)]
+                ctx.fill(Path(CGRect(x: inner.minX + 1 + CGFloat(u),
+                                     y: inner.minY + 1 + CGFloat(v),
+                                     width: 1, height: 1)),
+                         with: .color(Color(rgb: step)))
+            }
+        }
+
         switch widget {
         case .close:
-            break
+            break          // the machine draws no glyph in a close box
         case .zoom:
-            ctx.stroke(Path(CGRect(x: box.minX + 2, y: box.minY + 2,
-                                   width: 5, height: 5)),
-                       with: .color(Platinum.g6), lineWidth: 1)
+            ctx.fill(Path(CGRect(x: box.minX + 6, y: box.minY,
+                                 width: 1, height: 7)), with: .color(ink))
+            ctx.fill(Path(CGRect(x: box.minX, y: box.minY + 6,
+                                 width: 7, height: 1)), with: .color(ink))
         case .collapse:
-            ctx.fill(Path(CGRect(x: inner.minX + 1, y: box.midY,
-                                 width: inner.width - 2, height: 1)),
-                     with: .color(Platinum.g6))
+            for local in [4, 6] {
+                ctx.fill(Path(CGRect(x: box.minX, y: box.minY + CGFloat(local),
+                                     width: box.width, height: 1)),
+                         with: .color(ink))
+            }
         }
     }
 
@@ -2031,10 +2309,37 @@ public struct SceneRenderer {
     /// host with no content plane, or a window with no exact guest address,
     /// has no second answer to offer and inventing one would be the same
     /// class of mistake in the other direction.
+    /// AND SAY WHICH SILENCE THIS IS, when the content plane has no answer
+    /// but the control plane does. Two lanes wrote a caption producer for
+    /// this hatch on 2026-08-07 and each was right about a different
+    /// question — whether this window was ever *looked at* (``contentPlane``)
+    /// and whether its *controls* arrived (``controlsKnowledge``). Merged
+    /// rather than picked, because a renderer with two caption producers is
+    /// the drift this function was extracted to prevent.
+    ///
+    /// Order is the point. `notAttempted` outranks everything: a window
+    /// nobody spotlighted has nothing to say about its controls either, and
+    /// naming the control pool there would explain the wrong silence.
+    ///
+    /// **Only `notFetched` earns a sentence of its own**, and the first
+    /// version of this fold got that wrong in a way its own tests caught.
+    /// `notFetched` is a POSITIVE statement by the guest — the scene-wide
+    /// control pool filled before this window, and asking again with room
+    /// would answer it — so it is the one state that is not about this
+    /// window at all. `unknown` is the opposite: ``Scene/ControlsState`` is
+    /// explicit that it means the producer does not report this and
+    /// therefore could not tell us. Drawing "Controls unknown" over an
+    /// ordinary scene from an older guest would put a diagnosis on every
+    /// window in it, which is exactly the guess the `nil`-attention clause
+    /// below refuses to make in the other direction.
     static func absentContentCaption(_ win: MirrorKit.Scene.Window) -> String {
         switch win.contentPlane {
         case .notAttempted: return "Interior not captured — one window at a time"
-        case .armed, .none: return "Guest content not reported"
+        case .armed, .none:
+            switch win.controlsKnowledge {
+            case .notFetched: return "Controls not fetched"
+            case .unknown, .empty, .complete: return "Guest content not reported"
+            }
         }
     }
 

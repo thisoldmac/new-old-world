@@ -31,6 +31,11 @@ actor ChatHarness {
     private let projections: HostProjectionRegistry
     private let makeClient: @Sendable (String?) -> AgentIntegrationClient
     private let audit: any HostProjectionAuditSink
+    /// What the guest's screen is, asked fresh at each turn — because it
+    /// can become known mid-session (the first scene) and a prompt built
+    /// from a stale "unknown" would keep saying so. Answers nil until
+    /// something has actually measured it; see `ChatSystemPrompt.Screen`.
+    private let guestScreen: @Sendable () async -> ChatSystemPrompt.Screen?
     private let maxToolTurns: Int
     private let maxTokens: Int
     private var running: [String: Task<Void, Never>] = [:]
@@ -40,6 +45,8 @@ actor ChatHarness {
         projections: HostProjectionRegistry = .hostFaces,
         makeClient: @escaping @Sendable (String?) -> AgentIntegrationClient,
         audit: any HostProjectionAuditSink,
+        guestScreen: @escaping @Sendable () async -> ChatSystemPrompt.Screen?
+            = { nil },
         /* Real work is many rounds: finding an application means paging
            the whole apps inventory, then launching by exact name — and
            12 rounds cut exactly that off on metal (2026-08-02). Each
@@ -52,6 +59,7 @@ actor ChatHarness {
         self.projections = projections
         self.makeClient = makeClient
         self.audit = audit
+        self.guestScreen = guestScreen
         self.maxToolTurns = maxToolTurns
         self.maxTokens = maxTokens
     }
@@ -126,7 +134,8 @@ actor ChatHarness {
             + "\(transcript.count) turn(s) of history")
         let client = makeClient(selector)
         let system = ChatSystemPrompt.compose(
-            health: await client.sessionHealth(), origin: origin)
+            health: await client.sessionHealth(), origin: origin,
+            screen: await guestScreen())
         let tools = ChatToolRendering.descriptors(registry: projections)
         let dispatch = HostProjectionDispatch(
             face: .chat, registry: projections, audit: audit)

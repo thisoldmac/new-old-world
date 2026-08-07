@@ -44,4 +44,37 @@
  * bus scan) is the one this build refuses. */
 int now68k_census_gather(const char *probe, long cursor, N68CensusPage *page);
 
+/* --- what hello carries -------------------------------------------------
+ *
+ * The `identity` probe's three facts, as VALUES rather than as rows in a
+ * page. `hello` sends them typed (contract, 2026-08-07) so the host can
+ * key an asset pack on which Macintosh and which System answered, and
+ * these are the same Gestalt reads the probe already performs - not new
+ * ones. That matters on this guest specifically: it is the one that
+ * refuses the `selectors` walk outright for want of 32 KB in a 384 KB
+ * partition, so an identity route that cost a new probe would not be
+ * affordable here.
+ *
+ * They are declared beside the census rather than in hello.h because
+ * hello.c is deliberately Toolbox-free - that is what lets the host cc
+ * compile and run it in test_framecodec. */
+
+/* This machine's MODEL, e.g. "PowerBook 180c". Gestalt 'mnam' first (the
+ * machine's own name for itself beats any table), then this file's short
+ * table of 68K Macs, then "machine id <n>". Never empty, and a machine
+ * outside the table reports its NUMBER rather than a guess. */
+void now68k_machine_model(char *out, long cap);
+
+/* The raw gestaltMachineType response, or 0 where Gestalt did not answer.
+ * A MODEL, never a unit: two PowerBook 1400cs answer identically, and
+ * nothing may read this as identifying one machine. */
+long now68k_machine_type(void);
+
+/* This machine's system version as `major.minor.bugfix`, or `unknown`
+ * where Gestalt did not answer. Decoded through
+ * contract/guest_identity.h, which is what makes it comparable with the
+ * PowerPC guest's answer rather than merely similar to it. Size the
+ * buffer from kNowIdentityVersionCap. */
+void now68k_system_version(char *out, long cap);
+
 #endif /* NOW68K_CENSUS68_H */

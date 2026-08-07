@@ -220,8 +220,15 @@ final class MirrorStateProjectionService {
         let floor = AgentIntegrationMirrorSnapshot(
             metadata: metadata(projection), coverage: coverage,
             entities: [], menus: [],
-            screen: .init(w: projection.scene.screen.w,
-                          h: projection.scene.screen.h),
+            /* ABSENT rather than zero when the guest has not said. The
+               field is optional precisely so a headless caller can tell
+               "the screen is 0x0" — which is not a thing — from "nobody
+               has measured it". Stated once here: `floor.screen` is what
+               every later pass of the shedding loop carries, so the two
+               cannot disagree. */
+            screen: projection.scene.screen.known.map {
+                .init(w: $0.w, h: $0.h)
+            },
             surfaces: [])
         let fixed = (try? JSONEncoder().encode(floor).count) ?? 0
 
@@ -468,7 +475,18 @@ final class MirrorStateProjectionService {
                 ref: window.ref.flatMap { $0.isEmpty ? nil : $0 },
                 text: window.text.map {
                     Self.windowText($0, within: &contentBytes)
-                })
+                },
+                /* **Whether an empty control list is an answer.** An agent
+                   reading a window with no control items had no way to be
+                   wrong before this: the guest emits `[]` for a panel
+                   proven to have none and for one it never walked, and
+                   since the shared control pool was measured filling, for
+                   a panel skipped because earlier windows spent the slots.
+                   Resolved here rather than passed on, because the
+                   producer sends the word only where the array cannot
+                   speak for itself and a caller must not have to know
+                   that. */
+                controlsState: window.controlsKnowledge.rawValue)
         }
     }
 

@@ -63,6 +63,114 @@ reported refusing them, this arc did not reproduce it deliberately, and
 a fresh boot cleared the modal rather than answering the question. The
 guest is a Carbon-era alert in a foreign application, which is the
 `dialogItem` path — a second data point for whatever picks that up.
+## OPEN: a lane can revert a sibling's work in a commit whose message never mentions it (2026-08-07, round 7 integration)
+
+**Verification level: TESTED.** Found by reading a merge, not by any gate,
+and it would have landed silently.
+
+`fe4d8179` on `claude/019-asset-packs` — subject "feat(contract): hello
+says which Macintosh, in fields rather than in prose" — reverts the
+CDEF-attribution work that its own immediate predecessor `9c219366` had
+just landed on the same branch. The revert spans seven files and 117 lines
+of this document, and the commit body describes only the hello.machine
+work. Restored: `control_cdef.c`'s variant tables (which name every check
+box and radio button in OS 9's control panels a push button),
+`control_cdef_test.c`'s rows — including the ones whose own comment warns
+that "a later reader who 'restores' the family table will reintroduce
+exactly the shipped bug" — `scene_json.c`'s `cdef` emission (8 mentions to
+4), `Scene.swift`'s decode (5 to 0), `observe.c`'s `defProc`/`variant`, and
+`local-control-drive.py`'s `--detail`.
+
+**What makes it a class rather than an incident: git auto-merged almost
+all of it.** Only `control_cdef.h` and `local-control-drive.py`
+conflicted. `scene_json.c` and `Scene.swift` took the revert with no
+conflict at all, while the sibling lane's `scene_json_test.c` assertions
+survived — an internally inconsistent tree that would have gone red at the
+gate, which is luck rather than a guard. Had the test file been reverted
+too, the merge would have been green and the product quietly worse.
+
+The classification numbers moved DOWN on purpose (Memory 33→23 of 44,
+Date & Time 19→10 of 21) because the old route attributed variant 0 to a
+push button when the variation code cannot be read for a foreign control
+at all. **A test asserting the higher count is asserting the old defect.**
+
+Two things are still open:
+
+- **Nothing detects a commit that reverts its own branch's predecessor.**
+  A gate could: for each commit, whether any hunk restores a blob a recent
+  ancestor changed, without the word "revert" in the subject.
+- **Nothing detects an auto-merge that takes a deletion of live code.**
+  The keep-both hazards this repository has already paid for are all about
+  conflicts; this one produced no conflict.
+
+## OPEN: `arc-status`'s findings total is a sum with duplicates (2026-08-07, round 7 integration)
+
+**Verification level: TESTED (read, not measured against the corpus).**
+
+`019-multi-window-content` fixed exactly this shape for COMMITS in the
+same round: `shared_with` was added because `merge-base $b $INT` counts a
+lane cut from another lane as owning that lane's commits, and one branch
+with one commit of its own read as seventeen.
+
+The findings counter below it was not fixed and still has the defect. It
+loops over every branch, counts `--diff-filter=A` against
+`$trunk...$cb`, and adds — so a finding written on a parent branch is
+counted again on every child cut from it. Derived against merge-bases the
+same figure that reads **82 findings across 34 branches** is **69 across
+29**.
+
+The cure is the one the commit half already took: attribute a file to one
+branch, or report the union rather than the sum. Until then, quote the
+derived figure and not this line — and the line itself should say which
+it is, because a total nobody can tell is deduplicated is exactly the
+kind of enumerated number this repository has already been bitten by
+three times in one day.
+
+## OPEN: a fix landed on a file this arc archived, and there is no forward target (2026-08-07, round 7 integration)
+
+**Verification level: TESTED.**
+
+`claude/019-stale-reason-string` fixed two refusal strings that outlive
+what they were about. The guest half (`g_note` in
+`now-guest-ppc/src/files/files_browser_view.c`) landed and is BUILDS —
+that pane is Carbon, has no host test, and nobody has watched it on a
+machine.
+
+The host half did not land. `contentNote` lived in
+`now-host/Sources/Host/MirrorModuleModel.swift`, which `0443ab2b`
+("vendor Mirror whole as a subproject, and archive the port that replaced
+it") moved into `archive/mirror-port-2026-08-01/` in this same arc — and
+git rename-detected the lane's edits onto the archived copy. An archive
+records what was archived, so it was restored rather than edited.
+
+**`contentNote`, `joinContent` and the page they belong to exist nowhere
+else in the tree** (checked across `now-host/` and `mirror/`), so there was
+no forward target either. The open question is whether the vendored Mirror
+has the same shape of defect — an explanation written on a failure path
+surviving into a success, specifically a live watch loop that ticks
+without clearing a note a refused press left standing. Nobody has looked.
+
+## OPEN: five complete nested agent worktrees are checked in under `mirror/` (2026-08-07, round 7 integration)
+
+**Verification level: TESTED (measured, not acted on).**
+
+`mirror/.claude/worktrees/` holds five whole checkouts —
+`confident-tu-60f97b`, `funny-khorana-e67807`, `gallant-ritchie-d78731`,
+`jolly-lamarr-d3cd03`, `wizardly-bardeen-e2b6dc` — **3,789 tracked files,
+ignored by nothing**, each carrying its own `Package.swift` and its own
+copy of MirrorKit.
+
+They are stale in a way that matters for exactly the reason this
+repository states limits once: each carries
+`Platinum.contentTop: CGFloat = 22` where the live tree says `20`. A
+reader who greps this tree for a constant gets six answers, five of them
+wrong, and no gate reads them at all.
+
+Round 7's merge touched none of them (checked: zero paths under
+`mirror/.claude/` in `git diff claude/019-integration-6 HEAD`). Deleting
+them is not an integrator's call mid-merge, and it is somebody's — either
+a `.gitignore` entry plus a `git rm -r --cached`, or a decision that they
+are worth keeping and a note saying why.
 
 ## FIXED: the drive loop's own instrument armed every plane except the one that draws interiors (2026-08-07, `claude/019-instrument-arms-content`)
 
@@ -1004,6 +1112,277 @@ commit hooks are dead in every worktree off it**. `arc-status` says so
 under GATE FRESHNESS; nothing here fixes it, because moving that
 checkout is a decision about somebody else's tree (AGENTS.md > Git,
 "keep the shared checkout on main").
+## ANSWERED: the desktop verb had no reader, and now the render says who answered (2026-08-07, plan 019 slice D)
+
+**Emulator-verified**, this lane's own VM (block 963, wire 19705), build
+`490165bfb441`. Nothing here touched the PowerBook.
+
+Slice 9 gave the guest a live answer to what its desktop is drawn from —
+`GetTheme` with the Mac OS 9 desktop tags, served as the `desktop`
+command — and **nothing on the host side ever read it**. `hasPattern`,
+`patternCarried`, `patternBytes` and `kThemeDesktopPatternTag` returned
+zero matches across `now-host` and `mirror`. Meanwhile the renderer
+filled the largest rectangle in the picture from the offline asset pack's
+`manifest.json`: a record of the disk image the pack was extracted from,
+true for a guest booted from that image and unchanged since, and
+byte-identical to the truth whether that still held or not. Two producers
+of one answer with one of them unread — a seam by the sweep spec's own
+definition, and it survived because both halves landed *before* the slice
+that would have read them.
+
+**What the machine actually says**, asked live:
+
+```
+source picture   hasPattern true   hasPicture true
+patternBytes 16790   patternName "Lollipop 7"
+pictureName  <TAG ABSENT>          pictureAlias 154 bytes
+```
+
+That last line is the case the design turns on, and it is measured rather
+than assumed: the picture NAME tag is absent while the ALIAS carries the
+file, so **this machine confirms a picture without saying which**. Kind
+agreement is then the strongest claim available, and it is labelled as
+one.
+
+`meta.desktop` now rides every scene beside `meta.theme`, from the same
+gather through the same `read_tag` — one implementation, two shapes, so
+the console verb and the scene cannot drift. `DesktopPattern.resolve`
+asks it first and reports who answered: `machine` (the guest named it and
+the pack held what it named), `assetPack` (it did not, and the pack is
+standing in), `none` (nobody could say, and nothing is substituted).
+
+**The honesty half.** A substituted desktop draws a plate in the
+bottom-left corner reading "desktop from asset pack, not this machine".
+A corner plate rather than a tint over the surface, and the trade is
+stated where it is made: the desktop is what a fidelity sweep compares
+pixel for pixel, so washing it would fail every substituted comparison
+for a reason unrelated to what is being compared. **An unmarked desktop
+now means the machine named it.**
+
+Two rules that make the provenance more than a label, both
+mutation-tested: `source: unknown` never consults the pack — that value
+means the machine was asked and refused, and a fallback there launders a
+measured "I do not know" back into a confident picture — and a pattern
+the machine NAMED that the pack does not hold renders unknown rather than
+as a different pattern.
+
+**Still open:** the guest can name its desktop and cannot hand over a
+drawable copy of it (the flattened `ppat` is an identity, not art), so
+`machine` provenance still means "the machine chose it and the pack had
+it". A guest whose desktop is not in the pack renders as the marked
+unknown, which is honest and is not a picture.
+## FIXED / MEASURED: the title bar was never drawn from the machine, and the inactive one had never been seen (2026-08-07, `claude/019-titlebar-fidelity`)
+
+Michelle: *"in terms of platinum fidelity, i want someone to focus on the
+titlebar itself and the buttons on it"*, and a side-by-side showing
+Extensions Manager and Sherlock 2 with no widgets at all.
+
+### The first finding is about the METHOD, and it is a negative
+
+`docs/deriving-a-drawn-procedure.md` says to read the QuickDraw drain
+before writing anything, because `DrawThemeTab` leaks nearly all of
+itself through the bottlenecks. **The title bar leaks NOTHING.** Fourteen
+captures across three sweeps, 4,550 ops for one control panel, and not
+one op is in a title bar: every port in every drain is window-LOCAL
+(origin 0,0, bounded by the content rect), no port carries screen-global
+coordinates, and no `text` op anywhere in the corpus draws a window's own
+title. `qdtrace` hooks an application's ports and the WDEF does not draw
+into one.
+
+That is worth knowing before the next piece of chrome: **rung 3 answers
+window CONTENT and nothing the Window Manager draws.** Scroll bars,
+grow boxes and menu bars are the same class of question. The title bar
+was derived entirely at rung 4 — the guest's own pixels — on eleven front
+windows.
+
+### It was a PER-CLASS defect, not a universal one, and the rule is exact
+
+`WindowChrome.widgetBox` opened with `guard win.kind != 2`. Dialog
+Manager–owned windows are `kind == 2`, and that is what most control
+panels are — so **Extensions Manager, Memory, Date & Time, General
+Controls and Mouse were given no widgets at all**, while `kind == 8`,
+`kind == 20` and `kind == 2000` windows always had them. Confirmed by
+rendering the corpus with the old build and counting ink in the band:
+Extensions Manager and Memory show only face and frame; Appearance,
+Finder and Sherlock 2 show a widget's bevel. Michelle's "control panels
+especially" is the whole rule, not an impression.
+
+Sherlock 2 is `kind == 20000` and DOES get a widget from the old build
+when it is the front window, so its absence in her screenshot is not this
+defect. Either it was not front in that scene, or the `front` flag
+disagreed with the machine — **that is unexplained and belongs to whoever
+owns which window is front.**
+
+### Everything the drawer had wrong, measured
+
+| what | the renderer | the machine |
+|---|---|---|
+| band | 18 rows from `t+1` | **22 rows from `t-2`**, black frame row and lit row above the face |
+| stripes | white lines every 2 px, full width | `FFFFFF`/**`777777`** alternating, 12 rows, `t+2 … t+13` |
+| stripe field | edge to edge | `l+15` to seven px clear of the first right widget |
+| stripe phase | none | **dark rows sit one pixel right**, patch and all |
+| close box | `l+1`, top `t+2` | `l-1`, top `t+3` |
+| collapse box | `r-14` | `r-10`, right edge exactly `r` |
+| zoom box | `r-29` | `r-26` *where the machine draws one* |
+| widget face | flat, plain bevel | recessed `888888`/`FFFFFF`, `222222` ring, 7×7 anti-diagonal ramp |
+| collapse glyph | one centred line | two bars, local rows 4 and 6 |
+| zoom glyph | 5×5 stroked square | 7×7 square sharing the ring's top and left |
+| title patch | `ink + 16`, centred on the bar | `ink + 8`, centred on the window |
+| window frame | 1 px black ON the scene rect | **6 px OUTSIDE it**, `000000 · FFFFFF · CCCCCC · CCCCCC · 999999 · 000000`, plus a 1 px shadow |
+| content top | `t + 22` | `t + 20` |
+
+Exact-pixel agreement, per rectangle, old build → new, on five windows:
+widgets 11–15 % → **100.0 %**, stripes 0–4 % → **100.0 %**, the frame row
+and lit edge 0–3 % → **100.0 %**, the bar's bottom edge 0.2 % → **100.0
+%**, the whole band 17–22 % → 89–97 %. The band's residual is the title
+text, where Chicago stands in for Charcoal.
+
+### The inactive bar had never been observed, and now has been
+
+Every background window in all fourteen sweep captures is fully occluded;
+a scan of every screendump in the private store found the front window
+and nothing else. So one was photographed: a lane-private guest, two
+control panels, one screendump
+(`titlebar-inactive-2026-08-07/PROVENANCE.md`).
+
+**The geometry does not change at all.** Three colours move — frame
+`000000 → 555555`, the whole band `→ DDDDDD` flat, title ink `→ 777777` —
+and the widgets and stripes are simply absent. The baseline stays `t+13`.
+
+### STILL BROKEN, and named rather than worked around
+
+1. **IR v1 cannot say whether a window has a ZOOM box**, and `kind`
+   cannot stand in: **Extensions Manager is `kind == 2` and has one;
+   Memory is `kind == 2` and has none.** Seven of eleven windows were
+   being drawn one the machine does not draw, and `HitTester` reported it
+   — so a zoom act sent a click into the racing stripes, which the Window
+   Manager reads as the start of a DRAG. `WindowChrome.zoomBox` now
+   answers nil and nothing draws it. The WindowRecord already carries the
+   answer beside the `windowKind` the walk reads: `spareFlag` is the zoom
+   flag and `goAwayFlag` the close flag, one byte each. **Contract field
+   first, then the guest read, then both guests.** Until then four windows
+   in the corpus have a real affordance the mirror does not offer.
+2. **`WindowChrome.growBox` still guards on `kind != 2`** and has the
+   same problem in the other direction — Extensions Manager is resizable
+   and gets no grow box. Same fix, same field.
+3. **A single pixel at `(432, t+19)`** on the inactive window — where the
+   frame ring around the content meets the bar's last row — renders
+   `696969` against the machine's `555555`. A blend at a junction of two
+   integer fills; its four neighbours are exact. The gate excludes exactly
+   that pixel and says so, rather than widening a tolerance that would
+   hide the next real defect.
+4. **Semantic control frames are STROKED, and Core Graphics centres a
+   stroke on the coordinate** — the same half-pixel `DisplayReplay`'s
+   `pixelCentre` was written for, still unfixed in the control drawer. A
+   list's boundary reads 128 rather than 0, and which pixel carries it
+   moves with the content origin. Two `IslandRenderTests` were pinned to
+   the old landing and now take the darkest of the corner's four pixels.
+5. **The title's text is anti-aliased by the machine and aliased here.**
+   The pixel gate reads the stripes at their ends and the inactive band
+   right of the title for exactly this reason. Chicago-for-Charcoal is an
+   accepted product decision; this is where it shows up as a number.
+6. **Modal alert chrome is untouched and unmeasured.** The `isDialog`
+   path keeps its old drawing because nothing here was measured for it,
+   and the one alert in the corpus does not agree with a document frame
+   either.
+7. **Nothing here is metal-verified.** Emulator only, against QEMU
+   screendumps of Mac OS 9.1.
+## CORRECTION: four sentences on this page cite a render that could not have falsified them (2026-08-07, `claude/019-correct-round3-prose`)
+
+Nothing on this page is corrected by editing it, so this entry names the
+sentences rather than touching them. Named by their entry, because a
+line number in an append-only file rots the next time anyone appends —
+these were `:228`, `:527`, `:631` and `:1123` when Sweep C found them
+and are not those now. **Read this before quoting any of them:**
+
+| Entry | The sentence |
+|---|---|
+| *WAS BROKEN, FIXED … a classified control the renderer will not draw* (`019-integration-4`) | *"This is why the panel has had no group boxes, no static text and no field values in **both** rounds"* |
+| *BROKEN: the integrated render at round 3* (`019-integration-3`) | the Date & Time row — *"Still **no group boxes at all**… there is nothing to draw them as"* — the origin |
+| *BROKEN: the machine will not say what a foreign control IS* (`018-control-semantics`) | *"**This is also why Date & Time renders with no group boxes.**"* |
+| *BROKEN: a FOREIGN process's controls have no determined kind* (`019-integration-2`) | *"**Date & Time has no group boxes.**… render as nothing at all"* |
+
+One sentence outside this file — `render-composition.md`'s *"no group
+boxes in any sweep"* — is a claim about the product rather than a dated
+ledger line, and **was corrected in place** in the same commit.
+
+**What is corrected is the evidence, not the conclusion, and the two are
+different edits.** Conflating them is how the error was made in the
+first place.
+
+**The semantic defect is REAL and STANDS.** A DITL row and its
+ControlRecord are one object seen twice; the tie was broken by asking
+the control alone for `knowledge == .known`, `derived` failed that, and
+twenty of Date & Time's twenty-one classified controls lost to dialog
+items carrying `kind: null`, so a group box never reached `drawGroup`.
+Named code path, broken comparison, fix (`semanticOutranks`), mutation
+that fails naming it. Do not read this entry as a retraction of that.
+
+**What is VOID is the pixel evidence offered for it.**
+`SceneBuilder.normalizeWindows` sets `display: nil` **unconditionally**
+(`mirror/host/MirrorKit/Sources/MirrorKit/SceneBuilder.swift:285`, the
+sole occurrence in that function, no branch), so an interior reaches a
+render only on a *second* artifact — the `qdtrace` drain. Rounds 2 and 3
+were **pair captures**, not sweeps: both stores hold `manifest.json` and
+`<slug>-guest.png`, six renders each, and **zero drains**. Round 3's own
+method note says the path independently — *"host render via `MirrorApp
+--render-scene` over the same envelope"*. So those renders show no
+machine-drawn interior whatever the semantics do, and citing them *"in
+both rounds"* proves nothing either way. Derived from the artefact
+stores rather than from prose;
+[fidelity-sweep-2026-08-07-c.md](fidelity-sweep-2026-08-07-c.md) carries
+the store fingerprints and the discriminating hatch strings.
+
+**Two things this does NOT void, said plainly because the temptation is
+to over-retract:**
+
+- **Round 4's mechanism finding stands.** It was derived by reading the
+  scene JSON — twenty controls sharing a `ref` with an untyped dialog
+  item — not from a picture. Only its closing sentence *"this is why the
+  panel has had no group boxes … in both rounds"* is the void
+  attribution.
+- **Sweep A's Finder hatch stands** — sweep A meaning
+  [fidelity-sweep-2026-08-07-a.md](fidelity-sweep-2026-08-07-a.md), not
+  the 2026-08-06 A-side baseline quoted below; the two share a letter
+  and this correction is a poor place to be sloppy about which. It is a
+  sweep, it has drains,
+  and *"Bitmap unavailable"* is emitted inside `DisplayReplay`
+  (`DisplayReplay.swift:835`), which cannot run without a drain — so
+  that caption is positive proof the capture had one.
+
+**And one claim was outright wrong, in the direction nobody checked.**
+`render-composition.md` said the panel had no group boxes **"in any
+sweep"**. That was never derived from a sweep. Neither
+`fidelity-sweep-2026-08-07-a.md` nor `-b.md` contains the phrase "group
+box" at all, and **two 2026-08-06 sweeps — sweeps, with drains, on the
+same panel — say the opposite in as many words**:
+
+- [fidelity-sweep-2026-08-06.md](fidelity-sweep-2026-08-06.md), row 1 —
+  Date & Time is *"the best window in the sweep. Every group box, button
+  and label within a pixel or two"*.
+- [fidelity-sweep-2026-08-06-b.md](fidelity-sweep-2026-08-06-b.md), row
+  1 — after the DITL-silencing fix, 3/3/2/3/3 and *"both group boxes,
+  the time-zone sentence and the time-server line are all back"*.
+
+Two sweeps in the same directory contradicted the sentence, and one of
+them was the A-side baseline everything else in that family is measured
+against. **The word "any" was doing work no one had checked.** This is
+the enumerated-list failure AGENTS.md describes, in its cheapest form: a
+universal quantifier is an enumeration, and nothing enumerated it.
+
+**The lesson, which is the part worth keeping.** The claim spread from
+one row of one round to four durable sentences without anyone
+re-deriving it, and each restatement read as corroboration of the one
+before. Two rules follow, both already this repository's shape:
+
+- **A count — or an appearance — you did not derive is not evidence.**
+  The honest unit is the artefact store, which is checkable, not
+  sentences agreeing with each other across five documents.
+- **A live-reading instrument must assert that the plane armed**, the
+  way a metal gate asserts which build answered. An instrument that
+  cannot tell you whether it was looking at anything reports absence and
+  defect in the same words. Written into AGENTS.md beside the metal-gate
+  rules in this commit.
 
 ## LOOK: round 5's five checks, and the one thing four lanes claimed that a picture had to settle (2026-08-07, `claude/019-integration-5`)
 
@@ -1701,6 +2080,81 @@ makes `actselftest` refuse on every spun-up clone. Two of `menuact`'s
 three argument requirements were also found by being refused for them in
 turn, and both refusals said exactly what was missing, which is the
 error vocabulary working.
+## FIXED: four base-image failures in two days, each one layer away from the last fix (2026-08-07, `claude/019-base-image-guards`)
+
+Michelle, after a coordinator pointed an integration lane at the wrong
+base image: *"not the first time this has happened. we need guards for
+this."* She is right that it recurs, **and the recurrence is the
+finding.**
+
+1. **2026-08-06** — the shared stage image was three days old while six
+   `ext/` commits landed that day. Every session cloned it, staged a
+   fresh build into a throwaway clone, and discarded the clone. The rule
+   was already written down and nothing checked it → `tools/ext-bake-gate`.
+2. **2026-08-06** — three bakes in one night installed images whose HFS
+   volume was still marked mounted; `qemu-img check` called all three
+   clean, because it answers a different question → `tools/volclean.py`.
+3. **19 July → 2026-08-07** — `os91-runner.qcow2` sat dirty for nineteen
+   days, opening a modal on every clone. Nobody noticed: the anchor came
+   up at 167 s behind it → the volume check moved into
+   `tools/image-provenance` (the entry below).
+4. **2026-08-07** — `scripts/spin-up-ppc:89` **defaulted** `BASE` to
+   `os91-runner.qcow2` rather than the stage image, in one line, with a
+   comment sixty lines further down saying so. Every lane in the arc
+   cloned a 19 July image. That is failure 1 again, one layer down, where
+   no gate was watching.
+
+**Each fix guarded the layer that had just failed.** Bake was well gated;
+the clone sites were not gated at all, and "which base" was spread across
+a shell default, a comment contradicting it, `ext/stage-receipts.json`
+and prose in AGENTS.md — which is the shape this project's own rule
+forbids: state a limit once, where every reader looks.
+
+`tools/base-image` is that one place. It answers *which base for this
+purpose* and *is it fit*: designated or not, volume clean / dirty /
+`unknown` (never folded together), and whether the base's baked resident
+predates this checkout's `ext/`. `spin-up-ppc`, `bake-ext-image` and
+`q800-68k` all consult it before cloning, and `spin-up-ppc` no longer
+carries a default of its own.
+
+Warn or refuse is argued per check rather than picked once — the table is
+in [docs/staged-images.md](staged-images.md). The short version: a dirty
+base is a slower boot the caller cannot fix, so it warns; a run that
+stages **no** resident, pointed at a base with none in it, produces a
+wrong result that looks right, so it refuses.
+`NOW_BASE_FORCE=1` with `NOW_BASE_FORCE_REASON="…"` overrides — a force
+with no reason is still refused.
+
+Seven guards in `tools/image-discipline-tests`, each watched failing by
+mutation. Two of them are the ones meant to make this the last time
+rather than the fifth: **a new clone site that does not consult is named
+by a scan**, and **a `BASE=` default that disagrees with the designated
+base fails the gate**.
+
+Still open, and honestly:
+
+- **No clone site can currently trip a refusal**, because all three stage
+  a fresh resident, and that is what makes staleness a warning rather
+  than an error. The refusing rows serve a caller that boots a base as it
+  is — which nothing here does yet — and a person running `tools/base-image
+  fit --purpose oracle` by hand. The refusal path is watched failing in
+  the gates and end to end through `spin-up-ppc` with a forced purpose; it
+  is not exercised by ordinary work.
+- **Nothing here booted a VM.** Tested, not metal-verified, and not even
+  emulator-verified: the guards are watched failing against synthetic HFS
+  images, and the wiring is watched only as far as `bash -n`, the
+  spin-up-ppc python gates, and the tool's own exit codes. The first real
+  `spin-up-ppc` run after this lands is the proof, and it should be said
+  out loud when somebody makes it.
+- The designated base for ordinary PPC work is now the **stage image**
+  rather than the plain runner. That is the right default — it is the one
+  file anybody can account for — but it means ordinary lane work now
+  clones the file `--shared` bakes over. Somebody should decide whether
+  `spin-up-ppc` ought to prefer a lane's own private bake when one exists.
+- At the time of writing the shared oracle is `UNACCOUNTED` (no receipt
+  on any branch claims its bytes) and `claude/019-integration-6` is
+  baking a fresh one. Until that lands, every `spin-up-ppc` run warns
+  about the base's resident — correctly.
 
 ## FIXED in the tools, REPAIRED but NOT INSTALLED on disk: every spin-up clone booted into Disk First Aid for nineteen days (2026-08-07, `claude/019-clean-base-image`)
 
@@ -1845,6 +2299,461 @@ plane's counters stay flat proves the filter runs and the planes do not,
 which is the question that was asked; it does not put a microsecond
 figure on the filter body itself. A per-pass timing number on a 33 MHz
 68030 remains unmeasured, and `NOW_METAL` is where it would come from.
+## BROKEN: `main` never received the gates, and the hooks were dead two ways at once (2026-08-07, `claude/019-hooks-diagnosis`)
+
+**Tested** (mutation, four states; no metal). The repair is **not applied** —
+it needs a decision only Michelle can make.
+
+Two explanations were in circulation and **both were right about a
+different half**, which is why neither fix would have worked alone.
+
+**Fault A — the config.** 48 of 246 worktrees carry a per-worktree
+`core.hooksPath` of the *absolute* `/Users/michelle/Lab/Code/timbottu/now/.githooks`
+in `.git/worktrees/<name>/config.worktree`, which shadows the shared
+config's correct relative `.githooks`. The shared checkout is parked on
+`claude/mirror-subproject` (042f41f2, 2026-08-02), which predates
+`.githooks`, so that absolute path names a directory that does not exist.
+
+**Fault B — the branch, and this is the root cause.** `.githooks` was
+added in 543b06af (2026-08-06 00:50) and **has never been an ancestor of
+`main`**. 109 of 411 branches carry it; `main` is not one of them. So a
+worktree cut off `main` has no `.githooks` to point at *whatever*
+`core.hooksPath` says, and `tools/hooks-doctor --fix` — which only rewrites
+config — cannot cure it.
+
+**`main` is not the head, and has not been since 2026-08-05 16:51.** It is
+13 commits ahead of the lane line and **802 behind**, and it lacks the
+entire gate apparatus, not merely the hooks: no `tools/ext-bake-gate`, no
+`tools/setup-hooks`, no `tools/hooks-doctor`, no
+`tools/receipts-merge-driver`, no `.gitattributes`, no
+`ext/stage-receipts.json`, no `tools/image-discipline-tests`, and a
+`scripts/test-all` that does not mention `hooks-doctor` at all. AGENTS.md
+says "`main` is the head — keep the shared checkout on it"; the checkout
+drifted, and this time the consequence was not a confusing diff but every
+gate in the repository going quiet.
+
+**Blast radius — what has not been refusing anything.** `.githooks/pre-commit`
+carries the main guardrail and `ext-bake-gate check`; `.githooks/pre-merge-commit`
+carries `ext-bake-gate merge-check`; `.githooks/post-merge` carries the
+stage-image `verify-image` announcement. In an affected worktree none ran.
+So: nothing refused a commit on `main`; a resident commit did not wait for
+the image that carries it; a `TBT_DEFER_EXT_BAKE` deferral wrote **no
+record**, because the gate that writes it is the gate that never ran; and a
+fast-forward that moved the stage receipts passed in silence. Fault A dates
+from the shared checkout being parked (2026-08-02); Fault B from
+`.githooks` landing off-main (2026-08-06).
+
+**Git says nothing when this happens.** Mutation-proved: with
+`core.hooksPath` at a non-existent path, `git commit` on `main` succeeds
+with no diagnostic of any kind. A dead hooks path is indistinguishable from
+having no hooks.
+
+**Why nothing caught it.** `scripts/test-all` *did* report it, at the top of
+every run and again at the bottom, and four lanes read it and correctly did
+nothing — the only repair it named rewrites config all 246 worktrees share.
+A warning everybody sees, believes, and is right not to act on is a broken
+warning. Worse, `hooks-doctor` recommended `--fix` even under Fault B, where
+`--fix` cannot work; a repair instruction that cannot work turns a live
+problem into one somebody believes they already tried. And a lane cut off
+`main` never saw the warning at all, because main's `test-all` does not call
+`hooks-doctor`.
+
+**Fixed here** (this branch): `test-all` now refuses instead of warning
+twice, naming the safe action (`git -c core.hooksPath=.githooks commit`)
+separately from the one that needs a person, with `TBT_ALLOW_UNARMED_HOOKS=1`
+as the open-decision override; and `hooks-doctor` distinguishes a config
+fault from a branch fault and stops offering `--fix` for the latter.
+
+**Still open — the actual repair, in order.** Neither step alone suffices:
+
+1. Land the gate arc on `main`, so a branch cut from it has `.githooks`
+   *and* the `tools/` the hooks invoke. This is a change to `main` and
+   joint with Michelle.
+2. Then `tools/hooks-doctor --fix` on the shared checkout, to strip the 48
+   per-worktree overrides, when no other session is mid-commit.
+3. Move the shared checkout off `claude/mirror-subproject` back to `main`.
+
+Until then, a lane gates its own commits with
+`git -c core.hooksPath=.githooks commit`, which changes nothing shared and
+works on any branch that carries `.githooks`.
+## SWEPT: hardcoded machine facts — the whole class, mapped (2026-08-07, `claude/019-no-hardcoded-machine-facts`)
+
+Michelle, approving a fix to one instance: *"yes this should be dynamic
+and learned from the actual machine, never hard coded."*
+
+A **hardcoded machine fact** is a value that claims to describe the
+machine and describes the build, or the developer's desk, instead. It is
+uniquely nasty here because it is **always plausible** — right on the
+machine it was written on, right in every test, and silently wrong the
+first time somebody runs it somewhere else. No test that runs on one
+machine can catch it, and every test we have runs on one machine.
+
+The sweep covered both guests, `ext/`, the host, MirrorKit and the
+tooling. Four categories, and the third is the largest and the point:
+
+1. **DEFECT** — a machine fact stated as a constant where the machine
+   could answer.
+2. **DELIBERATE, DECLARED** — correct, knowingly, with a comment saying
+   why. Left alone.
+3. **DELIBERATE, UNDECLARED** — correct today, nothing says so. This is
+   what turns into category 1 the next time somebody edits nearby.
+4. **UNKNOWABLE** — the machine genuinely cannot answer, so the constant
+   must read as an assumption rather than a fact.
+
+### The table
+
+| # | Site | Fact stated | Cat | Disposition |
+|---|---|---|---|---|
+| 1 | `now-guest-ppc/src/commands/commands.c:256` | addressing is 32-bit | 1 | **FIXED** — asked Gestalt, discarded the answer, printed a literal. Now tests the bit. |
+| 2 | `now-guest-ppc/src/workshop/workshop_window.c:54` | this Mac is a PowerBook | 1 | **FIXED** — "this PowerBook" → "this Mac", matching all 8 sibling blurbs. |
+| 3 | `tools/stage-ext.py:84` | guest volume is `Macintosh HD` | 1 | **FIXED** — `NOW_GUEST_EXTENSIONS`, matching `DEV` on the next line. |
+| 4 | `now-guest-ppc/src/peek/peek.c:384` | guest OS is `"9"` | 1 | **NOT OURS** — the `hello` twin. Its own comment says if hello becomes computed this must read the same source, and hello is being computed now. See below. |
+| 5 | `now-guest-68k/src/ui/window.c:92-95` | screen ≥ 552×360 | 1 | **DECLARED FALSELY** — comment claimed a 512×342 fit that the arithmetic denies. Corrected; clamp still open (below). |
+| 6 | `now-guest-68k/src/console/conwin.c:83-86` | screen ≥ 520×360 | 1 | Same. Comment's own arithmetic added height to the *left* edge. Corrected. |
+| 7 | `now-host/Sources/Host/NOWMirrorWindow.swift:30` | guest screen is 800×600 | 1 | **OPEN** — see "three answers" below. |
+| 8 | `mirror/…/MirrorKit/Sources/MirrorKit/ScenePoller.swift:16,27,440` | guest screen is 800×600 | 1 | **OPEN** — same fact, same value. |
+| 9 | `mirror/…/MirrorKitUI/PlatinumTheme.swift:43` | guest screen is 1024×768 | 1 | **OPEN** — same fact, *different* value. |
+| 10 | `now-host/Sources/Host/Chat/ChatSystemPrompt.swift:97` | guest is a 68030 with 8 MB | 1 | **OPEN** — told to the model unconditionally; `situation()` in the same file already composes per-guest from real facts. |
+| 11 | `now-host/…/ChatSystemPrompt.swift:119` | guest screen is 640×480 | 1 | **OPEN** — same fact, a *third* value. |
+| 12 | `now-host/Sources/Host/DiagnosticsModuleView.swift:228,230` | which guest serves a verb | 1 | **OPEN** — enablement is derived correctly; only the explanatory prose asserts. The `.vprobe` arm 6 lines above states the right rule. |
+| 13 | `now-host/Sources/Host/NetworkingModuleView.swift:62` | PowerPC guest serves `net` | 1 | **OPEN** — same shape. |
+| 14 | `now-host/…/Projection/{GuestLogTail,MachineFacts,GuestDiagnostics,SoftwareInventory}Projection.swift` | per-guest command tables | 1 | **OPEN** — model-facing prose asserting what the gates derive. |
+| 15 | `now-host/Sources/Host/NOWMirrorSource.swift:2306` | System Folder child is named `Apple Menu Items` | 1 | **OPEN** — breaks on a localized System; Finder's `apple menu items folder` specifier is the ask-the-machine form. |
+| 16 | `mirror/tools/stage-{agent,mirror}.py`, `mirror/tools/extract-assets/{pull,iconpack}.py`, `scripts/probes/*.py` | guest volume / OS-bearing paths | 1 | **OPEN** — `scripts/probes/oracles.py:45-57` already demonstrates the fix and says why. |
+| 17 | `tools/fidelity-sweep.py:327` | guest is mac99/OS 9.1 | 4 | **FIXED** — now reads "assumed … (not read from the guest)". Every other field in that provenance block was measured. |
+| 18 | `now-guest-ppc/src/core/prefs.c:177` | screen is 8-bit | 3 | **DECLARED** — it is a capture *policy*, not a reading. Comment added, no behaviour change. |
+| 19 | `now-guest-ppc/src/census/census_probes.c:617` | CPU is PowerPC | 3 | **DECLARED** — true by construction (a CFM/PPC binary cannot load elsewhere), but on a census page. |
+| 20 | `now-guest-ppc/src/core/prefs.c:175` | peer is at `10.0.2.2` | 2 | Left — declared twice already (`prefs.c:125`, `prefs.h:107`). |
+| 21 | `now-guest-ppc/src/main.c:250`, `workshop_window.c:143` | desktop is 800×600, menu bar 20 | 3 | **OPEN, minor** — dead fallback branch; `GetMainDevice()` and `GetMBarHeight()` would answer, and `GetMBarHeight` appears nowhere in the tree. |
+| 22 | `now-guest-68k/src/census/vprobe68.c:138` | System ≥ 7.0, so `Microseconds()` exists | 2 | Left — declared, dated, reasoned, with a "confirm on metal" action. The gate would fail closed on a machine where the trap works. |
+| 23 | `now-guest-68k/src/main.c:214` | desktop is the main screen | 3 | **OPEN, minor** — `DragWindow` bounded by `qd.screenBits.bounds`; `(*GetGrayRgn())->rgnBBox` covers all GDevices. |
+| 24 | `now-guest-68k/now-guest-68k.r:60` | machine has 4 MB | 4 | Left — a `SIZE` resource is read by the Process Manager *before* the app runs. Genuinely unanswerable, and declared. |
+| 25 | `now-guest-68k/src/core/screen68.c:239` | depth is 1 | 2 | Not a defect — reached only when Color QuickDraw is absent, where `screenBits` is a `BitMap` and 1-bit by definition. |
+| 26 | `tools/fakeguest.py:128` | a guest's OS and capabilities | 2 | Not a defect — it is a test double; hardcoding is its job and it cites the source lines it mimics. |
+
+### One fact, three host-side answers
+
+Rows 7–11 are the sharpest structural finding, and they are one issue:
+**how big is the guest's screen?** The host answers 800×600, MirrorKit
+answers 800×600 in one file and 1024×768 in another, and the chat prompt
+tells the model 640×480. Each is a plausible default and no two agree.
+
+This is the failure AGENTS.md already names — *state a limit once, where
+both sides read it* — arriving as a machine fact rather than a buffer
+size. The guest sends `scene.screen.w/h`; `fitToGuestScreen()` already
+uses it, once. Nothing was fixed here because the fix is a seam across
+two packages and belongs to whoever owns the Mirror window's sizing, not
+to a sweep.
+
+### `hello.os` and its twin (row 4)
+
+`peek.c:384` writes `"9"` into the resident endpoint table, and its
+comment (`peek.c:381-383`) says the quiet part: *"one string in two
+places is exactly the drift this project has paid for, so if that one
+ever becomes computed this must read the same source."* `hello.os` **is
+becoming computed** on `claude/019-asset-packs`. So the condition that
+comment sets has now been met, and `peek.c` is the half that will be left
+behind. Named here rather than fixed because the header it must read from
+is that lane's, mid-flight.
+
+### What is gated, and what is not
+
+`MachineFactProbeGateTests` (`now-host/Tests/HostTests/`) fails the build
+when a guest asks the machine a question and discards the answer — the
+exact shape of row 1:
+
+```c
+if (Gestalt(gestaltAddressingModeAttr, &v) == noErr) {
+    add_row(rows, &n, max, "cpu", "Addressing", "32-bit");   /* v unused */
+}
+```
+
+It derives both sides from source, keeps no list, and needs no allowlist:
+a probe that only cares whether a selector *exists* has two forms already
+used in this codebase that say so in code — the `== noErr` ternary and the
+Boolean assignment — and neither is block form, so neither is examined.
+The escape hatch cannot be a comment, because the gate reads through
+`GateSource` with comments stripped. Mutation-verified: reinstating the
+bug fails it by file and line. 35 probes found; the second test fails if
+that count collapses, because a scanner that has gone blind reports every
+guest clean.
+
+**It does not cover the class**, and the table above is mostly outside
+it. It sees only `Gestalt`, only the `== noErr` block form, and says
+nothing about whether any other constant is true — deciding which
+literals are machine facts is not mechanically decidable. Rows 7–17 are
+exactly the part no gate catches, which is why they are written down.
+
+### Open, in priority order
+
+1. Rows 7–11: one guest screen size, three host-side answers, none asked.
+2. Row 4: `peek.c`'s OS literal, once `guest_identity.h` lands.
+3. Rows 12–14: per-guest capability claims surviving in prose the gates
+   no longer make.
+4. Rows 5–6: the 68K windows are placed unclamped and do not fit a
+   512×342 screen. `health_static()->screen_width/height` is sampled
+   before the first draw, so the fix is a clamp — but it is a behaviour
+   change nobody has watched on a compact screen, so it is parked rather
+   than done blind. **Supported floor today is 640×480.**
+5. Rows 15–16: guest volume names and localized System Folder children.
+## FIXED: an act longer than three seconds switched off the instrument that was to report on it (2026-08-07, `claude/019-ctlact-settle`)
+
+Sweep C briefed this as a regression — `ctlact part 0` on Appearance's
+tab accepted, `click posted`, **zero pixels** — and the regression was
+not real. Driven on a live guest, the tab switches. The two things that
+made it look otherwise were both the instrument, and both were caught by
+**re-posing** rather than by inspecting harder, which is now the third
+time that has been the cheaper route:
+
+- **The twenty points.** `scene.windows[].rect` is the STRUCTURE box and
+  `elements`' `bounds` is the CONTENT box; Appearance reports `t=70` and
+  `top=90`. A point built from a content-relative control rect and a
+  structure origin aims one title bar high — a tall control absorbs it,
+  a short one does not. (Found independently by
+  `claude/019-list-selection`.)
+- **The covering window.** A posted click carries only a POINT, and the
+  TARGET resolves it with its own `FindWindow` against the machine's
+  window list. At 800×600 NOW's own Workshop window covers Appearance's
+  panel completely, so a press aimed through it belongs to NOW and the
+  panel does nothing with it — *accepted, `click posted`, zero pixels*,
+  which is the briefed symptom exactly. `tools/local-tab-settlement.py`
+  now refuses to press a covered point rather than reporting one.
+
+**What was underneath was worse than the briefed defect**, and it is two
+things:
+
+1. **An act that outlives the writer lease disarms every plane beneath
+   itself.** Three clocks govern an armed plane — writer lease 180 ticks,
+   owner lease 600, act deadline 300 — and `act_yield` renewed the
+   owner's (by pumping the wire) and not the writer's. Nothing else
+   renews the writer heartbeat during an act: the main loop is not
+   reached, and the wire's renewal rides an INBOUND message, of which
+   there are none while the host waits for the reply. At t=3 s the
+   resident reads a lapsed writer and sets `request = 0`. Measured: a
+   5.1 s `ctlact part 0` that **genuinely switched the tab** came back
+   `Re-read value: the anchor plane is absent or not armed`. This is the
+   2026-08-06 owner-lease finding one lease over, and the shorter clock
+   was the one nobody had looked at.
+2. **`part 0` was judged by a patch it never asked for.** It posts a real
+   click and consults no patch on an Appearance-era tab — but it waited
+   the full 300-tick deadline for one anyway, which is where the 5.1 s
+   came from (a hundred times a `part 23` scroll, and the very thing that
+   outran the lease above), and then reported `Settlement: timed-out`
+   regardless. **The reply was word for word identical for a tab that
+   switched and a tab that did not.** Not a verb claiming success it did
+   not have — a verb that could not tell its two outcomes apart, which is
+   the same defect wearing a milder face.
+
+Both fixed. `part 0` now watches THE CONTROL, stopping the moment it
+moves, and reports the settlement vocabulary — `confirmed - the control
+moved` or `dispatched-but-unconfirmed` — never `click posted`.
+
+**EMULATOR-VERIFIED**, both directions, on one guest, with the old and
+the new build A/B'd on the same machine and the same control (rig:
+`os91-runner` clone, this tree's build restaged in place; the A/B is what
+the accident of staging a stale binary bought). Each row confirmed twice
+as sweep spec v3 requires — the machine's own re-read value **and** the
+rectangle a person would look at, in the guest's own framebuffer:
+
+| | old build | new, tab switched | new, same tab pressed |
+|---|---|---|---|
+| `Dispatch` | `click posted` | `confirmed - the control moved` | `dispatched-but-unconfirmed` |
+| `Settlement` | **`timed-out`** | `confirmed` | `dispatched-but-unconfirmed` |
+| `Re-read value` | *the anchor plane is absent or not armed* | 1 → 4 | 4 → 4 |
+| value, from the scene | 4 → 1 | 1 → 4 | 4 → 4 |
+| strip pixels | 1949 / 9320 | 1949 / 9320 | **0** / 9320 |
+| pane pixels | 79146 / 130946 | 79146 / 130946 | **0** / 130946 |
+| dispatch | 6092 ms | **721 ms** | 2066 ms |
+
+The first column is the defect in one line: **the tab switched and the
+verb said `timed-out`.** The last two columns are the same verb, the same
+control and the same point, telling its two outcomes apart — which is the
+whole of what slice 8 asked for. The 2066 ms in the last column is the
+120-tick watch being spent in full, which is the only case that pays it.
+
+Evidence, screendumps and the rig table: `docs/local/ctlact-settlement/`.
+
+### STILL OPEN, from the same audit
+
+- **`part 0` arms a patch that would suppress the click it posts.**
+  `now_act_control_answer` returns the armed `part_code`, so an
+  application that *does* call `TrackControl` on that control is answered
+  **0** — "released outside the control" — and does nothing. `part 0` is
+  self-defeating on exactly the controls a named part serves, and correct
+  on the ones it does not. The arming lives in the resident, so changing
+  it is a bake; it is at least reported honestly now. Table in
+  [mirror-act-plane.md](mirror-act-plane.md) > "Which part codes can
+  verify their own effect".
+- **A push button cannot be verified by this guest at all.** It has no
+  value range, so `part 10` has only the patch firing — which proves the
+  application was *asked*, not what it did. That is now said out loud
+  (`dispatched-but-unconfirmed`) rather than reported as `dispatched`.
+- **The part code was never the axis.** `ctlact` branches on `part`
+  exactly once (0 or not); what decides verifiability is the CONTROL and
+  the APPLICATION. A per-part hunt for missing settlement checks will
+  find one difference and miss the two that matter.
+
+### An aside worth someone's time
+
+`spin-up-ppc`'s rule 1 states that "QMP keyboard events never reach this
+guest". On this run they did: `send-key ret` dismissed the Disk First Aid
+dialog on the dirty `os91-runner` base and the boot continued. Either the
+rule has aged out (mac99 + `usb-kbd`) or it was always narrower than
+written. Worth a measurement, because a great deal of rig design rests on
+it.
+## FIXED: one fact about the machine, four answers, none of them asked (2026-08-07, `claude/019-one-screen-one-answer`)
+
+The guest measures its own screen and sends `scene.screen.w/h`. Exactly
+one call site read it. Four other places had decided for themselves:
+
+| Where | Said |
+| --- | --- |
+| `NOWMirrorWindow` (host) | 800x600 |
+| `ScenePoller` (MirrorKit) | 800x600 |
+| `PlatinumTheme.logicalSize` (MirrorKit) | 1024x768 |
+| `ChatSystemPrompt` (what the model is told) | 640x480 |
+
+Two more sat in the PowerPC guest as `SetRect(&screen, 0, 20, 800, 600)`
+fallbacks for a `GetGrayRgn()` that returned NULL.
+
+**Nothing was visibly wrong**, which is exactly the state AGENTS.md's
+most-repeated rule describes: *the control-frame cap lived in prose, in
+the sender, and as a different number in the receiver's buffer; nothing
+was wrong until a message grew past the smallest of the three.* The two
+800x600 defaults were both corrected in practice — the window by
+`fitToGuestScreen` on the first scene, the poller by `detectScreen()` —
+and the theme's 1024x768 was reachable only from a scene carrying no
+screen. So three of the four were latent. The fourth was not.
+
+**The chat prompt was the live one.** A model told the screen is 640x480
+while it is 800x600 aims at the wrong place and is confident about it,
+and the miss reads as an act-plane defect — which this arc has already
+spent days chasing twice. It was hedged ("the screen may be 640x480"),
+which is worse rather than better: a hedge is still a number, and the
+number was wrong on every guest this project has driven this month.
+
+### What it is now
+
+`Scene.ScreenSize` carries the vocabulary — `unknown`, `isKnown`,
+`known` — and `unknown` is a state, never a substitute. Consequences,
+each of them a refusal rather than a default:
+
+- `SceneRenderer.logicalSize` is optional. An unmeasured screen draws
+  "Screen size unknown" instead of letterboxing an invented surface.
+- `RenderShot.png` throws `screenUnknown` rather than emit a PNG at a
+  size nobody measured — that picture is what an agent reasons about.
+- `LiveMirror` drops the pointer input entirely when the scale is
+  unknown, because a click mapped through a guessed logical size lands
+  somewhere else on the real machine and nothing about the miss says so.
+- `ScenePoller.placeVolumes` places nothing without a right edge.
+- The mirror window opens at a host window size that is deliberately not
+  4:3, so a wrong aspect is visible rather than plausible.
+- The guest measures once, in `now-guest-ppc/src/core/screen_bounds.c`;
+  `scene_collect`, `main` and the Workshop all read it, and the
+  Workshop skips its clamp rather than clamp to nothing.
+
+`GuestScreenIsOneAnswerGateTests` derives both halves from source and
+maintains no list. **Read its "what this gate does NOT cover" header
+before trusting it** — notably it reads text rather than evaluating it,
+it gates the host side only, and its prompt half proves the sentence
+rather than the plumbing behind it.
+
+### Two things this arc learned the hard way
+
+- **Its own first cut passed by reading zero files.** The gate excluded
+  paths containing `/.claude/` to skip worktrees — and this checkout IS a
+  worktree under `.claude/worktrees/`, so the filter matched every file
+  in the repository. A fifth hardcoded screen size, planted in
+  `HostRootView.swift` to watch the gate fail, went unnamed. It now
+  filters on the *relative* path and asserts it scanned more than 200
+  files before reporting a finding, because **a scan that read nothing
+  passes**.
+- **Zero has to be allowed.** `ScreenSize.unknown` is written down
+  somewhere, so the scan objects only to a *plausible* size. That is a
+  hole with a name, and it is smaller than the alternative of exempting a
+  file by hand.
+
+### Still open, from the same work
+
+- **The scene IR is not in the contract.** `contract/asyncapi.yaml` has
+  no `screen` schema, no scene object at all; the only machine-readable
+  definition of `scene.screen.w/h` is MirrorKit's frozen key set in
+  `IRSchema.swift`. This lane changed no behaviour so it changed no
+  contract, but AGENTS.md's "a behaviour change starts there" cannot
+  apply to a message family the contract has never heard of.
+- **`docs/scene-deltas.md` shows `"screen": {"w": 1024, "h": 768}`** in
+  its worked example — the only place a reader learns the shape, using a
+  size no code now uses. Harmless as prose, and the gate cannot see it.
+- **`scripts/probes/qmp.py` pins the pointer against `SCREEN_W, SCREEN_H
+  = 800, 600`**, and `winact-probe.py` chooses its window geometry to fit
+  the same screen. Both declare the assumption in a comment, so they are
+  honest rather than wrong — but a probe run against a guest at another
+  resolution produces hops that are all wrong, and nothing checks.
+- The 68K guest builds no scene, so it reports its screen only as census
+  text (`"Screen", "800 x 600, 8-bit"`). Nothing structured crosses.
+## FIXED: agents were not power-cutting VMs carelessly — the rig cornered them (2026-08-07, `claude/019-shutdown-always-available`)
+
+Five of the seven preserved qcow2 images on this Mac have the HFS volume
+still marked mounted, so every clone of them opens in Disk First Aid.
+`tools/volclean.py` and the bake gate were built to find that. **Nobody
+had established why it kept happening**, and three bakes in one night plus
+`os91-runner.qcow2` sitting dirty since 19 July is not a run of bad luck.
+
+**The mechanism.** A lane reported, honestly, that it had broken the
+"never QMP `quit`" rule: the lab's `tools/shutdown-guest` asks the Finder
+through the anchor's `script` verb, the anchor refused, and the tool's
+message ends *"nothing here can shut this guest down gracefully."* Its two
+remaining options were a power cut or abandoning a running VM.
+
+Two facts turn that from an edge case into a standing defect:
+
+- **The refusal is not a session's decision and does not fire
+  sometimes — it fires always.** The anchor's scope is a static
+  `worker.session` baked into the image, byte-identical in
+  `now-mirror-stage.qcow2` and `os91-runner.qcow2`: the same 24 verbs, the
+  same `policyDigest` 328e2ef0…, stamped `"owner":"canonical"`. There is
+  no configuration under which that tool succeeds here.
+- **The message is false, and the false half is the expensive half.**
+  `launch` IS in that baked scope — which is why NOW's applet route
+  works — and the Finder route never asks the anchor at all. Two graceful
+  routes were open the whole time.
+
+**And our own callers took the dirty route by construction.** `--wire`
+selects the Finder route, the only one measured to leave a clean volume.
+Neither `tools/lane-ports reclaim` nor the `stop:` recipe
+`scripts/spin-up-ppc` prints passed it, while both printed the words
+*guest-clean*. `scripts/bake-ext-image` did pass it and checks `volclean`
+afterwards, which is why the current oracle is clean and the older bakes
+are not — the fix landed on 2026-08-06 in one caller out of three.
+
+**What changed.** `tools/shared-image-guard.py` refuses a power cut
+against a VM writing to a shared image, names the file, and fails closed
+when it cannot tell. `shutdown-guest.py` prints its route list before
+trying anything, ends by naming three options and what each costs, and
+carries `--force` as the sanctioned last resort — gated by the guard,
+stamping the disk `.power-cut` so the damage cannot be inherited silently.
+Both other callers now pass `--wire`. 23 tests, 21 mutations watched fail,
+no survivors (`tools/mirror-gate-tests/test_shutdown_always_available.py`).
+
+**TESTED, not metal-verified**, and one thing is deliberately unverified:
+no VM was booted for this. It did not need one — the baked scope was read
+directly out of both images, which is a stronger oracle than one machine's
+`hello`, and the guard is driven over a fake QMP socket in its own tests.
+What that leaves unproven is the end-to-end claim that `--force` on a real
+cornered VM behaves as written. Nobody has been cornered since the fix.
+
+**Still open, and not this lane's to land:** `tools/arc-status` and
+`docs/arc-coordination.md` exist on 18 of the 48 `claude/019-*` branches
+and were cited in briefs to lanes that did not have them — the same
+mistake three times in one day. If a rig tool is meant to be citable, it
+belongs on the arc base. See docs/staged-images.md > "Which rig tools a
+lane can actually rely on" for the per-tool counts.
+
+**Also unfixed, because it is in the lab checkout and this repo does not
+edit its instruments:** the lab's `tools/shutdown-guest` still ends with
+the sentence that corners people. It should say that NOW's
+`tools/shutdown-guest.py --wire` is the route on this rig. Someone with
+standing in that tree should change it.
 
 ## BROKEN: the machine will not say what a foreign control IS, and that is not a bug we can fix in the walk (2026-08-07, `claude/018-control-semantics`)
 
@@ -2889,6 +3798,67 @@ One consequence for how this gets re-measured: the console verbs
 `scene.request` path in `wire.c` does. A walk driven from the console
 reports no-plane for every foreign process, which looks exactly like a
 dead resident and is not one.
+
+### TAKEN: the distribution, and a fourth state for the windows that lost (2026-08-07, plan 019 slice E)
+
+**Emulator-verified**, on this lane's own VM (block 963, anchor 19704 /
+wire 19705), a fresh `spin-up-ppc` clone carrying this tree's build
+`490165bfb441`, then `9a307a3577b3` after the fix below. Nothing here
+touched the PowerBook. The anchor plane resolved this time, which is
+exactly the condition the entry above said was missing — so the
+measurement the reason was written for is now taken.
+
+**Nine control panels opened one at a time, the scene walked after each.
+Controls per window, from the walks in which each was carried:**
+
+| panel | controls |
+|---|---|
+| Appearance | 73 |
+| Memory | 44 |
+| Mouse | 38 |
+| General Controls | 28 |
+| Date & Time | 21 |
+| Keyboard | 19 |
+| Monitors (VGA Display) | 18 |
+| Set Time Zone | 10 |
+| Extensions Manager | 6 |
+| NOW's own Workshop | 5-9 |
+
+**What the distribution says that Appearance alone could not.** The mean
+is about 29 and the spread is 6 to 73, so a pool sized for the largest
+panel is sized for one outlier and a pool sized for the mean serves three
+windows. With ten panels open the scene wants over 250 slots against 96,
+and every walk in the run spent the pool exactly: 96, 96, 95, 94, 96. The
+cap is not the binding constraint on any one panel — the per-window bound
+already clears 73 — it is the SCENE budget, and no single number both
+fits `NowScene` in its 64 KB wire ceiling and covers a busy desktop. That
+is the argument for lazy delivery rather than for a bigger number, and it
+is now measured rather than asserted.
+
+**The fourth state, which is what the measurement actually exposed.** A
+window walked after the pool filled is refused a slot and retracts, so it
+published `controls: []` — identical to a window proven to have none, for
+a reason that has nothing to do with that window. Five panels read that
+way in one walk. `windows[].controlsState` now says which:
+`complete` / `empty` / `unknown` / `notFetched`, and only `empty` is a
+fact about the machine. Observed live in one scene: Appearance, Date &
+Time, Memory, Monitors and Sound `notFetched`; the Finder's desktop and
+Mouse's second window `empty`; five windows `complete`.
+
+**A defect this run found that no test would have.** The walk verdict is
+one slot and the dialog-item retraction runs after the control one, so
+four of those five `notFetched` windows had their pool-full sentence —
+and its chain length — overwritten by "dialog item list hit a bound".
+True, and silent about the thing a reader would act on. The pool-full
+verdict now survives an item retraction, the same way
+`ControlsAndItemsRetracted` already composed the two older ones; watched
+failing by mutation, and re-confirmed on the machine (`Mouse ... chain is
+38` where the previous build said nothing).
+
+**Still open:** the pool is still 96 and lazy DELIVERY does not exist —
+there is no way to go back and ask for a `notFetched` window's controls.
+What exists is the honest name for the gap, so nothing reads a spent pool
+as an empty panel while the fetch is built.
 
 ### NOT what Sweep A thought, for Mouse
 
@@ -6779,6 +7749,88 @@ Same class as `probe-oracles-were-blind` and the `hello`-probe trap in
 instrument that talks to the subject on the channel it is measuring is
 not a passive observer of that channel. The real host, which pings
 nothing by contract, was the only observer quiet enough to see it.
+## A refusal that outlives the thing it was about (2026-08-07)
+
+The lane was pointed at the guest's `handle` verb, on a report that an
+`ok` reply carried a leftover reason. **`handle` did not have that
+defect** — obsresolve.c's resolver sets the verdict and the reason as a
+pair and a native test already pinned Ok ⇒ no reason. Saying so is the
+useful half: the report was about a real class and named the wrong
+instance of it, and the reason it was believable is that `handle` is the
+only reply in either guest that states a reason inside an `ok:true`
+frame. That is by design (the refusal is the product) and it makes the
+one place where the two could ever disagree.
+
+### Fixed
+
+Derived rather than remembered — the sweep is one command and it belongs
+beside the claim:
+
+```
+# every reply builder carrying BOTH ok:true and a reason-shaped key
+python3 - <<'EOF'
+import re, pathlib
+for sub in ("now-guest-ppc/src", "now-guest-68k/src", "ext"):
+    for p in sorted(pathlib.Path(sub).rglob("*.c")):
+        t = p.read_text(errors="replace")
+        for m in re.finditer(r'(snprintf|append|fmt_append_str)\s*\(.*?\);', t, re.S):
+            s = m.group(0)
+            if r'ok\":true' in s and re.search(r'\\"(reason|note|detail|message|why|error)\\"', s):
+                print(f"{p}:{t[:m.start()].count(chr(10))+1}")
+EOF
+```
+
+One hit: `observe.c`'s handle emitter. It read verdict, reason and
+`resolved` off three independent expressions; all three now derive from
+`handle.why` through the mapping obsresolve.c already owned
+(`now_obs_verdict_for_why`). Not a bug fixed — a bug made
+unrepresentable, in a file that has **no host test at all**, which is why
+it also got `handle_reason_source_test.py` beside
+`one_minter_source_test.py`.
+
+Two reachable instances of the actual class, found by asking the general
+question:
+
+- **`now-guest-ppc/src/files/files_browser_view.c`** — `g_note`, the
+  status placard, was written only on failure paths and never reset by a
+  successful listing. Step into a refused folder, then into one that
+  lists: twelve items under "that path leaves the shared folder". Now
+  cleared where the question is ASKED, so it also covers an answer that
+  never arrives.
+- **`now-host/Sources/Host/MirrorModuleModel.swift`** — `contentNote`
+  survived `show(document:)`, which is the door the live watch loop comes
+  through. One refused content join drew its sentence under every healthy
+  window that arrived afterwards. `clearScene()` and `guestLeft(_:)` both
+  already stated the rule this door broke.
+
+### Unverified, and the sharper of the two
+
+- **The guest half is Builds, not Tested.** `files_browser_view.c` is
+  Carbon and has no host test; nobody has watched the placard clear on a
+  machine. The reasoning is from the source and from two sibling
+  browsers that get it right, not from a screen.
+- **`handle` was never driven end to end this lane.** A VM was staged
+  (extension + app, cold-booted, both verified present after the reboot)
+  and the guest did not dial the listener within 180 s. So the reply's
+  shape is argued from the emitter and pinned by two gates; no one has
+  read a real `handle` frame off a wire here. The host change is Tested
+  — two XCTests watched failing first, each naming the leftover
+  sentence.
+- **The brief's rig names do not exist in this tree.** `tools/lane-ports`
+  and `tools/shutdown-guest.py` are not here; the parent checkout has
+  `tools/shutdown-guest`, and `scripts/spin-up-ppc` cold-boots by QMP
+  `quit` on purpose (an INIT loads at boot only). Worth knowing before
+  the next lane spends time looking for them.
+
+### Not fixed, and deliberately
+
+`now-guest-ppc/src/screenshots/screenshots_module.c` has the same shape
+in a weaker form: `set_status(err)` on failure, nothing on success, so a
+prior "Failed: …" can sit over a successful send. It is overwritten in
+practice by `conn_set_shot_note` arriving shortly after — which makes it
+correct by **timing** rather than by structure. Left alone rather than
+folded into an unrelated fix, and named here so it is a decision instead
+of an oversight.
 
 ## The folding sidebar, both halves (2026-08-05)
 
@@ -16658,3 +17710,55 @@ General Controls' "Insertion Point Slider" and "Menu Blink Slider" are
 Up/Down Controls" and "VM Up/Down Control" are `cdef: 6` (little arrows).
 All are ids this product deliberately has no role for — so they stay
 `unknown`, and are now countable rather than anonymous.
+
+## 2026-08-07 — a shared worktree was checked out from under a running lane, and its commits landed on other lanes' branches
+
+Recorded because it is invisible while it happens and expensive
+afterwards, and because nothing in this repository warns about it.
+
+`now/.claude/worktrees/keen-clarke-4988fc` was being used by several
+sessions at once. This lane branched correctly (`git checkout -b
+claude/019-cdef-memory-radios`, 13:02) and then made three commits. Its
+`HEAD` reflog:
+
+```
+13:02  checkout: ... to claude/019-cdef-memory-radios
+13:14  checkout: moving from claude/019-cdef-memory-radios
+                 to claude/019-ctlact-settlement      <- not this lane
+13:17  commit: diag(observe): ...                     <- this lane's
+13:22  commit: fix(scene): ...                        <- this lane's
+13:22  checkout: ... to claude/019-asset-packs         <- not this lane
+13:28  commit: test+docs: ...                          <- this lane's
+```
+
+Two commits landed on `claude/019-ctlact-settlement` and one on
+`claude/019-asset-packs`, and `claude/019-cdef-memory-radios` stayed at
+the commit it was cut from. **Nothing failed.** `git log --oneline -1`
+after each commit showed the expected hash; the branch guard was
+satisfied, because the branch really was not `main`.
+
+The visible damage was a RED branch that nobody had broken:
+`claude/019-ctlact-settlement` received an emitter change without the
+test update that belonged with it, because the two were split across a
+checkout that happened between them. It reads exactly like a careless
+commit and was not one.
+
+Three things follow, and the first is the one that costs nothing:
+
+- **A lane's own worktree is not a nicety, it is the isolation.** `git
+  worktree add -b <branch> <path> <base>` and then `git -C <path>` for
+  everything. Branch-per-thread does not isolate anything if the
+  worktree is shared, because a branch is a property of the worktree and
+  a neighbour can move it.
+- **Check the branch immediately before every commit, not once at the
+  start.** `git -C <path> branch --show-current` is free and is the only
+  thing that would have caught this at 13:17 instead of at 13:35.
+- **`git stash` is repo-global and is not safe here.** A `stash push`
+  followed by a `pop` can return a NEIGHBOUR's stash into your tree if
+  one arrived between them. Save a patch to a file instead.
+
+Recovery was clean because every commit still existed: a private
+worktree, a branch off the intended base, and `git cherry-pick -x` of
+the three by hash. The other lanes' branches were left alone —
+rewriting a branch another session is actively committing to is worse
+than the mess it would tidy.

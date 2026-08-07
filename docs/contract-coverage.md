@@ -1277,7 +1277,7 @@ moved; the hash is the receipt, not the point.
 
 <!-- derived-doc v1
 sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
-sources-sha1: 71d48a4f7c620b6dd2b8cb846929752d4363146e
+sources-sha1: c9937be0e3de84b8a3a4c55a6d36819991c9502a
 derive ppc-inbound-types sha256=c15c9c82d3460aa5288ca67ace049e5cbf47d7bf305be82c85e3a07cfe0ae5e2 lines=49 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
@@ -1298,6 +1298,9 @@ derive 68k-verbs sha256=70a32cc1ffb1933862444e2c0a0d7972fb6f1b68e40d34a2fd6bb5ef
 rederived: 2026-08-07T03:49:51-0400 8c1e3d94 sources, ppc-inbound-types 0->48, 68k-inbound-types 0->23, x-commands-registry 0->42, ppc-verbs 0->39, 68k-verbs 0->13 (first declaration)
 rederived: 2026-08-07T04:05:51-0400 dd520b71 unchanged
 rederived: 2026-08-07T12:06:15-0400 c76fea99 sources, ppc-inbound-types 48->49, x-commands-registry 42->47, ppc-verbs 39->44
+rederived: 2026-08-07T13:30:46-0400 40ab79b6 sources
+rederived: 2026-08-07T14:11:03-0400 4b54a5d2 sources
 rederived: 2026-08-07T13:51:56-0400 a309422b sources
 rederived: 2026-08-07T14:20:10-0400 ae89768d unchanged
+rederived: 2026-08-07T15:21:01-0400 07b89775 sources
 -->

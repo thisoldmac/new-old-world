@@ -16,7 +16,8 @@ below follows from those three words.
 | You are… | You want |
 |---|---|
 | changing `ext/` or `contract/peek_table.h` and need a machine to test on | `scripts/bake-ext-image` — **private, the default**, touches nothing shared |
-| running a sweep, a fidelity pass, any ordinary guest work | `scripts/spin-up-ppc` — it clones `os91-runner.qcow2` and stages **your tree's** build; the stage image is not involved |
+| running a sweep, a fidelity pass, any ordinary guest work | `scripts/spin-up-ppc` — it clones the **designated base** and stages **your tree's** build into the clone |
+| unsure which base you should be cloning at all | `tools/base-image which` — and `tools/base-image fit <image> --purpose …` for whether it is fit |
 | landing finished resident work that everyone else must now clone | `scripts/bake-ext-image --shared` — announce it first |
 | about to quote a number from an emulator run | copy `$NOW_SPIN_RUN/provenance.md` into the report |
 | wondering whether the oracle is trustworthy right now | `tools/ext-bake-gate verify-image` |
@@ -27,10 +28,13 @@ On 2026-08-06 a coordinating session told the human that an arc's
 measurements were suspect because the shared stage image was stale. It was
 wrong twice, and a lane had to correct it:
 
-- **`scripts/spin-up-ppc` does not use the stage image.** Its `BASE`
-  defaults to `os91-runner.qcow2`. It clones that, stages *this checkout's*
-  ext and app into the clone, cold-boots so the INIT loads, and asks the
-  guest to identify itself. So the resident under test is the tree's build.
+- **`scripts/spin-up-ppc` did not use the stage image.** Its `BASE`
+  defaulted to `os91-runner.qcow2`. It clones its base, stages *this
+  checkout's* ext and app into the clone, cold-boots so the INIT loads, and
+  asks the guest to identify itself — so the resident under test is the
+  tree's build either way. (The default is gone; see *Which base, and is it
+  fit* below. The staging is unchanged, and is still why a stale base warns
+  rather than refusing.)
 - **The stage image was not merely stale, it was unaccounted for.** Its
   sha256 matched no receipt at all. Something wrote it at 01:58 while the
   newest receipt was written at 01:19, and its content mtime was three days
@@ -75,6 +79,82 @@ is the more expensive failure.
 running VM holds a write lock, the format is unfamiliar — is **not
 clean**. Folding the two together is precisely how `qemu-img check` came
 to stand in for a question it cannot answer.
+
+## Which base, and is it fit — `tools/base-image`
+
+Four times a run has been pointed at a base nobody meant, and the shape of
+the recurrence is worth more than any of the four:
+
+| when | what | what came out of it |
+|---|---|---|
+| 2026-08-06 | the stage image was three days old while six `ext/` commits landed that day; every session cloned it | `tools/ext-bake-gate` |
+| 2026-08-06 | three bakes installed images whose HFS volume was still marked mounted; `qemu-img check` called all three clean | `tools/volclean.py` |
+| 19 July → 08-07 | `os91-runner.qcow2` sat dirty for nineteen days, opening a modal on every clone | the volume check moved into `image-provenance` |
+| 2026-08-07 | `spin-up-ppc`'s `BASE` **defaulted** to `os91-runner.qcow2`, so a whole arc cloned a 19 July image | this section |
+
+**Each fix guarded the layer that had just failed, and the next failure
+happened one layer away.** Bake is well gated; the *clone sites* were not
+gated at all. And the answer to "which base" was spread across a default in
+a shell script, a comment contradicting it, `ext/stage-receipts.json` and
+prose in AGENTS.md — the exact shape this project's own rule forbids.
+
+So the answer is stated **once**, keyed by purpose rather than by path:
+
+    tools/base-image which                       # the designated PPC base
+    tools/base-image fit <image> --purpose ppc-work --stages-resident
+
+`ppc-work`, `oracle` and `bake` all designate
+`~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2`. `68k` designates nothing —
+there is one 68K base and `.env.lab` names it — and the tool says so rather
+than checking a question it did not ask. `scripts/spin-up-ppc`,
+`scripts/bake-ext-image` and `scripts/q800-68k` all consult it before they
+clone, and **a test fails if a new clone site does not** — because a
+hand-maintained list of layers is what was missing all four times.
+
+### Warn or refuse, argued per check
+
+Picking one severity for all of them is how a gate stops being read. The
+rule is `ext-bake-gate`'s: refuse when the fix is in the caller's power and
+the failure would otherwise produce a **wrong result that looks right**;
+warn when the caller cannot act on it, or when the cost is inconvenience
+rather than a false conclusion.
+
+| check | warns | refuses |
+|---|---|---|
+| the file is not there | — | always |
+| not the designated base | ordinary work — a private bake is legitimate | `--purpose oracle`, where the conclusion is about *the* stage image |
+| volume dirty | always — a slower boot, and not this run's to fix | never |
+| volume `unknown` | always, in its own words — **not** clean | never |
+| base's resident older than this checkout's `ext/` | when the run stages a fresh resident (`--stages-resident`) | when it does not: the measurement would be of an old resident and read as current |
+| shared oracle whose bytes no receipt claims | when the run stages a fresh resident | when it does not |
+
+`--stages-resident` is the load-bearing flag and it must be told the truth.
+`spin-up-ppc` passes it because it stages this checkout's ext and app into
+the clone and cold-boots; a site that only boots must not. `spin-up-ppc`
+refuses `NOW_SPIN_PURPOSE=oracle` outright for that reason — it can never
+be a measurement of the baked resident, so declaring itself one would be a
+lie told to the gate.
+
+Which has a consequence worth saying plainly rather than discovering:
+**no clone site in this tree can currently trip the refusal path**, because
+all three stage a resident. The refusals are for the caller that boots a
+base as it is, and for a person running `tools/base-image fit --purpose
+oracle` by hand before quoting a result about what is baked into an image.
+If you write a site that boots without staging, that is the moment those
+rows start doing work.
+
+A refusal can be overridden the way the other floors in this repository
+are, and on the same terms: `NOW_BASE_FORCE=1` **with**
+`NOW_BASE_FORCE_REASON="…"`. A force with no reason is still refused — the
+written decision is the point, not the escape.
+
+### Every finding names an act
+
+Not decoration. On 2026-08-06 four lanes read a true warning and correctly
+did nothing, because it named an action none of them could safely take. A
+warning nobody can act on is broken however true it is, so each finding
+carries what the reader should do and who can do it — re-bake, re-ask when
+the VM is down, quote `provenance.md`, say it in the channel.
 
 ### Repairing a base image
 
@@ -164,6 +244,7 @@ more than the gates themselves.
 | `ext-bake-gate merge-check` | a merge did not silently combine two branches' claims | **yes** — via `pre-merge-commit` |
 | `merge-check` on **main** | the resident source being landed is covered by a bake | **yes** — `TBT_DEFER_EXT_BAKE=1` with a reason still overrides |
 | `tools/image-provenance` | these bytes are (or are not) claimed by a receipt, **and whether the volume inside them is cleanly unmounted** | nothing; it only speaks |
+| `tools/base-image fit` | this base is (or is not) the designated one for a stated purpose, its volume's state, and whether its baked resident predates this checkout's `ext/` | **per check** — see *Warn or refuse, argued per check*. It is the only gate here that runs **before a clone**, which is why it may refuse at all |
 
 The staged-receipt case is the subtle one, and it was found by its own
 test. A receipt whose `imageSha256` does not match the file it names has
@@ -266,9 +347,123 @@ missing record must not read as nothing to do.
 `scripts/test-all` runs the doctor first and, when the gates are not armed,
 its final line stops saying they passed.
 
+## Why images kept arriving dirty: nobody was careless, they were cornered
+
+Five of the seven preserved images on this Mac have the HFS "volume
+unmounted" bit clear, so every clone of them opens in Disk First Aid
+(`tools/volclean.py`, run over all of them 2026-08-07):
+
+| image | mtime | volume |
+|---|---|---|
+| `now-mirror-stage.qcow2` | 08-06 01:58 | clean |
+| `now-mirror-stage.qcow2.bak-20260806` | 08-06 00:44 | clean |
+| `now-mirror-stage.qcow2.bak-20260806-2` | 08-06 01:10 | **dirty** |
+| `now-mirror-stage.qcow2.bak-20260806-3` | 08-06 01:19 | **dirty** |
+| `now-mirror-stage.qcow2.bak-20260806-4-dirty` | 08-06 01:58 | **dirty** |
+| `now-mirror-stage.qcow2.bak-…-pre-transport` | 08-06 01:12 | **dirty** |
+| `os91-runner.qcow2` | 07-19 13:55 | **dirty** |
+
+`volclean.py` and the bake gate were built to DETECT this. Nothing had
+established **why it kept happening**, and the question matters: a rule
+everybody breaks is not a rule, it is a description of tooling that made
+the rule impossible.
+
+**The mechanism, established 2026-08-07.** A lane reported, honestly, that
+it had power-cut its VM against the rule, because the graceful route
+refused: the lab's `tools/shutdown-guest` asks the Finder through the
+anchor's `script` verb, and the anchor refuses it. Its message ends
+*"nothing here can shut this guest down gracefully; that is a scope
+decision, not a bug in this tool."* The lane was then choosing between a
+power cut and leaving a VM running for the next lane to trip over. It took
+the power cut and said so.
+
+Two things about that refusal, and both of them are worse than they look:
+
+- **It fires for every lane, every run, always.** The scope is not a
+  per-session decision. It is a static `worker.session` file baked into
+  the image, and it is byte-identical in both bases — the same 24 verbs,
+  the same `policyDigest` 328e2ef0…, stamped `"owner":"canonical"`. So
+  "most sessions are fine and this one was unusual" was never available as
+  an explanation.
+- **The sentence is false about this rig, and the false half is the
+  expensive half.** `launch` IS in that baked scope, which is exactly why
+  NOW's staged-applet route works; and the Finder route
+  (`shutdown-guest.py --wire`) never asks the anchor at all. Two graceful
+  routes were open the whole time. Nothing said so, and the tool an agent
+  finds first is the one with the obvious name.
+
+**And our own callers steered onto the dirty route.** `--wire` is what
+selects the Finder route, the only one measured to leave a clean volume;
+without it `shutdown-guest.py` falls to the applet, which starts a
+shutdown without reliably finishing one. Until 2026-08-07 neither
+`tools/lane-ports reclaim` nor the `stop:` recipe `scripts/spin-up-ppc`
+prints passed it — while both printed the words *guest-clean*.
+`scripts/bake-ext-image` did pass it, and checks `volclean` afterwards;
+that is why the current oracle is clean and the older bakes are not.
+
+### What a lane does now
+
+    tools/shutdown-guest.py <qmp.sock> --port <anchor> --wire <wire>
+
+It prints the route list **before** it tries anything, read from the
+anchor's own `hello`, so a refusal is a route list rather than a mystery.
+If every graceful route fails it names three options and what each costs —
+retry with `--wire`, leave the VM up and say so, or `--force`. There is no
+ending where the reader is left holding two bad choices and no third; that
+is the same failure as the dead-hooks warning four lanes read, believed,
+and correctly did nothing about.
+
+`--force` is a QMP `quit` made in the open. It asks
+`tools/shared-image-guard.py` first, which **refuses outright** if the
+machine is writing to a shared image (`launch --base` does), fails closed
+when it cannot tell, and does not object to a read-only backing file. When
+a cut does happen the disk is stamped `<image>.power-cut`, because the
+damage is otherwise invisible until something boots the image — by which
+time it is somebody else's afternoon.
+
+**Still true and still the rule:** a bare QMP `quit` is a power cut. What
+changed is that refusing it no longer means abandoning a running VM.
+
+## Which rig tools a lane can actually rely on
+
+Three times on 2026-08-07 a brief cited a tool that was not present on the
+branch it was cited to, and each time the lane either worked around it or
+broke a rule. Measured across the 48 `claude/019-*` branches:
+
+| tool | present on | absent from |
+|---|---|---|
+| `tools/shutdown-guest.py` | 47 | 1 |
+| `tools/volclean.py` | all | — |
+| `tools/lane-ports` | 42 | 6 |
+| `tools/arc-status`, `docs/arc-coordination.md` | 18 | **30** |
+
+The first two are safe to cite anywhere. `tools/lane-ports` nearly is.
+`tools/arc-status` is on integration branches and nowhere common, so an
+instruction that names it is wrong for most worktrees — which is how it
+became the third instance of the same mistake in one day.
+
+Two more traps worth knowing before you reach for the parent checkout:
+
+- **`tools/shutdown-guest` (no `.py`) is a different tool.** It lives in
+  the lab checkout, not here, and it is the one that refuses; NOW's is
+  `tools/shutdown-guest.py`. A lane that finds the parent's by name has
+  found the broken route.
+- **A worktree outside the repo tree could not run it at all.** The lab
+  checkout was located by walking up from the worktree, and an agent
+  worktree cut into `/private/tmp` has no such ancestor — so the one tool
+  that stops a VM cleanly answered with `ModuleNotFoundError`. It now asks
+  git where the real checkout is; `NOW_LAB_ROOT` still wins.
+
+**The landing decision, which is not this lane's to make:** if a rig tool
+is meant to be citable in a brief, it belongs on the arc base so every
+lane inherits it. `tools/arc-status` and `docs/arc-coordination.md` are
+the two that currently are not, and they are the two that keep being
+cited.
+
 ## Run it
 
     tools/image-discipline-tests     # every mutation, ~3 seconds
+    scripts/test-native              # includes the shutdown-route gate
     tools/gate-impact-sweep --all-matching 'claude/018-'
 
 The second is the one to run before tightening any gate here: it stages

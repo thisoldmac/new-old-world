@@ -182,6 +182,12 @@ run_c now-guest-shared now_cursor_logic_test.c \
       "-DNOW_PEEK_TABLE_HOST" src/now_cursor_logic.c
 run_c now-guest-shared now_act_inflight_test.c  ""  src/now_act_inflight.c
 run_py now-guest-shared act_inflight_wiring_source_test.py
+# The gestaltSystemVersion decode `hello.os` carries since 2026-08-07.
+# Header-only in contract/, so it names no source - which is the point:
+# the host cc checks the thing BOTH guests must agree about without
+# either cross-compiler in the room. The two guests had two decodes and
+# two shapes ("9.1" vs "7.1.0") before the field became a key.
+run_c now-guest-shared guest_identity_test.c    ""
 # The six trap trampolines' result-slot ABI, read out of the assembly.
 # A source test, and normally the weakest kind - but a Pascal Boolean
 # answered as 0x0001 writes FALSE while the patch reports firing, and
@@ -234,6 +240,7 @@ run_py_path tools/mirror-gate-tests/test_legacy_mirror_retirement.py
 run_py_path tools/mirror-gate-tests/test_agent_socket_suffix.py
 run_py_path tools/mirror-gate-tests/test_spin_up_ppc_shutdown.py
 run_py_path tools/mirror-gate-tests/test_lane_ports.py
+run_py_path tools/mirror-gate-tests/test_shutdown_always_available.py
 run_py_path tools/mirror-gate-tests/test_build_guests_env.py
 run_py_path tools/mirror-gate-tests/test_qemu_memory_oracle.py
 # The tool that reports where the arc stands, driven against a synthetic

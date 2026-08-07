@@ -244,3 +244,118 @@ struct ConnectedGuest: Identifiable, Equatable, Sendable {
     /// machine calls itself after it, because that is what changes.
     var label: String { "\(id.slug) — \(name)" }
 }
+
+/// **Which machine's art belongs to this guest** — the asset-pack key,
+/// derived in exactly one place.
+///
+/// A fifth thing this file names, and the one that is deliberately NOT a
+/// machine identity. `GuestID` answers "which Mac"; this answers "which
+/// KIND of Mac, running which System", and it is meant to collide: two
+/// PowerBook 1400cs running 9.1 have the same key, and should, because a
+/// pack extracted from one is the right pack for the other. That is what
+/// makes a pack shareable at all (plan 021 §1).
+///
+/// **Everything it reads is typed.** The facts arrive as `hello.machine`
+/// and `hello.os` rather than being parsed out of the census's display
+/// strings — which the two guests spell differently (`Mac OS` against
+/// `System`, and `Model`'s raw column a name on one guest and a decimal
+/// on the other). A per-guest label map would be a third place to keep in
+/// agreement by hand, with nothing failing the build when a guest changed
+/// a word.
+struct AssetPackKey: Hashable, Sendable, CustomStringConvertible {
+    /// `gestaltMachineType`, where the guest could establish it.
+    let machineID: Int?
+    /// The machine's own name for itself. Kept even when `machineID` is
+    /// present: it is what a person reads in the pack list, and a key
+    /// nobody can recognise is a key nobody will choose correctly.
+    let machineModel: String?
+    /// `major.minor.bugfix`, from the shared decode both guests use.
+    let systemVersion: String?
+
+    /// **False when this guest did not tell us enough to key anything.**
+    ///
+    /// The case that matters is a guest built before 2026-08-07: it sends
+    /// no `machine` at all and an `os` that is a compiled-in literal, so
+    /// there is nothing here to trust. A pack must NOT be auto-selected
+    /// from a key like that — it would silently dress one machine in
+    /// another's art, which is the exact failure the provenance rules
+    /// exist to prevent. Selection stays manual, and the UI says why.
+    var isComplete: Bool {
+        guard let systemVersion, systemVersion != Self.unknown,
+              !systemVersion.isEmpty else { return false }
+        if let machineID, machineID != 0 { return true }
+        guard let machineModel, machineModel != Self.unknown,
+              !machineModel.isEmpty else { return false }
+        return true
+    }
+
+    /// The guest-side word for "we looked and could not establish it",
+    /// spelled once here to match `contract/guest_identity.h`. Distinct
+    /// from nil, which means the guest never said.
+    static let unknown = "unknown"
+
+    init(hello: Hello) {
+        self.machineID = hello.machine?.id
+        self.machineModel = hello.machine?.model
+        self.systemVersion = hello.os
+    }
+
+    init(machineID: Int?, machineModel: String?, systemVersion: String?) {
+        self.machineID = machineID
+        self.machineModel = machineModel
+        self.systemVersion = systemVersion
+    }
+
+    /// The stable comparison key: the machine id where there is one, the
+    /// model name where there is not.
+    ///
+    /// The id LEADS because a model name is localised and a Sharing-name
+    /// fallback can change under a person's hands, while the number is
+    /// the same on every System. The model is the fallback rather than
+    /// the primary for that reason, not because it is less readable.
+    var identity: String {
+        let machine: String
+        if let machineID, machineID != 0 {
+            machine = "m\(machineID)"
+        } else if let machineModel, !machineModel.isEmpty,
+                  machineModel != Self.unknown {
+            machine = Self.slug(machineModel)
+        } else {
+            machine = Self.unknown
+        }
+        let system = (systemVersion.map(Self.slug) ?? Self.unknown)
+        return "\(machine)-os\(system.isEmpty ? Self.unknown : system)"
+    }
+
+    /// What a person reads in the pack list. Names what is missing rather
+    /// than eliding it: "PowerBook 1400c — System unknown" is a usable
+    /// sentence and "PowerBook 1400c" alone is a claim.
+    var description: String {
+        let machine = (machineModel?.isEmpty == false ? machineModel! : nil)
+            ?? machineID.flatMap { $0 == 0 ? nil : "machine type \($0)" }
+            ?? "unknown machine"
+        let system = (systemVersion?.isEmpty == false ? systemVersion! : nil)
+            ?? Self.unknown
+        return "\(machine) — System \(system)"
+    }
+
+    /// Lowercase, ASCII alphanumerics and dots kept, everything else a
+    /// hyphen. A directory name a person can read and a shell will not
+    /// fight; the authoritative key lives in the pack's manifest, so this
+    /// never has to be parsed back.
+    private static func slug(_ raw: String) -> String {
+        var out = ""
+        var lastWasSeparator = false
+        for ch in raw.lowercased() {
+            if ch.isASCII && (ch.isLetter || ch.isNumber || ch == ".") {
+                out.append(ch)
+                lastWasSeparator = false
+            } else if !lastWasSeparator && !out.isEmpty {
+                out.append("-")
+                lastWasSeparator = true
+            }
+        }
+        while out.hasSuffix("-") { out.removeLast() }
+        return out
+    }
+}

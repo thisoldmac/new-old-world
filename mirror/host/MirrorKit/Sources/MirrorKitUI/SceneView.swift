@@ -49,7 +49,13 @@ public enum RenderShot {
                            selectedItem: String? = nil,
                            itemDrag: SceneRenderer.ProvisionalDrag? = nil,
                            size: CGSize? = nil) throws -> Data {
-        let size = size ?? SceneRenderer(scene: scene).logicalSize
+        /* No size and no guest screen is a REFUSAL, not a default. A PNG
+           rendered at an invented surface is indistinguishable from one
+           rendered at the real screen, and it is the picture an agent
+           reasons about. */
+        guard let size = size ?? SceneRenderer(scene: scene).logicalSize else {
+            throw RenderShotError.screenUnknown
+        }
         let view = SceneView(scene: scene, openMenu: openMenu,
                              hoveredItem: hoveredItem,
                              selectedItem: selectedItem,
@@ -68,6 +74,9 @@ public enum RenderShot {
     }
 
     public enum RenderShotError: Error {
+        /// The scene carries no `screen` and the caller named no size, so
+        /// there is no surface to render onto. Unknown, not empty.
+        case screenUnknown
         case rasterizeFailed
         case encodeFailed
     }

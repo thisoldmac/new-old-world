@@ -386,6 +386,31 @@ public enum IRSchema {
            which was the problem: `partial` said the order was incomplete
            and could not say that a named process's rank was LOST rather
            than never taken. */
+        /* 2026-08-07. What the desktop is drawn from, asked of the running
+           machine. Additive: a reader that has never heard of it keeps
+           reading the asset pack's manifest, which is exactly as correct
+           as yesterday — and the point is that nothing could tell you
+           whether that was correct at all. An absent `meta.desktop` means
+           the producer did not ask, and is the only state in which the
+           pack may stand in; `source: unknown` means we asked and the
+           machine would not say. */
+        "meta.desktop",
+        "meta.desktop.source",
+        "meta.desktop.hasPattern",
+        "meta.desktop.hasPicture",
+        "meta.desktop.patternBytes",
+        "meta.desktop.patternName",
+        "meta.desktop.pictureName",
+
+        /* 2026-08-07. Which kind of empty an empty `controls` is.
+           Additive, and emitted only where the array cannot speak for
+           itself — a reader that has never heard of it sees exactly the
+           `[]` it saw before. The one it exists for is `notFetched`: the
+           guest's control pool is shared across the scene, so a window
+           walked after it filled arrives empty for a reason that is not
+           about that window and that asking again would answer. */
+        "windows[].controlsState",
+
         "meta.coverage[].evicted",
     ]
 
@@ -396,6 +421,13 @@ public enum IRSchema {
         "Scene.Theme.documentBackground", "Scene.Theme.highlight",
         "Scene.Theme.depth",
 
+        // See meta.desktop in v2Additions.
+        "Scene.Meta.desktop",
+        "Scene.Desktop.source",
+        "Scene.Desktop.hasPattern", "Scene.Desktop.hasPicture",
+        "Scene.Desktop.patternBytes",
+        "Scene.Desktop.patternName", "Scene.Desktop.pictureName",
+
         // See apps[].backgroundOnly in v2Additions.
         "Scene.AppRef.backgroundOnly",
         "Scene.ProcessRef.backgroundOnly",
@@ -403,6 +435,8 @@ public enum IRSchema {
         "Scene.AppRef.incarnation",
         "Scene.ProcessRef.incarnation",
         "Scene.Window.incarnation",
+        // See windows[].controlsState in v2Additions.
+        "Scene.Window.controlsState",
         "Scene.Meta.coverage",
         "Scene.CoverageClaim.scope", "Scene.CoverageClaim.owner",
         "Scene.CoverageClaim.status", "Scene.CoverageClaim.reason",
@@ -414,7 +448,11 @@ public enum IRSchema {
         "Scene.DialogItem.visible", "Scene.DialogItem.ref",
         "Scene.DialogItem.semantic",
         "Scene.Semantics.knowledge", "Scene.Semantics.kind",
-        "Scene.Semantics.definition", "Scene.Semantics.cdef",
+        "Scene.Semantics.definition",
+        // Additive and optional, and it rides the same rule as
+        // `definition`: present only where `kind` is absent. A v2 consumer
+        // that has never heard of it loses a diagnosis, never a kind.
+        "Scene.Semantics.cdef",
         "Scene.Semantics.action", "Scene.Semantics.state",
         "Scene.Semantics.value", "Scene.Semantics.selection",
         "Scene.Semantics.listCells", "Scene.Semantics.listTotalCount",

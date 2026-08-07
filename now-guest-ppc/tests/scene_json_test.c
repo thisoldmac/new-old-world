@@ -1552,8 +1552,322 @@ static void test_the_order_ledger_says_what_it_forgot(void)
     }
 }
 
+/* THE DESKTOP, AND THE THREE STATES IT HAS TO KEEP APART.
+ *
+ * The renderer's only source for the largest rectangle in the picture
+ * was an offline asset pack's record of the disk image it was extracted
+ * from - true for a guest booted from that image and unchanged since,
+ * and silently wrong otherwise. The live half now rides the scene, and
+ * the pack becomes the declared fallback. That only works if a consumer
+ * can tell these apart:
+ *
+ *   key absent          - nobody asked. The pack may stand in, and the
+ *                         render must say that it is standing in.
+ *   source "unknown"    - we asked; this machine would not say. The
+ *                         marked unknown, never a guessed pattern.
+ *   source pattern/pic  - the machine named it.
+ *
+ * Watched failing by mutation 2026-08-07: dropping the `if (!asked)`
+ * return from put_desktop puts a full `unknown` object into every scene
+ * that never asked, collapsing state 1 into state 2 - and the first two
+ * checks below name it. Dropping the same guard from
+ * now_scene_set_desktop lets a zeroed struct publish a desktop, which
+ * the third check names.
+ */
+static void test_the_desktop_says_which_of_three_things_happened(void)
+{
+    NowScene s;
+    NowDesktopFacts d;
+    char out[16384];
+
+    /* NEVER ASKED. No key at all - not an object saying `unknown`, which
+       is a claim about the machine rather than about us. */
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_absent(out, "\"desktop\"");
+
+    /* AND A ZEROED STRUCT CANNOT PUBLISH ONE EITHER. `asked` 0 is the
+       looked-at-all bit; a caller that forgets to gather must not be
+       able to assert a desktop by handing over its stack. */
+    memset(&d, 0, sizeof d);
+    d.pattern_bytes = -1;
+    now_scene_set_desktop(&s, &d);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_absent(out, "\"desktop\"");
+
+    /* ASKED AND REFUSED. The key IS present, and it says unknown - the
+       fact that this machine would not say is worth sending, because it
+       is what stops the pack silently standing in. */
+    memset(&d, 0, sizeof d);
+    d.asked = 1;
+    d.source = kDesktopSourceUnknown;
+    d.pattern_bytes = -1;
+    now_scene_set_desktop(&s, &d);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_present(out, "\"desktop\":{\"source\":\"unknown\"");
+    check_present(out, "\"hasPattern\":false");
+    check_present(out, "\"hasPicture\":false");
+    /* -1 is "we do not know how long it is", and that is an absent key
+       rather than a negative length on the wire. */
+    check_absent(out, "patternBytes");
+    check_absent(out, "patternName");
+    check_absent(out, "pictureName");
+    check(well_formed(out), "a refused desktop ask is valid JSON");
+
+    /* A PICTURE OVER A PATTERN - both layers reported, and `source` says
+       which one a person is actually looking at. */
+    memset(&d, 0, sizeof d);
+    d.asked = 1;
+    d.source = kDesktopSourcePicture;
+    d.has_pattern = 1;
+    d.has_picture = 1;
+    d.pattern_bytes = 32;
+    snprintf(d.pattern_name, sizeof d.pattern_name, "Waves");
+    snprintf(d.picture_name, sizeof d.picture_name, "Indigo Foam");
+    now_scene_set_desktop(&s, &d);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_present(out, "\"source\":\"picture\"");
+    check_present(out, "\"hasPattern\":true");
+    check_present(out, "\"hasPicture\":true");
+    check_present(out, "\"patternBytes\":32");
+    check_present(out, "\"patternName\":\"Waves\"");
+    check_present(out, "\"pictureName\":\"Indigo Foam\"");
+    check(well_formed(out), "a named desktop is valid JSON");
+
+    /* A PATTERN AND NO PICTURE. The picture name is an ABSENT TAG, not a
+       nameless picture, so it is omitted rather than sent empty - the
+       same rule the titles follow. */
+    memset(&d, 0, sizeof d);
+    d.asked = 1;
+    d.source = kDesktopSourcePattern;
+    d.has_pattern = 1;
+    d.pattern_bytes = 0;
+    snprintf(d.pattern_name, sizeof d.pattern_name, "Bubbles");
+    now_scene_set_desktop(&s, &d);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_present(out, "\"source\":\"pattern\"");
+    check_present(out, "\"hasPicture\":false");
+    /* Zero bytes is a MEASURED length and must survive, the way black
+       survives in the theme. */
+    check_present(out, "\"patternBytes\":0");
+    check_present(out, "\"patternName\":\"Bubbles\"");
+    check_absent(out, "pictureName");
+    check(well_formed(out), "a pattern desktop is valid JSON");
+
+    /* A NAME THAT IS NOT PUBLISHABLE is dropped, not escaped into the
+       document - foreign Str255 bytes reach this field straight off the
+       theme collection, and they go through the same title gate as every
+       other foreign string in this scene. */
+    memset(&d, 0, sizeof d);
+    d.asked = 1;
+    d.source = kDesktopSourcePattern;
+    d.has_pattern = 1;
+    d.pattern_bytes = 8;
+    snprintf(d.pattern_name, sizeof d.pattern_name, "bad\x01name");
+    now_scene_set_desktop(&s, &d);
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check_absent(out, "patternName");
+    check(well_formed(out), "an unpublishable pattern name is valid JSON");
+}
+
+/* THREE FACTS THAT ARRIVED AS THE SAME TWO CHARACTERS.
+ *
+ * `controls` is required by the IR, so a window that was never walked,
+ * a window proven to have none, and a window skipped because the shared
+ * pool was already spent all published `[]`. The last of those is the
+ * one that had no name at all: it is not a fact about that window, and
+ * asking again with room would answer it.
+ *
+ * The key rides only where the array is empty, which is the only place
+ * it carries information - so these checks are also the gate on that
+ * rule, because a `controlsState` beside a populated array would be
+ * 900 bytes of a 64 KB ceiling saying what the array already says.
+ *
+ * Watched failing by mutation 2026-08-07: collapsing the PoolFull case
+ * in now_scene_controls_state into the `unknown` group turns the last
+ * check below into "unknown", which is the exact conflation this exists
+ * to end; and dropping the `pool_full` branch in scene_walk.c leaves
+ * the ordinary Retracted verdict, which reads the same way.
+ */
+static void test_an_empty_control_list_says_which_kind_of_empty(void)
+{
+    NowScene s;
+    char out[16384];
+    const char *p;
+    int owner;
+
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    owner = now_scene_add_process(&s, 0, 1, "Finder", 0, 1,
+                                  kNowSceneAnchorOk, 0);
+    (void)now_scene_add_window(&s, owner, "Never Walked", 0, 0, 10, 10, 1);
+    (void)now_scene_add_window(&s, owner, "Proven Empty", 0, 0, 10, 10, 1);
+    (void)now_scene_add_window(&s, owner, "Chain Too Long", 0, 0, 10, 10, 1);
+    (void)now_scene_add_window(&s, owner, "Has Controls", 0, 0, 10, 10, 1);
+
+    /* 1. NEVER OPENED. This producer did not ask about this window. */
+
+    /* 2. OPENED AND NOTHING ADDED - a real answer about the machine. */
+    (void)now_scene_open_controls(&s, 1);
+
+    /* 3. WALKED AND RETRACTED. We looked and could not establish it. */
+    (void)now_scene_open_controls(&s, 2);
+    (void)now_scene_add_control(&s, 2, "gone", 0, 0, 9, 9, 1, 1, 0, 0, 1);
+    now_scene_retract_controls(&s, 2);
+    now_scene_set_walk_verdict(&s, 2, kNowSceneWalkControlsBound);
+
+    /* 4. WALKED, AND HERE THEY ARE. */
+    (void)now_scene_open_controls(&s, 3);
+    (void)now_scene_add_control(&s, 3, "OK", 0, 0, 9, 9, 1, 1, 0, 0, 1);
+
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check(well_formed(out), "a scene carrying control states is valid JSON");
+
+    /* The derivation itself, which is the thing both the wire and any
+       struct consumer read. Stated once so they cannot disagree. */
+    check(now_scene_controls_state(&s.windows[0])
+          == kNowSceneControlsNotFetched, "an unopened plane is notFetched");
+    check(now_scene_controls_state(&s.windows[1])
+          == kNowSceneControlsEmpty, "an opened, empty plane is empty");
+    check(now_scene_controls_state(&s.windows[2])
+          == kNowSceneControlsUnknown, "a bounded chain is unknown");
+    check(now_scene_controls_state(&s.windows[3])
+          == kNowSceneControlsComplete, "a populated plane is complete");
+
+    /* AND ON THE WIRE, in window order. `strstr` walking forward is what
+       ties each word to its window: three empty arrays that all said
+       "notFetched" would satisfy a bare substring search. */
+    p = strstr(out, "\"Never Walked\"");
+    check(p != NULL && strstr(p, "\"controlsState\":\"notFetched\"") != NULL
+          && strstr(p, "\"controlsState\":\"notFetched\"") < strstr(p, "\"Proven Empty\""),
+          "an unwalked window says notFetched");
+    p = strstr(out, "\"Proven Empty\"");
+    check(p != NULL && strstr(p, "\"controlsState\":\"empty\"") != NULL
+          && strstr(p, "\"controlsState\":\"empty\"") < strstr(p, "\"Chain Too Long\""),
+          "a window proven to have none says empty");
+    p = strstr(out, "\"Chain Too Long\"");
+    check(p != NULL && strstr(p, "\"controlsState\":\"unknown\"") != NULL
+          && strstr(p, "\"controlsState\":\"unknown\"") < strstr(p, "\"Has Controls\""),
+          "a window we could not establish says unknown");
+
+    /* THE POPULATED WINDOW CARRIES NO WORD. It is last, so anything
+       after its title is its own; a `controlsState` there would be the
+       900 bytes the ceiling gate refused. */
+    p = strstr(out, "\"Has Controls\"");
+    check(p != NULL && strstr(p, "\"controlsState\"") == NULL,
+          "a populated control list needs no word beside it");
+}
+
+/* AND THE FOURTH FACT, which is not about the window at all.
+ *
+ * The pool is shared across the scene. This is the case that had no
+ * name: a window walked after it filled retracts for want of a SLOT,
+ * and published `[]` exactly like a window proven to have none.
+ */
+static void test_a_window_the_pool_ran_out_on_says_not_fetched(void)
+{
+    NowScene s;
+    char out[65536];
+    int i;
+    int owner;
+
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    owner = now_scene_add_process(&s, 0, 1, "Finder", 0, 1,
+                                  kNowSceneAnchorOk, 0);
+    (void)now_scene_add_window(&s, owner, "Spent It", 0, 0, 10, 10, 1);
+    (void)now_scene_add_window(&s, owner, "Lost Out", 0, 0, 10, 10, 1);
+
+    /* Fill the shared pool from the first window. */
+    (void)now_scene_open_controls(&s, 0);
+    for (i = 0; i < kNowSceneMaxControls; ++i) {
+        (void)now_scene_add_control(&s, 0, "c", 0, 0, 9, 9, 1, 1, 0, 0, 1);
+    }
+    check(s.control_count == kNowSceneMaxControls, "the pool is full");
+
+    /* The second window's walk is now refused a slot. This is what
+       scene_walk.c does at that point. */
+    (void)now_scene_open_controls(&s, 1);
+    check(now_scene_add_control(&s, 1, "never", 0, 0, 9, 9, 1, 1, 0, 0, 1)
+          == 0, "a full pool refuses");
+    now_scene_retract_controls(&s, 1);
+    now_scene_set_walk_verdict(&s, 1, kNowSceneWalkControlsPoolFull);
+    now_scene_set_control_chain_len(&s, 1, 73, 1);
+
+    check(now_scene_controls_state(&s.windows[1])
+          == kNowSceneControlsNotFetched,
+          "a window the pool ran out on was NOT ASKED, not unknown");
+
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check(well_formed(out), "a pool-exhausted scene is valid JSON");
+    check_present(out, "\"controlsState\":\"notFetched\"");
+    /* And the errors line says whose fault it was, with the number that
+       sizes the pool - one measured panel is not a distribution, and
+       this is how the other panels get counted. */
+    check_present(out, "Lost Out: the scene's shared control pool was "
+                       "already full");
+    check_present(out, "chain is 73");
+}
+
+/* ONE VERDICT SLOT, AND WHICH FACT KEEPS IT.
+ *
+ * Found by driving a live guest with ten control panels open (2026-08-07):
+ * five windows read `notFetched` and only ONE carried the pool-full
+ * sentence and its chain length. The dialog-item retraction runs after the
+ * control retraction and overwrote it, so Sound, VGA Display, Memory and
+ * Date & Time each reported "dialog item list hit a bound" - true, and
+ * silent about the thing a reader would act on.
+ *
+ * A dropped item list is a fact about that window. A spent pool is a fact
+ * about the SCENE and is the only one a consumer could fix by asking
+ * again, so it survives.
+ *
+ * Watched failing by mutation 2026-08-07: removing the PoolFull guard in
+ * now_scene_retract_dialog_items puts the item sentence back and drops the
+ * chain length, and both checks below name it.
+ */
+static void test_a_spent_pool_outlives_a_dropped_item_list(void)
+{
+    NowScene s;
+    char out[65536];
+    int i, owner;
+
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    owner = now_scene_add_process(&s, 0, 1, "Finder", 0, 1,
+                                  kNowSceneAnchorOk, 0);
+    (void)now_scene_add_window(&s, owner, "Spent It", 0, 0, 10, 10, 1);
+    (void)now_scene_add_window(&s, owner, "Lost Both", 0, 0, 10, 10, 1);
+
+    (void)now_scene_open_controls(&s, 0);
+    for (i = 0; i < kNowSceneMaxControls; ++i) {
+        (void)now_scene_add_control(&s, 0, "c", 0, 0, 9, 9, 1, 1, 0, 0, 1);
+    }
+    (void)now_scene_open_controls(&s, 1);
+    now_scene_retract_controls(&s, 1);
+    now_scene_set_walk_verdict(&s, 1, kNowSceneWalkControlsPoolFull);
+    now_scene_set_control_chain_len(&s, 1, 73, 1);
+
+    /* ...and THEN the item list goes, which is the order the walk runs in. */
+    (void)now_scene_open_dialog_items(&s, 1);
+    now_scene_retract_dialog_items(&s, 1);
+
+    check(now_scene_controls_state(&s.windows[1])
+          == kNowSceneControlsNotFetched,
+          "losing the item list does not turn a spent pool into unknown");
+
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check(well_formed(out), "a window that lost both planes is valid JSON");
+    check_present(out, "Lost Both: the scene's shared control pool was "
+                       "already full");
+    /* The number that sizes the pool must survive too - it is the whole
+       reason the pool-full path measures a chain it never recorded. */
+    check_present(out, "chain is 73");
+}
+
 int main(void)
 {
+    test_an_empty_control_list_says_which_kind_of_empty();
+    test_a_window_the_pool_ran_out_on_says_not_fetched();
+    test_a_spent_pool_outlives_a_dropped_item_list();
+    test_the_desktop_says_which_of_three_things_happened();
     test_the_order_ledger_says_what_it_forgot();
     test_theme_colours_reach_the_wire();
     test_coverage_and_incarnation_reach_the_wire();

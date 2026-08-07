@@ -13,6 +13,7 @@
 #include "obsref.h"
 #include "peek_read.h"
 #include "proc_roster.h"
+#include "screen_bounds.h"
 #include "scene_phase.h"
 #include "scene_self.h"
 #include "scene_theme.h"
@@ -109,20 +110,6 @@ static double captured_at_now(void)
        silently correcting that would hide a real fact about the machine
        behind a plausible number. */
     return (double)secs - kMacToUnixEpochSeconds;
-}
-
-static void screen_size(short *w, short *h)
-{
-    GDHandle device = GetMainDevice();
-
-    *w = 0;
-    *h = 0;
-    if (device != NULL) {
-        Rect r = (**device).gdRect;
-
-        *w = (short)(r.right - r.left);
-        *h = (short)(r.bottom - r.top);
-    }
 }
 
 /* One process's windows and their sub-planes, appended under an
@@ -369,7 +356,7 @@ void now_scene_collect(NowScene *out, long seq,
         now_scene_phase_calibrate();
     }
     now_scene_phase_reset();
-    screen_size(&w, &h);
+    now_screen_size(&w, &h);
     /* ONE epoch for the whole scene, not one per process. What it bounds
        is how much of a SCENE stays addressable, and a scene is what the
        person is looking at when they click; a per-process epoch would
@@ -388,6 +375,18 @@ void now_scene_collect(NowScene *out, long seq,
 
         now_scene_theme_ask(&theme);
         now_scene_set_theme(out, &theme);
+    }
+    /* And the desktop, for the same reason and in the same breath: it is
+       the largest rectangle the consumer redraws, and until this line the
+       only thing that could say what was on it was an offline pack's
+       record of a disk image. Two GetTheme collections per sweep rather
+       than one is the cost; the alternative was a renderer confidently
+       drawing last week's desktop. */
+    {
+        NowDesktopFacts desktop;
+
+        now_desktop_facts_ask(&desktop);
+        now_scene_set_desktop(out, &desktop);
     }
     now_semantic_client_begin((unsigned long)seq);
 

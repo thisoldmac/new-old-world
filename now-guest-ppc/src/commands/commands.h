@@ -25,11 +25,44 @@ enum { kNowCommandResultCap = 3072 };
 void now_command_run(const char *name, const char *request_json, long id,
                      char *out, long cap);
 
+/* kNowIdentityVersionCap and the shared system-version decode, so a
+   caller of now_system_version() sizes its buffer from the same header
+   the value is written by. */
+#include "guest_identity.h"
+
 /* --- machine identity --------------------------------------------------- */
 
 /* Writes this machine's name — what the other side calls it on screen —
-   into out (NUL-terminated, at most cap - 1 characters). Never empty. */
+   into out (NUL-terminated, at most cap - 1 characters). Never empty.
+
+   A LABEL, not an identity: it is the Sharing name, which a person edits
+   in a control panel, and on this project a deployed guest wears its
+   MacBinary name. `now_machine_model` is the one that answers "which
+   kind of Macintosh is this". */
 void now_machine_name(char *out, long cap);
+
+/* This machine's MODEL — "PowerBook 1400cs/117" — from Gestalt 'mnam',
+   then the System's machine-name 'STR ', then the machineType table,
+   then the raw id in words. Never empty.
+
+   Exported for `hello.machine.model` (contract, 2026-08-07). The census
+   `identity` probe keeps its own copy in census_probes.c and the two
+   resolve slightly differently — that one skips the 'STR ' step. Both
+   are display strings there; only this one goes on the wire as a field,
+   so only this one is the key. */
+void now_machine_model(char *out, long cap);
+
+/* The raw gestaltMachineType response, or 0 where Gestalt did not answer.
+   0 is a fact — "we could not establish it" — and never a model. A MODEL
+   at that: two PowerBook 1400cs answer identically, and nothing may read
+   this as identifying one unit. */
+long now_machine_type(void);
+
+/* This machine's system version as `major.minor.bugfix`, decoded through
+   contract/guest_identity.h so both guests spell it identically, or
+   `unknown` where Gestalt did not answer. Size the buffer from
+   kNowIdentityVersionCap. */
+void now_system_version(char *out, long cap);
 
 /* --- gestalt, as structured rows (the data layer both paths share) ------ */
 

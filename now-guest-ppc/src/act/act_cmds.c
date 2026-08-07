@@ -767,8 +767,68 @@ void now_act_run_textset(const char *request_json, long id, char *out, long cap)
 
 /* ---- ctlact ----------------------------------------------------------- */
 
+/* How long part 0 will watch the control it pressed. Ticks.
+ *
+ * DELIBERATELY SHORTER THAN kNowActDeadlineTicks (300). That deadline is
+ * how long a target may take to PUMP, and it is generous because a busy
+ * application may be slow to reach its event loop. This one starts after
+ * the target has already served the request and queued the press in its
+ * own context, so the only thing still outstanding is the application
+ * dequeuing one click - and it returns the moment the control moves, so
+ * the number is only what an unmoved control costs. Two seconds against
+ * an Appearance tab that redraws in well under one. */
+enum { kCtlactSettleTicks = 120 };
+
+/* What the control said about the act, as a reason rather than a flag -
+   because `not confirmed` has three causes and they send a reader to
+   three different places. */
+typedef enum {
+    kCtlMoved = 0,      /* re-read, and its value differs from before   */
+    kCtlUnmoved,        /* re-read, and it is exactly where it was      */
+    kCtlNoRange,        /* re-read, but min == max: nothing to observe  */
+    kCtlUnreadable      /* the re-read itself failed; `after.why` says  */
+} NowCtlSettled;
+
+/* Watch ONE control for `ticks`, stopping the moment it moves.
+ *
+ * This is `part 11`'s settlement check written for the form that has no
+ * patch to wait on: part 11 waits for the application to answer a trap,
+ * part 0 waits for the application to move the control. Both wait for
+ * the APPLICATION to do something observable, and both stop as soon as
+ * it does. `ticks` of 0 takes a single reading, which is what a named
+ * part wants - its settlement already happened.
+ *
+ * It re-resolves rather than re-reading a cached record: the reference
+ * layer re-proves the control from foreign memory every time, so a
+ * control that went away during the act is reported as gone rather than
+ * as unmoved. */
+static NowCtlSettled await_control_moved(const char *ref, long before,
+                                         NowObsHandle *after,
+                                         unsigned long ticks)
+{
+    unsigned long deadline = (unsigned long)TickCount() + ticks;
+
+    for (;;) {
+        now_observe_resolve_element(ref, 0, after);
+        if (after->verdict != kNowObsOk) {
+            return kCtlUnreadable;
+        }
+        if (after->detail.control.max <= after->detail.control.min) {
+            return kCtlNoRange;
+        }
+        if ((long)after->detail.control.value != before) {
+            return kCtlMoved;
+        }
+        if ((unsigned long)TickCount() >= deadline) {
+            return kCtlUnmoved;
+        }
+        now_act_yield_once();
+    }
+}
+
 void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
 {
+    NowCtlSettled       moved;
     NowObsHandle        handle;
     NowObsHandle        after;
     NowPeekActCell     *cell;
@@ -951,53 +1011,76 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
         return;
     }
 
-    /* The resident plane queued the press when it armed. The
-       application calls TrackControl from its own mouseDown handler, so
-       it still needs one to get there - but where it lands decides
-       nothing, because the patch answers with the part we named and
-       refuses any control but this one. */
-    st = now_act_await_fired(&g_snap);
-    /* PART 0 IS NOT WAITING FOR THAT, and reporting it as a failure was
-     * measured wrong on the emulator, 2026-08-07: the Appearance control
-     * panel's tab strip went from tab 1 to tab 3 to tab 4, watched in a
-     * screendump, while every one of those three requests answered
-     * `act-not-taken - armed, and the application never called
-     * TrackControl`. The message was literally true and the verdict was
-     * a lie.
+    /* WHAT EACH FORM OF THIS VERB MAY BE JUDGED BY, and the two forms do
+     * not have the same answer. Getting that wrong cost the verb its
+     * verdict in both directions, and the second cost was not free.
      *
-     * An Appearance-era tab in a dialog is handled by the Appearance
-     * Manager's own click path, not by the `TrackControl` trap, so no
-     * patch is ever consulted. What the plane actually did - and what
-     * this verb's part 0 asks for - is POST A REAL CLICK at a point
-     * inside a control this Mac revalidated, and then let the
-     * application do whatever it does with one. Whether that worked is
-     * answered by the control's own re-read below, not by a trap that
-     * was never called.
+     * A NAMED PART asks the patch to answer, so the patch answering IS
+     * the settlement: the application called TrackControl, and one that
+     * never did did not take the click. Unchanged below.
      *
-     * So part 0 reports what happened rather than whether a patch fired,
-     * and says which of the two it was in its own row. Every other part
-     * keeps the old contract exactly: naming a part code IS a request
-     * for the patch to answer, and one that never fired did not do it. */
-    if (st != kNowActOk && part != 0) {
-        reply_registered_error(
-            out, cap, id, "act-not-taken",
-            "armed, and the application never called TrackControl");
-        return;
+     * PART 0 ASKS FOR NO PATCH. It posts a real click and lets the
+     * application's own tracking decide - and an Appearance-era tab is
+     * handled by the Appearance Manager's own click path, where no patch
+     * is ever consulted. Waiting for one was wrong twice over, measured
+     * on the emulator 2026-08-07 with the tab confirmed switched in the
+     * guest's own pixels (value 4 -> 1, 1949 of 9320 strip pixels):
+     *
+     *   - THE VERDICT WAS A LIE. The reply read `Settlement: timed-out`
+     *     on the press that WORKED - word for word the same reply a
+     *     press that did nothing produced. A verb that cannot tell its
+     *     two outcomes apart cannot be believed about either.
+     *   - THE WAIT ITSELF DID THE DAMAGE. Burning the full 300-tick
+     *     deadline took every part-0 press to 5.1 s, a hundred times a
+     *     part-23 scroll, and outran the 180-tick writer lease - so the
+     *     anchor plane went dark mid-act and `Re-read value`, the only
+     *     evidence this form has, came back "the anchor plane is absent
+     *     or not armed". (act_client.c :: act_yield now renews that
+     *     lease; not asking for the extra seconds is the other half.)
+     *
+     * So part 0 waits for THE CONTROL - the thing it aimed at - and
+     * stops the moment the control moves. */
+    if (part != 0) {
+        /* The resident plane queued the press when it armed. The
+           application calls TrackControl from its own mouseDown handler,
+           so it still needs one to get there - but where it lands
+           decides nothing, because the patch answers with the part we
+           named and refuses any control but this one. */
+        st = now_act_await_fired(&g_snap);
+        if (st != kNowActOk) {
+            reply_registered_error(
+                out, cap, id, "act-not-taken",
+                "armed, and the application never called TrackControl");
+            return;
+        }
     }
+    /* THE SAME WATCH FOR BOTH FORMS, and it costs a named part nothing:
+       a control with no range answers on the first reading, and one that
+       moved answers on the first reading too. Only a control that CAN
+       move and did not pays the budget - which is exactly the case worth
+       being sure about before saying so. */
+    moved = await_control_moved(ref, (long)handle.detail.control.value,
+                                &after, kCtlactSettleTicks);
     now_act_withdraw();
+    now_act_note_observed(moved == kCtlMoved);
 
     rows_reset(&rows);
     row_add(&rows, "Element", ref);
     row_addf(&rows, "Part", "%ld", part);
-    row_add(&rows, "Dispatch", part == 0 ? "click posted" : "dispatched");
+    /* THE VERDICT ROW, and it is the settlement vocabulary rather than a
+       word of this verb's own. `click posted` described the DISPATCH and
+       was read as the effect - which is the exact failure slice 8 exists
+       to remove, and it read identically over a machine that did
+       nothing. `dispatched-but-unconfirmed` is already what the plane
+       says elsewhere for "it went and I cannot prove what it did"; a
+       second vocabulary here would only be a second thing to learn. */
+    row_add(&rows, "Dispatch",
+            moved == kCtlMoved ? "confirmed - the control moved"
+                               : "dispatched-but-unconfirmed");
     if (part == 0) {
         row_add(&rows, "Mechanism",
-                st == kNowActOk
-                    ? "a real click at the point; the application's own "
-                      "TrackControl then ran unanswered"
-                    : "a real click at the point; this application does not "
-                      "route it through TrackControl at all, so no patch "
-                      "was consulted");
+                "a real click at the point; this form asks no patch to "
+                "answer, so the control's own position is the evidence");
     } else {
         row_add(&rows, "Mechanism", "the application's own TrackControl");
     }
@@ -1015,28 +1098,36 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
        the guest itself can be quoted. A push button has no such range
        and this proves nothing about it - its effect is whatever its own
        handler did, which only the caller can name and check. The
-       stronger claim is made exactly where the guest supports it. */
-    now_observe_resolve_element(ref, 0, &after);
-    if (after.verdict == kNowObsOk) {
-        if (after.detail.control.max > after.detail.control.min) {
-            /* BESIDE the value the resolver read BEFORE the act, because
-               a number on its own cannot say whether anything moved -
-               and for part 0, that pair is the only evidence there is.
-               Both are the guest's own reads of the same control, taken
-               either side of one request. */
-            row_addf(&rows, "Value before", "%ld",
-                     (long)handle.detail.control.value);
-            row_addf(&rows, "Re-read value", "%ld",
-                     (long)after.detail.control.value);
-        } else {
-            row_add(&rows, "Re-read value",
-                    "this control has no range, so its position "
-                    "answers nothing about the act");
-        }
-    } else {
+       stronger claim is made exactly where the guest supports it.
+
+       WHY the verdict above cannot be recovered from these rows alone:
+       `unconfirmed` has three causes and they send a reader to three
+       different places - the control never moved, the control has no
+       position to move, or the re-read itself failed. Each says which. */
+    switch (moved) {
+    case kCtlMoved:
+    case kCtlUnmoved:
+        /* BESIDE the value the resolver read BEFORE the act, because a
+           number on its own cannot say whether anything moved - and for
+           part 0, that pair is the only evidence there is. Both are the
+           guest's own reads of the same control, either side of one
+           request. */
+        row_addf(&rows, "Value before", "%ld",
+                 (long)handle.detail.control.value);
+        row_addf(&rows, "Re-read value", "%ld",
+                 (long)after.detail.control.value);
+        break;
+    case kCtlNoRange:
+        row_add(&rows, "Re-read value",
+                "this control has no range, so its position "
+                "answers nothing about the act");
+        break;
+    default:
         row_add(&rows, "Re-read value", now_obs_why_text(after.why));
+        break;
     }
-    now_log(kLogInfo, "act", "#%ld ctlact part %ld dispatched", id, part);
+    now_log(kLogInfo, "act", "#%ld ctlact part %ld %s", id, part,
+            moved == kCtlMoved ? "confirmed" : "dispatched-but-unconfirmed");
     settlement_rows(&rows);
     reply_rows(out, cap, id, "ctlact", &rows);
 }

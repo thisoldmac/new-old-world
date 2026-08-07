@@ -101,13 +101,34 @@ public enum Platinum {
     public static let highlightFallbackRGB: UInt32 = 0x97A1DE
     public static let highlight = Color(rgb: Platinum.highlightFallbackRGB)
 
-    // Logical surface (the guest screen); scenes carry rects in this space.
-    public static let logicalSize = CGSize(width: 1024, height: 768)
+    /* NO logicalSize HERE. The logical surface IS the guest screen, and
+       the guest is the only thing that knows how big that is — it
+       measures `gdRect` and sends `scene.screen.w/h`. A theme constant
+       (this one said 1024×768 while the poller beside it said 800×600)
+       is a fourth opinion about somebody else's machine, and the render
+       it produces is letterboxed into a window sized from a different
+       opinion. `SceneRenderer.logicalSize` reads the scene, and answers
+       nil when no guest has said. */
 
     // Metrics (px in logical space).
     public static let menubarHeight: CGFloat = 20
     public static let titlebarHeight: CGFloat = 20
-    public static let contentTop: CGFloat = 22
+    /// Where the guest's own content starts inside a window's scene rect.
+    ///
+    /// **It is 20, not 22, and the two extra pixels were pure invention.**
+    /// `Scene.Window.rect` is the content port grown UP by
+    /// `SceneBuilder.titleBarHeight` = 20, so the content starts exactly 20
+    /// rows below `rect.t` by construction — and the machine agrees on all
+    /// eight windows measured: the black frame row above a window's content
+    /// lands on `t + 19` and the first content pixel on `t + 20`.
+    ///
+    /// The renderer had been drawing a one-pixel frame ON the scene rect and
+    /// then insetting the content by another row, so every window's interior
+    /// sat two pixels low and one pixel right of where the guest drew it — in
+    /// every render this project has ever taken. A fixed offset like that is
+    /// invisible to a similarity score and shows up as "close enough" on every
+    /// eyeball comparison. See MirrorKit.PlatinumTitleBar for the counts.
+    public static let contentTop: CGFloat = 20
 
     // Chicago / Geneva stand-ins.
     public static func systemFont(_ size: CGFloat) -> Font {

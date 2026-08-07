@@ -51,6 +51,7 @@
  */
 #include "census68.h"
 
+#include "guest_identity.h"   /* the system-version decode BOTH guests use */
 #include "health.h"
 #include "numfmt.h"
 #include "screen68.h"
@@ -156,22 +157,29 @@ static void fmt_size(char *buf, long cap, unsigned long bytes)
     fin(buf, cap, pos, ok);
 }
 
-/* The standard Mac OS decode for gestaltSystemVersion and its siblings:
- * high byte is the major version as a plain decimal number, the low byte
- * is minor and bug-fix as two BCD nibbles. health.c decodes it the same
- * way, and this file deliberately does not call into that one - health.c
- * caches formatted DISPLAY strings for a panel, and a census row wants the
- * number beside the words. */
+/* The standard Mac OS decode for gestaltSystemVersion and its siblings.
+ *
+ * It USED to be spelled out here, reading the high byte as a plain
+ * decimal number. That was right for every System this guest runs on and
+ * wrong at a BCD ten, and - the half that actually cost something - it
+ * was a SECOND decode: the PowerPC guest had its own, which dropped a
+ * zero bug-fix digit ("9.1" against this file's "7.1.0"). Harmless while
+ * both were display strings on their own machine's screen; not harmless
+ * once `hello.os` became a key the two guests are compared through
+ * (contract, 2026-08-07).
+ *
+ * So the decode is contract/guest_identity.h now and this is a renderer.
+ * Two behaviours changed, both strictly more correct: a high byte of
+ * 0x10 reads as ten rather than sixteen, and a Gestalt that answered 0
+ * renders `unknown` instead of claiming System 0.0.0 - which line 473's
+ * `gest_or(..., 0)` could always produce.
+ *
+ * health.c still decodes separately and deliberately: it caches formatted
+ * DISPLAY strings for a panel, where a census row wants the number beside
+ * the words. That one is not on the wire and is not a key. */
 static void fmt_version(char *buf, long cap, long v)
 {
-    long pos = 0;
-    int ok = now68k_fmt_append_long(buf, cap, &pos, (v >> 8) & 0xFF)
-             && now68k_fmt_append_str(buf, cap, &pos, ".")
-             && now68k_fmt_append_long(buf, cap, &pos, (v >> 4) & 0xF)
-             && now68k_fmt_append_str(buf, cap, &pos, ".")
-             && now68k_fmt_append_long(buf, cap, &pos, v & 0xF);
-
-    fin(buf, cap, pos, ok);
+    now_identity_system_version(v, buf, cap);
 }
 
 /* A Pascal string into a C buffer, truncating at cap-1. The census page
@@ -348,6 +356,37 @@ static void machine_model(char *out, long cap)
 
         fin(out, cap, pos, ok);
     }
+}
+
+/* --- what hello carries -------------------------------------------------
+ *
+ * `hello` gained typed identity fields on 2026-08-07 (contract), and the
+ * values were already in this file - computed for the `identity` probe.
+ * These three are exports of what the census already knew, not new
+ * probes: nothing extra is asked of Gestalt, which matters more here than
+ * on the PowerPC guest, since this is the machine that refuses the whole
+ * `selectors` walk for want of 32 KB.
+ *
+ * They live in census68.c rather than in hello.c on purpose. hello.c is
+ * pure C with no Toolbox, which is what lets test_framecodec compile and
+ * run it under the host cc; putting a Gestalt call in it would cost that. */
+
+void now68k_machine_model(char *out, long cap)
+{
+    machine_model(out, cap);
+}
+
+long now68k_machine_type(void)
+{
+    long id;
+
+    /* 0 is a fact - "we could not establish it" - and never a model. */
+    return gest(gestaltMachineType, &id) ? id : 0;
+}
+
+void now68k_system_version(char *out, long cap)
+{
+    now_identity_system_version(gest_or(gestaltSystemVersion, 0), out, cap);
 }
 
 static const char *cpu_name(long type)

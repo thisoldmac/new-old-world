@@ -72,7 +72,13 @@ final class IRFreezeTests: XCTestCase {
         let window = Scene.Window(
             id: "0.1/W#0", app: "A", psn: "0.1", title: "W", kind: 2,
             rect: rect, front: true, z: 0, visible: true,
-            controls: [control], dialogItems: [dialogItem],
+            controls: [control],
+            /* MAXIMAL, even though a real producer omits this beside a
+               populated array — the freeze pins the SHAPE a consumer must
+               keep decoding, and a key the fixture never sets is a key the
+               gate cannot notice being removed. */
+            controlsState: "complete",
+            dialogItems: [dialogItem],
             ref: "now-window-probe",
             addr: 0x1EA2D3E0,
             incarnation: "process-12345678/window-1ea2d3e0",
@@ -119,7 +125,16 @@ final class IRFreezeTests: XCTestCase {
                 theme: .init(dialogBackground: "#DDDDDD",
                              alertBackground: "#DDDDDD",
                              documentBackground: "#FFFFFF",
-                             highlight: "#97A1DE", depth: 32)))
+                             highlight: "#97A1DE", depth: 32),
+                /* Maximal for the same reason: a machine that names no
+                   pattern encodes no `patternName`, and the freeze would
+                   then pin a shape the real answer does not have. Both
+                   names and both layer bits are filled even though a real
+                   desktop rarely carries all four at once. */
+                desktop: .init(source: "picture", hasPattern: true,
+                               hasPicture: true, patternBytes: 32,
+                               patternName: "Waves",
+                               pictureName: "Indigo Foam")))
     }
 
     // MARK: - 1. The shape does not drift

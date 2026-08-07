@@ -357,6 +357,80 @@ void now_desktop_gather(DesktopAnswer *out)
     DisposeCollection(c);
 }
 
+/* One tag's Str255 straight into a buffer, with no row written. The row
+   writer above cannot serve this: it needs a DesktopAnswer to append to,
+   and the whole point of the scene carrier is not to build one. */
+static void read_str_tag(Collection c, OSType tag, char *out, long cap)
+{
+    unsigned char buf[256];
+    OSErr err = noErr;
+    long size;
+
+    out[0] = '\0';
+    size = read_tag(c, tag, buf, (long)sizeof buf, &err);
+    if (size < 0) {
+        return;
+    }
+    pstring_text(buf, size, out, cap);
+}
+
+void now_desktop_facts_ask(NowDesktopFacts *out)
+{
+    Collection c;
+    OSErr err = noErr;
+    unsigned char scratch[8];
+    long size;
+
+    if (out == NULL) {
+        return;
+    }
+    memset(out, 0, sizeof *out);
+    out->source = kDesktopSourceUnknown;
+    out->pattern_bytes = -1;
+
+    c = NewCollection();
+    if (c == NULL) {
+        /* Not asked: there was nothing to ask WITH. A consumer meeting no
+           `meta.desktop` and a consumer meeting one that says `unknown`
+           are owed different sentences, and this is the first. */
+        return;
+    }
+    out->asked = 1;
+    if (GetTheme(c) != noErr) {
+        DisposeCollection(c);
+        return;                 /* asked, refused, source stays unknown */
+    }
+
+    read_str_tag(c, (OSType)kThemeDesktopPatternNameTag, out->pattern_name,
+                 (long)sizeof out->pattern_name);
+    read_str_tag(c, (OSType)kThemeDesktopPictureNameTag, out->picture_name,
+                 (long)sizeof out->picture_name);
+
+    /* The pattern's TRUE length, without carrying any of it: an eight-byte
+       scratch is enough for read_tag to report the item size, and the
+       bytes themselves are not renderable art. */
+    size = read_tag(c, (OSType)kThemeDesktopPatternTag, scratch,
+                    (long)sizeof scratch, &err);
+    if (size >= 0) {
+        out->has_pattern = 1;
+        out->pattern_bytes = size;
+    }
+
+    /* The ALIAS, not the name - see the note on DesktopSource for the
+       measurement that settled which tag actually says a picture is set. */
+    if (CountTaggedCollectionItems(c,
+            (CollectionTag)kThemeDesktopPictureAliasTag) > 0) {
+        out->has_picture = 1;
+    }
+
+    if (out->has_picture || out->picture_name[0] != '\0') {
+        out->source = kDesktopSourcePicture;
+    } else if (out->has_pattern) {
+        out->source = kDesktopSourcePattern;
+    }
+    DisposeCollection(c);
+}
+
 void now_desktop_command(const char *request_json, long id,
                          char *out, long cap)
 {
