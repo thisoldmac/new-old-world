@@ -223,3 +223,60 @@ final class ProvenanceLadderTests: XCTestCase {
     }
 
 }
+
+/// **The desktop is a rectangle on the same ladder, and it is the biggest
+/// one in the picture.**
+///
+/// It used to be two guesses: tile `ppat` 16 across the screen, and fill a
+/// hard-coded purple when the pack had none. Lane C measured the first as
+/// wrong on the image we run — `ppat` 16 is a shipped DEFAULT, not a
+/// setting, and the guest's actual desktop is the 800×600 picture "Indigo
+/// Foam", drawn once at the origin (p50 delta 2 against sweep A's own
+/// screendump).
+@MainActor
+final class DesktopProvenanceTests: XCTestCase {
+
+    /// **A size mismatch is an unknown, not a crop.**
+    ///
+    /// Mac OS 9 ships desktop pictures at 800×600, 1024×768 AND 832×624,
+    /// and the alignment field that says what to do with a mismatch is
+    /// `null` on the offline route. Drawing at the origin would crop
+    /// silently and read as a render bug; scaling would read as a different
+    /// picture. Neither is a fact.
+    ///
+    /// Watched failing by mutation: dropping the size equality guard from
+    /// `DesktopPattern.answer` makes an 800×600 picture answer `.picture`
+    /// for a 1024×768 screen and this fails.
+    func testAPictureThatIsNotTheScreenSizeIsAnUnknown() throws {
+        try XCTSkipIf(MirrorKitUI.AssetPack.root == nil,
+                      "no asset pack; nothing to resolve against")
+        let wrong = DesktopPattern.answer(
+            screen: CGSize(width: 1024, height: 768))
+        guard case .unknown = wrong else {
+            return XCTFail("""
+                a desktop picture whose size is not this screen's resolved \
+                to \(wrong). The alignment that would say how to place it \
+                was not readable, so there is no honest answer but the mark.
+                """)
+        }
+    }
+
+    /// **And the right size resolves to the picture, or the pack cannot
+    /// say — never to a tiled default.**
+    ///
+    /// Both outcomes are acceptable and one of them is not: whatever this
+    /// answers, it must never be a pattern the manifest did not name. That
+    /// is the deletion this test protects.
+    func testTheDesktopIsNeverAnUnnamedDefault() throws {
+        try XCTSkipIf(MirrorKitUI.AssetPack.root == nil,
+                      "no asset pack; nothing to resolve against")
+        switch DesktopPattern.answer(screen: CGSize(width: 800, height: 600)) {
+        case .picture, .unknown:
+            break
+        case .pattern:
+            // Legitimate only if the manifest actually says `pattern`.
+            XCTFail("resolved to a tiled pattern on a pack whose manifest "
+                    + "records a picture — this is the ppat 16 guess back")
+        }
+    }
+}
