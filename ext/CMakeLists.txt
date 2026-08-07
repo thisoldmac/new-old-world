@@ -88,6 +88,9 @@ add_executable(NowExt
     # P7's decisions, where the host cc can compile them and
     # scripts/test-native can watch the dead-man fire.
     ../now-guest-shared/src/now_drag_logic.c
+    # P8's one decision - "is somebody else driving this pointer" - where
+    # the host cc can compile it and a test can watch it yield.
+    ../now-guest-shared/src/now_cursor_logic.c
     ../now-guest-shared/src/now_semantic_guard.c)
 add_dependencies(NowExt generate_now_ext_identity)
 set_source_files_properties(src/now_ext.c

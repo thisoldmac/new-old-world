@@ -68,6 +68,7 @@
 #include <Traps.h>
 
 #include "peek_table.h"
+#include "now_cursor_logic.h"
 
 /* CrsrNew and CrsrCouple are past where this toolchain's LowMem.h stops
    (CrsrBusy, 0x08CD), and are reached through VOLATILE POINTER VARIABLES
@@ -167,7 +168,9 @@ int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, int owned)
        always "us". */
     raw = LMGetRawMouseLocation();
     now = (unsigned long)LMGetTicks();
-    if (raw.h != gLastPlaced.h || raw.v != gLastPlaced.v) {
+    if (now_cursor_is_foreign((NowPeekI32)raw.h, (NowPeekI32)raw.v,
+                              (NowPeekI32)gLastPlaced.h,
+                              (NowPeekI32)gLastPlaced.v)) {
         gForeignTicks = now;
     }
 
@@ -187,8 +190,9 @@ int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, int owned)
         cell->at_v = v;
     }
 
-    if (!owned && (unsigned long)(now - gForeignTicks)
-                      < (unsigned long)kNowPeekCursorYieldTicks) {
+    if (now_cursor_should_yield((NowPeekU32)now, (NowPeekU32)gForeignTicks,
+                                owned,
+                                (NowPeekU32)kNowPeekCursorYieldTicks)) {
         route = kNowPeekCursorRouteYielded;
         if (cell != NULL) {
             cell->yielded++;
