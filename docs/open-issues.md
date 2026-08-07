@@ -14,6 +14,45 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## OPEN: this tree cites corpus findings that are not in the corpus (2026-08-07, `claude/019-housekeeping`)
+
+**Verification level: TESTED.** Four citations were corrected to say
+where the finding actually is; the class behind them is not closed.
+
+`docs/` said, in the completed past tense, that four findings had been
+**graduated to the corpus**. They are not on the parent's `main`. They
+sit on `claude/018-findings`, which holds **26 unlanded findings** — so
+the repository was telling a reader they could go and read something that
+is not where it says. Landing that branch is a `main` decision and was
+not taken here; the citations were made honest instead, each naming the
+branch and saying it has not landed:
+
+| Finding | Cited in |
+|---|---|
+| `charcoal-ships-scalable-only-no-bitmap-strike` | `docs/plans/2026-08-07-020-accounting.md` |
+| `hdmx-is-apples-own-per-ppem-advance-table` | `docs/plans/2026-08-07-020-accounting.md` |
+| `headless-is-declared-not-observed` | `docs/plans/2026-08-07-020-accounting.md` |
+| `an-appearance-check-flags-correct-absences` | `docs/fidelity-sweep-2026-08-07-b.md` |
+
+**The sweep that found the fourth also found a worse class, and it is
+left open.** Comparing every finding-shaped slug cited anywhere in
+`docs/`, `README.md`, `AGENTS.md` and `CONTRIBUTING.md` against the
+parent corpus turned up six more that are on **neither** `main` **nor**
+`claude/018-findings` — `deriving-a-drawn-procedure`,
+`pb1400-vram-read-bandwidth`, `qdtrace-drain-sweep-sound`,
+`postevent-modifiers-need-ppostevent`, `now-four-face-capability-cost`,
+`now-large-transfer-pacing-collapse`. Two of those are honest on their
+face (`now-large-transfer-pacing-collapse` says *"working slug"*); the
+rest read as references to something that exists. They were not corrected
+because each needs its own check — a slug may have been renamed on the
+way in rather than never written — and guessing would replace one wrong
+claim with another.
+
+**Nothing gates any of this.** A citation into another repository's
+corpus is prose, and prose that names an artifact is the shape this
+project has been bitten by repeatedly; the durable fix is a check that
+resolves cited slugs against the corpus, not a sweep repeated by hand.
+
 ## OPEN: a lane can revert a sibling's work in a commit whose message never mentions it (2026-08-07, round 7 integration)
 
 **Verification level: TESTED.** Found by reading a merge, not by any gate,
