@@ -114,6 +114,18 @@
    }
   },
   {
+   "path": "now-host/Tests/HostTests/Fixtures/now-scene-sweepb-memory.json",
+   "sha256": "8b75a76bef0e46f56bb2de9b5ad0c6c4496f99d3a95e5021181f05e523ef0798",
+   "bytes": 88624,
+   "ops": null,
+   "provenanceIsWeak": true,
+   "provenance": {
+    "source": "peek",
+    "capturedAt": 1786072575.0,
+    "version": 2
+   }
+  },
+  {
    "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-blitsrc-control.json",
    "sha256": "ce001825c14fa0d749d430d22b89c3f2ee5baeaea48fd8e405eff8e4a050b859",
    "bytes": 4144,
@@ -469,6 +481,20 @@
     "vm": "nowvm-sw18a",
     "run": "fidelity-sweep finder (record mode, worlds hooked at birth)",
     "capturedAt": "2026-08-06",
+    "guest": "mac99/OS 9.1 emulated"
+   }
+  },
+  {
+   "path": "now-host/Tests/HostTests/Fixtures/qdtrace-drain-sweepb-memory.json",
+   "sha256": "74312a35e28c3360fdeaac9520f835b177b7edef69f6131f9071d01c8ac1e196",
+   "bytes": 792208,
+   "ops": 4744,
+   "provenanceIsWeak": null,
+   "provenance": {
+    "build": "7e8d5e35bc36",
+    "vm": "nowvm-swb",
+    "run": "fidelity-sweep memory (record mode, worlds hooked at birth)",
+    "capturedAt": "2026-08-07",
     "guest": "mac99/OS 9.1 emulated"
    }
   },

@@ -14,7 +14,69 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
-## BROKEN: a classified control the renderer will not draw, and one that erases the panel (2026-08-07, `claude/019-integration-4`)
+## FIXED: four render defects, two mechanisms, one arbitration (2026-08-07, `claude/019-sweepb-regressions`)
+
+Sweep B's **R1** (Memory's interior drawn twice) and **R2** (a vertical
+stroke merged into every static label), and integration round 4's **3a**
+(a root `userPane` erasing all six Appearance tabs) and **3b** (a
+classified control losing to its own untyped DITL row). They arrived
+from three lanes on the same day and they are **one question asked in
+four places**: which producer owns this rectangle.
+
+**Verification level: TESTED** — `scripts/test-all` green, and every
+claim below measured offline through the sweep's own harness
+(`LiveShapedRenderTests.testRenderASweepAsTheAppWouldDrawIt` over
+`sweep-2026-08-07-b/p1`, manifest sha `5de039bf…`), rendered against the
+guest's own screendumps for all nine targets. **Nothing here ran on a VM
+or on metal**, and no claim is made about either.
+
+### It was two mechanisms, not four bugs
+
+- **Rung 2 drew over rung 1 because nothing asked.** `drawControl` had
+  never consulted `Coverage` at all — its twin `drawDialogItem` has
+  since 2026-08-06 — and the test it should have asked, `mostlyCovers`,
+  is the RECTANGLE's question rather than the text's. Memory's "Disk
+  Cache" row is 102 points holding a 48-point run.
+- **`derived` is a knowledge level and was read as two other things:**
+  as words (`semantic.value` carrying `GetControlValue`), and as "not
+  good enough to outrank a dialog item that knows nothing".
+
+The full statement is [render-composition.md](render-composition.md) >
+"The arbitration is asked on BOTH planes". Six gates in
+`LadderArbitrationTests`, each watched failing by its own mutation, with
+sweep B's Memory scene and drain committed as fixtures — and one gate
+asserting that fixture still exhibits the conditions, because a gate
+whose capture was quietly replaced by a clean one proves nothing.
+
+### What the fix cost, found by re-rendering all nine targets
+
+Two corrections that the named defect would not have surfaced, both
+caught by looking at targets nobody had complained about:
+
+- **Ground drawn ahead of the chain is wrong for an ARMED window.** The
+  first ordering fix put "Structured content unavailable" beneath Date &
+  Time's own Time Zone group. Ground marks an absence; where the replay
+  owns the interior there is no absence.
+- **Yielding a check box as one row takes its mark box with its label.**
+  NOW's own Workshop lost the tick beside "Compress on wire (PackBits)"
+  — the same per-piece lesson Date & Time taught in August.
+
+### What did NOT get fixed, and is now visible
+
+- **OS 9 builds its radio buttons from a CDEF the guest reports as the
+  button FAMILY**, so six of Memory's radios arrive as `pushButton`.
+  With the pills correctly withheld, the machine's own radio MARK does
+  not reach the replay either, so those rows now render as a bare label
+  where the machine draws a filled circle. Before the fix they rendered
+  as a Platinum pill, which was a confident wrong answer rather than a
+  better one. Two separable items: a classification the guest cannot
+  make honestly today, and a capture gap.
+- **Monitors' small user pane** (nothing inside it) renders as a marked
+  unknown, and its root pane is silent. That is the rule working, not a
+  defect, but it is the first place the two clauses are visible side by
+  side.
+
+## WAS BROKEN, FIXED 2026-08-07 (see the entry above): a classified control the renderer will not draw, and one that erases the panel (2026-08-07, `claude/019-integration-4`)
 
 Round 4's LOOK, on the emulator at 03:35–03:45, against the private bake
 `now-stage-int4` (anchor 14624 / wire 14625). Emulator-capture-verified;
@@ -58,6 +120,13 @@ not regress — the SCENE changed underneath it.
   fixable before this lane, because there was nothing better to prefer;
   it is fixable now, and the care it needs is the `scene-ie-error-alert`
   case the existing suppression was written for.
+
+**Both fixed 2026-08-07** on `claude/019-sweepb-regressions`, together
+with sweep B's R1 and R2 because all four are the same arbitration — see
+the entry above. The alert case is asserted rather than assumed: it has
+the OPPOSITE shape, `unknown` controls beside `known pushButton` items,
+and a mutation letting a derived control win unconditionally fails
+naming it.
 
 **Fixed in the same round:** the derived branch was emitting
 `GetControlValue` into `semantic.value`, which on this contract is the
