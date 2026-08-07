@@ -58,9 +58,13 @@ too: it followed every resident move exactly, to the integer.
 
 So the manager knows where the cursor is and is simply not the thing
 `CrsrNew` asks. **On Mac OS 8/9 the Cursor Device Manager owns the
-sprite, and the low-memory globals are downstream of it rather than
-upstream.** That is an operating-system fact, not an emulator one, so
-metal is not expected to differ — and the fix is not a rig workaround.
+pointer's position, and the low-memory globals are downstream of it
+rather than upstream.** That is an operating-system fact, not an emulator
+one, so metal is not expected to differ — and nothing below is a rig
+workaround.
+
+It is also not the whole answer, and the next section is the rest of it:
+calling the manager was necessary and was *not sufficient*.
 
 ### How low memory was found, which is not a detail
 
@@ -85,7 +89,7 @@ that fails *quietly* if you get it backwards.
 One entry point does both halves:
 
 ```c
-int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, int owned);
+int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags);
 ```
 
 - **The low-memory writes stay, unchanged and unconditional.** They are
@@ -96,11 +100,19 @@ int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, int owned);
   mouse driver's own interrupt handler makes sixty times a second — which
   is why it is safe from P7's Time Manager task, and why it is an
   absolute move with no acceleration applied, which is what an act needs.
+- **and the redraw, which is the part the next section is about.**
 
-P4's `act_post_click` calls it with `owned = 0`; P7's `drag_place` calls
-it with `owned = 1`. `now_ext_drag.c` no longer spells `0x08CE` at all:
-one plane owns the cursor, and two files spelling the same two addresses
-is how a pair drifts.
+`flags` carries two facts that are the CALLER's and cannot be worked out
+here: `kNowCursorPlaceOwned` (I am holding the pointer for a gesture and
+must not yield) and `kNowCursorPlaceInterrupt` (no Toolbox beyond
+low-memory accessors). P4's `act_post_click` passes neither; P7's
+`drag_place` passes both. The first version inferred the second from the
+first, because the drag happened to be the only interrupt-time caller —
+an accidental coupling waiting for a second caller.
+
+`now_ext_drag.c` no longer spells `0x08CE` at all: one plane owns the
+cursor, and two files spelling the same two addresses is how a pair
+drifts.
 
 ## Three routes, and only the third draws
 
