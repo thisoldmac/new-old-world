@@ -113,6 +113,37 @@ final class ThemeColourRenderTests: XCTestCase {
             """)
     }
 
+    /// **An untitled Dialog Manager window takes the ALERT brush.**
+    ///
+    /// A real one was raised on the guest and its interior counted:
+    /// 40372 of 45974 px at 0xDDDDDD. That settles the VALUE and cannot
+    /// settle the BRUSH, because both evaluate to 0xDDDDDD under
+    /// Platinum. So the discrimination is pinned here synthetically, with
+    /// a theme whose two brushes differ - the only way the difference can
+    /// be seen at all until the guest reports a WDEF variant.
+    func testAnUntitledDialogTakesTheAlertBrushAndATitledOneDoesNot() throws {
+        var scene = try scene()
+        let index = try XCTUnwrap(scene.windows.firstIndex(where: \.front))
+        scene.meta.theme = .init(dialogBackground: "#336699",
+                                 alertBackground: "#996633", depth: 32)
+
+        XCTAssertFalse(scene.windows[index].title.isEmpty,
+                       "the fixture's panel is titled, which is what makes "
+                       + "the pair below a contrast rather than a repeat")
+        let (titled, _, _) = try dominantInterior(scene)
+        XCTAssertEqual(titled, "51,102,153",
+                       "a TITLED kind-2 window is a dialog, not an alert")
+
+        scene.windows[index].title = ""
+        let (untitled, n, total) = try dominantInterior(scene)
+        XCTAssertEqual(untitled, "153,102,51", """
+            an untitled kind-2 window rendered \(untitled) (\(n) of \
+            \(total) px). It is this side's alert verdict - the same one \
+            that already decides it draws dBoxProc chrome - so the face \
+            must follow it to the alert brush.
+            """)
+    }
+
     // MARK: - what absence means, in both of its forms
 
     /// **No `meta.theme` at all: this producer did not ask.** The Platinum

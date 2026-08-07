@@ -100,18 +100,37 @@ public struct SceneTheme: Equatable, Sendable {
         return Color(rgb: v)
     }
 
-    /// The face a window with this `kind` was erased with.
+    /// The face a window was erased with.
     ///
     /// `kind` is the WindowRecord's own `windowKind`, read out of the
-    /// machine. 2 is the Dialog Manager's, and a Dialog Manager window is
-    /// erased with the dialog brush whether or not it has a title bar.
-    /// Everything else — including application-defined kinds such as the
-    /// Appearance control panel's 2000 — is a document window face, which
-    /// is what `kThemeBrushDocumentWindowBackground` names. Before this
-    /// method that second case was the literal white `Platinum.g0`, so a
+    /// machine. 2 is the Dialog Manager's; everything else — including
+    /// application-defined kinds such as the Appearance control panel's
+    /// 2000 — is a document window face, which is what
+    /// `kThemeBrushDocumentWindowBackground` names. Before this method
+    /// that second case was the literal white `Platinum.g0`, so a
     /// kind-2000 panel could only ever be white no matter what the theme
     /// said.
-    public func face(forWindowKind kind: Int?) -> Color {
-        kind == 2 ? dialogFace : documentFace
+    ///
+    /// **`untitled` PICKS THE ALERT BRUSH, AND IT IS AN INFERENCE — say so
+    /// out loud.** The Alert Manager erases an alert with
+    /// `kThemeBrushAlertBackgroundActive` and an ordinary modal dialog
+    /// with the dialog brush, but IR v1 carries no WDEF variant, so
+    /// nothing on the wire tells the two apart. What this side has is the
+    /// discriminator it ALREADY uses to decide that a window draws
+    /// `dBoxProc` chrome instead of a title bar: kind 2 with no title.
+    /// Using it for the face too adds no new guess — but it is the same
+    /// guess twice, and if it is wrong it is wrong in both places.
+    ///
+    /// **A measurement cannot currently settle it.** Both brushes evaluate
+    /// to 0xDDDDDD under the shipped Platinum theme — asked of the machine
+    /// (`meta.theme`, 2026-08-07) and counted off a real Finder alert's
+    /// interior (40372 of 45974 px). So no capture can distinguish them
+    /// and none will until either the theme differs or the guest reports
+    /// the variant. Recorded in docs/theme-colours.md rather than left as
+    /// a comfortable silence.
+    public func face(forWindowKind kind: Int?, untitled: Bool = false)
+        -> Color {
+        guard kind == 2 else { return documentFace }
+        return untitled ? alertFace : dialogFace
     }
 }

@@ -652,7 +652,8 @@ public struct SceneRenderer {
            `kind` is the WindowRecord's own `windowKind`, read out of the
            machine - not something this side inferred. Anything else keeps
            white, which is what a document window's content really is. */
-        let windowFace = theme.face(forWindowKind: win.kind)
+        let windowFace = theme.face(forWindowKind: win.kind,
+                                    untitled: win.title.isEmpty)
 
         // Drop shadow, frame, face, raised bevel.
         ctx.fill(Path(frame.offsetBy(dx: 2, dy: 2)),
