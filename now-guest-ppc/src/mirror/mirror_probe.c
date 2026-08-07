@@ -98,17 +98,33 @@ static int plane_format_compatible(const NowPeekTable *table,
         return format == kNowPeekActFormatV2 && table->length >= need;
     case kMirrorPlaneTransitions:
         return format == kNowEventFormatV1;
+    case kMirrorPlaneEnd:
+        /* Not a plane — the enumeration's own end. Named rather than
+           swept into a `default`, because -Wswitch naming every switch
+           that gained a plane is the point of the sentinel: a `default`
+           here would take that gate away again. */
+        break;
     }
     return 0;
 }
 
 static unsigned long plane_capability(MirrorPlane plane)
 {
-    static const unsigned long values[kMirrorPlaneCount] = {
+    /* Unsized and asserted, the mirror_layout.c rule: a bound written
+       beside a list is a second statement of how long the list is, and
+       the sibling table that did that drew P5 from past its own end. */
+    static const unsigned long values[] = {
         kNowPeekTableCapAnchors, kNowPeekTableCapTree,
         kNowPeekTableCapContent, kNowPeekTableCapAct,
         kNowPeekTableCapEvents
     };
+
+    _Static_assert(sizeof values / sizeof values[0] == kMirrorPlaneCount,
+                   "every MirrorPlane needs its capability bit");
+
+    if ((int)plane < 0 || (int)plane >= kMirrorPlaneCount) {
+        return 0;
+    }
     return values[(int)plane];
 }
 
@@ -146,6 +162,8 @@ static unsigned long plane_format(const NowPeekTable *table,
         const NowEventBlock *block = event_block(table);
         return block != NULL ? block->format : 0;
     }
+    case kMirrorPlaneEnd:
+        break;                        /* not a plane; see the note above */
     }
     return 0;
 }
@@ -190,6 +208,8 @@ static unsigned long plane_generation(const NowPeekTable *table,
            producing without reading a single record. */
         return block != NULL ? block->write_cursor : 0;
     }
+    case kMirrorPlaneEnd:
+        break;                        /* not a plane; see the note above */
     }
     return 0;
 }

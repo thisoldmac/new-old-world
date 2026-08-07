@@ -48,6 +48,26 @@ Two things worth keeping:
   nothing behind it publishes an empty state that no call of its own can
   get out of — the same trap `--open-mirror` fell into above.
 
+**Driven and watched, 2026-08-06 (emulator).** Against a host launched
+WITHOUT `--open-mirror` and a PowerPC guest on mac99/OS 9.1 dialling it:
+
+- `mirror_read --intention status` answered "The selected guest has no
+  published Mirror snapshot" — the window shut, the poll stopped.
+- The guest's button opened it. The host's own sentence — "Opened the
+  Mirror on Power Mac G4." — appeared on the guest's Mirror page, and
+  the resident's plane bits went from `requested 0, active 0` to
+  `requested 15, active 15`.
+- On a restarted host, `now_mirror_open` over the agent socket answered
+  `showing: true, alreadyOpen: false` and the same status read came back
+  with a live snapshot. Asking again answered `alreadyOpen: true`.
+- Typed at the machine, `showmirror` answered "The Mirror was already
+  open; brought it to the front."
+
+**The menu item is TESTED, not driven.** Clicking it means scripting
+macOS accessibility, which is the exact habit this entry exists to make
+unnecessary; `MainMenuTests` asserts the item, its selector and its
+shortcut instead.
+
 **What is left uneven, declared rather than left silent:** NOW-68K
 neither asks nor serves the family. That is the arc's scope, not a limit
 of a 68030 — a NOW-68K with a Mirror page would want the same button.

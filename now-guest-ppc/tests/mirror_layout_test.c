@@ -71,6 +71,34 @@ static void test_plane_words(void)
           "P3 is named Content");
     check(strcmp(now_mirror_plane_name(kMirrorPlaneInteraction), "Interaction") == 0,
           "P4 is named Interaction");
+    check(strcmp(now_mirror_plane_name(kMirrorPlaneTransitions),
+                 "Transitions") == 0,
+          "P5 is named Transitions");
+
+    /* **The whole enumeration, walked — not four planes named by hand.**
+       Naming them one at a time is how P5 came to be missing: the page
+       drew five rows against a four-row table and read one element past
+       its end, which rendered as a blank line and read as a plane with
+       nothing to say. A test that lists the planes it knows about cannot
+       catch the plane nobody added, so this one asks the enumeration. */
+    {
+        int i;
+        for (i = 0; i < kMirrorPlaneCount; ++i) {
+            const char *name = now_mirror_plane_name((MirrorPlane)i);
+            const char *purpose = now_mirror_plane_purpose((MirrorPlane)i);
+            check(name != NULL && name[0] != '\0',
+                  "every plane has a name");
+            check(purpose != NULL && purpose[0] != '\0',
+                  "every plane has a purpose");
+        }
+    }
+
+    /* And a plane index that is not one: the page is fed by a resident
+       over a shared table, so an out-of-range value is an input rather
+       than an impossibility. The empty string is the answer; a read past
+       the table is not. */
+    check(now_mirror_plane_name((MirrorPlane)kMirrorPlaneCount)[0] == '\0',
+          "a plane index past the end reads as empty, not as memory");
 
     facts.planes[kMirrorPlaneSemantics].state = kMirrorPlaneUnsupported;
     now_mirror_plane_value(&facts, kMirrorPlaneSemantics, out, sizeof out);
