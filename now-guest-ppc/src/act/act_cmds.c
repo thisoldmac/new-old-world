@@ -1041,22 +1041,6 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
     psn.lowLongOfPSN = (unsigned long)lo;
     want = &psn;
     visibility = menu == -16489L && (item == 1L || item == 2L);
-    /* READ THE ITEM BEFORE PRESSING IT. Not for tidiness: MenuSelect
-       returns whatever we answer with, so a press on a DISABLED item
-       reported `dispatched` and did nothing, forever - the Finder's
-       `File > Print` with an empty selection, watched 2026-08-07. The
-       probe refuses only on a POSITIVE reading; an unreadable menu list
-       comes back Unknown and this dispatches as before, because "I could
-       not look" is not "no". Skipped for the visibility items, which the
-       Process Manager serves rather than any application's menu. */
-    if (!visibility) {
-        now_act_menu_probe(want, menu, item, &probe);
-        if (now_act_menu_probe_code(&probe) != NULL) {
-            reply_error(out, cap, id, now_act_menu_probe_code(&probe),
-                        now_act_menu_probe_message(&probe));
-            return;
-        }
-    }
     if (!visibility && act_target_is_self(want)
         && g_self_menu_handler != NULL) {
         if (!g_self_menu_handler((menu << 16) | (item & 0xFFFFL))) {
@@ -1074,6 +1058,30 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
                 id, menu, item);
         reply_rows(out, cap, id, "menuact", &rows);
         return;
+    }
+    /* READ THE ITEM BEFORE PRESSING IT. Not for tidiness: MenuSelect
+       returns whatever we answer with, so a press on a DISABLED item
+       reported `dispatched` and did nothing, forever - the Finder's
+       `File > Print` with an empty selection, watched 2026-08-07. The
+       probe refuses only on a POSITIVE reading; an unreadable menu list
+       comes back Unknown and this dispatches as before, because "I could
+       not look" is not "no".
+
+       AFTER the two paths that do not go through a foreign MenuSelect,
+       and the ordering is load-bearing. The visibility items are the
+       Process Manager's, not any application's. And SELF is worse than
+       useless here: axprocess.h says plainly that binding our own PSN
+       "walks to nothing useful", because NOW is Carbon and its records
+       are not at the classic offsets - so probing our own menu bar could
+       refuse a legitimate act on the strength of a walk that was never
+       looking at our menus. */
+    if (!visibility) {
+        now_act_menu_probe(want, menu, item, &probe);
+        if (now_act_menu_probe_code(&probe) != NULL) {
+            reply_error(out, cap, id, now_act_menu_probe_code(&probe),
+                        now_act_menu_probe_message(&probe));
+            return;
+        }
     }
     st = now_act_ready();
     if (st != kNowActOk) {
