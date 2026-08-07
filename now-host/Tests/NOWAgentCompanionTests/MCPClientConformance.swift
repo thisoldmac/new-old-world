@@ -320,6 +320,27 @@ extension MCPConformance {
             }
             return (.served, outcome)
         }
+        /* **`showing` is `available` spelled a fourth way**, and this is a
+           driver reading a drift rather than a driver learning a shape.
+
+           `AgentIntegrationMirrorOpenResult` says availability with
+           `showing: Bool` beside the same `unavailable` payload every
+           envelope below carries — semantically identical to `available`,
+           and the fourth spelling of one question on this surface after
+           `available`, `hostAvailable` and `ok`. It was found by the round-3
+           integration merge, because `now_mirror_open` (018-open-mirror) and
+           this driver (019-conformance) had never met: the driver read it as
+           "a structured result in no shape this driver can read", which is
+           the correct verdict about a surface with four names for one thing.
+
+           Taught here rather than renamed, because renaming a shipped MCP
+           result field is a surface change and not an integration's to make.
+           **The consolidation is the finding**; see docs/open-issues.md. */
+        if let showing = structured["showing"] as? Bool {
+            if showing { return (.served, "showing") }
+            return refusal(structured["unavailable"] as? [String: Any],
+                           kind: "unavailable")
+        }
         /* `now_session_health` and the guest Files family keep their own
            envelopes; both say availability with a boolean beside a reason. */
         if let available = structured["available"] as? Bool {
