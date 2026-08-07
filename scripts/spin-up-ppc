@@ -417,6 +417,14 @@ NOW_ANCHOR_PORT="$ANCHOR" NOW_WIRE_PORT="$WIRE" \
 # the Shutdown Manager, and shutdown-guest.py waits for QEMU to exit. If it
 # will not go, STOP with the VM intact: falling back to `quit` would
 # manufacture the very Disk First Aid boot this gate exists to avoid.
+#
+# NO --wire HERE, AND THAT IS DELIBERATE — do not "fix" it to match the
+# stop: recipe printed at the end. The Finder route drives NOW's act
+# plane, which needs NOW's app RUNNING and dialled in; at this point the
+# app has only just been staged and has never been launched, so there is
+# no wire to give. Everywhere the app IS up (scripts/bake-ext-image, the
+# printed recipe, tools/lane-ports reclaim) passes it, because there the
+# clean-volume route is real.
 echo "== guest-clean shutdown, then COLD boot so the INIT loads =="
 python3 "$NOW/tools/shutdown-guest.py" "$QMP" --port "$ANCHOR" \
     --timeout "${NOW_SHUTDOWN_WAIT:-120}" || {
@@ -556,11 +564,20 @@ echo "anchor=127.0.0.1:$ANCHOR  wire=127.0.0.1:$WIRE  qmp=$QMP"
 [ -n "$LANE_BLOCK" ] && \
     echo "stop:  $NOW/tools/lane-ports reclaim   # lane block $LANE_BLOCK; \
 guest-clean, then frees the run dir"
-echo "stop:  $NOW/tools/shutdown-guest.py $QMP --port $ANCHOR"
-echo "       # quits the front application, then launches the staged"
-echo "       # applet so the guest shuts ITSELF down. Leaves the VM up on"
-echo "       # failure, and never QMP \`quit\` — that is a power cut, and"
-echo "       # the next boot spends its first minutes in Disk First Aid."
+# --wire, AND IT IS THE POINT OF THE LINE. Without it that tool skips
+# the Finder route — the ONLY one measured to leave a clean volume — and
+# goes straight to the applet, which starts a shutdown without reliably
+# finishing one; three images preserved after it were still marked
+# mounted. This recipe omitted --wire until 2026-08-07, so the printed
+# advice steered every lane onto the dirty route while calling it
+# "guest-clean". The wire port is right there on the line above.
+echo "stop:  $NOW/tools/shutdown-guest.py $QMP --port $ANCHOR --wire $WIRE"
+echo "       # asks the Finder its own Special > Shut Down over NOW's"
+echo "       # wire; falls back to the staged applet. Leaves the VM up on"
+echo "       # failure and TELLS YOU WHAT TO DO INSTEAD — including"
+echo "       # --force, which power-cuts only after the shared-image"
+echo "       # guard agrees. Never a bare QMP \`quit\`: that is the power"
+echo "       # cut, and the next boot starts in Disk First Aid."
 echo "       ...and never by PORT. \`lsof -ti tcp:$WIRE\` matches QEMU:"
 echo "       under user-mode networking the GUEST's outbound connection"
 echo "       belongs to the qemu process, so killing what holds the wire"
