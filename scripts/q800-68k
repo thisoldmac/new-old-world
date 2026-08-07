@@ -164,6 +164,14 @@ rm -f "$DISK"
 # own, so the delay looks exactly like a wire that would not come up.
 # A warning, not a refusal: it is a slower boot, not a wrong result.
 "$REPO/tools/image-provenance" "$BASE" --label "q800-68k base" || true
+# And the fitness question, asked through the one place that answers it for
+# every clone site (tools/base-image). Purpose 68k has NO designated base —
+# there is exactly one, named by .env.lab — so what it can check is the file
+# itself. It says so rather than staying quiet, because a check that skips a
+# question silently is how os91-runner.qcow2 went dirty for nineteen days.
+# --stages-resident is honest here: this script builds and stages THIS
+# checkout's 68K guest onto the clone.
+"$REPO/tools/base-image" fit "$BASE" --purpose 68k --stages-resident || exit $?
 clone_disk "$BASE" "$DISK" >/dev/null
 
 # NOW-68K has no preferences; the dev settings file is how a build under

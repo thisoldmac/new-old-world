@@ -232,15 +232,25 @@ in, so the resident it holds is whatever was baked — not whatever this
 checkout last compiled, and staging a fresh INIT into a throwaway clone
 changes the clone, never the image.
 
-**It is not what an ordinary run uses, and believing otherwise has already
-produced a wrong conclusion.** `scripts/spin-up-ppc` clones
-`os91-runner.qcow2`, stages *this checkout's* ext and app into the clone
-and cold-boots, so the resident under test there is the tree's build. This
-paragraph used to say the opposite ("every Mirror sweep and every
-`scripts/spin-up-ppc` clones it"), and on 2026-08-06 a coordinating session
-read it, told the human an arc's measurements were suspect because the
-stage image was stale, and had to be corrected by a lane that read the
-script.
+**What an ordinary run clones is not something to remember — ask
+`tools/base-image which`.** That is the one place the answer lives, keyed
+by purpose, and every clone site consults it (`spin-up-ppc`,
+`bake-ext-image`, `q800-68k`); a test fails if a new one does not. It also
+answers whether a base is **fit** to clone — designated, volume clean, and
+whether its baked resident predates this checkout's `ext/` — refusing or
+warning per check, with the argument for each in
+[docs/staged-images.md](docs/staged-images.md).
+
+Two things this page got wrong in two days, and both are why the answer
+moved into a tool. It once said the stage image is what every sweep clones;
+on 2026-08-06 a coordinating session read that, told the human an arc's
+measurements were suspect, and had to be corrected by a lane that read the
+script. Then `spin-up-ppc` defaulted `BASE` to `os91-runner.qcow2` in one
+line of shell — so on 2026-08-07 a whole arc cloned a 19 July image, which
+is the same stale-oracle failure one layer below every gate. Note that
+`spin-up-ppc` stages *this checkout's* ext and app into the clone and
+cold-boots either way, so the resident under test there is the tree's
+build; that is why a stale base warns rather than refusing.
 
 [docs/staged-images.md](docs/staged-images.md) is the page: which mode to
 bake in, what each gate can honestly assert versus imply, and how to hand

@@ -97,7 +97,7 @@ class Repo:
         # every volume read "could not be asked", which is a PASSING
         # answer for the dirty case and would have hidden the very gap
         # these tests were added for.
-        for tool in ("ext-bake-gate", "image-provenance",
+        for tool in ("ext-bake-gate", "image-provenance", "base-image",
                      "receipts-merge-driver", "volclean.py"):
             shutil.copy(os.path.join(ROOT, "tools", tool),
                         os.path.join(self.path, "tools", tool))
@@ -682,6 +682,200 @@ def _(tmp):
               if x.get("kind") == "deferral"]
     must(len(defers) == 1, f"{defers}")
     must("PowerBook" in defers[0]["reason"], defers[0])
+
+
+# --------------------------------------------------------------------------
+# 7. WHICH BASE, AND IS IT FIT. The clone sites, which no gate watched at
+#    all until 2026-08-07 — when spin-up-ppc's own default sent a whole
+#    arc's lanes at a 19 July image, one layer below every gate above.
+# --------------------------------------------------------------------------
+
+def base_image(repo: "Repo", *args, env=None):
+    return sh(sys.executable, os.path.join(repo.path, "tools/base-image"),
+              *args, "--repo", repo.path, cwd=repo.path, env=env)
+
+
+@case("base: a run that stages no resident is REFUSED a base with none in it")
+def _(tmp):
+    r = Repo(tmp, "bi1")
+    img = os.path.join(tmp, "stage.qcow2")
+    hfs_image(img, clean=True)
+    env = {"NOW_STAGE_IMAGE": img}          # so the image IS the designated one
+
+    # THE MUTATION, and it is the failure that costs the most: a base with
+    # no current resident, and a run that will measure the plane rather
+    # than stage one. The answer would come back confident and be about
+    # nothing this checkout built.
+    bad = base_image(r, "fit", img, "--purpose", "oracle", env=env)
+    must(bad.returncode == 3, f"must refuse:\n{bad.stdout}{bad.stderr}")
+    must("REFUSED" in bad.stderr, bad.stderr)
+
+    # The NEGATIVE case, which matters as much: the same base, a run that
+    # DOES stage this checkout's resident into the clone. That is what
+    # scripts/spin-up-ppc does, and refusing it would be false.
+    ok = base_image(r, "fit", img, "--purpose", "ppc-work",
+                    "--stages-resident", env=env)
+    must(ok.returncode == 0, f"staging runs must pass:\n{ok.stdout}{ok.stderr}")
+
+
+@case("base: an override is refused unless the decision is written down")
+def _(tmp):
+    r = Repo(tmp, "bi2")
+    img = os.path.join(tmp, "stage.qcow2")
+    hfs_image(img, clean=True)
+    env = {"NOW_STAGE_IMAGE": img, "NOW_BASE_FORCE": "1"}
+    bare = base_image(r, "fit", img, "--purpose", "oracle", env=env)
+    must(bare.returncode == 3,
+         "a force with no reason must still refuse:\n" + bare.stderr)
+    must("written decision" in bare.stderr, bare.stderr)
+
+    env2 = dict(env, NOW_BASE_FORCE_REASON="measuring the base's own resident "
+                                           "on purpose, arc 019")
+    said = base_image(r, "fit", img, "--purpose", "oracle", env=env2)
+    must(said.returncode == 0, said.stdout + said.stderr)
+    must("OVERRIDDEN" in said.stderr and "arc 019" in said.stderr, said.stderr)
+
+
+@case("base: a dirty volume WARNS and names an act; it does not refuse")
+def _(tmp):
+    r = Repo(tmp, "bi3")
+    img = os.path.join(tmp, "stage.qcow2")
+    hfs_image(img, clean=False)             # the 19-July runner base, in miniature
+    env = {"NOW_STAGE_IMAGE": img}
+    got = base_image(r, "fit", img, "--purpose", "ppc-work",
+                     "--stages-resident", env=env)
+    must(got.returncode == 0,
+         "a dirty base is a slower boot, not a wrong result — it must not "
+         f"refuse:\n{got.stdout}{got.stderr}")
+    must("WARNING" in got.stdout and "Disk First Aid" in got.stdout, got.stdout)
+    # A warning nobody can act on is broken however true it is: four lanes
+    # read one on 2026-08-06 and correctly did nothing.
+    must("shutdown-guest.py" in got.stdout,
+         "the warning must name what to do:\n" + got.stdout)
+
+    # MUTATION: the clean volume must NOT produce that warning, or the
+    # check is a constant and proves nothing.
+    clean = os.path.join(tmp, "clean.qcow2")
+    hfs_image(clean, clean=True)
+    fine = base_image(r, "fit", clean, "--purpose", "ppc-work",
+                      "--stages-resident", env={"NOW_STAGE_IMAGE": clean})
+    must("still marked MOUNTED" not in fine.stdout, fine.stdout)
+    must("cleanly unmounted" in fine.stdout, fine.stdout)
+
+
+@case("base: unknown is not clean — an unreadable image says so in its own words")
+def _(tmp):
+    r = Repo(tmp, "bi4")
+    img = os.path.join(tmp, "stage.qcow2")
+    fake_image(img, b"not a disk image at all")
+    env = {"NOW_STAGE_IMAGE": img}
+    got = base_image(r, "fit", img, "--purpose", "ppc-work",
+                     "--stages-resident", env=env)
+    must("could not be asked" in got.stdout, got.stdout)
+    must("NOT the same as clean" in got.stdout,
+         "folding unknown into clean is the mistake qemu-img check made:\n"
+         + got.stdout)
+    must("volume: the HFS volume was cleanly unmounted" not in got.stdout,
+         got.stdout)
+
+
+@case("base: a resident older than this checkout's ext/ is named, with the commit")
+def _(tmp):
+    r = Repo(tmp, "bi5")
+    img = os.path.join(tmp, "stage.qcow2")
+    hfs_image(img, clean=True)
+    # A receipt that describes exactly these bytes — so the image is
+    # ACCOUNTED FOR, and the only thing wrong with it is its age. That is
+    # 2026-08-06 in miniature: six ext/ commits landed after the bake and
+    # every session cloned it anyway.
+    r.receipts([receipt(r.digest(), img, sha_of(img),
+                        at="2026-08-03T01:00:00-0400")])
+    r.git("add", "--", "ext/stage-receipts.json")
+    r.git("commit", "-qm", "receipt")
+    r.write("ext/src/now_ext.c", "int resident(void) { return 42; }\n")
+    r.git("add", "--", "ext/src/now_ext.c")
+    r.git("commit", "-qm", "the resident work the image predates")
+    env = {"NOW_STAGE_IMAGE": img}
+
+    stale = base_image(r, "fit", img, "--purpose", "oracle", env=env)
+    must(stale.returncode == 3,
+         f"a stale resident with nothing staging a fresh one must refuse:\n"
+         f"{stale.stdout}{stale.stderr}")
+    must("ext/ has moved since" in stale.stderr, stale.stderr)
+    must("the resident work the image predates" in stale.stderr,
+         "name the commit, so the reader can judge it:\n" + stale.stderr)
+
+    # MUTATION: the same image, a run that stages a fresh resident. Warns,
+    # and must not refuse — spin-up-ppc is that run, on every lane.
+    warn = base_image(r, "fit", img, "--purpose", "ppc-work",
+                      "--stages-resident", env=env)
+    must(warn.returncode == 0, warn.stdout + warn.stderr)
+
+
+@case("base: which names the stage image, and no clone site hardcodes another")
+def _(tmp):
+    # THE 2026-08-07 DEFECT ITSELF. `scripts/spin-up-ppc` defaulted BASE to
+    # os91-runner.qcow2 in one line, with a comment further down saying so,
+    # and every lane in the arc cloned a 19 July image. A default that
+    # disagrees with the designated base is not a bug you can read your way
+    # out of — it has to be impossible to write.
+    got = sh(sys.executable, os.path.join(ROOT, "tools", "base-image"), "which")
+    must(got.returncode == 0, got.stdout + got.stderr)
+    must(got.stdout.strip().endswith("now-mirror-stage.qcow2"),
+         f"the designated PPC base must be the stage image: {got.stdout!r}")
+
+    with open(os.path.join(ROOT, "scripts", "spin-up-ppc")) as fh:
+        spin = [ln for ln in fh if ln.startswith("BASE=")]
+    must(spin, "scripts/spin-up-ppc must still set BASE")
+    must(all("os91-runner" not in ln for ln in spin),
+         f"a clone site must not hardcode a base of its own: {spin}")
+    must(any("base-image" in ln for ln in spin),
+         f"the default must come from tools/base-image: {spin}")
+
+
+@case("base: every clone site consults tools/base-image before cloning")
+def _(tmp):
+    # THE GATE THAT MAKES THIS THE LAST TIME. Each of the four failures was
+    # one layer away from the last fix, and the reason a new layer keeps
+    # appearing unguarded is that nothing enumerates the layers. This does:
+    # a file that clones a disk image must also ask whether the base is fit.
+    #
+    # A grep, deliberately, and the same shape as CommandParityTests — the
+    # alternative is a list somebody maintains by hand, which AGENTS.md has
+    # already paid to learn rots at merges.
+    clones, unguarded = [], []
+    for sub in ("scripts", "tools"):
+        d = os.path.join(ROOT, sub)
+        for name in sorted(os.listdir(d)):
+            path = os.path.join(d, name)
+            if not os.path.isfile(path) or name in ("base-image",
+                                                    "image-provenance",
+                                                    "image-discipline-tests"):
+                continue
+            try:
+                with open(path, errors="replace") as fh:
+                    body = fh.read()
+            except OSError:
+                continue
+            # WHAT THIS CAN SEE, said plainly, because a scan that
+            # overstates its reach is worse than none: the shell idioms
+            # this tree actually clones with. A future site that clones an
+            # image from PYTHON — shutil.copy of a .qcow2, say — would
+            # pass this scan while breaking the rule it enforces. If you
+            # write one, add its idiom here in the same commit.
+            if not any(k in body for k in ("tbt_clone_disk ", "clone_disk \"$BASE\"",
+                                           "cp -c \"$BASE", "qemu-img create -b")):
+                continue
+            clones.append(name)
+            if "base-image" not in body:
+                unguarded.append(name)
+    must(clones, "the scan found no clone site at all — it has stopped working")
+    must(not unguarded,
+         "these clone a base image and never ask whether it is fit: "
+         f"{unguarded}. Add `tools/base-image fit \"$BASE\" --purpose …` "
+         "before the clone. Each of the four base-image failures happened "
+         "one layer away from the previous fix; this is the enumeration "
+         "that stops the fifth.")
 
 
 # --------------------------------------------------------------------------
