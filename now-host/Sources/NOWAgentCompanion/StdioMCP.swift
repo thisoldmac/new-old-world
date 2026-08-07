@@ -59,7 +59,32 @@ enum NOWAgentCompanionMain {
         var framer = BoundedMCPLineFramer()
 
         while true {
-            let chunk = FileHandle.standardInput.readData(ofLength: 4096)
+            /* `availableData`, and NOT `readData(ofLength: 4096)`.
+               Found 2026-08-07 while driving the seven revived tools, and
+               it is the larger half of what that drive found.
+
+               On Darwin `readData(ofLength:)` LOOPS until it has the full
+               count or the descriptor ends. An MCP client holds stdio open
+               for the life of the session and sends one small line at a
+               time, so this loop sat on a 76-byte `initialize` waiting for
+               4020 more bytes that were never coming — and answered
+               nothing. Not one of the forty-one tools, not seven: the
+               whole surface, to every client that behaves the way the
+               transport says clients behave.
+
+               It survived because everything that ever drove this binary
+               wrote its whole script and CLOSED stdin, which is what makes
+               the blocking read return. A pipeline that closes the pipe is
+               not a client; it is a batch, and the surface passed for
+               months on batches alone. Measured directly: one small line
+               with stdin held open gets no reply in ten seconds, and
+               padding the same line to exactly 4096 bytes gets one
+               immediately.
+
+               `availableData` returns whatever has arrived, blocking only
+               until there IS something, and returns empty at EOF — which
+               is the loop's own exit condition, unchanged. */
+            let chunk = FileHandle.standardInput.availableData
             if chunk.isEmpty { break }
             await handle(framer.append(chunk), server: server,
                          output: output)

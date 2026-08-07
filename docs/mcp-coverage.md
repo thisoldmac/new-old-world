@@ -70,6 +70,47 @@ about the Macintosh. No projection test fails, because the projection is fine.
 It was proven by removing `process.front`'s row: twenty-five tests across the
 three most closely related suites stayed green and only this one spoke.
 
+**A second check is not about this document either, and it exists because
+every table below was true while seven of the tools they describe could not
+reach a Macintosh.** On 2026-08-07 a surface audit found that
+`SocketAgentIntegrationClient` — the client every MCP call travels through —
+never overrode `observeElements`, `mirrorDrive` or `tailGuestLog`. All three
+landed on the protocol default in `AgentIntegrationClient`, so
+`now_observe_elements`, `now_mirror_drive` and `now_guest_log_tail` answered
+"no lane" from a healthy host; and because the observation is the **only**
+producer of the `now-element-…` references the act rows take,
+`now_window_act`, `now_control_act`, `now_text_get` and `now_text_set` were
+unreachable for want of a legal argument.
+
+Nothing here could see it, and that is the point worth keeping. This file
+derives what a projection **declares** — its `capability`, its `requires`,
+its `exposes` — and all seven declarations were correct. What was missing was
+four lines one layer below the projection, in a file this document does not
+read. So the gate is
+[`SocketClientForwardingTests`](../now-host/Tests/NOWAgentCompanionTests/SocketClientForwardingTests.swift),
+which derives two sets from source — every `client.<method>(` the projections
+call, and every requirement the client protocol declares — and fails when
+either contains a name `SocketAgentIntegrationClient` does not declare a
+`func` for. Neither set is maintained by hand, for the reason AGENTS.md gives
+about enumerations: the same day this was found, three separate hand-kept
+lists in this repository were wrong, and none of them by carelessness.
+
+**The drive that verified the fix found a larger defect than the one it was
+sent for**, and it belongs beside this one because it has the same shape.
+The MCP stdio loop read `FileHandle.standardInput.readData(ofLength: 4096)`,
+which on Darwin blocks until it has the full count or the pipe closes — so a
+client holding stdio open and sending one small line at a time was answered
+by **nothing at all**, on every one of the tools in this file. It survived
+because every driver this surface has ever had wrote its whole script and
+closed stdin, which is a batch rather than a client.
+[`StdioTransportLivenessTests`](../now-host/Tests/NOWAgentCompanionTests/StdioTransportLivenessTests.swift)
+spawns the real executable, writes one small line and holds stdin open — the
+one condition every previous driver removed.
+
+Both are the same lesson in different places: **a table of what a surface
+declares is not evidence that the surface answers.** Neither gate changes a
+row below; they are what makes the rows mean something.
+
 The guest-side greps are `contract-coverage.md`'s, unchanged:
 
 ```
@@ -872,11 +913,27 @@ host ask.
 
 ## Status
 
-**Tested, not metal-verified.** Nothing in this file has been read against a
-Macintosh; it is a derivation over source and a contract, and the guest-side
-`Served` column claims only what a guest's dispatch answers — never that any
-of it has run. `contract-coverage.md`'s "how far each served thing is
-proven" is the axis for that and is not duplicated here.
+**Tested, not metal-verified.** The tables are a derivation over source and a
+contract, and the guest-side `Served` column claims only what a guest's
+dispatch answers — never that any of it has run. `contract-coverage.md`'s
+"how far each served thing is proven" is the axis for that and is not
+duplicated here.
+
+**Seven rows are now emulator-verified, and they are the only ones.** On
+2026-08-07, against Mac OS 9 under QEMU, each of `now_guest_log_tail`,
+`now_observe_elements`, `now_mirror_drive`, `now_window_act`,
+`now_control_act`, `now_text_get` and `now_text_set` was called through the
+MCP transport — the companion executable over JSON-RPC, not a test seam —
+and four of them were watched taking effect on the machine: the walk minted
+`now-element-…` references for a Finder window's scrollbars, `now_window_act`
+moved that window to exactly the coordinates it was given, `now_control_act`
+was dispatched against one of those scrollbars, and `now_mirror_drive`
+zoomed the window. `now_text_get` and `now_text_set` reached the guest and
+were refused **by the guest, in its own words** — *"that reference names a
+control, not a text element"* — which proves the reference vocabulary is
+shared but is not a completed reading; a window carrying a discoverable
+`TEHandle` was not open on that machine. Nothing here has run on real
+hardware.
 
 The test is proven by mutation: adding a registry row without a table entry,
 and declaring a gap for a capability a projection exposes, both fail naming the
@@ -891,7 +948,16 @@ real defect in its own first draft — reading the whole section rather than its
 first paragraph collected the two names the explanation mentions *because* they
 are not on the list.
 
-Last derived: 2026-07-30, on `claude/tbt-parity-slice` with the phase
+Last derived: 2026-08-07, on `claude/018-mcp-revival`, by running
+`swift test --filter MCPCoverage` — which reads the registry in process, so
+the tables below are what the running catalog says today. **No row moved**,
+and that is the finding rather than the absence of one: the seven tools this
+branch brought back to life were declared correctly the whole time, so a
+derivation over declarations could not tell they were dead. The two gates
+named in "Derived, and gated by a test" are the answer, and the drive that
+proved the fix is recorded in Status above.
+
+Before that, 2026-07-30, on `claude/tbt-parity-slice` with the phase
 complete — twelve capabilities wired across twenty-six registry rows. The last
 was diagnostics, where one plan item and one wire operation became **three**
 registry rows on purpose, because availability is per row and `vprobe`,
