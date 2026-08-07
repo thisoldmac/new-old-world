@@ -7,6 +7,7 @@ the resident may land until the stage image contains it.
     tools/ext-bake-gate record <receipt.json>         # what a bake writes
     tools/ext-bake-gate verify-image [--require]      # image ?= newest receipt
     tools/ext-bake-gate merge-check                   # what post-merge runs
+    tools/ext-bake-gate note-image --reason "…"       # a hand-install, recorded
 
 WHAT EACH ONE CAN HONESTLY ASSERT, because the difference decides which of
 them may refuse a commit:
@@ -657,6 +658,75 @@ def merge_check(root: str) -> int:
     return 1
 
 
+def note_image(root: str, argv: list[str]) -> int:
+    """Account for an image that arrived at the oracle's path WITHOUT a bake.
+
+        tools/ext-bake-gate note-image --reason "rolled back to the last
+            volume-clean image; see docs/open-issues.md 2026-08-06"
+
+    This exists because the real 2026-08-06 sequence had a step no receipt
+    could describe. Three bakes installed images whose HFS volume was still
+    marked mounted, so somebody sensibly cloned the last known-good file
+    back over the oracle by hand — a good decision, recorded in
+    docs/open-issues.md, and invisible to every gate. The image on disk
+    then matched no receipt at all and read as a mystery.
+
+    A note is DELIBERATELY WEAKER THAN A BAKE and the verdict says so: it
+    records who put these bytes there and why. It cannot say what resident
+    is inside, because nobody asked a guest. Only a bake can say that.
+    """
+    reason = ""
+    image = oracle_path()
+    it = iter(argv)
+    for arg in it:
+        if arg == "--reason":
+            reason = next(it, "")
+        elif arg.startswith("--reason="):
+            reason = arg.split("=", 1)[1]
+        elif arg == "--image":
+            image = os.path.expanduser(next(it, image))
+    if len(reason.strip()) < 20:
+        print("\n[ext-bake-gate] note-image needs a --reason, and a sentence "
+              "rather than a word.", file=sys.stderr)
+        print("  It is the only account anybody will have of why these bytes "
+              "are at the", file=sys.stderr)
+        print("  oracle's path. Name what happened and where the fuller story "
+              "is.\n", file=sys.stderr)
+        return 1
+    p = provenance(root, image)
+    if p is None:
+        print(f"[ext-bake-gate] no image at {image}", file=sys.stderr)
+        return 1
+    doc = load(root)
+    doc.setdefault("receipts", []).append({
+        "kind": "image-note",
+        "at": iso(time.time()),
+        "image": p["image"],
+        "imageSha256": p["imageSha256"],
+        "imageBytes": p["imageBytes"],
+        "imageCtime": p.get("imageCtime"),
+        "imageMtime": p.get("imageMtime"),
+        "reason": reason.strip(),
+        "branch": run("git", "-C", root, "rev-parse", "--abbrev-ref",
+                      "HEAD").strip(),
+        # Said in the record itself, so no reader has to infer it from the
+        # absence of the other fields.
+        "certifies": "provenance only — no guest was asked what resident is "
+                     "in this image, so this is NOT a bake and does not "
+                     "satisfy the commit gate.",
+    })
+    save(root, doc)
+    subprocess.run(["git", "-C", root, "add", "--", RECEIPTS], check=True)
+    print(f"[ext-bake-gate] noted {p['imageSha256'][:16]}… in {RECEIPTS} "
+          f"(staged).")
+    print(f"  {reason.strip()}")
+    print("  This accounts for how the file got there. It does NOT say what "
+          "resident is")
+    print("  in it — only scripts/bake-ext-image --shared can, by asking the "
+          "guest.")
+    return 0
+
+
 def record(root: str, path: str) -> int:
     with open(path) as fh:
         entry = json.load(fh)
@@ -685,6 +755,8 @@ def main(argv: list[str]) -> int:
         return verify_image(root, "--require" in argv)
     if cmd == "merge-check":
         return merge_check(root)
+    if cmd == "note-image":
+        return note_image(root, argv[2:])
     print(__doc__, file=sys.stderr)
     return 64
 

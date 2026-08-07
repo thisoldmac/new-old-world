@@ -1,0 +1,161 @@
+# Staged images: whose image is this, and what is in it?
+
+Read this before you bake anything, and before you quote a measurement
+taken on an emulator.
+
+There is exactly one shared mutable file at the centre of this:
+
+    ~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2
+
+It is a Mac OS 9.1 disk image with the NOW Extension baked into its System
+Folder. **It is shared, it is mutable, and the last bake wins.** Everything
+below follows from those three words.
+
+## The one-minute version
+
+| You are… | You want |
+|---|---|
+| changing `ext/` or `contract/peek_table.h` and need a machine to test on | `scripts/bake-ext-image` — **private, the default**, touches nothing shared |
+| running a sweep, a fidelity pass, any ordinary guest work | `scripts/spin-up-ppc` — it clones `os91-runner.qcow2` and stages **your tree's** build; the stage image is not involved |
+| landing finished resident work that everyone else must now clone | `scripts/bake-ext-image --shared` — announce it first |
+| about to quote a number from an emulator run | copy `$NOW_SPIN_RUN/provenance.md` into the report |
+| wondering whether the oracle is trustworthy right now | `tools/ext-bake-gate verify-image` |
+
+## Which image is under test — the mistake that made this page
+
+On 2026-08-06 a coordinating session told the human that an arc's
+measurements were suspect because the shared stage image was stale. It was
+wrong twice, and a lane had to correct it:
+
+- **`scripts/spin-up-ppc` does not use the stage image.** Its `BASE`
+  defaults to `os91-runner.qcow2`. It clones that, stages *this checkout's*
+  ext and app into the clone, cold-boots so the INIT loads, and asks the
+  guest to identify itself. So the resident under test is the tree's build.
+- **The stage image was not merely stale, it was unaccounted for.** Its
+  sha256 matched no receipt at all. Something wrote it at 01:58 while the
+  newest receipt was written at 01:19, and its content mtime was three days
+  older than both — a rollback, by hand, leaving nothing behind that said
+  so.
+
+Neither fact was hidden. Both were quiet: one line defaulting a shell
+variable, and a hash nobody had compared. **A careful reader got it wrong,
+so the cure is volume, not care.** Every run now prints a provenance block
+and writes `provenance.json` and `provenance.md` into its run directory.
+Copy the file; do not remember which image you used.
+
+`docs/fidelity-sweep-2026-08-07-a.md` is the standard the generated table
+is trying to reach — it named the base, its sha256, the resident's
+`sourceManifest` and `buildFingerprint`, and said in words that the stage
+image "was not used and is not the oracle for this sweep." It was written
+by hand. The next one should not have to be.
+
+## Baking your own image (the default, and what lane work uses)
+
+    scripts/bake-ext-image                      # ~5 minutes, one VM
+    scripts/bake-ext-image --name plane-abi     # if the branch name is not the point
+
+It clones the shared oracle, stages your build, cold-boots, and refuses to
+install anything unless the **guest itself** says it is running your
+resident (lifecycle, capability word, `buildFingerprint`, `sourceManifest`),
+the container checks out, and the HFS volume inside is cleanly unmounted.
+Then it installs into:
+
+    ~/Lab/Assets/os91-qemu/agent-stage/now-stage-<branch>.qcow2
+    …/now-stage-<branch>.qcow2.provenance.json     ← its account of itself
+
+**`ext/stage-receipts.json` is not written.** A receipt in that file means
+*"the shared oracle contains this resident"*, and your image is not the
+shared oracle. The commit gate refuses a `throwaway` receipt found there,
+rather than trusting nobody will paste one in.
+
+Boot it:
+
+    NOW_SPIN_BASE=~/Lab/Assets/os91-qemu/agent-stage/now-stage-<branch>.qcow2 \
+    NOW_SPIN_RUN=/private/tmp/nowvm-$$ NOW_ANCHOR_PORT=<yours> \
+    NOW_WIRE_PORT=<yours> scripts/spin-up-ppc
+
+Throw it away when the lane ends: `rm -f …/now-stage-<branch>.qcow2*`.
+
+## Updating the shared oracle (a decision, not a step)
+
+    scripts/bake-ext-image --shared
+
+Do this when resident work is **finished** and every other session must now
+be testing against it. It prints a banner, and it refuses while other QEMU
+guests are running on this Mac (`NOW_STAGE_SHARED_FORCE=1` overrides) —
+because a bake mid-arc silently replaces the base under a sweep in
+progress. On 2026-08-06 six lanes were live and one was in `ext/`; the only
+reason a bake did not pull the floor out from under the others is that
+nobody happened to run one, which is luck rather than a safety property.
+
+**Hand it over out loud.** Say in the channel: what resident, which branch,
+the new sha256. Anyone mid-run against the old image needs to know their
+base changed, and their run directory's `provenance.md` will still name the
+old one — correctly, which is the point.
+
+## What each gate can honestly assert
+
+This distinction decides which of them may refuse a commit, and it is worth
+more than the gates themselves.
+
+| Gate | Asserts | May it refuse? |
+|---|---|---|
+| `ext-bake-gate check` | a receipt in this tree records a bake of exactly this resident source | **yes** — a fact about two files in git, entirely in the committer's power |
+| `ext-bake-gate verify-image` | the bytes at the oracle's path hash to what the newest receipt claims | **no, on the commit path** — a fact about a shared file any lane can invalidate a second later. It warns, loudly. `--require` refuses for a caller who has asked for it |
+| the staged-receipt check | a receipt being *written* is true when written | **yes, in one case** — see below |
+| `ext-bake-gate merge-check` | a merge did not silently combine two branches' claims | **yes** — via `pre-merge-commit` |
+| `tools/image-provenance` | these bytes are (or are not) claimed by a receipt | nothing; it only speaks |
+
+The staged-receipt case is the subtle one, and it was found by its own
+test. A receipt whose `imageSha256` does not match the file it names has
+**two possible causes**, and the file's ctime separates them:
+
+- the file was written **after** the receipt's timestamp — another lane
+  baked over yours between your bake and your commit. Your receipt is an
+  honest record of a bake that happened. **Warn.** Refusing here would
+  strand correct work for a reason its author cannot act on, and re-baking
+  to satisfy the gate would stomp the other lane straight back.
+- the file was written **before** it — the file at that path has not
+  changed since before this bake claims to have installed it, so this bake
+  did not install it. That was never true. **Refuse.**
+
+And what none of them can assert: that a receipt is *true*. A receipt is a
+record another session wrote about a bake it ran. The gates check that the
+record and the file agree about which file — not that the bake did what it
+says.
+
+## Merges
+
+`ext/stage-receipts.json` **conflicts by design**. Two lanes each appending
+a receipt merges cleanly and produces a file whose last bake entry — which
+every gate reads as "the newest bake" — is whichever line sorted last, not
+whichever bake happened last. AGENTS.md already says this about derived
+tables: *treat a clean textual merge of a derived table as no evidence at
+all.* Here the underlying thing can change without any branch touching a
+file, which makes it worse.
+
+- `.gitattributes` routes the file to `tools/receipts-merge-driver`, which
+  always conflicts and writes a time-ordered proposal to
+  `.git/nowreceipts-proposal.json`.
+- The driver body lives in per-clone git config (`tools/setup-hooks` writes
+  it), so a clone that skipped setup gets git's ordinary merge —
+  `.githooks/pre-merge-commit` re-checks the result and aborts the merge
+  *commit*, and `.githooks/post-merge` reports on a fast-forward, where
+  nothing else runs at all.
+
+Resolve it by **asking the file**, not the receipts: `tools/ext-bake-gate
+verify-image` prints the sha on disk and which receipt claims it. If it
+matches neither side, the honest resolution is to re-bake or to land saying
+plainly that the oracle is unaccounted for. Picking a side to make the
+conflict go away writes a claim nobody checked.
+
+## Run it
+
+    tools/image-discipline-tests     # fourteen mutations, ~3 seconds
+    tools/gate-impact-sweep --all-matching 'claude/018-'
+
+The second is the one to run before tightening any gate here: it stages
+each live branch's own last commit and reports only whether the proposed
+gate refuses something the old one accepted. This repository's most
+expensive lesson is uncommitted work lost, and a gate that refuses a
+correct commit converts a crash-shaped risk into a certainty.
