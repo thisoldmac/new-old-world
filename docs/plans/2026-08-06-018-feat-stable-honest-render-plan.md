@@ -810,6 +810,56 @@ latency did not**, and the two must be reported separately — an average
 that mixes them hides both. Sweep B records latency per action beside
 the attempts-to-land count.
 
+### Slice 18 — Authoritative control semantics (added 2026-08-07)
+
+**The biggest red area in the live product**, found by Michelle driving
+the integrated build:
+
+> a lot of controls (such as scrollbars and tabs) and basically all
+> lists say the guest did not provide complete authoritative semantics.
+> so like lists, scrollbars and tabs render now but they cant be used
+
+**Rendered but not usable** is the exact split this arc keeps producing,
+and this is its largest instance. Three earlier reports each hit it and
+none named it as the cause of unusability:
+
+- **Slice 3**: *"the guest reports all 21 of that window's controls as
+  `role: unknown` with no semantic, so `semanticSupersedesResource` can
+  never fire."*
+- **Slice 8**: Mouse is fully addressable — 38 controls, each with a ref
+  and a content-local rect — and **37 of 38 titles are empty with every
+  role `unknown`.** It was scored DRIVABILITY 0 for want of *names*, not
+  addressing.
+- **Slice 16**: the render now draws these controls correctly, which is
+  what makes the gap visible — you can see a scrollbar and not use it.
+
+So the defect is **capture**, not render and not the act plane: the walk
+does not report what a control IS.
+
+**The mechanism is in our floor.** The Appearance-era Control Manager
+answers this directly — `GetControlKind` returns a `ControlKind` whose
+signature and kind name the control (`kControlKindScrollBar`,
+`kControlKindTabs`, `kControlKindListBox`, and the rest). We have been
+inferring roles from procIDs and titles where the machine will simply
+say. Read the real headers on the CarbonLib floor rather than trusting
+this note — and remember Retro68's Universal Interfaces headers have CR
+line endings, so pipe through `tr '\r' '\n'` before grep.
+
+Rules this slice inherits:
+
+- **A kind the machine did not state is `unknown`, never a guess.** The
+  point is authoritative semantics; an inferred role that is usually
+  right is exactly the plausible wrong answer the arc forbids, and it
+  would be worse here because an act would then address the wrong kind
+  of thing.
+- **"Lists" are not one thing.** A `kControlKindListBox` is a control;
+  a classic List Manager `ListHandle` is not; the Finder draws its own.
+  Say which of those the render is refusing and handle them
+  separately rather than under one word.
+- It feeds **both** products: a native host-side Finder needs the same
+  answer, so this is capture-layer work in the sense
+  [019](2026-08-07-019-feat-the-surface-as-a-foundation-plan.md) means.
+
 ### Slice 6 — Sweep B and the verdict
 
 Re-run the sweep, same spec, same targets, same machine-shape. Output:
