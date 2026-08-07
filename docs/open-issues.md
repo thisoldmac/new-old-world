@@ -111,12 +111,69 @@ there — but it should be **stated where a person sees it**, not only on a
 status line, because "I dragged and nothing happened" is what four hours
 of this investigation cost.
 
+### The half that does work, driven rather than reasoned
+
+Emulator-verified on this lane's own clone — block 113, anchor 12904 /
+wire 12905, a fresh clone of `os91-runner.qcow2` carrying this tree's ext
+and app, guest build `113f1b176035`, capabilities **511** with bit 7
+(`kNowPeekTableCapDrag`) set, `actselftest` **abi-agreed**. Nothing here
+ran on the PowerBook. `tools/local-drag-vehicle.py`:
+
+| what | what the guest did |
+| --- | --- |
+| the Time Manager task fires | **26 ticks** across one press, `Moves applied` 0 → 1 → 2 |
+| the button goes down and stays | `State=held  Button=down` for the whole gesture |
+| a move is consumed | pointer followed to `h=300 v=200` |
+| **the dead-man releases without being asked** | `idle=60` ticks, **nothing sent**, ended by itself in **~1.0 s** |
+| a fresh press afterwards | succeeded — the vehicle is reusable |
+
+So the far end of the bridge is real. It is the span that is missing, and
+that is worth saying plainly: **a green run of that probe says nothing
+whatever about the product**, and the probe now says so in its own output
+rather than leaving a reader to infer it.
+
 ### A gate, so the next conformer is not silently absent
 
 Nothing failed when `itemDragDriver` went unimplemented, because a
 protocol default that returns `nil` is a legal conformance. That is the
 same shape as *"every other gate can be green while neither guest
 compiles"*: a seam with a default is a seam nothing checks.
+
+`ItemDragSeamTests` now checks the conformer and the `dragpress` verb as
+a **pair**, and fails in either direction — verb without conformer (today,
+once someone writes the plumbing and stops) and conformer without verb
+(which would put a moving ghost on screen over a gesture no guest
+received, since the view begins showing a drag before the guest answers).
+Both directions were watched failing under mutation.
+
+### And a probe that failed a correct guest
+
+Found on the way, and the sharper lesson of the two. `local-drag-vehicle.py`
+phase 4 required `dragpress` to **refuse** an element sent without `h`/`v`.
+That was never a property of the rule; it was a property of
+`resolve_self` leaving `detail` zeroed, so every self element resolved to
+{0,0,0,0} and there was no rectangle to fall back to. **Another lane
+fixed that hole**, the refusal stopped arriving, and the probe reported
+the fix as the defect.
+
+Settled by asking the machine rather than the code: the scene reports the
+control content-local at `{135,10,151,340}`, the window content origin is
+`(28,70)`, and the resolver answers `{163,80,179,410}` **global** — the
+two conventions agreeing exactly, which is the thing the `resolve_self`
+entry below said it could not drive. The centre `(171,245)` is precisely
+where `dragpress` pressed.
+
+The phase now asserts the rule instead of the symptom: the point comes
+from the resolver, the reply **says** which of the two it used, and it is
+never 0,0. The refusal branch is now unreachable from that rig — it can
+only mint self references and those always resolve — and the probe states
+that rather than dropping it silently.
+
+The generalisation is the same one this repository keeps paying for from
+a new angle: **a probe's precondition is a derived claim, and it rots when
+a sibling lane repairs what it was derived from.** A stale oracle does not
+go quiet; it goes red against correct code, which is more expensive than
+silence because someone believes it.
 
 ## LOOK: round 5's five checks, and the one thing four lanes claimed that a picture had to settle (2026-08-07, `claude/019-integration-5`)
 
@@ -1578,6 +1635,20 @@ has reached a guest**, because the vehicle above is still unreachable:
 `ItemDragDriver` — the seam the view calls — has no conformer at all.
 Today the live view answers an item drag with "this mirror cannot hold
 the mouse button down", which is honest and is not the feature.
+
+> **2026-08-07, `claude/019-drag-live`: half of that first sentence has
+> stopped being true, and the half that remains is the whole problem.**
+> The two branches met. `dragpress` / `dragmove` / `dragrelease` **do**
+> exist on the wire on `claude/019-integration-5` and every branch below
+> it — `contract/asyncapi.yaml:4649-4787`, served at
+> `now-guest-ppc/src/act/act_cmds.c:1439+` — and the vehicle behind them
+> is emulator-verified. `ItemDragDriver` still has **no conformer**, and
+> now there is a second wall behind that one: `dragpress` names an
+> `element` reference and a Finder icon does not have one, so writing the
+> conformer would not be enough. Both are set out under *"drag isn't
+> working on my build"* at the top of this file. This entry is left as
+> written because the shape of it — two ends of a bridge, tested, with no
+> span and nothing red — is the point.
 
 What IS proven: `DragTargeting` resolves subjects, destinations and
 intents against the geometry above, including against a **recorded real

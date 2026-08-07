@@ -258,6 +258,19 @@ def main():
         r = link.command("dragpress", {"element": ctl["ref"], "idle": 60},
                          timeout=120)
     except nowwire.GuestError as exc:
+        # Not every refusal is this phase's refusal, and reading them as
+        # one is how a rig problem gets filed as a defect - which is the
+        # mistake this whole phase was rewritten to stop making. A
+        # `conflict` says a previous drag is still holding the button
+        # (another run of this script, a cap that has not expired): the
+        # vehicle is fine and the rig is dirty. Only the no-rectangle
+        # branch in act_cmds.c is a failure here, and it answers
+        # `unsupported`.
+        if getattr(exc, "code", None) == "conflict":
+            print(f"  INCONCLUSIVE: {exc}")
+            print("  A drag from an earlier run is still held. That is the")
+            print("  rig, not the guest - wait for the dead-man and re-run.")
+            return 2
         print(f"  FAIL: refused ({exc}). This element resolves to a real")
         print("  rectangle, so a refusal here means the fallback stopped")
         print("  reading detail.control - the 0,0 press is back.")
