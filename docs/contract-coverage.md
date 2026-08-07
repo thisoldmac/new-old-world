@@ -963,12 +963,12 @@ without anyone noticing, and how `key` and `net` sat here twice. Run
 these from the repository root:
 
 ```sh
-# the registry — 43
+# the registry — 47
 awk '/^  x-commands:$/{f=1;next} f&&/^  [^ ]/{f=0} \
      f&&/^    [a-z][a-z0-9]*:$/{gsub(/[ :]/,"");print}' \
     contract/asyncapi.yaml | sort -u
 
-# what the PowerPC guest serves — 40
+# what the PowerPC guest serves — 44
 grep -oE 'strcmp\(name, *"[a-z0-9]+"\)' \
     now-guest-ppc/src/commands/commands.c \
   | grep -oE '"[a-z0-9]+"' | tr -d '"' | sort -u
@@ -980,10 +980,15 @@ grep -oE '\{ *"[a-z0-9]+"' now-guest-68k/src/commands/commands68.c \
 
 The registry command tracks the block by indentation deliberately: a
 naive `sed` range over `x-commands` runs past the end of the block and
-picks up a nested `services:` key from a later section, giving 43. A
-derivation that is off by one in the direction of "one more verb than
-exists" is not obviously wrong on sight, which is the reason to have the
-command written down rather than retyped each time.
+picks up a nested `services:` key from a later section, which gave one
+MORE than the correct count on the tree where that was found (43 against
+42). A derivation that is off by one in the direction of "one more verb
+than exists" is not obviously wrong on sight, which is the reason to
+have the command written down rather than retyped each time. *(Checked
+again at the 019 integration: the naive range and the indentation-aware
+one now agree at 47, so the trap does not reproduce on today's file. It
+is kept because the file moves and the trap comes back — an agreement
+between two derivations on one day is not a property of the command.)*
 
 > **Re-derived once more on the merge, 2026-08-06.** Two threads
 > counted these hours apart and disagreed by one in two rows — the
@@ -992,6 +997,36 @@ command written down rather than retyped each time.
 > settled by RUNNING the commands below against the merged tree, which
 > is this file's own rule working exactly as written: a hand-carried
 > count drifts, a derivation does not.
+
+## Re-derived at the 019 integration merge, 2026-08-07 (`claude/019-integration-2`)
+
+**This supersedes every derivation below.** `main` and four lanes —
+`018-port-ranges`, `018-drag`, `018-drag-targeting`, `018-mcp-revival` —
+were merged into one tree and the five commands at the foot were run
+against the RESULT.
+
+| | Derived here | The 018 integration said | Moved by |
+|---|---|---|---|
+| PowerPC inbound message types | **49** | 49 | — |
+| NOW-68K inbound message types | **23** | 23 | — |
+| `x-commands` registry | **47** | 44 | `dragpress`, `dragmove`, `dragrelease` (`018-drag`) |
+| PowerPC verbs served | **44** | 41 | the same three |
+| NOW-68K verbs served | **13** | 13 | — |
+
+The three registry verbs the PowerPC guest still does not serve are
+unchanged: `put`, `cancel`, `shotdiag`. Derived, not remembered —
+`comm -23` over the two sorted lists rather than read off this table.
+
+`main` moved none of these. Thirteen commits of host UI landed in the
+same merge and touched nothing under `contract/`, `now-guest-ppc/` or
+`now-guest-68k/`, which is worth recording because the counts being
+unmoved by a large merge is the kind of non-event that otherwise gets
+mistaken for a derivation nobody ran.
+
+The three `drag*` verbs are one gesture and are the first verbs on this
+surface with a physical effect on somebody else's desk; the
+[mcp-coverage.md](mcp-coverage.md) row explains why they must be decided
+together.
 
 ## Re-derived at the plan-018 integration merge, 2026-08-07 (`claude/018-integration`)
 
