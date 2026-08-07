@@ -104,6 +104,16 @@ line.** Every entry below is something this project did not have until
 somebody built it, which is precisely why each is now a regression
 candidate. When a lane lands a capability, it goes here.
 
+**Every check below is a check of AGREEMENT WITH THE MACHINE, never of
+expected appearance.** Two drafts of this list got that wrong in two
+different places — "fronting a process makes its windows appear" (plenty
+have none) and "icons resolve to art, not a blank plate" (a document with
+no creator gets the generic icon on a real Mac). **Any check phrased as
+"the render should look like X" has legitimate exceptions and will send
+somebody chasing a defect that is not there.** If a line below reads that
+way to you, read it as *"matches the guest's pixels"* and say so in your
+report — the line is the bug.
+
 Take each **where the target affords it**, and record ✓ / ✗ / n/a:
 
 - **A scrollbar scrolls.** A tab switches. A list row selects.
@@ -125,8 +135,13 @@ Take each **where the target affords it**, and record ✓ / ✗ / n/a:
 - **The desktop shows its icons**, and one can be selected by name.
 - **Text is what the machine drew** — no glyph the guest truncated, no
   glyph the guest drew missing.
-- **Icons resolve to art**, not to a blank plate; unknown regions are
-  legible as unknown at 32×32.
+- **An icon renders what the machine drew** — including a plain or
+  generic one where that is what the machine drew. **A document with no
+  creator gets the generic document icon on a real Mac**, so a
+  blank-looking plate is a **pass** when the guest's pixels show the same
+  plate. The failure is our *unknown* wearing art's clothes, or art
+  replaced by our unknown. Where we genuinely could not resolve an icon,
+  the unknown must be legible as unknown at 32×32.
 - **No hatching where the machine drew** — every hatch traceable to a
   rectangle nobody could attribute.
 - **Panel faces are the guest's grey**, not white.
