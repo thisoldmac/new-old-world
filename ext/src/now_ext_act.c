@@ -70,12 +70,15 @@
 
 /* P7's vehicle (now_ext_drag.c). Declared rather than headered for the
    same reason the liveness net is: this file is P4 and must not start
-   depending on P7's internals. Three entry points is the whole seam. */
+   depending on P7's internals. Three entry points is the whole seam -
+   press, the cell, and the way to hand a begun gesture back when the
+   press event this file owes it cannot be queued. */
 extern int now_ext_drag_press(NowPeekTable *table, NowPeekU32 session,
                               NowPeekU32 target_a5, NowPeekI32 h,
                               NowPeekI32 v, NowPeekU32 idle_asked,
                               NowPeekU32 cap_asked);
 extern NowPeekDragCell *now_ext_drag_cell(NowPeekTable *table);
+extern void now_ext_drag_abandon(NowPeekTable *table);
 #include "peek_table.h"
 
 /* Resident state. The relocated blob sits at a fixed system-heap address
@@ -647,6 +650,50 @@ static int act_post_click(NowPeekActCell *cell)
     return 1;
 }
 
+/* THE PRESS EVENT, and without it nothing on this machine ever enters a
+ * tracking loop.
+ *
+ * Found by driving, 2026-08-07, and it is the third break in one gesture:
+ * the vehicle wrote MBState down, moved the pointer, ticked 120 times and
+ * released on its deadline, and the Finder did not move the icon by a
+ * pixel. It could not have. Writing MBState is what a tracking loop
+ * READS once it is running; it is not what STARTS one. An application
+ * begins a drag because a mouseDown arrived through GetNextEvent, it
+ * hit-tested the point, and it called DragGrayRgn - and no mouseDown was
+ * ever queued.
+ *
+ * That was invisible because the plane's other users do not need one.
+ * ctlact's patch answers TrackControl for a handle the request names, so
+ * the target is already inside a loop when the button matters; a drag
+ * starts from outside one.
+ *
+ * The mirror image of act_settle_drag_mouseup below - one event, `where`
+ * stamped on the queue element rather than left to the live mouse, in the
+ * target's own context, which is where this serve already runs. Unlike
+ * act_post_click it posts ONLY the down: the up is what the vehicle's
+ * deadline owes and it must not be queued here, or the gesture would end
+ * the instant it began.
+ *
+ * A refused queue is NOT best-effort, and that asymmetry with the mouseUp
+ * is deliberate. There, the button is already up and no machine is
+ * wedged; here, failing quietly would leave the button down with nothing
+ * tracking it - which is precisely the state this whole plane exists to
+ * make impossible. So the caller abandons the gesture instead. */
+static int act_post_drag_mousedown(NowPeekActCell *cell)
+{
+    EvQElPtr down = NULL;
+    Point    pt;
+
+    pt.h = (short)cell->click_h;
+    pt.v = (short)cell->click_v;
+    if (PPostEvent(mouseDown, 0, &down) != noErr || down == NULL) {
+        return 0;
+    }
+    down->evtQWhere = pt;
+    down->evtQModifiers = 0;
+    return 1;
+}
+
 /* Settle the mouseUp the drag vehicle could not queue.
  *
  * The button itself went up at interrupt time, in now_ext_drag_tick,
@@ -841,6 +888,12 @@ void now_ext_act_apply(NowPeekTable *table)
                all is a different resident, a busy vehicle is a retry. */
             error = (drag == NULL) ? kNowPeekActErrDragNoVehicle
                                    : kNowPeekActErrDragBusy;
+        } else if (!act_post_drag_mousedown(cell)) {
+            /* The button is down and nothing would ever track it. Take
+               the gesture back rather than hand out a session for a
+               drag no application has been told about. */
+            now_ext_drag_abandon(table);
+            error = kNowPeekActErrPostFailed;
         } else {
             cell->fired = 1;
             now_act_v2_note(table, kNowPeekActStageFired,
