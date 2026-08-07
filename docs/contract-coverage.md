@@ -1013,6 +1013,44 @@ between two derivations on one day is not a property of the command.)*
 > is this file's own rule working exactly as written: a hand-carried
 > count drifts, a derivation does not.
 
+## Re-derived at the 019 integration round 8, 2026-08-07 (`claude/019-integration-8`)
+
+**This supersedes every derivation below.** Twelve lanes —
+`019-merge-gates`, `019-accounting-2`, `019-sweep-d`, `019-scope-hooks`,
+`019-human-stack`, `019-flicker-bc`, `019-first-render-differs`,
+`019-dialog-buttons-act`, `019-window-flags-and-join`, `019-drag-break-4`,
+`019-cursor-follows-act` and `019-housekeeping` — were merged into one
+tree and the derivation was run against the RESULT, by
+`tools/derived-doc-gate rederive`, not carried across the merge.
+
+| | Derived here | Round 5 said | Moved by |
+|---|---|---|---|
+| PowerPC inbound message types | **49** | 49 | — |
+| NOW-68K inbound message types | **23** | 23 | — |
+| `x-commands` registry | **47** | 47 | — |
+| PowerPC verbs served | **44** | 44 | — |
+| NOW-68K verbs served | **13** | 13 | — |
+| census probes, PPC / 68K | **14 / 14** | 14 / 14 | — |
+
+**The sources moved and the answers did not, and this round that is a
+measurement rather than an assumption.** `sources-sha1` changed in both
+this file and `mcp-coverage.md` — lanes in this merge edited `wire.c` and
+`commands.c` — while every `derive … sha256=` line is byte-identical to
+round 7's. So the guests' dispatch tables were touched without any verb
+or message type being added, removed or renamed. A count alone could not
+have told those two cases apart; the per-answer hashes can, which is the
+whole reason they record the ANSWER and not its length.
+
+**What this round's lanes changed is invisible to every number above,
+and that is expected.** `019-window-flags-and-join` adds `closeBox` and
+`zoomBox` to `Scene.Window` — new FIELDS on an existing message, the same
+blind spot recorded for `018-cdef-classify` and `019-theme-colours`.
+`019-drag-break-4` gives `dragpress` `toH`/`toV`, which is a new argument
+to a verb that already existed. Neither moves a row here. **A green
+derivation in this file is not evidence that the contract did not
+change**; it is evidence that the *inventory* of names did not.
+
+
 ## Re-derived at the 019 integration round 5, 2026-08-07 (`claude/019-integration-5`)
 
 **This supersedes every derivation below.** Seven lanes —
@@ -1278,7 +1316,7 @@ moved; the hash is the receipt, not the point.
 
 <!-- derived-doc v1
 sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
-sources-sha1: a1c87c6d2998ee14b9c4b3bb075ac10cca17dcda
+sources-sha1: 6ef3e9a0f98d8978aafb5486ba826bdbdb6ea428
 derive ppc-inbound-types sha256=c15c9c82d3460aa5288ca67ace049e5cbf47d7bf305be82c85e3a07cfe0ae5e2 lines=49 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
@@ -1305,4 +1343,5 @@ rederived: 2026-08-07T13:51:56-0400 a309422b sources
 rederived: 2026-08-07T14:20:10-0400 ae89768d unchanged
 rederived: 2026-08-07T15:21:01-0400 07b89775 sources
 rederived: 2026-08-07T16:24:02-0400 1a35e96f sources
+rederived: 2026-08-07T17:09:34-0400 0f3a3a43 sources
 -->
