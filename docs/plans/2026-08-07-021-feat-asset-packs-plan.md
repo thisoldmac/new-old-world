@@ -56,6 +56,17 @@ is how anyone looking at a pack can tell what it is rather than seeing
 **No locks.** No machine-binding, no obfuscation, no key derived from
 hardware, no anti-sharing anything.
 
+**And the constraint hands us the community case for free.** Gestalt
+carries no per-unit serial number: `gestaltMachineType` is the MODEL, and
+two PowerBook 1400cs answer identically. For anything that needs to tell
+two Macs apart that would be a limitation. For this it is exactly right —
+a pack extracted from one 1400c running 9.1 *is* the right pack for
+another, so the key that identifies a pack is a key that is **meant to
+collide**. Michelle's "someone in the community with all the software
+ever makes a comprehensive pack" is not a feature bolted onto the keying;
+it is what the keying already does. A key that could tell two units apart
+would give every machine its own pack and make that impossible.
+
 ### The one rule, and it is mundane repo hygiene
 
 A pack is a few thousand binary files extracted from a guest. It belongs
@@ -565,19 +576,23 @@ carry a *counter that moves*, or it must say it is waiting.
 
 ## 9. Open questions
 
-Named rather than decided. **The first one blocks S0 and should be
-answered before any code is typed.**
+Named rather than decided.
 
-0. **The `hello` typed-identity contract change (§5.1.1).** `hello.os` is
-   a hardcoded literal on both guests and `hello.name` is explicitly not
-   an identity, so there is no honest key today. The proposal is to make
-   `hello.os` carry `gestaltSystemVersion` and add an optional typed
-   `machine` object — no new capability, just facts moved from prose into
-   fields, using values both guests already compute for the `identity`
-   probe. It touches the contract, both guests, and the first frame of
-   every session. **Michelle's call.** The fallback is parsing
-   `census identity`'s display strings through a per-guest label map,
-   which works and is the worse answer for the reason §5.1 names.
+0. ~~The `hello` typed-identity contract change.~~ **DECIDED 2026-08-07:
+   take it. Typed fields in `hello`, not the census-label map — and it is
+   built (§12).** The reasoning, recorded here rather than left in the
+   conversation that produced it: the fallback is disqualified by this
+   project's own worst defect class. A per-guest label map is a third
+   place that must agree with two others, maintained by hand, with
+   nothing failing the build when a guest changes its wording — while the
+   two guests already spell the same fact differently (`Mac OS` against
+   `System`; `Model`'s raw column a name on one and a decimal on the
+   other). And the change adds **no capability**: both guests already
+   compute every value for the `identity` probe, so it moves facts from
+   prose into fields. `hello.os` carrying `gestaltSystemVersion` instead
+   of a hardcoded `"9"` / `"7.1"` is strictly more true than what shipped.
+   `hello.name` stays what it is — a human label, never compared — and
+   was deliberately not promoted into the key while the file was open.
 1. **The accent ramps.** `tools/extract-assets-offline` writes them as
    *generated Swift source* (`PlatinumAccentRamps.swift`), deliberately —
    168 integers the renderer needs at static-init, with no bundle lookup
@@ -587,15 +602,16 @@ answered before any code is typed.**
    the failure mode they were designed to avoid), or the plan states
    plainly that accent ramps are always the build's and not the selected
    machine's. **This is a real trade-off and it is Michelle's call.**
-2. **Whether "none" means no art at all, or the built-in minimal set.**
-   Michelle's words were "none with the default minimal assets we were
-   using before making that full extraction". Those are not the same
-   thing: today, absent means `AssetPack` returns nil everywhere and the
-   renderer draws procedural fallbacks. If a genuine *minimal* built-in
-   set is wanted, that is art that would have to ship in the build — the
-   thing §1 forbids for extracted art. Reading it as "the procedural
-   fallbacks + rung 4", which is what exists and ships nothing, is the
-   assumption this plan makes until told otherwise.
+2. ~~Whether "none" means no art at all, or the built-in minimal set.~~
+   **DECIDED 2026-08-07: "None" is PROCEDURAL AND HONEST-UNKNOWN, not a
+   smaller pack.** Michelle's words were "none with the default minimal
+   assets we were using before making that full extraction", and the
+   reading that matches what exists is the right one: `AssetPack` returns
+   nil everywhere, the renderer draws its procedural fallbacks, and
+   anything it cannot account for is rung 4 / `UnknownVisual`. **No
+   starter pack is to be built.** Shipped extracted art is precisely what
+   §1 rules out, and a built-in "minimal" set of Apple bitmaps would be
+   that with a smaller file count. A later slice must not try.
 3. **Whether extraction is offered against the PowerBook at all.** A
    1,078-fork sweep over MacTCP on a 68K machine is a different
    proposition from the same sweep on an emulated G4, and the 180c
@@ -643,3 +659,80 @@ Per AGENTS.md — *verification is a status, not an adjective*.
 
 Nothing in this plan has been implemented. No claim here is
 metal-verified by this lane.
+
+## 12. S0, as built (2026-08-07)
+
+Status: **Builds** (both guests + ext + three rig instruments) and
+**Tested** (`scripts/test-native` 138; host suites green).
+**Not metal-verified** — no Macintosh has sent one of these frames.
+
+What landed, against §5.1.1:
+
+- `hello` gained an optional typed `machine {id, model}`; `hello.os` now
+  carries `gestaltSystemVersion`. Additive, **no revision bump** (the
+  `agent.access` precedent). `additionalProperties: false` on `Hello`
+  means the field had to be declared before either guest could send it,
+  which is the contract-first rule enforcing itself.
+- **Both guests send it, in the same shape, from one decode.** No
+  direction where one half sends what the other has never heard of.
+- `NOW68K_HELLO_OS` was **deleted rather than updated**. It was `"7.1"` —
+  a property of the build sent as a property of the machine.
+
+### What the work found that the plan had not
+
+**Both guests already decoded `gestaltSystemVersion`, differently, in two
+places neither of which was on the wire.** `commands.c` read the major as
+BCD and dropped a zero bug-fix (`"9.1"`); `census68.c` read the same byte
+as plain decimal and always printed three (`"7.1.0"`). Both correct for
+every System either guest has ever run on. A key built by comparing them
+would still have failed to match a pack to its own machine — the least
+debuggable shape a defect takes.
+
+So the decode is **one shared header**, `contract/guest_identity.h`,
+compiled by both guests and by the host `cc` for its native test. The
+`census68.c` copy now delegates to it, which incidentally corrects two
+things: a BCD ten reads as ten, and a Gestalt that answered 0 renders
+`unknown` rather than claiming System 0.0.0.
+
+**`hello.os` had a twin, and it was a live break rather than a tidiness
+item.** `peek.c` published the resident endpoint's OS as the literal
+`"9"`, beside a comment stating that if `send_hello()`'s matching literal
+ever became computed, this must read the same source. The resident's own
+hello fills its `os` from that field, and the host associates a resident
+channel with its application by **fingerprinting name and OS together**.
+An application saying `9.1.0` beside a resident still saying `9` is two
+different machines to that fingerprint — the channel would have gone on
+connecting and silently vouched for nobody. Both are now published off
+the same call, at the same instant, once per successful connect.
+
+### The key
+
+`AssetPackKey` (`now-host/Sources/Host/GuestIdentity.swift`) derives it in
+one place from typed fields only. The machine id leads and the model name
+follows — a name is localised and can fall back to a Sharing name a
+person edits, while the number is the same on every System.
+
+`isComplete` is the guard that matters. **A guest built before today
+sends no `machine` and a compiled-in `os`, so nothing may auto-select a
+pack from it.** Selection stays manual and the UI must say why; dressing
+one machine in another's art is what §1's provenance rules exist to
+prevent.
+
+### One test was found to be a fake
+
+`testTheHumanLabelNeverReachesTheKey` first used a `hello` **with** a
+machine — where a `?? hello.name` fallback can never engage — so it
+asserted nothing and passed against the exact mutation it was written
+for. It now uses the no-machine case, which is the redeploy case that
+would actually bite. Recorded because it is the shape: **a test of a
+fallback must reach the state where the fallback runs.**
+
+### Residue, named rather than left
+
+- `census_probes.c` keeps its own `machine_model` that skips the `'STR '`
+  step, so the census page and `hello` can name the same Mac
+  differently. Only `hello` is the key, so it does not corrupt one — but
+  it is two implementations of "which machine is this".
+- `scripts/test-all` reports that **the commit gates are not armed in
+  this clone** (`tools/hooks-doctor --fix`). Green means the tests pass,
+  not that anything would refuse a bad commit here.
