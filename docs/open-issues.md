@@ -116,11 +116,17 @@ in this tree looked strict and none of them could have seen this.
   straddled the warm-up and could differ. The fix removes the mechanism.
   The name is gone, so this stays a hypothesis with a mechanism rather
   than a diagnosis.
-- **The varying skip counts (54 / 65 / 72) are not this.** They are
-  environment: twelve `XCTSkipUnless(NOW_METAL)`, two on
-  `AssetPack.root == nil`, and a dozen more gated on a guest dialling in.
-  A machine with the asset pack and no guest skips a different set from
-  one without either. Nothing there is nondeterminism.
+- **The varying skip counts (54 / 65 / 72) are not this, and the run that
+  answered it is `scripts/test-all` itself.** `scripts/test-host` runs the
+  host suite **twice** — once as the machine is, and once with
+  `NOW_MIRROR_ASSETS=none` to check honest degradation. Measured in one
+  green run today: `1858 tests, 54 skipped` then `1858 tests, 72
+  skipped`. Both numbers come out of the same invocation, minutes apart,
+  and 54-versus-72 is precisely the pair that was being read as
+  instability. The rest of the spread is the other environment gates —
+  twelve `XCTSkipUnless(NOW_METAL)` and a dozen more waiting on a guest to
+  dial in. Nothing there is nondeterminism; a report of a skip count that
+  does not say WHICH of the two passes it came from is not a measurement.
 - **`HostAppStateWiringTests` is refuted.** It renders nothing. It binds a
   listener, connects a `FakeGuest` over a real socket, and polls at 20 ms
   against a **single 8 s deadline computed once and shared by both
