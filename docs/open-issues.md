@@ -14,6 +14,49 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## ANSWERED: the list-view lane is still unwatched, and the reason is NOT the one recorded (2026-08-07, `claude/019-integration-2`)
+
+The 018 integration could not get a list-view pair and recorded that
+`script` "answered `osaErr -1753` to every AppleScript on that rig,
+including `get name of front window`". **That is disproven.** On this
+rig, with the integrated tree:
+
+| script | osaErr | output |
+|---|---|---|
+| `tell application "Finder" to activate` | **0** | — |
+| `tell application "Finder" to get name of front window` | **0** | `"Macintosh HD"` |
+| `… open file "Date & Time" of folder "Control Panels" of folder "System Folder" of startup disk` | **0** | opened |
+| `… open file "Appearance" of …` | **0** | opened |
+| `… set current view of front window to list view` | -1753 | — |
+| `… set view of front window to list view` | -1753 | — |
+| `… tell front window to set current view to list view` | -1753 | — |
+
+So the `script` verb works and the AppleScript path is live. What fails
+is **`current view` specifically**, in all three spellings — that term
+is Mac OS X Finder vocabulary and Mac OS 9.1's Finder does not carry it.
+It is a guest-OS limit, not a rig fault and not a defect in anything this
+project ships.
+
+The product-real route is the act plane, and it refuses for a reason
+already on this page: `menuact` on View > "as List" (menu 259, item 3,
+`titleLeft` 110, the Finder's own PSN) answers **`no-such-process`** —
+the known anchor-bind failure on the staging path, the same one that
+makes `actselftest` refuse on every spun-up clone. Two of `menuact`'s
+three argument requirements were also found by being refused for them in
+turn, and both refusals said exactly what was missing, which is the
+error vocabulary working.
+
+**Status: list view remains UNWATCHED, not disproved** — third pass
+running. But it is now blocked on one named thing (foreign-process
+anchor bind on the staging path) rather than on a rig whose AppleScript
+was believed dead. Closing the anchor bind unblocks it; nothing else
+needs to change.
+
+For the record, the scene DOES carry what a driver needs: the View menu
+arrives with all twelve items, correct indices, and `mark: true` on "as
+Icons" — so the icon-view pair that WAS captured is confirmed to be icon
+view by the guest's own menu state rather than by looking at it.
+
 ## BROKEN: a FOREIGN process's controls have no determined kind — 169 of 169, across five targets (2026-08-07, `claude/019-integration-2`)
 
 The 019 integration merged `main` and four lanes, then watched the tree
