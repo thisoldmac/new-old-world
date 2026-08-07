@@ -51,9 +51,8 @@ class LegacyMirrorRetirementTests(unittest.TestCase):
         # "run the poll" and "put it on screen"; 019 split them, and the
         # window is now one of two containers rather than the only one.
         view = (sources / "MirrorControlView.swift").read_text()
-        self.assertIn("Start Mirror", view)
-        self.assertIn("Stop Mirror", view)
-        self.assertIn("Detach", view)
+        self.assertIn('"Stop" : "Start"', view)
+        self.assertIn('"Attach" : "Detach"', view)
         module = (sources / "MirrorModuleView.swift").read_text()
         self.assertIn("NOWMirrorWindow", module)
         self.assertIn("MirrorPaneView", module)

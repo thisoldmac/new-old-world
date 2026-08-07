@@ -74,14 +74,27 @@ final class MirrorPresentation: ObservableObject {
         didSet { defaults.set(zoom.rawValue, forKey: Self.zoomKey) }
     }
 
+    /// The diagnostics column. **Closed by default, and that is the
+    /// decision rather than a default that happened.** The first embedded
+    /// Mirror gave the planes, the resident's lifecycle and the act
+    /// clocks a permanent half of the pane, and the picture of the
+    /// Macintosh got the other half — which read as two things stacked on
+    /// each other rather than as one module. None of it is wanted while
+    /// driving; all of it is wanted when something is wrong.
+    @Published var inspectorShown: Bool {
+        didSet { defaults.set(inspectorShown, forKey: Self.inspectorKey) }
+    }
+
     private let defaults: UserDefaults
     private static let detachedKey = "mirrorDetached"
     private static let zoomKey = "mirrorZoom"
+    private static let inspectorKey = "mirrorInspectorShown"
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         isDetached = defaults.bool(forKey: Self.detachedKey)
         zoom = Self.sanitised(defaults.string(forKey: Self.zoomKey))
+        inspectorShown = defaults.bool(forKey: Self.inspectorKey)
     }
 
     /// A stored zoom made whole. Pure and static so the rule — and in

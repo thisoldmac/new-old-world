@@ -231,6 +231,7 @@ run_py_path tools/mirror-gate-tests/test_mirror_gate_evidence.py
 run_py_path tools/mirror-gate-tests/test_shot_explicit_oracle.py
 run_py_path tools/mirror-gate-tests/test_mirror_parity_inventory.py
 run_py_path tools/mirror-gate-tests/test_legacy_mirror_retirement.py
+run_py_path tools/mirror-gate-tests/test_agent_socket_suffix.py
 run_py_path tools/mirror-gate-tests/test_spin_up_ppc_shutdown.py
 run_py_path tools/mirror-gate-tests/test_lane_ports.py
 run_py_path tools/mirror-gate-tests/test_build_guests_env.py

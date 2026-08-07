@@ -23,7 +23,7 @@ struct MirrorPaneView: View {
 
     /// Which container this instance is. It decides the keyboard policy
     /// and nothing else: everything visual is the same picture.
-    enum Container {
+    enum Container: Equatable {
         /// One pane of NOW's main window, beside the sidebar and the
         /// host's own menu bar.
         case modulePane
@@ -39,8 +39,16 @@ struct MirrorPaneView: View {
     var body: some View {
         VStack(spacing: 0) {
             surface
-            Divider()
-            zoomBar
+                .background(Color(nsColor: .windowBackgroundColor))
+            /* **The pane has NO zoom bar.** Attached, the stop lives in
+               the module's toolbar with the other controls a person
+               reaches for — a second copy under the picture would be the
+               same control in two places and half the pane's chrome. The
+               detached window has no toolbar above it, so it keeps one. */
+            if container == .detachedWindow {
+                Divider()
+                zoomBar
+            }
         }
     }
 
@@ -73,6 +81,11 @@ struct MirrorPaneView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
+
+    /* **What the letterbox is made of.** `FitTransform` preserves the
+       guest's aspect, so a pane taller than 4:3 has bands above and
+       below the Macintosh. They were the window's own black, which read
+       as a broken render rather than as empty space around a picture. */
 
     /// The guest's own screen, or the classic default until it says.
     private var guestSize: CGSize {

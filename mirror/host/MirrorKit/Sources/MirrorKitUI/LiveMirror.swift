@@ -293,9 +293,9 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                        failure this project keeps paying for. So it is
                        said, and only while it is true. */
                     if case .sharesWindow = keyboard {
-                        Text(keyboardEngaged
-                             ? "keyboard → this Mac"
-                             : "click to type to this Mac")
+                        Text(keyboardEngaged ? "keyboard ↦" : "click to type")
+                            .lineLimit(1)
+                            .fixedSize()
                             .foregroundStyle(.secondary)
                             .allowsHitTesting(false)
                     }

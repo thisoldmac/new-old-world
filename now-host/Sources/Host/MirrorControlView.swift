@@ -1,8 +1,119 @@
 import SwiftUI
 
-/// One product surface: NOW's own data-driven Mirror window, plus the host's
-/// policy over the four named planes. The guest Workshop reports these same
-/// resident facts read-only; it never becomes a second policy authority.
+/// **The Mirror's chrome: what a person reaches FOR, above the picture.**
+///
+/// One strip, and the grouping is by how often a control is wanted rather
+/// than by "these all belong to the Mirror" — which is the arrangement
+/// that made the first embedded version read as a dump. **Start/Stop and
+/// Detach are actions**: frequent, one click, always visible. **Zoom is a
+/// view setting**: adjusted while looking, so it sits here too but as a
+/// picker rather than a button. Everything else — the planes, the
+/// resident's lifecycle, the act and cycle clocks — is diagnostics, and
+/// diagnostics go in the inspector behind a toggle, because a person
+/// driving a Macintosh is not reading them.
+struct MirrorToolbarView: View {
+    @ObservedObject var model: MirrorControlModel
+    @ObservedObject var run: MirrorRunControl
+    @ObservedObject var presentation: MirrorPresentation
+    /// Detaching is not `presentation.isDetached.toggle()`: the window
+    /// owns its own open/closed state and sets the axis itself, so both
+    /// directions go through it and there is one path rather than two
+    /// that must agree.
+    let setDetached: (Bool) -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            identity
+            Spacer(minLength: 8)
+            if !presentation.isDetached {
+                /* A MENU rather than a segmented control. Five stops as
+                   segments is 260 points of toolbar for a setting that
+                   is changed occasionally — it crowded out the machine's
+                   own name at a 620-point pane width, which is the width
+                   the detail column actually starts at. */
+                Picker("Zoom", selection: $presentation.zoom) {
+                    ForEach(MirrorZoom.allCases) { stop in
+                        Text(stop.label).tag(stop)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .fixedSize()
+                .help("How much of the classic Mac's screen one point here "
+                      + "is worth. Every numbered stop is a power of two, so "
+                      + "the pixels stay exact.")
+            }
+            Button(run.running ? "Stop" : "Start") {
+                if run.running { run.stop() } else { run.start() }
+            }
+            .disabled(!run.running && !model.connection.canCapture)
+            .help(run.running
+                  ? "Stop asking the classic Mac for its screen. Every "
+                    + "Mirror request refuses until it is started again."
+                  : "Start asking the classic Mac for its screen.")
+            Button(presentation.isDetached ? "Attach" : "Detach") {
+                setDetached(!presentation.isDetached)
+            }
+            .help(presentation.isDetached
+                  ? "Bring the Mirror back into this page."
+                  : "Put the Mirror in a window of its own. It keeps "
+                    + "running either way.")
+            Toggle(isOn: $presentation.inspectorShown) {
+                Image(systemName: "sidebar.trailing")
+            }
+            .toggleStyle(.button)
+            .help("Show the planes, the resident's lifecycle and the act "
+                  + "clocks.")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    /// Which Macintosh, and whether anything is being asked of it. Both
+    /// belong here rather than in a card: they are the two facts a person
+    /// checks before believing anything else on the page.
+    private var identity: some View {
+        HStack(spacing: 7) {
+            Circle()
+                .fill(run.running ? Color.green
+                      : run.wantsRunning ? Color.orange : Color.secondary)
+                .frame(width: 8, height: 8)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(model.connection.peerLabel)
+                    .font(.headline)
+                    .lineLimit(1)
+                Text(stateLine)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var stateLine: String {
+        if run.running {
+            return presentation.isDetached
+                ? "Running — showing in its own window"
+                : "Running"
+        }
+        if run.wantsRunning { return "Waiting for a Mac to come back" }
+        return "Stopped"
+    }
+}
+
+/// **The Mirror's inspector: what a person looks UP, beside the picture.**
+///
+/// Everything here was a card stacked under the Mirror in the first
+/// embedded version, which is what made it read as two things piled on
+/// each other rather than as one module. None of it is wanted while
+/// driving; all of it is wanted when something is wrong. So it is a
+/// trailing column behind a toggle, closed by default.
+///
+/// The host's policy over the four named planes lives here too. The guest
+/// Workshop reports these same resident facts read-only; it never becomes
+/// a second policy authority.
 struct MirrorControlView: View {
     @ObservedObject var model: MirrorControlModel
     @ObservedObject var run: MirrorRunControl
@@ -16,7 +127,6 @@ struct MirrorControlView: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    productCard
                     actsCard
                     cyclesCard
                     lifecycleCard
@@ -30,87 +140,23 @@ struct MirrorControlView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack {
-                Text("Mirror").font(.headline)
-                Spacer()
-                if model.isLifecycleChecking {
-                    ProgressView().controlSize(.small)
-                }
-                Button("Refresh") { model.refreshLifecycle() }
-                    .disabled(model.isLifecycleChecking
-                              || !model.connection.canCapture)
+        HStack(alignment: .firstTextBaseline) {
+            /* Deliberately terse. The old header explained what the
+               Mirror IS, which was necessary when this page was a button
+               that opened a window somewhere else. The page draws the
+               machine now, so the explanation is redundant and the space
+               is better spent on the machine. */
+            Text("Details").font(.headline)
+            Spacer()
+            if model.isLifecycleChecking {
+                ProgressView().controlSize(.small)
             }
-            Text("A native, data-driven view of the connected classic Mac. "
-                 + "State comes from that Mac; keyboard and mouse actions "
-                 + "mutate it through NOW's interaction plane.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            Button("Refresh") { model.refreshLifecycle() }
+                .disabled(model.isLifecycleChecking
+                          || !model.connection.canCapture)
         }
-        .padding(12)
-    }
-
-    /// **Two controls, because the Mirror has two axes.**
-    ///
-    /// One button said `Open Mirror` / `Close Mirror` and meant both
-    /// things at once: opening started the poll and closing stopped it.
-    /// That label became a lie the moment the Mirror could be looked at
-    /// in two places and driven from neither — an agent on the MCP socket
-    /// needs the poll and has no window, and a person putting the picture
-    /// back in the pane is not asking the classic Mac to stop.
-    ///
-    /// So: **Start/Stop** governs the poll, and **Detach/Attach** governs
-    /// where it is drawn. Each persists its own last answer, and neither
-    /// can change the other.
-    private var productCard: some View {
-        card {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Mirror this Mac").font(.headline)
-                    Text(runningSentence)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button(run.running ? "Stop Mirror" : "Start Mirror") {
-                    if run.running { run.stop() } else { run.start() }
-                }
-                .disabled(!run.running && !model.connection.canCapture)
-                .keyboardShortcut(.defaultAction)
-            }
-            Divider()
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Where it is shown").font(.headline)
-                    Text(presentation.isDetached
-                         ? "In a window of its own. Closing that window "
-                            + "brings it back to this page; it does not "
-                            + "stop the Mirror."
-                         : "On this page, under these controls.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
-                Button(presentation.isDetached ? "Attach" : "Detach") {
-                    presentation.isDetached.toggle()
-                }
-            }
-        }
-    }
-
-    private var runningSentence: String {
-        if run.running {
-            return "Running: this Mac is asking the classic Mac for its "
-                + "screen, and keeps asking while you are on another page."
-        }
-        if run.wantsRunning {
-            return "Waiting for a Mac to come back — it will start again "
-                + "by itself."
-        }
-        return "Stopped. Nothing is asking the classic Mac for its screen, "
-            + "and every Mirror request refuses until it is started."
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
     }
 
     /// **What the lane is doing, and where the last acts spent their time.**
