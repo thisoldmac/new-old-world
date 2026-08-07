@@ -14,6 +14,55 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## LOOK: round 5's five checks, and the one thing four lanes claimed that a picture had to settle (2026-08-07, `claude/019-integration-5`)
+
+Emulator-capture-verified, on the lane's own VM (block 591, anchor 16728 /
+wire 16729) against a fresh clone of `os91-runner.qcow2` — **not the
+shared stage oracle** — carrying this tree's ext and app: sourceManifest
+`f41867cfe431`, buildFingerprint `4d0988e8e891`, and the guest's own
+`mirror` agreed. Nothing here ran on the PowerBook. Four targets captured
+with `tools/fidelity-sweep.py`, rendered through
+`LiveShapedRenderTests.testRenderASweepAsTheAppWouldDrawIt` onto each
+target's OWN scene, and paired against the machine's pixels with
+`tools/fidelity-pair.py`.
+
+**What four lanes claimed, and what the pictures say:**
+
+- **Memory is readable and drawn ONCE.** Sweep B's R1 and R2 are gone in
+  a live capture, not only in a fixture: every string in the panel
+  appears exactly once, the labels carry no spurious vertical stroke, and
+  the paragraph, the popup, both value fields and `Use Defaults` all
+  match. This is `019-sweepb-regressions` surviving integration.
+- **All six Appearance tabs draw**, with `Themes` correctly raised, the
+  theme list, its scroll bar, `Save Theme…` and `Current Theme: Indigo
+  Foam` beneath it. Round 4's 3a — the root `userPane` erasing the whole
+  panel — does not reproduce.
+- **Date & Time has its group boxes**, all five, titles included, and
+  "Use a Network Time Server" arrives with its `r`. Round 4's 3b is gone.
+  Its panel face matches the machine's grey, and its Menu Bar Clock
+  radios draw as filled circles.
+- **Cross-application stacking is right**, and the Memory and Appearance
+  rows are the evidence rather than the Finder row: in both, a foreign
+  control panel renders in front of NOW's own Workshop window, which
+  renders in front of the desktop — the same order the guest drew. (The
+  Finder row is marked **contaminated** by the sweep's own dirty-exit
+  check and was not used for this.)
+- **The Mirror module's resting layout is the accepted one**, rendered
+  from the shipping `MirrorModuleView` at 620×720 and 1400×900: header,
+  the picture, the status line, and both drawers shut with only the
+  `Events` chevron showing. Its narrow form truncates the status line
+  rather than reflowing it.
+
+**And the thing a picture had to settle, which no gate could:** with the
+pills correctly withheld, **Memory's six radios and its "Save contents to
+disk" check box now draw as bare labels** where the machine draws a
+filled circle and a ticked box. That is the radio-CDEF item above,
+visible exactly as predicted. Date & Time's radios in the same render
+draw correctly, so this is the CDEF classification and not the choice
+renderer. Two smaller absences in the same frame, neither new: the
+panel's three icons and the RAM-disk slider render empty, and
+Appearance's theme thumbnails render as plain plates.
+
 ## FIXED: two of the three the regressions lane named, and the third is a guest question (2026-08-07, `claude/019-integration-5`)
 
 Round 5 merged seven lanes and then took the two defects
