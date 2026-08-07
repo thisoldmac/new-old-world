@@ -4675,26 +4675,68 @@ components:
 
         An ok reply means the button was put down. Whether the target
         noticed is a separate observation.
+
+        TWO WAYS TO NAME THE TARGET, and the second exists because the
+        first cannot reach a Finder icon. Send EXACTLY ONE of `element`
+        or `window`; sending both, or neither, is refused.
+
+        What the reference does here is narrower than it looks, and
+        saying so is what makes the second form honest rather than a
+        loophole. Unlike ctlact, whose trap patch answers for the
+        ControlHandle the request names, a drag press does NOT act
+        through the named thing: the resident puts the button down at
+        the caller's own point and carries the session nonce in the
+        field a handle would have used. So the reference's job is to
+        name the PROCESS whose context the press runs in, and the POINT
+        is the entire operation.
+
+        `window` therefore names the container the press happens inside,
+        and the guest CHECKS that: a point outside the resolved window's
+        global content rectangle is refused. That check is the whole
+        reason this form is not "a coordinate is a reference" arriving
+        by the back door - the reference bounds where the press may
+        land, rather than merely accompanying it.
+
+        A desktop icon is reached the same way: the Finder's desktop is
+        an ordinary window in the window list, titled "Desktop", and the
+        element walk mints a reference for it like any other. Measured
+        2026-08-07 rather than assumed - it is what made this form
+        sufficient instead of half a repair.
       args:
         type: object
-        required: [element]
         properties:
           element:
             type: string
             description: >
               The opaque reference, "now-element-" and a UUID, minted by
-              the observation that saw the element.
+              the observation that saw the element. One of this or
+              `window`.
+          window:
+            type: string
+            description: >
+              The opaque reference, "now-window-" and a UUID, minted by
+              an observation that saw the window - the CONTAINER the
+              press happens inside. One of this or `element`. In this
+              form `h` and `v` are required and the point must lie
+              within the window's global content rectangle: there is no
+              element rectangle to fall back on, and a press at a
+              guessed point is the one thing this verb may not do.
           h:
             type: integer
             description: >
-              Global horizontal point to press at. Optional, and the
-              caller SHOULD send it: without it the press falls back to
-              the rectangle the guest's own resolver has for the element,
-              which is not always populated - and where it is not, the
-              request is refused rather than pressed at a guessed point.
-              For ctlact a wrong point is harmless, because its patch
-              answers for the handle the request names; for a drag the
-              point is the entire operation.
+              Global horizontal point to press at. Optional in the
+              `element` form and the caller SHOULD send it: without it
+              the press falls back to the rectangle the guest's own
+              resolver has for the element, which is not always
+              populated - and where it is not, the request is refused
+              rather than pressed at a guessed point. For ctlact a wrong
+              point is harmless, because its patch answers for the
+              handle the request names; for a drag the point is the
+              entire operation.
+
+              REQUIRED in the `window` form, where there is no element
+              rectangle to fall back on, and checked against the
+              window's own.
           v:
             type: integer
             description: Global vertical point to press at. See h.

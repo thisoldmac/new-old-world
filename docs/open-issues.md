@@ -190,11 +190,33 @@ have been "a coordinate is a reference" arriving by the back door;
 a window reference plus a point *inside that window* is a bound the
 guest can check and does.
 
-What this does **not** close is the desktop, and that is stated here
-rather than discovered later: a desktop icon is inside no window, so this
-form cannot carry it unless the Finder's desktop is itself a window in
-the window list. That is an empirical question about this Macintosh, not
-a design choice, and it is measured below.
+The one thing that could have left this half-closed was the desktop: a
+desktop icon is inside no *folder* window, so the form reaches it only if
+the Finder's desktop is itself a window in the window list. That is a
+fact about this Macintosh rather than a design choice, so it was measured
+rather than assumed — and it came back better than the design needed.
+
+**The Finder's desktop IS a window, and the guest already mints a
+reference for it.** Emulator-measured 2026-08-07 on this lane's own clone
+(block 979, anchor 19832 / wire 19833, guest build `113f1b176035`), by
+aiming `elements` at the Finder's own PSN:
+
+| window | kind | z | content bounds (global) | reference |
+| --- | --- | --- | --- | --- |
+| `Macintosh HD` | 20 | 0 | `{48, 103, 452, 321}` | minted |
+| `Desktop` | 20 | 1 | `{0, 20, 800, 600}` | minted |
+
+So the desktop is an ordinary Finder window of the same kind as a folder
+window, its content region starts below the menu bar, and the element
+walk had been naming it the whole time — nobody had asked. **No new
+species of reference is needed for any Finder icon**, which is the
+strongest possible argument that candidates A through C were the wrong
+shape: the addressing this feature wanted already existed, one verb over.
+
+The bound the guest checks falls out of the same fact. A desktop drag is
+a press inside `Desktop`'s rectangle, a folder drag is a press inside
+that folder window's, and both are the same comparison against the same
+global content box.
 
 ### A gate, so the next conformer is not silently absent
 

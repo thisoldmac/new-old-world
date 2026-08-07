@@ -1451,6 +1451,8 @@ void now_act_run_dragpress(const char *request_json, long id,
     long             h = 0;
     long             v = 0;
     int              have_point;
+    int              by_window;
+    char             probe[kNowObsTokenMax];
 
     now_act_begin_command();
     if (arg_int_malformed(request_json, "idle")
@@ -1467,9 +1469,85 @@ void now_act_run_dragpress(const char *request_json, long id,
     have_point = arg_int(request_json, "h", &h)
               && arg_int(request_json, "v", &v);
 
-    if (!resolve_for_act(request_json, id, out, cap, kNowObsKindElement,
+    /* EXACTLY ONE NAME FOR THE TARGET, and the second one exists because
+       the first cannot reach a Finder icon.
+
+       An icon on the desktop or in a folder window is not a Control
+       Manager object: the Finder lays it out in its own structures, so
+       the element walk cannot see it and no observation ever minted an
+       element reference for it. Every item drag a person made therefore
+       had nothing to name (docs/open-issues.md, 2026-08-07).
+
+       What made a second form defensible rather than a loophole is what
+       this verb actually does with the reference, which is less than it
+       looks. ctlact's trap patch answers for the ControlHandle the
+       request names, so its reference bounds the act. A drag press does
+       not act through the named thing at all: the resident puts the
+       button down at the caller's point and carries the session nonce in
+       the field a handle would have used (ext/src/now_ext_act.c). The
+       reference's job here is to name the PROCESS whose context the
+       press runs in.
+
+       So the window form names the CONTAINER, and the point is checked
+       against it below. A window reference with a point anywhere on the
+       screen would have been "a coordinate is a reference" arriving by
+       the back door, which obsref.h asks reviewers to refuse. */
+    by_window = arg_str(request_json, "window", probe,
+                        (long)kNowObsTokenMax);
+    if (by_window == arg_str(request_json, "element", probe,
+                             (long)kNowObsTokenMax)) {
+        reply_error(out, cap, id, "bad-request",
+                    by_window
+                        ? "dragpress takes element OR window and this "
+                          "names both. They mean different targets and "
+                          "nothing here gets to pick one"
+                        : "dragpress requires element or window: one "
+                          "opaque reference minted by an observation. "
+                          "element names the thing pressed; window names "
+                          "the container a press happens inside, which is "
+                          "how a Finder icon is reached");
+        return;
+    }
+    if (by_window && !have_point) {
+        /* A window is a container, not a point. There is no rectangle to
+           centre on that would mean anything, and the fallback below is
+           deliberately not reused: pressing at the middle of a Finder
+           window would pick up whatever happened to be there. */
+        reply_error(out, cap, id, "bad-request",
+                    "the window form of dragpress requires h and v: a "
+                    "window is a container rather than a point, and this "
+                    "verb does not press at a guessed one");
+        return;
+    }
+
+    if (!resolve_for_act(request_json, id, out, cap,
+                         by_window ? kNowObsKindWindow : kNowObsKindElement,
                          &handle, ref, 0)) {
         return;
+    }
+    if (by_window) {
+        /* The bound that makes the reference do real work. detail.window
+           is the CONTENT region's bounding box in global coordinates
+           (axwalk.c reads contRgn and leaves it global), which is the
+           same space h and v are in - so this is a comparison and not a
+           conversion, and there is no second frame of reference to get
+           wrong. */
+        const NowAxWindow *w = &handle.detail.window;
+
+        if (w->right <= w->left || w->bottom <= w->top) {
+            reply_error(out, cap, id, "unsupported",
+                        "this window resolves to no rectangle, so there is "
+                        "nothing to check the press point against");
+            return;
+        }
+        if (h < w->left || h >= w->right || v < w->top || v >= w->bottom) {
+            reply_error(out, cap, id, "bad-request",
+                        "that point is outside the window it names. The "
+                        "window form presses INSIDE its container - a "
+                        "reference that did not bound the point would be a "
+                        "coordinate wearing a reference's clothes");
+            return;
+        }
     }
     /* Refuse BEFORE pressing, never after. A resident with a cell but no
        vehicle would take the press and never let go of it, which is the
@@ -1494,7 +1572,10 @@ void now_act_run_dragpress(const char *request_json, long id,
     }
 
     if (!have_point) {
-        /* Fall back to the resolver's own rectangle for the element -
+        /* ELEMENT FORM ONLY: the window form was refused above without a
+           point, so this branch cannot be reached with a container.
+
+           Fall back to the resolver's own rectangle for the element -
            but only if it HAS one. Found by driving: the resolver leaves
            detail.control zeroed for controls the scene walk reports with
            real bounds, so this silently pressed at 0,0.
@@ -1547,7 +1628,11 @@ void now_act_run_dragpress(const char *request_json, long id,
     now_act_withdraw();
 
     rows_reset(&rows);
-    row_add(&rows, "Element", ref);
+    /* Which form was used, said in the label rather than left for a
+       reader to infer from the token's prefix. A receipt names what was
+       asked for, and the two forms promise different things about where
+       the press could have landed. */
+    row_add(&rows, by_window ? "Window" : "Element", ref);
     row_add(&rows, "Dispatch", "pressed");
     row_add(&rows, "Point from", have_point ? "the caller" : "the resolver");
     drag_state_rows(&rows, drag);
