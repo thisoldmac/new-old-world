@@ -283,7 +283,10 @@ final class AgentIntegrationActControl {
             return .refused(Self.failure(
                 "now-key-refused",
                 Self.bounded(result.error?.message
-                    ?? "The paired guest refused the keystroke")))
+                    ?? "The paired guest refused the keystroke"),
+                correlation: result.error?.correlation,
+                settlement: result.error?.settlement,
+                reach: Self.reach(ofGuestRefusal: result.error)))
         case .result(let result):
             /* The `key` verb's own rows are lower-case (`code`, `char`,
                `posted`, …) — the input plane's convention, distinct from
@@ -345,7 +348,10 @@ final class AgentIntegrationActControl {
             return .refused(Self.failure(
                 "now-text-get-refused",
                 Self.bounded(result.error?.message
-                    ?? "The paired guest refused the text read")))
+                    ?? "The paired guest refused the text read"),
+                correlation: result.error?.correlation,
+                settlement: result.error?.settlement,
+                reach: Self.reach(ofGuestRefusal: result.error)))
         case .result(let result):
             let rows = Self.rows(from: result, verb: "textget")
             /* `Text` may legitimately be empty — an empty field is a real
