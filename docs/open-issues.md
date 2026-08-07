@@ -12164,3 +12164,104 @@ for its live handle. So the cost is dominated by the number of
 cross-boundary reads, not by anything per-byte. If someone takes perf,
 that is where to look first — and they should measure before believing
 this paragraph.
+
+### The list view's rows: measured, fixed, and driven (2026-08-07)
+
+Closes the second half Lane B named above ("**List view**"), and closes
+Michelle's "unable to select items in list view". Lane B was right to stop
+where it did: the vocabulary it needed had never been measured, and the
+answer is not the one a modern Finder would have given.
+
+**The Finder's view vocabulary, on mac99 / OS 9.1.** `view of window 1`
+works; its class renders as `«class pvew»`. The value has **no string
+coercion** — `(view of window 1) as string` raises −1700, "Can't make
+«class pvew» of window 1 … into a string" — but concatenating it renders
+it as a bare word, and those words are the whole domain:
+
+| raw word | the view |
+|---|---|
+| `icon` | icon view |
+| `name` | **the list**, confirmed against a screendump of the rows |
+| `small icon` | small-icon view |
+
+They are also the setter's vocabulary (`set view of window 1 to name`).
+The four-character enum was deliberately NOT pinned: `«constant ****icnv»`,
+`nmev`, `lisv`, `ivew`, `nvew`, `bvew`, `sicv` and `btnv` each answered
+false or silently did nothing, and only `«constant ****smic»` round-tripped
+(to `small icon`). The bare words are what reaches the wire, so the code
+uses those and the codes are left unmeasured rather than guessed.
+
+The phrasings that did NOT work, recorded because each cost a probe:
+
+- `current view of window 1` — not a term, and **osaErr −1753 for the whole
+  script**. An unknown term is a COMPILE failure, so a `try` around it does
+  not catch it and it takes every other phrasing in the same script down
+  with it. Probe one phrasing per script; a batched probe reports a single
+  lie about all of them.
+- `properties of window 1` — −1728, "Can't get properties of window 1".
+  There is no property dump to enumerate the vocabulary from.
+- `list view` / `button view` — −1728 "Can't get view"; `button` /
+  `buttons` — −2753, "not defined". Those are the modern Finder's words.
+  `set view of window 1 to list` compiles and raises −15279, "Value out of
+  range": `list` is the class, not the view.
+- A guest `script` source is capped at **2048 bytes**; a batch of more than
+  about five phrasings is refused `too-large`.
+
+**We got the real geometry, not `placed: false`.** `bounds of` an item is
+the box the Finder actually DREW, in every view, and its top-left is the
+old `position` — so there is nothing `position` answered that it does not.
+Measured beside a screendump, Macintosh HD, ten items:
+
+| view | `position of` item 1 | `bounds of` item 1 |
+|---|---|---|
+| `icon` | 34, 25 | 34,25,66,57 — position + 32 |
+| `small icon` | 35, 25 (a DIFFERENT grid) | 16×16 |
+| `name` | **2, 42 — the saved icon grid** | 22,43,38,59 — the row, 19-px pitch |
+
+So every producer now asks for `bounds` and none asks for `position`
+(`NOWMirrorSource.iconItemsScript`, `FinderItems.windowsScript`), and the
+size travels with it as `Scene.DesktopItem.w/h`. `HitTester.targetSize` is
+the one place that turns it into a target: the Finder's box, plus the label
+UNDER an icon-view icon, and nothing added to a list row, whose name is
+drawn beside it and whose width the Finder does not measure for us. That
+under-claims deliberately — it costs a click that must land on the icon,
+where guessing the text width would over-claim into the next row.
+
+Consequently the `view` is measured and **deliberately not carried**:
+`bounds` made the geometry right in every view, so a `view` field would
+have no reader, which is its own defect class. It is written into
+`FinderItems`'s header for whoever needs it next.
+
+**Driven and watched — emulator-verified, mac99 / OS 9.1, build
+`0011e6584be9`, a session-private VM on anchor 1770 / wire 5320.** Through
+a private host (`NOW_PREFS_SUFFIX`, its own agent socket confirmed by
+`lsof`) and its own agent surface, paired with QMP screendumps at every
+step:
+
+- Macintosh HD in list view projects ten 16×16 rows at `l=22`,
+  `t = 43, 62, 81, 100, 119, 138, 157, 176, 195, 214` — the rows the guest
+  is drawing. Before this it reported the three-column icon grid.
+- `finderSelect` selected "Rumpus PRO 2.0" (row 4) and, in a second pass,
+  "TBT-sndbuf-dev" (row 8). Both watched highlighting in the screendump,
+  the right row each time, from nothing selected.
+- Driving View → as Icons through the Mirror turned every rect into a
+  32×44 box on the icon grid (columns 34/162/290) — so the rects follow
+  the layout the window is drawing rather than a saved one. That is the
+  claim, and it is the one a fixture cannot make.
+
+**What this did NOT prove.** `finderSelect` addresses an item by NAME, so
+the drive above exercises the acquisition and the projection but not the
+mouse: the path from a POINT in the Mirror window to a row is
+`HitTester.windowItem` plus `FinderItems.clickPoint`, and no agent-socket
+gesture takes a raw point. Those two are covered by guards built from these
+same measured numbers and watched failing by mutation, which is a test and
+not a drive. Someone with the Mirror window in front of them should click a
+list row and watch it, and that is the last unproven inch.
+
+Item `ref` stays `nil` throughout: standing host policy, untouched here.
+
+One incidental corroboration for whoever owns menus. The View menu in the
+same snapshot reports `marked: true` for "as List" **and** for "as Window"
+and "Sort List" simultaneously — consistent with the sibling finding that
+`mark` is a raw byte carrying a submenu ID rather than a checkmark flag.
+Nothing here reads it.
