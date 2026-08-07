@@ -427,14 +427,15 @@ def cmd_check(args):
                         cwd=root)
     imported = self_revert_suspects(parents, base, root, merge_message)
 
-    result = flatten(census(commit, root))
+    result_census = census(commit, root)
+    result = flatten(result_census)
     pc = [census(p, root) for p in parents]
     pf = [flatten(c) for c in pc]
     bf = flatten(census(base, root))
 
     # A symbol whose FILE the merge does not have is a file-level decision,
     # reported once below rather than once per name.
-    live = set(census(commit, root))
+    live = set(result_census)
 
     def lost_from(i):
         return {s for s in pf[i] - result if s[0] in live}
@@ -468,7 +469,8 @@ def cmd_check(args):
     # its own predecessor without saying so is the shape that cost this
     # repository the CDEF attribution, and it is refusable where the bucket
     # as a whole is not.
-    suspects = attribute_removals(honoured_removal, parents, base, root)
+    suspects = attribute_removals(honoured_removal, parents, base, root,
+                                  merge_message)
 
     if gone_files:
         report_losses("files a parent had and the merge does not:",
@@ -593,7 +595,7 @@ def self_revert_suspects(parents, base, root, merge_message=""):
     return suspects
 
 
-def attribute_removals(honoured, parents, base, root):
+def attribute_removals(honoured, parents, base, root, merge_message=""):
     """Which commit removed each name, and is that commit a self-revert?
 
     `git log -S` over the range that side owns answers the first question
@@ -637,6 +639,12 @@ def attribute_removals(honoured, parents, base, root):
                         cwd=root).strip()
         verdict = ""
         found = mod.findings(sha, root) if (sha != "?" and mod) else []
+        # The merge's own message excuses it here exactly as it does in
+        # self_revert_suspects. Two places that ask the same question have
+        # to answer it the same way, or a merge passes one and is refused
+        # by the other for the same commit.
+        if found and mod.mentions(merge_message, sha):
+            found = []
         if found:
             verdict = "   <-- SELF-REVERT"
             suspects.append(sha)

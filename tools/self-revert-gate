@@ -46,9 +46,8 @@ THE FALSE POSITIVE IS A LANE REWORKING ITS OWN APPROACH across two
 commits, and it looks nearly identical -- C removes most of what A added.
 The fraction and the adjacency are what separate them in practice, and
 they are thresholds rather than a proof, so a rework that trips this is
-cured the same way a revert is: by saying so. Measured over every
-`claude/019-*` branch in this tree (`sweep claude/019-`), the defaults
-flag exactly one commit, and it is `fe4d8179`.
+cured the same way a revert is: by saying so. The rate is measured rather
+than hoped for; see the bottom of this docstring.
 
 WHAT IT DOES NOT COVER:
 
@@ -68,15 +67,20 @@ WHAT IT DOES NOT COVER:
     actually shipped -- a whole predecessor undone -- and a smaller revert
     is left to review.
 
-MEASURED FALSE POSITIVES, so the thresholds are a number and not a hope.
-`sweep claude/019- main` over this arc: 7 of 1014 distinct commits
-flagged across 56 branches, 0.7%. `fe4d8179` is one of them. Of the other
-six, `1de856e3` removes all 48 substantial lines `39191398` added
-fourteen minutes before -- a whole `scene_self.c`/`scene_self.h` feature
-and its source test, undone in a commit titled "drive system actions
-through guest state" -- which nobody had noticed. Whether the remaining
-five are reworks or reverts is a reading, and that is the point: the gate
-hands a reader seven commits to read instead of a thousand.
+MEASURED FLAG RATE, so the thresholds are a number and not a hope.
+`sweep claude/019- main`, 2026-08-07: 9 of 1050 distinct commits flagged
+across 61 branches, 0.86%. It is a SUBCOMMAND rather than a note here
+because the number moves as branches land, and a rate quoted from memory
+is the derived-number defect this repository has already paid for three
+times in one day. Re-run it.
+
+`fe4d8179` is one of the nine. Another is `1de856e3`, which removes all
+48 substantial lines `39191398` added fourteen minutes before -- a whole
+`scene_self.c`/`scene_self.h` feature and its source test -- in a commit
+titled "drive system actions through guest state". Nobody had noticed
+that one. Whether the other seven are reworks or reverts is a reading,
+and that is exactly the point: the gate hands a reader nine commits
+instead of a thousand.
 
 Mutation evidence: `tools/mirror-gate-tests/test_self_revert_gate.py`, in
 `scripts/test-native`. It replays `fe4d8179` itself, and every threshold
@@ -93,7 +97,14 @@ MIN_FRACTION = float(os.environ.get("NOW_SELF_REVERT_MIN_FRACTION", "0.55"))
 MAX_BACK = int(os.environ.get("NOW_SELF_REVERT_MAX_BACK", "20"))
 MAX_HOURS = float(os.environ.get("NOW_SELF_REVERT_MAX_HOURS", "24"))
 
-SAYS_SO = re.compile(r"\brevert|\bre-?applies\b|\bundo(es|ing)?\b|\brestor(e|es|ing)\b",
+# Deliberately NARROW. An earlier version also accepted "restore", which
+# is the most natural English for what a revert does -- and that is
+# precisely why it had to go: round 7's own merge message says "restores
+# the variant tables" while DESCRIBING the defect. A word this repository
+# uses in prose about reverts cannot also be the thing that silences the
+# gate about them.
+SAYS_SO = re.compile(r"\brevert(s|ed|ing)?\b|\bundo(es|ing|ne)?\b|"
+                     r"\bbacks? out\b|\bre-?instat(e|es|ing)\b",
                      re.IGNORECASE)
 HEXISH = re.compile(r"\b[0-9a-f]{7,40}\b")
 
