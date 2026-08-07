@@ -341,6 +341,116 @@ final class MirrorStateEngineTests: XCTestCase {
         }?.processVisibility[finder], false)
     }
 
+    // MARK: - A denominator that could never be filled
+
+    /// The roster of a HEALTHY Mac OS 9.1 boot: two applications with a
+    /// face, and the six faceless background processes observed beside
+    /// them. Their names are the real ones — this is the machine the
+    /// permanently-`partial` claim was measured on.
+    private func healthyBootScene(seq: Int,
+                                  declaresBackgroundOnly: Bool) throws -> Scene {
+        let faceless = ["Control Strip Extension", "DVD AutoLauncher",
+                        "FBC Indexing Scheduler", "Folder Actions",
+                        "tbt-appe", "tbt-worker"]
+        func row(_ psn: String, _ name: String, front: Bool,
+                 background: Bool) -> String {
+            let declaration = declaresBackgroundOnly && background
+                ? #","backgroundOnly":true"# : ""
+            // The faceless rows carried this token, and it is what a
+            // consumer saw before the declaration existed.
+            let error = background ? #","error":"ax_oracle_not_found"# + "\"" : ""
+            return #"{"psn":"\#(psn)","name":"\#(name)","front":\#(front),"#
+                + #""incarnation":"process-\#(psn)"\#(declaration)\#(error)}"#
+        }
+        var apps = [row("0.3", "Finder", front: true, background: false),
+                    row("0.4", "SimpleText", front: false, background: false)]
+        for (i, name) in faceless.enumerated() {
+            apps.append(row("0.\(10 + i)", name, front: false,
+                            background: true))
+        }
+        let document = #"""
+        {
+          "version":2,"seq":\#(seq),"capturedAt":\#(seq),"source":"peek",
+          "screen":{"w":640,"h":480},
+          "apps":[\#(apps.joined(separator: ","))],
+          "windows":[{
+            "id":"0.3/Macintosh HD#0","app":"Finder","psn":"0.3",
+            "title":"Macintosh HD","rect":{"l":10,"t":20,"r":300,"b":240},
+            "front":true,"z":0,"visible":true,"controls":[],
+            "incarnation":"process-0.3/window-disk"
+          }],
+          "meta":{"errors":[],"coverage":[
+            {"scope":"processes","status":"complete"}
+          ]}
+        }
+        """#
+        return try JSONDecoder().decode(Scene.self, from: Data(document.utf8))
+    }
+
+    /// **The measurement.** `process-visibility` could never read
+    /// `complete` on a healthy machine, and this is why — not an assertion,
+    /// a count.
+    ///
+    /// The census is the Finder's `every application process`. A faceless
+    /// background application is not one, so no census row can ever exist
+    /// for it; requiring a row per application in the replica required six
+    /// rows that could not be produced. The claim then said the census
+    /// "did not uniquely cover every application" about a machine where it
+    /// had covered everything there was to cover — a health signal pinned
+    /// at `partial` forever, which is the same as no signal.
+    ///
+    /// Both halves are asserted in one test on purpose: the before is the
+    /// evidence, and a fix whose before-case silently stops reproducing is
+    /// a fix nobody can check.
+    func testHeadlessProcessesNoLongerHoldVisibilityCoveragePartial() throws {
+        let census = ["Finder": true, "SimpleText": false]
+
+        // BEFORE: the same guest, before it declared anything. Six rows the
+        // census cannot produce keep the claim partial no matter what.
+        let old = MirrorStateEngine(guestKey: key)
+        _ = old.accept(try healthyBootScene(seq: 1,
+                                            declaresBackgroundOnly: false))
+        XCTAssertTrue(old.enrichVisibility(census, complete: true,
+                                           sequence: 1))
+        let before = old.snapshot?.scene.meta.coverage?.first {
+            $0.scope == "process-visibility"
+        }
+        XCTAssertEqual(before?.status, .partial,
+                       "8 applications, 2 coverable: the denominator was "
+                       + "6 rows short and always would be")
+
+        // AFTER: the declaration excludes exactly those six, and the same
+        // census settles.
+        let engine = MirrorStateEngine(guestKey: key)
+        _ = engine.accept(try healthyBootScene(seq: 1,
+                                               declaresBackgroundOnly: true))
+        XCTAssertTrue(engine.enrichVisibility(census, complete: true,
+                                              sequence: 1))
+        XCTAssertEqual(engine.snapshot?.scene.meta.coverage?.first {
+            $0.scope == "process-visibility"
+        }?.status, .complete,
+                       "partial -> complete is reachable once the six "
+                       + "processes with nothing to cover leave the "
+                       + "denominator")
+    }
+
+    /// The exclusion is by DECLARATION, not by "the census skipped it".
+    /// An application with a face that the census missed still holds the
+    /// claim partial — otherwise the fix would launder every gap into a
+    /// green light, which is a worse defect than the one it replaces.
+    func testAMissingApplicationStillHoldsCoveragePartial() throws {
+        let engine = MirrorStateEngine(guestKey: key)
+        _ = engine.accept(try healthyBootScene(seq: 1,
+                                               declaresBackgroundOnly: true))
+        XCTAssertTrue(engine.enrichVisibility(["Finder": true],
+                                              complete: true, sequence: 1))
+        XCTAssertEqual(engine.snapshot?.scene.meta.coverage?.first {
+            $0.scope == "process-visibility"
+        }?.status, .partial,
+                       "SimpleText has a face and no visibility row: that is "
+                       + "a real gap and must still say so")
+    }
+
     func testProjectionDigestIgnoresObservationSequenceAndCaptureTime() throws {
         let engine = MirrorStateEngine(guestKey: key)
         _ = engine.accept(try scene(seq: 1))
