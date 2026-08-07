@@ -204,6 +204,11 @@ static const char *const d_ctlact[] = {
     "  you name, so the application runs its real mouse-down handler.",
     "  Button parts are 10 and 11; a scroll bar's are 20 up, 21 down,",
     "  22 page-up, 23 page-down, and 129 is the indicator.",
+    "  Part 0 answers NOTHING: the press is still posted and the",
+    "  application's own tracking decides, which is how a tab switches",
+    "  and a list row selects.",
+    "  h and v are global screen coordinates and must be inside the",
+    "  control. Omit both to press its centre.",
     NULL
 };
 static const char *const d_ditemact[] = {
@@ -590,7 +595,7 @@ const NowCommandDoc kNowCommandDocs[] = {
     { "textset", 1, "replace one text element's contents",
       "textset <element> <text>", d_textset },
     { "ctlact", 1, "act on one control",
-      "ctlact <element> <part>", d_ctlact },
+      "ctlact <element> <part> [h v]", d_ctlact },
     { "ditemact", 1, "select one Dialog Manager item",
       "ditemact <element> <item>", d_ditemact },
     { "menuact", 1, "perform one menu command",

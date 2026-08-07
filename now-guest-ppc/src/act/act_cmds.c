@@ -9,6 +9,7 @@
 #include "act_menu_probe.h"
 #include "axresolve.h"
 #include "cmd_line.h"
+#include "ctlact_line.h"
 #include "json.h"
 #include "now_act_guard.h"
 #include "nowlog.h"
@@ -775,8 +776,48 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
     char                ref[kNowObsTokenMax];
     NowActStatus        st;
     long                part = 0;
+    long                point_h = 0, point_v = 0;
+    int                 has_point = 0;
+    char                line[kNowCtlactLineMax];
+    char                rebuilt[kNowCtlactLineMax];
 
     now_act_begin_command();
+    /* THE CONSOLE FACE, and it is first because a console line supplies
+       every argument at once. A typed caller's named args win where both
+       arrive, which is the rule cmd_line.h states for every verb. */
+    if (now_cmd_line(request_json, line, (long)sizeof line) && line[0] != '\0') {
+        char line_ref[kNowObsTokenMax];
+        long line_part = 0, line_h = 0, line_v = 0;
+        int  line_has_point = 0, half = 0;
+
+        if (!now_ctlact_parse_line(line, line_ref, (long)sizeof line_ref,
+                                   &line_part, &line_has_point,
+                                   &line_h, &line_v, &half)) {
+            reply_error(out, cap, id, "bad-request",
+                        half ? "ctlact's point needs both numbers: "
+                               "ctlact <element> <part> <h> <v>, in global "
+                               "screen coordinates"
+                             : "ctlact <element> <part> [h v]. The element "
+                               "is one now-element- reference, which "
+                               "`elements` prints; the part is a Control "
+                               "Manager part code, and 0 means let the "
+                               "application's own tracking decide from "
+                               "where the click landed");
+            return;
+        }
+        /* Rebuilt as the typed request this command already serves, so
+           there is ONE implementation below and the console is not a
+           second path through it. */
+        if (!now_ctlact_line_request(line_ref, line_part, line_has_point,
+                                     line_h, line_v,
+                                     rebuilt, (long)sizeof rebuilt)) {
+            reply_error(out, cap, id, "bad-request",
+                        "that element reference is too long to be one this "
+                        "Mac minted");
+            return;
+        }
+        request_json = rebuilt;
+    }
     if (arg_int_malformed(request_json, "part")) {
         /* Named separately because it is a CALLER's encoding bug, not a
            missing argument, and the two send someone looking in
@@ -795,6 +836,30 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
                     "20 up, 21 down, 22 page-up, 23 page-down, and 129 is "
                     "the indicator");
         return;
+    }
+    /* THE POINT, and it is all-or-nothing. A caller that sent one
+       coordinate meant to aim; taking the centre in the other axis would
+       be an act landing somewhere nobody asked for, and the reply would
+       still say `dispatched`. */
+    if (arg_int_malformed(request_json, "h")
+        || arg_int_malformed(request_json, "v")) {
+        reply_error(out, cap, id, "bad-request",
+                    "ctlact's h and v are present but not numbers. Send "
+                    "JSON integers, not quoted ones");
+        return;
+    }
+    {
+        int have_h = arg_int(request_json, "h", &point_h);
+        int have_v = arg_int(request_json, "v", &point_v);
+
+        if (have_h != have_v) {
+            reply_error(out, cap, id, "bad-request",
+                        "ctlact's point needs both h and v, in global "
+                        "screen coordinates. One alone would silently mean "
+                        "\"the centre\" in the other axis");
+            return;
+        }
+        has_point = have_h;
     }
     if (!resolve_for_act(request_json, id, out, cap, kNowObsKindElement,
                          &handle, ref, 0)) {
@@ -840,10 +905,36 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
        Where it lands decides nothing - the patch answers for the handle
        the request names and declines every other - so this only has to
        be somewhere the application will route to a mouseDown handler. */
-    cell->click_h = (NowPeekI32)((handle.detail.control.left
-                                  + handle.detail.control.right) / 2);
-    cell->click_v = (NowPeekI32)((handle.detail.control.top
-                                  + handle.detail.control.bottom) / 2);
+    if (has_point) {
+        /* WHERE IS NOW PART OF THE REQUEST for the two controls whose
+           identity is not enough: a tab strip is one control and eight
+           tabs, a list box is one control and every row. For those the
+           part code decides nothing and the point decides everything.
+         *
+           It is CHECKED against the rect the resolver just proved, in
+           the same global frame, and refused rather than clamped. A
+           clamp would turn "I aimed at the wrong thing" into "I pressed
+           the edge of the right thing", and the reply would say
+           dispatched either way. */
+        if (point_h < handle.detail.control.left
+            || point_h >= handle.detail.control.right
+            || point_v < handle.detail.control.top
+            || point_v >= handle.detail.control.bottom) {
+            now_act_withdraw();
+            reply_error(out, cap, id, "bad-request",
+                        "that point is outside the control this reference "
+                        "names. Send a point inside its rect, in the same "
+                        "global coordinates the observation reported");
+            return;
+        }
+        cell->click_h = (NowPeekI32)point_h;
+        cell->click_v = (NowPeekI32)point_v;
+    } else {
+        cell->click_h = (NowPeekI32)((handle.detail.control.left
+                                      + handle.detail.control.right) / 2);
+        cell->click_v = (NowPeekI32)((handle.detail.control.top
+                                      + handle.detail.control.bottom) / 2);
+    }
 
     st = now_act_submit(&g_target, &g_snap);
     if (st == kNowActRefused) {
@@ -878,7 +969,16 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
     row_add(&rows, "Element", ref);
     row_addf(&rows, "Part", "%ld", part);
     row_add(&rows, "Dispatch", "dispatched");
-    row_add(&rows, "Mechanism", "the application's own TrackControl");
+    row_add(&rows, "Mechanism",
+            part == 0 ? "the application's own tracking, unanswered"
+                      : "the application's own TrackControl");
+    if (has_point) {
+        row_addf(&rows, "Point", "%ld,%ld (global, as sent)",
+                 point_h, point_v);
+    } else {
+        row_add(&rows, "Point", "the centre of the control this reference "
+                                "names");
+    }
     /* A control with a live range publishes its position, so for those
        the guest itself can be quoted. A push button has no such range
        and this proves nothing about it - its effect is whatever its own

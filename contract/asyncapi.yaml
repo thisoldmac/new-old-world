@@ -4506,9 +4506,50 @@ components:
               A Control Manager part code. The button parts are 10 and
               11; a scroll bar's are 20 up, 21 down, 22 page-up, 23
               page-down; 129 is the indicator.
+
+              ZERO IS A REAL REQUEST, and it is the one a tab or a list
+              row needs. It means "do not answer TrackControl at all" -
+              the press is still posted, the plane still proves it
+              reached the machine, and the application's own tracking
+              runs unmodified. A tab switches and a list row selects
+              because the real control definition function decided, from
+              WHERE the click landed. Answering a part code instead would
+              short-circuit exactly the code that makes those two work.
+          h:
+            type: integer
+            description: >
+              WHERE the press lands, in GLOBAL screen coordinates. Both
+              h and v must be sent together, and the point must lie
+              inside the control the reference names as this Mac has just
+              revalidated it - a point outside is refused rather than
+              clamped, because a click that silently moved is a click
+              that actuated something the caller did not name.
+
+              Omit both to press the CENTRE of that same control, which
+              is what every request did before 2026-08-07 and is still
+              right for a button, a checkbox, or a scroll bar arrow whose
+              part code carries the whole of the intent.
+
+              It is here because the centre is WRONG for the two things
+              that most needed driving: a tab strip's centre is one
+              particular tab, and a list's centre is one particular row.
+              For those the point IS the request.
+          v:
+            type: integer
+            description: >
+              The vertical half of h, in the same global coordinates.
+              Sending one without the other is a bad-request: a half-
+              specified point would silently mean "centre" in one axis.
       x-line: >
-        NOT TYPEABLE. Same reason as winact: the argument is a
-        reference no human has.
+        `ctlact <element> <part> [h v]`. It was declared NOT TYPEABLE
+        until 2026-08-07 on the grounds that a reference is not something
+        a human has — but `elements` PRINTS them, and a reference is
+        copyable even though it is not inventable. What actually existed
+        was worse than an honest asymmetry: a help row, a usage string,
+        and no grammar, so a person who typed exactly what `help ctlact`
+        printed was told the command requires an element. The console
+        line is now parsed into the same named args a typed caller sends,
+        so there is one implementation behind both faces.
       output:
         type: object
         properties:
