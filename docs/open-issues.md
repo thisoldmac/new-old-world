@@ -188,6 +188,135 @@ caught by looking at targets nobody had complained about:
   defect, but it is the first place the two clauses are visible side by
   side.
 
+## BROKEN: the content plane is a one-window spotlight, and every other window hatches (2026-08-07, `claude/019-content-never-active`)
+
+Michelle's live Planes panel: Structure/Semantics/Interaction **Active**,
+Content **Requested**, `Plane bits cap 31, requested 15, active 15`, and
+**every window** rendering "Guest content not reported". Three separate
+attributions were offered for that picture. All three are wrong.
+
+Emulator-verified on a session-private clone (lane block 753, wire 18025,
+guest build `00a33f9fd567`, resident `sourceManifest f41867cfe431` /
+`buildFingerprint 4d0988e8e891` — this tree's build, staged into a clone,
+not the shared oracle). Nothing here touched the PowerBook.
+
+**The mechanism.** P3's `arm_active` bit is not an echo of `arm_request`,
+and it is the only plane of the five for which that is true. P1, P2 and
+P4 echo unconditionally on the resident's armed pass —
+`ext/src/now_ext.c:294`, `:299`, `:323`, each a bare
+`table->arm_active |= …` guarded only by `request & cap`. P3 appears
+nowhere in that function. Its bit is set in exactly one place,
+`ext/src/now_content.c:1843`, reached only under
+`kNowContentVerdictArmed` — a **per-window, per-A5, TTL-bounded** verdict
+over the content block's `arm_window` / `arm_psn` / `arm_generation`
+cells. And the only code path in the whole PPC app that ever claims
+`kNowPeekTableCapContent` is `qdtrace start`
+(`now-guest-ppc/src/content/qdtrace_cmd.c:311`), released again by
+`qdtrace stop` at `:354`.
+
+So the content plane is not a plane the host switches on. It is a
+spotlight aimed at **one window at a time**, and it expires. The resident
+hooks exactly that identity (`content_install_exact_window`,
+`ext/src/now_content.c:1859`); the host fills `display` only for windows
+whose `psn:addr` collected ops
+(`now-host/Sources/Host/NOWMirrorContentPlane.swift:970-999`); and any
+window with `display == nil` hatches
+(`mirror/host/MirrorKitUI/SceneRenderer.swift:789-797`). With three
+windows and one armed target, **at best one window can ever have an
+interior.** That is the picture, exactly.
+
+**Watched, on a running machine.** Paired `mirror` readings across one
+`qdtrace start` on the Finder's "Macintosh HD" window:
+
+| | cap | requested | active | content row |
+|---|--:|--:|--:|---|
+| before arming | 511 | 0 | 0 | `inactive` |
+| after arming  | 511 | **15** | **15** | **`active-current`** |
+
+`requested 15, active 15` is Michelle's own reading, reproduced — and
+with the arm live the content row is `active-current`, not `Requested`.
+Her `Requested` is therefore a **sample between spotlights**, not a plane
+that never activates: `state = requested` is the one-pass window where
+the claim is published and the resident has not yet agreed
+(`now-guest-ppc/src/mirror/mirror_probe.c:245-250`).
+
+**The three wrong attributions.**
+
+- *"Content never activates."* False. It activates whenever a window is
+  armed, and it deactivates when that arm expires. There is no sustained
+  "on".
+- *Sweep B: "the wire scene has no per-window content field at all,
+  armed or not."* False. `windows[].display[]` is a frozen, encodable IR
+  key (`mirror/host/MirrorKit/Sources/MirrorKit/Scene.swift:361`, in
+  `CodingKeys` at `:394`), and it is populated only by the P3 join. The
+  `content: false` Sweep B quoted is a **plane** row, not a window field;
+  no per-window `content` boolean exists on either side.
+- *"`whole 0B` says nothing ever arrived."* False, and it is a pure red
+  herring: `wireBytes` is the **scene document's** delta-vs-whole
+  transfer meter (`now-host/Sources/Host/Session.swift:1584`, hardcoded 0
+  on the `.unchanged` path at `:1654`). The content ops never travel in
+  the scene document at all — they come over the separate `qdtrace drain`
+  lane and are attached host-side. `whole 0B` is compatible with a
+  perfectly healthy content plane.
+
+**The join still works, and that is where this stops being a P3 bug.**
+The at-arm census reproduces on the current tree, unchanged: 467 records,
+a hooked offscreen world `0x1f472e60` (2 `worldborn`, 2 `blitsrc` on the
+window port `0x009eab90`), and **20 text ops carrying the real
+filenames** — `10 items, 3.21 GB available`, `System Folder`,
+`Applications (Mac OS 9)`, `Documents`, `Late Breaking News`,
+`Rumpus PRO 2.0`, `TimBotTu`, `TBT`, `TBT-paced-dev`, `TBT-sndbuf-dev` —
+item for item what the guest's own QMP screendump shows in that window.
+`census: runs 1, examined 94, found 2, hooked 1`. **The drain is
+healthy.** The loss is entirely between "which windows get armed" and the
+render.
+
+**Watched failing by mutation, and this is the reading that settles it.**
+Arm, then `qdtrace stop`, reading `mirror` at each step:
+
+| | requested | active | structure | semantics | content | interaction |
+|---|--:|--:|---|---|---|---|
+| baseline (scene walk only) | **7** | **7** | ACTIVE | ACTIVE | **off** | ACTIVE |
+| `qdtrace start` | **15** | **15** | ACTIVE | ACTIVE | **ACTIVE** | ACTIVE |
+| `qdtrace stop` | **7** | **7** | ACTIVE | ACTIVE | **off** | ACTIVE |
+
+Content is the only bit that moves; the other three never flinch. And
+the baseline is the finding: **a normal scene walk arms 7, never 15.**
+`1|2|4` is structure, semantics and interaction — the content bit, 8, is
+not in it and nothing in the ordinary cycle ever puts it there. So the
+product's steady state is a content plane that is off, and Michelle's
+`15/15` was a sample taken while some arm happened to be live.
+
+**Why nothing caught it, and the instrument that has to change.**
+`tools/local-pair-capture.py` — the drive loop's own live pair
+instrument — **never issues `qdtrace start`.** Grep it: no `qdtrace`, no
+`content`. Its warm-up comment at `:174-185` says "the planes arm as a
+RESULT" of a scene walk, which is true of P1/P2/P4 and false of P3 for
+the reason above. So the one instrument that photographs a live machine
+captures envelopes in which every window's `display` is nil by
+construction, and hatching is its only possible output. Every other
+recent render claim composed a **committed capture** onto its own scene,
+which feeds the renderer content from a file. Neither harness can see a
+content plane that never delivers — the defect lived in the one place
+nothing was looking, and it still does.
+
+**What is still unknown.**
+
+- Whether the host's cycle arms P3 at all in normal operation, and on
+  which window. `NOWMirrorSource.swift:683-698` gates the join on
+  `planes.contains(.content)`, but nothing here established what drives
+  the arm during a live host session. Not measured; the host app was
+  never run in this lane.
+- Whether a multi-window interior is reachable at all without a contract
+  change. `qdtrace start` takes ONE `window`; serving three windows means
+  three arms, three censuses (57 ms each here, 68.9/186.5 ms measured
+  previously) and three TTLs — or a new verb. That is a design decision,
+  not a fix.
+- Michelle's resident reported `cap 31`; this tree's reports `cap 511`.
+  Her image is older. Bit assignments are append-only and stable since
+  `9d2a7bcd`, so this does not change the mechanism, but her exact
+  build was not reproduced.
+
 ## WAS BROKEN, FIXED 2026-08-07 (see the entry above): a classified control the renderer will not draw, and one that erases the panel (2026-08-07, `claude/019-integration-4`)
 
 Round 4's LOOK, on the emulator at 03:35–03:45, against the private bake
