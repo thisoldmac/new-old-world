@@ -613,6 +613,11 @@ static void gather_pram(long cursor, CensusPage *page)
         set_row(&page->rows[page->count++], label, raw, "");
     }
     page->outcome = kCensusPartial;
+    /* "this PowerPC" is true by construction rather than by measurement:
+       this binary is CFM/PPC and cannot load on anything else, so the ISA
+       is the one machine fact a Carbon build may state without asking.
+       Said out loud because a census page is the worst place to leave an
+       unmeasured claim looking like a measured one. */
     snprintf(page->note, sizeof page->note,
              "20 of 256 bytes - no XPRAM trap on this PowerPC");
 }

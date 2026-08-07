@@ -51,7 +51,7 @@ static const struct {
       "Browse the other Mac's share and choose what this Mac exposes.",
       "Files still lives in File Sharing and the peer browser windows." },
     { "Console",
-      "Commands run on this PowerBook. Only declared commands are available.",
+      "Commands run on this Mac. Only declared commands are available.",
       "Console still lives in its own window (Windows menu)." },
     { "Processes",
       "Everything running on this Mac. Quit asks politely and never forces.",
