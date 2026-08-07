@@ -522,6 +522,32 @@ void now_scene_set_process_incarnation(NowScene *s, int proc,
 void now_scene_set_windows_coverage(NowScene *s, int proc,
                                     NowSceneCoverage coverage);
 
+/* --- what the scene refuses to say (scene_build.c) ---------------------
+ *
+ * Every title in a scene was read out of foreign memory at a literal byte
+ * offset, and when the record is not what the walk believed, the same
+ * bytes are a 68K address. Both predicates below are the guest's answer
+ * to that, stated ONCE and applied by the assembly functions themselves,
+ * so no caller can forget them.
+ *
+ * `now_scene_title_is_publishable` - 1 when a title is bytes a person
+ * could read (printable, MacRoman's high half included), or is absent.
+ * The single documented exception is the Apple menu's 0x14. A title that
+ * fails is OMITTED by the add functions, never shipped: an element with
+ * no name is honest, an element wearing an address is not.
+ *
+ * `now_scene_rect_is_sane` - 1 when a rect is ordered and every
+ * coordinate is inside the plausible QuickDraw range for a machine of
+ * this era. A rect that fails is clamped into its window's content box
+ * (a degenerate rect at an edge: draws as nothing, hit-tests as
+ * nothing) rather than shipped as `l = 16555`, which hit-tests as
+ * somewhere and actuates a neighbour.
+ *
+ * Both are exported for the tests, which drive them directly as well as
+ * through the add functions. */
+int now_scene_title_is_publishable(const char *title);
+int now_scene_rect_is_sane(short t, short l, short b, short r);
+
 /* Adds a window to a process already added. Returns 1 on success, 0 when
    the scene is full (sets windows_truncated) or when `proc` is out of
    range - and 0, deliberately, when that process's verdict does not

@@ -236,6 +236,139 @@ final class MirrorStateProjectionServiceTests: XCTestCase {
         XCTAssertEqual(field.text, "/")
     }
 
+    /// **One coordinate space, and a box a click can land in.**
+    ///
+    /// Sweep A, 2026-08-07: the desktop's icons arrived as points at SCREEN
+    /// positions while every other rect in the same array was content-local
+    /// — two conventions in one snapshot, the degenerate one impossible to
+    /// hit-test. Both are producer-side and both are fixed in the producer.
+    ///
+    /// The backdrop is given a non-zero origin on purpose: with the origin
+    /// at {0,0} the conversion is arithmetically invisible, which is
+    /// exactly how it stayed unwritten for a month.
+    func testFinderItemRectsAreWindowLocalBoxesOrHonestlyAbsent()
+        async throws {
+        let document = #"""
+        {
+          "version":2,"seq":9,"capturedAt":9,"source":"peek",
+          "screen":{"w":800,"h":600},
+          "apps":[{"psn":"0.3","name":"Finder","front":true,
+                   "incarnation":"process-finder"}],
+          "processes":[{"psn":"0.3","name":"Finder","front":true,
+                        "signature":"MACS",
+                        "incarnation":"process-finder"}],
+          "menubar":{"app":"Finder","menus":[]},
+          "windows":[{
+            "id":"0.3/Desktop#0","app":"Finder","psn":"0.3",
+            "title":"Desktop",
+            "rect":{"l":0,"t":20,"r":800,"b":600},
+            "front":true,"z":0,"visible":true,"controls":[],
+            "ref":"desktop-ref",
+            "incarnation":"process-finder/window-desktop"
+          }],
+          "desktopItems":[
+            {"name":"Macintosh HD","kind":"folder","type":null,
+             "creator":null,"x":700,"y":60,"placed":true,
+             "alias":false,"invisible":false},
+            {"name":"Nowhere","kind":"document","type":null,
+             "creator":null,"x":0,"y":0,"placed":false,
+             "alias":false,"invisible":false}
+          ],
+          "meta":{"errors":[],"coverage":[]}
+        }
+        """#
+        let registry = MirrorStateEngineRegistry()
+        _ = registry.engine(for: key).accept(try JSONDecoder().decode(
+            Scene.self, from: Data(document.utf8)))
+
+        let result = await service(registry).read(.init(intention: .snapshot))
+        let surface = try XCTUnwrap(result.value?.snapshot?.surfaces.first)
+
+        let disk = try XCTUnwrap(surface.items.first {
+            $0.title == "Macintosh HD"
+        })
+        let rect = try XCTUnwrap(disk.rect)
+        /* Local to the window that carries it: the backdrop's own origin
+           subtracted, and NOT `FinderItems.contentOrigin`, which would add
+           a title bar the desktop does not have. */
+        XCTAssertEqual(rect.l, 700)
+        XCTAssertEqual(rect.t, 40)
+        /* The 32x32 icon plus the name beneath it — the box the Finder was
+           measured with, and the box HitTester already compares against. A
+           point is not a smaller version of that; it is a rect nothing can
+           ever hit. */
+        XCTAssertEqual(rect.r, 700 + 32)
+        XCTAssertEqual(rect.b, 40 + 32 + 12)
+
+        let unplaced = try XCTUnwrap(surface.items.first {
+            $0.title == "Nowhere"
+        })
+        /* An honest gap. The Finder never placed it, so there is no
+           position to report and none is invented; `state` says why. */
+        XCTAssertNil(unplaced.rect)
+        XCTAssertEqual(unplaced.state, "unplaced")
+    }
+
+    /// **A list row is 16x16 at a 19-px pitch, and a 32x44 box spans three of
+    /// them.** Lane B made every item's rect a real 32x32 target; this is the
+    /// half it named and did not ship — the size is the Finder's own, so a
+    /// window drawing rows stops being projected as icons on a grid.
+    ///
+    /// The numbers are the ones the Finder answered for Macintosh HD in
+    /// `name` view on 2026-08-07 (mac99 / OS 9.1), beside a screendump.
+    func testAListViewsRowsProjectAsRowsAndNotAsIconBoxes() async throws {
+        let document = #"""
+        {
+          "version":2,"seq":11,"capturedAt":11,"source":"peek",
+          "screen":{"w":800,"h":600},
+          "apps":[{"psn":"0.3","name":"Finder","front":true,
+                   "incarnation":"process-finder"}],
+          "processes":[{"psn":"0.3","name":"Finder","front":true,
+                        "signature":"MACS",
+                        "incarnation":"process-finder"}],
+          "menubar":{"app":"Finder","menus":[]},
+          "windows":[{
+            "id":"0.3/Macintosh HD#0","app":"Finder","psn":"0.3",
+            "title":"Macintosh HD",
+            "rect":{"l":48,"t":83,"r":452,"b":321},
+            "front":true,"z":0,"visible":true,"controls":[],
+            "ref":"hd-ref",
+            "incarnation":"process-finder/window-hd",
+            "items":[
+              {"name":"Applications (Mac OS 9)","kind":"folder","type":null,
+               "creator":null,"x":22,"y":43,"w":16,"h":16,"placed":true,
+               "alias":false,"invisible":false},
+              {"name":"Documents","kind":"folder","type":null,
+               "creator":null,"x":22,"y":62,"w":16,"h":16,"placed":true,
+               "alias":false,"invisible":false}
+            ]
+          }],
+          "meta":{"errors":[],"coverage":[]}
+        }
+        """#
+        let registry = MirrorStateEngineRegistry()
+        _ = registry.engine(for: key).accept(try JSONDecoder().decode(
+            Scene.self, from: Data(document.utf8)))
+
+        let result = await service(registry).read(.init(intention: .snapshot))
+        let surface = try XCTUnwrap(result.value?.snapshot?.surfaces.first)
+        let first = try XCTUnwrap(surface.items.first {
+            $0.title == "Applications (Mac OS 9)"
+        })
+        let rect = try XCTUnwrap(first.rect)
+        XCTAssertEqual(rect.l, 22)
+        XCTAssertEqual(rect.t, 43)
+        XCTAssertEqual(rect.r, 38, "the Finder's own right edge")
+        XCTAssertEqual(rect.b, 59, "and its bottom — not 43 + 32 + 12")
+
+        let second = try XCTUnwrap(surface.items.first {
+            $0.title == "Documents"
+        })
+        XCTAssertLessThanOrEqual(rect.b, try XCTUnwrap(second.rect).t,
+                                 "two rows that overlap are one click that "
+                                 + "can select either file")
+    }
+
     func testDesktopIconsAreCarriedAndNotReportedAsAnEmptyWindow()
         async throws {
         let document = #"""

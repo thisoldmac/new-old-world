@@ -1181,6 +1181,58 @@ final class NOWMirrorIconParsingTests: XCTestCase {
         XCTAssertTrue(NOWMirrorSource.parseIcons("").isEmpty)
     }
 
+    /// **The list-view defect, at the one line that caused it.** `position of`
+    /// is the Finder's live layout in an icon view and the SAVED icon grid in
+    /// a list view, and this script could not tell which it was reading. It
+    /// asks for the box the Finder drew instead — measured 2026-08-07 on
+    /// mac99 / OS 9.1 beside a screendump.
+    func testFinderRosterScriptAsksForTheBoxAndNotTheSavedGrid() {
+        let script = NOWMirrorSource.iconItemsScript(
+            container: "window \"Macintosh HD\"", offset: 0, limit: 8)
+
+        XCTAssertTrue(script.contains("set ps to bounds of every item"))
+        XCTAssertFalse(script.contains("position of"),
+                       "in a list view `position` answers a three-column icon "
+                       + "grid the window is not drawing, and every rect "
+                       + "computed from it is a click on the wrong file")
+        XCTAssertTrue(script.contains("(item 3 of p)"), "the box's right edge")
+        XCTAssertTrue(script.contains("(item 4 of p)"), "and its bottom")
+    }
+
+    /// The Macintosh HD list view, exactly as the Finder answered it: rows at
+    /// a 19-px pitch, each icon 16x16, while `position` for the same two files
+    /// claimed 194,42 and 386,42 on a saved icon grid.
+    func testAListViewRosterCarriesTheRowBoxAndNotAnIconBox() throws {
+        let page = "\"N\t10\r"
+            + "I\tApplications (Mac OS 9)\t22\t43\t38\t59\tfolder\r"
+            + "I\tDocuments\t22\t62\t38\t78\tfolder\r\""
+
+        let parsed = NOWMirrorSource.parseIcons(page)
+        let first = try XCTUnwrap(parsed.first)
+        XCTAssertEqual(first.name, "Applications (Mac OS 9)")
+        XCTAssertEqual(first.kind, "folder", "the kind moved to field 7")
+        XCTAssertEqual(first.x, 22)
+        XCTAssertEqual(first.y, 43)
+        XCTAssertEqual(first.w, 16)
+        XCTAssertEqual(first.h, 16)
+        XCTAssertEqual(parsed.last?.y, 62, "the next row, 19 px down")
+        XCTAssertLessThan(try XCTUnwrap(first.h), 19,
+                          "a box as tall as the row pitch reaches the file "
+                          + "below it")
+    }
+
+    /// A five-field row is a capture taken before the roster moved to
+    /// `bounds`. It still reads, with no size — which every reader answers
+    /// with the 32x32 it assumed before the field existed.
+    func testAnOlderFiveFieldRosterRowStillReadsWithNoBox() throws {
+        let page = "\"N\t1\rI\tDate & Time\t184\t221\tcontrol panel\r\""
+        let item = try XCTUnwrap(NOWMirrorSource.parseIcons(page).first)
+        XCTAssertEqual(item.x, 184)
+        XCTAssertEqual(item.y, 221)
+        XCTAssertNil(item.w)
+        XCTAssertEqual(HitTester.targetSize(item).w, HitTester.iconSize)
+    }
+
     func testFinderRosterScriptRequestsOneBoundedPageAndTotal() {
         let script = NOWMirrorSource.iconItemsScript(
             container: "window \"Control Panels\"", offset: 16, limit: 8)

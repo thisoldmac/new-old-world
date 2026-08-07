@@ -12229,3 +12229,157 @@ including which stage, if any, needed a `--skip` and why.
 Nothing in this closing pass changed behaviour. Nothing in it is
 metal-verified, and the live host application has still never been
 watched composing an interior.
+
+### What slice 4 closed, and the two halves it did not (2026-08-07)
+
+Plan 018 slice 4 closed the title and rect defect classes at the point
+they are created — the PPC walk refuses to publish a title it cannot
+vouch for, clamps an implausible rect, and makes the live ControlRecord
+authoritative over a DITL's frozen text. Measured on the emulator
+against the build under test: Memory 21 pointer titles → 0 (and 18
+out-of-port rects → 0), Monitors 13 → 0, Mouse 12 → 0, General Controls
+7 → 0, and the application-switcher menu's `'\x01\x1f@"\xcf'` → omitted.
+Date & Time was the fifth target and its capture did not complete before
+the run was stopped; its 6 are unmeasured.
+
+Two things are still open, and both are named here rather than left to
+be re-derived.
+
+**The Finder's items are still not addressable, and the remaining half
+is host-side.** Sweep A read this as a guest-walk defect. It is not: the
+guest emits no Finder items at all (`scene.h` declares `items[]` and
+`desktopItems[]` absent by design). They are AppleScript to the Finder,
+run through the `script` verb, parsed in `NOWMirrorSource.readIcons` and
+flattened by `MirrorStateProjectionService`. Slice 4 fixed the geometry
+there — one coordinate space, a real 32x32 target box, no rect at all
+for an item the Finder did not place. What it did NOT fix:
+
+- **Refs.** `ref: nil` is a deliberate host policy: these are addressed
+  by name, and `finderSelect` / `finderOpen` already work that way. If
+  they should carry refs, that is a decision, not a bug fix.
+- **List view.** `NOWMirrorSource.iconItemsScript` asks `position of
+  every item` whatever view the window is in, and in a list view the
+  Finder answers with the SAVED icon grid — which is why sweep A saw ten
+  rows at `l ∈ {1,129,257}` on a machine drawing a list. The honest fix
+  is to read the window's view and mark the items unplaced when it is
+  not a spatial one (`placed: false` already means exactly that, and
+  both the hit tester and the projection already honour it). It was not
+  done because **the OS 9 Finder's `view of window` vocabulary has not
+  been measured**, and guessing it would put a plausible wrong answer in
+  the one lane that must not have one. One AppleScript against a live
+  guest settles it.
+
+**Why the walk is slow, as a reading of the code and NOT a
+measurement.** Slice 4's own cost is negligible and was not measured
+separately: it adds a scan of each title's bytes (strings already being
+copied) and four comparisons per rect. The ~1.9 s walk sweep A measured
+is structural. Per window, `scene_walk.c` makes three passes over the
+control chain — read, name, join — and the read pass costs one handle
+read plus a **296-byte** foreign read per control; Memory has 44
+controls and 44 dialog items, and the dialog-item walk then reads the
+item list again and calls the Memory Manager once per static-text item
+for its live handle. So the cost is dominated by the number of
+cross-boundary reads, not by anything per-byte. If someone takes perf,
+that is where to look first — and they should measure before believing
+this paragraph.
+
+### The list view's rows: measured, fixed, and driven (2026-08-07)
+
+Closes the second half Lane B named above ("**List view**"), and closes
+Michelle's "unable to select items in list view". Lane B was right to stop
+where it did: the vocabulary it needed had never been measured, and the
+answer is not the one a modern Finder would have given.
+
+**The Finder's view vocabulary, on mac99 / OS 9.1.** `view of window 1`
+works; its class renders as `«class pvew»`. The value has **no string
+coercion** — `(view of window 1) as string` raises −1700, "Can't make
+«class pvew» of window 1 … into a string" — but concatenating it renders
+it as a bare word, and those words are the whole domain:
+
+| raw word | the view |
+|---|---|
+| `icon` | icon view |
+| `name` | **the list**, confirmed against a screendump of the rows |
+| `small icon` | small-icon view |
+
+They are also the setter's vocabulary (`set view of window 1 to name`).
+The four-character enum was deliberately NOT pinned: `«constant ****icnv»`,
+`nmev`, `lisv`, `ivew`, `nvew`, `bvew`, `sicv` and `btnv` each answered
+false or silently did nothing, and only `«constant ****smic»` round-tripped
+(to `small icon`). The bare words are what reaches the wire, so the code
+uses those and the codes are left unmeasured rather than guessed.
+
+The phrasings that did NOT work, recorded because each cost a probe:
+
+- `current view of window 1` — not a term, and **osaErr −1753 for the whole
+  script**. An unknown term is a COMPILE failure, so a `try` around it does
+  not catch it and it takes every other phrasing in the same script down
+  with it. Probe one phrasing per script; a batched probe reports a single
+  lie about all of them.
+- `properties of window 1` — −1728, "Can't get properties of window 1".
+  There is no property dump to enumerate the vocabulary from.
+- `list view` / `button view` — −1728 "Can't get view"; `button` /
+  `buttons` — −2753, "not defined". Those are the modern Finder's words.
+  `set view of window 1 to list` compiles and raises −15279, "Value out of
+  range": `list` is the class, not the view.
+- A guest `script` source is capped at **2048 bytes**; a batch of more than
+  about five phrasings is refused `too-large`.
+
+**We got the real geometry, not `placed: false`.** `bounds of` an item is
+the box the Finder actually DREW, in every view, and its top-left is the
+old `position` — so there is nothing `position` answered that it does not.
+Measured beside a screendump, Macintosh HD, ten items:
+
+| view | `position of` item 1 | `bounds of` item 1 |
+|---|---|---|
+| `icon` | 34, 25 | 34,25,66,57 — position + 32 |
+| `small icon` | 35, 25 (a DIFFERENT grid) | 16×16 |
+| `name` | **2, 42 — the saved icon grid** | 22,43,38,59 — the row, 19-px pitch |
+
+So every producer now asks for `bounds` and none asks for `position`
+(`NOWMirrorSource.iconItemsScript`, `FinderItems.windowsScript`), and the
+size travels with it as `Scene.DesktopItem.w/h`. `HitTester.targetSize` is
+the one place that turns it into a target: the Finder's box, plus the label
+UNDER an icon-view icon, and nothing added to a list row, whose name is
+drawn beside it and whose width the Finder does not measure for us. That
+under-claims deliberately — it costs a click that must land on the icon,
+where guessing the text width would over-claim into the next row.
+
+Consequently the `view` is measured and **deliberately not carried**:
+`bounds` made the geometry right in every view, so a `view` field would
+have no reader, which is its own defect class. It is written into
+`FinderItems`'s header for whoever needs it next.
+
+**Driven and watched — emulator-verified, mac99 / OS 9.1, build
+`0011e6584be9`, a session-private VM on anchor 1770 / wire 5320.** Through
+a private host (`NOW_PREFS_SUFFIX`, its own agent socket confirmed by
+`lsof`) and its own agent surface, paired with QMP screendumps at every
+step:
+
+- Macintosh HD in list view projects ten 16×16 rows at `l=22`,
+  `t = 43, 62, 81, 100, 119, 138, 157, 176, 195, 214` — the rows the guest
+  is drawing. Before this it reported the three-column icon grid.
+- `finderSelect` selected "Rumpus PRO 2.0" (row 4) and, in a second pass,
+  "TBT-sndbuf-dev" (row 8). Both watched highlighting in the screendump,
+  the right row each time, from nothing selected.
+- Driving View → as Icons through the Mirror turned every rect into a
+  32×44 box on the icon grid (columns 34/162/290) — so the rects follow
+  the layout the window is drawing rather than a saved one. That is the
+  claim, and it is the one a fixture cannot make.
+
+**What this did NOT prove.** `finderSelect` addresses an item by NAME, so
+the drive above exercises the acquisition and the projection but not the
+mouse: the path from a POINT in the Mirror window to a row is
+`HitTester.windowItem` plus `FinderItems.clickPoint`, and no agent-socket
+gesture takes a raw point. Those two are covered by guards built from these
+same measured numbers and watched failing by mutation, which is a test and
+not a drive. Someone with the Mirror window in front of them should click a
+list row and watch it, and that is the last unproven inch.
+
+Item `ref` stays `nil` throughout: standing host policy, untouched here.
+
+One incidental corroboration for whoever owns menus. The View menu in the
+same snapshot reports `marked: true` for "as List" **and** for "as Window"
+and "Sort List" simultaneously — consistent with the sibling finding that
+`mark` is a raw byte carrying a submenu ID rather than a checkmark flag.
+Nothing here reads it.
