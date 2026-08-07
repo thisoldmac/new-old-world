@@ -36,6 +36,28 @@ same live ControlRecord's drawable semantics, the more specific guest fact
 wins and the shell is suppressed instead. This is the Date & Time list case;
 unconditional DITL precedence painted an unavailable hatch over real cells.
 
+## Window widgets
+
+`windows[].closeBox` and `windows[].zoomBox` are the WindowRecord's own
+`goAwayFlag` and `spareFlag` — one byte each, beside `windowKind`. They say
+which title-bar widgets the machine draws. `kind` cannot stand in for them:
+Extensions Manager is `kind == 2` and has a zoom box, Memory is `kind == 2`
+and has none.
+
+Both are absent rather than false when the producer did not read the record.
+Absent is unknown, not false, exactly as for semantics — a consumer that has
+no answer falls back to what it did before rather than withholding a widget
+from every producer that has not learned to send one. A consumer must not
+draw a widget, or offer a hit target for one, on an absent-or-false `zoomBox`:
+a click on a zoom box the machine does not draw lands in the racing stripes,
+which the Window Manager reads as the start of a window drag.
+
+There is no `growBox`. The WindowRecord carries no grow flag, and the
+variation code in the high byte of `windowDefProc` is ambiguous without the
+WDEF's resource id — `kWindowDocumentDefProcResID` 64 and
+`kWindowDialogDefProcResID` 65 number their variants independently — which a
+foreign walk cannot name from a Handle. That gap is stated, not guessed.
+
 ## Collection coverage and lifetime identity
 
 IR v2 carries collection authority in `meta.coverage[]`. Each claim has a

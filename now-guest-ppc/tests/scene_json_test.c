@@ -352,6 +352,70 @@ static void test_conditional_planes(void)
     check(strstr(w2, "\"text\"") == NULL, "and no text");
 }
 
+/* THE TITLE-BAR WIDGETS, and the third state the consumer needs.
+ *
+ * `kind` cannot say which widgets a window has - Extensions Manager is
+ * kind 2 and has a zoom box, Memory is kind 2 and has none - so the two
+ * flags ride the wire beside it. The assertion that matters most here is
+ * the ABSENT one: a window nobody read must carry neither key, because a
+ * consumer reads absence as "not reported" and keeps what it did before,
+ * while `false` is this producer stating the machine draws none. Emitting
+ * `false` for an unread window would take a close box away from every
+ * window an older or refusing producer describes. */
+static void test_window_widgets_reach_the_wire(void)
+{
+    NowScene s;
+    char out[16384];
+    int p;
+    const char *w0;
+    const char *w1;
+    const char *w2;
+
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    p = now_scene_add_process(&s, 0, 9, "Finder", 0x4D414353UL, 1,
+                              kNowSceneAnchorOk, 0);
+
+    (void)now_scene_add_window(&s, p, "Extensions Manager", 51, 150, 391, 622,
+                               1);
+    now_scene_set_window_kind(&s, 0, 2);
+    now_scene_set_window_widgets(&s, 0, 1, 1);
+
+    (void)now_scene_add_window(&s, p, "Memory", 60, 80, 378, 432, 1);
+    now_scene_set_window_kind(&s, 1, 2);
+    now_scene_set_window_widgets(&s, 1, 1, 0);
+
+    (void)now_scene_add_window(&s, p, "Unread", 0, 0, 50, 50, 1);
+
+    check(now_scene_encode(&s, out, sizeof out, NULL) == kNowSceneEncodeOk,
+          "the scene encodes");
+    check(well_formed(out), "and is well formed");
+
+    w0 = strstr(out, "\"title\":\"Extensions Manager\"");
+    w1 = strstr(out, "\"title\":\"Memory\"");
+    w2 = strstr(out, "\"title\":\"Unread\"");
+    check(w0 != NULL && w1 != NULL && w2 != NULL && w0 < w1 && w1 < w2,
+          "the three windows encode in order");
+    if (w0 == NULL || w1 == NULL || w2 == NULL) {
+        return;
+    }
+    check(strstr(w0, "\"closeBox\":true") != NULL
+          && strstr(w0, "\"closeBox\":true") < w1,
+          "Extensions Manager carries a close box");
+    check(strstr(w0, "\"zoomBox\":true") != NULL
+          && strstr(w0, "\"zoomBox\":true") < w1,
+          "and a zoom box - which kind 2 could never have told anyone");
+    check(strstr(w1, "\"closeBox\":true") != NULL
+          && strstr(w1, "\"closeBox\":true") < w2,
+          "Memory carries a close box");
+    check(strstr(w1, "\"zoomBox\":false") != NULL
+          && strstr(w1, "\"zoomBox\":false") < w2,
+          "and states it has NO zoom box - same kind, opposite answer");
+    check(strstr(w2, "\"closeBox\"") == NULL
+          && strstr(w2, "\"zoomBox\"") == NULL,
+          "an unread window carries NEITHER key: absent means not "
+          "reported, and false would be a claim nobody made");
+}
+
 /* Every retraction reaches meta.errors. A sub-plane that vanished with
    nothing said would be indistinguishable from one that was never
    walked, which is the confusion the whole present-vs-absent split
@@ -1881,6 +1945,7 @@ int main(void)
     test_produced_fields();
     test_unproduced_planes_are_absent();
     test_conditional_planes();
+    test_window_widgets_reach_the_wire();
     test_reference_plane();
     test_retractions_are_reported();
     test_a_dropped_window_plane_names_its_window();

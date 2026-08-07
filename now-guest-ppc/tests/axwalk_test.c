@@ -126,6 +126,75 @@ static void window_fields(void)
           "content origin = rgnBBox - portRect origin");
 }
 
+/* THE TWO WIDGET FLAGS, and the three ways this read can be wrong.
+ *
+ * `goAwayFlag` is 112 and `spareFlag` 113 — adjacent single bytes with
+ * `hilited` at 111 immediately before them, which is the field most likely
+ * to be picked up by an off-by-one. So each case below sets the four bytes
+ * 110..113 to a DIFFERENT pattern: reading one offset early, one late, or
+ * the two the other way round each fails at least one of them. A fixture
+ * that set both flags to the same value would pass against a reader that
+ * read one byte twice. */
+static void window_widget_flags(void)
+{
+    AxFixture f;
+    NowAxMemory m;
+    NowAxWindow w;
+
+    /* close box, no zoom box — the seven control panels in the corpus. */
+    axfix_init(&f, &m);
+    build_window(&f, kWin, "Memory", kCtlH, kWin2);
+    axfix_put8(&f, kWin + 111, 1);        /* hilited: NOT either flag */
+    axfix_put8(&f, kWin + 112, 1);        /* goAwayFlag */
+    axfix_put8(&f, kWin + 113, 0);        /* spareFlag */
+    check(now_ax_read_window(&m, kWin, &w) == kNowAxOk, "window reads");
+    check(w.go_away == 1, "goAwayFlag @112");
+    check(w.zoom == 0, "spareFlag @113 - a close box is not a zoom box");
+
+    /* close box AND zoom box — Extensions Manager, the Finder, SimpleText. */
+    axfix_init(&f, &m);
+    build_window(&f, kWin, "Extensions Manager", kCtlH, kWin2);
+    axfix_put8(&f, kWin + 111, 0);
+    axfix_put8(&f, kWin + 112, 1);
+    axfix_put8(&f, kWin + 113, 1);
+    check(now_ax_read_window(&m, kWin, &w) == kNowAxOk, "window reads");
+    check(w.go_away == 1 && w.zoom == 1, "both flags set");
+
+    /* Neither, with `hilited` and `visible` both set on either side of them.
+       A read one byte early answers 1 for the close box; one byte late
+       answers whatever strucRgn's high byte holds. */
+    axfix_init(&f, &m);
+    build_window(&f, kWin, "Alert", kCtlH, kWin2);
+    axfix_put8(&f, kWin + 111, 1);
+    axfix_put8(&f, kWin + 112, 0);
+    axfix_put8(&f, kWin + 113, 0);
+    check(now_ax_read_window(&m, kWin, &w) == kNowAxOk, "window reads");
+    check(w.visible == 1, "visible @110 still read");
+    check(w.go_away == 0 && w.zoom == 0, "neither flag set");
+
+    /* The other way round: zoom without close. It exists on the machine
+       (a zoomable window whose close box was never asked for) and it is
+       the case a reader that swapped the two offsets passes everything
+       else on. */
+    axfix_init(&f, &m);
+    build_window(&f, kWin, "Zoom only", kCtlH, kWin2);
+    axfix_put8(&f, kWin + 111, 0);
+    axfix_put8(&f, kWin + 112, 0);
+    axfix_put8(&f, kWin + 113, 1);
+    check(now_ax_read_window(&m, kWin, &w) == kNowAxOk, "window reads");
+    check(w.go_away == 0 && w.zoom == 1, "flags are not swapped");
+
+    /* Any nonzero byte is TRUE. The Toolbox's Boolean is a byte and
+       nothing promises it is 1; a reader that compared against 1 would
+       report a window with 0xFF as having no close box. */
+    axfix_init(&f, &m);
+    build_window(&f, kWin, "Nonzero", kCtlH, kWin2);
+    axfix_put8(&f, kWin + 112, 0xFF);
+    axfix_put8(&f, kWin + 113, 0x80);
+    check(now_ax_read_window(&m, kWin, &w) == kNowAxOk, "window reads");
+    check(w.go_away == 1 && w.zoom == 1, "any nonzero byte is true");
+}
+
 /* BOTH REGIONS, NEITHER UNDER THE OTHER'S NAME.
  *
  * Until 2026-08-07 this reader returned the content region and
@@ -393,6 +462,7 @@ static void record_widths(void)
 int main(void)
 {
     window_fields();
+    window_widget_flags();
     both_regions_read_and_not_confused();
     an_unreadable_structure_region_refuses_the_window();
     window_no_title();

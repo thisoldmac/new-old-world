@@ -99,6 +99,24 @@ typedef struct {
     unsigned long control_list;
     short         kind;
     unsigned char visible;
+    /* WHICH TITLE-BAR WIDGETS THE MACHINE DRAWS, which `kind` cannot say.
+     * MacWindows.h lays them out beside `windowKind`: `goAwayFlag` at 112 is
+     * the close box, `spareFlag` at 113 the zoom box, one byte each, both
+     * inside the 148 bytes this reader already validates.
+     *
+     * They are here because the consumer had been GUESSING from `kind`, and
+     * the corpus falsifies that guess with a single pair: Extensions Manager
+     * is `kind == 2` and has a zoom box, Memory is `kind == 2` and has none.
+     *
+     * THERE IS NO grow FIELD, and that is a finding rather than an omission.
+     * The record holds no grow flag. The variation code in the high byte of
+     * `windowDefProc` is the only other candidate and it is ambiguous without
+     * the WDEF's resource id — kWindowDocumentDefProcResID 64 and
+     * kWindowDialogDefProcResID 65 number their variants independently — and
+     * a Handle cannot be named by a foreign Resource Manager. Same wall as
+     * `contrlDefProc` below, one level up. */
+    unsigned char go_away;
+    unsigned char zoom;
     short         origin_top;
     short         origin_left;
     short         top;

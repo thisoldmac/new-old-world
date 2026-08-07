@@ -14,6 +14,64 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## WAS BROKEN, NOW CLOSED: the zoom box — and the grow box is NOT the same fix (2026-08-07, `claude/019-window-flags-and-join`)
+
+**Verification level: TESTED**, against the machine's own pixels. Nothing
+here is metal-verified and nothing here needed an emulator: the evidence is
+the 2026-08-07 screendump corpus, compared per rectangle.
+
+**Closed.** *"IR v1 cannot say whether a window has a ZOOM box"* is no longer
+true. `windows[].closeBox` and `windows[].zoomBox` are the WindowRecord's own
+`goAwayFlag` and `spareFlag`, one byte each at offsets 112 and 113, beside the
+`windowKind` the walk already read — contract first (`asyncapi.yaml`'s scene
+family and `mirror/docs/IR-V2.md`), then `axwalk.c`, then `scene_json.c`, then
+`Scene.Window` and `IRSchema`, then `WindowChrome`. NOW's own window answers
+the same two facts through `GetWindowAttributes` rather than a second
+derivation. `contract-coverage.md` carries the declared asymmetry: NOW-68K
+serves no scene, and here — unlike `apps[].backgroundOnly` — it has no second
+route to the fact either, because nothing in it reads a foreign WindowRecord.
+
+**The bar was per-rectangle agreement on a window that has one and one that
+does not, and that is what was measured.** `PlatinumTitleBarTests` now prices
+the zoom box's rectangle on all five corpus windows — Extensions Manager and
+the Finder folder, where the machine draws one, and Appearance, Memory and
+Mouse, where it draws stripes and face. Exact, 0 pixels differing. Watched
+failing against both mutations that matter, which are the two states this
+field has been in: drawing it unconditionally (the original defect) fails
+Appearance, Memory and Mouse naming each, plus the stripe run beside them,
+plus two of the three geometry cases; returning nil always (yesterday's honest
+nothing) fails Extensions Manager and the Finder. The three-valued read is
+asserted separately — `true` draws, `false` does not, **and absent does not**,
+because a producer that cannot say has told us nothing about this machine.
+
+### NOT closed, and the reason is a correction rather than a to-do
+
+The entry above said of the grow box: *"Same fix, same field."* **That is
+wrong, and it is worth more written down than fixed quietly.** `spareFlag` is
+the zoom box alone; MacWindows.h's WindowRecord carries **no grow flag at
+all**. The only other candidate is the variation code in the high byte of
+`windowDefProc`, and it is ambiguous without the WDEF's resource id:
+`kWindowDocumentDefProcResID` 64 numbers variant 7
+`kWindowFullZoomGrowDocumentProc`, while `kWindowDialogDefProcResID` 65
+numbers its own variants from 0 independently — and a foreign walk cannot ask
+the Resource Manager to name a Handle. **That is the exact wall
+`contrlDefProc` already hit one level down**, and it is why the control walk
+reports a heap origin rather than a kind.
+
+So `WindowChrome.growBox` is left on `kind != 2` — wrong in both directions,
+and now named in its own doc comment rather than changed to a different guess.
+The measurement that settles the ground truth was taken and is worth keeping:
+counted out of the corpus PPMs at each window's bottom-right corner,
+**Extensions Manager (`kind == 2`) DRAWS a grow box** — the same anti-diagonal
+ramp the Finder's corner shows — and **Memory and Appearance (also `kind == 2`)
+draw flat face**. So the guard is wrong on Extensions Manager, and nothing
+here proves a `kind` 8/20/2000 window is resizable either.
+
+**What would close it**, in order of honesty: the Window Manager itself
+answers `inGrow` from `FindWindow`, because it consults the WDEF — an act, not
+a read, and it needs a gated surface. Short of that, nothing available to a
+foreign memory walk can say.
+
 ## OPEN: a lane can revert a sibling's work in a commit whose message never mentions it (2026-08-07, round 7 integration)
 
 **Verification level: TESTED.** Found by reading a merge, not by any gate,

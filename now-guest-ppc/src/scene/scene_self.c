@@ -685,6 +685,24 @@ void now_scene_collect_self(NowScene *s, int row,
         index = now_scene_last_window(s);
         now_scene_set_window_addr(s, index, (unsigned long)window);
         now_scene_set_window_kind(s, index, (short)GetWindowKind(window));
+        {
+            /* THE SAME TWO FACTS THE FOREIGN WALK READS AS BYTES, asked of
+               Carbon instead. `goAwayFlag` and `spareFlag` are exactly what
+               MacWindows.h says to use ChangeWindowAttributes for, so this is
+               the Toolbox's own answer rather than a second derivation - and
+               it keeps this producer symmetric with scene_walk.c, which is
+               the property the two-region merge was made for. Reported only
+               when the call succeeds: a failure leaves the keys absent, which
+               says "not reported" rather than "no widgets". */
+            WindowAttributes attrs = kWindowNoAttributes;
+
+            if (GetWindowAttributes(window, &attrs) == noErr) {
+                now_scene_set_window_widgets(
+                    s, index,
+                    (attrs & kWindowCloseBoxAttribute) != 0,
+                    (attrs & kWindowFullZoomAttribute) != 0);
+            }
+        }
         if (refs != NULL) {
             char token[64];
 

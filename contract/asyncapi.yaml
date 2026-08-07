@@ -3435,6 +3435,30 @@ components:
     # means a documented answer exists somewhere, never that this is a push
     # button. It can never authorise an act, and a receiver that promotes it
     # to a kind is reading a key that does not say that.
+    # IR v2 also carries `windows[].closeBox` and `windows[].zoomBox` — two
+    # booleans read straight out of the WindowRecord's own `goAwayFlag` and
+    # `spareFlag` (MacWindows.h: one byte each, at 112 and 113, beside the
+    # `windowKind` the walk already reads). They say WHICH TITLE-BAR WIDGETS
+    # THE MACHINE DRAWS, which nothing in IR v1 could say and which `kind`
+    # cannot stand in for: Extensions Manager is `kind == 2` and HAS a zoom
+    # box, Memory is `kind == 2` and has none. A consumer that guessed from
+    # `kind` drew a zoom box on seven of eleven windows in the 2026-08-07
+    # corpus, and a click sent at one landed in the racing stripes, which the
+    # Window Manager reads as the start of a window DRAG — so the guess was
+    # not merely cosmetic.
+    # BOTH ARE ABSENT RATHER THAN FALSE when the producer did not read the
+    # record: absent means "not reported", NOT "no such widget", and a
+    # consumer must fall back to whatever it did before rather than start
+    # withholding a close box from every guest that has not learned to send
+    # one. Absent booleans are unknown, not false — the rule IR-V2.md already
+    # states for semantics, applied here.
+    # THERE IS NO `growBox` COMPANION, and its absence is a finding rather
+    # than an omission: the WindowRecord carries NO grow flag. `spareFlag` is
+    # the zoom box alone, and the only other candidate — the variation code in
+    # the high byte of `windowDefProc` — is ambiguous without the WDEF's
+    # resource id, which a foreign walk cannot name from a Handle. That is
+    # exactly the `contrlDefProc` problem one level up. See
+    # docs/open-issues.md.
     SceneRequest:
       type: object
       required: [type, id]

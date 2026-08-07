@@ -27,6 +27,9 @@ enum {
        bytes at literal offsets. */
     kNowAxWinKind = 108,
     kNowAxWinVisible = 110,
+    /* 111 is `hilited`, which this walk does not use. */
+    kNowAxWinGoAway = 112,        /* goAwayFlag: the close box */
+    kNowAxWinSpare = 113,         /* spareFlag: the zoom box; see axwalk.h */
     kNowAxWinPortTop = 16,        /* portRect.top, LOCAL coordinates */
     kNowAxWinPortLeft = 18,
     kNowAxWinStrucRgn = 114,      /* structure region; see axwalk.h */
@@ -259,6 +262,8 @@ int now_ax_read_window(const NowAxMemory *memory, unsigned long address,
     out->address = address;
     out->kind = bes16(window + kNowAxWinKind);
     out->visible = window[kNowAxWinVisible] != 0;
+    out->go_away = window[kNowAxWinGoAway] != 0;
+    out->zoom = window[kNowAxWinSpare] != 0;
     out->control_list = be32(window + kNowAxWinControlList);
     out->next_window = be32(window + kNowAxWinNextWindow);
     /* Both links are checked HERE, before the caller can walk either.

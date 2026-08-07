@@ -496,6 +496,7 @@ void now_scene_walk_window(NowScene *s, int window,
         return;
     }
     now_scene_set_window_kind(s, window, win.kind);
+    now_scene_set_window_widgets(s, window, win.go_away, win.zoom);
     now_scene_phase_enter(kNowScenePhaseRefs);
     name_window(s, window, refs, address);
     now_scene_phase_leave(kNowScenePhaseRefs);

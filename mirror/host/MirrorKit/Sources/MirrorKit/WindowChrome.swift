@@ -63,35 +63,71 @@ public enum WindowChrome {
     public static func widgetBox(_ win: Scene.Window, _ widget: Widget) -> Rect? {
         guard hasTitleBar(win), win.front else { return nil }
         switch widget {
-        case .close:    return PlatinumTitleBar.closeBox(win.rect)
+        case .close:
+            /* `closeBox == false` is the guest saying the machine draws
+               none, and it is the only thing that withdraws one. nil is
+               "not reported" — an older producer, or a window whose record
+               would not validate — and takes the behaviour we already had.
+               The asymmetry with `.zoom` below is deliberate: this widget
+               was right on every window in the corpus, so absence of an
+               answer is not a reason to start hiding it. */
+            guard win.closeBox != false else { return nil }
+            return PlatinumTitleBar.closeBox(win.rect)
         case .collapse: return PlatinumTitleBar.collapseBox(win.rect)
         case .zoom:     return zoomBox(win)
         }
     }
 
-    /// The zoom box — **and today the honest answer is always "we cannot say".**
+    /// The zoom box — **drawn only where the guest PROVED the machine draws
+    /// one**, and nowhere else.
     ///
-    /// A zoom box exists only for some WDEF variants, and IR v1 does not carry
-    /// the variant. `kind` cannot stand in for it and the corpus proves so with
-    /// a single pair: **Extensions Manager is `kind == 2` and HAS a zoom box;
-    /// Memory is `kind == 2` and has none.** Seven control panels in the corpus
-    /// show close + collapse only; four windows (a Finder folder, a SimpleText
-    /// document, Extensions Manager, NOW's own Workshop) show all three.
+    /// A zoom box exists only for some WDEF variants. `kind` cannot stand in
+    /// for it and the corpus proves so with a single pair: **Extensions
+    /// Manager is `kind == 2` and HAS a zoom box; Memory is `kind == 2` and
+    /// has none.** Seven control panels in the corpus show close + collapse
+    /// only; four windows (a Finder folder, a SimpleText document, Extensions
+    /// Manager, NOW's own Workshop) show all three.
     ///
-    /// So this returned a fabricated box on seven of eleven windows, and the
-    /// fabrication was not only cosmetic: `HitTester` reported a zoom target
-    /// there and `Serve`/`Battery` would send a click into the racing stripes,
-    /// which the Window Manager reads as the start of a DRAG. An affordance the
-    /// machine does not offer is worse than a missing one.
+    /// So this once returned a fabricated box on seven of eleven windows, and
+    /// the fabrication was not only cosmetic: `HitTester` reported a zoom
+    /// target there and `Serve`/`Battery` would send a click into the racing
+    /// stripes, which the Window Manager reads as the start of a DRAG. An
+    /// affordance the machine does not offer is worse than a missing one — so
+    /// it then answered nil everywhere, which was honest and offered nothing.
     ///
-    /// **What fills this in:** the WindowRecord already carries it —
-    /// `spareFlag` is the zoom flag and `goAwayFlag` the close flag, both one
-    /// byte, both beside the `windowKind` the walk already reads
-    /// (`scene_walk.c`). It is a contract field and a guest read, in that
-    /// order, and it is written up in docs/open-issues.md.
-    private static func zoomBox(_ win: Scene.Window) -> Rect? { nil }
+    /// `Scene.Window.zoomBox` is the WindowRecord's own `spareFlag`, and it
+    /// closes both halves: `true` draws it, `false` and nil do not. **nil
+    /// keeps the honest-nothing behaviour** rather than guessing, because a
+    /// producer that cannot say has told us nothing about this machine.
+    private static func zoomBox(_ win: Scene.Window) -> Rect? {
+        guard win.zoomBox == true else { return nil }
+        return PlatinumTitleBar.zoomBox(win.rect)
+    }
 
     /// The grow box at the bottom-right corner (front, non-dialog only).
+    ///
+    /// **`kind != 2` IS A GUESS AND IT IS WRONG, in both directions.**
+    /// Extensions Manager is `kind == 2` and draws a grow box — counted in its
+    /// own screendump, the same anti-diagonal ramp the Finder's corner shows —
+    /// so this denies it a real affordance; and nothing here proves a `kind`
+    /// 8/20/2000 window is resizable, so a fixed-size document window is
+    /// offered a grow target the machine does not draw. It is the zoom box's
+    /// defect wearing the other costume.
+    ///
+    /// **It is NOT fixed by the same field, and that is a finding.**
+    /// docs/open-issues.md said "same fix, same field"; it is not.
+    /// `spareFlag` is the zoom box alone — MacWindows.h's WindowRecord carries
+    /// no grow flag at all. The only other candidate is the variation code in
+    /// the high byte of `windowDefProc`, and it is ambiguous without the
+    /// WDEF's resource id: `kWindowDocumentDefProcResID` 64 numbers variant 7
+    /// `kWindowFullZoomGrowDocumentProc`, while `kWindowDialogDefProcResID` 65
+    /// numbers its own variants from 0 independently — and a foreign walk
+    /// cannot name a Handle's resource, which is the exact wall
+    /// `contrlDefProc` already hit one level down.
+    ///
+    /// So this is left as it was, wrong and named, rather than changed to a
+    /// different guess. Closing it needs an authority the WindowRecord does
+    /// not hold.
     public static func growBox(_ win: Scene.Window) -> Rect? {
         guard win.kind != 2, win.front else { return nil }
         let r = win.rect
