@@ -104,8 +104,29 @@ def main(argv: list[str]) -> int:
     # Does the path RESOLVE, from this worktree, to hooks that can execute?
     resolved = configured if os.path.isabs(configured or "") \
         else os.path.join(root, configured or ".git/hooks")
+    # Is the directory missing because the CONFIG is wrong, or because the
+    # BRANCH does not carry it? --fix can only ever cure the first, and on
+    # 2026-08-07 it was being recommended for the second: `.githooks` has
+    # never been an ancestor of `main`, so a worktree cut off main has no
+    # such directory to point at and repairing the config changes nothing.
+    # A repair instruction that cannot work is worse than none — it converts
+    # a live problem into one somebody believes they already tried.
+    tracked_hooks = git("ls-tree", "--name-only", "HEAD", ".githooks",
+                        root=root)
     if not os.path.isdir(resolved):
         problems.append(f"the hooks directory does not exist: {resolved}")
+        if not tracked_hooks:
+            problems.append(
+                "…and `.githooks` is not in the commit this worktree has "
+                "checked out.\n"
+                "    So this is NOT a config fault and `--fix` cannot cure "
+                "it: there is no\n"
+                "    directory for any value of core.hooksPath to name. The "
+                "branch needs the\n"
+                "    hooks — which for a worktree cut off `main` means "
+                "`.githooks` has to LAND\n"
+                "    on main. That is a change to main, and joint with the "
+                "human.")
     else:
         for hook in HOOKS:
             full = os.path.join(resolved, hook)
@@ -162,9 +183,25 @@ def main(argv: list[str]) -> int:
         print("  gate. A deferral written with TBT_DEFER_EXT_BAKE is not "
               "recorded either,")
         print("  because the gate that records it never runs.")
-        print("  Repair (a sequencing decision — other sessions may be "
-              "mid-commit):")
-        print("      tools/hooks-doctor --fix")
+        if tracked_hooks:
+            print("  Gate YOUR OWN commits now — safe, nothing shared "
+                  "changes:")
+            print("      git -c core.hooksPath=.githooks commit ...")
+            print("  Arm the clone (a sequencing decision — other sessions "
+                  "may be mid-commit,")
+            print("  and this rewrites config every worktree shares). Ask "
+                  "first:")
+            print("      tools/hooks-doctor --fix")
+        else:
+            # No amount of config repair invents a directory the commit does
+            # not contain, so do not offer any — say what the real fix is.
+            print("  `--fix` WILL NOT HELP: this worktree's commit does not "
+                  "contain .githooks,")
+            print("  so there is nothing for core.hooksPath to point at. The "
+                  "hooks must reach")
+            print("  this branch — for a worktree off `main`, that means "
+                  "landing .githooks on")
+            print("  main, which is a decision to make with the human.")
         print("")
         return 1
 

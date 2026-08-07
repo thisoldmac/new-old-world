@@ -39,15 +39,44 @@ fail () {
     exit 1
 }
 
-# Before anything else: are the commit gates even WIRED? This does not fail
-# the run, and the reason is the whole point of where it sits. On 2026-08-06
-# core.hooksPath was found pointing at a directory that does not exist, so
-# NO pre-commit hook had ever run in any worktree — and every gate that
-# depends on one read green by never running. A person cannot fix that
-# mid-commit and arming it is a sequencing decision, so this SHOUTS and the
-# final line of this script stops saying the gates passed.
+# Before anything else: are the commit gates even WIRED? This REFUSES, and
+# it refuses because warning did not work. From 2026-08-06 this sat here as
+# a warning that shouted at the top of every run and again at the bottom.
+# FOUR separate lanes read it, believed it, and correctly did nothing —
+# because the only repair it named, `tools/hooks-doctor --fix`, writes git
+# config that all 246 worktrees share, and no lane may do that unasked.
+#
+# A warning that everybody sees, believes, and is RIGHT not to act on is a
+# broken warning, whatever it says. The precedent for warning rather than
+# refusing is ext-bake-gate's image check, which warns because the fact it
+# reports is "not in this committer's power". That is the discriminator, and
+# it points the other way here: a lane CAN act — `git -c
+# core.hooksPath=.githooks commit` runs the gates for its own commits
+# without touching shared state. So the text below names the action that is
+# safe now and separates it from the one that needs a person, and the run
+# stops rather than adding a fifth unheeded notice.
 hooks_armed=yes
 "$script_dir/../tools/hooks-doctor" --quiet || hooks_armed=no
+if [ "$hooks_armed" = no ] && [ -z "${TBT_ALLOW_UNARMED_HOOKS:-}" ]; then
+    echo
+    echo "==> FAILED at: commit gates not armed (before any test ran)"
+    echo "    Green tests here would mean the tests pass, NOT that anything"
+    echo "    refuses a bad commit: not the main guardrail, not the ext-bake"
+    echo "    gate, not the receipts merge driver."
+    echo
+    echo "    To gate YOUR OWN commits right now — safe, changes nothing shared:"
+    echo "        git -c core.hooksPath=.githooks commit ..."
+    echo "    (only works if .githooks is present in your checked-out tree;"
+    echo "     hooks-doctor above says whether it is.)"
+    echo
+    echo "    To arm the clone — NOT yours to do unasked. It rewrites config"
+    echo "    that every worktree shares, and other sessions may be mid-commit:"
+    echo "        tools/hooks-doctor --fix        # ask the human first"
+    echo
+    echo "    To run the tests anyway, having read the above:"
+    echo "        TBT_ALLOW_UNARMED_HOOKS=1 scripts/test-all"
+    exit 1
+fi
 
 echo "==> [1/5] staged-image discipline gates"
 # First because it is cheap, and because a broken image gate is the one
@@ -92,9 +121,10 @@ echo
 if [ "$hooks_armed" = yes ]; then
     echo "==> all gates passed (TESTED; not metal-verified)"
 else
-    echo "==> all gates passed — BUT THE COMMIT GATES ARE NOT ARMED IN THIS"
-    echo "    CLONE (see the top of this run). Nothing refuses a commit here:"
-    echo "    not the main guardrail, not the ext bake gate. Green above means"
-    echo "    the tests pass, NOT that the gates are running."
-    echo "    Repair, when no other session is mid-commit: tools/hooks-doctor --fix"
+    # Reached only via TBT_ALLOW_UNARMED_HOOKS. The override is a decision
+    # someone made in the open, so it is repeated here rather than forgotten
+    # between the top of the run and the line people actually quote.
+    echo "==> all tests passed — BUT THE COMMIT GATES ARE NOT ARMED IN THIS"
+    echo "    CLONE and you set TBT_ALLOW_UNARMED_HOOKS to proceed. Green"
+    echo "    above means the tests pass, NOT that the gates are running."
 fi
