@@ -111,11 +111,41 @@ region) and now reports `{l:28, t:50, r:772, b:548}`. Its content top is
 70, so the old rect decomposed to 68 — **the render was two pixels out on
 every control in that window** — and the new one decomposes exactly.
 
-**Owed, and not done here:** `rectSource`, so a caller holding a rect can
-say which region it is. `elements`/`axtree` still publish the raw content
-rect under `bounds` while the scene publishes the box, and that is a real
-remaining disagreement — but a new `windows[]` key is an IR v1 question,
-not a producer's to answer alone.
+**Owed, and deliberately not added here as its own key.** A caller
+holding a rectangle still cannot ask which one it is, and
+`claude/018-drag-targeting` is adding per-item origin provenance
+(`drawn` / `saved` / `unknown`) for the same class of question. **Two
+provenance schemes for two kinds of rectangle is the defect this slice
+exists to close**, so this is written as a requirement for that
+vocabulary rather than shipped as a competing field. What a caller has to
+be able to tell apart, in the order it costs them:
+
+1. **Which REGION this rectangle is.** Three answers, and they are not
+   interchangeable: the **box** (content grown by the IR title-bar
+   constant — what `windows[].rect` carries, decomposable by the
+   consumer), the **content** region (what `elements`/`axtree` publish
+   under `bounds`, and what a control's local rect is relative to), and
+   the **structure** region (the frame a person sees; read from the
+   machine now but published nowhere). Today the same window under two
+   planes gives two rectangles about twenty pixels apart with nothing
+   saying so, and a caller that joined them would be quietly wrong.
+2. **Whether the region was READ or DERIVED.** The box is arithmetic over
+   a measurement; the content and structure regions are measurements. A
+   caller comparing a rectangle against pixels needs to know it is
+   holding an approximation before it calls a two-pixel difference a
+   rendering bug — which is the mistake this entry's own measurement
+   would have produced.
+3. **Which READER answered.** `axwalk` (bound, from the target's own
+   context), `peek_read` (unbound fallback), or Carbon (self). They agree
+   now; they have disagreed, and when they disagree again the first
+   question will be which one spoke.
+
+(1) is the one a caller cannot work around. (2) and (3) are what makes a
+future disagreement diagnosable rather than another 2026-08-02. Note that
+this is a property of a rectangle, not of an item — the drag lane's
+`placed` is about a POSITION being invented, this is about a rectangle
+MEANING something different — so the shared vocabulary probably wants one
+enum with both concerns spelled out rather than one word reused.
 
 ## UNVERIFIED-TO-BROKEN: the anchor lease lapses between two calls, watched (2026-08-07)
 
