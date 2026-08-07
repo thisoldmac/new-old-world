@@ -218,6 +218,94 @@ a press inside `Desktop`'s rectangle, a folder drag is a press inside
 that folder window's, and both are the same comparison against the same
 global content box.
 
+### Break 3, found by driving: nothing ever posted the mouseDown
+
+The window form was built, the conformer written, and the gesture driven
+against a real Finder — and the icon did not move. **The vehicle was
+never going to start a drag, and the reason is one line that was never
+there.**
+
+`now_ext_drag.c` says in its own header that the whole vehicle is "write
+those four" low-memory globals, and that is true. But writing `MBState`
+is what a tracking loop **reads** once it is running; it is not what
+**starts** one. An application begins a drag because a `mouseDown`
+arrived through `GetNextEvent`, it hit-tested the point, and it called
+`DragGrayRgn`. No `mouseDown` was ever queued.
+
+That stayed invisible because the plane's other users do not need one:
+`ctlact` arms a patch that answers `TrackControl` for a handle the
+request names, so the target is **already inside** a loop when the button
+matters. A drag starts from outside one. `local-drag-vehicle.py` could
+not have caught it either, and says so in its own header — it aims at
+NOW's own window and claims nothing about what an application did.
+
+So the `DragPress` serve now posts a `mouseDown` — one event, `where`
+stamped on the queue element, in the target's own context, which is where
+that serve already runs. Only the down: the up is what the vehicle's
+deadline owes, and queueing it here would end the gesture the instant it
+began. A refused queue **abandons the gesture** rather than being
+best-effort, the opposite of the mouseUp's policy and deliberately so —
+there the button is already up, here it would be down with nothing
+tracking it.
+
+**It works, and it is not enough.** Emulator-verified, same rig as above:
+with NOW hidden and the Finder frontmost, the press reaches the Finder
+and **the Trash selects itself under the pointer** — the guest's own
+pixels, `dt-1-pressed`. Nothing in this project had ever made a foreign
+application respond to a drag press before. Which is what let the next
+wall be found.
+
+### Break 4: the press's own reply is blocked by the loop the press starts
+
+With the Finder genuinely tracking, `dragpress` answers:
+
+```
+State = ended    Button = up    Vehicle ticks = 253
+Moves applied = 0    Ended = dead-man-idle
+```
+
+**The gesture is over before the caller learns the session nonce.** Not a
+timing accident — it is the plane's own central fact, arriving one step
+earlier than the contract expected it. `dragpress`'s description already
+says that from the instant the button is down "the filter that serves act
+requests is never entered again until the gesture ends", and concludes
+that motion and release therefore cannot be act requests. True, and
+incomplete: **`dragpress` is itself an act request**, and `now_act_submit`
+waits for the target to pump before it can report `fired`. The target
+stops pumping the moment it starts tracking. So the press cannot answer
+until the drag is over, and the only thing that ends it is the dead-man.
+
+The circle: the press starts the tracking loop → the loop stops the
+target pumping → the press's reply cannot be composed → no `dragmove`
+can be sent, because it needs the nonce the reply carries → the idle
+deadline expires → the loop ends → the reply finally arrives, saying
+`dead-man-idle`, `Moves applied 0`.
+
+This is stated and stopped at rather than patched. The shapes a repair
+could take all change the plane's contract, and picking one is a design
+pass rather than a fix:
+
+- the nonce could be **minted by the caller** and sent with the press, so
+  nothing has to come back before motion can start;
+- or `dragpress` could answer **on arming rather than on firing**, which
+  means saying "the press is queued" instead of "the button is down" —
+  a weaker and more honest claim, and one that changes what an `ok` reply
+  means;
+- or the resident could publish the session in the drag cell, which any
+  reader can poll, so the press's reply stops being the only route to it.
+
+The first is the smallest and the most suspicious: a caller-supplied
+nonce is a caller-supplied identifier, and that family of shortcut is
+what `obsref.h` exists to refuse. It is probably still right here — a
+nonce is not an address — but it is exactly the argument that wants to be
+had out loud rather than settled by whoever is holding the keyboard.
+
+**What this means for the two breaks above.** Both are closed and both
+are real: a Finder icon is nameable, the conformer exists, and the press
+lands on the right icon in the right process. What is not closed is
+carrying the gesture, and no part of the product should claim otherwise
+until Break 4 is.
+
 ### A gate, so the next conformer is not silently absent
 
 Nothing failed when `itemDragDriver` went unimplemented, because a

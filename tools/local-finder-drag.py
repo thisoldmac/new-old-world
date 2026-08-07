@@ -266,6 +266,15 @@ def main():
         return 1
 
     print("\n== 3. the drag itself ==")
+    # The Finder must be FRONT when the press is queued. PPostEvent puts
+    # the mouseDown in the machine's one event queue, and the front process
+    # is what dequeues it -- so a press aimed at the Finder while NOW is
+    # frontmost is delivered to NOW, at a point outside its window, where
+    # it means nothing. Everything above this line (a scene, an element
+    # walk) can change what is frontmost, so this is re-asserted here
+    # rather than once at the top.
+    link.command("front", {"target": "Finder"}, timeout=60)
+    time.sleep(1)
     r = link.command("dragpress",
                      {"window": ref, "h": start[0], "v": start[1],
                       "idle": 300, "cap": 600}, timeout=120)
