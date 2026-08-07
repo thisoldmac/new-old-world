@@ -166,6 +166,222 @@ def sfnt_to_ttf(body: bytes) -> bytes:
     return bytes(body)
 
 
+# -- TrueType strikes ------------------------------------------------------
+#
+# Charcoal, the Mac OS 8.5+ system font, ships NO bitmap strike anywhere: its
+# FOND association table is a single size-0 (scalable) row, there is no NFNT
+# in the suitcase or in the System file, and its sfnt carries no 'bdat'/'bloc'
+# or 'EBDT'/'EBLC'. Mac OS rasterises it from the outlines at run time. So a
+# strike for it has to be rasterised here too, and the honesty of the result
+# turns on keeping its two halves apart:
+#
+#   * WIDTHS come from 'hdmx' — Apple's own device metrics, one row per ppem,
+#     one unsigned byte per glyph. That is the number the Font Manager
+#     advances the pen by on the machine, so it is the machine's answer and
+#     not a plausible one. A rasteriser's idea of the advance is different
+#     arithmetic over the same outline and is allowed to disagree; where it
+#     does, hdmx wins and the disagreement is counted into `notes`.
+#   * SHAPES come from FreeType (via Pillow) in monochrome. OS 9's TrueType
+#     interpreter is NOT FreeType, so this half is a measured approximation
+#     and the delta against the guest's own pixels is reported rather than
+#     claimed away — docs/charcoal-strike.md carries the numbers.
+#
+# A ppem with no 'hdmx' row raises `NoDeviceMetrics` rather than falling back
+# to the rasteriser's advances. A strike whose widths are a guess is worse
+# than the substitution it replaces, because the substitution is at least
+# written down; an absent size keeps substituting and says so.
+
+
+class NoDeviceMetrics(Exception):
+    """The face has no 'hdmx' row for this ppem, so its widths are unknown."""
+
+
+def hdmx_sizes(ttf: bytes) -> list[int]:
+    """The ppem sizes this face carries device metrics for — i.e. exactly the
+    sizes `render_truetype_strike` can answer honestly."""
+    tables = _sfnt_tables(ttf)
+    if "hdmx" not in tables:
+        return []
+    off, _ = tables["hdmx"]
+    _ver, n_rec, rec_size = struct.unpack_from(">HhL", ttf, off)
+    return sorted(ttf[off + 8 + i * rec_size] for i in range(n_rec))
+
+
+def _sfnt_tables(ttf: bytes) -> dict:
+    """{tag: (offset, length)} from the sfnt table directory."""
+    num = struct.unpack_from(">H", ttf, 4)[0]
+    out = {}
+    for i in range(num):
+        tag, _sum, off, ln = struct.unpack_from(">4sLLL", ttf, 12 + 16 * i)
+        out[tag.decode("latin-1")] = (off, ln)
+    return out
+
+
+def _hdmx_row(ttf: bytes, tables: dict, ppem: int, n_glyphs: int):
+    """The per-glyph advance widths 'hdmx' records for `ppem`, or None.
+
+    'hdmx' (OpenType spec, "Horizontal Device Metrics"; the table predates
+    OpenType and is Apple's): uint16 version, int16 numRecords, int32
+    sizeDeviceRecord, then numRecords records of that many bytes each —
+    uint8 pixelSize, uint8 maxWidth, uint8 widths[numGlyphs], padded.
+    """
+    if "hdmx" not in tables:
+        return None
+    off, _ = tables["hdmx"]
+    _ver, n_rec, rec_size = struct.unpack_from(">HhL", ttf, off)
+    for i in range(n_rec):
+        base = off + 8 + i * rec_size
+        size, _max = struct.unpack_from(">BB", ttf, base)
+        if size == ppem:
+            return list(ttf[base + 2:base + 2 + n_glyphs])
+    return None
+
+
+def _mac_roman_cmap(ttf: bytes, tables: dict) -> dict:
+    """{byte: glyphID} from the (platform 1, encoding 0) Roman 'cmap'.
+
+    Charcoal carries EIGHT (1,0) subtables — one per Mac script the face was
+    localised for — so the platform/encoding pair alone does not identify the
+    one QuickDraw uses for MacRoman text. Format 6's own `language` field
+    does: 0 means language-independent, which is the Roman table. Picking the
+    first (1,0) subtable instead would silently file glyphs under the wrong
+    byte for some faces, and a wrong glyph is worse than a missing one.
+    """
+    off, _ = tables["cmap"]
+    n = struct.unpack_from(">H", ttf, off + 2)[0]
+    best = None
+    for i in range(n):
+        plat, enc, sub = struct.unpack_from(">HHL", ttf, off + 4 + 8 * i)
+        if (plat, enc) != (1, 0):
+            continue
+        base = off + sub
+        fmt = struct.unpack_from(">H", ttf, base)[0]
+        if fmt == 6:
+            _f, _len, lang, first, count = struct.unpack_from(">HHHHH", ttf,
+                                                              base)
+            ids = struct.unpack_from(">%dH" % count, ttf, base + 10)
+            table = {first + j: g for j, g in enumerate(ids) if g}
+        elif fmt == 0:
+            _f, _len, lang = struct.unpack_from(">HHH", ttf, base)
+            table = {c: g for c, g in enumerate(ttf[base + 6:base + 262]) if g}
+        else:
+            continue
+        if lang == 0:
+            return table
+        best = best or table
+    if best is None:
+        raise ValueError("no MacRoman 'cmap' subtable in this sfnt")
+    return best
+
+
+def render_truetype_strike(ttf: bytes, ppem: int, chars: range = range(32, 256),
+                           cols: int = 16, pad: int = 1):
+    """Rasterise a TrueType face at `ppem` into the sheet+metrics form
+    `render_strike` produces for an NFNT. Returns (PIL.Image, metrics).
+
+    Raises `NoDeviceMetrics` when the face has no 'hdmx' row for `ppem`.
+
+    The vertical metrics come from 'hhea' scaled by ppem/unitsPerEm, which is
+    checkable rather than assumed: at 12 ppem it yields ascent 12, descent 3,
+    leading 1 for Chicago and for Geneva, and both of those faces ALSO ship a
+    hand-drawn 12-point NFNT whose own header says exactly 12/3/1. Where a
+    rasterised glyph reaches past that box the box grows to hold it and the
+    growth is recorded, because a strike that clips its own accents is a
+    defect the consumer cannot see.
+    """
+    import io                                   # local: only this path needs it
+    from PIL import ImageDraw, ImageFont
+
+    tables = _sfnt_tables(ttf)
+    upem = struct.unpack_from(">H", ttf, tables["head"][0] + 18)[0]
+    n_glyphs = struct.unpack_from(">H", ttf, tables["maxp"][0] + 4)[0]
+    asc_u, desc_u, gap_u = struct.unpack_from(">hhh", ttf, tables["hhea"][0] + 4)
+
+    widths = _hdmx_row(ttf, tables, ppem, n_glyphs)
+    if widths is None:
+        raise NoDeviceMetrics(
+            f"no 'hdmx' row at {ppem} ppem; the machine's own advances for "
+            "this size are not in the font")
+    cmap = _mac_roman_cmap(ttf, tables)
+
+    font = ImageFont.truetype(io.BytesIO(ttf), ppem,
+                              layout_engine=ImageFont.Layout.BASIC)
+
+    # One scratch canvas, big enough that no glyph at these sizes can reach
+    # its edge; the pen sits at (margin, margin + 2*ppem).
+    margin = 2 * ppem + 4
+    pen_x, base_y = margin, margin + 2 * ppem
+    side = margin * 2 + 4 * ppem
+
+    inked: dict[int, tuple] = {}         # code -> (bitmap, left, above, below)
+    for code in chars:
+        gid = cmap.get(code)
+        if gid is None:
+            continue
+        ch = bytes([code]).decode("mac_roman")
+        scratch = Image.new("1", (side, side), 0)
+        ImageDraw.Draw(scratch).text((pen_x, base_y), ch, font=font, fill=1,
+                                     anchor="ls")
+        box = scratch.getbbox()
+        if box is None:                  # a real glyph with no ink, e.g. space
+            inked[code] = (None, 0, 0, 0)
+            continue
+        x0, y0, x1, y1 = box
+        inked[code] = (scratch.crop(box), x0 - pen_x, base_y - y0, y1 - base_y)
+
+    ascent = max(round(asc_u * ppem / upem),
+                 max((v[2] for v in inked.values()), default=0))
+    descent = max(round(-desc_u * ppem / upem),
+                  max((v[3] for v in inked.values()), default=0))
+    leading = round(gap_u * ppem / upem)
+    frect_h = ascent + descent
+
+    cell_w = max((v[0].width for v in inked.values() if v[0]), default=1) + 2 * pad
+    cell_h = frect_h + 2 * pad
+    rows = (len(inked) + cols - 1) // cols
+    sheet = Image.new("RGBA", (cols * cell_w, rows * cell_h), (0, 0, 0, 0))
+
+    glyphs: dict[str, dict] = {}
+    overhang = []
+    for idx, code in enumerate(sorted(inked)):
+        bitmap, left, above, _below = inked[code]
+        advance = widths[cmap[code]]
+        cx = (idx % cols) * cell_w + pad
+        cy = (idx // cols) * cell_h + pad
+        gw = bitmap.width if bitmap else 0
+        if bitmap:
+            tinted = Image.new("RGBA", bitmap.size, (0, 0, 0, 0))
+            tinted.paste((0, 0, 0, 255), (0, 0), bitmap)
+            sheet.paste(tinted, (cx, cy + ascent - above), tinted)
+            if left + gw > advance:
+                overhang.append(bytes([code]).decode("mac_roman"))
+        glyphs[bytes([code]).decode("mac_roman")] = {
+            "x": cx, "y": cy, "w": gw, "h": frect_h,
+            "advance": advance, "left": left,
+        }
+
+    metrics = {
+        "ascent": ascent,
+        "descent": descent,
+        "leading": leading,
+        "frectHeight": frect_h,
+        "cellHeight": cell_h,
+        "glyphs": glyphs,
+        # Provenance, in the file the consumer reads, because "where did this
+        # width come from" is the question this strike exists to answer.
+        "widthSource": "hdmx",
+        "shapeSource": "freetype-mono",
+        "rasterisedFrom": "sfnt",
+    }
+    notes = {
+        "hheaBox": [round(asc_u * ppem / upem), round(-desc_u * ppem / upem)],
+        "grewToFitInk": [ascent, descent] != [round(asc_u * ppem / upem),
+                                              round(-desc_u * ppem / upem)],
+        "inkPastAdvance": overhang,
+    }
+    return sheet, metrics, notes
+
+
 if __name__ == "__main__":
     import sys
     fork = resfork.load(sys.argv[1])

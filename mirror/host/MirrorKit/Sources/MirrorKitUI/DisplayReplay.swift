@@ -752,11 +752,21 @@ public enum DisplayReplay {
     /// `FontBook.nearest`'s business, and it is documented there.
     /// Internal rather than private so the fidelity gate can ask which
     /// strike a captured op would be drawn in without rendering a pixel.
+    /// **Font 0 is CHARCOAL**, and was answered as Chicago until
+    /// 2026-08-07 because the pack had no Charcoal strike to answer with —
+    /// Charcoal ships no bitmap strike anywhere on the guest, so the
+    /// extractor found nothing to lift and left a note instead of a face.
+    /// Chicago is the System 7 system font, is wider, and so overran every
+    /// box the guest had sized in Charcoal. The pack now rasterises
+    /// Charcoal from its own outlines with Apple's `hdmx` advances; where
+    /// it cannot (a ppem with no `hdmx` row) `FontBook.nearest` rounds and
+    /// says which strike it gave.
     static func strike(font: Int, size: Int) -> BitmapFont? {
         let wanted = size > 0 ? size : 12
         switch font {
         case 0:
-            return FontBook.nearest(face: "chicago", size: wanted)
+            return FontBook.nearest(face: "charcoal", size: wanted)
+                ?? FontBook.nearest(face: "chicago", size: wanted)
         default:
             return FontBook.nearest(face: "geneva", size: wanted)
         }
