@@ -712,6 +712,75 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
                tick / 60 % 60, tick % 60)
     }
 
+    /* ── THE OTHER HALF OF THE SAME DECAY ───────────────────────────────
+       The host re-arms the guest's trace on a 9-minute timer against a
+       10-minute guest TTL, with nobody touching anything. Re-arming
+       bumps the guest's `display_epoch`, so the next record opens an
+       identity this host has never seen — and an EMPTY accumulator —
+       while the window on the guest still holds every pixel it drew.
+       The first thing a settled panel draws afterwards is one clock
+       tick, and that one op settled as the entire published display.
+
+       This needs no cap, no eviction and no disposal: it is the picture
+       collapsing to whatever was redrawn in the seconds after a renewal
+       the person never asked for, on a timer that matches "minutes
+       apart, nothing touched". */
+
+    func testARenewalReArmDoesNotCollapseTheWindowToItsNextClockTick()
+        throws {
+        let model = plane()
+        _ = model.apply(try drain(Self.establishingPass), to: try scene())
+        _ = model.apply(try drain(Self.clockTick(0)), to: try scene())
+
+        // The 9-minute renewal: same window, fresh ring baseline, and the
+        // guest's re-arm advances displayEpoch 3 → 4.
+        model.carryForward = true
+        let after = model.apply(try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"rect","port":"0x1eba6800","ticks":900,
+           "a5":"0x00100000","psn":"0.29949953",
+           "displayEpoch":4,"generation":7,
+           "verb":2,"rect":[205,20,320,56],"ext":[0,0]},
+          {"op":"text","port":"0x1eba6800","ticks":900,
+           "a5":"0x00100000","psn":"0.29949953",
+           "displayEpoch":4,"generation":7,
+           "pen":[222,42],"font":3,"size":9,"face":0,
+           "len":8,"fullLen":8,"trunc":false,"text":"00:09:00"}],
+         "nextCursor":64,"records":2,"more":false}
+        """), to: try scene())
+
+        let text = try XCTUnwrap(after.scene.windows[0].display)
+            .compactMap(\.text)
+        XCTAssertTrue(text.contains("Current Date"),
+                      "the renewal collapsed the window: \(text)")
+        XCTAssertTrue(text.contains("Server Options…"))
+        XCTAssertTrue(text.contains("00:09:00"), "and it is still live")
+        XCTAssertTrue(after.sentence.contains("carried"))
+    }
+
+    /// The control for the test above: a RETARGET — a genuinely different
+    /// window — must inherit nothing, or one window's pixels would be
+    /// published as another's.
+    func testARetargetInheritsNothingFromTheWindowItReplaced() throws {
+        let model = plane()
+        _ = model.apply(try drain(Self.establishingPass), to: try scene())
+        XCTAssertFalse(model.carryForward,
+                       "a renewal sets this; a retarget must not")
+
+        let other = try scene(address: 0x2000)
+        let after = model.apply(try drain("""
+        {"cmd":"drain","ops":[
+          {"op":"text","port":"0x00002000","ticks":900,
+           "a5":"0x00100000","psn":"0.29949953",
+           "displayEpoch":9,"generation":8,
+           "pen":[20,18],"font":3,"size":9,"face":0,
+           "len":5,"fullLen":5,"trunc":false,"text":"Fresh"}],
+         "nextCursor":64,"records":1,"more":false}
+        """), to: other)
+        XCTAssertEqual(after.scene.windows[0].display?.compactMap(\.text),
+                       ["Fresh"])
+    }
+
     /* The coverage rule is allowed to keep an op it could have dropped
        and is never allowed to drop one still on the guest's screen, so
        these four are the ones that matter. Each fails if the

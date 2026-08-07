@@ -138,6 +138,12 @@ final class NOWMirrorContentPlane {
     /// dropped by this host. Their frames publish `stale`: a marked gap
     /// is honest, a confident subset is not.
     private var hollowed: Set<ContentIdentity> = []
+    /// Set by a RENEWAL arm (same window, fresh ring baseline), so the
+    /// first identity to arrive afterwards inherits the pixels the guest
+    /// still has rather than starting from nothing. Cleared once used —
+    /// it describes one arm, not a standing mode. Internal so tests can
+    /// drive a renewal without a listener.
+    var carryForward = false
     /// The structural scene sequence each slot's display last settled
     /// against — reported, never gated on. See ``DisplayEpoch``.
     private var settledAtSequence: [String: Int] = [:]
@@ -261,6 +267,29 @@ final class NOWMirrorContentPlane {
             armedAt = nil
         }
         if needsTarget || needsRenewal {
+            /* **A RENEWAL IS NOT A NEW WINDOW, and the accumulator must
+               not pretend it is.** Re-arming bumps the guest's
+               `display_epoch`, so the next record carries an identity
+               this host has never seen and starts an EMPTY op list —
+               while the window on the guest still holds every pixel it
+               drew before. The first thing a settled panel draws
+               afterwards is one clock tick, and that single op settled
+               as the whole published display: the interior collapsed to
+               whatever happened to be redrawn in the seconds after a
+               renewal nobody asked for.
+
+               The renewal fires on a 9-minute timer against a 10-minute
+               guest TTL, so this arrives with the machine untouched and
+               looks exactly like the picture decaying on its own. It is
+               also why RE-FRONTING cures it and the timer does not:
+               fronting a window makes the application repaint the whole
+               thing, so the fresh accumulator is immediately complete.
+
+               Carrying the settled ops forward keeps the picture the
+               guest still has. It is only ever done for the SAME window
+               of the same process — a retarget is a different window and
+               inherits nothing. */
+            carryForward = !needsTarget
             prepare(front: front, scene: scene, completion: completion)
         } else {
             drain(scene: scene, completion: completion)
@@ -438,6 +467,7 @@ final class NOWMirrorContentPlane {
         var born = 0
         var died = 0
         var compactedPasses = 0
+        var carried = 0
         evictedSourceCount = 0
         for record in drain.records {
             guard let address = record.portAddress else {
@@ -601,9 +631,11 @@ final class NOWMirrorContentPlane {
                 if !isSame {
                     operations[current] = nil
                     currentDisplay[slot] = identity
+                    inherit(identity, at: slot, carried: &carried)
                 }
             } else {
                 currentDisplay[slot] = identity
+                inherit(identity, at: slot, carried: &carried)
             }
             /* The join (013 slice C). A blitsrc record names the source of
                the bits record immediately after it; any other op between
@@ -761,6 +793,10 @@ final class NOWMirrorContentPlane {
         if joined > 0 {
             facts.append("joined \(joined) composite"
                          + "\(joined == 1 ? "" : "s") from offscreen worlds")
+        }
+        if carried > 0 {
+            facts.append("carried \(carried) settled op"
+                         + "\(carried == 1 ? "" : "s") across the re-arm")
         }
         if compactedPasses > 0 {
             facts.append("compacted \(compactedPasses) accumulator"
@@ -1056,6 +1092,20 @@ final class NOWMirrorContentPlane {
 
     private static func area(_ box: [Int]) -> Int {
         max(box[2] - box[0], 0) * max(box[3] - box[1], 0)
+    }
+
+    /// Seed a freshly-opened accumulator with the pixels the guest still
+    /// has, when this identity opened because of a RENEWAL rather than
+    /// because the window changed. Consumes the flag: exactly one
+    /// identity inherits per arm.
+    private func inherit(_ identity: ContentIdentity, at slot: String,
+                         carried: inout Int) {
+        guard carryForward else { return }
+        carryForward = false
+        guard let prior = settledDisplay[slot], prior != identity,
+              let ops = settledOperations[prior], !ops.isEmpty else { return }
+        operations[identity] = ops
+        carried += ops.count
     }
 
     /// Append to a held source's ops, opening its bucket if needed and
