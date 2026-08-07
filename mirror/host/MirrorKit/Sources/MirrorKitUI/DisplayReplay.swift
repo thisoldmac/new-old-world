@@ -202,7 +202,7 @@ public enum DisplayReplay {
                cover text the guest DID report. */
             if !Self.answeredInStreamOrder(frame) {
                 if ladder.owner(ofUnjoinedBlit: frame) == .unknown {
-                    UnknownMark.draw(in: draw, frame: frame)
+                    drawUnavailableBits(in: draw, frame: frame)
                     coverage?.add(frame)
                     drew = true
                 }
@@ -311,7 +311,7 @@ public enum DisplayReplay {
                        marked here so a composite's own erase precedes it
                        instead of wiping it. */
                     guard Self.answeredInStreamOrder(frame) else { break }
-                    UnknownMark.draw(in: drawingContext(), frame: frame)
+                    drawUnavailableBits(in: drawingContext(), frame: frame)
                     coverage?.add(frame)
                     drew = true
                 }
@@ -522,6 +522,21 @@ public enum DisplayReplay {
         let a = pt(r[0], r[1]); let b = pt(r[2], r[3])
         return CGRect(x: a.x, y: a.y,
                       width: max(0, b.x - a.x), height: max(0, b.y - a.y))
+    }
+
+    private static func drawUnavailableBits(in ctx: GraphicsContext,
+                                             frame: CGRect) {
+        guard frame.width > 1, frame.height > 1 else { return }
+        var clipped = ctx
+        clipped.clip(to: Path(frame))
+        /* One definition, in UnknownVisual — this used to be a second copy
+           of the scene renderer's hatch, identical by coincidence. */
+        UnknownVisual.drawGround(in: clipped, frame: frame)
+        guard let font = FontBook.small,
+              let at = UnknownVisual.captionOrigin(
+                  in: frame, ascent: CGFloat(font.ascent)) else { return }
+        font.draw("Bitmap unavailable", in: clipped, x: at.x, baselineY: at.y,
+                  color: UnknownVisual.caption)
     }
 
     /// Map a guest font id + size to a bundled NFNT strike.

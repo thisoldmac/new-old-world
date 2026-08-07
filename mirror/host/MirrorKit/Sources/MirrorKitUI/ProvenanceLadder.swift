@@ -23,8 +23,10 @@ import MirrorKit
 /// 3. **Asset-pack art addressed BY IDENTITY.** Something named this
 ///    rectangle: a DITL row typed `icon`, a typed control. Never a size,
 ///    never a shape.
-/// 4. **The marked unknown.** Styled once, in ``UnknownMark``, and drawn
-///    the same way everywhere.
+/// 4. **The marked unknown.** Styled once, in ``UnknownVisual`` — lane C
+///    of this plan chose that look over real captures, and both renderers
+///    go through it, so there is exactly one place for the decision to
+///    live.
 ///
 /// ## Rung 1 beats rung 2, and that is a deliberate reversal
 ///
@@ -137,73 +139,5 @@ public struct ProvenanceLadder {
     /// The art a named rectangle resolves to, or nil for the unknown.
     public func art(at frame: CGRect) -> NamedArt? {
         named.first { $0.rect.contains(frame) }?.art
-    }
-}
-
-/// **The marked unknown, defined once.**
-///
-/// Rung 4 is going to be all over the render for a while — honestly, which
-/// is the point — so how it LOOKS is a product decision rather than a
-/// detail. Half the "excessive hatching" complaint from the driving session
-/// is the hatch itself being loud.
-///
-/// This type exists so that decision has exactly one place to land. The
-/// style below is the one the renderer has always drawn, kept deliberately
-/// as a placeholder-placeholder while the candidates are mocked over a real
-/// captured scene. **Swapping it is editing `draw` and nothing else** — no
-/// caller knows what an unknown looks like, and none should.
-public enum UnknownMark {
-
-    /// Style names, so the choice can be made by picking one rather than by
-    /// rewriting a drawing routine.
-    public enum Style: Sendable {
-        /// High-contrast 45° hatch with a dashed border. What the renderer
-        /// has drawn since the content plane existed; loud on purpose when
-        /// gaps were rare, and no longer proportionate now they are not.
-        case hatch
-    }
-
-    /// The current choice. One line to change.
-    public static var style: Style = .hatch
-
-    /// Draw the mark for a rectangle nobody could account for.
-    ///
-    /// `label` is drawn only when there is room for it: a 16×16 scroll
-    /// arrow and a 404×218 window interior are the same claim, and the
-    /// larger one can afford to say so in words.
-    public static func draw(in ctx: GraphicsContext, frame: CGRect,
-                            label: String = "Bitmap unavailable") {
-        guard frame.width > 1, frame.height > 1 else { return }
-        switch style {
-        case .hatch:
-            hatch(in: ctx, frame: frame, label: label)
-        }
-    }
-
-    private static func hatch(in ctx: GraphicsContext, frame: CGRect,
-                              label: String) {
-        var clipped = ctx
-        clipped.clip(to: Path(frame))
-        clipped.fill(Path(frame), with: .color(Platinum.g1))
-        var x = frame.minX - frame.height
-        while x < frame.maxX {
-            var line = Path()
-            line.move(to: CGPoint(x: x, y: frame.maxY))
-            line.addLine(to: CGPoint(x: x + frame.height, y: frame.minY))
-            clipped.stroke(line, with: .color(Platinum.g2), lineWidth: 1)
-            x += 6
-        }
-        clipped.stroke(Path(frame), with: .color(Platinum.g3),
-                       style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
-        /* 60, which is the more permissive of the two thresholds this
-           replaced (the replay wanted 92, the semantic placeholder 60).
-           The text is clipped to the frame either way, so the looser bound
-           costs a truncated caption at worst and buys a captioned mark on
-           every rectangle that used to carry one. */
-        guard frame.width >= 60, frame.height >= 14, !label.isEmpty,
-              let font = FontBook.small else { return }
-        font.draw(label, in: clipped, x: frame.minX + 4,
-                  baselineY: frame.midY + CGFloat(font.ascent) / 2,
-                  color: Platinum.g4)
     }
 }

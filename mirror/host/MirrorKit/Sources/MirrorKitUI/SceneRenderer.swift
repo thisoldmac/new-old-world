@@ -1470,13 +1470,20 @@ public struct SceneRenderer {
     private func drawUnavailableVisual(_ ctx: GraphicsContext,
                                        _ frame: CGRect,
                                        _ label: String) {
-        /* ONE DEFINITION FOR RUNG 4. This drew its own hatch, byte for
-           byte the same as the replay's, in a second place — so the
-           "the unknown must be QUIET" decision would have had two places
-           to land and would have landed in one of them. `UnknownMark` is
-           the single swappable style; both readers go through it. */
-        UnknownMark.draw(in: ctx, frame: frame,
-                         label: label.isEmpty ? "Visual unavailable" : label)
+        guard frame.width > 1, frame.height > 1 else { return }
+        var clipped = ctx
+        clipped.clip(to: Path(frame))
+        /* The look lives in UnknownVisual and nowhere else — see its
+           header for why it is quiet and how the pick was made. This site
+           and DisplayReplay's used to hold two identical copies of the
+           fill, free to drift apart with nothing to notice. */
+        UnknownVisual.drawGround(in: clipped, frame: frame)
+        let ascent = CGFloat(FontBook.small?.ascent ?? 8)
+        guard let at = UnknownVisual.captionOrigin(in: frame,
+                                                   ascent: ascent) else { return }
+        let caption = label.isEmpty ? "Visual unavailable" : label
+        appText(caption, clipped, x: at.x, baselineY: at.y,
+                color: UnknownVisual.caption, small: true)
     }
 
     private func drawButton(_ ctx: GraphicsContext, _ ctl: MirrorKit.Scene.Control,

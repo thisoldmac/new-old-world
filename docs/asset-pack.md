@@ -34,6 +34,19 @@ genuinely surprising step are in
 
 Its default `--out` is exactly where the renderer looks in a working
 checkout, so **"run the extractor" is the whole recovery procedure**.
+
+That sentence was not true when it was written, and 2026-08-07 made it
+true. The offline extractor produced no `fonts/` at all, so a recovered
+pack had every icon and no text: `FontBook` names `chicago-12` and
+`geneva-9/10/12`, got nil for each, and drew a fallback face with
+different metrics — a pack that looks complete in a directory listing
+and is wrong on screen. It now extracts the `NFNT` strikes from
+`System Folder:Fonts:` (9 sheets; the 8 the store's pack already held
+come out **byte-identical** to the wire route's) and carries each
+suitcase's `sfnt` verbatim as `fonts/ttf/<face>.ttf`. **Charcoal, the
+system font, has no bitmap strike on the image to extract** — it is
+TrueType-only, which is why the render substitutes Chicago; see
+[asset-extraction-offline.md](asset-extraction-offline.md).
 Anyone with their own image can produce their own pack; nobody has to
 be given Apple's bitmaps to build or run this.
 
@@ -140,3 +153,22 @@ by sha256, against a copy taken first:
 
 1,154 files, 0 missing, 0 mismatched, 0 extra. Nothing left git that
 does not demonstrably exist somewhere durable with hashes.
+
+### It has been superseded — read the newest `pack-`, not this one
+
+    ~/Lab/Assets/now-mirror-assets/pack-2026-08-07/Resources/
+    ~/Lab/Assets/now-mirror-assets/pack-2026-08-07.sha256   (1,210 lines)
+
+Regenerated 2026-08-07 by plan 018's slice 5, from the same stage image
+by the same read-only route. The 56-file difference is entirely the two
+asset classes that run added — **fonts** (9 NFNT sheets, 3 verbatim
+TrueType faces) and the **desktop** (44 named Appearance patterns, the
+current picture, and the `desktop` manifest key). Everything the older
+pack held came out byte-identical except two app icons whose names
+differ only in case (`ddsk__dimg` → `ddsk__dImg`), which a
+case-insensitive volume had folded together.
+
+`AssetPack` resolves the newest `pack-` directory first, so a machine
+with both picks this one up with no configuration. **The older list is
+kept rather than replaced** — it is the receipt for the removal from
+git, and a receipt for one thing is not a description of another.

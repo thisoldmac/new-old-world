@@ -222,17 +222,4 @@ final class ProvenanceLadderTests: XCTestCase {
                       + "is not coming")
     }
 
-    // MARK: - Rung 4's style has exactly one definition
-
-    /// Half the "excessive hatching" complaint is the hatch being loud, and
-    /// the style is a product decision that must have ONE place to land.
-    /// Before slice 2 there were two byte-identical hatch routines, in
-    /// different modules.
-    func testTheUnknownHasOneStyle() {
-        XCTAssertEqual(UnknownMark.style, .hatch,
-                       "the placeholder-placeholder, until the mock is "
-                       + "picked — swap this one line, nothing else")
-    }
 }
-
-extension UnknownMark.Style: Equatable {}
