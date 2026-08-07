@@ -183,3 +183,135 @@ can see, and the limit should be stated in it.
   by mutation.
 - **Derive, do not remember** — coverage numbers re-derived by running
   their own commands, and re-derived again at every merge.
+
+---
+
+# AMENDED 2026-08-07, after the accounting — the missing pieces, named
+
+Appended, not edited: the body above is the record of what was planned,
+and this is what an audit of the tree found was actually missing.
+
+The authority for every claim here is
+[`2026-08-07-020-accounting.md`](2026-08-07-020-accounting.md) and its
+evidence file
+[`2026-08-07-020-accounting-evidence.md`](2026-08-07-020-accounting-evidence.md).
+Where a lane's report and those two disagree, **those two win** — that is
+the whole reason they were derived from the tree rather than from
+reports.
+
+## The decision that was undecided is now made
+
+**Charcoal: keep substituting Chicago, and DECLARE it.** Michelle,
+2026-08-07: *"our fonts are ok at this stage, im happy enough with
+them"*.
+
+This is the one item the accounting classed as **dishonest-by-default**
+rather than incomplete, and the distinction is the point. Charcoal ships
+TrueType-only — no `bdat`/`bloc`, no NFNT strike — so we substitute
+Chicago and mis-measure width. Substituting is now an accepted product
+decision. **Saying nothing about it is not.**
+
+So this slice is not a font slice. It is an honesty slice, and it is
+done when a person reading a render can tell that a glyph is ours rather
+than the machine's. A silent substitution is precisely the failure this
+arc names everywhere else: a render drifting toward *plausible* rather
+than *true*, each drift individually defensible.
+
+## Why this list is ordered the way it is
+
+The accounting's own verdict on the highest-value unfinished thing:
+**authoritative control semantics for OS 9's own panels.** Everything
+else in the arc changes how well the product is *described*; that one
+changes what it can *do*, and it funds the native file/proc server too.
+It goes first.
+
+Second is the instrument, because an instrument that cannot see the
+defect makes every measurement after it worthless — and this arc has now
+paid for that eight separate times.
+
+### Slice A — finish the CDEF route (Memory's radios)
+
+`018-cdef-classify` reached **71 of 73** for Appearance and stops one
+step short. Memory's radios come back **CDEF 0, variant 0** and draw as
+bare labels.
+
+`GetControlKind` is Mac OS X only; `GetControlData(kControlKindTag)`
+answered 2 of 73 for Appearance and **0 of 21** for Date & Time. The
+`GetResInfo`-against-`contrlDefProc` route is the one that works on OS 9
+and it is already wired into the live walk. This finishes it.
+
+**A control whose kind cannot be established stays `unknown`. It is
+never inferred** — that rule does not bend for the last two.
+
+### Slice B — the instrument must arm the plane it photographs
+
+`tools/local-pair-capture.py` never issues `qdtrace start`, so every
+`display` it captures is nil by construction and every window hatches.
+Its warm-up comment claims the planes arm "as a RESULT" of a scene walk,
+true of P1/P2/P4 and false of P3.
+
+**Blast radius, corrected:** `fidelity-sweep.py` *does* arm (line 220),
+so Sweeps A/B and round 5's LOOK stand. Only drive-loop observations are
+artefactual.
+
+Includes the pass nobody has taken: **attribute the existing hatching
+findings to their instrument.** The accounting names this as the largest
+thing it could not determine, and it is one pass away.
+
+### Slice C — one interior at a time is a design decision, not a defect
+
+`qdtrace start` takes ONE window. Three windows means three arms, three
+censuses (~57 ms each) and three TTLs. **At best one interior can exist
+at a time** without a contract change.
+
+A screenshot with one live interior and the rest hatched may be the
+product working exactly as built. Decide whether that is the product, and
+if not, the contract changes first.
+
+### Slice D — slice 9's live verb is wired into nothing
+
+Guest-side `GetTheme`/`kThemeDesktopPatternTag` exists; the contract
+carries a `desktop` gestalt verb; **`hasPattern` / `patternCarried` /
+`patternBytes` return zero matches** across `now-host` and `mirror`. The
+renderer reads only the offline asset-pack manifest — true solely for a
+guest booted from that stage image and unchanged since.
+
+Two producers of one answer, one of them unread. That is a seam by the
+sweep spec's own definition.
+
+### Slice E — slice 14's lazy delivery was never begun
+
+Cap moved 48 → 96 and chain length is now reported. **Lazy delivery does
+not exist**: no `notFetched`, no generation stamp, no contract field.
+The pool sizing measurement was blocked behind the anchor plane, which
+has since been fixed — so the measurement is now takeable.
+
+`displayEpoch` is the precedent for the generation stamp; it is slice 1's
+pattern applied to controls.
+
+### Slice F — landed capabilities with nothing pinning them
+
+`LiveMirror.cursor(for:)` has **no test coverage at all**. Carries the
+Charcoal declaration above, and any other capability the accounting
+found landed-without-a-test.
+
+### Slice G — `arc-status` measures the corpus in the wrong tree
+
+`tools/arc-status:174` reads the parent's working directory, which sits
+on `main`, and reported *"nothing graduated to the corpus in 21h"* while
+**26 findings sat on `claude/018-findings` across 7 commits.**
+
+A real worry with a wrong shape — and a tool that reports arc state
+being wrong about arc state is the same class of defect as the
+instrument in slice B. Fix the measurement; keep the warning.
+
+## Two things reserved for Michelle, not dispatched
+
+- **`019-embed-mirror` did not wait for a pick.** Six candidate PNGs at
+  03:23; at 03:34 it implemented a *fourth* shape. There is no record of
+  a choice being made, and round 5 now calls it *"the accepted one"* — a
+  reserved decision that has quietly read as resolved ever since.
+- **Nothing in this arc is metal-verified.** Across all 975 commit
+  bodies, every "metal-verified" hit is a negation or a correction. That
+  is honest and it is also the gap between where this stands and where it
+  is going.
