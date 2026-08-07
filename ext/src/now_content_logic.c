@@ -354,6 +354,59 @@ int now_content_probe_pixmap_match(NowContentU16 cand_port_version,
         && pm_r == want_r && pm_b == want_b;
 }
 
+/* The arm-time census's verdict; the header carries the reasoning.
+   Ordered cheapest-first because the caller runs this over every
+   even-aligned address in a heap and the first test is what the sweep's
+   cost is made of. */
+int now_content_census_match(NowContentU16 port_version,
+                             NowContentU32 port_pixmap_handle,
+                             NowContentS16 port_l, NowContentS16 port_t,
+                             NowContentS16 port_r, NowContentS16 port_b,
+                             NowContentU32 pm_base,
+                             NowContentU16 pm_row_bytes,
+                             NowContentS16 pm_l, NowContentS16 pm_t,
+                             NowContentS16 pm_r, NowContentS16 pm_b)
+{
+    NowContentU32 stride;
+
+    if ((port_version & 0xC000U) != 0xC000U) {
+        return 0;                     /* not a colour port at all */
+    }
+    if (port_pixmap_handle == 0 || (port_pixmap_handle & 1U) != 0) {
+        return 0;                     /* a handle is never odd */
+    }
+    if (port_r <= port_l || port_b <= port_t) {
+        return 0;                     /* an empty world is not one */
+    }
+    if (pm_base == 0) {
+        return 0;                     /* a zeroed block, not a world */
+    }
+    /* rowBytes' high bit is QuickDraw's own "this record is a PixMap
+       and not a BitMap" flag, and the low 14 bits are the stride. A
+       BitMap-shaped record is somebody else's structure however well
+       the rest of it reads. */
+    if ((pm_row_bytes & 0x8000U) == 0) {
+        return 0;
+    }
+    stride = (NowContentU32)(pm_row_bytes & 0x3FFFU);
+    if (stride == 0) {
+        return 0;
+    }
+    /* THE GWORLD INVARIANT, and the test that carries this function.
+       See the header: it is also what keeps window ports out. */
+    if (pm_l != port_l || pm_t != port_t
+        || pm_r != port_r || pm_b != port_b) {
+        return 0;
+    }
+    /* A row must at least hold the pixels it claims, at the shallowest
+       depth QuickDraw has. Cheap, and it rejects the coincidence where
+       four rectangle words agree by accident over an unrelated stride. */
+    if (stride * 8UL < (NowContentU32)(port_r - port_l)) {
+        return 0;
+    }
+    return 1;
+}
+
 /* Which hooked offscreen port owns the blit's source PixMap. The caller
    dereferences each row's handle - and reads the row's shape through
    it - at the same instant it captures the src fields (013 A2.1: both
