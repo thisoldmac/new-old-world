@@ -14,6 +14,115 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## OPEN: a lane can revert a sibling's work in a commit whose message never mentions it (2026-08-07, round 7 integration)
+
+**Verification level: TESTED.** Found by reading a merge, not by any gate,
+and it would have landed silently.
+
+`fe4d8179` on `claude/019-asset-packs` — subject "feat(contract): hello
+says which Macintosh, in fields rather than in prose" — reverts the
+CDEF-attribution work that its own immediate predecessor `9c219366` had
+just landed on the same branch. The revert spans seven files and 117 lines
+of this document, and the commit body describes only the hello.machine
+work. Restored: `control_cdef.c`'s variant tables (which name every check
+box and radio button in OS 9's control panels a push button),
+`control_cdef_test.c`'s rows — including the ones whose own comment warns
+that "a later reader who 'restores' the family table will reintroduce
+exactly the shipped bug" — `scene_json.c`'s `cdef` emission (8 mentions to
+4), `Scene.swift`'s decode (5 to 0), `observe.c`'s `defProc`/`variant`, and
+`local-control-drive.py`'s `--detail`.
+
+**What makes it a class rather than an incident: git auto-merged almost
+all of it.** Only `control_cdef.h` and `local-control-drive.py`
+conflicted. `scene_json.c` and `Scene.swift` took the revert with no
+conflict at all, while the sibling lane's `scene_json_test.c` assertions
+survived — an internally inconsistent tree that would have gone red at the
+gate, which is luck rather than a guard. Had the test file been reverted
+too, the merge would have been green and the product quietly worse.
+
+The classification numbers moved DOWN on purpose (Memory 33→23 of 44,
+Date & Time 19→10 of 21) because the old route attributed variant 0 to a
+push button when the variation code cannot be read for a foreign control
+at all. **A test asserting the higher count is asserting the old defect.**
+
+Two things are still open:
+
+- **Nothing detects a commit that reverts its own branch's predecessor.**
+  A gate could: for each commit, whether any hunk restores a blob a recent
+  ancestor changed, without the word "revert" in the subject.
+- **Nothing detects an auto-merge that takes a deletion of live code.**
+  The keep-both hazards this repository has already paid for are all about
+  conflicts; this one produced no conflict.
+
+## OPEN: `arc-status`'s findings total is a sum with duplicates (2026-08-07, round 7 integration)
+
+**Verification level: TESTED (read, not measured against the corpus).**
+
+`019-multi-window-content` fixed exactly this shape for COMMITS in the
+same round: `shared_with` was added because `merge-base $b $INT` counts a
+lane cut from another lane as owning that lane's commits, and one branch
+with one commit of its own read as seventeen.
+
+The findings counter below it was not fixed and still has the defect. It
+loops over every branch, counts `--diff-filter=A` against
+`$trunk...$cb`, and adds — so a finding written on a parent branch is
+counted again on every child cut from it. Derived against merge-bases the
+same figure that reads **82 findings across 34 branches** is **69 across
+29**.
+
+The cure is the one the commit half already took: attribute a file to one
+branch, or report the union rather than the sum. Until then, quote the
+derived figure and not this line — and the line itself should say which
+it is, because a total nobody can tell is deduplicated is exactly the
+kind of enumerated number this repository has already been bitten by
+three times in one day.
+
+## OPEN: a fix landed on a file this arc archived, and there is no forward target (2026-08-07, round 7 integration)
+
+**Verification level: TESTED.**
+
+`claude/019-stale-reason-string` fixed two refusal strings that outlive
+what they were about. The guest half (`g_note` in
+`now-guest-ppc/src/files/files_browser_view.c`) landed and is BUILDS —
+that pane is Carbon, has no host test, and nobody has watched it on a
+machine.
+
+The host half did not land. `contentNote` lived in
+`now-host/Sources/Host/MirrorModuleModel.swift`, which `0443ab2b`
+("vendor Mirror whole as a subproject, and archive the port that replaced
+it") moved into `archive/mirror-port-2026-08-01/` in this same arc — and
+git rename-detected the lane's edits onto the archived copy. An archive
+records what was archived, so it was restored rather than edited.
+
+**`contentNote`, `joinContent` and the page they belong to exist nowhere
+else in the tree** (checked across `now-host/` and `mirror/`), so there was
+no forward target either. The open question is whether the vendored Mirror
+has the same shape of defect — an explanation written on a failure path
+surviving into a success, specifically a live watch loop that ticks
+without clearing a note a refused press left standing. Nobody has looked.
+
+## OPEN: five complete nested agent worktrees are checked in under `mirror/` (2026-08-07, round 7 integration)
+
+**Verification level: TESTED (measured, not acted on).**
+
+`mirror/.claude/worktrees/` holds five whole checkouts —
+`confident-tu-60f97b`, `funny-khorana-e67807`, `gallant-ritchie-d78731`,
+`jolly-lamarr-d3cd03`, `wizardly-bardeen-e2b6dc` — **3,789 tracked files,
+ignored by nothing**, each carrying its own `Package.swift` and its own
+copy of MirrorKit.
+
+They are stale in a way that matters for exactly the reason this
+repository states limits once: each carries
+`Platinum.contentTop: CGFloat = 22` where the live tree says `20`. A
+reader who greps this tree for a constant gets six answers, five of them
+wrong, and no gate reads them at all.
+
+Round 7's merge touched none of them (checked: zero paths under
+`mirror/.claude/` in `git diff claude/019-integration-6 HEAD`). Deleting
+them is not an integrator's call mid-merge, and it is somebody's — either
+a `.gitignore` entry plus a `git rm -r --cached`, or a decision that they
+are worth keeping and a note saying why.
+
 ## FIXED: the drive loop's own instrument armed every plane except the one that draws interiors (2026-08-07, `claude/019-instrument-arms-content`)
 
 **Verification level: EMULATOR-VERIFIED, by mutation.** Own VM, lane block
