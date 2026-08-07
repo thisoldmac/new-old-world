@@ -14,6 +14,110 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## BROKEN: "drag isn't working on my build" — where the gesture stops, in two places (2026-08-07, `claude/019-drag-live`)
+
+Michelle, 2026-08-07: *"drag isnt working on my build"*. It is not
+working, it never has, and the reason is not in any of the code the arc
+spent two slices writing. **Both halves are built and neither is
+connected to the other.**
+
+Her build is PID 17303 out of `/private/tmp/int5-app`, which is
+`claude/019-integration-5` — a branch that carries slice 10 and slice
+10.5 together, so everything below is about the tree she is running, not
+about a stale checkout.
+
+### Break 1: `ItemDragDriver` has no conformer anywhere in the tree
+
+`LiveMirrorView.beginItemDrag` asks `controller.itemDragDriver` for
+someone who can hold the mouse button down
+(`mirror/host/MirrorKit/Sources/MirrorKitUI/LiveMirror.swift:479`).
+`MirrorSceneSource` declares it at `:52` and gives it a default of `nil`
+at `:74`. The application's only conforming type,
+`now-host/Sources/Host/NOWMirrorSource.swift:216`, **does not override
+it** — so it is `nil` in the running app, and every item drag a person
+makes takes the refusal branch:
+
+> this mirror cannot hold the mouse button down — *(name)* was not dragged
+
+Derived rather than remembered:
+
+```
+grep -rn ': ItemDragDriver\|ItemDragDriver {' . --include='*.swift'
+```
+
+answers with the protocol declaration and the `nil` default and nothing
+else. There is no conformer, and there is no host-side plumbing for the
+three verbs either: `grep -rn 'dragpress' now-host/Sources` is empty.
+`AgentIntegrationActControl` serves `winact`, `ctlact`, `menuact` and
+`key`; it has never had a drag verb.
+
+So the honest answer to "is it being refused, and with what reason" is:
+**yes, and the reason is that the app has no drag driver.** Nothing was
+ever sent. `dragpress` has never left this Mac from the application.
+
+The refusal message is well-written and specific, which is the one thing
+that went right here — but it is a status-line note, and a status line
+that scrolls is how a deliberate refusal reads as a dead feature.
+
+### Break 2: a Finder icon cannot be named to `dragpress`
+
+This is the deeper one, and writing the missing conformer does not fix
+it. `dragpress` takes `element` — *"the opaque reference, `now-element-`
+and a UUID, minted by the observation that saw the element"*
+(`contract/asyncapi.yaml:4682`). `DragTargeting.Subject` is a
+`Scene.DesktopItem` (`Scene.swift:521-551`): name, kind, type, creator,
+x, y, w, h — **and no reference at all**. Desktop and folder-window icons
+arrive through `FinderItems`' AppleScript, not through the element walk,
+so no observation ever minted one for them.
+
+The same wall was already written down from the other side, under
+*"a self reference described every one of our own controls as {0,0,0,0}"*:
+the `elements` and `observe` walks report a process with `bind: no-plane`
+and an empty `windows` array, so **the wire cannot mint the reference**
+and reaching a drag from a host *"needs either that mint path on the wire
+or the drag verbs themselves"*. That sentence was about NOW's own
+controls. It is equally true, and unremarked, about every Finder icon —
+which is the only thing `DragTargeting` can pick up.
+
+### What this means for the two slices
+
+Nothing built in slice 10 or 10.5 is wrong. The vehicle fires and the
+dead-man lets go (entry below, emulator-verified). Targeting, the session
+state machine and the provisional presentation are unit- and
+render-tested. **The arc built the two ends of a bridge and no span.**
+
+The `homeIsTrustworthy` refusal at `DragTargeting.swift:221` was the
+first suspect and is **not** the cause: it is reached only after a driver
+exists, and the code path stops one guard earlier. That refusal is
+correct and must stay — a drag aimed at a guessed target moves the wrong
+file.
+
+### What closing it actually costs
+
+Two pieces, in this order, and the second is the real work:
+
+1. **A way to name a Finder icon on the wire.** Either the guest mints
+   element references for Finder items (a new observation surface), or
+   the drag verbs gain a by-position form and take the refusal-rather-
+   than-guess rule with them. This is a contract change and starts in
+   `contract/asyncapi.yaml`.
+2. **`dragpress`/`dragmove`/`dragrelease` through
+   `AgentIntegrationActControl`, and an `ItemDragDriver` conformer on
+   `NOWMirrorSource`.** Mechanical once (1) exists; it follows the
+   `winact`/`ctlact` pattern exactly.
+
+Until (1), the honest product behaviour is the refusal that is already
+there — but it should be **stated where a person sees it**, not only on a
+status line, because "I dragged and nothing happened" is what four hours
+of this investigation cost.
+
+### A gate, so the next conformer is not silently absent
+
+Nothing failed when `itemDragDriver` went unimplemented, because a
+protocol default that returns `nil` is a legal conformance. That is the
+same shape as *"every other gate can be green while neither guest
+compiles"*: a seam with a default is a seam nothing checks.
+
 ## LOOK: round 5's five checks, and the one thing four lanes claimed that a picture had to settle (2026-08-07, `claude/019-integration-5`)
 
 Emulator-capture-verified, on the lane's own VM (block 591, anchor 16728 /
