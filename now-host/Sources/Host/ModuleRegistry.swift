@@ -94,14 +94,21 @@ struct ModuleRegistry: Sendable {
         /* Kept where the Mirror page has always been, and now beside
            Processes for a reason rather than by inheritance: it is about
            the connected Mac, the way every other row in this half is.
-           Mirror is a separate application with its own wire — this page
-           owns whether that Mac is ready for it and one instance's
-           lifecycle, not the drawing. */
+
+           **This page DRAWS the other Macintosh.** It used to own only
+           whether that Mac was ready and one instance's lifecycle,
+           explicitly "not the drawing" — the drawing lived in a window
+           this page had a button for. It is the pane now, with the window
+           kept as the detached container, so a person on this page is
+           looking at the machine rather than at a button that opens it
+           somewhere else. It is also the only module that owns a live
+           poll, and that poll deliberately keeps running while another
+           module is showing. */
         ModuleDescriptor(
             id: "mirror",
             title: "Mirror",
             symbol: "macwindow.on.rectangle",
-            summary: "Run Mirror against the connected Mac, and see if it is ready"
+            summary: "See and drive the connected Mac, here or in its own window"
         ),
         ModuleDescriptor(
             id: "console",
