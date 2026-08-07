@@ -63,6 +63,26 @@ static void request(const char *path, long cursor)
         }
         strncpy(g_path, path != NULL ? path : "", sizeof g_path - 1);
         g_path[sizeof g_path - 1] = '\0';
+        /* THE PLACARD BELONGS TO THE QUESTION BEING ASKED, and it is
+           cleared HERE - at the one point a new question starts - rather
+           than on each way an answer can arrive.
+
+           It used to be written only where something went wrong: the ask
+           being refused, and the guest refusing the folder. The success
+           continuation below fills the rows and the count and said
+           nothing about the placard, so a refusal stood over the next
+           folder that listed perfectly - "that path leaves the shared
+           folder" above twelve items that are right there. Nothing on
+           this side was wrong except that a reader was told otherwise,
+           which is the worst direction for a status line to be wrong in.
+
+           Clearing per success path would have been the third place to
+           remember; clearing at the ask is one place, and it holds for
+           an answer that never comes at all. The sibling browsers
+           (cloud_drive_view.c, files_share_view.c) reach the same
+           property by overwriting on every branch - this is the same
+           rule, stated once. */
+        g_note[0] = '\0';
     }
     if (now_wire_list_host(g_path, cursor, err, sizeof err) < 0) {
         snprintf(g_note, sizeof g_note, "%.100s", err);

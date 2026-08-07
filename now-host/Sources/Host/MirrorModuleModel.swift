@@ -881,6 +881,24 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
            refusal. Left standing, a refusal from a minute ago would sit over
            a scene that plainly arrived. */
         fetch = .idle
+        /* AND THE CONTENT NOTE GOES WITH IT, for the same reason.
+           `contentNote` explains why THIS scene could not be joined; a
+           newer document retires the question, so the sentence stops being
+           true the moment one arrives.
+
+           `clearScene()` and `guestLeft(_:)` already stated that rule in
+           their own comments and this door did not honour it — and this is
+           the door the LIVE LOOP comes through, ticking with
+           `withContent: false` and never touching the note. So one refused
+           press of the content button left "the content plane is not armed"
+           standing under every healthy window that arrived afterwards: a
+           working mirror, drawn with a verdict from a minute ago.
+
+           Cleared before the decode rather than beside `failure = nil`,
+           because a document that will not decode is still a newer answer
+           than the note, and two unrelated explanations on one page is a
+           reader picking the wrong one. */
+        contentNote = nil
         do {
             let doc = try NOWSceneCodec.decode(irVersion: irVersion,
                                                document: document)
@@ -914,6 +932,15 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
 
     func record(planeEvidence: PlaneEvidence) {
         self.planeEvidence = planeEvidence
+    }
+
+    /// The same kind of seam, for the note. `joinContent` is private and
+    /// needs a live listener and a ring to refuse against, so without this
+    /// there is no way to put the page into the state where a note is
+    /// standing — which is exactly the state the rule below is about, and a
+    /// rule no test can reach is a rule that gets broken again.
+    func record(contentNote: String?) {
+        self.contentNote = contentNote
     }
 
     /// A machine leaving takes its scene with it — but only a LIVE one. A

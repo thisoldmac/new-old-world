@@ -267,6 +267,51 @@ final class MirrorModuleModelTests: XCTestCase {
         XCTAssertEqual(model.state, .extensionAbsent(guest: "Quadra"))
     }
 
+    // MARK: - a refusal does not outlive the scene it was about
+
+    /// A content note explains why THIS scene could not be joined. When a
+    /// newer scene arrives, the sentence stops being true — and it is drawn
+    /// under the window, so it reads as a verdict on what is on screen.
+    ///
+    /// `clearScene()` and `guestLeft(_:)` both state the rule in their own
+    /// comments ("The note describes a scene that is no longer here").
+    /// `show(document:…)` replaced the scene without honouring it, so the
+    /// live watch loop — which ticks with `withContent: false` and never
+    /// touches the note — would draw "the content plane is not armed" over
+    /// a healthy window that had plainly just arrived.
+    func testAContentRefusalDoesNotOutliveTheSceneItWasAbout() throws {
+        let model = MirrorModuleModel()
+        model.connection = .connected(named: "Quadra")
+        model.show(document: try bytes(), provenance: .guest(name: "Quadra"))
+        model.record(contentNote: "the content plane is not armed")
+        XCTAssertNotNil(model.contentNote, "the state under test is reachable")
+
+        /* The loop's next tick: a scene that arrived and decoded. */
+        model.show(document: try bytes(), provenance: .guest(name: "Quadra"))
+
+        XCTAssertNil(model.contentNote,
+                     "a note about the previous scene must not be drawn "
+                     + "under this one")
+        XCTAssertNotNil(model.scene, "and the scene did arrive")
+    }
+
+    /// The same rule for the half nobody looks at: a document that will not
+    /// decode is still a NEWER answer than the note, so the note goes too.
+    /// Leaving it would put two unrelated explanations on the page at once
+    /// and let a reader pick the wrong one.
+    func testADocumentThatFailsToDecodeAlsoRetiresTheNote() throws {
+        let model = MirrorModuleModel()
+        model.connection = .connected(named: "Quadra")
+        model.show(document: try bytes(), provenance: .guest(name: "Quadra"))
+        model.record(contentNote: "the content plane is not armed")
+
+        model.show(document: Data("not json".utf8),
+                   provenance: .guest(name: "Quadra"))
+
+        XCTAssertNil(model.contentNote)
+        XCTAssertNotNil(model.failure, "the decode failure is what is drawn")
+    }
+
     // MARK: - registration
 
     /// The page is a module, not a view somebody can only reach by knowing
@@ -319,5 +364,13 @@ final class MirrorModuleModelTests: XCTestCase {
  E. A fixture's banner reads "Live from …" — a recording claiming to be this
     Mac now. RED in testAReplayedDocumentIsShownAndNamedAsARecording (2).
 
- Restored: 26/26 green.
+ F. `contentNote = nil` removed from `show(document:…)` — which is not a
+    mutation at all but the code AS IT SHIPPED until 2026-08-07: a content
+    refusal left standing under every scene that arrived afterwards. RED in
+    testAContentRefusalDoesNotOutliveTheSceneItWasAbout and
+    testADocumentThatFailsToDecodeAlsoRetiresTheNote, each naming the
+    leftover sentence in its failure text. Watched failing before the fix
+    existed, which is the only order that proves anything.
+
+ Restored: 28/28 green.
 */
