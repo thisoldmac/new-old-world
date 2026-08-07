@@ -5,6 +5,27 @@ the resident may land until the stage image contains it.
     tools/ext-bake-gate digest [--index|--worktree]   # the source digest
     tools/ext-bake-gate check                         # what pre-commit runs
     tools/ext-bake-gate record <receipt.json>         # what a bake writes
+    tools/ext-bake-gate verify-image [--require]      # image ?= newest receipt
+    tools/ext-bake-gate merge-check                   # what post-merge runs
+
+WHAT EACH ONE CAN HONESTLY ASSERT, because the difference decides which of
+them may refuse a commit:
+
+  `check`   asserts that a receipt in THIS tree records a bake of exactly
+            this resident source. That is a fact about two files in git and
+            it is fully in the committer's power, so it REFUSES.
+  `verify-image` asserts that the bytes at the oracle's path right now hash
+            to what the newest receipt claims. That is a fact about a
+            SHARED MUTABLE FILE and it is not in the committer's power at
+            all — another lane can invalidate it a second after the bake.
+            So it WARNS on the commit path, loudly, and refuses only where
+            a commit is WRITING the claim (a bake receipt being staged must
+            be true at the moment it is written) or where a caller asks for
+            --require.
+  `merge-check` asserts that a merge did not silently combine two branches'
+            receipts. A clean textual merge of a receipts file is no
+            evidence at all — the same class as the derived tables in
+            AGENTS.md that merged cleanly and produced a lie.
 
 WHY THIS EXISTS. On 2026-08-06 the newest stage image
 (~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2) was three days old while
@@ -250,6 +271,12 @@ def defer(root: str, paths: list[str], want: str) -> int:
 
 
 def check(root: str) -> int:
+    # Runs on EVERY commit, not only resident ones, because it guards what
+    # the commit WRITES rather than what it depends on — and a receipt can
+    # be staged by a commit that touches no ext/ file at all.
+    if staged_receipt_claims(root):
+        return 1
+
     paths = staged_paths(root)
     if not paths:
         return 0
@@ -295,9 +322,292 @@ def check(root: str) -> int:
     if problems:
         return fail([f"staged resident changes: {shown}"] + problems)
 
-    print(f"[ext-bake-gate] stage image carries this resident "
+    print(f"[ext-bake-gate] a receipt records a bake of this resident "
           f"({want[:12]}, baked {entry.get('at')}).")
+    # WARN, never refuse. Whether the shared file still holds that bake is
+    # not a property of this commit and not in this committer's power: any
+    # lane can replace it between the bake and the commit. Refusing here
+    # would strand correct work for a reason its author cannot act on —
+    # which, in a repository whose most expensive lesson is uncommitted
+    # work lost, is a worse failure than the one it would prevent.
+    for line in image_warning(root, entry):
+        print(line)
     return 0
+
+
+# --- the image on disk, rather than the receipt's memory of it -----------
+
+def oracle_path() -> str:
+    return os.path.expanduser(
+        os.environ.get("NOW_STAGE_IMAGE",
+                       "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2"))
+
+
+def provenance(root: str, image: str | None = None) -> dict | None:
+    """Ask tools/image-provenance about the image, or None if it cannot.
+
+    Returns None — never a guess — when the tool or the image is absent.
+    A contributor on a machine with no images must not be told their oracle
+    is wrong; they have no oracle, and saying nothing is the honest answer.
+    """
+    tool = os.path.join(root, "tools", "image-provenance")
+    path = image or oracle_path()
+    if not os.path.exists(tool) or not os.path.exists(path):
+        return None
+    out = os.path.join(os.environ.get("TMPDIR", "/tmp"),
+                       f"now-ext-bake-gate-prov.{os.getpid()}.json")
+    try:
+        subprocess.run([sys.executable, tool, path, "--quiet", "--json", out,
+                        "--repo", root], check=True, capture_output=True)
+        with open(out) as fh:
+            return json.load(fh)
+    except Exception:
+        return None
+    finally:
+        try:
+            os.remove(out)
+        except OSError:
+            pass
+
+
+def image_warning(root: str, entry: dict) -> list[str]:
+    """The sha-vs-receipt check AGENTS.md already asked for in prose.
+
+    It was written down as a rule ("before believing a sweep, check the
+    image's sha256 against the receipt's imageSha256") and nothing ran it,
+    which is how the oracle came to hold a 3-August image with a ctime of
+    the 6th and no receipt describing it at all. This is that one `shasum`,
+    run for you.
+    """
+    p = provenance(root)
+    if p is None or not p.get("imageSha256"):
+        return []
+    if p["imageSha256"] == entry.get("imageSha256"):
+        return []
+    lines = [
+        "",
+        "  [image] THE ORACLE ON DISK IS NOT THE ONE THIS RECEIPT DESCRIBES.",
+        f"    receipt  {entry.get('imageSha256')}  ({entry.get('at')},"
+        f" {entry.get('branch')})",
+        f"    on disk  {p['imageSha256']}  (installed {p.get('imageCtime')})",
+    ]
+    if p.get("matchedReceipt"):
+        m = p["matchedReceipt"]
+        lines.append(f"    the file matches a LATER receipt: {m.get('at')} on "
+                     f"{m.get('branch')} — someone baked over yours.")
+    else:
+        lines.append("    the file matches NO receipt on this branch. Nobody can "
+                     "say what resident is in it.")
+    lines += [
+        "    This does not make your commit wrong and it is not refused: a",
+        "    receipt is an honest record of a bake that happened. It makes any",
+        "    RESULT from a clone of that image unattributable until it is",
+        "    re-baked (scripts/bake-ext-image --shared) or until whoever owns",
+        "    the newer bake says which resident is in there.",
+        "",
+    ]
+    return lines
+
+
+def verify_image(root: str, require: bool) -> int:
+    doc = load(root)
+    entry = latest_bake(doc)
+    p = provenance(root)
+    if p is None:
+        print("[ext-bake-gate] no image at "
+              f"{oracle_path()} — nothing to verify (this is not a failure; "
+              "a machine without the oracle simply has no oracle).")
+        return 0
+    print(f"[ext-bake-gate] oracle {p['image']}")
+    print(f"  sha256 on disk   {p['imageSha256']}")
+    print(f"  installed        {p.get('imageCtime')}"
+          f"  (content mtime {p.get('imageMtime')})")
+    if entry is None:
+        print("  newest receipt   none at all.")
+        return 3 if require else 0
+    print(f"  newest receipt   {entry.get('imageSha256')}"
+          f"  ({entry.get('at')}, {entry.get('branch')})")
+    if p["imageSha256"] == entry.get("imageSha256"):
+        if entry.get("correctedOn"):
+            print("  VERDICT          the file matches the newest receipt — and "
+                  "that receipt has been CORRECTED, so it certifies nothing.")
+            return 3 if require else 0
+        print("  VERDICT          MATCH. The oracle is the image this receipt "
+              "describes.")
+        return 0
+    print("  VERDICT          MISMATCH — the oracle is not the image the newest "
+          "receipt describes.")
+    for line in image_warning(root, entry)[1:]:
+        print(line)
+    return 3 if require else 0
+
+
+def staged_receipt_claims(root: str) -> int:
+    """A receipt being WRITTEN must be true when it is written. This refuses.
+
+    Two lies are possible on the way into the tracked file and neither can
+    be caught later, because afterwards both look exactly like a bake some
+    other lane replaced:
+
+      * a `throwaway` receipt pasted in — a claim about one lane's private
+        image, sitting in the file that means "the SHARED oracle contains
+        this";
+      * a bake receipt whose imageSha256 does not match the file it names,
+        at the moment it is staged.
+
+    Neither can strand in-flight work: scripts/bake-ext-image stages the
+    receipt in the same breath as installing the image, so the second is
+    true by construction, and nothing writes the first at all.
+    """
+    out = run("git", "-C", root, "diff", "--cached", "--name-only",
+              "--diff-filter=ACMRT")
+    if RECEIPTS not in out.splitlines():
+        return 0
+    try:
+        blob = run("git", "-C", root, "show", f":{RECEIPTS}")
+        staged = json.loads(blob).get("receipts", [])
+    except Exception as exc:
+        print(f"\n[ext-bake-gate] {RECEIPTS} is staged and does not parse as "
+              f"JSON: {exc}", file=sys.stderr)
+        print("  A receipts file that does not parse certifies nothing and "
+              "every gate", file=sys.stderr)
+        print("  that reads it silently degrades to 'no receipts'. Fix it "
+              "before committing.\n", file=sys.stderr)
+        return 1
+    head = []
+    try:
+        head = json.loads(run("git", "-C", root, "show",
+                              f"HEAD:{RECEIPTS}")).get("receipts", [])
+    except Exception:
+        head = []
+    new = staged[len(head):] if staged[:len(head)] == head else staged
+
+    problems = []
+    for entry in new:
+        if entry.get("kind") != "bake":
+            continue
+        if entry.get("scope") == "throwaway":
+            problems.append(
+                f"a THROWAWAY bake receipt ({entry.get('at')}, image "
+                f"{entry.get('imageName')}) is being committed into "
+                f"{RECEIPTS}.")
+            problems.append(
+                "  That file means 'the SHARED oracle contains this "
+                "resident'. A private")
+            problems.append(
+                "  lane image in it reads as the oracle to every gate and "
+                "every reader.")
+            problems.append(
+                "  Your image accounts for itself in its .provenance.json "
+                "sidecar; leave it there.")
+            continue
+        p = provenance(root, os.path.expanduser(
+            (entry.get("image") or "").replace("~", os.path.expanduser("~"))))
+        if p is None or not p.get("imageSha256"):
+            continue
+        if p["imageSha256"] != entry.get("imageSha256"):
+            problems.append(
+                f"a bake receipt is being committed that does not describe "
+                f"the file it names:")
+            problems.append(f"    receipt  {entry.get('imageSha256')}")
+            problems.append(f"    {entry.get('image')}")
+            problems.append(f"    on disk  {p['imageSha256']}")
+            problems.append(
+                "  It was true when the bake finished and it is not true "
+                "now, so somebody")
+            problems.append(
+                "  baked over it in between. Committing it would put a "
+                "false claim about")
+            problems.append(
+                "  a shared file into git, where the next reader has no way "
+                "to tell. Re-bake,")
+            problems.append(
+                "  or drop the receipt and say in the commit message that "
+                "the oracle is theirs.")
+    if not problems:
+        return 0
+    print("", file=sys.stderr)
+    print("[ext-bake-gate] refusing this commit: it would write a receipt "
+          "that is not true.", file=sys.stderr)
+    for line in problems:
+        print(f"  {line}", file=sys.stderr)
+    print("", file=sys.stderr)
+    return 1
+
+
+def merge_check(root: str) -> int:
+    """After a merge: did two branches' receipts silently combine?
+
+    A receipts file merges textually without complaint — two lanes each
+    appending an entry produces a file with both, in an order nobody chose,
+    whose LAST entry (which every gate reads as 'the newest bake') may be
+    the one that lost the race. AGENTS.md already carries this lesson about
+    derived tables: 'treat a clean textual merge of a derived table as no
+    evidence at all'. This is the same shape with a shared file behind it.
+
+    .gitattributes routes the file to a merge driver that always conflicts,
+    so the normal path is that a person decides. This runs afterwards and
+    checks the decision, because a driver can be missing — it lives in
+    per-clone git config, and a clone that never ran tools/setup-hooks has
+    none.
+    """
+    doc = load(root)
+    problems = []
+    try:
+        with open(os.path.join(root, RECEIPTS)) as fh:
+            raw = fh.read()
+        if "<<<<<<<" in raw or ">>>>>>>" in raw:
+            problems.append(f"{RECEIPTS} still has conflict markers in it.")
+    except FileNotFoundError:
+        return 0
+    except Exception as exc:
+        problems.append(f"{RECEIPTS} does not parse: {exc}")
+
+    entry = latest_bake(doc)
+    if entry:
+        seq = [r for r in doc.get("receipts", []) if r.get("kind") == "bake"]
+        times = [r.get("at", "") for r in seq]
+        if times != sorted(times):
+            problems.append(
+                "the bake receipts are NOT in time order after this merge:")
+            for r in seq[-4:]:
+                problems.append(f"    {r.get('at')}  {r.get('branch')}")
+            problems.append(
+                "  Every gate reads the LAST entry as the newest bake. Two "
+                "branches each")
+            problems.append(
+                "  appended one and git interleaved them by text, so the "
+                "last entry is")
+            problems.append(
+                "  whichever line sorted last, not whichever bake happened "
+                "last. Decide")
+            problems.append(
+                "  which resident the oracle actually holds — "
+                "`tools/ext-bake-gate verify-image`")
+            problems.append(
+                "  answers it from the file — and reorder or re-bake.")
+        for r in seq:
+            if r.get("scope") == "throwaway":
+                problems.append(
+                    f"a THROWAWAY receipt ({r.get('at')}, {r.get('branch')}) "
+                    f"is in {RECEIPTS} after this merge; it is a claim about "
+                    "one lane's private image.")
+    if not problems:
+        return 0
+    print("", file=sys.stderr)
+    print("[ext-bake-gate] THIS MERGE NEEDS A DECISION — it combined stage "
+          "image receipts.", file=sys.stderr)
+    for line in problems:
+        print(f"  {line}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("  A clean textual merge of a receipt is no evidence at all. The "
+          "receipts", file=sys.stderr)
+    print("  describe ONE shared file and only one of them can be true of it.",
+          file=sys.stderr)
+    print("  Resolve it in a commit of its own, then re-run:", file=sys.stderr)
+    print("      tools/ext-bake-gate merge-check", file=sys.stderr)
+    print("", file=sys.stderr)
+    return 1
 
 
 def record(root: str, path: str) -> int:
@@ -324,6 +634,10 @@ def main(argv: list[str]) -> int:
         return 0
     if cmd == "record":
         return record(root, argv[2])
+    if cmd == "verify-image":
+        return verify_image(root, "--require" in argv)
+    if cmd == "merge-check":
+        return merge_check(root)
     print(__doc__, file=sys.stderr)
     return 64
 

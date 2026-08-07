@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# The merge driver for ext/stage-receipts.json. It ALWAYS conflicts.
+#
+#     tools/receipts-merge-driver %O %A %B %L %P      (git calls it)
+#
+# Wired up by .gitattributes + tools/setup-hooks (the driver body lives in
+# git config, which is per-clone, so a clone that never ran setup-hooks
+# falls back to git's ordinary text merge — which is exactly why
+# .githooks/pre-merge-commit re-checks afterwards).
+#
+# WHY A DRIVER RATHER THAN LETTING IT MERGE. Two lanes each append a
+# receipt; git merges the two appends without a murmur and produces a file
+# containing both, in whatever order the text landed in. Every gate — and
+# every reader — takes the LAST bake entry to be the newest bake. After
+# such a merge the last entry is whichever line sorted last, not whichever
+# bake happened last, and there is nothing in the result that says so.
+#
+# It matters more here than for an ordinary file because the receipts
+# describe ONE SHARED MUTABLE FILE on disk. Two receipts can both be
+# honest records of bakes that happened and still only one of them can be
+# true of the oracle right now. Merging them is not combining two sets of
+# facts, it is combining two claims about the same byte range, and no
+# textual rule can pick the right one. A person has to look at the image.
+#
+# AGENTS.md already carries this lesson for derived tables: "treat a clean
+# textual merge of a derived table as no evidence at all". Nothing enforced
+# it, in the one place where the underlying thing can change without any
+# branch touching a file.
+set -uo pipefail
+
+O="$1"; A="$2"; B="$3"; MARKER="${4:-7}"; P="${5:-ext/stage-receipts.json}"
+
+# A proposal, written where a person can find it: the union of both sides'
+# receipts in time order. It is NOT the resolution — that is the point of
+# the conflict — but reading two 4-KB JSON files by hand to see which bake
+# is newer is the kind of chore that gets skipped.
+GITDIR="$(git rev-parse --git-dir 2>/dev/null || echo .)"
+PROPOSAL="$GITDIR/nowreceipts-proposal.json"
+python3 - "$O" "$A" "$B" "$PROPOSAL" <<'PY' >&2
+import json, sys
+base, ours, theirs, proposal = sys.argv[1:5]
+def load(p):
+    try:
+        return json.load(open(p)).get("receipts", [])
+    except Exception:
+        return []
+o, a, b = load(base), load(ours), load(theirs)
+seen, merged = set(), []
+for src in (a, b):
+    for r in src:
+        key = json.dumps(r, sort_keys=True)
+        if key not in seen:
+            seen.add(key)
+            merged.append(r)
+merged.sort(key=lambda r: r.get("at", ""))
+json.dump({"receipts": merged}, open(proposal, "w"), indent=2, sort_keys=True)
+
+def bakes(rs):
+    return [r for r in rs if r.get("kind") == "bake"]
+print("")
+print("  the two sides, newest bake each:")
+for label, rs in (("ours  ", a), ("theirs", b)):
+    bk = bakes(rs)
+    if bk:
+        n = bk[-1]
+        print(f"    {label}  {n.get('at')}  {n.get('branch')}")
+        print(f"             image {str(n.get('imageSha256'))[:16]}…"
+              f"  extDigest {str(n.get('extDigest'))[:12]}"
+              f"  volumeClean={n.get('volumeClean')}")
+    else:
+        print(f"    {label}  no bake receipts")
+ob = {json.dumps(r, sort_keys=True) for r in o}
+added = [r for r in merged if json.dumps(r, sort_keys=True) not in ob]
+print(f"  {len(added)} receipt(s) new since the merge base.")
+PY
+
+# git's own 3-way, so the conflict a person sees has ordinary markers.
+git merge-file "--marker-size=$MARKER" -L "ours" -L "merge base" -L "theirs" \
+    "$A" "$O" "$B" >/dev/null 2>&1
+
+cat >&2 <<MSG
+
+[receipts-merge-driver] $P CONFLICTS BY DESIGN — this needs a decision.
+
+  These receipts are claims about ONE shared file:
+    ~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2
+  Both sides may be honest records of bakes that happened. Only one of them
+  can describe what is in that file now, and no merge rule can tell which.
+
+  1. Ask the file, not the receipts:
+         tools/ext-bake-gate verify-image
+     It prints the sha on disk and which receipt (if any) claims it.
+  2. A time-ordered union of both sides is written for you at
+         $PROPOSAL
+     Use it if the image on disk matches the newest of them.
+  3. If the image matches NEITHER, the honest resolution is to re-bake
+     (scripts/bake-ext-image --shared) or to land the merge saying plainly
+     that the oracle is unaccounted for. Do not pick a side to make the
+     conflict go away: that writes a claim nobody checked.
+
+  Then: git add $P
+
+MSG
+exit 1

@@ -1,0 +1,28 @@
+#!/bin/sh
+# After ANY merge that landed (including a fast-forward, where nothing else
+# in this family runs): say out loud what the stage image now is.
+#
+# git ignores this hook's exit code, so it cannot refuse anything and does
+# not pretend to. Its whole job is that a merge which changed
+# ext/stage-receipts.json — or which brought in resident changes — does not
+# pass in silence. A fast-forward is the case with no other guard at all:
+# no pre-merge-commit, no merge driver, no conflict.
+root=$(git rev-parse --show-toplevel)
+changed=$(git diff-tree -r --name-only ORIG_HEAD HEAD 2>/dev/null || true)
+
+case "$changed" in
+    *ext/stage-receipts.json*|*ext/src*|*contract/peek_table.h*) ;;
+    *) exit 0 ;;
+esac
+
+echo
+echo "[post-merge] this merge touched the resident or its receipts."
+if [ -x "$root/tools/ext-bake-gate" ]; then
+    "$root/tools/ext-bake-gate" merge-check || true
+    "$root/tools/ext-bake-gate" verify-image || true
+fi
+echo "  If a MISMATCH is reported above, the shared oracle does not contain"
+echo "  what the newest receipt says. Nothing you clone from it is"
+echo "  attributable until somebody re-bakes:  scripts/bake-ext-image --shared"
+echo
+exit 0
