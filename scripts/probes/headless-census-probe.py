@@ -107,9 +107,14 @@ def main():
         })
 
     headless = [r for r in rows if r["backgroundOnly"] is True]
-    undeclared = [r for r in rows if r["backgroundOnly"] is None]
     faced = [r for r in rows if r["backgroundOnly"] is not True]
     not_found = [r for r in rows if r["error"] == "ax_oracle_not_found"]
+
+    kind_claim = next(
+        (c for c in (scene.get("meta") or {}).get("coverage") or []
+         if c.get("scope") == "process-kind"), None)
+    kinds_established = (kind_claim or {}).get("status") in (
+        "complete", "partial")
 
     switcher = application_menu_rows(scene)
     agreement = None
@@ -126,7 +131,7 @@ def main():
     report = {
         "processes": len(rows),
         "headlessDeclared": len(headless),
-        "undeclared": len(undeclared),
+        "processKindClaim": (kind_claim or {}).get("status"),
         "coverableByTheCensus": len(faced),
         "stillReportingNotFound": [r["name"] for r in not_found],
         "rows": rows,
@@ -139,16 +144,20 @@ def main():
 
     print(f"{len(rows)} processes in the scene")
     for r in rows:
+        # Absent is a FACE when the producer said it read every kind, and
+        # genuinely unknown when it did not — the whole reason the
+        # roster-wide claim exists.
         mark = ("headless" if r["backgroundOnly"] is True
-                else "faced" if r["backgroundOnly"] is False
-                else "UNDECLARED")
+                else "faced" if (r["backgroundOnly"] is False
+                                 or kinds_established)
+                else "UNKNOWN")
         print(f"  {r['name']:<32} {mark:<11} windows={r['windows']:<3}"
               f" {'front' if r['front'] else '     '}"
               f" {r['error'] or ''}")
     print()
     print(f"declared faceless : {len(headless)}")
-    print(f"undeclared        : {len(undeclared)}"
-          "   (absent is not false — an older guest, or a read that failed)")
+    print(f"process-kind claim: {(kind_claim or {}).get('status', 'ABSENT')}"
+          "   <- what an absent backgroundOnly key means on these rows")
     print(f"census could cover: {len(faced)} of {len(rows)}"
           "   <- the only denominator process-visibility can ever fill")
     if not_found:

@@ -178,6 +178,14 @@ void now_scene_set_windows_coverage(NowScene *s, int proc,
     s->procs[proc].windows_coverage = coverage;
 }
 
+void now_scene_set_process_kind_coverage(NowScene *s,
+                                         NowSceneCoverage coverage)
+{
+    if (s != NULL) {
+        s->process_kind_coverage = coverage;
+    }
+}
+
 void now_scene_set_process_background_only(NowScene *s, int proc,
                                            int background_only)
 {

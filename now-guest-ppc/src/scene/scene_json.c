@@ -940,6 +940,10 @@ static void put_coverage(Sink *k, const NowScene *s)
     }
     put(k, "[");
     put_coverage_claim(k, "processes", NULL, s->processes_coverage, 1);
+    /* ONE CLAIM FOR THE WHOLE ROSTER, and the reason `backgroundOnly` can
+       stay true-only: this says whether an absent key means "has a face"
+       or "nobody asked". See NowScene.process_kind_coverage. */
+    put_coverage_claim(k, "process-kind", NULL, s->process_kind_coverage, 0);
     for (i = 0; i < s->proc_count; ++i) {
         const NowSceneProc *p = &s->procs[i];
 

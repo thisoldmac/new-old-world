@@ -81,6 +81,7 @@ public enum AppList {
     public static func rows(_ scene: Scene,
                             includeBackground: Bool = false) -> [Row] {
         let switchable = Set(switchableApps(scene).map(\.psn))
+        let established = ProcessPresence.kindsEstablished(scene)
         var windowCount: [String: Int] = [:]
         for w in scene.windows {
             windowCount[w.psn, default: 0] += 1
@@ -88,7 +89,8 @@ public enum AppList {
         var out: [Row] = []
         for app in scene.apps {
             let windows = windowCount[app.psn] ?? 0
-            let verdict = ProcessPresence.classify(app, windowCount: windows)
+            let verdict = ProcessPresence.classify(
+                app, windowCount: windows, kindsEstablished: established)
             // The DECLARATION decides, and the switchable predicate is the
             // fallback only for a guest that never sent one. Reversing that
             // order is how an application whose walk failed, or one with

@@ -152,10 +152,17 @@ final class MirrorStateProjectionService {
         for record in windowRecords {
             windowsByPsn[record.window.psn, default: 0] += 1
         }
+        // The producer's own answer to "did you establish what each
+        // process is", read from the projected scene rather than assumed:
+        // without it an absent `backgroundOnly` is ambiguous, and the
+        // conservative reading is `unknown`.
+        let kindsEstablished = ProcessPresence.kindsEstablished(
+            projection.scene)
         let applications = applicationRecords.map { record in
                 let verdict = ProcessPresence.classify(
                     record.app,
-                    windowCount: windowsByPsn[record.app.psn] ?? 0)
+                    windowCount: windowsByPsn[record.app.psn] ?? 0,
+                    kindsEstablished: kindsEstablished)
                 return AgentIntegrationMirrorEntity(
                     id: processID(record.identity), kind: .process,
                     ownerID: nil, name: record.app.name, title: nil,

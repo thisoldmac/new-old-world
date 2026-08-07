@@ -113,6 +113,31 @@ public extension ProcessPresence {
     /// unknown rather than given the comfortable answer.
     static let noDeclarationReason = "now_no_declaration"
 
+    /// The coverage scope the guest answers "did you establish what each
+    /// process IS?" with. See `kindsEstablished`.
+    static let kindScope = "process-kind"
+
+    /// Whether this scene's producer established what each process is.
+    ///
+    /// `backgroundOnly` rides the wire true-only — 40 process rows across
+    /// two arrays of an explicit `false` is 1.8 KB against a 64 KB scene
+    /// ceiling — so an absent key cannot by itself tell "this process has
+    /// a face" from "this producer never heard of the question". The
+    /// guest answers that once for the whole roster with a `process-kind`
+    /// coverage claim, and this reads it.
+    ///
+    /// `partial` counts: it means some process could not be read at all,
+    /// not that a row present in the scene has an unread kind — the kind
+    /// comes from the same `ProcessInfoRec` as the name, so a row exists
+    /// exactly when its kind was established. Anything else, including a
+    /// missing claim, is "nobody asked" and leaves absence unknown.
+    static func kindsEstablished(_ scene: Scene) -> Bool {
+        guard let claim = scene.meta.coverage?.first(where: {
+            $0.scope == kindScope
+        }) else { return false }
+        return claim.status == .complete || claim.status == .partial
+    }
+
     /// Classify one application row against the scene it came from.
     ///
     /// - Parameter windowCount: windows the scene attributes to this
@@ -120,8 +145,14 @@ public extension ProcessPresence {
     ///   which are already known to be successful enumerations — never to
     ///   decide whether a process has a face, and never to earn `empty`
     ///   on its own.
+    /// - Parameter kindsEstablished: whether the producer said it read
+    ///   every process's kind. **Defaults to false**, so a caller that has
+    ///   not looked gets `unknown` rather than a flattering `empty`: the
+    ///   comfortable answer must be earned by evidence, never reached by
+    ///   forgetting to pass an argument.
     static func classify(_ app: Scene.AppRef,
-                         windowCount: Int) -> Verdict {
+                         windowCount: Int,
+                         kindsEstablished: Bool = false) -> Verdict {
         // The declaration comes first and answers on its own. A faceless
         // process's missing anchor is not a failure to report.
         if app.backgroundOnly == true {
@@ -142,12 +173,15 @@ public extension ProcessPresence {
             return Verdict(.windowed)
         }
         // No error means the guest enumerated this process, so zero
-        // windows is a measured emptiness rather than an unexamined one.
-        // Without the declaration key we cannot rule out `headless`, so an
-        // older guest gets `unknown` rather than a flattering `empty`.
-        return app.backgroundOnly == nil
-            ? Verdict(.unknown, reason: noDeclarationReason)
-            : Verdict(.empty)
+        // windows is a measured emptiness rather than an unexamined one —
+        // PROVIDED we can also rule out `headless`. An explicit `false`
+        // rules it out on its own; otherwise the roster-wide claim has to,
+        // and without either this is an older guest whose silence we
+        // cannot read, which is `unknown`.
+        if app.backgroundOnly == false || kindsEstablished {
+            return Verdict(.empty)
+        }
+        return Verdict(.unknown, reason: noDeclarationReason)
     }
 
     /// Every application in a scene, classified. Window counts are taken
@@ -157,9 +191,11 @@ public extension ProcessPresence {
         for w in scene.windows {
             windows[w.psn, default: 0] += 1
         }
+        let established = kindsEstablished(scene)
         var out: [String: Verdict] = [:]
         for app in scene.apps {
-            out[app.psn] = classify(app, windowCount: windows[app.psn] ?? 0)
+            out[app.psn] = classify(app, windowCount: windows[app.psn] ?? 0,
+                                    kindsEstablished: established)
         }
         return out
     }

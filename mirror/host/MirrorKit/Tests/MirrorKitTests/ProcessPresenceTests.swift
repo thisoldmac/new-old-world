@@ -151,6 +151,75 @@ final class ProcessPresenceTests: XCTestCase {
             .empty)
     }
 
+    // MARK: - The roster-wide claim, and what absence means without it
+
+    private func scene(_ apps: [Scene.AppRef],
+                       kindClaim: Scene.CoverageStatus?) -> Scene {
+        Scene(version: 2, seq: 1, source: "peek", capturedAt: 0,
+              screen: .init(w: 640, h: 480), apps: apps,
+              processes: nil, menubar: nil, windows: [], desktopItems: nil,
+              meta: Scene.Meta(
+                latencyMs: nil, bytes: nil, errors: [], plane: nil,
+                coverage: kindClaim.map {
+                    [Scene.CoverageClaim(scope: ProcessPresence.kindScope,
+                                         status: $0)]
+                }))
+    }
+
+    /// `backgroundOnly` rides the wire TRUE-ONLY — 40 process rows across
+    /// two arrays of an explicit `false` is 1.8 KB against a 64 KB scene
+    /// ceiling the encoder already nearly touches, and its own gate
+    /// refuses the overrun. So an absent key means two different things
+    /// and the roster-wide `process-kind` claim is what separates them.
+    ///
+    /// Both directions here, because only the pair proves it: the SAME
+    /// row, with and without the claim, must read `empty` and `unknown`.
+    func testAbsenceMeansAFaceOnlyWhenTheProducerSaysItReadTheKinds() {
+        let row = Scene.AppRef(psn: "0.9", name: "SimpleText", front: false)
+
+        let told = ProcessPresence.classify(scene([row],
+                                                  kindClaim: .complete))
+        XCTAssertEqual(told["0.9"]?.presence, .empty,
+                       "the producer read every kind, so a missing key on "
+                       + "this row means it has a face")
+
+        let untold = ProcessPresence.classify(scene([row], kindClaim: nil))
+        XCTAssertEqual(untold["0.9"]?.presence, .unknown,
+                       "without the claim, absence could equally be a "
+                       + "producer that never heard of the question")
+        XCTAssertEqual(untold["0.9"]?.reason,
+                       ProcessPresence.noDeclarationReason)
+
+        let refused = ProcessPresence.classify(
+            scene([row], kindClaim: .unavailable))
+        XCTAssertEqual(refused["0.9"]?.presence, .unknown,
+                       "`unavailable` is the producer saying it did not "
+                       + "establish kinds — it must not read as a face")
+    }
+
+    /// `partial` still answers the per-row question. It means some process
+    /// could not be read AT ALL, not that a row present in the scene has
+    /// an unread kind: the kind comes from the same `ProcessInfoRec` as
+    /// the name, so a row exists exactly when its kind was established.
+    func testAPartialRosterStillSettlesTheRowsItCarries() {
+        let row = Scene.AppRef(psn: "0.9", name: "SimpleText", front: false)
+        XCTAssertEqual(
+            ProcessPresence.classify(scene([row], kindClaim: .partial))["0.9"]?
+                .presence,
+            .empty)
+    }
+
+    /// The default is the CONSERVATIVE one. A caller that forgets to pass
+    /// the flag gets `unknown`, never a flattering `empty` — the
+    /// comfortable answer has to be reached deliberately.
+    func testTheDefaultForgetsNothingIntoEmpty() {
+        XCTAssertEqual(
+            ProcessPresence.classify(
+                Scene.AppRef(psn: "0.9", name: "SimpleText", front: false),
+                windowCount: 0).presence,
+            .unknown)
+    }
+
     // MARK: - Over a whole scene
 
     func testAWholeSceneIsClassifiedByPsn() {

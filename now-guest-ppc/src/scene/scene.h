@@ -446,6 +446,24 @@ typedef struct {
     short proc_count;
     int procs_truncated;
     NowSceneCoverage processes_coverage;
+    /* DID THIS PRODUCER ESTABLISH WHAT EACH PROCESS IS?
+       `backgroundOnly` rides the wire only when true, because 40 process
+       rows times two arrays of `,"backgroundOnly":false` is 1.8 KB
+       against a 64 KB ceiling this scene already nearly touches. That
+       makes a missing key ambiguous by itself - "has a face" and "this
+       producer never heard of the question" look identical - and a
+       consumer needs them apart or it can never report the middle state
+       (a face with nothing open) at all.
+       So the answer is given ONCE, in the vocabulary the IR already has
+       for exactly this: a `process-kind` coverage claim. `complete` means
+       every row's kind was read, so an absent key on a row means that row
+       has a face. `partial` means at least one process could not be read.
+       `unavailable` - the value a producer that never sets this leaves
+       behind - means the question was not asked, and a consumer must then
+       treat every absent key as unknown rather than as a face.
+       This is scene.h's own `_present` idiom: the looked-at-all bit lives
+       beside the data rather than being guessed from it. */
+    NowSceneCoverage process_kind_coverage;
 
     NowSceneWindow windows[kNowSceneMaxWindows];
     short window_count;
@@ -521,6 +539,14 @@ void now_scene_set_windows_coverage(NowScene *s, int proc,
    No-op for an out-of-range row. */
 void now_scene_set_process_background_only(NowScene *s, int proc,
                                            int background_only);
+
+/* Whether this producer established what each process IS - see
+   NowScene.process_kind_coverage. A producer that reads processMode for
+   every row says `complete`; one that could not read some says `partial`;
+   one that never calls this leaves `unavailable`, and its absent
+   `backgroundOnly` keys mean unknown rather than "has a face". */
+void now_scene_set_process_kind_coverage(NowScene *s,
+                                         NowSceneCoverage coverage);
 
 /* Adds a window to a process already added. Returns 1 on success, 0 when
    the scene is full (sets windows_truncated) or when `proc` is out of
