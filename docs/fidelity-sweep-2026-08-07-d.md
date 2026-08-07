@@ -351,6 +351,149 @@ scenes.
 | SimpleText | ✓ | ✓ | |
 | Finder — `Macintosh HD` folder | ✓ | ✓ | **not the Desktop**: `find_window` took the front Finder window and a folder window was open, so this row is not comparable with sweep C's Finder row |
 
+## Every target's pair, actually looked at
+
+Nine of nine, side by side, `pairs/<label>-pair.png` (guest cropped to the
+window on the left, the host's whole render on the right). What follows is
+what is DIFFERENT, target by target — not a score.
+
+### Claim 7 — the desktop names who answered: **CONFIRMED, and the answer is `assetPack`**
+
+**The corner plate reads "desktop from asset pack, not this machine" on
+every one of the nine renders.** So the mark works, it is legible, it does
+not tint the desktop — and the fact it reports is that on this rig the
+machine's own desktop answer never reached the scene. `scene.desktop` is
+absent in all nine scene files, derived from the files rather than from
+the picture.
+
+**That is the claim working exactly as designed and it is also the
+finding**: "an unmarked desktop means the machine named it" is now true,
+and nothing in this run produced an unmarked desktop. A sweep on a rig
+where the desktop DOES arrive is still owed.
+
+### Apple System Profiler — the rotated target, and it earns the slot
+
+The best-rendered interior in the run and the one with the most new
+information. Text is essentially exact: every row of the Software /
+Memory / Hardware overviews, the values, the alignment. 1,551 drain
+records, 47 distinct strings — unlike SimpleText it records text.
+
+What diverges, in the order a person would see it:
+
+- **The six-tab strip is not drawn at all.** The scene carries the tab
+  control (`role: tab`, `semantic.kind: tab`, value 1, min 1, max 6) and
+  the machine draws six labelled tabs; the render draws a horizontal
+  scroll bar across that band instead.
+- **Twelve disclosure triangles are not drawn.** The scene carries all
+  twelve as `semantic.kind: disclosureTriangle` with their values (three
+  of them open), and the render draws none. **This is the slider-thumb
+  defect in a new family: the data is present and the drawing is
+  absent** — and `disclosureTriangle` is a control family no earlier
+  sweep has reported at all.
+- **The vertical scroll bar is drawn on the wrong side** — the machine
+  puts it at the window's right edge, the render at its left.
+- One line loses two characters: the machine draws `Printer overview`,
+  the render draws `inter overview`.
+
+And a state cell nobody has reached: **five invisible zero-area windows**
+(`Preferences`, `Search options`, `Clipboard`, and two untitled) reported
+with `visible: false`, `rect {0,-20,0,0}`, and **41 controls between them,
+every one carrying a minted reference.** One of them carries a second tab
+control at value 3 of 4. A caller reading `controls` without reading
+`visible` would act on a window that is not on screen. The scene is
+honest — `visible` is right there — but this is the first time the corpus
+has contained the case.
+
+### Extensions Manager — the list target
+
+Rows, sizes, versions and package names are exact. What is missing:
+
+- **The ⊠ marks in the On/Off column** — every row's mark, ~10 rows.
+- **The disclosure triangle** beside `Control Panels`.
+- **Every row's icon** renders as a grey plate.
+- **The help "?" button is a blank plate** — sweep A, B, C and now D.
+- The vertical scroll bar's top arrow is absent.
+
+### Finder — `Macintosh HD`, and nine icons for nine
+
+Text exact, including `10 items, 3.21 GB available` and all nine item
+names. **All nine icons render as identical hatched plates.** The hatch is
+legible as unknown at 32×32, which is what the spec asks of an unknown —
+so this is an honest unknown rather than art wearing unknown's clothes,
+and it is still nine icons of content lost. The zoom box the machine draws
+on this window is absent (the 1/121 row above).
+
+### Memory — R1 and R2 stay fixed, and the bare labels stay broken
+
+No doubled drawing, no cap-height stroke on the static labels: **sweep C's
+two confirmed fixes have not regressed.** Text exact throughout.
+
+Absent: **every radio button's mark** (5), the check box's mark, all three
+group-box frames, all three sidebar icons, the RAM-disk slider's thumb,
+and the stepper arrows beside `513M`.
+
+### Date & Time — and it still draws the marks Memory does not
+
+**Check boxes and radio buttons DRAW here**, on the same build, in the same
+run, where Memory's and General Controls' do not. So sweep C's finding #4
+reproduces exactly — and the CDEF reclassification did not change it:
+Date & Time is down to **one** `pushButton` and eleven `unknown` and its
+marks still draw. **The classification is not what decides the mark**, and
+the cause is still unknown.
+
+Absent: the stepper arrows beside both fields; the help "?" plate.
+Present and correct: five group boxes with their frames breaking cleanly
+around their labels, including `Use a Network Time Serve`**`r`**.
+
+### General Controls — five group boxes right, everything inside them bare
+
+Group-box frames and titles exact. Absent: every check box and radio
+mark, **both slider thumbs** (values present in the scene: Menu Blink 3
+of 0–3, Insertion Point 2 of 1–3), all three preview pictures, the help
+"?" plate.
+
+### Appearance — the six tabs draw, the previews do not
+
+Six tabs with outlines and the selected-tab join, exactly as sweep C
+found. Unfixed from sweep C: the two theme thumbnails render as empty
+rectangles, "Lime Horizon" losing its green entirely; the "?" is a blank
+plate; the 64-byte text cap shows as `…in the following sect…` (marked
+honestly with an ellipsis).
+
+**And a fabricated affordance the zoom fix did not reach.** The machine
+draws no grow box on Appearance. **The render draws one**, at the
+bottom-right corner. `WindowChrome.growBox` still opens `guard win.kind
+!= 2` and Appearance is `kind == 2000`, so it passes — the same
+discriminator, in the same file, one function below the one that was
+just corrected. This is the class of defect claim 3 was landed to remove,
+surviving in the neighbouring function, **and it is now confirmed in
+pixels rather than inferred from the source.**
+
+**Scroll arrows are still at the wrong end** — confirmed twice this run,
+in Appearance's horizontal bar and NOW's own sidebar: the machine groups
+both arrows together, the render splits them one to each end. Sweep B's
+finding, sweep C's finding, unfixed.
+
+### SimpleText — and a correction to sweep C's row
+
+An empty untitled document; guest and render agree on a blank page, a
+caret and the title bar. **Sweep C reported "SimpleText still records no
+text op at all (190 records, 0 distinct strings)" as a reproduction of a
+defect. This run reproduces the numbers exactly — and the document is
+EMPTY.** Zero text ops from a document with no text in it is a fact about
+the fixture, not about the guest. That row needs a document with text in
+it before it means anything, and no sweep has taken one.
+
+### NOW's own Workshop
+
+The most faithful interior in the run: the sidebar list, the module
+titles and subtitles, the popup with its arrows, the three push buttons
+with their bevels, `Compress on wire (PackBits)` **with its check mark**,
+`Advanced Transport` **with its disclosure triangle**, the green
+connection dot, the status line. Absent: most sidebar module icons render
+as one generic plate. The zoom box the machine draws is absent; the grow
+box is drawn and the machine draws one too.
+
 ## Rotated new target
 
 **Apple System Profiler**, at
