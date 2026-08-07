@@ -323,6 +323,10 @@ def _(tmp):
 @case("merge-check catches receipts left out of time order")
 def _(tmp):
     r = Repo(tmp, "i")
+    # On a lane branch: ordering is what this case is about, and on `main`
+    # the separate "a deferral comes due" check would also fire and muddy
+    # which gate spoke.
+    r.git("checkout", "-qb", "claude/018-whoever")
     d = r.digest()
     must(r.gate("merge-check").returncode == 0, "an ordered file must pass")
     # THE MUTATION: the result of a textual merge that git was happy with.
@@ -403,6 +407,42 @@ def _(tmp):
                  "was not used and is not the oracle for this run",
                  "Resident (guest's own `mirror`)", "capabilities `127`"):
         must(want in body, f"rig table is missing {want!r}:\n{body}")
+
+
+@case("merge-check: a deferral comes due on main and nowhere else")
+def _(tmp):
+    r = Repo(tmp, "dd")
+    img = os.path.join(tmp, "stage.qcow2")
+    fake_image(img, b"THE ORACLE")
+    r.receipts([receipt(r.digest(), img, sha_of(img))])
+    r.git("add", "--", "ext/stage-receipts.json")
+    r.git("commit", "-qm", "baked")
+    must(r.gate("merge-check").returncode == 0, "a baked main must pass")
+
+    # THE MUTATION: resident source that no bake covers, exactly as an
+    # honest TBT_DEFER_EXT_BAKE commit leaves it.
+    r.write("ext/src/now_ext.c", "int resident(void) { return 9; }\n")
+    doc = r.read_receipts()
+    doc["receipts"].append({"kind": "deferral", "at": "2026-08-06T20:00:00-0400",
+                            "branch": "claude/018-arm-census",
+                            "reason": "sequenced behind the census work; "
+                                      "baking once the arc settles"})
+    r.receipts(doc["receipts"])
+
+    on_lane = r.git("checkout", "-qb", "claude/018-arm-census")
+    must(on_lane.returncode == 0, on_lane.stderr)
+    must(r.gate("merge-check").returncode == 0,
+         "a lane-to-lane merge must NOT be gated on a bake")
+
+    r.git("checkout", "-q", "main")
+    out = r.gate("merge-check")
+    must(out.returncode == 1, "landing unbaked resident work must stop")
+    must("no bake receipt covers" in out.stderr, out.stderr)
+    must("good enough to COMMIT on a branch" in out.stderr, out.stderr)
+    must("sequenced behind the census work" in out.stderr,
+         "the deferral's own reason must be quoted back:\n" + out.stderr)
+    must(r.gate("merge-check", env={"TBT_DEFER_EXT_BAKE": "1"}).returncode == 0,
+         "the written override must still work")
 
 
 # --------------------------------------------------------------------------

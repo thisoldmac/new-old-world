@@ -576,6 +576,60 @@ def staged_receipt_claims(root: str) -> int:
     return 1
 
 
+def deferral_comes_due(root: str, doc: dict) -> list[str]:
+    """A defer is a promise to bake before landing. This is when it comes due.
+
+    `TBT_DEFER_EXT_BAKE=1` with a written reason lets a resident change be
+    COMMITTED without a bake, and that is right: a lane mid-arc has better
+    things to do than hold a VM for five minutes, and the reason lands in
+    the same commit as the work it excuses. What it must not do is let the
+    change LAND — an honest deferral on a branch is a sequencing decision,
+    and the same deferral on `main` is an unbaked resident that every
+    session's oracle now disagrees with, excused by a note nobody will read
+    again.
+
+    So this fires only when the merge target is `main`. Lane-to-lane merges
+    are untouched, which matters: eleven branches were in flight when this
+    was written and a gate that made them merge each other's work harder
+    would have cost more than the drift it prevents. On main it REFUSES,
+    and `TBT_DEFER_EXT_BAKE=1` with a reason is the same override it always
+    was — a written decision, not a silence.
+    """
+    branch = subprocess.run(
+        ["git", "-C", root, "symbolic-ref", "--quiet", "--short", "HEAD"],
+        capture_output=True, text=True).stdout.strip()
+    if branch not in ("main", "master"):
+        return []
+    if os.environ.get("TBT_DEFER_EXT_BAKE"):
+        return []
+    want = digest(root, "worktree")
+    entry = latest_bake(doc)
+    if entry and entry.get("extDigest") == want:
+        return []
+    out = [
+        "this merge would land RESIDENT SOURCE that no bake receipt covers.",
+        f"  tree now  {want}",
+        f"  newest bake  {entry.get('extDigest') if entry else '(none)'}"
+        f"  {entry.get('at') if entry else ''}",
+    ]
+    defers = [r for r in doc.get("receipts", []) if r.get("kind") == "deferral"]
+    if defers:
+        out.append("  It is excused on the branch by a written deferral:")
+        for d in defers[-2:]:
+            out.append(f"    {d.get('at')}  {d.get('branch')}: {d.get('reason')}")
+        out.append("  Those reasons were good enough to COMMIT on a branch and "
+                   "are not good")
+        out.append("  enough to LAND: on main the oracle every session clones "
+                   "disagrees with")
+        out.append("  the resident source, and the deferral is a note nobody "
+                   "reads again.")
+    out.append("  Bake it (scripts/bake-ext-image --shared, announced), or land "
+               "it as an")
+    out.append("  explicit decision: TBT_DEFER_EXT_BAKE=1 "
+               "TBT_DEFER_EXT_BAKE_REASON=\"…\" git merge …")
+    return out
+
+
 def merge_check(root: str) -> int:
     """After a merge: did two branches' receipts silently combine?
 
@@ -640,6 +694,8 @@ def merge_check(root: str) -> int:
                     f"a THROWAWAY receipt ({r.get('at')}, {r.get('branch')}) "
                     f"is in {RECEIPTS} after this merge; it is a claim about "
                     "one lane's private image.")
+
+    problems += deferral_comes_due(root, doc)
     if not problems:
         return 0
     print("", file=sys.stderr)
