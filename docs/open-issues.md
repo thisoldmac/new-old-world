@@ -14,6 +14,69 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED: two of the three the regressions lane named, and the third is a guest question (2026-08-07, `claude/019-integration-5`)
+
+Round 5 merged seven lanes and then took the two defects
+`019-sweepb-regressions` left standing in `docs/open-issues.md` on its way
+out. **Verification level: TESTED** — `scripts/test-all`, all five stages,
+against the integrated tree. Nothing here ran on the PowerBook.
+
+- **FIXED: `drawDialogItem`'s `pushButton` branch had no coverage gate at
+  all.** The regressions lane taught `drawControl` to consult `Coverage`
+  and left the identical hole in its twin. Every other branch of
+  `drawDialogItem` has yielded to the replay since 2026-08-06; this one
+  drew unconditionally, so a DITL row classified `pushButton` painted a
+  filled Platinum pill over the machine's own ink. It asks `words`
+  (`textCovers || mostlyCovers`) rather than `inked`, because a DITL row
+  is a slack box holding a short run and the area test alone says no on
+  exactly the rows this is about. Gated by
+  `LadderArbitrationTests.testADialogItemButtonDoesNotPaintOverTheMachinesOwnInk`,
+  watched failing by mutation: **1217 of 1840 pixels** over the "Virtual
+  Memory" row with the guard deleted.
+
+- **FIXED: `Coverage.mostlyCovers` was a single-rectangle test.** Its own
+  comment argued that a union is expensive and the cases are not close.
+  The second half is false, and the fixture says so: **QuickDraw draws in
+  pieces.** A machine-drawn well is a fill plus four bevel strokes; a
+  multi-line paragraph is four or eleven separate text runs. Every
+  fragment falls under half, so the predicate answered "the machine drew
+  nothing here" about a rectangle the machine had covered completely —
+  the ladder's own failure, reached from the far side of the same test.
+  A single rectangle still answers alone and returns immediately; only
+  when several fragments each fall short is their union measured, over a
+  fixed 16×16 sample grid. **A grid rather than summed areas**, because
+  two copies of one 40% fragment are 40% of something and summing says
+  120% — a permissive error in a predicate whose whole job is to silence
+  the semantic plane. `CoverageUnionTests` holds both halves; sweep B's
+  Memory panel has **five** rectangles the union answers and no single
+  fragment does, and the mutation takes that count to zero.
+
+- **NOT FIXED, and it is a guest question rather than a renderer one: the
+  radio CDEF.** Memory's six radios arrive as `pushButton` and now render
+  as a bare label where the machine draws a filled circle. **Michelle will
+  see this.** The mechanism is now traced end to end, which is the part
+  worth having: `cdef_resolver.c` recovers the variation code **only when
+  it rides in the high byte of `contrlDefProc`** — it asks the Resource
+  Manager about the raw longword first, and about the masked one second,
+  and takes the high byte as the variant only when the machine itself
+  says the masked value is the resource and the raw one is not. On these
+  controls the high byte is zero, so the resolver honestly reports CDEF 0
+  variant 0, and `control_cdef.c` honestly maps that to `button`. Nothing
+  in the chain is guessing; the variant simply is not in that field on a
+  32-bit-clean OS 9.
+
+  The candidate route is `GetControlVariant`, which CarbonLib exports and
+  which reads the variant wherever the Control Manager actually keeps it.
+  It is **not** a small change and it is not a host-side one: it means
+  calling a Toolbox accessor on a `ControlHandle` belonging to another
+  process, which dereferences a foreign control record through code we do
+  not own. That is a design question against
+  [resident-components.md](resident-components.md)'s division — foreign
+  MEMORY reads live in the application, foreign-context EXECUTION does not
+  — and it wants a guest build and a machine to watch it on, neither of
+  which this round had. Left visible rather than papered over: the bare
+  label is honest and the pill was a confident wrong answer.
+
 ## FIXED: four render defects, two mechanisms, one arbitration (2026-08-07, `claude/019-sweepb-regressions`)
 
 Sweep B's **R1** (Memory's interior drawn twice) and **R2** (a vertical
