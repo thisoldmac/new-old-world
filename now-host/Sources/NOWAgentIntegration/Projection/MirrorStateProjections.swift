@@ -34,8 +34,13 @@ private enum MirrorStateProjectionSchema {
 
 private enum MirrorStateProjectionReach {
     static let faces: [HostCapabilityFace: HostFaceReach] = [
-        .appUI: .reached(file: "NOWMirrorWindow.swift",
-                         symbol: "LiveMirrorView(controller: source)"),
+        /* **The pane, not the window.** These rows read the state engine
+           the Mirror's poll fills, and the app's face on it is now the
+           Mirror module's own surface — one view drawn in two containers,
+           so naming the container would name the lesser half. The window
+           hosts this same view; the view is the face. */
+        .appUI: .reached(file: "MirrorPaneView.swift",
+                         symbol: "LiveMirrorView(controller: source"),
         .mcp: .reachedByRegistry,
         .appIntents: .appIntentsFaceNotBuiltYet,
     ]
