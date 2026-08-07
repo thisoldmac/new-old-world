@@ -14,6 +14,80 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## BROKEN: the first watch of the INTEGRATED render, and what it shows (2026-08-07, `claude/018-integration`)
+
+Seventeen plan-018 lanes merged into one tree, then the tree was
+**watched composing real windows** — five targets, guest pixels beside
+the host's own composition path, on emulated mac99/OS 9.1. Pairs and
+crops: `~/Lab/Assets/now-mirror-assets/018-integration/` (out of git).
+Nothing here is metal-verified.
+
+**The integrated render is better than what sweep A saw, and it is not
+uniformly better.** Date & Time, the Finder in icon view and NOW's own
+Workshop compose recognisably — every group box framed and labelled,
+every button titled, radio and check states right, the selected Finder
+row correctly inverted, the desktop pattern drawn rather than hatched,
+and **no hatching anywhere in five targets**. Appearance is worse than
+recognisable and is the one target a person would call broken.
+
+Six defects, all seen in more than one target unless said otherwise:
+
+1. **THE FRONT TAB IS DESTROYED, and only the front one** (Appearance).
+   The guest draws six tabs; the render draws four — `Fonts`, `Desktop`,
+   `Sound`, `Options` — correctly capped. Where `Themes` (front) and
+   `Appearance` should be there are two stray diagonal strokes with no
+   label and no cap. So the procedural tab strip works for every tab
+   whose label box arrived and fails exactly on the one whose geometry
+   differs. `crop-appearance-tabs.png`. **This is the highest-value
+   thing here: the chrome lane's fix survives integration for 4 of 6
+   tabs and inverts on the front one**, which is the tab a person is
+   always looking at.
+2. **Icons are drawn as blank grey plates, silently.** All nine Finder
+   folder icons, all thirteen of NOW's sidebar icons, and both `?` help
+   buttons render as identical featureless squares where the machine drew
+   distinct art (`crop-finder-icons.png`). The plate is the honest
+   untyped answer for a blit whose pixels never crossed — but a plate
+   *claims something is there*, and the ladder's own unknown ground
+   (`UnknownVisual`) is what would say "this is a rectangle nobody can
+   name". Today a missing icon and a real grey square are the same
+   pixels.
+3. **Group-box frames are drawn through their own labels.** The guest
+   interrupts the frame line behind the label; the render strikes the
+   rule straight through the glyphs of `Current Date`, `Current Time`,
+   `Time Zone`, `Use a Network Time Server`
+   (`crop-datetime-groupbox.png`). Same shape as the tab-cap defect —
+   art drawn without the label's clip — and wrong in every window that
+   has a group box.
+4. **Static text is truncated 2-4 characters early**, consistently:
+   "Set Daylight-Saving Time Automa", "…Time is in effe", "Use a Network
+   Time Serve", "…in the following sect…". The runs are being clipped to
+   a box narrower than the one the machine used.
+5. **Framed rectangles the machine drew go missing.** NOW's screenshot
+   preview box — a large bordered rect with "No screenshot yet." inside
+   — renders as the text alone, no box, in every capture that contains
+   it. Popup-menu arrows, scroll arrows, stepper arrows and the `«` back
+   button are absent the same way; the trough and thumb render, the
+   arrows do not.
+6. **The render carries text the machine did not draw.** NOW's sidebar
+   truncates on the guest ("Capture and stre…"); the render prints it in
+   full ("Capture and stream"). It is reading the semantic title rather
+   than replaying the drawn run — a fidelity divergence in the direction
+   nobody checks, because it looks like an improvement.
+
+Also absent from every render: **the desktop's own icons and the Control
+Strip**, both of which the machine draws on all five captures.
+
+**Two things a reader should not conclude from this page.** The
+`script` verb answered `osaErr -1753` to every AppleScript tried through
+it on this rig, including `get name of front window`, so the Finder's
+list view could not be reached that way and **no list-view pair was
+captured** — the listview lane's work is unwatched, not disproved. And
+`menuact` refused with `no-such-process` against a PSN `axtree` had just
+reported, which is the known anchor-bind failure on the staging path
+rather than a new defect. `cycle` itself worked and reported honestly
+(`armed`, `complete`, `restored`, 8 considered, 6 `backgroundOnly` —
+the headless lane's classification, live).
+
 ## FIXED: an act could report success it had not verified, and a window could go silent without naming itself (2026-08-07, lane D of plan 018)
 
 Sweep A found `as Buttons` "dispatched cleanly twice and never produced
