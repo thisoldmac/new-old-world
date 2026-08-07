@@ -431,7 +431,7 @@ static void front_and_capture(void)
     g_capture_target = g_procs[g_selected].psn;
     snprintf(g_capture_name, sizeof g_capture_name, "%.31s",
              g_procs[g_selected].name);
-    SetFrontProcess(&g_capture_target);
+    (void)now_proc_front_confirm(&g_capture_target, 0);
     g_capture_pending = true;
     /* ~0.75 s for the target to come front and redraw before we read the
        framebuffer; the main loop's WaitNextEvent yields do the waiting. */
@@ -459,7 +459,7 @@ static void do_capture(void)
     g_capture_pending = false;
     if (now_peek_windows_for_psn(&g_capture_target, &w) != kNowPeekReadOk
         || w.count < 1) {
-        SetFrontProcess(&g_capture_self);
+        (void)now_proc_front_confirm(&g_capture_self, 0);
         set_notice("The window could not be read for capture.");
         return;
     }
@@ -468,12 +468,12 @@ static void do_capture(void)
     now_prefs_load(&prefs);
     if (now_screenshot_rect(&rect, prefs.shot_depth, true, &stats, err,
                             sizeof err) != 0) {
-        SetFrontProcess(&g_capture_self);
+        (void)now_proc_front_confirm(&g_capture_self, 0);
         snprintf(msg, sizeof msg, "Capture failed: %.80s", err);
         set_notice(msg);
         return;
     }
-    SetFrontProcess(&g_capture_self);         /* back to NOW */
+    (void)now_proc_front_confirm(&g_capture_self, 0);         /* back to NOW */
     snprintf(msg, sizeof msg,
              "Captured %s - %d x %d - saved \"%.24s\" on the Desktop",
              g_capture_name, stats.width, stats.height, stats.saved_name);

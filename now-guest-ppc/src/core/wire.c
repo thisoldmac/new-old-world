@@ -2304,7 +2304,7 @@ static void service_shot(void)
     /* Pixels grabbed; NOW comes back to the front to send them (it pumps
        the wire either way, but this leaves the human's machine where they
        left it). */
-    SetFrontProcess(&g_shot.self);
+    (void)now_proc_front_confirm(&g_shot.self, 0);
     if (!ok) {
         capture_fail(g_shot.id);
         return;
@@ -5444,9 +5444,28 @@ static void serve_process_act(const char *request, Boolean quit)
             }
         }
     } else {
-        err = now_proc_bring_to_front(&psn);
-        if (err != noErr) {
+        /* THE SAME ASK-AND-CONFIRM the console's `front` and `mach
+           activate` make (proc_actions.h). This used to answer ok:true
+           on SetFrontProcess returning noErr, which means the switch was
+           SCHEDULED and nothing more - so `now_bring_to_front` over MCP,
+           which rides this exact path, got the weakest of three claims
+           and no way to tell. A verb reports what happened; an accepted
+           request that never landed is not a switch, and saying so is
+           the whole point of re-reading. */
+        switch (now_proc_front_confirm(&psn,
+                                       (unsigned long)kProcFrontWaitSecs
+                                       * 60)) {
+        case kProcFrontConfirmed:
+            break;
+        case kProcFrontAccepted:
+            err = -1;
+            reason = "the Mac accepted the request and it is still not "
+                     "frontmost";
+            break;
+        case kProcFrontSetRefused:
+            err = -1;
             reason = "the Mac would not bring it to the front";
+            break;
         }
     }
 

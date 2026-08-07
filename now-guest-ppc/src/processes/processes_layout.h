@@ -61,9 +61,6 @@ void processes_layout_compute(const Rect *body, ProcessesLayout *out);
    into DrawString. */
 void proc_fourcc_text(unsigned long code, char out[5]);
 
-/* The word a person reads for a process type: application, background
-   only, the Finder - or the raw four characters when we do not know. */
-void proc_kind_text(unsigned long type, char *out, long cap);
 
 /* "312K used of 1,024K" - classic thousands grouping, ASCII only. */
 void proc_mem_text(long used_kb, long size_kb, char *out, long cap);

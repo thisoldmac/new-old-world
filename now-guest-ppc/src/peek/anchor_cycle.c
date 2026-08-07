@@ -4,6 +4,8 @@
  */
 
 #include "anchor_cycle.h"
+#include "proc_actions.h"
+#include "proc_roster.h"
 
 #include <Processes.h>
 #include <string.h>
@@ -100,30 +102,27 @@ static void cycle_yield(void)
 static int process_alive(const ProcessSerialNumber *psn, Boolean *background,
                          char *name_out, long name_cap)
 {
-    ProcessInfoRec info;
-    Str31 name;
+    NowProcRosterRow row;
 
-    memset(&info, 0, sizeof info);
-    info.processInfoLength = sizeof info;
-    info.processName = name;
-    name[0] = 0;
-    if (GetProcessInformation((ProcessSerialNumber *)psn, &info) != noErr) {
+    if (!now_proc_roster_read(psn, &row)) {
         return 0;
     }
     if (background != NULL) {
-        /* THE SAME BIT `process.list` READS (wire.c), deliberately: the
-           processes surface has been ahead of the scene plane on this
-           distinction, and a second opinion about what is faceless is
-           how two faces come to disagree about the same machine. */
-        *background = (info.processMode & modeOnlyBackground) != 0;
+        /* THE SAME CLASSIFIER `process.list` READS (proc_roster.h),
+           deliberately: the processes surface has been ahead of the
+           scene plane on this distinction, and a second opinion about
+           what is faceless is how two faces come to disagree about the
+           same machine. It was a fourth verbatim copy of the bit test
+           until the roster gave the question one home. */
+        *background = row.kind == kNowProcKindBackground;
     }
     if (name_out != NULL && name_cap > 0) {
-        long n = (long)name[0];
+        long n = (long)row.pname[0];
 
         if (n > name_cap - 1) {
             n = name_cap - 1;
         }
-        BlockMoveData(&name[1], name_out, n);
+        BlockMoveData(&row.pname[1], name_out, n);
         name_out[n] = '\0';
     }
     return 1;
@@ -263,7 +262,20 @@ int now_peek_anchor_cycle(NowAnchorCycleReport *out)
             out->vanished++;          /* quit while we were elsewhere */
             continue;
         }
-        if (SetFrontProcess(&targets[i]) != noErr) {
+        /* `fronted` is documented as "applications ACTUALLY brought
+           forward", and a raw SetFrontProcess could only count accepted
+           requests - the exact distinction this report's before/after
+           counters exist to draw. The shared confirm re-reads
+           GetFrontProcess, with no wait budget: this loop has a deadline
+           of its own and is about to spend it waiting on the harder
+           question (did it pump). An application that accepted and never
+           came forward is `refused` - "would not come forward" is
+           already that field's meaning. */
+        switch (now_proc_front_confirm(&targets[i], 0)) {
+        case kProcFrontConfirmed:
+            break;
+        case kProcFrontAccepted:
+        case kProcFrontSetRefused:
             out->refused++;
             name_unreached(out, &targets[i]);
             continue;
@@ -302,7 +314,11 @@ int now_peek_anchor_cycle(NowAnchorCycleReport *out)
        only exits are `break`s, so there is one way out of this function
        once anything has been fronted. */
     if (had_front && process_alive(&was_front, NULL, NULL, 0)) {
-        out->restored = SetFrontProcess(&was_front) == noErr;
+        /* `restored` is a claim about the machine, so it is re-read
+           rather than taken from the return code - the same distinction
+           `fronted` above now draws. */
+        out->restored =
+            now_proc_front_confirm(&was_front, 0) == kProcFrontConfirmed;
         if (!out->restored) {
             note(out, "the application that was front would not come back");
         }
@@ -311,7 +327,7 @@ int now_peek_anchor_cycle(NowAnchorCycleReport *out)
            so we take the front ourselves rather than leaving whichever
            application happened to be last in the list holding it - a
            person should come back to the tool they invoked. */
-        (void)SetFrontProcess(&self);
+        (void)now_proc_front_confirm(&self, 0);
         note(out, "the application that was front has quit; NOW took the "
                   "front instead");
     }

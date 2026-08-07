@@ -8,6 +8,7 @@
 
 #include "proc_hide_args.h"
 #include "proc_quit_args.h"
+#include "proc_roster.h"
 #include "wire.h"
 
 /* --- the Process Manager's visibility calls ------------------------------
@@ -88,14 +89,14 @@ typedef struct {
    that serial. */
 static Boolean process_name(const ProcessSerialNumber *psn, Str31 name)
 {
-    ProcessInfoRec info;
+    NowProcRosterRow row;
 
-    memset(&info, 0, sizeof info);
-    info.processInfoLength = sizeof info;
-    info.processName = name;
-    info.processAppSpec = NULL;
     name[0] = 0;
-    return GetProcessInformation(psn, &info) == noErr;
+    if (!now_proc_roster_read(psn, &row)) {
+        return false;
+    }
+    BlockMoveData(row.pname, name, (long)row.pname[0] + 1);
+    return true;
 }
 
 /* Is this target still the process we asked to quit? A PSN can be reused
@@ -157,7 +158,8 @@ static void yield_ticks(UInt32 ticks)
 static int gather_targets(const char *want, QuitTarget *out,
                           Boolean *skipped_self, Boolean skip_self)
 {
-    ProcessSerialNumber psn;
+    NowProcRosterIter it;
+    NowProcRosterRow row;
     ProcessSerialNumber self;
     Str255 wanted;
     Str31 name;
@@ -175,19 +177,18 @@ static int gather_targets(const char *want, QuitTarget *out,
         self.lowLongOfPSN = kNoProcess;
     }
 
-    psn.highLongOfPSN = 0;
-    psn.lowLongOfPSN = kNoProcess;
-    while (GetNextProcess(&psn) == noErr) {
+    now_proc_roster_begin(&it);
+    while (now_proc_roster_next(&it, &row)) {
         Boolean is_self = false;
 
-        if (!process_name(&psn, name)) {
-            continue;              /* it went away mid-walk; not ours to
-                                      mourn - the next list will agree */
-        }
+        /* A row the roster could not read never arrives here at all -
+           "it went away mid-walk" is one rule, in one place, and the
+           next list will agree with this one. */
+        BlockMoveData(row.pname, name, (long)row.pname[0] + 1);
         if (!EqualString(name, wanted, false, true)) {
             continue;
         }
-        (void)SameProcess(&psn, &self, &is_self);
+        (void)SameProcess(&row.psn, &self, &is_self);
         if (is_self && skip_self) {
             /* Deliberate, not incidental: a second COPY of NOW is a
                legitimate target, but this one is the one holding the
@@ -198,7 +199,7 @@ static int gather_targets(const char *want, QuitTarget *out,
         if (count == kMaxTargets) {
             return -1;
         }
-        out[count].psn = psn;
+        out[count].psn = row.psn;
         memcpy(out[count].name, name, (size_t)name[0] + 1);
         ++count;
     }
@@ -391,16 +392,28 @@ static Boolean front_name(const char *arg, char *out, long cap, char *msg,
     return true;
 }
 
-static Boolean is_frontmost(const ProcessSerialNumber *psn)
-{
-    ProcessSerialNumber front;
-    Boolean same = false;
 
-    if (GetFrontProcess(&front) != noErr) {
-        return false;
+NowProcFrontConfirm now_proc_front_confirm(const ProcessSerialNumber *psn,
+                                           unsigned long wait_ticks)
+{
+    UInt32 deadline;
+
+    if (now_proc_bring_to_front(psn) != noErr) {
+        return kProcFrontSetRefused;
     }
-    (void)SameProcess(psn, &front, &same);
-    return same;
+    /* noErr means SCHEDULED. Re-read at least once even with no budget:
+       a caller that asks for no wait still wants the answer, not the
+       receipt. */
+    deadline = TickCount() + (UInt32)wait_ticks;
+    for (;;) {
+        if (now_proc_is_frontmost(psn)) {
+            return kProcFrontConfirmed;
+        }
+        if (TickCount() >= deadline) {
+            return kProcFrontAccepted;
+        }
+        yield_ticks(2);
+    }
 }
 
 NowProcFrontOutcome now_proc_front_by_name(const char *arg, char *msg,
@@ -453,28 +466,20 @@ NowProcFrontOutcome now_proc_front_by_name(const char *arg, char *msg,
                  shown);
         return kProcFrontNotRunning;
     }
-    if (now_proc_bring_to_front(&targets[0].psn) != noErr) {
+    /* The shared ask-and-confirm: this verb's outcome vocabulary is its
+       own, but the question it asks the machine is the one every other
+       fronting caller asks. */
+    switch (now_proc_front_confirm(&targets[0].psn,
+                                   (unsigned long)kProcFrontWaitSecs * 60)) {
+    case kProcFrontSetRefused:
         snprintf(msg, (size_t)cap,
                  "front: the Mac would not bring \"%.31s\" forward", shown);
         return kProcFrontRefused;
-    }
-
-    /* noErr means the switch was SCHEDULED. It happens when we yield, and
-       GetFrontProcess is the only thing that can tell the two apart. */
-    {
-        UInt32 deadline = TickCount() + (UInt32)kProcFrontWaitSecs * 60;
-
-        for (;;) {
-            if (is_frontmost(&targets[0].psn)) {
-                snprintf(msg, (size_t)cap, "front: \"%.31s\" is frontmost",
-                         shown);
-                return kProcFrontDone;
-            }
-            if (TickCount() >= deadline) {
-                break;
-            }
-            yield_ticks(2);
-        }
+    case kProcFrontConfirmed:
+        snprintf(msg, (size_t)cap, "front: \"%.31s\" is frontmost", shown);
+        return kProcFrontDone;
+    case kProcFrontAccepted:
+        break;
     }
     snprintf(msg, (size_t)cap,
              "front: asked for \"%.24s\"; it is NOT frontmost after %d s",

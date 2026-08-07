@@ -915,7 +915,7 @@ void now_observe_axsnap_command(const char *request_json, long id, char *out,
 
     (void)request_json;
     now_observe_init();
-    if (GetFrontProcess(&front) != noErr) {
+    if (!now_proc_roster_front(&front)) {
         fail(out, cap, id, "no-front", "no front process");
         return;
     }

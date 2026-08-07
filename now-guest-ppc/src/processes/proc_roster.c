@@ -55,6 +55,10 @@ static void fill_row(NowProcRosterRow *row, const ProcessSerialNumber *psn,
     long len = (long)pname[0];
 
     memset(row, 0, sizeof *row);
+    if (info->processAppSpec != NULL) {
+        row->spec = *info->processAppSpec;
+        row->have_spec = true;
+    }
     row->psn = *psn;
     if (len > 31) {
         len = 31;
@@ -98,13 +102,17 @@ int now_proc_roster_next(NowProcRosterIter *it, NowProcRosterRow *row)
     while (GetNextProcess(&it->cursor) == noErr) {
         ProcessInfoRec info;
         Str31 name;
+        FSSpec spec;
         Boolean is_front = false;
         Boolean is_self = false;
 
         memset(&info, 0, sizeof info);
         info.processInfoLength = sizeof info;
         info.processName = name;
-        info.processAppSpec = NULL;
+        /* The launch FSSpec rides on every row: the software inventory
+           needs it to tell a running application from an installed one,
+           and it used to walk twice more to get it. */
+        info.processAppSpec = &spec;
         name[0] = 0;
         if (GetProcessInformation(&it->cursor, &info) != noErr) {
             /* A fact about us, not about the machine: counted, never
@@ -134,13 +142,14 @@ int now_proc_roster_read(const ProcessSerialNumber *psn,
 {
     ProcessInfoRec info;
     Str31 name;
+    FSSpec spec;
     ProcessSerialNumber self;
     Boolean is_self = false;
 
     memset(&info, 0, sizeof info);
     info.processInfoLength = sizeof info;
     info.processName = name;
-    info.processAppSpec = NULL;
+    info.processAppSpec = &spec;
     name[0] = 0;
     if (GetProcessInformation((ProcessSerialNumber *)psn, &info) != noErr) {
         return 0;
@@ -150,4 +159,9 @@ int now_proc_roster_read(const ProcessSerialNumber *psn,
     }
     fill_row(row, psn, &info, name, now_proc_is_frontmost(psn), is_self);
     return 1;
+}
+
+int now_proc_roster_front(ProcessSerialNumber *out)
+{
+    return GetFrontProcess(out) == noErr;
 }

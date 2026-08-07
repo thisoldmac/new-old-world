@@ -57,6 +57,8 @@ typedef struct {
     unsigned long process_size;   /* bytes, as the record reports         */
     unsigned long free_mem;
     unsigned long active_time;
+    FSSpec        spec;           /* processAppSpec: where it was launched */
+    Boolean       have_spec;      /* the Process Manager gave us one       */
     long          size_kb;
     long          used_kb;        /* size - free, floored at 0            */
     NowProcKind   kind;
@@ -109,5 +111,9 @@ const char *now_proc_kind_name(NowProcKind kind);
    helper that existed byte-identically in proc_actions.c and
    mach_activate.c. */
 Boolean now_proc_is_frontmost(const ProcessSerialNumber *psn);
+
+/* The front process, for a caller that wants exactly that one row and no
+   walk. Returns 0 when the Process Manager will not say. */
+int now_proc_roster_front(ProcessSerialNumber *out);
 
 #endif /* NOW_PROC_ROSTER_H */

@@ -14,6 +14,35 @@
 /* Bring a process to the front. Thin over SetFrontProcess. */
 OSErr now_proc_bring_to_front(const ProcessSerialNumber *psn);
 
+/* --- the ONE fronting answer -------------------------------------------
+
+   SetFrontProcess returning noErr means the switch was SCHEDULED. On a
+   cooperative system it happens when we yield, so a re-read of
+   GetFrontProcess is the only thing that can tell a completed switch
+   from an accepted request.
+
+   Three implementations used to make three different claims about that.
+   The console's `front` waited and confirmed; `mach activate` waited and
+   confirmed with its own copy of the loop; the wire's `process.front` -
+   which is what `now_bring_to_front` over MCP rides - answered ok:true
+   on noErr and never looked, so an agent got the weaker claim and could
+   not tell; and the anchor cycle called SetFrontProcess raw and counted
+   accepted requests in a field documented as "actually brought
+   forward". This is that loop, once, so every caller reports what
+   HAPPENED rather than that it dispatched.
+
+   `wait_ticks` is the caller's own budget. 0 means ask and re-read once,
+   for a caller (the cycle) that has a deadline of its own and will wait
+   on a different question next. */
+typedef enum {
+    kProcFrontConfirmed = 0,      /* re-read as frontmost                 */
+    kProcFrontAccepted,           /* noErr, and NOT frontmost at the wait */
+    kProcFrontSetRefused          /* SetFrontProcess itself failed        */
+} NowProcFrontConfirm;
+
+NowProcFrontConfirm now_proc_front_confirm(const ProcessSerialNumber *psn,
+                                           unsigned long wait_ticks);
+
 /* Ask a process to quit: a 'quit' Apple Event it is free to decline or
    take its time over. noErr means the event was SENT, never that the
    application has gone. */
