@@ -828,6 +828,7 @@ void now_observe_handle_command(const char *request_json, long id, char *out,
     char         reference[kNowObsTokenMax];
     char         escaped[128];
     long         used = 0;
+    int          resolved;
 
     now_observe_init();
     reference[0] = '\0';
@@ -853,17 +854,32 @@ void now_observe_handle_command(const char *request_json, long id, char *out,
     }
     now_json_escape(reference, escaped, sizeof(escaped));
 
+    /* VERDICT, REASON AND `resolved` ARE ONE VALUE HERE, not three that
+       agree. All three are read off `handle.why` through the mapping
+       obsresolve.c owns, so there is no arrangement of this struct in
+       which the reply can say `ok` beside a sentence explaining a
+       refusal - the shape that reads as a failure to everyone quoting
+       it, and the worst direction for a reply to lie in.
+
+       `handle.verdict` is deliberately not consulted. It is the same
+       fact, and consulting it would be the second copy: this file has no
+       host test (see one_minter_source_test.py on why that matters), so
+       the invariant that keeps the two in step would be enforced here by
+       nothing at all. handle_reason_source_test.py fails if it comes
+       back. */
+    resolved = (handle.why == kNowObsWhyNone);
     if (!append(out, cap, &used,
                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
                 "\"output\":{\"handle\":{\"ref\":\"%s\",\"verdict\":\"%s\","
                 "\"reason\":\"%s\",\"resolved\":%s",
-                id, escaped, now_obs_verdict_name(handle.verdict),
+                id, escaped,
+                now_obs_verdict_name(now_obs_verdict_for_why(handle.why)),
                 now_obs_why_text(handle.why),
-                handle.verdict == kNowObsOk ? "true" : "false")) {
+                resolved ? "true" : "false")) {
         fail(out, cap, id, "overflow", "handle");
         return;
     }
-    if (handle.verdict == kNowObsOk) {
+    if (resolved) {
         char window_title[512];
         char control_title[512];
 

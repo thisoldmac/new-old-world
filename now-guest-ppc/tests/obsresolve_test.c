@@ -643,6 +643,60 @@ static void verdicts_have_words(void)
           "and the two Mismatch-adjacent reasons do not read alike");
 }
 
+/* A VERDICT AND ITS REASON ARE ONE VALUE, over the whole enum.
+
+   `handle` states all three of verdict, reason and `resolved` in one
+   object, and a caller reads the verdict and the reason together. If
+   those could ever be an `ok` beside a sentence explaining a refusal,
+   the reply would read as a failure to everyone quoting it - in a
+   report, or in a test assertion, which is how a lie of this shape
+   propagates.
+
+   The defence is that exactly one `why` maps to Ok. Asserted here over
+   every enumerator rather than at the two or three sites that happen to
+   care, because a sixteenth reason added later gets this for free only
+   if the property is stated about the mapping itself. */
+static void one_why_is_ok_and_only_one(void)
+{
+    static const NowObsWhy every_why[] = {
+        kNowObsWhyNone, kNowObsWhyMalformed, kNowObsWhyUnminted,
+        kNowObsWhyNoProcess, kNowObsWhyNoPlane, kNowObsWhyNoAnchor,
+        kNowObsWhyOracleAmbiguous, kNowObsWhyOracleMismatch,
+        kNowObsWhyUnreadable, kNowObsWhyProcessRecycled,
+        kNowObsWhyNoWindowList, kNowObsWhyElementGone, kNowObsWhyCycle,
+        kNowObsWhyUnreadableRecord, kNowObsWhyAddressesMoved
+    };
+    int count = (int)(sizeof every_why / sizeof every_why[0]);
+    int oks = 0;
+    int i;
+
+    /* The count itself is an assertion: a reason added to the enum and
+       not added here would leave this loop silently narrower than the
+       thing it claims to cover. */
+    check(count == (int)kNowObsWhyAddressesMoved + 1,
+          "every reason in the enum is in this table");
+    for (i = 0; i < count; i++) {
+        if (now_obs_verdict_for_why(every_why[i]) == kNowObsOk) {
+            oks++;
+            check(every_why[i] == kNowObsWhyNone,
+                  "the only reason that maps to ok is having none");
+        }
+    }
+    check(oks == 1, "and exactly one reason maps to ok");
+    check(now_obs_verdict_for_why(kNowObsWhyNone) == kNowObsOk,
+          "having no reason to refuse IS the ok verdict");
+
+    /* The mapping the resolver uses and the mapping a caller can reach
+       are the same mapping - not two tables that agree today. */
+    {
+        NowObsResolution got;
+
+        now_obs_resolve(NULL, kNowObsKindElement, "x", 1, NULL, &got);
+        check(got.verdict == now_obs_verdict_for_why(got.why),
+              "a resolution's verdict is its reason's verdict");
+    }
+}
+
 int main(void)
 {
     resolves();
@@ -654,6 +708,7 @@ int main(void)
     a_cycle_is_refused();
     a_chain_longer_than_the_bound_is_refused();
     verdicts_have_words();
+    one_why_is_ok_and_only_one();
 
     if (g_failures != 0) {
         fprintf(stderr, "%d failure(s)\n", g_failures);
