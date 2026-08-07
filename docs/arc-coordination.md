@@ -24,38 +24,49 @@ gates are actually armed. Run it before saying any of that out loud.
 
 ## The two cadences, and they are different
 
-**MERGE, TEST, DRIVE** — the frequent one. Land what is finished, run
-the gates, boot a guest, and **look at pixels**. Its job is to stop
-"fifteen slices and nobody tested them together", which is a jam you
-cannot back out of once you are in it.
+**The triggers are numbers in [arc-triggers.conf](arc-triggers.conf), and
+`tools/arc-status` evaluates them.** It prints a VERDICT naming which
+trigger fired. That is deliberate: "when it feels good" is not a
+schedule, and a tired coordinator reinterpreting a guideline at 2am is
+exactly how fifteen slices end up untested together. Argue with the
+numbers and change them — in the file, not in the moment.
 
-Trigger it when **any** of these is true:
+**MERGE, TEST, DRIVE** — the frequent one. Land what is finished, run the
+gates, boot a guest, and **look at pixels**. Computed triggers, any one:
 
-- Three or more lanes have landed since the last one.
-- A lane touched something every other lane builds on — the renderer,
-  the ladder, the guest walk, the contract, the act plane.
-- `main` has moved.
-- Anything at all touched `ext/` (a bake is owed, and a stale resident
-  invalidates every measurement taken after it).
-- A lane reports a defect in **another** lane's landed work.
+- **3+ idle unlanded lanes.** Three is where their conflicts begin
+  interacting rather than merely existing.
+- **40+ unlanded commits**, however few lanes. One lane can be a jam.
+- **Any single lane at 5+ conflicts.** Past that the merge is a project
+  rather than a chore, and it only grows.
+- **`main` has anything we do not.** Always. It is somebody else's work
+  and the drift is silent.
+- **Anything touched `ext/` or `contract/peek_table.h`** — a bake is
+  owed, and a stale resident invalidates every measurement taken after
+  it.
+- **An unlanded lane touched a foundation path** — the renderer, the
+  ladder, the unknown, the content plane, the state engine, the guest's
+  scene/act/peek trees, the contract. Everyone else is working against a
+  tree about to move.
 
-**FULL SWEEP** — the rare one. The scored instrument across every
-target, with a person driving a parallel build. Its job is to **name the
-pain points to steer the work still in flight**, which means it must
-happen while there is work in flight to steer. A sweep taken after
-everything lands has nothing left to inform.
+**FULL SWEEP** — rare, scored, with a person driving a parallel build.
+Its job is to name the pain points that steer work **still in flight**,
+so it must not wait for everything. Computed trigger:
 
-Trigger it when:
+- **Every branch in `SWEEP_GATE` is landed**, AND
+- **at least one merge-test-drive round has run since the last of them
+  landed.** A sweep of a tree whose newest work has never been merged
+  with the rest measures the lanes, not the product.
 
-- The defects the last sweep named are fixed, **and** the fixes have
-  been through a merge-test-drive round. Sweeping over a known-bad
-  target scores one cause twice.
-- The product's shape changed — a new capability class, not a fix.
-- Before a handoff to a new session, so the next one starts from a
-  measurement rather than a story.
+The gate list is deliberately short — three branches, not everything —
+because a sweep after all work lands has nothing left to inform. Two
+discretionary sweeps stay human calls and are **not** computed: a new
+capability class landing (a kind of thing the product could not do
+before, not a fix), and before a handoff, so the next session starts
+from a measurement rather than a story.
 
 **Sweep a frozen commit.** Cut it, sweep that, let the other lanes keep
-running on their branches. This satisfies "do not measure a tree moving
+running on their branches. That satisfies "do not measure a tree moving
 underneath you" without stalling anything.
 
 ## The stop rule

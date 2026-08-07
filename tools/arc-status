@@ -89,6 +89,71 @@ echo "    $vms guest VM(s), $hosts host app(s) running"
 du -sh /private/tmp/nowvm-*/ 2>/dev/null | awk '{s+=$1} END {if (NR) print "    " NR " run dir(s)"}'
 echo
 
+conf="$root/docs/arc-triggers.conf"
+if [ -f "$conf" ]; then
+    cfg () { grep -E "^$1=" "$conf" | tail -1 | cut -d= -f2-; }
+    cfgall () { grep -E "^$1=" "$conf" | cut -d= -f2-; }
+
+    idle=0; unl_commits=0; maxconf=0; ext_touched=0; found_touched=""
+    for b in $(git branch --list 'claude/01[0-9]-*' --format='%(refname:short)'); do
+        [ "$b" = "$INT" ] && continue
+        git merge-base --is-ancestor "$b" "$INT" 2>/dev/null && continue
+        mb=$(git merge-base "$b" "$INT")
+        n=$(git rev-list --count "$mb..$b" 2>/dev/null || echo 0)
+        unl_commits=$((unl_commits + n))
+        wt=$(git worktree list --porcelain | awk -v br="refs/heads/$b" '
+            /^worktree /{w=$2} $0=="branch "br{print w}')
+        dirty=0
+        [ -n "$wt" ] && [ -d "$wt" ] && \
+            dirty=$(git -C "$wt" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+        [ "${dirty:-0}" = "0" ] && idle=$((idle + 1))
+        c=$(git merge-tree --write-tree --name-only "$INT" "$b" 2>/dev/null \
+              | grep -c '^CONFLICT' || true)
+        [ "${c:-0}" -gt "$maxconf" ] && maxconf=$c
+        files=$(git diff --name-only "$mb..$b" 2>/dev/null || true)
+        while IFS= read -r p; do
+            [ -z "$p" ] && continue
+            if printf '%s\n' "$files" | grep -q "^$p"; then
+                found_touched="$found_touched ${b#claude/}:$p"
+                case "$p" in ext/|contract/peek_table.h) ext_touched=1;; esac
+            fi
+        done <<EOF
+$(cfgall FOUNDATION)
+EOF
+    done
+
+    echo "=== VERDICT — computed from docs/arc-triggers.conf, not judgement"
+    fired=0
+    t=$(cfg MERGE_IDLE_LANES);      [ "$idle" -ge "${t:-99}" ] && \
+        { echo "    MERGE: $idle idle unlanded lanes (>= $t)"; fired=1; }
+    t=$(cfg MERGE_UNLANDED_COMMITS);[ "$unl_commits" -ge "${t:-9999}" ] && \
+        { echo "    MERGE: $unl_commits unlanded commits (>= $t)"; fired=1; }
+    t=$(cfg MERGE_LANE_CONFLICTS);  [ "$maxconf" -ge "${t:-99}" ] && \
+        { echo "    MERGE: a lane would hit $maxconf conflicts (>= $t)"; fired=1; }
+    [ "$(cfg MERGE_ON_MAIN_AHEAD)" = "1" ] && [ "${ahead:-0}" != "0" ] && \
+        { echo "    MERGE: main has $ahead commits we do not"; fired=1; }
+    [ "$(cfg MERGE_ON_EXT_TOUCHED)" = "1" ] && [ "$ext_touched" = "1" ] && \
+        { echo "    MERGE: an unlanded lane touched ext/ or peek_table.h — a bake is owed"; fired=1; }
+    if [ -n "$found_touched" ]; then
+        echo "    MERGE: unlanded lanes touch foundation paths:"
+        for f in $found_touched; do echo "           $f"; done
+        fired=1
+    fi
+    [ "$fired" = "0" ] && echo "    merge: no trigger fired"
+
+    missing=""
+    for g in $(cfgall SWEEP_GATE); do
+        git rev-parse --verify "$g" >/dev/null 2>&1 || { missing="$missing $g(absent)"; continue; }
+        git merge-base --is-ancestor "$g" "$INT" 2>/dev/null || missing="$missing ${g#claude/}"
+    done
+    if [ -z "$missing" ]; then
+        echo "    SWEEP: every gate branch is landed — sweep after one merge-test-drive round"
+    else
+        echo "    sweep: BLOCKED on$missing"
+    fi
+    echo
+fi
+
 echo "=== GATE FRESHNESS — a green you did not watch is not a green"
 echo "    build-guests will SKIP silently without .env.lab:"
 if [ -f "$(git rev-parse --git-common-dir)/../.env.lab" ] || [ -f .env.lab ]; then
