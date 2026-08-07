@@ -1791,10 +1791,66 @@ static void test_a_window_the_pool_ran_out_on_says_not_fetched(void)
     check_present(out, "chain is 73");
 }
 
+/* ONE VERDICT SLOT, AND WHICH FACT KEEPS IT.
+ *
+ * Found by driving a live guest with ten control panels open (2026-08-07):
+ * five windows read `notFetched` and only ONE carried the pool-full
+ * sentence and its chain length. The dialog-item retraction runs after the
+ * control retraction and overwrote it, so Sound, VGA Display, Memory and
+ * Date & Time each reported "dialog item list hit a bound" - true, and
+ * silent about the thing a reader would act on.
+ *
+ * A dropped item list is a fact about that window. A spent pool is a fact
+ * about the SCENE and is the only one a consumer could fix by asking
+ * again, so it survives.
+ *
+ * Watched failing by mutation 2026-08-07: removing the PoolFull guard in
+ * now_scene_retract_dialog_items puts the item sentence back and drops the
+ * chain length, and both checks below name it.
+ */
+static void test_a_spent_pool_outlives_a_dropped_item_list(void)
+{
+    NowScene s;
+    char out[65536];
+    int i, owner;
+
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    owner = now_scene_add_process(&s, 0, 1, "Finder", 0, 1,
+                                  kNowSceneAnchorOk, 0);
+    (void)now_scene_add_window(&s, owner, "Spent It", 0, 0, 10, 10, 1);
+    (void)now_scene_add_window(&s, owner, "Lost Both", 0, 0, 10, 10, 1);
+
+    (void)now_scene_open_controls(&s, 0);
+    for (i = 0; i < kNowSceneMaxControls; ++i) {
+        (void)now_scene_add_control(&s, 0, "c", 0, 0, 9, 9, 1, 1, 0, 0, 1);
+    }
+    (void)now_scene_open_controls(&s, 1);
+    now_scene_retract_controls(&s, 1);
+    now_scene_set_walk_verdict(&s, 1, kNowSceneWalkControlsPoolFull);
+    now_scene_set_control_chain_len(&s, 1, 73, 1);
+
+    /* ...and THEN the item list goes, which is the order the walk runs in. */
+    (void)now_scene_open_dialog_items(&s, 1);
+    now_scene_retract_dialog_items(&s, 1);
+
+    check(now_scene_controls_state(&s.windows[1])
+          == kNowSceneControlsNotFetched,
+          "losing the item list does not turn a spent pool into unknown");
+
+    (void)now_scene_encode(&s, out, sizeof out, NULL);
+    check(well_formed(out), "a window that lost both planes is valid JSON");
+    check_present(out, "Lost Both: the scene's shared control pool was "
+                       "already full");
+    /* The number that sizes the pool must survive too - it is the whole
+       reason the pool-full path measures a chain it never recorded. */
+    check_present(out, "chain is 73");
+}
+
 int main(void)
 {
     test_an_empty_control_list_says_which_kind_of_empty();
     test_a_window_the_pool_ran_out_on_says_not_fetched();
+    test_a_spent_pool_outlives_a_dropped_item_list();
     test_the_desktop_says_which_of_three_things_happened();
     test_the_order_ledger_says_what_it_forgot();
     test_theme_colours_reach_the_wire();

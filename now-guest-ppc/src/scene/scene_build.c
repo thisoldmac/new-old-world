@@ -961,6 +961,25 @@ void now_scene_retract_dialog_items(NowScene *s, int window)
     w->dialog_item_count = 0;
     w->first_dialog_item = 0;
     s->dialog_items_truncated = 1;
+    /* ONE SLOT, AND THE MORE ACTIONABLE VERDICT KEEPS IT.
+     *
+       Measured on a live guest 2026-08-07, ten control panels open: five
+       windows read `notFetched` and only ONE carried the pool-full
+       sentence with its chain length, because this line arrived after the
+       control retraction and overwrote it. Sound, VGA Display, Memory and
+       Date & Time each said "dialog item list hit a bound" - true, and
+       silent about the thing a reader would act on.
+     *
+       A dropped item list is a fact about that window. A spent pool is a
+       fact about the SCENE and is the one a consumer can fix by asking
+       again, so it survives; the item retraction is still on the wire in
+       `dialogItems` and in the scene-wide notice. Same shape as the
+       ControlsAndItems composition below, which exists for the same
+       reason and did not cover this verdict because this verdict did not
+       exist when it was written. */
+    if (w->walk_verdict == kNowSceneWalkControlsPoolFull) {
+        return;
+    }
     w->walk_verdict = w->walk_verdict == kNowSceneWalkControlsRetracted
                     ? kNowSceneWalkControlsAndItemsRetracted
                     : kNowSceneWalkDialogItemsRetracted;

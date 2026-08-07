@@ -14,6 +14,66 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## ANSWERED: the desktop verb had no reader, and now the render says who answered (2026-08-07, plan 019 slice D)
+
+**Emulator-verified**, this lane's own VM (block 963, wire 19705), build
+`490165bfb441`. Nothing here touched the PowerBook.
+
+Slice 9 gave the guest a live answer to what its desktop is drawn from —
+`GetTheme` with the Mac OS 9 desktop tags, served as the `desktop`
+command — and **nothing on the host side ever read it**. `hasPattern`,
+`patternCarried`, `patternBytes` and `kThemeDesktopPatternTag` returned
+zero matches across `now-host` and `mirror`. Meanwhile the renderer
+filled the largest rectangle in the picture from the offline asset pack's
+`manifest.json`: a record of the disk image the pack was extracted from,
+true for a guest booted from that image and unchanged since, and
+byte-identical to the truth whether that still held or not. Two producers
+of one answer with one of them unread — a seam by the sweep spec's own
+definition, and it survived because both halves landed *before* the slice
+that would have read them.
+
+**What the machine actually says**, asked live:
+
+```
+source picture   hasPattern true   hasPicture true
+patternBytes 16790   patternName "Lollipop 7"
+pictureName  <TAG ABSENT>          pictureAlias 154 bytes
+```
+
+That last line is the case the design turns on, and it is measured rather
+than assumed: the picture NAME tag is absent while the ALIAS carries the
+file, so **this machine confirms a picture without saying which**. Kind
+agreement is then the strongest claim available, and it is labelled as
+one.
+
+`meta.desktop` now rides every scene beside `meta.theme`, from the same
+gather through the same `read_tag` — one implementation, two shapes, so
+the console verb and the scene cannot drift. `DesktopPattern.resolve`
+asks it first and reports who answered: `machine` (the guest named it and
+the pack held what it named), `assetPack` (it did not, and the pack is
+standing in), `none` (nobody could say, and nothing is substituted).
+
+**The honesty half.** A substituted desktop draws a plate in the
+bottom-left corner reading "desktop from asset pack, not this machine".
+A corner plate rather than a tint over the surface, and the trade is
+stated where it is made: the desktop is what a fidelity sweep compares
+pixel for pixel, so washing it would fail every substituted comparison
+for a reason unrelated to what is being compared. **An unmarked desktop
+now means the machine named it.**
+
+Two rules that make the provenance more than a label, both
+mutation-tested: `source: unknown` never consults the pack — that value
+means the machine was asked and refused, and a fallback there launders a
+measured "I do not know" back into a confident picture — and a pattern
+the machine NAMED that the pack does not hold renders unknown rather than
+as a different pattern.
+
+**Still open:** the guest can name its desktop and cannot hand over a
+drawable copy of it (the flattened `ppat` is an identity, not art), so
+`machine` provenance still means "the machine chose it and the pack had
+it". A guest whose desktop is not in the pack renders as the marked
+unknown, which is honest and is not a picture.
+
 ## LOOK: round 5's five checks, and the one thing four lanes claimed that a picture had to settle (2026-08-07, `claude/019-integration-5`)
 
 Emulator-capture-verified, on the lane's own VM (block 591, anchor 16728 /
@@ -1598,6 +1658,67 @@ One consequence for how this gets re-measured: the console verbs
 `scene.request` path in `wire.c` does. A walk driven from the console
 reports no-plane for every foreign process, which looks exactly like a
 dead resident and is not one.
+
+### TAKEN: the distribution, and a fourth state for the windows that lost (2026-08-07, plan 019 slice E)
+
+**Emulator-verified**, on this lane's own VM (block 963, anchor 19704 /
+wire 19705), a fresh `spin-up-ppc` clone carrying this tree's build
+`490165bfb441`, then `9a307a3577b3` after the fix below. Nothing here
+touched the PowerBook. The anchor plane resolved this time, which is
+exactly the condition the entry above said was missing — so the
+measurement the reason was written for is now taken.
+
+**Nine control panels opened one at a time, the scene walked after each.
+Controls per window, from the walks in which each was carried:**
+
+| panel | controls |
+|---|---|
+| Appearance | 73 |
+| Memory | 44 |
+| Mouse | 38 |
+| General Controls | 28 |
+| Date & Time | 21 |
+| Keyboard | 19 |
+| Monitors (VGA Display) | 18 |
+| Set Time Zone | 10 |
+| Extensions Manager | 6 |
+| NOW's own Workshop | 5-9 |
+
+**What the distribution says that Appearance alone could not.** The mean
+is about 29 and the spread is 6 to 73, so a pool sized for the largest
+panel is sized for one outlier and a pool sized for the mean serves three
+windows. With ten panels open the scene wants over 250 slots against 96,
+and every walk in the run spent the pool exactly: 96, 96, 95, 94, 96. The
+cap is not the binding constraint on any one panel — the per-window bound
+already clears 73 — it is the SCENE budget, and no single number both
+fits `NowScene` in its 64 KB wire ceiling and covers a busy desktop. That
+is the argument for lazy delivery rather than for a bigger number, and it
+is now measured rather than asserted.
+
+**The fourth state, which is what the measurement actually exposed.** A
+window walked after the pool filled is refused a slot and retracts, so it
+published `controls: []` — identical to a window proven to have none, for
+a reason that has nothing to do with that window. Five panels read that
+way in one walk. `windows[].controlsState` now says which:
+`complete` / `empty` / `unknown` / `notFetched`, and only `empty` is a
+fact about the machine. Observed live in one scene: Appearance, Date &
+Time, Memory, Monitors and Sound `notFetched`; the Finder's desktop and
+Mouse's second window `empty`; five windows `complete`.
+
+**A defect this run found that no test would have.** The walk verdict is
+one slot and the dialog-item retraction runs after the control one, so
+four of those five `notFetched` windows had their pool-full sentence —
+and its chain length — overwritten by "dialog item list hit a bound".
+True, and silent about the thing a reader would act on. The pool-full
+verdict now survives an item retraction, the same way
+`ControlsAndItemsRetracted` already composed the two older ones; watched
+failing by mutation, and re-confirmed on the machine (`Mouse ... chain is
+38` where the previous build said nothing).
+
+**Still open:** the pool is still 96 and lazy DELIVERY does not exist —
+there is no way to go back and ask for a `notFetched` window's controls.
+What exists is the honest name for the gap, so nothing reads a spent pool
+as an empty panel while the fetch is built.
 
 ### NOT what Sweep A thought, for Mouse
 
