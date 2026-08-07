@@ -1257,17 +1257,15 @@ extension MirrorStateProjectionServiceTests {
                     $0.op == "text" && $0.text == "Save changes?"
                 } == true
             },
-            "island": .declined("""
-                Host-internal render state that happens to live on this \
-                struct. It has never been on the wire — `Serve.sceneMethod` \
-                nils every island before encoding, because island pixels \
-                ride their own pager — and it is a base64 RGBA blob that \
-                would exceed the protocol's whole one-message ceiling by \
-                itself.
-                """),
+            /* The `island` row stood here and is gone with the field
+               (2026-08-07). It declined to project a base64 RGBA blob of
+               the guest's real framebuffer — which was the right call about
+               the projection and said nothing about the deeper problem,
+               that those bytes were being drawn into the render. The field
+               is removed; see archive/pixel-islands-2026-08-07/. */
             "displayEpoch": .declined("""
                 The content plane's own clock (plan 018 slice 1), and the \
-                same kind of shelf as `island`: host-internal render state \
+                same kind of shelf `island` was: host-internal render state \
                 that happens to live on this struct. Every number in it — \
                 the guest's capture generation and its display epoch — \
                 already reaches an agent on the drain records themselves, \
@@ -1277,8 +1275,8 @@ extension MirrorStateProjectionServiceTests {
                 """),
             "contentPlane": .declined("""
                 Whether THIS HOST ever armed P3 on this window (plan 019 \
-                slice C). It is the strongest case of the three shelves \
-                above it: `island` and `displayEpoch` at least describe \
+                slice C). It is the strongest case of the shelves \
+                above it: `displayEpoch` at least describes \
                 the guest, while this describes only what this host chose \
                 to look at, and an agent driving the machine has no use \
                 for another client's attention history.
