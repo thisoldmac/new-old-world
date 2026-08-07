@@ -14,6 +14,76 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## BROKEN: a classified control the renderer will not draw, and one that erases the panel (2026-08-07, `claude/019-integration-4`)
+
+Round 4's LOOK, on the emulator at 03:35–03:45, against the private bake
+`now-stage-int4` (anchor 14624 / wire 14625). Emulator-capture-verified;
+nothing here ran on the PowerBook.
+
+`018-cdef-classify` does what it says: **71 of Appearance's 73 controls
+come back classified** by CDEF resource id, including the six-tab strip
+(`kind: tab`, value 1, min 1, max 6), the theme list, the horizontal
+scroll bar and the help button. Date & Time's four group boxes arrive
+with `kind: groupBox` and their exact titles — **"Use a Network Time
+Server", with its `r`.** That is a large, real gain in what the scene
+knows.
+
+**And the rendered picture got worse, not better.** Two mechanisms, both
+found by rendering round 3's own Appearance scene through round 4's
+renderer: it comes out exactly as round 3 drew it, so the renderer did
+not regress — the SCENE changed underneath it.
+
+- **The root user pane erases the window.** Appearance's outermost
+  control is a `userPane` at (0,0)-(464,330) — the whole content rect —
+  and it is LAST in the control chain. `SceneRenderer` draws
+  `dataBrowser`/`userPane`/`imageWell`/`systemControl` as an opaque
+  unavailable plate, so the panel renders as one flat lattice and all six
+  tabs, the theme list and `Save Theme…` disappear beneath it. When every
+  one of those 73 controls was `unknown` (round 3) the same window drew
+  its scroll bars and its button. **A lane that learned more drew less.**
+  The rule this wants is the one `018-render-defects` already established
+  for DITL rows — *the machine paints its ground and then draws on it* —
+  applied to region controls: they are ground, and ground is not drawn
+  last. Not attempted here rather than attempted unwatched.
+
+- **A typed control loses to its own untyped DITL row.** Twenty of Date &
+  Time's twenty-one controls share a `ref` with a dialog item, and every
+  one of those items is `knowledge: unknown, kind: null`. The control
+  loop skips any control whose ref is in `dialogRefs`, so the newly
+  classified group box never reaches `drawGroup` and the untyped row
+  draws in its place. This is why the panel has had no group boxes, no
+  static text and no field values in **both** rounds — and why
+  `019-charcoal`'s "Use a Network Time Server" fix cannot be seen in an
+  integrated render even though the string now arrives whole. It was not
+  fixable before this lane, because there was nothing better to prefer;
+  it is fixable now, and the care it needs is the `scene-ie-error-alert`
+  case the existing suppression was written for.
+
+**Fixed in the same round:** the derived branch was emitting
+`GetControlValue` into `semantic.value`, which on this contract is the
+control's own WORDS and which every consumer draws as text. Every static
+field and every user pane was published with the text `"0"`, and
+Appearance's root pane was captioned `0`. The number already rides the
+control's own `value` key; the derived branch now says nothing about
+contents. `scene_json_test.c` pins it, mutation-verified.
+
+**What DID survive integration, watched rather than asserted:**
+
+- **Cross-application stacking (`019-depth-and-face`).** The Finder's
+  "Macintosh HD" window renders in front of NOW's sidebar, matching the
+  guest's own screendump. Round 3's render put NOW over it.
+- **The panel face (`019-depth-and-face`).** Date & Time's face measures
+  (220,220,220) against the guest's (221,221,221). Round 3's render of
+  the same panel measured (255,255,255).
+- **A small unknown reads as texture (`018-render-defects`).** A ~20×20
+  unknown region in Date & Time draws in the close style (0xC4 dots,
+  0xB8 edge) and is plainly distinguishable from the quiet lattice
+  beside it in the same frame — the rung-4 defect Michelle filed as
+  "a plate claims something is there".
+- **Charcoal (`019-charcoal`).** Every menu title, window title, button
+  and label in the render is Charcoal; `pack-2026-08-07b` carries
+  strikes 9 through 24.
+
 ## FIXED: two capabilities and their gate had never met, and one integration found both (2026-08-07, `claude/019-integration-3`)
 
 `scripts/test-all` failed at the host gate on the round-3 merge, twice,

@@ -640,14 +640,21 @@ static void put_controls(Sink *k, const NowScene *s, const NowSceneWindow *w)
                 put(k, ",\"state\":");
                 put_str(k, c->value != 0 ? "on" : "off");
             }
-            if (control_has_value(role)) {
-                char derived_value[16];
+            /* NO `semantic.value` HERE, and its absence is the answer.
+               The CDEF id names a KIND; it does not read a control's
+               contents, so this branch has nothing to say about them.
+               `semantic.value` is the control's own words - the text in
+               the field, the item chosen in the menu - and every consumer
+               DRAWS it. Emitting `GetControlValue` into it published the
+               integer 0 as the text of every static field and every user
+               pane, and on 2026-08-07 that erased the whole Appearance
+               panel: its root pane came back captioned "0" and, being the
+               last control in the chain, painted over all six tabs.
 
-                put(k, ",\"value\":");
-                snprintf(derived_value, sizeof derived_value, "%d",
-                         (int)c->value);
-                put_str(k, derived_value);
-            }
+               The number is not lost and never was - it rides the
+               control's own `value` key a few lines above, where it means
+               what the Control Manager means. Saying it twice under two
+               meanings is how it came to be read as prose. */
             put(k, ",\"provenance\":\"guest-cdef-resource\","
                    "\"completeness\":\"complete\"}}");
             continue;

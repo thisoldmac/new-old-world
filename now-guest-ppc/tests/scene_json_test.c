@@ -1164,9 +1164,20 @@ static void test_a_cdef_id_is_derived_and_not_known(void)
           "the panel encodes");
 
     check_present(out, "\"knowledge\":\"derived\",\"kind\":\"scrollBar\","
-                       "\"action\":\"scroll\",\"value\":\"7\","
+                       "\"action\":\"scroll\","
                        "\"provenance\":\"guest-cdef-resource\","
                        "\"completeness\":\"complete\"");
+    /* THE NUMBER RIDES `value`, NEVER `semantic.value`. A CDEF id names a
+       KIND and reads nothing of a control's contents, so this branch has
+       nothing to say about them - and `semantic.value` is the control's
+       own WORDS, which every consumer draws as text. Emitting
+       GetControlValue into it published the integer 0 as the text of
+       every static field and every user pane; Appearance's root pane came
+       back captioned "0" and, being last in the chain, painted an
+       unavailable plate over all six tabs. Watched on the emulator
+       2026-08-07 before this line existed. */
+    check_present(out, "\"value\":7");
+    check_absent(out, "\"value\":\"7\"");
     check_present(out, "\"knowledge\":\"derived\",\"kind\":\"tab\","
                        "\"action\":\"press\"");
     /* The legacy role field carries it too - it is documented as the
