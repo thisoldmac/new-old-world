@@ -551,7 +551,7 @@ meaning exactly what it meant. See "cross-application depth" below.
 renders white. CLOSED 2026-08-07, at the *measured* level — see "the
 panel face is measured, not asked" below.
 
-## UNVERIFIED: cross-application depth is watched, not read (2026-08-07, `claude/019-depth-and-face`)
+## EMULATOR-VERIFIED: cross-application depth is watched, not read (2026-08-07, `claude/019-depth-and-face`)
 
 **The Window Manager cannot answer across applications, and that is
 settled rather than suspected.** `WindowList` is a low-memory global at
@@ -582,10 +582,19 @@ scene carries a new `depth` coverage claim reading `partial`. Faceless
 background applications are excluded from that count, or every scene on
 every machine would read partial forever.
 
-- **Not verified on a Macintosh.** `scripts/build-guests` compiles it and
-  `front_order_test.c` replays the 019 run's real fronting sequence
-  against the layering that run's own screendump shows. Nothing has
-  watched the guest emit a corrected order.
+- **Watched on an emulator, not on metal.** Three applications fronted
+  in a known order — New Old World, then the Finder with the startup
+  disk open, then Date & Time — on a mac99/OS 9.1 clone, guest build
+  `baeca61f30e9`. The guest emitted `Date & Time, Macintosh HD, Desktop,
+  New Old World`, which is what its own QMP screendump shows, and the
+  host render agrees; before this branch it emitted New Old World ahead
+  of both Finder windows. Pair and scene:
+  `~/Lab/Assets/now-mirror-assets/019-depth-and-face/` (out of git).
+  The PowerBook has not seen it.
+- **One machine, one sequence, four applications.** The measurement is a
+  single arrangement that used to be drawn wrong and now is not. It does
+  not exercise eviction, a process that quits and relaunches, or an
+  application fronted by a person rather than by AppleScript.
 - **The ledger is bounded at 32 and counts its evictions**, but nothing
   puts that count on the wire. A machine that has run more than 32
   applications since NOW started has forgotten somebody, and the scene
@@ -595,7 +604,7 @@ every machine would read partial forever.
   generically. The renderer draws the order either way and says nothing
   about how much of it is known.
 
-## UNVERIFIED: the panel face is measured, not asked (2026-08-07, `claude/019-depth-and-face`)
+## EMULATOR-VERIFIED: the panel face is measured, not asked (2026-08-07, `claude/019-depth-and-face`)
 
 The renderer filled every non-modal window's content with `Platinum.g0`.
 Against the guest's own screendump for the same scene, the Date & Time
@@ -614,6 +623,11 @@ is CarbonLib 1.0 (`Appearance.h:2826`) and the guest already calls it
 in — the ask is `meta.theme.dialogBackground`, and until it exists the
 number is right for the shipped Platinum theme and silently wrong for
 any other. That is the same shape as `ppat` 16 on the desktop.
+
+Watched in the same run as the depth work above: Date & Time's face is
+0xDDDDDD in the guest screendump and in the render beside it, against
+white in the 018 render of the same three applications
+(`019-depth-and-face/00-before-render-018.png`).
 
 - **`kind == 2` is the Dialog Manager's answer and does not cover every
   panel.** The Appearance control panel is windowKind 2000 — application
