@@ -176,7 +176,7 @@ struct HostRootView: View {
     @ViewBuilder
     private var detail: some View {
         switch state.selectedModuleID {
-        case "screenshots":
+        case "screen":
             ScreenshotsModuleView(model: state.screenshots)
         case "files":
             FilesModuleView(model: state.files)
@@ -190,8 +190,6 @@ struct HostRootView: View {
             ConsoleModuleView(model: state.console, listener: state.listener)
         case "chat":
             ChatModuleView(model: state.chat)
-        case "connections":
-            ConnectionsModuleView(model: state.connections)
         case "census":
             CensusModuleView(model: state.census)
         case "diagnostics":
@@ -209,10 +207,11 @@ struct HostRootView: View {
         case "logs":
             LogsModuleView(model: state.logs, log: state.logs.log)
         case "settings":
-            SettingsModuleView(settings: state.settings,
-                               listener: state.listener,
-                               onStart: { state.startListening() },
-                               onStop: { state.stopListening() })
+            ConnectionsModuleView(model: state.connections,
+                                  settings: state.settings,
+                                  listener: state.listener,
+                                  onStart: { state.startListening() },
+                                  onStop: { state.stopListening() })
         default:
             // A card rather than a full-bleed pane: this is the one detail
             // state that is not a module, and reading as something floating
@@ -274,7 +273,8 @@ struct GuestPicker: View {
                 .padding(.horizontal, 10)
                 .padding(.top, 8)
                 .help("Every command, module and capture request goes to "
-                      + "the Mac chosen here. The others stay connected.")
+                      + "the machine chosen here. The others stay "
+                      + "connected.")
             }
         }
     }

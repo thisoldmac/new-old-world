@@ -44,6 +44,7 @@ struct ModuleRegistry: Sendable {
     static let renamedIDs: [String: String] = [
         "agent": "mcp",
         "screenshots": "screen",
+        "connections": "settings",
     ]
 
     /// The module a saved selection means today, following one rename.
@@ -136,18 +137,6 @@ struct ModuleRegistry: Sendable {
             summary: "Talk to a model that can see and drive "
                 + "\(MachineNaming.simpleReference)"
         ),
-        /* Above the machine-describing pages on purpose: this one is about
-           WHICH machines are connected and which is being driven, where
-           Census and Software describe the one already chosen. The
-           footer's Connection row keeps its own job (this side's port and
-           link state) and is a different question. */
-        ModuleDescriptor(
-            id: "connections",
-            title: "Connections",
-            symbol: "desktopcomputer.and.arrow.down",
-            summary: "Which \(MachineNaming.properNounPlural) are "
-                + "connected, and which one is being driven"
-        ),
         ModuleDescriptor(
             id: "census",
             title: "Hardware",
@@ -217,12 +206,24 @@ struct ModuleRegistry: Sendable {
             summary: "What \(MachineNaming.thisMac) has recorded happening",
             placement: .footer
         ),
+        /* The link, and who is on it — one page, formerly two rows.
+           "Connections" sat in the list (the roster of machines) while this
+           one sat in the footer (the port and the link state), and neither
+           half stood up alone: the roster explained an empty page by naming
+           the port, and this one explained the port by describing a machine
+           that would dial into it. It keeps the FOOTER placement and the
+           link dot, because the state of the link is what the footer is
+           for; the roster came down to it. */
         ModuleDescriptor(
+            /* The id is a preferences key and the ⌘, target, not a name: it
+               is what a saved selection and the Settings menu item both
+               spell, so it stays put while the title says what the page is
+               about. */
             id: "settings",
             title: "Connection",
             symbol: "network",
             summary: "The port \(MachineNaming.thisMac) listens on, and "
-                + "the state of the link",
+                + "which \(MachineNaming.properNounPlural) are on it",
             placement: .footer,
             showsLinkStatus: true
         ),

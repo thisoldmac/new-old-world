@@ -229,7 +229,7 @@ final class GuestStatusTests: XCTestCase {
         XCTAssertFalse(state.quickCapture.readiness.isEnabled,
                        "no guest — the command must be greyed out")
         XCTAssertEqual(state.quickCapture.readiness.reason,
-                       "No Mac is connected")
+                       "No \(MachineNaming.commonNoun) is connected")
 
         let guest = NWConnection(host: .ipv4(.loopback),
                                  port: NWEndpoint.Port(rawValue: 52983)!,

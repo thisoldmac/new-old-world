@@ -25,7 +25,7 @@ final class QuickCaptureTests: XCTestCase {
             connection: .disconnected, isCapturing: false,
             isStreaming: false, isTransferringFile: false)
         XCTAssertFalse(ready.isEnabled)
-        XCTAssertEqual(ready.reason, "No Mac is connected")
+        XCTAssertEqual(ready.reason, "No \(MachineNaming.commonNoun) is connected")
     }
 
     func testConnectingIsNotYetConnected() {
@@ -76,7 +76,7 @@ final class QuickCaptureTests: XCTestCase {
         var outcomes: [QuickCaptureOutcome] = []
         command.report = { outcomes.append($0) }
         command.run()
-        XCTAssertEqual(outcomes, [.failed("No Mac is connected")])
+        XCTAssertEqual(outcomes, [.failed("No \(MachineNaming.commonNoun) is connected")])
     }
 
     /// The badge says connected but the listener holds no session, so the
