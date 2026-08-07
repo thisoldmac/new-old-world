@@ -28,22 +28,34 @@ with `itemTotal` and the owner-rect COUNT both unchanged, the *identities*
 of the rects revert to the icon grid for **0.83 s** before returning to
 list geometry.
 
-    BEFORE  (-8.06s)  13 rects  162,25,194,69   162,89,194,133  …   (icon boxes, 32x44)
-    AFTER   (+6.86s)  21 rects  22,100,38,116   22,119,38,135   …   (list rows, 16x16 at 19px pitch)
-    BOUNCE  (+7.48s)  21 rects  162,25,194,69   162,89,194,133  …   ICON boxes, back, inside a list window
-    SETTLED (+8.31s)  21 rects  22,100,38,116   …                    list rows again
+     -8.06s   displayTotal=235   itemTotal=13   roster=ICON boxes (32x44)
+     +1.81s   displayTotal=235   itemTotal=23   roster=ICON boxes    <- count switched, geometry did not
+     +6.86s   displayTotal=235   itemTotal=23   roster=list rows     <- geometry switched
+     +7.48s   displayTotal=235   itemTotal=23   roster=ICON boxes    <- the BOUNCE, 0.83 s, nothing asked for it
+     +8.31s   displayTotal=235   itemTotal=23   roster=list rows
+     +8.41s   displayTotal=845   itemTotal=23   roster=list rows     <- the CONTENT PLANE finally follows
 
 All **20** flipping rects are icon-grid boxes; they contribute all 40
 `rectOwnerFlips` in the run, every one of them `semantic → absent →
-semantic` or its mirror. **The count staying at 21 is what makes this a
-SWAP rather than an addition**: the list rows were gone from the same
-frames the icon boxes were in.
+semantic` or its mirror.
 
-In the render that is a second of Finder items drawn at the wrong
-positions inside a list-view window — Michelle's complaint #1
-("content draws over, under, or absent across redraws") caught in a
-trace for the first time, with the window, the rectangles and the
-instant all named.
+**Two things are visible there and only one is a defect.** The lag is
+not, or not obviously: `displayTotal` holds at the icon view's 235 ops
+until +8.41 s because the Finder had not yet repainted, and the content
+plane can only carry what the guest drew. What it means is that for
+**8.4 seconds** the window's drawn content was the icon view's while the
+item roster already claimed 23 list items — the semantic layer and the
+QuickDraw layer disagreeing about which view the window is in, with the
+renderer compositing both.
+
+**The bounce is.** At +7.48 s the roster went list → icon → list with
+`itemTotal` and the rect count both unchanged at 23 and 21, and nothing
+asked it to. The count holding still is what makes it a SWAP rather than
+an addition: the list rows were gone from the same frames the icon boxes
+were in. In the render that is roughly a second of Finder items drawn at
+the wrong positions — Michelle's complaint #1 ("content draws over,
+under, or absent across redraws") caught in a trace for the first time,
+with the window, the rectangles and the instant all named.
 
 **Not yet diagnosed, and the hypothesis is stated as a hypothesis.**
 `Scene.Window.items` is the Finder's own live `position of` via
