@@ -282,6 +282,7 @@ final class CommandParityTests: XCTestCase {
     private static let reachedByFallback: [String: String] = [
         "putstat": "no arguments; renders as rows through console_reply.c",
         "mouseloc": "no arguments; renders as rows through console_reply.c",
+        "desktop": "no arguments; renders as rows through console_reply.c",
     ]
 
     /// Verbs with no console face because **a person cannot usefully type

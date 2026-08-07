@@ -62,6 +62,20 @@ static const char *const d_putstat[] = {
     NULL
 };
 
+static const char *const d_desktop[] = {
+    "  What this Mac's desktop is actually drawn from, asked",
+    "  of the Appearance Manager rather than read out of a",
+    "  resource. The `ppat` in the System file is a shipped",
+    "  default the desktop is never chosen from, so it says",
+    "  nothing about what is on the screen.",
+    "  Reports the theme, the pattern's name and its",
+    "  flattened bytes in hex, and - when a picture is set -",
+    "  its name and alignment. A picture is drawn OVER the",
+    "  pattern, so both are reported and `source` says which",
+    "  one a person is looking at.",
+    NULL
+};
+
 static const char *const d_wirestat[] = {
     "  How long this Mac takes to NOTICE a request, as two",
     "  histograms: the interval between wire service passes,",
@@ -509,6 +523,8 @@ const NowCommandDoc kNowCommandDocs[] = {
       "putstat", d_putstat },
     { "wirestat", 1, "how long this Mac takes to notice a request",
       "wirestat [reset | sleep N | wake on|off]", d_wirestat },
+    { "desktop", 1, "what this Mac's desktop is actually drawn from",
+      "desktop", d_desktop },
     { "mv", 0, "move or rename something in the shared files",
       "mv <path> <new path>", d_mv },
     { "trash", 0, "move something to the Trash",

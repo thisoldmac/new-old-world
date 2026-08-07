@@ -316,6 +316,14 @@ run_c now-guest-ppc now_semantic_batch_test.c \
 # mismatch, a cleared `fired`, or an unreached request up to agreement.
 run_c now-guest-ppc mach_selftest_report_test.c \
       "-DNOW_PEEK_TABLE_HOST" src/machine/mach_selftest_report.c
+# `desktop` - what the machine's desktop is actually drawn from. The
+# serializer is Toolbox-free so the wire shape is provable here; the
+# Appearance Manager call that fills it is not, and is not pretended to
+# be. The interesting assertion is the byte budget: a full answer must
+# fit kNowCommandResultCap, because the run-time alternative is dropping
+# the hex rows a person asked for.
+run_c now-guest-ppc desktop_report_test.c "" \
+      src/machine/desktop_report.c src/core/json.c
 run_c now-guest-ppc act_settlement_test.c \
       "-DNOW_PEEK_TABLE_HOST" src/act/act_settlement.c
 # `activate` - fronting a process by IDENTITY rather than by name. The
