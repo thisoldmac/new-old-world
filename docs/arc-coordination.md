@@ -12,19 +12,57 @@ Michelle, 2026-08-07, going to bed:
 alpha.** Her hedge is hers and it stays — this is a direction to steer
 by, not a promise anyone made.
 
-Read it as a filter on what to do next. Work that moves the product
-toward *"looks and feels good enough to land"* outranks work that is
-merely interesting, and there has been a great deal of the interesting
-kind. Two consequences worth holding:
+**Landing is a joint act. Never do it alone.**
 
-- **A thing that looks wrong to a person outranks a thing that measures
-  wrong to an instrument.** She could not sign off on a layout while
-  every test was green.
-- **Landing on `main` has prerequisites nobody has done**, and they are
-  not features: `.githooks` does not exist there, so the commit gates
-  cannot be armed; several corpus findings cite `now/docs/` files that
-  live only on lane branches; and the arc is a long way ahead of main
-  with the merge never yet attempted in that direction.
+> dont land on main on your own. i want to be there for that.
+
+### It is not a reason to narrow
+
+A first draft of this section read "work that moves the product toward
+landing outranks work that is merely interesting". **She pushed back on
+that and she is right:**
+
+> you can keep the interesting stuff going. i strongly encourage it,
+> especially if its turning out good findings and missing pieces that are
+> in service of "good enough to land". pushing back on this gate because
+> i dont want you hyperfocused too narrowly on patching when theres still
+> a lot of open ends.
+
+So the destination is a **direction**, not a gate that forecloses
+breadth. Nearly everything that made this product better was found by
+work that looked tangential when it started — the transport bug found by
+a lane sent to revive seven tools, the two-pixel window rect found by
+making one reader authoritative, a font gap wearing a chrome costume.
+**Findings and missing pieces are in service of landing, not competing
+with it.** Narrowing to patch what is already known would forfeit exactly
+the mechanism that has been producing the wins.
+
+### On people versus instruments — the framing to use
+
+The same draft said "a thing that looks wrong to a person outranks a
+thing that measures wrong to an instrument". That is lazy, and Michelle
+corrected it:
+
+> ideally something looking wrong to a person should look wrong to the
+> machine. the opposite is seldom true
+
+**The asymmetry is the point.** When an instrument goes red, it is almost
+always genuinely wrong. When a *person* sees something wrong that every
+gate passed, the defect is real **and so is a second defect: the
+instrument has a gap.** The response is not "trust the human over the
+tests" — it is **go make the gate that would have caught it.**
+
+This arc has produced five of those gaps and every one was found by a
+person or by accident, never by the instruments themselves. A human
+noticing is a signal that we are one gate short, not a licence to skip
+building it.
+
+### The prerequisites, which are not features
+
+`.githooks` does not exist on `main`, so the commit gates cannot be
+armed; several corpus findings cite `now/docs/` files that live only on
+lane branches; and the arc is a long way ahead of main with the merge
+never yet attempted in that direction.
 
 
 A coordinating session that has a dozen lanes in flight cannot hold their
