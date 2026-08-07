@@ -343,6 +343,29 @@ public enum DisplayReplay {
                 break   // arc/poly remain unsupported structured ops
             }
         }
+
+        /* TABS, AFTER EVERYTHING ELSE, AND THAT ORDER IS LOAD-BEARING.
+           `DrawThemeTab` leaks its label boxes, their bevel and their
+           titles through the bottlenecks but not its slanted end caps, so
+           the mirror has drawn tab labels floating on flat grey for as long
+           as anyone has looked (fidelity sweep 2026-08-07-a, verdict 4).
+           `DrawnTabStrip` recovers the caps' geometry from the boxes that
+           DID arrive; this places them.
+
+           It runs last because the front tab must ERASE one row of the
+           pane's own frame line, and the replay draws that line. Running
+           the pass earlier would put the caps down and then stroke the
+           pane straight through them. The title is protected by a clip
+           inside `PlatinumTab.draw`, not by ordering. */
+        for strip in MirrorKit.DrawnTabStrip.derive(from: ops) {
+            PlatinumTab.draw(strip, in: g,
+                             origin: { h, v in
+                                 CGPoint(x: content.minX + CGFloat(h),
+                                         y: content.minY + CGFloat(v))
+                             },
+                             coverage: coverage)
+            drew = true
+        }
         return drew
     }
 
