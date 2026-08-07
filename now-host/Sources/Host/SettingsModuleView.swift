@@ -1,6 +1,23 @@
 import SwiftUI
 
-struct SettingsModuleView: View {
+/// This Mac's side of the link: the port it offers, and the health of the
+/// session running over it.
+///
+/// **A section, not a page.** This used to be the whole "Connection" pane,
+/// pinned in the footer beside a separate "Connections" pane that listed the
+/// machines on that same link. Two sidebar rows for one subject, and neither
+/// stood up alone — the link pane had to say what a connection was for, and
+/// the roster pane had to restate the port and the listening state to explain
+/// why it was empty. They are one page now (`ConnectionsModuleView`), and
+/// this is the half about this side.
+///
+/// The file keeps its name deliberately: `SessionHealthProjection` declares
+/// that the app UI reaches session health through `healthBlock(health)` in
+/// `SettingsModuleView.swift`, and `HostFaceParityTests` reads this source to
+/// check it. Renaming the file would break that declaration silently in one
+/// direction and loudly in the other; the declaration moves when somebody
+/// moves it on purpose, in the same commit.
+struct ConnectionLinkSection: View {
     @ObservedObject var settings: SettingsModel
     @ObservedObject var listener: GuestListener
     var onStart: () -> Void
@@ -9,65 +26,53 @@ struct SettingsModuleView: View {
     @State private var portText: String = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Connection")
-                    .font(.largeTitle.weight(.semibold))
-                Text("The \(MachineNaming.commonNoun) dials in; "
-                     + "\(MachineNaming.thisMac) only listens.")
-                    .foregroundStyle(.secondary)
-            }
-            Divider()
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHead(
+                "The link",
+                caption: "\(MachineNaming.startingSentence(MachineNaming.simpleReference)) "
+                    + "dials in; \(MachineNaming.thisMac) only listens.")
 
-            Form {
-                HStack(spacing: 12) {
-                    TextField("Port", text: $portText)
-                        .frame(width: 90)
-                        .disabled(isListening)
-                        .onSubmit(applyPort)
-                    if isListening {
-                        Button("Stop Listening") { onStop() }
-                    } else {
-                        Button("Start Listening") {
-                            applyPort()
-                            onStart()
-                        }
-                        .buttonStyle(.borderedProminent)
+            /* The port and its switch on one line, not in a Form. A Form
+               draws a labelled settings sheet, and this is no longer a
+               settings page — it is the first fact on a page whose second
+               fact is who dialled into that port. */
+            HStack(spacing: 12) {
+                Text("Port")
+                    .foregroundStyle(.secondary)
+                TextField("Port", text: $portText)
+                    .labelsHidden()
+                    .frame(width: 80)
+                    .disabled(isListening)
+                    .onSubmit(applyPort)
+                if isListening {
+                    Button("Stop Listening") { onStop() }
+                } else {
+                    Button("Start Listening") {
+                        applyPort()
+                        onStart()
                     }
+                    .buttonStyle(.borderedProminent)
                 }
                 Toggle("Listen when the app starts",
                        isOn: $settings.listenAtLaunch)
                     .toggleStyle(.checkbox)
+                    .padding(.leading, 6)
             }
 
-            statusLine
+            /* No status line here. The page's header carries one sentence
+               for the state of the link AND how many machines are on it —
+               which is the whole reason the two panes folded together. A
+               second dot down here would be the same fact drawn twice, and
+               the two were already worded differently. */
 
             if let health = listener.health {
                 healthBlock(health)
             }
-
-            if !listener.log.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Log")
-                        .font(.headline)
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 2) {
-                            ForEach(listener.log.reversed()) { entry in
-                                Text("\(entry.at, format: .dateTime.hour().minute().second())  \(entry.text)")
-                                    .font(.system(.caption, design: .monospaced))
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
-                    }
-                    .frame(maxHeight: 180)
-                }
-            }
-            Spacer()
         }
-        .padding(28)
-        .frame(maxWidth: .infinity, maxHeight: .infinity,
-               alignment: .topLeading)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(Color(nsColor: .controlBackgroundColor)))
         .onAppear { portText = String(settings.listenPort) }
     }
 
@@ -86,7 +91,10 @@ struct SettingsModuleView: View {
         }
     }
 
-    private func healthBlock(_ health: GuestListener.SessionHealth) -> some View {
+    /// How the paired session is actually behaving — the one thing on this
+    /// page that is about the link rather than about either machine.
+    private func healthBlock(_ health: GuestListener.SessionHealth)
+        -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Health")
                 .font(.headline)
@@ -113,6 +121,7 @@ struct SettingsModuleView: View {
             }
             .font(.callout)
         }
+        .padding(.top, 4)
     }
 
     private func guestDescription(_ health: GuestListener.SessionHealth)
@@ -133,24 +142,57 @@ struct SettingsModuleView: View {
         }
         return text
     }
+}
 
-    @ViewBuilder
-    private var statusLine: some View {
-        switch listener.state {
-        case .idle:
-            Label("Not listening", systemImage: "circle")
-                .foregroundStyle(.secondary)
-        case .listening(let port):
-            Label("Listening on port \(String(port)) — no "
-                  + "\(MachineNaming.commonNoun) connected",
-                  systemImage: "circle.dotted")
-                .foregroundStyle(.orange)
-        case .connected(let name):
-            Label("Connected: \(name)", systemImage: "circle.fill")
-                .foregroundStyle(.green)
-        case .failed(let reason):
-            Label(reason, systemImage: "exclamationmark.triangle")
-                .foregroundStyle(.red)
+/// What the listener has been doing, last line first.
+///
+/// Last on the page because it is the record rather than the state: a person
+/// arrives here to see whether the link is up and who is on it, and reaches
+/// the log only when one of those answers is surprising.
+struct ConnectionListenerLog: View {
+    @ObservedObject var listener: GuestListener
+
+    var body: some View {
+        if !listener.log.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                SectionHead("Log", caption: "What the listener on "
+                    + "\(MachineNaming.thisMac) has done, newest first.")
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(listener.log.reversed()) { entry in
+                            Text("\(entry.at, format: .dateTime.hour().minute().second())  \(entry.text)")
+                                .font(.system(.caption, design: .monospaced))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
+                .frame(maxHeight: 180)
+            }
+        }
+    }
+}
+
+/// One heading vocabulary for the whole page, so the two halves that were
+/// separate panes do not arrive wearing their old title styles.
+struct SectionHead: View {
+    let text: String
+    let caption: String?
+
+    init(_ text: String, caption: String? = nil) {
+        self.text = text
+        self.caption = caption
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(text)
+                .font(.headline)
+            if let caption {
+                Text(caption)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }

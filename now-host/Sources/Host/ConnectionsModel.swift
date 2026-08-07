@@ -132,7 +132,7 @@ struct ConnectionRow: Identifiable, Equatable, Sendable {
     /// Nil is "this build never said", which is not a yes.
     let agentAccess: AgentIntegrationGuestAccess?
     /// True while the id is the host's own ordinal and nobody has named
-    /// this Mac. It addresses the machine; it says nothing about it.
+    /// this machine. It addresses it; it says nothing about it.
     let idIsAutoAssigned: Bool
     /// False when the host cannot tell two machines apart at this address
     /// — every emulated guest — so the id surviving a reconnection is a
@@ -179,7 +179,15 @@ struct ConnectionsSnapshot: Equatable, Sendable {
     /// of what the host is doing (listening, or not), never as an error.
     var isIdle: Bool { connected.isEmpty }
 
-    /// The one line that answers "which Macs are connected".
+    /// **The page's one line**: whether the link is up, and who is on it.
+    ///
+    /// It answers both halves because the page is both halves — the link
+    /// pane and the roster pane were separate and each drew a status line of
+    /// its own, worded differently. This is the surviving one.
+    ///
+    /// "Mac" is never the noun here. This is the page that lists several
+    /// machines, and it is read from a Mac; "no Mac connected" on it could
+    /// as easily have meant the machine the app is running on.
     var headline: String {
         switch state {
         case .failed(let reason):
@@ -188,7 +196,8 @@ struct ConnectionsSnapshot: Equatable, Sendable {
             return "Not listening"
         case .listening(let port):
             guard !connected.isEmpty else {
-                return "Listening on \(String(port)) — no Mac connected"
+                return "Listening on \(String(port)) — no "
+                    + "\(MachineNaming.commonNoun) connected"
             }
             return Self.connectedLine(connected)
         case .connected:
@@ -196,7 +205,7 @@ struct ConnectionsSnapshot: Equatable, Sendable {
                 // The roster is built from live sessions and the state is
                 // published beside it; if they disagree, say the roster's
                 // answer rather than inventing a machine.
-                return "No Mac connected"
+                return "No \(MachineNaming.commonNoun) connected"
             }
             return Self.connectedLine(connected)
         }
@@ -204,11 +213,14 @@ struct ConnectionsSnapshot: Equatable, Sendable {
 
     private static func connectedLine(_ rows: [ConnectionRow]) -> String {
         guard rows.count > 1 else {
-            return "1 Mac connected"
+            return "1 \(MachineNaming.commonNoun) connected"
         }
         let driving = rows.first { $0.presence == .driving }?.machineID
-        guard let driving else { return "\(rows.count) Macs connected" }
-        return "\(rows.count) Macs connected — driving \(driving)"
+        guard let driving else {
+            return "\(rows.count) \(MachineNaming.commonNounPlural) connected"
+        }
+        return "\(rows.count) \(MachineNaming.commonNounPlural) connected "
+            + "— driving \(driving)"
     }
 
     /// Builds the whole pane from the facts, and asks the host itself what
@@ -368,8 +380,8 @@ final class ConnectionsModel: ObservableObject {
             resolve: resolve)
     }
 
-    /// Points the whole window at this Mac — the person's half of what an
-    /// agent does by naming one.
+    /// Points the whole window at this row's machine — the person's half of
+    /// what an agent does by naming one.
     ///
     /// False when the row cannot be driven: a remembered machine has no
     /// connection to point at, and the one already being driven is not a
@@ -414,13 +426,15 @@ final class ConnectionsModel: ObservableObject {
                         proposed: String) -> String {
         switch failure {
         case .notFound:
-            return "That Mac is no longer connected."
+            return "That machine is no longer connected."
         case .malformed:
             return "\"\(proposed)\" cannot be a machine id. Use letters, "
                 + "numbers and hyphens."
         case .taken(let by):
-            return "Another Mac (\(by)) already holds that id. Rename it "
-                + "first, or choose another."
+            /* Not "another Mac": this sentence appears on the page that
+               lists several of them, read from a Mac. */
+            return "Another \(MachineNaming.commonNoun) (\(by)) already "
+                + "holds that id. Rename it first, or choose another."
         }
     }
 
