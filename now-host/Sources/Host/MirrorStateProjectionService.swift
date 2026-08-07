@@ -261,17 +261,50 @@ final class MirrorStateProjectionService {
                one. Measured 2026-08-06 on a live session: Macintosh HD 10
                rows, Control Panels 33, Desktop 0, with seven icons on the
                screen. Same shape, one field over, third time. */
-            let desktopIcons = HitTester.isDesktopBackdrop(window)
-                ? (scene.desktopItems ?? []) : []
+            /* **ONE COORDINATE SPACE, and the desktop was the exception.**
+               Sweep A, 2026-08-07: "Desktop items carry screen coordinates
+               and zero size. Every one of the 19 is a point at a screen
+               position, while every other surface's rects are
+               content-local. Two conventions in one snapshot, and the
+               degenerate one cannot be hit-tested."
+
+               Both halves are fixed here, where they are created.
+
+               SPACE. A window's own `items` are already content-local
+               (FinderItems: the Finder's `position of` is window-content-
+               local and scroll-compensated). `scene.desktopItems` are
+               global screen positions, so they are made local to the
+               window that carries them by subtracting that window's own
+               origin. The backdrop's rect origin is used rather than
+               `FinderItems.contentOrigin`, which adds a title bar the
+               desktop backdrop does not have.
+
+               SIZE. A Finder item's target is the 32x32 icon box plus the
+               name under it - the box FinderItems measured by clicking and
+               the box HitTester already compares against. A point is not a
+               smaller version of that; it is a rect nothing can ever hit.
+
+               An item the Finder did not place carries NO rect at all.
+               That is the honest gap: `state: "unplaced"` says so, and a
+               reader that needs geometry gets nothing rather than a
+               position that was never true. */
+            let backdrop = HitTester.isDesktopBackdrop(window)
+            let desktopIcons = backdrop ? (scene.desktopItems ?? []) : []
             let finderItems = ((window.items ?? []) + desktopIcons).map { item in
-                AgentIntegrationMirrorSurfaceItem(
+                let x = backdrop ? item.x - window.rect.l : item.x
+                let y = backdrop ? item.y - window.rect.t : item.y
+                return AgentIntegrationMirrorSurfaceItem(
                     source: "finderItem",
                     /* Addressed BY NAME, which is how the Finder itself
                        addresses them and why `finderOpen` takes a name
                        rather than a reference. */
                     ref: nil, role: item.kind, title: item.name,
-                    rect: .init(l: item.x, t: item.y,
-                                r: item.x, b: item.y),
+                    rect: item.placed
+                        ? .init(l: x, t: y,
+                                r: x + HitTester.iconSize,
+                                b: y + HitTester.iconSize
+                                    + HitTester.iconLabelHeight)
+                        : nil,
                     enabled: true, visible: !item.invisible,
                     value: nil, checked: nil,
                     kind: item.alias ? "alias" : item.kind,
