@@ -46,6 +46,7 @@ enum MainMenu {
         var screenshotGuest: Selector
         var askGuestForHelp: Selector
         var toggleListening: Selector
+        var showMirror: Selector
         var revealSharedFolder: Selector
         var revealLogFolder: Selector
         var quit: Selector
@@ -271,6 +272,13 @@ enum MainMenu {
                                        actions: Actions) -> NSMenuItem {
         submenu("Window", [
             item(appName, actions.openWindow, "0", target: target),
+            /* The Mirror is a window of this app, so this is where a Mac
+               user looks for it — and until it was here, opening one in a
+               running host meant finding the Mirror page's button or
+               relaunching with --open-mirror. Already open is not a
+               no-op: the item raises it. */
+            item("Show Mirror", actions.showMirror, "m", target: target,
+                 modifiers: [.command, .shift]),
             .separator(),
             item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
             item("Zoom", #selector(NSWindow.performZoom(_:)), ""),

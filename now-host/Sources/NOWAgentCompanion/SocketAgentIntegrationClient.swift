@@ -150,6 +150,19 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    /// The row this companion exists for, more than most: an agent on
+    /// this socket is the caller with no other way to open the window.
+    func mirrorOpen() async -> AgentIntegrationMirrorOpenResult {
+        guard let client else {
+            return .init(unavailable: unavailable(for: startupError))
+        }
+        do {
+            return try await client.mirrorOpen()
+        } catch {
+            return .init(unavailable: unavailable(for: error))
+        }
+    }
+
     /* THE ACT LANE, overriding the five protocol defaults that answered
        `noActLane`. That sentence — "this host carries no act lane yet" — was
        true of every client that could reach them and stopped being true the

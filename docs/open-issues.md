@@ -349,6 +349,66 @@ Three things worth keeping from how it went:
 Still open, and not this slice's to fix: the Finder read
 `ax_oracle_not_found` on that same emulator run with no planes armed.
 That is the anchor-acquisition condition above, owned by its own lane.
+## FIXED: nothing could open the Mirror in an already-running host (2026-08-06, night)
+
+`--open-mirror` covers a launch and a click on the Mirror page covers a
+person sitting at the modern Mac. Everyone else had no route at all: an
+agent on the socket, and the person sitting at the CLASSIC Mac, whose
+screen the Mirror is a rendering OF.
+
+**The cost was not a missing feature, it was a documented bad habit.** A
+sweep that could not open the Mirror from the agent socket fell back to
+macOS accessibility scripting to click the button, and wrote that up as
+a rig fact; later sessions copied the pattern and started taking
+computer-use on the desk's actual desktop mid-session. A missing
+affordance became a rig technique.
+
+Closed with three faces over one implementation
+(`HostAppState.showMirrorWindow`, which ends at the same
+`NOWMirrorWindow.show` a click performs):
+
+- **`now_mirror_open`** on the agent surface — the only projection there
+  whose whole effect is on the modern machine.
+- **Window > Show Mirror (Cmd-Shift-M)** in the host app.
+- **A "Show Mirror on Host" button** on the guest's Mirror page, with
+  `showmirror` as its typed face, over a new additive contract family
+  (`host.show` / `host.shown`).
+
+Two things worth keeping:
+
+- **Already open is a success, not an error.** The window is raised and
+  the answer says which it was. The asker wanted the Mirror in front of
+  them; it is.
+- **No Mac connected is a REFUSAL, not an empty window.** A Mirror with
+  nothing behind it publishes an empty state that no call of its own can
+  get out of — the same trap `--open-mirror` fell into above.
+
+**Driven and watched, 2026-08-06 (emulator).** Against a host launched
+WITHOUT `--open-mirror` and a PowerPC guest on mac99/OS 9.1 dialling it:
+
+- `mirror_read --intention status` answered "The selected guest has no
+  published Mirror snapshot" — the window shut, the poll stopped.
+- The guest's button opened it. The host's own sentence — "Opened the
+  Mirror on Power Mac G4." — appeared on the guest's Mirror page, and
+  the resident's plane bits went from `requested 0, active 0` to
+  `requested 15, active 15`.
+- On a restarted host, `now_mirror_open` over the agent socket answered
+  `showing: true, alreadyOpen: false` and the same status read came back
+  with a live snapshot. Asking again answered `alreadyOpen: true`.
+- Typed at the machine, `showmirror` answered "The Mirror was already
+  open; brought it to the front."
+
+**The menu item is TESTED, not driven.** Clicking it means scripting
+macOS accessibility, which is the exact habit this entry exists to make
+unnecessary; `MainMenuTests` asserts the item, its selector and its
+shortcut instead.
+
+**What is left uneven, declared rather than left silent:** NOW-68K
+neither asks nor serves the family. That is the arc's scope, not a limit
+of a 68030 — a NOW-68K with a Mirror page would want the same button.
+And there is deliberately no verb the other way: the host drives the
+guest's windows through the act plane, and a `guest.show` would be a
+second, weaker route into it.
 
 ## FIXED: the live render was worse than every fixture render, and no gate could see it (2026-08-06, evening)
 

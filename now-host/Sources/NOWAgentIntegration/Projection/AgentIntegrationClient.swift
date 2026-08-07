@@ -204,6 +204,10 @@ public protocol AgentIntegrationClient: Sendable {
     /// separate and address a different reference vocabulary.
     func mirrorDrive(_ request: AgentIntegrationMirrorDriveRequest) async
         -> AgentIntegrationMirrorDriveResult
+
+    /// Open the native Mirror on the HOST. The one call on this protocol
+    /// that sends the classic Mac nothing at all.
+    func mirrorOpen() async -> AgentIntegrationMirrorOpenResult
 }
 
 extension AgentIntegrationClient {
@@ -465,6 +469,16 @@ extension AgentIntegrationClient {
         .init(unavailable: .init(
             code: "now-mirror-state-lane-absent",
             message: "This client cannot drive the host Mirror"))
+    }
+
+    /// Defaulted with the lanes above. A client with no window layer
+    /// cannot open one, and saying so is the honest answer — the failure
+    /// this whole row exists to end is a caller with no route reaching
+    /// for the desktop instead.
+    public func mirrorOpen() async -> AgentIntegrationMirrorOpenResult {
+        .init(unavailable: .init(
+            code: "now-mirror-window-absent",
+            message: "This client has no window layer to open a Mirror in"))
     }
 
     /// Nothing to address: this client answers "no host" to everything.

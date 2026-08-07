@@ -2,7 +2,7 @@
 #define NOW_MIRROR_FACTS_H
 
 /* The guest-observed half of Mirror policy. This value contains only facts
-   the classic Mac can prove about the one NOW Extension and its four planes.
+   the classic Mac can prove about the one NOW Extension and its planes.
    Host policy never enters it. Kept Toolbox-free so layout and wire tests run
    with the native compiler. */
 
@@ -17,7 +17,6 @@
 
 enum {
     kMirrorFactsSchema = 1,
-    kMirrorPlaneCount = 5,
     kMirrorIdentityWords = 5,
     kMirrorReasonMax = 128,
     /* Str31-derived: the resident captures CurApName into a fixed field
@@ -41,8 +40,26 @@ typedef enum {
     /* P5. Appended last, so every existing row keeps its index: the host
        reads these positionally and a reordering would silently relabel
        four planes. */
-    kMirrorPlaneTransitions
+    kMirrorPlaneTransitions,
+    /* NOT A PLANE — the enumeration's own end, and the only place the
+       number of planes is written down.
+
+       It was written down twice: `kMirrorPlaneCount = 5` in the enum
+       above, and a four-row label table in mirror_layout.c. P5 landed in
+       one of them, so the Workshop's Mirror page drew a fifth row whose
+       name and purpose were read one PAST the end of two four-element
+       arrays — undefined behaviour that happened to render as an empty
+       string. That is this repository's most expensive defect class, the
+       one the control-frame cap taught: a limit stated in more than one
+       place is wrong the moment anything grows past the smallest.
+
+       So the count is DERIVED from the list, and mirror_layout.c's table
+       is checked against it at compile time on both compilers. A sixth
+       plane cannot reintroduce this without failing the build. */
+    kMirrorPlaneEnd
 } MirrorPlane;
+
+enum { kMirrorPlaneCount = kMirrorPlaneEnd };
 
 typedef enum {
     kMirrorFreshUnavailable = 0,

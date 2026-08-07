@@ -257,6 +257,11 @@ final class MetalAgentLocalSurface {
              .bringToFront, .guestFileMutation, .transferCancel,
              .guestLogTail, .machineFacts, .catalogSearch, .revealItem,
              .diagnostics, .mirrorRead, .mirrorDrive,
+             /* And opening the Mirror, refused here for a reason unlike
+                every neighbour's: this rig has no window layer at all, so
+                there is nothing for it to open. On the real host it is
+                served; here the honest answer is that this surface cannot. */
+             .mirrorOpen,
              /* And the bracket, refused for a reason of its own on TOP of
                 those: it is the one operation that would not end when the
                 gate did. A rig that opened a stream on the person's

@@ -230,6 +230,13 @@ final class CommandParityTests: XCTestCase {
         // it to type at this Mac - and it reaches this verb anyway
         // through the exec plane, which is the command-first proof.
         "chat": "chat.* family served BY the host; nothing to serve it to",
+        // The same shape as chat, travelling the same way: the subject is
+        // a window on the HOST, which reaches its own Mirror through its
+        // Window menu and the mirror_open agent verb. There is nothing
+        // for it to type at this Mac, and the capability it would be
+        // typing about is not this Mac's.
+        "showmirror": "host.* family served BY the host; its own Mirror is "
+                    + "reached from its menu and mirror_open",
         "put": "file.* family from the host side, not an x-command",
         "mv": "file.* family from the host side, not an x-command",
         "trash": "file.* family from the host side, not an x-command",

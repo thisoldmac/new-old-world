@@ -146,6 +146,7 @@ static void shot_drop(void);
 static void note_shot(const char *line);
 static void get_cleanup(Boolean keep_file);
 static void chat_drop(void);
+static void host_show_drop(void);
 static void preview_fail(const char *reason);
 
 /* --- the wake plane ------------------------------------------------------
@@ -457,6 +458,7 @@ static void link_drop_transfers(void)
     put_drop();                       /* no half-written file left behind */
     get_cleanup(false);               /* nor half a file coming the other way */
     chat_drop();                      /* a streaming turn dies with the link */
+    host_show_drop();                 /* nobody is going to answer now */
     preview_fail("Connection lost");  /* local hook only; no wire touched */
     ctlq_clear();
     g_scene_plane_caps = 0;            /* no consumer, nothing to renew */
@@ -3478,6 +3480,111 @@ static void chat_drop(void)
     }
 }
 
+/* --- asking the HOST to show one of its own windows ---------------------
+   One direction by definition, the cloud and chat rule: the subject is
+   a surface on the modern machine, which this one does not have.
+
+   One ask at a time and no queue. A second press while one is in
+   flight is refused locally rather than stacking, because the answer a
+   person is waiting for is "did the window come up", and two asks can
+   only produce one useful answer. The deadline is short: the host does
+   no work worth waiting on — it opens a window and replies — so
+   silence past it means a host that predates the family, which is a
+   status line rather than an error. */
+
+enum { kHostShowTimeoutTicks = 60 * 8 };
+
+static struct {
+    Boolean pending;
+    long id;
+    unsigned long deadline;
+} g_hostshow;
+
+static ConnHostShowNote g_hostshow_hook;
+
+ConnHostShowNote conn_set_host_show_note(ConnHostShowNote fn)
+{
+    ConnHostShowNote previous = g_hostshow_hook;
+
+    g_hostshow_hook = fn;
+    return previous;
+}
+
+Boolean now_wire_host_show_pending(void)
+{
+    return g_hostshow.pending;
+}
+
+/* Settles the ask exactly once. Every path out of the family comes
+   through here — the answer, the deadline and the dropped link — so
+   there is one place that can clear `pending`, and no path that
+   forgets to. */
+static void host_show_settle(Boolean ok, const char *reason)
+{
+    if (!g_hostshow.pending) {
+        return;
+    }
+    g_hostshow.pending = false;
+    if (g_hostshow_hook != NULL) {
+        g_hostshow_hook(ok, reason);
+    }
+}
+
+static void host_show_drop(void)
+{
+    host_show_settle(false, "Connection lost.");
+}
+
+int now_wire_host_show(const char *surface, char *err, long cap)
+{
+    char json[128];
+    char esc[48];
+
+    if (g_hostshow.pending) {
+        snprintf(err, (size_t)cap, "Already asking");
+        return -1;
+    }
+    now_json_escape(surface, esc, sizeof esc);
+    ++g.offer_seq;
+    snprintf(json, sizeof json,
+             "{\"type\":\"host.show\",\"id\":%ld,\"surface\":\"%s\"}",
+             g.offer_seq, esc);
+    if (cloud_send(json, err, cap) != 0) {
+        return -1;
+    }
+    g_hostshow.pending = true;
+    g_hostshow.id = g.offer_seq;
+    g_hostshow.deadline = TickCount() + kHostShowTimeoutTicks;
+    return 0;
+}
+
+/* The host's answer. `reason` is the host's own sentence and is shown
+   whichever way `ok` went — a refusal a person cannot read is a button
+   that did nothing. */
+static void host_shown_answer(const char *reply)
+{
+    char reason[128];
+    Boolean ok;
+
+    if (!g_hostshow.pending
+        || now_json_find_int(reply, "id", -1) != g_hostshow.id) {
+        return;
+    }
+    ok = json_find_flag(reply, "ok", 0) != 0;
+    if (!now_json_find_string(reply, "reason", reason, sizeof reason)) {
+        snprintf(reason, sizeof reason,
+                 ok ? "The host showed it." : "The host refused.");
+    }
+    host_show_settle(ok, reason);
+}
+
+static void service_host_show(void)
+{
+    if (g_hostshow.pending && TickCount() > g_hostshow.deadline) {
+        host_show_settle(false, "No answer - that Mac may be too old.");
+    }
+}
+
 /* --- pulling a file FROM the other machine -------------------------------
    The same bytes as an inbound push, asked for rather than offered, so
    the receiving machinery is the same and only the destination differs:
@@ -6326,6 +6433,10 @@ static int handle_frame(const char *reply)
         chat_status_answer(reply);
         return 1;
     }
+    if (now_json_type_is(reply, "host.shown")) {
+        host_shown_answer(reply);
+        return 1;
+    }
     if (now_json_type_is(reply, "chat.result")) {
         chat_result_answer(reply);
         return 1;
@@ -6718,6 +6829,7 @@ void conn_service(void)
     service_get();
     service_cloud();
     service_chat();
+    service_host_show();
         }
         if (g.phase == kConnConnected) {
             service_stream();

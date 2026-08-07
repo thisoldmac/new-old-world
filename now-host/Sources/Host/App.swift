@@ -114,6 +114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                            screenshotGuest: #selector(screenshotGuest),
                            askGuestForHelp: #selector(askGuestForHelp),
                            toggleListening: #selector(toggleListening),
+                           showMirror: #selector(showMirror),
                            revealSharedFolder: #selector(revealSharedFolder),
                            revealLogFolder: #selector(revealLogFolder),
                            quit: #selector(quit)))
@@ -169,6 +170,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         case .listening, .connected:
             state.stopListening()
         }
+    }
+
+    /// **The Window menu's face on `showMirrorWindow`.**
+    ///
+    /// One implementation, four faces — this, the Mirror page's button,
+    /// the `mirror_open` agent verb and the guest's `host.show`. When it
+    /// refuses (no Mac connected) the reason goes to the log and the
+    /// Mirror page comes up, because a menu item that silently does
+    /// nothing is indistinguishable from a broken one.
+    @objc func showMirror() {
+        let outcome = state.showMirrorWindow()
+        guard !outcome.ok else { return }
+        state.listener.note("Show Mirror: \(outcome.reason)", area: "host")
+        show(moduleID: "mirror")
     }
 
     @objc func revealSharedFolder() {
@@ -857,6 +872,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     }
                     return .mirrorDrive(
                         agentIntegration.driveMirror(drive))
+                case .mirrorOpen:
+                    /* No shape to check: the operation says only its own
+                       name, and the codec has already refused a request
+                       that carried anything else. The one branch here
+                       that sends the classic Mac nothing. */
+                    return .mirrorOpen(agentIntegration.openMirror())
                 case .stream:
                     /* The bracket. The codec has already refused every
                        crossed shape — a stop carrying a depth, a page

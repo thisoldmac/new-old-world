@@ -170,6 +170,27 @@ final class MainMenuTests: XCTestCase {
                       + "to it — NOW keeps running without one")
     }
 
+    /// **The Mirror's menu face.** The item is the whole of it — the
+    /// action ends at `HostAppState.showMirrorWindow`, which the agent
+    /// verb and the guest's `host.show` also end at — so an item that
+    /// lost its target or its selector would be the one face of this
+    /// capability with no other gate on it.
+    func testTheWindowMenuOpensTheMirror() throws {
+        let windows = try XCTUnwrap(MainMenu.windowsMenu(in: menu()))
+        let item = try XCTUnwrap(
+            windows.items.first { $0.title == "Show Mirror" },
+            "opening the Mirror in a running host has to be somewhere a "
+            + "Mac user looks, and that is the Window menu")
+        /* The action and not the target: `NSMenuItem.target` is WEAK, and
+           the target this menu was built against is a stub that dies with
+           the helper. Every other item test here checks the selector for
+           the same reason. */
+        XCTAssertEqual(item.action, #selector(AppDelegate.showMirror))
+        XCTAssertEqual(item.keyEquivalent, "m")
+        XCTAssertEqual(item.keyEquivalentModifierMask, [.command, .shift],
+                       "plain Cmd-M is Minimize")
+    }
+
     /// Help has no help book, so it must not offer one. What it offers
     /// instead has to be real.
     func testHelpOffersOnlyThingsThatExist() throws {

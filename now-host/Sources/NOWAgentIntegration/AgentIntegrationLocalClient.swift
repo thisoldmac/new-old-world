@@ -294,6 +294,11 @@ public struct AgentIntegrationLocalClient: Sendable {
             preconditionFailure("A Mirror read names its intention")
         case .mirrorDrive:
             preconditionFailure("A Mirror drive names its gesture")
+        case .mirrorOpen:
+            /* Beside `transferCancel` and `machineFacts` above: the
+               operation says only its own name, so a bare one IS the
+               whole request. */
+            return try await send(.mirrorOpen())
         case .stream:
             preconditionFailure(
                 "A stream request says which of its three intentions it is")
@@ -504,6 +509,16 @@ public struct AgentIntegrationLocalClient: Sendable {
         return result
     }
 
+    public func mirrorOpen() async throws
+        -> AgentIntegrationMirrorOpenResult {
+        let response = try await send(.mirrorOpen())
+        guard let result = response.mirrorOpenResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no Mirror open result")
+        }
+        return result
+    }
+
     // MARK: - The act lane
 
     public func windowAct(_ act: AgentIntegrationWindowActRequest)
@@ -624,6 +639,13 @@ public struct AgentIntegrationLocalClient: Sendable {
                    and back inside its own watchdog: a `file.result` is one
                    reply, and a front is a couple of seconds of the guest
                    yielding. */
+                timeout = readOnlyReceiveTimeout
+            case .mirrorOpen:
+                /* The read-only window, but for the opposite reason to
+                   the branch above: this one reaches NO guest. It opens a
+                   window on THIS Mac and answers immediately — a longer
+                   bound could only hide a host that had stopped answering
+                   its own socket. */
                 timeout = readOnlyReceiveTimeout
             case .census:
                 /* A census PAGE is bounded at 16 rows and the page is not

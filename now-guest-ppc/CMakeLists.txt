@@ -65,6 +65,7 @@ add_application(now-guest-ppc
     src/mirror/mirror_json.c
     src/mirror/mirror_probe.c
     src/mirror/mirror_module.c
+    src/mirror/mirror_show.c
     src/census/census_decode.c
     src/census/census_report.c
     src/files/files_module.c
