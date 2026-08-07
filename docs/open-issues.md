@@ -237,7 +237,14 @@ scattered `if`s is not a control.
   checked by the tool. `fidelity-sweep.py`'s `--expect-build auto` is the
   pattern.
 
-## BROKEN: "drag isn't working on my build" — where the gesture stops, in two places (2026-08-07, `claude/019-drag-live`)
+## FIXED (all four breaks) and EMULATOR-VERIFIED: "drag isn't working on my build" — where the gesture stopped, in four places (2026-08-07, `claude/019-drag-live`, `019-drag-element-refs`, `019-drag-break-4`)
+
+**Read this section in order and to the end.** It is the record of four
+walls found one behind another over a single day, kept as it was written
+because the sequence is the useful part — and the last entry CORRECTS the
+diagnosis in the second-to-last. An item moves now; the evidence is at
+the bottom.
+
 
 Michelle, 2026-08-07: *"drag isnt working on my build"*. It is not
 working, it never has, and the reason is not in any of the code the arc
@@ -529,6 +536,13 @@ lands on the right icon in the right process. What is not closed is
 carrying the gesture, and no part of the product should claim otherwise
 until Break 4 is.
 
+> **CORRECTED BELOW.** The paragraph beginning "The circle" is wrong in
+> its middle step, and all three candidate repairs it lists are answers
+> to a question that was not being asked. The reply is committed BEFORE
+> the tracking loop exists; what is missing is not a channel but a
+> scheduled reader. See "break 4 was never about the act filter", two
+> entries down, which measured it and closed it.
+
 ### The resident change here carries NO bake receipt, and nothing stopped it
 
 Said out loud because the mechanism that should have said it did not run.
@@ -603,7 +617,7 @@ a sibling lane repairs what it was derived from.** A stale oracle does not
 go quiet; it goes red against correct code, which is more expensive than
 silence because someone believes it.
 
-### Break 4, one layer deeper: the reply was ALREADY COMMITTED, and nothing was scheduled to read it (2026-08-07, `claude/019-drag-break-4`, UNVERIFIED — read from source, not yet driven)
+### FIXED and EMULATOR-VERIFIED: break 4 was never about the act filter — nothing was SCHEDULED to read a reply that had already been written (2026-08-07, `claude/019-drag-break-4`)
 
 The entry above says the press's reply "cannot be composed" because the
 act filter is never re-entered. **Read the serve path and that is not
@@ -668,14 +682,77 @@ resident disarms every plane underneath a gesture still in flight. The
 `toH`/`toV` form sidesteps that too: it needs nothing armed after the
 press.
 
-**Status of this entry: UNVERIFIED.** It is derived from the serve path
-and from the previous lane's measured reply, not yet driven. The
-discriminating measurement is cheap and is the next thing this lane
-does — count `act_yield` iterations and elapsed ticks inside
-`now_act_submit` and report them in the `dragpress` reply. Many yields
-over four seconds means the application WAS running and the block is
-something else; near-zero yields across four seconds is starvation and
-this entry is right.
+### AN ITEM MOVED, and the machine said which one
+
+**Emulator-verified 2026-08-07.** Lane block 436, anchor 15488 / wire
+15489, a session-private clone of `now-mirror-stage.qcow2` (sha256
+`c466baa9…`, volume clean) carrying this tree's ext and app,
+guest build `39ac9db60598`, resident `active` capabilities **511**,
+`actselftest` **abi-agreed**. `tools/local-finder-drag.py`, twice:
+
+| item | press | destination | the FINDER's own `bounds of`, before → after |
+| --- | --- | --- | --- |
+| `From Claude.txt` | 624,556 | 488,76 | `{608,540}` → **`{472,60}`** |
+| `HELLO_CLAUDE.txt` | 624,108 | 536,76 | `{608,92}` → **`{520,60}`** |
+
+Both landed where they were aimed. The oracle is the Finder answering
+`bounds of` for the item it moved, not our arithmetic; the guest's own
+screendumps are beside it because a picture is what a person asked for,
+and they show the icon in its new place, selected, with the gap it left.
+`DragGrayRgn` had never been measured in this project and it is measured
+now: **it follows.**
+
+The resident's account of the same gesture:
+
+```
+State = ended   Button = up   At h = 488  At v = 76
+Vehicle ticks = 59   Moves applied = 1   Ended = dead-man-idle
+```
+
+One want, consumed on the vehicle's first tick, published before the
+button went down. `dead-man-idle` is the truth about how it let go and is
+deliberately not dressed up as `released-as-asked` — nobody asked,
+because nobody could.
+
+### And the measurement that settles the mechanism
+
+`Submit ticks 67, Submit yields 1.` **This application got the processor
+once in the 1.1 seconds its own gesture ran.** Second run: 68 ticks, 1
+yield. That is the discriminating pair — a slow resident and a starved
+application both read as "the press took a second", and the repairs are
+opposite ones. The instrument counts a loop that already existed rather
+than adding a poll, which is the distinction finding
+`instrument-feeds-the-clock` was written about.
+
+So the entry above is confirmed: the reply was written three statements
+after the `mouseDown` was queued and sat in the cell, coherent and
+unread, until the Finder gave the processor back. **Every act longer than
+a target's own tracking loop has this shape**, and it is a property of
+cooperative multitasking rather than of this plane — which is why the
+repair is not in the protocol at all. It is that the gesture travels with
+the press.
+
+### What is still not closed
+
+- **`dragmove` and `dragrelease` are unreachable for this target class,**
+  and the contract now says so rather than leaving a caller to find out.
+  They are not dead: an application that yields inside its tracking loop
+  can still be driven that way. Nothing has measured one that does.
+- **The drop is the idle dead-man**, so a gesture holds for about a
+  second at the destination before it lets go. That is a hand-movement
+  duration and it looks right, but it is a side effect being relied on:
+  a `drop` the press could ask for would say what it means.
+- **Only ONE want travels.** A path — press, via, drop — would need a
+  queue in the drag cell, which changes `sizeof(NowPeekDragCell)` and
+  therefore needs the resident and the application deployed together.
+  Not needed for an icon; needed for anything that must avoid something
+  on the way.
+- **The resident change carries no bake.** Typed deferrals are recorded
+  in `ext/stage-receipts.json` for every commit in this thread. The
+  evidence is a session-private clone with this tree's build staged in
+  and its fingerprint checked against the local build; what is missing is
+  the shared oracle, and it was deliberately not baked while other lanes
+  were running against it. **Bake before this lands.**
 
 ## FIXED and EMULATOR-VERIFIED: the Finder's list rows were unclickable because a column header was read as a scroll bar — and Extensions Manager's list is not a control at all (2026-08-07, `claude/019-list-selection`)
 

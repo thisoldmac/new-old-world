@@ -48,8 +48,10 @@ answer this listener (AGENTS.md). `auto` reads the local build stamp.
 """
 
 import argparse
+import json
 import os
 import re
+import socket
 import sys
 import time
 
@@ -58,6 +60,43 @@ sys.path.insert(0, os.path.join(ROOT, "scripts", "probes"))
 import nowwire  # noqa: E402
 
 ICON = 32
+
+
+def screendump(qmp_path, out_png):
+    """The GUEST'S OWN PIXELS, straight out of QEMU.
+
+    A screendump is for LOOKING, never for deciding: the pass/fail in this
+    script is the Finder's own `bounds of`, and a picture is what a person
+    asked for beside it. QMP `screendump` writes a PPM, so the file is
+    converted only if a converter is at hand and left as a PPM otherwise -
+    an unconverted image is still the machine's pixels."""
+    ppm = os.path.splitext(out_png)[0] + ".ppm"
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(30)
+    s.connect(qmp_path)
+    f = s.makefile("rwb")
+    f.readline()                                  # the greeting
+    for cmd in ({"execute": "qmp_capabilities"},
+                {"execute": "screendump",
+                 "arguments": {"filename": ppm}}):
+        f.write((json.dumps(cmd) + "\n").encode())
+        f.flush()
+        while True:
+            line = f.readline()
+            if not line:
+                raise RuntimeError("QMP closed")
+            msg = json.loads(line)
+            if "return" in msg or "error" in msg:
+                if "error" in msg:
+                    raise RuntimeError(str(msg["error"]))
+                break
+    f.close()
+    s.close()
+    if os.system(f"sips -s format png {ppm} --out {out_png} "
+                 ">/dev/null 2>&1") == 0:
+        os.unlink(ppm)
+        return out_png
+    return ppm
 
 
 def rows(reply, key):
@@ -193,6 +232,8 @@ def main():
     ap.add_argument("--item", default=None,
                     help="drag this desktop item by name, rather than the "
                          "first document the Finder lists")
+    ap.add_argument("--qmp", default=None,
+                    help="QMP unix socket, for before/after screendumps")
     ap.add_argument("--shot", default=None,
                     help="directory for before/after screendumps, if the "
                          "lab's tools/shot is reachable")
@@ -331,6 +372,11 @@ def main():
     # (docs/open-issues.md, break 4 one layer deeper). The reply's own
     # Submit ticks / Submit yields pair is what says which of those two
     # worlds we are in, and it is printed whatever happens.
+    if args.qmp and args.shot:
+        os.makedirs(args.shot, exist_ok=True)
+        print("   before:", screendump(args.qmp,
+                                       os.path.join(args.shot,
+                                                    "drag-before.png")))
     r = link.command("dragpress",
                      {"window": ref, "h": start[0], "v": start[1],
                       "toH": end[0], "toV": end[1],
@@ -371,6 +417,10 @@ def main():
 
     print("\n== 4. THE ORACLE: what the Finder says now ==")
     time.sleep(2)
+    if args.qmp and args.shot:
+        print("   after: ", screendump(args.qmp,
+                                       os.path.join(args.shot,
+                                                    "drag-after.png")))
     after = {it["name"]: it for it in desktop_items(link)}
     now = after.get(subject["name"])
     if now is None:
