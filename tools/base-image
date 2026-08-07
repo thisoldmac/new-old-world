@@ -275,7 +275,17 @@ def verdicts(image: str, purpose: str, stages_resident: bool,
     #    does — scripts/spin-up-ppc stages this checkout's ext and app into
     #    the clone and cold-boots, so what is baked into the base is not
     #    what is under test, and refusing would be false.
-    findings.append(_resident_finding(p, purpose, stages_resident, root))
+    #    The 68K family has no resident at all — the NOW Extension is a PPC
+    #    INIT and no receipt describes a 68K base. Saying "no resident is
+    #    baked in" there would be true and useless, and a gate that reports
+    #    the normal case as a finding stops being read.
+    if purpose == "68k":
+        add("resident", "not-applicable", "ok",
+            "no resident applies to a 68K base — the NOW Extension is a PPC "
+            "INIT and no receipt covers this file",
+            "")
+    else:
+        findings.append(_resident_finding(p, purpose, stages_resident, root))
     return _summarise(image, purpose, stages_resident, p, findings)
 
 

@@ -129,6 +129,18 @@ echo "   expected capability word: $WANT_CAPS (from contract/peek_table.h)"
 
 [ -f "$BASE_IMAGE" ] || { echo "no base image at $BASE_IMAGE (set NOW_STAGE_IMAGE)" >&2; exit 1; }
 
+# The third clone site, asking the same question as the other two through
+# the same file. A bake is the one caller for which a STALE base is not a
+# problem to be stopped — re-baking is what fixes it — so this reports and
+# never refuses on staleness: --stages-resident is true by definition here,
+# since staging this checkout's resident is the whole operation.
+# It still matters what the starting bytes were: an image whose volume is
+# dirty bakes a dirty volume into every clone that follows, and that is
+# exactly how three bakes in one night installed images the Mac greets with
+# Disk First Aid.
+"$NOW/tools/base-image" fit "$BASE_IMAGE" --purpose bake --stages-resident \
+    || exit $?
+
 echo
 if [ "$MODE" = shared ]; then
     cat >&2 <<BANNER

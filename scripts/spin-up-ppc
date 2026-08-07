@@ -86,7 +86,14 @@ cd "$LAB"                                  # lib.sh and tools/qmp are lab-relati
 . tools/lib.sh
 
 QEMU="${TIMBOTTU_QEMU:-$LAB/qemu/build/qemu-system-ppc}"
-BASE="${NOW_SPIN_BASE:-$HOME/Lab/Assets/os91-qemu/os91-runner.qcow2}"
+# THE BASE IS NOT DEFAULTED HERE ANY MORE. It was — one line naming
+# os91-runner.qcow2, with a comment sixty lines down saying so — and on
+# 2026-08-07 a whole arc of lanes cloned a 19 July image because of it,
+# which is the same stale-oracle failure ext-bake-gate exists to prevent,
+# one layer down where no gate was watching. A limit is stated ONCE, where
+# every reader of it looks (AGENTS.md > The contract is the source of
+# truth); tools/base-image is that place, and every clone site asks it.
+BASE="${NOW_SPIN_BASE:-$("$NOW/tools/base-image" which --purpose ppc-work)}"
 # A PER-VM RUN DIRECTORY, for the same reason rule 4 makes the ports
 # per-VM. It was one fixed directory, so a second spin-up in the same
 # checkout bound the same socket NAMES: the newer QEMU took them, every
@@ -141,13 +148,28 @@ export TBT_MACHINE_PROFILE=mac99
 tbt_select_machine_profile mac99
 mkdir -p "$RUN"
 
+# --- IS THIS BASE FIT TO CLONE? Asked before anything boots --------------
+# The provenance block below SAYS what the base is; this decides whether
+# the run should start at all. They are different jobs and the gap between
+# them is where 2026-08-07 happened: provenance was printed, correctly, on
+# every run that cloned the wrong image, and nothing read it.
+#
+# --stages-resident is the load-bearing argument, and it is true here: this
+# script stages THIS CHECKOUT's ext and app into the clone and cold-boots,
+# so what was baked into the base is not what is under test. That is why a
+# stale-resident base WARNS here instead of refusing, and it would be a lie
+# to pass this flag from a site that only boots.
+"$NOW/tools/base-image" fit "$BASE" --purpose ppc-work --stages-resident \
+    --json "$RUN/base-fitness.json" || exit $?
+
 # --- WHICH RIG IS THIS? Said out loud, before anything boots -------------
 # On 2026-08-06 a coordinating session told the human an arc's measurements
 # were suspect because the shared stage image was stale. Two things were
 # wrong with that and BOTH were visible in this file:
 #
-#   * BASE above defaults to os91-runner.qcow2, NOT now-mirror-stage.qcow2.
-#     This script does not use the stage image unless asked to.
+#   * BASE was defaulted here, in one line, to os91-runner.qcow2 rather
+#     than the stage image — the default is now tools/base-image's, and
+#     the designated base for ordinary work IS now-mirror-stage.qcow2.
 #   * It stages THIS CHECKOUT's ext and app into the clone and cold-boots,
 #     so the resident under test is the tree's build either way.
 #
