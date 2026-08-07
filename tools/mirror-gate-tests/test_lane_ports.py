@@ -189,6 +189,109 @@ class RegionTests(Sandbox):
         self.assertGreaterEqual(module.BASE, 1024)
 
 
+class HumanRangeTests(Sandbox):
+    """The block a lane may never be given.
+
+    On 2026-08-07 Michelle's VM was running on 16728/16729 and the hash
+    handed block 591 — exactly those ports — to a lane. Nothing was
+    misconfigured: allocation reserved a NAME and the collision happened
+    on a SOCKET, and a comment saying "leave 591 alone" is read by every
+    agent and enforced by none. So the range is skipped in code, and
+    these are the cases that say it still is.
+    """
+
+    def roots_hashing_into_the_range(self, module, count=3):
+        """Paths whose PREFERRED block is inside the reserved range.
+
+        Searched rather than hardcoded, so the cases keep testing the
+        skip if the range constants ever move — a hardcoded path would
+        quietly stop landing in the range and the test would pass by
+        aiming at nothing.
+        """
+        found = []
+        for i in range(2_000_000):
+            root = f"/w/human-probe-{i}"
+            if module.is_human_block(module.preferred_block(root)):
+                found.append(root)
+                if len(found) == count:
+                    return found
+        raise AssertionError("no path hashes into the reserved range")
+
+    def test_a_lane_whose_hash_lands_in_the_human_range_steps_past_it(self):
+        module = load_module()
+        for root in self.roots_hashing_into_the_range(module):
+            self.assertTrue(module.is_human_block(module.preferred_block(root)))
+            block = module.allocate(root)["block"]
+            self.assertFalse(
+                module.is_human_block(block),
+                f"{root} hashes into the reserved range and allocation gave "
+                f"it block {block} — a lane has just been handed a person's "
+                "ports, which is the 2026-08-07 collision exactly")
+
+    def test_the_skip_is_what_moves_them_and_not_luck(self):
+        """The mutation, run as a test rather than watched once.
+
+        With the range made empty the SAME roots land inside 590-599. A
+        guard whose removal changes nothing is not a guard, and this is
+        the case that would have gone quiet if the skip were deleted.
+        """
+        module = load_module()
+        roots = self.roots_hashing_into_the_range(module)
+        first, last = module.HUMAN_BLOCK_FIRST, module.HUMAN_BLOCK_LAST
+        try:
+            module.HUMAN_BLOCK_FIRST, module.HUMAN_BLOCK_LAST = 99998, 99999
+            landed = [module.allocate(r, create=False)["block"] for r in roots]
+        finally:
+            module.HUMAN_BLOCK_FIRST, module.HUMAN_BLOCK_LAST = first, last
+        self.assertTrue(
+            all(first <= b <= last for b in landed),
+            f"with the reservation inert these roots landed at {landed}, "
+            "which is outside the range they hash into — so the passing "
+            "case above is not evidence the skip did anything")
+
+    def test_no_lane_can_be_allocated_the_range_however_many_claim(self):
+        """Not "usually skipped": the range is absent from the outcome
+        space. Every block is claimed by somebody and the reserved ones
+        are still nobody's."""
+        module = load_module()
+        blocks = {module.allocate(f"/w/crowd-{i}")["block"] for i in range(400)}
+        intruders = sorted(b for b in blocks if module.is_human_block(b))
+        self.assertEqual(intruders, [], f"lanes were given {intruders}")
+
+    def test_asking_for_the_human_block_by_number_is_refused_and_says_why(self):
+        """`--force` does not open it either. Reclaim stops a machine,
+        and the one machine no lane may stop is the person's."""
+        module = load_module()
+        out = self.run_tool("reclaim", "--block", str(module.HUMAN_BLOCK),
+                            "--force", check=False)
+        self.assertNotEqual(out.returncode, 0,
+                            "reclaim took the human block with --force")
+        for phrase in ("RESERVED HUMAN RANGE", "NOW_PREFS_SUFFIX"):
+            self.assertIn(phrase, out.stdout,
+                          "the refusal must name the range AND say that a "
+                          "port block is not isolation; a bare denial "
+                          "teaches nothing and invites a workaround")
+
+    def test_whose_names_the_range_rather_than_calling_it_unclaimed(self):
+        """The registry cannot answer this one. A person's stack files no
+        claim, so "unclaimed" is the literal truth and the wrong answer —
+        it reads as an invitation."""
+        module = load_module()
+        port = module.ports_of(module.HUMAN_BLOCK)["wire"]
+        out = self.run_tool("whose", "--port", str(port))
+        self.assertIn("RESERVED HUMAN RANGE", out.stdout)
+        self.assertNotIn("unclaimed", out.stdout)
+
+    def test_the_reserved_range_is_inside_the_region_it_carves_from(self):
+        """A range outside the region would protect nothing: allocation
+        only ever hands out blocks 0..BLOCKS-1."""
+        module = load_module()
+        self.assertGreaterEqual(module.HUMAN_BLOCK_FIRST, 0)
+        self.assertLess(module.HUMAN_BLOCK_LAST, module.BLOCKS)
+        self.assertTrue(module.is_human_block(module.HUMAN_BLOCK),
+                        "the default human block is outside its own range")
+
+
 class AttributionTests(Sandbox):
     """The fact that was missing: whose port is this?"""
 

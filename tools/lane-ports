@@ -117,6 +117,65 @@ BASE = int(os.environ.get("NOW_LANE_PORT_BASE", "12000"))
 STRIDE = 8
 BLOCKS = int(os.environ.get("NOW_LANE_BLOCKS", "1000"))
 
+# --- the human range, which allocation may never hand out -----------------
+#
+# Blocks 590-599, ports 16720-16799. Reserved for a PERSON's stack, and
+# reserved STRUCTURALLY: `allocate()` steps over these blocks, so there is
+# no sequence of calls by any lane that ends with one of them.
+#
+# WHY IT IS A RANGE AND NOT A CONVENTION. On 2026-08-07 Michelle's own VM
+# was running on 16728/16729 and a lane was allocated the block those
+# ports fall in — block 591, by the hash, which knew nothing about her.
+# Nothing was misconfigured and no rule was broken: the scheme reserved a
+# NAME and the collision happened on a SOCKET. A comment saying "leave
+# 591 alone" would have been read by every agent and enforced by none.
+#
+# 591 is the block her running stack was already on, so the reservation
+# ratifies where she is rather than moving her; 590 and 592-599 are room
+# for a second stack and for whatever a person needs next.
+#
+# THIS IS NECESSARY AND NOWHERE NEAR SUFFICIENT, and saying so is part of
+# the reservation. A port block stops a lane BINDING her sockets. It does
+# not stop a lane DRIVING her application: there is one `now-agent` socket
+# per user, it reaches whichever host holds it, and that is how a lane
+# retargeted a host app that was already running and already pointed at
+# her VM. Socket isolation is `NOW_PREFS_SUFFIX`, it is a separate
+# mechanism, and `docs/arc-coordination.md` states what each one covers.
+HUMAN_BLOCK_FIRST = int(os.environ.get("NOW_HUMAN_BLOCK_FIRST", "590"))
+HUMAN_BLOCK_LAST = int(os.environ.get("NOW_HUMAN_BLOCK_LAST", "599"))
+# The one a person's stack gets by default; the rest are spare.
+HUMAN_BLOCK = int(os.environ.get("NOW_HUMAN_BLOCK", "591"))
+
+
+def is_human_block(block: int) -> bool:
+    """Reserved for a person, and therefore never allocated to a lane."""
+    return HUMAN_BLOCK_FIRST <= block <= HUMAN_BLOCK_LAST
+
+
+def human_refusal(block: int) -> str:
+    """Why a lane may not have this block. Named, not just refused.
+
+    A bare "denied" teaches nothing and invites a workaround; this says
+    whose it is, what it protects, and what the caller should do instead.
+    """
+    ports = ports_of(block)
+    return (
+        f"block {block} (ports {ports['anchor']}-{ports['anchor'] + STRIDE - 1}) "
+        f"is in the RESERVED HUMAN RANGE {HUMAN_BLOCK_FIRST}-{HUMAN_BLOCK_LAST} "
+        f"(ports {BASE + HUMAN_BLOCK_FIRST * STRIDE}-"
+        f"{BASE + (HUMAN_BLOCK_LAST + 1) * STRIDE - 1}).\n"
+        "It belongs to a person's running stack, not to any lane. On "
+        "2026-08-07 a lane was allocated the block Michelle's own VM was "
+        "already on and her application was driven by that lane's guest; "
+        "allocation had reserved a name while the collision happened on a "
+        "socket. This range is skipped by allocation so that cannot recur.\n"
+        "Run `tools/lane-ports` with no arguments to get YOUR block. If you "
+        "genuinely need to inspect the human stack, `tools/lane-ports human` "
+        "reports it read-only.\n"
+        "NOTE a port block is not isolation: it stops you binding her "
+        "sockets, not driving her app. That is NOW_PREFS_SUFFIX — see "
+        "docs/arc-coordination.md.")
+
 # Offsets within a block. The names are the contract: `--env` exports
 # them, spin-up-ppc reads them, and the guard reports them.
 ROLES = [
@@ -320,6 +379,12 @@ def allocate(root: str, *, create: bool = True) -> dict:
     branch = lane_branch(root)
     for step in range(BLOCKS):
         block = (start + step) % BLOCKS
+        # The human range is stepped over, never handed out. This is the
+        # whole structural half of the reservation: a lane whose hash lands
+        # here simply takes the next block, and no sequence of calls by any
+        # lane ends with one of these. See HUMAN_BLOCK_FIRST above.
+        if is_human_block(block):
+            continue
         existing = read_claim(block)
         if existing is not None:
             if os.path.realpath(existing.get("laneRoot", "")) == root:
@@ -547,6 +612,15 @@ def cmd_whose(args) -> int:
     if block is None:
         print(f"port {args.port} is outside the lane region "
               f"{BASE}-{BASE + BLOCKS * STRIDE - 1}; no lane owns it")
+    elif is_human_block(block):
+        # Answered before ownership, because the registry cannot answer it:
+        # a person's stack is not started by `lane-ports` and files no claim,
+        # so "unclaimed" would be the literal truth and the wrong answer.
+        print(f"port {args.port} is block {block} — the RESERVED HUMAN RANGE, "
+              "not any lane's")
+        print(f"  {HUMAN_BLOCK_FIRST}-{HUMAN_BLOCK_LAST} is a person's stack; "
+              "allocation skips it, so no lane can hold this port")
+        print("  `tools/lane-ports human` reports it; do not bind it")
     elif answer["isMine"]:
         print(f"port {args.port} is block {block} — YOURS ({mine['laneRoot']})")
     elif answer["owner"]:
@@ -580,8 +654,43 @@ def cmd_attach(args) -> int:
     return 0
 
 
+def cmd_human(args) -> int:
+    """Report the reserved human block. READ-ONLY, and deliberately so.
+
+    It writes no claim, because a person's stack is not a lane and the
+    registry is not where it lives. This exists so an agent that needs to
+    know which ports to stay off can ask, instead of inferring it from a
+    `whose` answer that would otherwise read "unclaimed".
+    """
+    ports = ports_of(HUMAN_BLOCK)
+    out = {"block": HUMAN_BLOCK, "reservedRange":
+           [HUMAN_BLOCK_FIRST, HUMAN_BLOCK_LAST],
+           "ports": ports, "allocatable": False,
+           "portIsolationOnly": True}
+    if args.json:
+        print(json.dumps(out, indent=2, sort_keys=True)); return 0
+    print(f"the human stack: block {HUMAN_BLOCK} "
+          f"(reserved range {HUMAN_BLOCK_FIRST}-{HUMAN_BLOCK_LAST}, "
+          f"ports {BASE + HUMAN_BLOCK_FIRST * STRIDE}-"
+          f"{BASE + (HUMAN_BLOCK_LAST + 1) * STRIDE - 1})")
+    for name, why in ROLES:
+        print(f"  {name:9} {ports[name]}  {why}")
+    print("allocation skips this range, so no lane can ever be given it.")
+    print("A port block is not isolation: it stops a lane BINDING these "
+          "sockets, not DRIVING the app that owns them — that is "
+          "NOW_PREFS_SUFFIX. See docs/arc-coordination.md.")
+    return 0
+
+
 def cmd_reclaim(args) -> int:
     if args.block is not None:
+        # Asking for the human range BY NUMBER is an error, and --force does
+        # not open it: reclaim's whole job is to stop a machine, and the one
+        # machine no lane may stop is the person's. A lane that reaches here
+        # is either confused or working around the skip in allocate().
+        if is_human_block(args.block):
+            print(human_refusal(args.block))
+            return 2
         claim = read_claim(args.block)
         if claim is None:
             print(f"block {args.block} is not claimed"); return 1
@@ -740,10 +849,15 @@ def main(argv: list[str]) -> int:
     gc = sub.add_parser("gc", help="drop claims whose worktree is gone")
     gc.add_argument("--dry-run", action="store_true")
 
+    human = sub.add_parser(
+        "human", help="the reserved human block's ports (read-only)")
+    human.add_argument("--json", action="store_true")
+
     args = ap.parse_args(argv)
     if args.command in (None, "show"):
         return cmd_show(args)
     return {"list": cmd_list, "whose": cmd_whose, "attach": cmd_attach,
+            "human": cmd_human,
             "reclaim": cmd_reclaim, "gc": cmd_gc}[args.command](args)
 
 
