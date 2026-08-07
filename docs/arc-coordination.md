@@ -92,6 +92,48 @@ Before ending a turn where anything is in flight, in this order:
 5. **Name what is unverified**, separately from what is unfinished. They
    are different debts: one needs work, the other needs somebody to look.
 
+## A failed mechanism is not a result
+
+This gets handed off as done a lot, and it is worth naming precisely
+because the honest version and the finished version look identical in a
+report.
+
+A lane sent to "classify controls with `GetControlKind`" came back having
+established, correctly and with measurements, that `GetControlKind` is
+Mac OS X only and that the substitute the resident already used is
+declined by the Control Manager for every window the product needs. That
+was excellent work and **it fixed nothing** — the controls that render
+and cannot be used were exactly as unusable afterwards.
+
+**The cause is in the brief, not the lane.** A brief that names a
+mechanism can be satisfied by *disproving the mechanism*. "Use
+`GetControlKind` to classify controls" is complete the moment
+`GetControlKind` turns out not to exist. "A scrollbar scrolls, a tab
+switches, a list row selects — watched on the guest" is not completable
+that way at all.
+
+So:
+
+- **State exit criteria as observable outcomes**, in the product, that a
+  person could check. A mechanism in a brief is a *suggestion about
+  route*, and should be labelled as one.
+- **When a mechanism fails, the lane owes the next route** — or an
+  explicit "nothing remains untried, and here is the list I considered".
+  A disproof plus a recommendation is a good report; a disproof alone is
+  a handoff of the original problem back to whoever asked.
+- **Separate the requirements a mechanism was standing in for.** The same
+  lane's finding split cleanly once looked at: *rendering* a control
+  needs to know what it is; *acting* on one needs a click point. One
+  failed mechanism was blocking two unrelated deliverables, and only one
+  of them actually depended on it.
+- **A renegotiated exit criterion is a decision, recorded** — not a
+  quiet substitution of what turned out to be possible for what was
+  asked.
+
+The tell, when reading a report: **does the product do something it could
+not do before?** If the answer is "we now understand why it doesn't",
+that is a finding, and the work is still open.
+
 ## Things that read as green and are not
 
 Each of these produced a false green here, and each is checked by
