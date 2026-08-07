@@ -64,6 +64,22 @@ public protocol MirrorSceneSource: ObservableObject {
     /// driver that can talk to the Finder by name overrides it and serves
     /// the two cases no action case can name.
     func perform(_ interaction: Interaction)
+
+    /// **The same dispatch, but say what became of it.**
+    ///
+    /// A press is drawn pressed from the gesture onward, and something has to
+    /// end that drawing. `answer` is called at most once, with what the guest
+    /// actually said.
+    ///
+    /// The default forwards to `perform(_:)` and **never answers**, which is
+    /// not an oversight. A driver with no settlement lane genuinely does not
+    /// learn the outcome, and the honest rendering of that is
+    /// `PressSession`'s deadline naming it — *"asked X and never learned the
+    /// answer"*. A default that answered `.confirmed` on send completion
+    /// would be the exact shape of the AppleScript lie this arc replaced,
+    /// reintroduced in every conformer at once.
+    func perform(_ interaction: Interaction,
+                 answer: @escaping (PressAnswer) -> Void)
 }
 
 public extension MirrorSceneSource {
@@ -91,6 +107,15 @@ public extension MirrorSceneSource {
             }
             perform(actions, label: InteractionBridge.label(for: interaction))
         }
+    }
+
+    /// See the protocol: this deliberately drops `answer` on the floor rather
+    /// than inventing a verdict. The press then ends at its deadline, saying
+    /// so.
+    func perform(_ interaction: Interaction,
+                 answer: @escaping (PressAnswer) -> Void) {
+        _ = answer
+        perform(interaction)
     }
 }
 
@@ -145,6 +170,19 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
     /// what it says.
     @State private var itemDrag: ItemDragSession?
 
+    /// A button the person is pressing. Same split as `itemDrag` above and
+    /// for the same reason: the transitions live in `PressSession`, where a
+    /// test can drive them without a window on screen, and this view only
+    /// feeds it events and draws what it says.
+    @State private var press: PressSession?
+    /// Drives `PressSession.tick` while a press is in flight — the thing
+    /// that makes the spinner's end ARRIVE rather than merely be defined.
+    ///
+    /// A view that only redrew on scene arrivals would leave a press
+    /// spinning through a silent guest, which is the failure the deadline
+    /// exists to prevent, reached by forgetting to look at the clock.
+    @State private var pressClock: Date = .distantPast
+
     /// A live drag in progress, carrying the dragged window's original rect.
     ///
     /// `item` and `refusedItem` are the two ends of the same decision: the
@@ -197,8 +235,30 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                                   SceneRenderer.ProvisionalDrag(
                                       item: $0.subject.item, frame: $0.frame,
                                       confirmed: $0.confirmed)
+                              },
+                              pressed: press.map {
+                                  SceneRenderer.PressedControl(
+                                      $0, now: pressClock)
                               })
                         .gesture(mouseGesture(scene: scene, size: geo.size))
+                        /* THE CLOCK THE DEADLINE NEEDS. Armed only while a
+                           press is in flight — a timer that ran all the time
+                           would redraw the whole mirror ten times a second
+                           for nothing. 10 Hz because the bar has ~120 px to
+                           cross in 8 s and a person cannot see finer. */
+                        .onReceive(
+                            Timer.publish(every: 0.1, on: .main, in: .common)
+                                .autoconnect()
+                        ) { now in
+                            guard press != nil else { return }
+                            tickPress(now)
+                        }
+                        /* And the machine's own report, every time one
+                           arrives: if the control we are drawing pressed is
+                           gone from the new scene, our drawing yields. */
+                        .onChange(of: scene.seq) { _ in
+                            reconcilePress(with: scene)
+                        }
                         .onContinuousHover { phase in
                             /* Name what is under the pointer, and shape
                                the cursor to it. A mirror is a picture of
@@ -477,7 +537,8 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                         return
                     }
                     act(object, .click(count: count, mods: 0,
-                                       at: Point(x: start.x, y: start.y)))
+                                       at: Point(x: start.x, y: start.y)),
+                        pressing: object)
                 } else if case .move = mode {
                     dragged(scene, from: start, to: end)
                 } else if case .resize = mode {
@@ -667,6 +728,80 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
     /// true rather than aspirational.
     private func act(_ object: MirrorObject, _ gesture: MirrorGesture) {
         controller.perform(Interaction(object: object, gesture: gesture))
+    }
+
+    /// The same act, but showing the person we have it.
+    ///
+    /// `pressing` is the object whose feedback to draw — the same object, but
+    /// passed explicitly so the two responsibilities stay legible: `act`
+    /// sends, this decides what lights up. A target with no drawable press
+    /// (a menu row, the desktop) falls straight through to `act`, which is
+    /// the old behaviour exactly.
+    private func act(_ object: MirrorObject, _ gesture: MirrorGesture,
+                     pressing: MirrorObject) {
+        guard let subject = PressSubject(pressing) else {
+            return act(object, gesture)
+        }
+        /* RULE 1, and it is the whole of Michelle's "doesn't need to wait for
+           the guest to respond": the button is down on THIS frame, before
+           anything has travelled. */
+        var session = PressSession(ref: subject.ref, title: subject.title,
+                                   frame: subject.frame)
+        controller.perform(Interaction(object: object, gesture: gesture)) {
+            answer in
+            /* THE ONLY DOOR TO CONFIRMED, and the session type has no other.
+               A `.confirmed` this side invented would be the plausible wrong
+               answer the whole arc is about. */
+            guard var live = press, live.ref == subject.ref else { return }
+            switch answer {
+            case .confirmed: live.confirm()
+            case .refused(let why): live.refuse(why)
+            }
+            press = live
+            if let note = live.note { controller.note(note) }
+            if live.isSettled { press = nil }
+        }
+        session.dispatch(at: Date())
+        press = session
+        pressClock = Date()
+    }
+
+    /// Let the wait run down, and end it out loud.
+    ///
+    /// Called from the view's timeline. **This is what makes the deadline
+    /// arrive rather than merely be defined** — a view that only redrew when
+    /// a scene landed would leave a press spinning through a silent guest,
+    /// which is precisely the failure `PressSession.patience` exists to
+    /// prevent, reached by forgetting to look at the clock.
+    private func tickPress(_ now: Date) {
+        guard var live = press else { return }
+        guard live.tick(now: now) else {
+            pressClock = now          // redraw so the bar advances
+            return
+        }
+        if let note = live.note { controller.note(note) }
+        press = nil
+    }
+
+    /// **The machine's own report, applied to our optimism.**
+    ///
+    /// When a new scene no longer carries the control we are drawing pressed,
+    /// the drawing yields. The standing rule is that when the render and the
+    /// machine disagree the machine is right, *even when the render looks
+    /// better*, and a pressed highlight hovering where the guest says there
+    /// is no longer a button is the mirror showing something the Mac is not.
+    ///
+    /// It is not reported as a refusal: the commonest way for a control to
+    /// vanish is that the press WORKED and the dialog dismissed itself.
+    private func reconcilePress(with scene: MirrorKit.Scene) {
+        guard var live = press, !live.isSettled else { return }
+        let stillThere = scene.windows.contains { window in
+            window.controls.contains { $0.ref == live.ref }
+        }
+        guard !stillThere else { return }
+        live.contradict("the guest's next scene no longer carries it")
+        if let note = live.note { controller.note(note) }
+        press = nil
     }
 
     /// A drag that grabbed window chrome. The object is resolved from

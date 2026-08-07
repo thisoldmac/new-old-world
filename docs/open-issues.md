@@ -1042,6 +1042,116 @@ naming it says the lookup worked and the id was not enough.
   = 20. Both classes agree with the machine; the (1, 2) it describes is
   gone with its cause, not left alone.*)
 
+## LOOK: a pressed Platinum button has never been photographed, and the guest cannot draw one for us (2026-08-07, `claude/019-pressed-and-waiting`)
+
+**Verification level: EMULATOR-VERIFIED.** Own VM, lane block 432 (anchor
+15456 / wire 15457), clone of `now-mirror-stage.qcow2` (sha256
+`c466baa9…`), this tree's build confirmed by matching `sourceManifest`
+`effb72f9346b` and `buildFingerprint` `6f7b3e5f508f`, resident
+`capabilities=511`. Guest shut itself down cleanly; block reclaimed.
+
+The slice was to draw a pressed style for buttons, and the standing rule
+said to compare against the guest's own pixels first, because Platinum's
+pressed state is a specific drawn procedure and not a darken filter. The
+comparison was made. It returned something more useful than a palette.
+
+### There is no such capture, and the usual routes cannot take one
+
+Every screendump in the corpus is taken *around* an act —
+`tools/local-control-drive.py:19` shoots "before and after" — and the one
+tool that holds the button down, `tools/local-drag-vehicle.py`, never
+screendumps at all. So the corpus holds a great many quiescent desktops
+and not one pressed control. `docs/deriving-a-drawn-procedure.md:262`
+already says the same of tabs.
+
+`tools/local-pressed-capture.py` is the missing combination: `dragpress`
+leaves the button down, and while it is down we shoot.
+
+### Holding the button down changed nothing, and the near-miss is the lesson
+
+Two false answers came first, in opposite directions, and both looked
+exactly like a result:
+
+1. **A run that pressed 54 px above the button.** The scene's window rect
+   is the STRUCTURE rect — its top is the top of the title bar — so
+   content-relative coords need one title bar (20 px) added, not zero. The
+   run sampled flat dialog grey, found no change, and reported that the
+   machine draws no pressed state. The script now ABORTS when the target
+   rectangle holds fewer than three colours: a push button is never flat,
+   so a verdict from such a rect is about the rig.
+2. **65 px of change that were the mouse cursor.** With the aim corrected,
+   BEFORE vs DURING showed 65 of 2600 px moved, in convincing blacks and
+   whites. All of it was the arrow arriving in the rectangle, which
+   `dragpress` had moved there. DURING vs AFTER — cursor in the same place
+   in both — is **0 of 2600**.
+
+### The guest says why, in its own words
+
+Two verbs, independently:
+
+- `ctlact part 11` → `act-not-taken: armed, and the application never
+  called TrackControl`
+- `ctlact part 0` → *"a real click at the point; this application does not
+  route it through TrackControl at all, so no patch was consulted"*
+
+A Platinum pressed face is drawn by the application **inside**
+`TrackControl`. An application that never enters that loop never draws
+one. And `Scene.Control` carries no `hilite` field for it to be reported
+through — that gap is structural, not an oversight, because `TrackControl`
+is exactly the state in which the application has stopped calling
+`GetNextEvent` and the resident's scene walk cannot run.
+
+**Bounded honestly:** the target was NOW's own Carbon window. Another
+application that does call `TrackControl` might well draw a pressed face.
+If someone photographs one, `PressedVisual` is where the measured drawing
+goes. Nobody has.
+
+### What that settled about the drawing
+
+Imitating Platinum's pressed face would be the mirror asserting a machine
+state that does not exist — and unfalsifiable, since nothing can
+contradict it. So the press mark is deliberately the **provisional
+family's**, not Platinum's: `ProvisionalVisual`'s edge and ink over
+`UnknownVisual`'s stipple, saying what is actually true, which is that the
+host has your press and is waiting.
+
+### Also measured, and it sizes the deadline
+
+`ctlact part 0` took **5.1 s** on this rig, independently reproducing
+Sweep C's ~5 s. `PressSession.patience` is 8 s so the ordinary slow case
+lands inside the wait rather than being reported as a mystery, and
+`testPatienceOutlastsTheMeasuredWorstCasePress` names the measurement for
+whoever tries to tighten it.
+
+### UNVERIFIED: a press that reaches the guest still cannot be confirmed
+
+`NOWMirrorSource` answers a press's **refusal** and nothing else, because
+the other three dispositions all mean the act left and none is evidence it
+worked (`.direct` is dispatched with no typed postcondition and nothing
+will ever settle it). So every press that actually reaches the guest runs
+to the deadline and reports *"asked X and never learned the answer after
+8s — it may still have happened"*.
+
+That is honest, and it is also the same missing plumbing `ItemDragDriver`
+is waiting on two entries below: the broker's settlement is not routed
+back to the gesture layer. Closing it closes both.
+
+### UNVERIFIED: the pressed style has never been seen by a person
+
+Render-tested, gate-green, and never on a screen a human watched. Platinum
+fidelity is a human judgement and this drawing deliberately is not
+Platinum, which makes it *more* in need of one, not less.
+
+### Noticed in passing: the renderer's first output differs from its later output
+
+A pixel-exact comparison of two identical scenes fails when it holds the
+process's FIRST render and passes when placed later in the same run —
+something on the shared draw path is built lazily on first use. Caught
+because `PressedRenderTests` compares whole images; it is stated in that
+test and warmed around, not fixed. It breaks rule 2 (the same window state
+renders the same way every time) and the fixture corpus is meant to harden
+into a contract gate at the IR v1 freeze, so it is worth someone's
+attention as its own question.
 
 ## FIXED: the drive loop's own instrument armed every plane except the one that draws interiors (2026-08-07, `claude/019-instrument-arms-content`)
 
