@@ -179,6 +179,43 @@ void now_machine_name(char *out, long cap)
     machine_model(out, cap);
 }
 
+/* --- what hello carries ------------------------------------------------- */
+
+/* These three exist because `hello` gained typed identity fields
+   (contract, 2026-08-07) and the values were already here — computed for
+   `now_gestalt_gather` below and for the census `identity` probe. They
+   are exports of what this file already knew, not new probes.
+
+   The DECODE deliberately is not here. contract/guest_identity.h owns
+   turning a gestaltSystemVersion into a string, because NOW-68K sends the
+   same field and the two guests used to format it differently — "9.1"
+   here against "7.1.0" there, which is a difference no reader could have
+   spotted while both were only ever shown on their own machine's
+   screen. */
+
+void now_machine_model(char *out, long cap)
+{
+    machine_model(out, cap);
+}
+
+long now_machine_type(void)
+{
+    long v;
+
+    /* 0 is a fact — "we could not establish it" — and never a model. */
+    return (Gestalt(gestaltMachineType, &v) == noErr) ? v : 0;
+}
+
+void now_system_version(char *out, long cap)
+{
+    long v;
+
+    if (Gestalt(gestaltSystemVersion, &v) != noErr) {
+        v = 0;      /* the shared decode renders this as `unknown` */
+    }
+    now_identity_system_version(v, out, cap);
+}
+
 /* --- gather ------------------------------------------------------------- */
 
 static void add_row(GestaltRow *rows, int *n, int max, const char *group,

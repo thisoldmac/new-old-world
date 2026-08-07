@@ -2888,9 +2888,24 @@ static void drain_frames(void)
 static void queue_hello(void)
 {
     char payload[kWireOutPayloadCap];
-    long n = now68k_hello_build(payload, (long)sizeof payload,
-                                 NOW68K_CONTRACT_REVISION,
-                                 NOW68K_APP_VERSION);
+    char sysver[kNowIdentityVersionCap];
+    /* A model name, not a path or a list: Gestalt 'mnam' returns a Str63
+     * at most, and this file's table is shorter still. */
+    char model[72];
+    long n;
+
+    /* Asked at hello time, every connection, rather than cached at
+     * startup: a System upgrade or a machine rename between two dials is
+     * exactly the change this field exists to notice. Three Gestalt reads
+     * the census already performs; nothing new is asked of a 384 KB
+     * partition. */
+    now68k_system_version(sysver, (long)sizeof sysver);
+    now68k_machine_model(model, (long)sizeof model);
+
+    n = now68k_hello_build(payload, (long)sizeof payload,
+                            NOW68K_CONTRACT_REVISION,
+                            NOW68K_APP_VERSION,
+                            sysver, now68k_machine_type(), model);
 
     if (n <= 0) {
         set_status_str("Internal error building hello");

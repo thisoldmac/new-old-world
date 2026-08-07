@@ -709,15 +709,33 @@ static void service_connecting(void)
 
 static void send_hello(void)
 {
-    char json[512];
+    char json[640];
     char name[64];
     char esc[256];
+    char model[64];
+    char model_esc[160];
+    char sysver[kNowIdentityVersionCap];
 
     /* This machine's name, not the product's: the other side puts it on
        screen ("Connected: Quadra 950"), and the product name is the one
        answer every machine running NOW would give. */
     now_machine_name(name, sizeof name);
     now_json_escape(name, esc, sizeof esc);
+
+    /* WHICH KIND of Macintosh, as opposed to what it calls itself. `name`
+       above is the Sharing name — a person edits it in a control panel,
+       and on this project a deployed guest wears its MacBinary name — so
+       it can never key anything. These two can, and they are what the
+       asset-pack store compares (plan 021).
+       Escaped, unlike `os`: a model comes from Gestalt 'mnam' or a 'STR '
+       resource, so it is whatever somebody's System says it is. `sysver`
+       is digits and dots or the literal `unknown`, from the shared decode
+       in contract/guest_identity.h — nothing there needs escaping, and
+       both guests produce it identically by construction rather than by
+       two implementations agreeing. */
+    now_machine_model(model, sizeof model);
+    now_json_escape(model, model_esc, sizeof model_esc);
+    now_system_version(sysver, sizeof sysver);
     /* build carries what version cannot: PRODUCT_VERSION is hand-edited, so
        a stale build on a machine reports the same string as the current one
        and a host has no way to tell them apart. It cost a misdiagnosis on
@@ -733,9 +751,11 @@ static void send_hello(void)
     snprintf(json, sizeof json,
              "{\"type\":\"hello\",\"contract\":%d,\"side\":\"guest\","
              "\"version\":\"%s\",\"build\":\"%s\",\"agent\":\"%s\","
-             "\"name\":\"%s\",\"os\":\"9\",\"chunk\":%d}",
+             "\"name\":\"%s\",\"os\":\"%s\","
+             "\"machine\":{\"id\":%ld,\"model\":\"%s\"},\"chunk\":%d}",
              kNowContractRevision, PRODUCT_VERSION, now_build_stamp(),
-             now_agent_access(), esc, kNowDefaultChunk);
+             now_agent_access(), esc, sysver,
+             now_machine_type(), model_esc, kNowDefaultChunk);
     if (!send_control(json)) {
         fail("Sending hello failed");
         return;

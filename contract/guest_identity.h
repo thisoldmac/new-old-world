@@ -27,7 +27,8 @@
  *
  * So: one decode, one shape, `major.minor.bugfix`, always three parts.
  * Both guests include this; the host `cc` compiles it for
- * `guest_identity_native_test.c`, which is what stops it drifting back.
+ * now-guest-shared/tests/guest_identity_test.c, which is what stops it
+ * drifting back.
  *
  * NO snprintf. NOW-68K formats through its own append helpers rather
  * than pulling in stdio, and this header is included by a 68K build
@@ -54,10 +55,25 @@
    from this rather than guessing; `unknown` is shorter. */
 #define kNowIdentityVersionCap 16
 
+/* These are static definitions in a header, so every translation unit
+   that includes it for `kNowIdentityUnknown` alone gets three functions
+   it never calls - and the guests build with -Werror, where that is
+   -Wunused-function and a hard failure. Both toolchains that compile
+   this file are GCC or Clang (Retro68 for either guest, the host cc for
+   the native test), so the attribute is available everywhere it is
+   needed; the guard is there so a third compiler gets a warning rather
+   than a syntax error. */
+#if defined(__GNUC__) || defined(__clang__)
+#define NOW_IDENTITY_MAYBE_UNUSED __attribute__((unused))
+#else
+#define NOW_IDENTITY_MAYBE_UNUSED
+#endif
+
 /* Append `value` as decimal digits. Returns the new position, or -1 if it
    would not fit — the caller checks once at the end rather than at every
    step, which is how both guests' own formatters already read. */
-static long now_identity_put_num(char *out, long cap, long pos, long value)
+static NOW_IDENTITY_MAYBE_UNUSED long
+now_identity_put_num(char *out, long cap, long pos, long value)
 {
     char digits[12];
     long n = 0;
@@ -82,8 +98,8 @@ static long now_identity_put_num(char *out, long cap, long pos, long value)
     return pos;
 }
 
-static long now_identity_put_str(char *out, long cap, long pos,
-                                 const char *text)
+static NOW_IDENTITY_MAYBE_UNUSED long
+now_identity_put_str(char *out, long cap, long pos, const char *text)
 {
     if (pos < 0) {
         return -1;
@@ -108,7 +124,8 @@ static long now_identity_put_str(char *out, long cap, long pos,
  * Always three components, including a zero bug-fix. The trailing ".0"
  * is not noise: it is what makes two senders' strings comparable, which
  * is the whole point of the field. */
-static void now_identity_system_version(long raw, char *out, long cap)
+static NOW_IDENTITY_MAYBE_UNUSED void
+now_identity_system_version(long raw, char *out, long cap)
 {
     long major;
     long pos;

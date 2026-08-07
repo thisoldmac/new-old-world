@@ -181,7 +181,7 @@ static void test_hello(void)
     long ival;
 
     n = now68k_hello_build(buf, sizeof buf, NOW68K_CONTRACT_REVISION,
-                            "0.1");
+                            "0.1", "7.1.0", 34, "Macintosh Quadra 950");
     CHECK(n > 0, "hello: build succeeds");
     CHECK((long)strlen(buf) == n, "hello: reported length matches string");
 
@@ -198,16 +198,81 @@ static void test_hello(void)
     /* This guest's own choices for the optional fields. */
     CHECK(strstr(buf, "\"name\":\"now-68k\"") != NULL,
           "hello: name == \"now-68k\"");
-    CHECK(strstr(buf, "\"os\":\"7.1\"") != NULL, "hello: os == \"7.1\"");
     CHECK(now68k_json_find_int(buf, (size_t)n, "chunk", &ival)
           && ival == 4096, "hello: chunk == 4096");
+
+    /* The typed identity fields (contract, 2026-08-07). `os` USED TO BE
+     * the literal "7.1" compiled into hello.h - a property of the build
+     * sent as a property of the machine. It is an argument now, and this
+     * assertion is what stops a literal creeping back. */
+    CHECK(strstr(buf, "\"os\":\"7.1.0\"") != NULL,
+          "hello: os is what the caller measured, not a literal");
+    CHECK(now68k_json_find_int(buf, (size_t)n, "id", &ival) && ival == 34,
+          "hello: machine.id is the raw gestaltMachineType");
+    CHECK(strstr(buf, "\"model\":\"Macintosh Quadra 950\"") != NULL,
+          "hello: machine.model names the machine");
+}
+
+/* A model name comes from Gestalt 'mnam' or a 'STR ' resource - somebody
+ * else's System, and the only field in this message that is not ours. It
+ * is also the only one that can reopen the JSON around it, because this
+ * guest's writer does not escape.
+ *
+ * Watched fail by removing append_model's substitution. The assertion
+ * that actually fires is the BACKSLASH one, and that is worth recording
+ * rather than tidying: this guest's scanner shrugged off the bare quote
+ * and still found `type` and `chunk`, so the two structural checks
+ * PASSED against a payload that is not valid JSON. A lenient reader on
+ * this side proves nothing about the host's, which is the half that
+ * would have had to parse it.
+ *
+ * So the cheap syntactic check is the one with teeth here, and the
+ * structural ones are kept because they are what a stricter reader would
+ * fail on - not because they were observed failing. */
+static void test_hello_model_cannot_break_out(void)
+{
+    char buf[512];
+    char text[64];
+    long ival = 0;
+    long n = now68k_hello_build(buf, sizeof buf, NOW68K_CONTRACT_REVISION,
+                                 "0.1", "7.1.0", 34,
+                                 "ev\"il\\,\"type\":\"bye");
+
+    CHECK(n > 0, "hello: build succeeds with a hostile model name");
+    CHECK(strchr(buf + 1, '\\') == NULL,
+          "hello: no backslash survives into the payload");
+    CHECK(now68k_json_read_type(buf, (size_t)n, text, sizeof text)
+          && strcmp(text, "hello") == 0,
+          "hello: the type is still hello after a quote-bearing model");
+    CHECK(now68k_json_find_int(buf, (size_t)n, "chunk", &ival)
+          && ival == 4096,
+          "hello: fields after the model still parse");
+}
+
+/* A machine that answers nothing. Both values are first-class - `unknown`
+ * and 0 mean "we could not establish it" - and neither may be quietly
+ * turned into something that looks like an answer. */
+static void test_hello_unknown_machine(void)
+{
+    char buf[512];
+    long ival = -1;
+    long n = now68k_hello_build(buf, sizeof buf, NOW68K_CONTRACT_REVISION,
+                                 "0.1", kNowIdentityUnknown, 0, NULL);
+
+    CHECK(n > 0, "hello: build succeeds when Gestalt answered nothing");
+    CHECK(strstr(buf, "\"os\":\"unknown\"") != NULL,
+          "hello: an unmeasured system version says so");
+    CHECK(now68k_json_find_int(buf, (size_t)n, "id", &ival) && ival == 0,
+          "hello: an unmeasured machine type is 0, not omitted");
+    CHECK(strstr(buf, "\"model\":\"\"") != NULL,
+          "hello: a NULL model is an empty string, not a missing field");
 }
 
 static void test_hello_rejects_undersize_buffer(void)
 {
     char tiny[8];
     long n = now68k_hello_build(tiny, sizeof tiny, NOW68K_CONTRACT_REVISION,
-                                 "0.1");
+                                 "0.1", "7.1.0", 34, "Macintosh Quadra 950");
 
     CHECK(n == 0, "hello: refuses rather than truncates into a short buffer");
 }
@@ -219,7 +284,8 @@ static void test_hello_negative_contract(void)
      * special-cased to positive numbers only the way the JSON scanner's
      * integer reader isn't either. */
     char buf[512];
-    long n = now68k_hello_build(buf, sizeof buf, -7, "0.1");
+    long n = now68k_hello_build(buf, sizeof buf, -7, "0.1", "7.1.0", 34,
+                                 "Macintosh Quadra 950");
     long ival = 0;
 
     CHECK(n > 0, "hello: build succeeds with a negative contract value");
@@ -477,6 +543,8 @@ int main(void)
     test_frame_length_ok_is_protocol_legality_only();
     test_control_frame_fits_is_buffer_capacity_only();
     test_hello();
+    test_hello_model_cannot_break_out();
+    test_hello_unknown_machine();
     test_hello_rejects_undersize_buffer();
     test_hello_negative_contract();
     test_ping_pong_roundtrip();
