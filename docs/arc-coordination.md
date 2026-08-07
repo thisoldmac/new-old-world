@@ -394,6 +394,11 @@ And check the shape after any conflicted merge: a keep-both once produced
 **six duplicate Python function definitions that still parsed**. Brace
 depth for Swift, duplicate `def` for Python, and remember only
 `scripts/build-guests` catches guest-side truncation.
+
+## A chip is not work
+
+**Dispatch a real agent. Never a suggestion chip.**
+
 Michelle has corrected this at least four times, most recently by
 screenshotting a chip with the words *"tasks not chips"*. The reason is
 not stylistic:
