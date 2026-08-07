@@ -12111,3 +12111,125 @@ including which stage, if any, needed a `--skip` and why.
 Nothing in this closing pass changed behaviour. Nothing in it is
 metal-verified, and the live host application has still never been
 watched composing an interior.
+
+## WORKED AROUND, not fixed: `cycle` makes an undriven machine visible, and three things it taught (2026-08-07)
+
+This continues the entry above — *"an application holds an anchor only
+after it has been FRONTMOST once"* — and the exact rule the visibility
+lane graduated from it. **Nothing here changes that diagnosis.** What it
+adds is a control a person or an agent invokes, and three measurements
+that narrow what the deep fix has to do.
+
+### The control
+
+`cycle`, on both faces (`command.request {name: "cycle"}` and the console
+verb). It arms the anchor plane under its own lease owner and **holds it
+armed for the whole cycle**, brings each faced application forward in
+turn so it pumps its own event loop once, and restores the application
+that was frontmost. It never runs automatically and it announces itself,
+because it visibly disturbs the machine.
+
+The ordering is the design, and it is the part a naive version gets
+wrong: `arm_request` is set and cleared repeatedly, so a cycle that
+fronted applications while the plane happened to be dark would acquire
+nothing **and would look like it worked**. That is why the result is the
+resident's own before/after counters rather than a success flag —
+`eventPasses` rising while `slotScans` does not is exactly the signature
+of that failure, and a consumer can tell it apart.
+
+Measured on a freshly booted, undriven QEMU mac99 guest (OS 9.1, build
+`5ef5f1852bd1`, run dir `/private/tmp/nowvm-acq18b`, anchor 1860 / wire
+5410), with `scripts/spin-up-ppc`'s own clone:
+
+| | before `cycle` | after |
+|---|---|---|
+| scene windows | **1** (NOW's own) | **2** |
+| `ax_oracle_not_found` | 8 processes, incl. Finder and Application Switcher | 5, all faceless |
+| anchor `count` | 1 | 2 |
+| `slotScans` | 1 | 2 |
+| slots | `New Old World` | `New Old World`, `Finder` |
+
+The report: `considered 7, alreadyAnchored 0, fronted 1, acquired 1,
+refused 0, vanished 0, backgroundOnly 6, complete true, restored true`. A
+QMP screendump after it shows NOW frontmost with its own window, exactly
+as before — the Finder came forward and went back.
+
+**Cost, measured rather than estimated.** A repeat cycle on the same
+settled machine costs **1–48 ms** and fronts nothing, because a process
+holding an anchor is never a candidate. The first cycle pays one
+`SetFrontProcess` and up to 0.75 s per un-anchored faced application,
+under a 15 s ceiling for the whole run. Nothing was added to the scene
+path (see below), so a host that never asks for a cycle pays nothing.
+
+### Three things this measured
+
+**1. `WakeUpProcess` is not enough, and this is the useful negative.** The
+obvious invisible cure — make every un-anchored process eligible for time
+without fronting it — was built, shipped into the scene path, and then
+**removed after it was measured**. On the undriven guest it woke eight
+processes, every call returned `noErr`, and half a second later
+`slotScans` had not moved: not one of them had executed a `GetNextEvent`.
+**Making a process eligible is not making it pump.** The code survives
+(`now-guest-ppc/src/peek/anchor_acquire.h`) as the cycle's first pass,
+where it is free, but no path that runs on a host poll pays for it any
+more. Anyone reaching for this again should know it has been tried.
+
+**2. Fronting DOES acquire, and the Appearance non-reproduction.** A
+sibling lane reported that opening and fronting the Appearance control
+panel acquired nothing. On this rig and this build it did not reproduce:
+Appearance was opened from the guest (`script`, via the Finder), appeared
+in `process.list` as an `application`, and **took slot 3 the moment the
+plane was armed while it was frontmost** — `fronted 0`, because it never
+needed bringing forward. Its window then appeared in the scene, titled
+`Appearance`, with `controls: 0`.
+
+So the discriminator is **not** "control panels do not pump". The
+remaining candidate is the one the ordering above defends against: a
+`scene.request` arms the plane briefly, and a brief armed window need not
+overlap the target's pump. `cycle` holds it armed and yields repeatedly,
+which is why the same machine answers.
+
+`controls: 0` on a window that visibly has six tabs is a **separate**
+finding and is not this entry's.
+
+**3. The faceless set is stable and is out of scope by declaration.** Six
+processes — Control Strip Extension, DVD AutoLauncher, FBC Indexing
+Scheduler, Folder Actions, tbt-appe, tbt-worker — carry
+`modeOnlyBackground` and have no window to bring forward. The cycle reads
+that bit from `GetProcessInformation`, the same bit `process.list` reads,
+and reports them as `backgroundOnly` **rather than discovering them by
+failing**. That matters: counting them as failures would make an honest
+cycle read as a broken one forever. Anything the cycle genuinely could
+not reach is **named** in `unreached` (bounded at eight, remainder
+counted) and must be read as UNKNOWN, never as empty.
+
+The Application Switcher comes and goes: present in one `ps` and absent
+in the next, minutes apart, on an untouched machine. A cycle's
+`considered` count will differ from a `ps` taken moments earlier for that
+reason alone.
+
+### What the deep fix still has to do
+
+Unchanged, and now with one option struck off. The plane must be armed
+across a window in which other processes are actually **scheduled**, or a
+hook must fire in a foreign context. `WakeUpProcess` is not that hook
+(finding 1). A rescan at arm time is not either — it runs in NOW's own
+context and re-samples the one process already covered.
+
+The open question from the visibility lane stands and nothing here
+explains it: after the flip, `slotScans` stayed at 2 across 362 further
+armed passes while essentially every pass was in the Finder's context and
+NOW contributed almost none — **even though NOW is the process arming the
+plane and serving the requests.** Understanding that is probably the
+lever.
+
+Verification level: **emulator-verified**. Nothing here touched metal,
+and no claim above is made about a real Macintosh.
+
+One thing is NOT verified and is called out rather than buried: the
+`cycle` verb is **not declared in `contract/asyncapi.yaml`**, because
+contract changes serialise through the human. Until it is,
+`CommandParityTests.testNeitherGuestInventsCommandsTheContractDoesNotDeclare`
+and `CommandRegistryTests.testTheThreeHalvesAgreeOnTheCommandSet` fail,
+naming `cycle` — correctly, and they are the only two failures in the
+host suite.
