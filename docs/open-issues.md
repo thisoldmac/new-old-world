@@ -97,6 +97,22 @@ item for item what the guest's own QMP screendump shows in that window.
 healthy.** The loss is entirely between "which windows get armed" and the
 render.
 
+**Watched failing by mutation, and this is the reading that settles it.**
+Arm, then `qdtrace stop`, reading `mirror` at each step:
+
+| | requested | active | structure | semantics | content | interaction |
+|---|--:|--:|---|---|---|---|
+| baseline (scene walk only) | **7** | **7** | ACTIVE | ACTIVE | **off** | ACTIVE |
+| `qdtrace start` | **15** | **15** | ACTIVE | ACTIVE | **ACTIVE** | ACTIVE |
+| `qdtrace stop` | **7** | **7** | ACTIVE | ACTIVE | **off** | ACTIVE |
+
+Content is the only bit that moves; the other three never flinch. And
+the baseline is the finding: **a normal scene walk arms 7, never 15.**
+`1|2|4` is structure, semantics and interaction — the content bit, 8, is
+not in it and nothing in the ordinary cycle ever puts it there. So the
+product's steady state is a content plane that is off, and Michelle's
+`15/15` was a sample taken while some arm happened to be live.
+
 **Why nothing caught it, and the instrument that has to change.**
 `tools/local-pair-capture.py` — the drive loop's own live pair
 instrument — **never issues `qdtrace start`.** Grep it: no `qdtrace`, no
