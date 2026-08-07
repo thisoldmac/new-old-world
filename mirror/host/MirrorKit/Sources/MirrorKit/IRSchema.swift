@@ -286,6 +286,15 @@ public enum IRSchema {
         "windows[].controls[].semantic.knowledge",
         "windows[].controls[].semantic.kind",
         "windows[].controls[].semantic.definition",
+        /* 2026-08-07. The resource id of the control definition function
+           the guest's Resource Manager NAMED, beside `unknown` and only
+           where `kind` is absent. It separates "could not even ask" from
+           "asked, and the id was not enough" - and the second is the
+           common case, because ids 0 and 23 are the button FAMILIES and
+           the variation code that would tell a push button from a check
+           box is not readable from outside the owning process. Never map
+           it to a kind. */
+        "windows[].controls[].semantic.cdef",
         "windows[].controls[].semantic.action",
         "windows[].controls[].semantic.state",
         /* 2026-08-07. See Scene.DesktopItem.aliasTarget below: the target
@@ -360,7 +369,7 @@ public enum IRSchema {
         "Scene.DialogItem.visible", "Scene.DialogItem.ref",
         "Scene.DialogItem.semantic",
         "Scene.Semantics.knowledge", "Scene.Semantics.kind",
-        "Scene.Semantics.definition",
+        "Scene.Semantics.definition", "Scene.Semantics.cdef",
         "Scene.Semantics.action", "Scene.Semantics.state",
         "Scene.Semantics.value", "Scene.Semantics.selection",
         "Scene.Semantics.listCells", "Scene.Semantics.listTotalCount",
