@@ -405,6 +405,25 @@ int now_wire_chat_cancel(char *err, long cap);
 int now_wire_chat_reset(char *err, long cap);
 Boolean now_wire_chat_turn_active(void);
 
+/* --- asking the HOST to show one of its own windows ---------------------
+   One direction by definition, the cloud and chat rule: the subject is
+   a surface on the modern machine. `mirror` is the only name today.
+
+   It exists because the Mirror is the HOST's rendering of THIS screen,
+   and the person who wants it open is sitting here. Before this the
+   only ways to open one in a running host were a click on that Mac and
+   a launch flag, so anyone at this keyboard had no route at all.
+
+   The note fires exactly once per ask: ok tells you what happened,
+   reason is the host's own sentence, already MacRoman-expressible. A
+   host too old for the family never answers, and the deadline turns
+   that into "that Mac cannot show its Mirror" — a status line, not an
+   error. */
+typedef void (*ConnHostShowNote)(Boolean ok, const char *reason);
+ConnHostShowNote conn_set_host_show_note(ConnHostShowNote fn);
+int now_wire_host_show(const char *surface, char *err, long cap);
+Boolean now_wire_host_show_pending(void);
+
 /* Where a file the guest is sending has got to, so the panel can show a
    moving bar rather than a line that sits still for a minute. Returns
    false when nothing is being sent. */

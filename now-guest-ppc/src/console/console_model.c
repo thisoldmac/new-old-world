@@ -5,6 +5,7 @@
 
 #include "mirror_layout.h"
 #include "mirror_probe.h"
+#include "mirror_show.h"
 #include "net_layout.h"
 #include "net_probe.h"
 
@@ -498,6 +499,58 @@ static void chat_verb_wait(void)
     }
 }
 
+/* --- showmirror ---------------------------------------------------------
+   The typed face on the Mirror page's button. One implementation below
+   both — `now_wire_host_show`, with mirror_show.h's words — because a
+   second copy would be a second thing to be wrong about an act whose
+   whole effect is on the other machine.
+
+   Console-only on this guest, and deliberately: the HOST reaches its
+   own Mirror through its Window menu and the `mirror_open` agent verb,
+   so there is nothing for it to type at us. Recorded as an asymmetry
+   beside `chat`, which is console-only for exactly this shape of
+   reason. */
+
+static Boolean g_show_done;
+static char g_show_reply[128];
+
+static void show_verb_note(Boolean ok, const char *reason)
+{
+    snprintf(g_show_reply, sizeof g_show_reply, "%s%.100s",
+             ok ? "" : "refused: ", reason);
+    g_show_done = true;
+}
+
+static void run_show_mirror_verb(void)
+{
+    char line[kMaxCols];
+    char err[96];
+    ConnHostShowNote previous;
+    unsigned long deadline;
+
+    previous = conn_set_host_show_note(show_verb_note);
+    g_show_done = false;
+    g_show_reply[0] = '\0';
+    if (now_wire_host_show(kMirrorHostSurface, err, sizeof err) != 0) {
+        snprintf(line, sizeof line, "showmirror: %.80s", err);
+        console_model_append(line);
+        conn_set_host_show_note(previous);
+        return;
+    }
+    console_model_append(now_mirror_show_waiting_text());
+    /* The wire's own deadline is what ends an ask nobody answers; this
+       loop only has to outlive it, and pumping is what lets the answer
+       arrive at all. */
+    deadline = TickCount() + 60UL * 20UL;
+    while (!g_show_done && (unsigned long)TickCount() < deadline) {
+        now_wire_pump();
+    }
+    snprintf(line, sizeof line, "showmirror: %.100s",
+             g_show_done ? g_show_reply : "gave up waiting");
+    console_model_append(line);
+    conn_set_host_show_note(previous);
+}
+
 static void run_chat_verb(const char *raw_args)
 {
     char line[kMaxCols];
@@ -797,6 +850,10 @@ static void console_model_dispatch(const char *input)
         } else if (more) {
             console_model_append("  ... more items follow");
         }
+        return;
+    }
+    if (strcmp(name, "showmirror") == 0) {
+        run_show_mirror_verb();
         return;
     }
     if (strcmp(name, "chat") == 0) {

@@ -34,6 +34,13 @@ void now_mirror_layout_compute(const Rect *body, MirrorLayout *out)
         y = (short)(y + kMirrorRowHeight);
     }
     y = (short)(y + kMirrorSectionGap);
+    out->show_button = row(*body, y);
+    out->show_button.right = (short)(out->show_button.left
+                                     + kMirrorButtonWidth);
+    out->show_button.bottom = (short)(y + kMirrorButtonHeight);
+    y = (short)(y + kMirrorButtonHeight + kMirrorButtonGap);
+    out->show_status = row(*body, y);
+    y = (short)(y + kMirrorRowHeight + kMirrorSectionGap);
     for (i = 0; i < kMirrorNoteLines; ++i) {
         out->note[i] = row(*body, y);
         y = (short)(y + kMirrorRowHeight);
@@ -121,7 +128,7 @@ const char *now_mirror_note(int line)
 {
     static const char *notes[kMirrorNoteLines] = {
         "These are observed guest facts. Mirror policy belongs to the host.",
-        "This page is read-only; changing policy here would create two authorities."
+        "The button asks that Mac to show its Mirror; policy stays there."
     };
     return line >= 0 && line < kMirrorNoteLines ? notes[line] : "";
 }
