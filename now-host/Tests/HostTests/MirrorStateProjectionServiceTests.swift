@@ -982,6 +982,16 @@ extension MirrorStateProjectionServiceTests {
                 would exceed the protocol's whole one-message ceiling by \
                 itself.
                 """),
+            "displayEpoch": .declined("""
+                The content plane's own clock (plan 018 slice 1), and the \
+                same kind of shelf as `island`: host-internal render state \
+                that happens to live on this struct. Every number in it — \
+                the guest's capture generation and its display epoch — \
+                already reaches an agent on the drain records themselves, \
+                and `stale` is this host's own conclusion about them, not a \
+                fact about the machine. A projection that published it \
+                would be exporting a renderer's opinion as guest evidence.
+                """),
         ]
     }
 }

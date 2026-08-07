@@ -722,6 +722,8 @@ public struct SceneRenderer {
         if let display = win.display {
             DisplayReplay.draw(display, in: contentCtx, content: content,
                                excluding: semanticFrames,
+                               ladder: Self.ladder(for: win, content: content,
+                                                   owning: semanticFrames),
                                coverage: replayCoverage)
         }
         if !displayOwnsVisuals, let text = win.text {
@@ -886,6 +888,62 @@ public struct SceneRenderer {
               }) else { return false }
         guard let r = ctl.rect else { return false }
         return (r.b - r.t) <= 26 && (r.r - r.l) > 20
+    }
+
+    /// **Rung 3's identities, gathered from the semantic plane.**
+    ///
+    /// The one rule: a rectangle is NAMED only because P2 said what is at
+    /// it. Never because of its size, never because of its shape. See
+    /// ``ProvenanceLadder`` and docs/render-composition.md.
+    ///
+    /// Two exclusions carry the weight, and both were paid for by sweep A:
+    ///
+    /// - **A derived cell names nothing.** `DrawnCellGrid` derives Sherlock
+    ///   2's channel grid from the drawing itself, so a cell's evidence IS
+    ///   the pixels — it can say where the cell is and which is selected,
+    ///   and nothing at all about the art inside it. Sweep A found nine
+    ///   page icons in that grid. They are unknowns.
+    /// - **An untyped control names nothing.** A Finder window's scroll
+    ///   bars arrive with `role: "unknown"` and no semantic kind, so their
+    ///   16×16 arrow blits get no name and draw as marked unknowns rather
+    ///   than as documents. That is the whole of Michelle's complaint #5,
+    ///   and "arrows or a marked unknown, never a page" is the exit
+    ///   criterion it became.
+    static func ladder(for win: MirrorKit.Scene.Window, content: CGRect,
+                       owning: [CGRect]) -> ProvenanceLadder {
+        func place(_ r: MirrorKit.Rect) -> CGRect {
+            CGRect(x: content.minX + CGFloat(r.l), y: content.minY + CGFloat(r.t),
+                   width: CGFloat(max(0, r.r - r.l)),
+                   height: CGFloat(max(0, r.b - r.t)))
+        }
+        var named: [(rect: CGRect, art: ProvenanceLadder.NamedArt)] = []
+        for control in win.controls where control.visible {
+            guard let rect = control.rect,
+                  control.semantic?.knowledge == .known,
+                  let kind = control.semantic?.kind,
+                  kind != MirrorKit.DrawnCellGrid.cellKind,
+                  !Self.isBackgroundKind(kind) else { continue }
+            named.append((place(rect), .control))
+        }
+        for item in win.dialogItems ?? [] where item.visible {
+            let kind = item.semantic.kind
+            if kind == "icon" {
+                named.append((place(item.rect), .icon))
+            } else if item.semantic.knowledge == .known,
+                      !Self.isBackgroundKind(kind ?? "") {
+                named.append((place(item.rect), .control))
+            }
+        }
+        return .init(owning: owning, named: named,
+                     inkIsCurrent: win.displayEpoch?.stale != true)
+    }
+
+    /// Backgrounds name nothing: they routinely wrap most of a dialog, and
+    /// a background that claimed every blit inside it would be the
+    /// `dialogItemOwnsDisplay` defect wearing a third hat.
+    static func isBackgroundKind(_ kind: String) -> Bool {
+        kind == "panel" || kind == "placard" || kind == "selectionBand"
+            || kind == "groupBox" || kind == "userItem"
     }
 
     /// Window furniture the Control Manager draws OVER application content
@@ -1411,25 +1469,13 @@ public struct SceneRenderer {
     private func drawUnavailableVisual(_ ctx: GraphicsContext,
                                        _ frame: CGRect,
                                        _ label: String) {
-        guard frame.width > 1, frame.height > 1 else { return }
-        var clipped = ctx
-        clipped.clip(to: Path(frame))
-        clipped.fill(Path(frame), with: .color(Platinum.g1))
-        var x = frame.minX - frame.height
-        while x < frame.maxX {
-            var hatch = Path()
-            hatch.move(to: CGPoint(x: x, y: frame.maxY))
-            hatch.addLine(to: CGPoint(x: x + frame.height,
-                                      y: frame.minY))
-            clipped.stroke(hatch, with: .color(Platinum.g2), lineWidth: 1)
-            x += 6
-        }
-        clipped.stroke(Path(frame), with: .color(Platinum.g3),
-                       style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
-        guard frame.width >= 60, frame.height >= 14 else { return }
-        let caption = label.isEmpty ? "Visual unavailable" : label
-        appText(caption, clipped, x: frame.minX + 4,
-                baselineY: frame.midY + 4, color: Platinum.g4, small: true)
+        /* ONE DEFINITION FOR RUNG 4. This drew its own hatch, byte for
+           byte the same as the replay's, in a second place — so the
+           "the unknown must be QUIET" decision would have had two places
+           to land and would have landed in one of them. `UnknownMark` is
+           the single swappable style; both readers go through it. */
+        UnknownMark.draw(in: ctx, frame: frame,
+                         label: label.isEmpty ? "Visual unavailable" : label)
     }
 
     private func drawButton(_ ctx: GraphicsContext, _ ctl: MirrorKit.Scene.Control,
