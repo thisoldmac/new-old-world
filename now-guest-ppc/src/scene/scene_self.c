@@ -651,23 +651,34 @@ void now_scene_collect_self(NowScene *s, int row,
         int budget = kSelfMaxControls;
         int index;
 
-        /* The STRUCTURE region, which is the box a person sees and the
-           box IR v1 carries - the same choice peek_read makes for every
-           other process, so the two agree. */
+        /* BOTH REGIONS, ASKED FOR SEPARATELY, and the CONTENT one is
+           what `windows[].rect` is derived from - see
+           kNowSceneIRTitleBarHeight, which is now the single derivation
+           every branch of every window walk goes through.
+         *
+         * This used to publish the structure region, on the stated
+         * ground that peek_read did the same "so the two agree". They
+         * did agree with each other and neither agreed with the walk the
+         * scene actually uses for a bound process, which grew the
+         * content region upward instead - three derivations of one
+         * field, two of them meaning something different from what the
+         * consumer decomposes. */
         if (GetWindowBounds(window, kWindowStructureRgn, &structure)
                 != noErr) {
             continue;
         }
         if (GetWindowBounds(window, kWindowContentRgn, &content) != noErr) {
-            content = structure;
+            continue;
         }
         title[0] = 0;
         GetWTitle(window, title);
         pascal_to_c(title, ctitle, sizeof ctitle);
 
         if (!now_scene_add_window(s, row, ctitle,
-                                  structure.top, structure.left,
-                                  structure.bottom, structure.right,
+                                  (short)(content.top
+                                          - kNowSceneIRTitleBarHeight),
+                                  content.left,
+                                  content.bottom, content.right,
                                   IsWindowVisible(window) ? 1 : 0)) {
             continue;
         }

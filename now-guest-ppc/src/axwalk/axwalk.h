@@ -66,14 +66,33 @@ typedef struct {
     unsigned long system_hi;
 } NowAxMemory;
 
-/* One classic WindowRecord, read by offset. The rect is the CONTENT
-   region's bounding box, not the structure region's - deliberately, and
-   it is why `origin_top`/`origin_left` exist: a control's rect is in
-   the window's local coordinates, and content-origin minus portRect
-   origin is what converts it to global. peek_read.c reads the STRUCTURE
-   region for the same window because it wants the frame a person sees;
-   the two are different fields for different questions, not a
-   disagreement. */
+/* One classic WindowRecord, read by offset - and BOTH of its regions.
+ *
+ * Two questions, two answers, one reader. `top/left/bottom/right` is the
+ * CONTENT region's bounding box, which is what a control's local rect is
+ * relative to and what `origin_top`/`origin_left` convert against.
+ * `struc_*` is the STRUCTURE region - the frame a person sees, title bar
+ * and border included - which is what a window's position and size MEAN
+ * to anyone looking at the screen.
+ *
+ * THEY ARE HERE TOGETHER BECAUSE THEY WERE APART. peek_read.c read the
+ * structure region and this file read the content region, from separate
+ * offset tables with opposite failure policies, and on 2026-08-02 the
+ * two disagreed about whether the Finder had any windows at all
+ * (scene_collect.c:129). The bind was made authoritative that day; the
+ * READERS were not merged, so `windows[].rect` went on having three
+ * derivations inside the scene plane alone - and one of them was this
+ * region grown upward by a fixed title-bar constant, which is a guess
+ * wearing arithmetic: title bars are not one height across window kinds
+ * and the Appearance Manager draws them procedurally.
+ *
+ * So the structure region is read from the machine, beside the content
+ * region, in the same walk that already has the WindowRecord in hand.
+ * A window whose structure region cannot be read is refused whole - the
+ * same policy this file already applies to an unreadable content region,
+ * and the same one peek_read.c applies by skipping the window. Reporting
+ * one region under the other's name is the outcome neither reader was
+ * ever willing to produce and this merge must not introduce. */
 typedef struct {
     unsigned long address;
     unsigned long next_window;
@@ -86,6 +105,10 @@ typedef struct {
     short         left;
     short         bottom;
     short         right;
+    short         struc_top;
+    short         struc_left;
+    short         struc_bottom;
+    short         struc_right;
     unsigned char title_len;
     char          title[kNowAxTitleMax + 1];
 } NowAxWindow;

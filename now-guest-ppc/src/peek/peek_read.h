@@ -21,11 +21,30 @@ enum {
     kNowPeekTitleMax = 48         /* window-title bytes, MacRoman */
 };
 
+/* ONE WINDOW, BOTH OF ITS REGIONS.
+ *
+ * `top/left/bottom/right` is the STRUCTURE region - the frame a person
+ * sees. `cont_*` is the CONTENT region, which is what a control's local
+ * rect is relative to and what the scene's `windows[].rect` is derived
+ * from.
+ *
+ * The content region is here because this reader and axwalk.c each used
+ * to return ONE region and a different one, from separate offset tables
+ * with opposite failure policies, and the scene consumed both - so
+ * `windows[].rect` had three derivations and one of them converted
+ * between the regions with a fixed constant. Both readers now return
+ * both regions, from the machine, so the scene has one derivation and
+ * nothing has to guess a title bar's height. See axwalk.h, which carries
+ * the same note against the same fields. */
 typedef struct {
     short top;
     short left;
     short bottom;
     short right;
+    short cont_top;
+    short cont_left;
+    short cont_bottom;
+    short cont_right;
     char title[kNowPeekTitleMax]; /* may be empty */
     /* The WindowRecord this row was read from, so a SECOND reader can
        return to the same window without re-deriving which one it is.

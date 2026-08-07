@@ -202,15 +202,17 @@ static void collect_process(NowScene *s, int row,
                 partial = 1;
                 break;
             }
-            /* THE BOX, not the content region. now_ax_read_window reads
-               the CONTENT region - that is what the controls are relative
-               to and what origin_top is taken from - but IR v1's
-               `windows[].rect` is that region grown up by a title bar,
-               and its consumer recovers the content origin by adding the
-               same constant back. Handing over the content region makes
-               every control in the window twenty pixels out on the
-               consumer's screen; see kNowSceneIRTitleBarHeight for the
-               measurement that caught it. */
+            /* THE BOX, not the content region - and this is now the
+               ONLY place in the guest that derives one from the other.
+               now_ax_read_window returns both regions; IR v1's
+               `windows[].rect` is the content region grown up by a title
+               bar, and its consumer recovers the content origin by
+               adding the same constant back. Handing over the content
+               region makes every control in the window twenty pixels out
+               on the consumer's screen; see kNowSceneIRTitleBarHeight for
+               the measurement that caught it, and for why the true
+               structure region is the wrong answer HERE despite being
+               the more faithful one. */
             if (now_scene_add_window(s, row, win.title,
                                      (short)(win.top
                                              - kNowSceneIRTitleBarHeight),
@@ -253,8 +255,17 @@ static void collect_process(NowScene *s, int row,
                validated path yet, so this is the honest floor and is
                stated in docs/scene-producer.md rather than dressed up as
                measured. */
-            if (!now_scene_add_window(s, row, w->title, w->top, w->left,
-                                      w->bottom, w->right, 1)) {
+            /* THE SAME DERIVATION, from this reader's content region -
+               which it did not use to return. It published the STRUCTURE
+               region here, so an unbound process's windows arrived in a
+               different coordinate convention from a bound one's, in the
+               same scene, under the same field name. Nothing declared
+               which a row held and no consumer could have asked. */
+            if (!now_scene_add_window(s, row, w->title,
+                                      (short)(w->cont_top
+                                              - kNowSceneIRTitleBarHeight),
+                                      w->cont_left,
+                                      w->cont_bottom, w->cont_right, 1)) {
                 continue;
             }
             /* The fallback path is self (Carbon, no record address) or
