@@ -3,6 +3,7 @@
 #include "loopstat.h"
 #include "wirestat_cmd.h"
 
+#include "anchor_cycle.h"
 #include "mirror_layout.h"
 #include "mirror_probe.h"
 #include "net_layout.h"
@@ -1153,6 +1154,79 @@ static void console_model_dispatch(const char *input)
                 snprintf(line, sizeof line, "  %-18.18s %.60s", label, value);
                 console_model_append(line);
             }
+        }
+        return;
+    }
+    if (strcmp(name, "cycle") == 0) {
+        /* The acquisition cycle's console face. Same producer as the wire
+           verb (now_peek_anchor_cycle), same numbers, same order - a
+           console that computed its own account of what a cycle achieved
+           would be a second answer to drift against.
+
+           It ANNOUNCES ITSELF before it runs, because this is the one
+           control in the guest that deliberately disturbs the machine: a
+           person is about to watch applications come forward in turn and
+           should have been told why. */
+        NowAnchorCycleReport rep;
+
+        console_model_append("Cycling applications so the anchor plane can "
+                             "see them.");
+        console_model_append("Windows will come forward in turn; the front "
+                             "application is restored after.");
+        if (!now_peek_anchor_cycle(&rep)) {
+            snprintf(line, sizeof line, "Refused: %.70s", rep.note);
+            console_model_append(line);
+            return;
+        }
+        snprintf(line, sizeof line,
+                 "Considered %d  anchored already %d  woken %d  "
+                 "fronted %d  acquired %d",
+                 (int)rep.considered, (int)rep.already, (int)rep.woken,
+                 (int)rep.fronted, (int)rep.acquired);
+        console_model_append(line);
+        snprintf(line, sizeof line,
+                 "  refused %d  vanished %d  background-only %d (no window "
+                 "to bring forward)",
+                 (int)rep.refused, (int)rep.vanished,
+                 (int)rep.background_only);
+        console_model_append(line);
+        /* The evidence, before and after, in the order mirror's Anchors
+           line prints it: passes first, because it is what separates
+           "the filter never ran while armed" from "it ran and captured
+           nothing". */
+        snprintf(line, sizeof line,
+                 "Anchors  passes %lu -> %lu  scans %lu -> %lu  "
+                 "count %lu -> %lu",
+                 rep.before_event_passes, rep.after_event_passes,
+                 rep.before_slot_scans, rep.after_slot_scans,
+                 rep.before_count, rep.after_count);
+        console_model_append(line);
+        snprintf(line, sizeof line, "%s front application %s",
+                 rep.complete ? "Complete." : "PARTIAL -",
+                 rep.restored ? "restored." : "NOT restored.");
+        console_model_append(line);
+        if (rep.unreached_count > 0 || rep.unreached_omitted > 0) {
+            int ui;
+
+            /* NAMED, not just counted. These read UNKNOWN to whoever
+               consumes the scene next - never empty - and a person
+               deciding whether to trust what the Mirror shows needs the
+               names rather than the number. */
+            console_model_append("Could not reach (their state is UNKNOWN, "
+                                 "not empty):");
+            for (ui = 0; ui < (int)rep.unreached_count; ++ui) {
+                snprintf(line, sizeof line, "  %.40s", rep.unreached[ui]);
+                console_model_append(line);
+            }
+            if (rep.unreached_omitted > 0) {
+                snprintf(line, sizeof line, "  ...and %d more",
+                         (int)rep.unreached_omitted);
+                console_model_append(line);
+            }
+        }
+        if (rep.note[0] != '\0') {
+            snprintf(line, sizeof line, "  %.70s", rep.note);
+            console_model_append(line);
         }
         return;
     }

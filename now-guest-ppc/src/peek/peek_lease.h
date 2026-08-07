@@ -14,6 +14,14 @@ typedef enum {
        two consumers behind one name is exactly the arrangement the
        comment in peek.h was written about. */
     kNowPeekOwnerEvents,
+    /* The acquisition cycle (anchor_cycle.c). Its own owner because it
+       must hold the plane armed for the WHOLE cycle — including the
+       seconds it spends with a foreign application in front and this one
+       in the background — and the union rule is what stops the Processes
+       page or a lapsed scene poll taking the plane down underneath it.
+       A cycle that ran with the plane dark would front every application
+       on the machine and acquire nothing, and would look like it worked. */
+    kNowPeekOwnerCycle,
     kNowPeekOwnerCount
 } NowPeekOwner;
 

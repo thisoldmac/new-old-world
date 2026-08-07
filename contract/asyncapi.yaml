@@ -5473,6 +5473,125 @@ components:
                   minted: { type: integer }
                   evicted: { type: integer }
                   capacity: { type: integer }
+    cycle:
+      description: >
+        Brings each application on the guest forward in turn, with the anchor
+        plane armed, so that it executes its own event loop once and the
+        resident captures its anchor — then restores the application that was
+        frontmost.
+
+        WHY IT EXISTS. The anchor plane captures a process only while THAT
+        process is executing GetNextEvent with the anchors bit set, and on a
+        cooperatively scheduled Macintosh nobody has driven, nothing else is
+        ever scheduled inside an armed window. So a freshly booted machine
+        mirrors as one window — NOW's own — with an honest "not observed" for
+        everything else, and nothing recovers on its own (open-issues.md,
+        2026-08-07). This is the deliberate workaround; the deep fix is
+        recorded there as future work.
+
+        IT DISTURBS THE MACHINE, ON PURPOSE, and is therefore never automatic
+        and never implied by any other verb. Windows come forward and flash
+        past. It is for two moments: once on a fresh boot, and on demand when
+        what the Mirror shows has gone stale.
+
+        Processes it can reach WITHOUT fronting them are woken invisibly
+        first (WakeUpProcess), and those never flash. Faceless background
+        processes have no window to bring forward and are counted as
+        `backgroundOnly` rather than as failures — they are outside what this
+        verb can reach, and the scene must not be read as claiming otherwise.
+      args: {}
+      x-line: >
+        Takes nothing. Disturbs the machine deliberately: applications come
+        forward in turn and the previous front application is restored
+        afterwards. Believe the before/after counters rather than the
+        flashing — `eventPasses` rising while `slotScans` does not means it
+        fronted applications and captured none of them.
+      output:
+        type: object
+        required: [cycle]
+        properties:
+          cycle:
+            type: object
+            required: [armed, complete, restored, before, after]
+            properties:
+              armed:
+                type: boolean
+                description: >
+                  The plane was armed for the whole cycle. False is never
+                  reported with any application fronted: a cycle that cannot
+                  arm refuses before disturbing anything.
+              complete:
+                type: boolean
+                description: >
+                  Every candidate got its turn. False means the cycle ran out
+                  of time partway; the state it left is partial and must not
+                  be presented as a whole machine.
+              restored:
+                type: boolean
+                description: >
+                  The application that was frontmost is frontmost again. When
+                  it quit mid-cycle there is nothing to restore to, this is
+                  false, and `note` says so in words.
+              considered:
+                type: integer
+                description: Processes enumerated, excluding the guest itself.
+              alreadyAnchored:
+                type: integer
+                description: Held an anchor before the cycle began.
+              woken:
+                type: integer
+                description: >
+                  Reached invisibly with WakeUpProcess and never brought
+                  forward. Cumulative for the session, not per cycle.
+              fronted:
+                type: integer
+                description: Applications actually brought forward.
+              acquired:
+                type: integer
+                description: Of those, the ones that then held an anchor.
+              refused:
+                type: integer
+                description: >
+                  Would not come forward, or came forward and never pumped
+                  inside its turn. The two are one fact from here: it did not
+                  answer.
+              vanished:
+                type: integer
+                description: Quit between enumeration and its turn.
+              backgroundOnly:
+                type: integer
+                description: >
+                  Faceless: no window to bring forward. Out of scope, not a
+                  failure.
+              before:
+                $ref: "#/components/x-commands/cycle/x-anchorCounters"
+              after:
+                $ref: "#/components/x-commands/cycle/x-anchorCounters"
+              note:
+                type: string
+                description: >
+                  One sentence a person can read. Carries the reason on a
+                  refusal, and the restore caveat when there is one.
+      x-anchorCounters:
+        type: object
+        required: [count, slotScans, eventPasses]
+        description: >
+          The resident's own anchor counters, the same three
+          `mirror.extension.anchors` reports. Sampled before and after
+          because a control that reports its own success is not evidence.
+        properties:
+          count:
+            type: integer
+            description: Occupied anchor slots.
+          slotScans:
+            type: integer
+            description: >
+              Slot-table scans, which is a count of CONTEXT CHANGES the
+              resident's filter noticed. This is the load-bearing number: it
+              rising is the proof the filter ran inside foreign processes.
+          eventPasses:
+            type: integer
+            description: Armed passes of the resident's jGNE filter.
     mirror:
       description: >
         The guest's read-only lifecycle view of the ONE optional NOW

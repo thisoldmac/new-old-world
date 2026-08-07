@@ -22,6 +22,7 @@
 #include "contract.h"
 #include "ot_carbon.h"
 #include "peek.h"
+#include "anchor_acquire.h"
 #include "peek_read.h"
 #include "prefs.h"
 #include "proc_actions.h"
@@ -2013,6 +2014,22 @@ static void serve_scene(const char *request)
      * arm handshake is unchanged; this only stops asking before it. */
     (void)now_peek_settle((unsigned long)kNowPeekCapAnchors,
                           kNowSceneArmSettleTicks);
+
+    /* AND NOTHING MORE, ON THIS PATH. A wake sweep was tried here and
+     * REMOVED after it was measured: on a freshly booted machine
+     * WakeUpProcess made eight processes eligible, every call returned
+     * noErr, and half a second later not one of them had executed a
+     * GetNextEvent - `slotScans` did not move. Making a process eligible
+     * is not making it pump, and a recurring cost on the scene path with
+     * no measured acquisition is exactly the trade this slice was told
+     * not to make.
+     *
+     * What DOES acquire is the process being brought forward, and that
+     * visibly disturbs the machine - so it belongs in a control a person
+     * or an agent invokes deliberately (`cycle`, anchor_cycle.h) and
+     * never on a path that runs whenever a host polls. A scene of a
+     * machine nobody has cycled still says "not observed", honestly, for
+     * the processes it has never been inside. */
 
     now_scene_collect(scene, ++g_scene_seq, stale_ticks);
     /* Correlate subsequent acts with the normal-context observation a
