@@ -47,6 +47,7 @@ PARSERS = os.path.join(REPO, "mirror", "tools", "extract-assets")
 sys.path.insert(0, PARSERS)
 
 import cursors            # noqa: E402
+import fonts              # noqa: E402
 import icons              # noqa: E402
 import patterns           # noqa: E402
 import resfork            # noqa: E402
@@ -65,6 +66,16 @@ DEFAULT_SWIFT_OUT = os.path.join(
 
 SYSTEM_FILE = "System Folder/System"
 THEME_FILE = "System Folder/Appearance/Theme Files/Apple platinum"
+FONTS_DIR = "System Folder/Fonts"
+
+# The font suitcases worth opening. Charcoal is here because it is the Mac
+# OS 8/9 SYSTEM FONT and its absence is visible on screen — see
+# extract_fonts(), which records what it found rather than what we hoped.
+FACES = ("Chicago", "Charcoal", "Geneva")
+STYLE_SUFFIX = {0: "", 1: "-bold", 2: "-italic", 3: "-bolditalic"}
+# The strikes FontBook.swift names outright. A pack without these draws its
+# procedural fallback face, which is the failure this refuses to ship.
+REQUIRED_SHEETS = ("chicago-12", "geneva-9", "geneva-10", "geneva-12")
 
 # The generic Finder icons the renderer asks for by name. Resource ids are
 # the System file's own; see IconAtlas.swift, which names the same five.
@@ -349,6 +360,96 @@ def extract_pictures(fork: resfork.ResourceFork, out: str, prov: list) -> dict:
                      "type": "PICT", "id": res.id})
     return {"count": len(listed), "format": "PICT (not PNG: no decoder)",
             "pictures": listed}
+
+
+def extract_fonts(mnt: str, out: str, prov: list) -> dict:
+    """The Fonts folder's bitmap strikes, as the sheets the renderer reads.
+
+    The offline route extracted NO fonts until 2026-08-07, which made the
+    documented recovery procedure ("run the extractor") produce a pack the
+    renderer could not draw text from: `FontBook` asks for `chicago-12`
+    and `geneva-9/10/12` by name and got nil, silently falling back to a
+    face with different metrics. The strikes live in the Fonts folder's
+    suitcases, NOT in the System file — the System file's own four NFNTs
+    are a Geneva/Monaco rump, without Chicago 12's real strike.
+
+    Each `NFNT` becomes `fonts/<face>-<size>[-style].png` plus its metrics
+    JSON, exactly as the live-pull route writes them (the sheet packer is
+    the same `fonts.render_strike`, so the two routes cannot disagree
+    about a glyph box), and each `sfnt` is carried out verbatim as a
+    `.ttf` — an 'sfnt' resource IS the TrueType file image.
+
+    CHARCOAL HAS NO STRIKE TO EXTRACT, and that is a finding rather than
+    an omission: on this image its suitcase holds one `sfnt` and a `FOND`
+    whose association table has a single size-0 (scalable) row, so Mac OS
+    rasterises the system font from TrueType at run time. The face's note
+    says so in the manifest instead of the pack quietly lacking it.
+    """
+    d = os.path.join(out, "fonts")
+    ttf_dir = os.path.join(d, "ttf")
+    os.makedirs(ttf_dir, exist_ok=True)
+    wipe_generated(d, keep=set())
+    wipe_generated(ttf_dir, keep=set())
+    summary: dict = {"sheets": {}, "ttf": {}, "notes": {}}
+
+    for face in FACES:
+        path = os.path.join(mnt, FONTS_DIR, face)
+        raw = rsrc(path)
+        if not raw:
+            summary["notes"][face] = f"no resource fork at {FONTS_DIR}/{face}"
+            continue
+        fork = resfork.ResourceFork(raw)
+        rel = f"{FONTS_DIR}/{face}"
+
+        sfnts = fork.of_type("sfnt")
+        if sfnts:
+            ttf = fonts.sfnt_to_ttf(sfnts[0].data)
+            with open(os.path.join(ttf_dir, f"{face}.ttf"), "wb") as fh:
+                fh.write(ttf)
+            summary["ttf"][face] = {"bytes": len(ttf), "id": sfnts[0].id}
+            prov.append({"asset": f"fonts/ttf/{face}.ttf", "source": rel,
+                         "type": "sfnt", "id": sfnts[0].id})
+
+        # The FOND association table is what says which point size a strike
+        # is; an NFNT does not carry its own size.
+        size_by_id: dict[int, tuple[int, int]] = {}
+        fond = fork.of_type("FOND")
+        if fond:
+            _, assoc = fonts.parse_fond(fond[0].data)
+            for a in assoc:
+                size_by_id[a.font_id] = (a.size, a.style)
+
+        strikes = fork.of_type("NFNT")
+        if not strikes:
+            summary["notes"][face] = (
+                "TrueType-only face: no NFNT bitmap strike in the suitcase "
+                f"({fork.census()}). Mac OS rasterises it from the sfnt at "
+                "run time; there is no strike on this image to lift")
+            continue
+        for res in strikes:
+            size, style = size_by_id.get(res.id, (0, 0))
+            label = f"{face.lower()}-{size}{STYLE_SUFFIX.get(style, '')}"
+            strike = fonts.parse_nfnt(res.data)
+            sheet, metrics = fonts.render_strike(strike)
+            metrics["face"] = face
+            metrics["pointSize"] = size
+            metrics["style"] = style
+            sheet.save(os.path.join(d, f"{label}.png"))
+            with open(os.path.join(d, f"{label}.json"), "w") as fh:
+                json.dump(metrics, fh, indent=1, sort_keys=True)
+            summary["sheets"][label] = {
+                "glyphs": len(metrics["glyphs"]), "size": size,
+                "style": style, "nfnt": res.id,
+                "ascent": strike.ascent, "descent": strike.descent}
+            for ext in ("png", "json"):
+                prov.append({"asset": f"fonts/{label}.{ext}", "source": rel,
+                             "type": "NFNT", "id": res.id})
+
+    missing = [s for s in REQUIRED_SHEETS if s not in summary["sheets"]]
+    if missing:
+        raise SystemExit(f"font strikes missing: {missing} — FontBook names "
+                         "these; refusing a pack whose text is a fallback")
+    return summary
 
 
 def parse_bundle(fork: resfork.ResourceFork):
@@ -879,6 +980,7 @@ def main() -> None:
         cursors_sum = extract_cursors(sysfork, args.out, prov)
         patterns_sum = extract_patterns(sysfork, args.out, prov)
         pictures_sum = extract_pictures(sysfork, args.out, prov)
+        fonts_sum = extract_fonts(mnt, args.out, prov)
         apps_sum = extract_appicons(mnt, args.out, prov, args.verbose)
 
         manifest = {
@@ -892,6 +994,7 @@ def main() -> None:
             "cursors": cursors_sum,
             "patterns": patterns_sum,
             "pictures": pictures_sum,
+            "fonts": fonts_sum,
             "appicons": apps_sum,
             "theme_file": {
                 "path": THEME_FILE,
@@ -915,6 +1018,10 @@ def main() -> None:
               f"{len(patterns_sum['PAT'])} PAT (desktop id "
               f"{patterns_sum['desktop_ppat_id']})")
         print(f"  pictures: {pictures_sum['count']} PICT (unconverted)")
+        print(f"  fonts:    {len(fonts_sum['sheets'])} NFNT sheets, "
+              f"{len(fonts_sum['ttf'])} TTF"
+              + (f" (no strike: {', '.join(sorted(fonts_sum['notes']))})"
+                 if fonts_sum["notes"] else ""))
         print(f"  appicons: {apps_sum['count']} for {apps_sum['creators']} creators "
               f"({apps_sum['forks_scanned']} forks scanned)")
         print(f"  provenance rows: {len(prov)}")

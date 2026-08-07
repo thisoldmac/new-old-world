@@ -123,6 +123,8 @@ Measured on `now-mirror-stage.qcow2`, 2026-08-06:
 | Patterns (`ppat` / `PAT `) | 3 + 5 |
 | Pictures (`PICT`) | 42, carried unconverted |
 | Per-app icons by `(creator, type)` | **914**, 185 creators, from 186 bundles |
+| Font strikes (`NFNT` sheets + metrics) | 9 — Chicago 12, Geneva 9/9-italic/10/12/14/18/20/24 |
+| TrueType faces (`sfnt`, carried verbatim) | 3 — Chicago, Charcoal, Geneva |
 
 The app-icon number is where mounting pays. Over the wire each
 application's fork was a separate pull; here every app on the volume is
@@ -271,6 +273,45 @@ selected list row**. The new render test carries its own scene for that
 reason. No guest screendump has a selected row either, so this colour is
 **measured from the source, not metal-verified** — a machine has not yet
 been watched drawing it.
+
+## The fonts — and the one this image cannot give
+
+Added 2026-08-07. Until then **the offline route extracted no fonts at
+all**, which quietly broke the recovery procedure this page and
+[asset-pack.md](asset-pack.md) both name: "run the extractor" rebuilt a
+pack whose `fonts/` directory was empty, and `FontBook` — which asks for
+`chicago-12` and `geneva-9/10/12` by name — answered nil for all of them
+and fell through to a fallback face with different metrics. The pack in
+the store had its strikes because the *wire* route put them there.
+
+The strikes are **not in the System file**. Its four `NFNT`s are a
+Geneva/Monaco rump; the real ones are in `System Folder:Fonts:`, each
+suitcase a file with an empty data fork and everything in its resource
+fork. The parser is the live route's own `fonts.py`
+(`parse_fond` → association table → `parse_nfnt` → `render_strike`), so
+the sheets cannot disagree between routes — and they demonstrably do
+not: **all eight sheets the store's pack already carried came out of the
+offline route byte-identical**, PNG and metrics JSON alike. The offline
+run also produces a ninth, `geneva-9-italic` (`NFNT` 769), which the
+wire pack was missing.
+
+**Charcoal — the Mac OS 8/9 system font — has no strike to extract, and
+that is a fact about the image rather than a gap in the tool.** Its
+suitcase holds `FOND` 2002, one `sfnt`, `vers`, `ftag` — and the `FOND`
+association table has exactly one row, `(size 0, style 0, id 9719)`,
+size 0 meaning *scalable*. There is no `NFNT` anywhere on the volume for
+it, the System file included, and its `sfnt` carries no embedded bitmap
+tables either (no `bdat`/`bloc`, no `EBDT`/`EBLC` — the table list is
+`OS/2 VDMX bsln cmap cvt fdsc feat fmtx fpgm glyf hdmx head hhea hmtx
+just loca maxp mort name post prep prop umif`). Mac OS rasterises
+Charcoal from TrueType at run time, with `hdmx`/`VDMX` supplying the
+device metrics. So the renderer substituting Chicago is not a missing
+extraction; closing it means rasterising the TTF, which is a different
+job with a different fidelity claim.
+
+The three `sfnt`s are carried out verbatim as `fonts/ttf/<face>.ttf` (an
+`sfnt` resource *is* the TrueType file image), which is where a Charcoal
+rasteriser would start. Nothing reads them today.
 
 ## The honest split for a host-side asset pack
 
