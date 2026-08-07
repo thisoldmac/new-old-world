@@ -6,6 +6,14 @@
    encoded document and knows nothing about a NowScene. */
 #include "scene_digest.h"
 
+/* For NowDesktopFacts, which meta.desktop carries. The struct is declared
+   above that header's Toolbox guard on purpose, so this header stays
+   compilable by the host cc for the native tests - and so the desktop
+   answer is ONE struct, gathered once, served to both the `desktop`
+   command and to every scene, rather than two producers of the same
+   fact drifting apart. */
+#include "desktop.h"
+
 /* The scene envelope: NOW's guest producing Mirror's frozen v1 scene IR
    over the part of the machine it can honestly walk today.
    (mirror/docs/IR-V1.md; docs/scene-producer.md for what is and is not
@@ -393,7 +401,60 @@ enum {
        a chain that does not terminate within the diagnostic probe bound
        is cyclic or corrupt, and no cap raise reaches it. Reported as
        "bound" it would argue forever for a bigger number. */
-    kNowSceneWalkControlsCyclic = 7
+    kNowSceneWalkControlsCyclic = 7,
+    /* A FOURTH cause, and the only one that is not about this window.
+     *
+       The control pool is shared across every window in the scene. A
+       window walked after it filled calls now_scene_add_control, is
+       refused for want of a SLOT, and retracts - so a panel with twenty
+       controls reported `controls: []` for a reason that had nothing to
+       do with that panel, and read on the wire exactly like a window
+       proven to have none.
+     *
+       That is the empty/unknown conflation with a third face on it: we
+       did not look at this window's controls, and we could have. It is
+       kept apart from Bound (this window's OWN chain is longer than we
+       carry), from Invalid (the machine was unreadable) and from Cyclic
+       (no cap raise reaches it) because those three are answers about
+       the machine and this one is an answer about us - and it is the
+       only one a consumer could fix by asking again. */
+    kNowSceneWalkControlsPoolFull = 8
+};
+
+/* WHAT IS KNOWN ABOUT A WINDOW'S CONTROLS, as one word.
+ *
+ * `controls: []` has carried three different facts since the plane was
+ * written, and the IR requires the key, so absence could not be used to
+ * separate them. The verdict above says why a plane was dropped, in
+ * prose, in meta.errors - readable by a person and by nothing else.
+ * This is the same knowledge as a value a consumer can branch on:
+ *
+ *   complete    walked, and here they are
+ *   empty       walked, and this window has none. A fact about the
+ *               MACHINE, and the only one of the four that licenses a
+ *               renderer to draw a bare window.
+ *   unknown     we looked and could not establish it - the chain was
+ *               longer than we carry, or failed validation, or did not
+ *               terminate. A fact about the machine being unreadable
+ *               where we are allowed to look.
+ *   notFetched  we have not asked. The pool was spent on other windows,
+ *               or this producer never opened the plane for this window
+ *               at all. A fact about US, and the only one of the four
+ *               that could be answered by asking again.
+ *
+ * A window whose RECORD would not validate is `unknown`, not
+ * `notFetched`: we did try, and the machine was unreadable where we are
+ * allowed to look. The line between the two words is not how much work
+ * was done, it is whose fault the silence is.
+ *
+ * Deriving `unknown` and `notFetched` from the same `[]` is what this
+ * value exists to stop. They are not degrees of the same thing: one
+ * says the machine will not tell us, the other says we did not ask. */
+enum {
+    kNowSceneControlsNotFetched = 0,    /* the default: nothing was asked */
+    kNowSceneControlsComplete = 1,
+    kNowSceneControlsEmpty = 2,
+    kNowSceneControlsUnknown = 3
 };
 
 typedef struct {
@@ -567,6 +628,16 @@ typedef struct {
     char source[kNowSceneSourceMax];
     short screen_w, screen_h;
     NowSceneTheme theme;
+    /* WHAT THE DESKTOP IS DRAWN FROM, asked of this machine.
+       Beside the theme and the screen size for the same reason all three
+       are here: they describe the surface a consumer is redrawing, and
+       any of them can be changed while this guest runs.
+       The renderer's alternative was the offline asset pack's record of
+       the image it was extracted from - true only for a guest booted from
+       that image and unchanged since, and silently wrong the moment
+       either stops holding. This is the live half; the pack is now the
+       declared fallback. `asked` 0 leaves the key off the wire entirely. */
+    NowDesktopFacts desktop;
     char plane[kNowScenePlaneMax];        /* meta.plane, a freeform note */
     long latency_ms;                      /* < 0 = absent */
 
@@ -775,6 +846,12 @@ void now_scene_set_plane(NowScene *s, const char *plane);
    half-copied colour would ride the wire looking measured. */
 void now_scene_set_theme(NowScene *s, const NowSceneTheme *theme);
 
+/* meta.desktop - what the machine says its desktop is drawn from. Copies
+   whole. A NULL `facts`, or one whose `asked` is 0, leaves the scene's
+   copy unasked and the key off the wire; there is no way to publish a
+   desktop this producer did not ask for. */
+void now_scene_set_desktop(NowScene *s, const NowDesktopFacts *facts);
+
 /* The row index of the most recently admitted window, or -1 when the
    scene has none. The walk needs it: it fills a window's sub-planes
    immediately after the row is admitted, and `now_scene_add_window`
@@ -797,6 +874,11 @@ void now_scene_set_window_kind(NowScene *s, int window, short kind);
    nothing is how a scene says "this window has no controls" - which is
    different from saying nothing at all. */
 int now_scene_open_controls(NowScene *s, int window);
+
+/* WHAT IS KNOWN ABOUT THIS WINDOW'S CONTROLS, as one of the four words
+   above. Stated ONCE, here, so the wire and any consumer of the struct
+   cannot disagree about it. Pure over a window row; native-tested. */
+short now_scene_controls_state(const NowSceneWindow *w);
 
 /* Appends a control to a window whose controls are open (adding one
    opens them, since adding a control means the list was walked).

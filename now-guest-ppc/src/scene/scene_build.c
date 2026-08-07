@@ -408,6 +408,29 @@ void now_scene_set_theme(NowScene *s, const NowSceneTheme *theme)
     s->theme.depth = theme->depth;
 }
 
+void now_scene_set_desktop(NowScene *s, const NowDesktopFacts *facts)
+{
+    if (s == NULL || facts == NULL) {
+        return;
+    }
+    /* An unasked answer is not copied at all, so no caller can publish a
+       desktop by handing over a zeroed struct: the scene's own copy stays
+       unasked and put_desktop omits the key. */
+    if (!facts->asked) {
+        return;
+    }
+    s->desktop.asked = 1;
+    s->desktop.source = facts->source;
+    s->desktop.has_pattern = facts->has_pattern ? 1 : 0;
+    s->desktop.has_picture = facts->has_picture ? 1 : 0;
+    s->desktop.pattern_bytes = facts->pattern_bytes < 0 ? -1
+                                                        : facts->pattern_bytes;
+    copy_title(s->desktop.pattern_name, (long)sizeof s->desktop.pattern_name,
+               facts->pattern_name);
+    copy_title(s->desktop.picture_name, (long)sizeof s->desktop.picture_name,
+               facts->picture_name);
+}
+
 int now_scene_add_window(NowScene *s, int proc, const char *title,
                          short t, short l, short b, short r, int visible)
 {
@@ -765,6 +788,39 @@ void now_scene_set_control_handle(NowScene *s, int window, int index,
     s->controls[w->first_control + index].handle = handle;
 }
 
+short now_scene_controls_state(const NowSceneWindow *w)
+{
+    if (w == NULL) {
+        return kNowSceneControlsNotFetched;
+    }
+    if (w->controls_present) {
+        /* WALKED. Zero here is a fact about the machine and the only one
+           of the four that licenses a bare window: the chain head was a
+           sentinel, so this window has none. */
+        return w->control_count > 0 ? kNowSceneControlsComplete
+                                    : kNowSceneControlsEmpty;
+    }
+    switch (w->walk_verdict) {
+    /* WE ASKED AND THE MACHINE WOULD NOT SAY. Each of these is a
+       different errand for whoever reads the note, which is why the
+       verdicts stay separate; as knowledge they are one word. */
+    case kNowSceneWalkRecordUnreadable:
+    case kNowSceneWalkControlsBound:
+    case kNowSceneWalkControlsInvalid:
+    case kNowSceneWalkControlsCyclic:
+    case kNowSceneWalkControlsRetracted:
+    case kNowSceneWalkControlsAndItemsRetracted:
+        return kNowSceneControlsUnknown;
+    /* WE DID NOT ASK, and could. The pool was spent on other windows. */
+    case kNowSceneWalkControlsPoolFull:
+        return kNowSceneControlsNotFetched;
+    default:
+        /* No verdict and no plane: this producer never opened the
+           control plane for this window. Also not asked. */
+        return kNowSceneControlsNotFetched;
+    }
+}
+
 void now_scene_retract_controls(NowScene *s, int window)
 {
     NowSceneWindow *w = window_at(s, window);
@@ -905,6 +961,25 @@ void now_scene_retract_dialog_items(NowScene *s, int window)
     w->dialog_item_count = 0;
     w->first_dialog_item = 0;
     s->dialog_items_truncated = 1;
+    /* ONE SLOT, AND THE MORE ACTIONABLE VERDICT KEEPS IT.
+     *
+       Measured on a live guest 2026-08-07, ten control panels open: five
+       windows read `notFetched` and only ONE carried the pool-full
+       sentence with its chain length, because this line arrived after the
+       control retraction and overwrote it. Sound, VGA Display, Memory and
+       Date & Time each said "dialog item list hit a bound" - true, and
+       silent about the thing a reader would act on.
+     *
+       A dropped item list is a fact about that window. A spent pool is a
+       fact about the SCENE and is the one a consumer can fix by asking
+       again, so it survives; the item retraction is still on the wire in
+       `dialogItems` and in the scene-wide notice. Same shape as the
+       ControlsAndItems composition below, which exists for the same
+       reason and did not cover this verdict because this verdict did not
+       exist when it was written. */
+    if (w->walk_verdict == kNowSceneWalkControlsPoolFull) {
+        return;
+    }
     w->walk_verdict = w->walk_verdict == kNowSceneWalkControlsRetracted
                     ? kNowSceneWalkControlsAndItemsRetracted
                     : kNowSceneWalkDialogItemsRetracted;

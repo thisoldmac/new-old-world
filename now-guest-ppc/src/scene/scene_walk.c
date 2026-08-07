@@ -194,7 +194,37 @@ static void read_controls(NowScene *s, int window, const NowAxMemory *memory,
                                    control.enabled,
                                    control.visible, control.value,
                                    control.min, control.max)) {
+            /* WHOSE FAULT THE SILENCE IS, before the plane goes.
+             *
+               The control pool is shared across every window in the
+               scene, so this refusal is usually not about this window at
+               all: the slots were spent walking earlier ones. Retracting
+               without saying so published `controls: []` for a panel with
+               twenty controls, indistinguishable from a panel proven to
+               have none - which is the empty/unknown conflation wearing
+               a third face, and the one face a consumer could fix by
+               asking again.
+             *
+               `now_scene_add_control` also refuses an interleaved block,
+               which is a misattribution rather than an overflow, so the
+               cause is read off the pool rather than assumed from the
+               refusal. */
+            int pool_full = s->control_count >= kNowSceneMaxControls;
+
             now_scene_retract_controls(s, window);
+            if (pool_full) {
+                now_scene_set_walk_verdict(s, window,
+                                           kNowSceneWalkControlsPoolFull);
+                /* And how long the chain WAS, for the same reason the
+                   bound path measures it: a cap raised without the
+                   distribution is a cap fitted to one panel. */
+                {
+                    int exact;
+                    short len = measure_chain(memory, win, &exact);
+
+                    now_scene_set_control_chain_len(s, window, len, exact);
+                }
+            }
             return;
         }
         /* Filed by its position in this window's block - which is

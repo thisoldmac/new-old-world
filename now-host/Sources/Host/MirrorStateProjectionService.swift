@@ -468,7 +468,18 @@ final class MirrorStateProjectionService {
                 ref: window.ref.flatMap { $0.isEmpty ? nil : $0 },
                 text: window.text.map {
                     Self.windowText($0, within: &contentBytes)
-                })
+                },
+                /* **Whether an empty control list is an answer.** An agent
+                   reading a window with no control items had no way to be
+                   wrong before this: the guest emits `[]` for a panel
+                   proven to have none and for one it never walked, and
+                   since the shared control pool was measured filling, for
+                   a panel skipped because earlier windows spent the slots.
+                   Resolved here rather than passed on, because the
+                   producer sends the word only where the array cannot
+                   speak for itself and a caller must not have to know
+                   that. */
+                controlsState: window.controlsKnowledge.rawValue)
         }
     }
 

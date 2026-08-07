@@ -256,7 +256,19 @@ public struct SceneRenderer {
     /// Rung 3 draws art the pack IDENTIFIED; rung 4 marks the rest. A
     /// plausible wrong purple is exactly what rule 1 forbids.
     private func drawDesktop(_ ctx: GraphicsContext, _ bounds: CGRect) {
-        switch DesktopPattern.answer(screen: bounds.size) {
+        /* THE MACHINE FIRST, THE PACK SECOND, AND SAY WHICH. Until the
+           guest's own desktop answer reached the scene this could only ask
+           the pack — a record of the disk image it was extracted from, and
+           byte-identical whether that record still held or not. `resolve`
+           asks the scene first and reports who answered; the plate below
+           is what makes a substitution legible instead of silent. */
+        let resolved = DesktopPattern.resolve(scene: scene, screen: bounds.size)
+        defer {
+            if resolved.provenance == .assetPack {
+                drawSubstitutionPlate(ctx, bounds)
+            }
+        }
+        switch resolved.answer {
         case .picture(let art):
             /* ONCE, AT THE ORIGIN, UNSCALED — the operation the machine
                performs. `answer` has already refused any picture whose
@@ -288,6 +300,49 @@ public struct SceneRenderer {
             _ = why
             drawUnavailableVisual(ctx, bounds, "")
         }
+    }
+
+    /// **The mark that says this desktop is the pack's, not the machine's.**
+    ///
+    /// The honesty requirement this whole seam exists for: when the live
+    /// answer arrives, the desktop came from the machine; when the pack is
+    /// standing in, that has to be LEGIBLE rather than silently identical.
+    /// A render that looks the same either way is how the pack's record of
+    /// a disk image went on being trusted for as long as it did.
+    ///
+    /// It is a plate in the bottom-left corner rather than a wash over the
+    /// surface, and that is a deliberate trade. The desktop is the largest
+    /// rectangle in the picture and a fidelity sweep compares it pixel for
+    /// pixel; tinting or hatching it would make every substituted render
+    /// fail a comparison for a reason that has nothing to do with what is
+    /// being compared. A bounded plate in a corner windows do not usually
+    /// reach says the same thing and costs a known, small region.
+    ///
+    /// Nothing marks ``DesktopPattern/Provenance/machine`` — an unmarked
+    /// desktop means the machine named it, and that is the point.
+    private func drawSubstitutionPlate(_ ctx: GraphicsContext,
+                                       _ bounds: CGRect) {
+        let caption = "desktop from asset pack, not this machine"
+        let ascent = CGFloat(FontBook.small?.ascent ?? 8)
+        let inset: CGFloat = 6
+        let pad = UnknownVisual.captionInset
+        let textW = CGFloat(FontBook.small?.width(caption)
+                            ?? Int(CGFloat(caption.count) * 6))
+        let plate = CGRect(x: bounds.minX + inset,
+                           y: bounds.maxY - inset - (ascent + pad * 2),
+                           width: min(textW + pad * 2,
+                                      max(bounds.width - inset * 2, 0)),
+                           height: ascent + pad * 2)
+        guard plate.width > pad * 2, plate.height > 0,
+              bounds.contains(plate.origin) else { return }
+        var clipped = ctx
+        clipped.clip(to: Path(plate))
+        clipped.fill(Path(plate), with: .color(UnknownVisual.ground))
+        clipped.stroke(Path(plate), with: .color(UnknownVisual.edge),
+                       lineWidth: 1)
+        appText(caption, clipped, x: plate.minX + pad,
+                baselineY: plate.minY + pad + ascent,
+                color: UnknownVisual.caption, small: true)
     }
 
     // MARK: - Desktop icons
@@ -2031,10 +2086,30 @@ public struct SceneRenderer {
     /// host with no content plane, or a window with no exact guest address,
     /// has no second answer to offer and inventing one would be the same
     /// class of mistake in the other direction.
+    /// AND SAY WHICH SILENCE THIS IS, when the content plane has no answer
+    /// but the control plane does. Two lanes wrote a caption producer for
+    /// this hatch on 2026-08-07 and each was right about a different
+    /// question — whether this window was ever *looked at* (``contentPlane``)
+    /// and whether its *controls* arrived (``controlsKnowledge``). Merged
+    /// rather than picked, because a renderer with two caption producers is
+    /// the drift this function was extracted to prevent.
+    ///
+    /// Order is the point. `notAttempted` outranks everything: a window
+    /// nobody spotlighted has nothing to say about its controls either, and
+    /// naming the control pool there would explain the wrong silence.
+    /// `notFetched` comes next and is worth naming above the rest because it
+    /// is the only one that is not about this window at all — the guest's
+    /// control pool is shared across the scene, and asking again with room
+    /// would answer it.
     static func absentContentCaption(_ win: MirrorKit.Scene.Window) -> String {
         switch win.contentPlane {
         case .notAttempted: return "Interior not captured — one window at a time"
-        case .armed, .none: return "Guest content not reported"
+        case .armed, .none:
+            switch win.controlsKnowledge {
+            case .notFetched: return "Controls not fetched"
+            case .unknown: return "Controls unknown"
+            case .empty, .complete: return "Guest content not reported"
+            }
         }
     }
 
