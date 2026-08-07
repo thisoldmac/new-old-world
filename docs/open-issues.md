@@ -24,6 +24,96 @@ entries here and link back rather than restating them. The split is by
 what the reader is being told: broken-or-unverified means nobody chose
 this, and a row over there means somebody did.
 
+## FIXED and GATED: the render was drawing the guest's own pixels, and nobody decided to (2026-08-07, `claude/024-no-pixel-islands`)
+
+`ScenePoller` fetched the guest's real framebuffer bytes over the wire
+(`wire.captureRegion`) onto `Scene.Window.island`, and `SceneRenderer` drew
+them in place of the content for any window without a named item roster.
+NOW had gated over-the-wire pixels as a post-stability enrichment; the
+feature arrived anyway, as a passenger inside the 1 August wholesale
+vendoring of the Mirror subproject. Nobody crossed the gate — **the import
+had no step that asks what came with it**, and no individual diff looked
+wrong. The archaeology is
+[the-drive-and-the-islands.md](the-drive-and-the-islands.md).
+
+Michelle's ruling: the islands are prior art only, for a later deliberate
+re-implementation. Removed from the live product; kept whole and inert in
+`archive/pixel-islands-2026-08-07/` (`.txt`, so nothing can build it),
+following the `archive/mirror-port-2026-08-01` convention.
+
+**Nothing on the wire changed.** `island` was never encoded, the contract
+never mentioned it, and both guests are untouched.
+
+### What it did NOT void — derived, and the derivation contradicted the analysis
+
+The analysis feared it "potentially inflates every render score this arc
+has produced". It inflated **none of them**, and the check is one command:
+every `ScenePoller` in this tree is constructed in Mirror's own development
+tooling (`MirrorApp` ×3, `MirrorOracleKit`) and **`now-host` constructs
+none**, so NOW's host — whose scenes come off NOW's own wire, where `island`
+was never encoded — always had `island == nil`. The corpus agrees: 107 scene
+JSONs, 148 scene records, every one `source: "peek"`; zero `axtree` or
+`observe` scenes, which are the only planes `ScenePoller` produces; and no
+occurrence of the string `island` in any JSON under
+`~/Lab/Assets/now-mirror-assets/`.
+
+So Sweeps A–D, the integration rounds and Michelle's own drive all stand.
+What the islands voided was the *sibling project's* dev-tool output, which
+this arc never scored against. Recorded rather than quietly corrected,
+because the reasoning was sound and the conclusion was wrong: it reasoned
+from the code without checking which binary ran.
+
+### The rule is now gated, not remembered
+
+Michelle, 2026-08-07: *"the only time we should be using pixels from the
+guest is when we have imported those assets as part of our assets pack, so
+the pixels are provided by the host and not the wire… these rules need to
+be gated and not violated without explicit approval from me."*
+
+`GuestPixelsGateTests` (host suite) derives both sides from source at test
+time — origin (no render-path file may both handle pixels and hold the
+wire), carriage (no type reachable from `Scene` may be a bitmap), and
+separation (the deliberate, labelled screenshot path stays out of the
+render). Its own docs state what it does not cover. Override:
+`NOW_ALLOW_GUEST_PIXELS=1` **with** `NOW_ALLOW_GUEST_PIXELS_REASON`, which
+writes the reason into `docs/guest-pixel-overrides.json` so it lands in the
+same commit; the flag alone still refuses.
+
+Why it needs a gate at all: *"make it a high-fidelity mirror of the guest"*
+has a cheapest solution — show the real pixels — and that solution scores
+perfectly against every fidelity measure anyone can write while destroying
+both the product and the measurement. It is the shape of failure where the
+stated objective is satisfied by a route that removes the thing being
+measured.
+
+### STILL OPEN: the import hole, which is the actual root cause
+
+The gate closes the *rule*. It does not close the *route*: a wholesale
+vendoring still imports a sibling's decisions, and nothing asks what came
+with it.
+
+Half of this is closable by machine and half is not, and the split is worth
+being exact about:
+
+- **Closable.** A pre-commit check can notice that a commit adds a large
+  number of files under a path this repository has never tracked, and refuse
+  unless the commit body carries an inventory. That is mechanical and cheap.
+  It forces someone to *look*; it cannot tell them what to look for.
+- **Not closable as things stand.** Checking an inventory against "this
+  project's deferred decisions" needs those decisions to exist somewhere a
+  machine can read. [known-wrong.md](known-wrong.md) is the nearest thing —
+  the register of what NOW knowingly does not do, with who decided — and
+  **over-the-wire pixels was never a row in it.** So even a perfect import
+  inventory on 1 August would have had nothing to check against.
+
+The durable closure is therefore neither of those: it is that **a deferred
+decision worth keeping gets a gate at the moment it is deferred**, so an
+import that crosses it fails a test rather than needing to be noticed by a
+reader. `GuestPixelsGateTests` is that for this one decision, seven days
+late. What a person has to do meanwhile: when vendoring anything wholesale,
+read `known-wrong.md` beside the import and say in the commit body which
+of its rows the import touches.
+
 ## BROKEN: what a human's own drive found, correlated against her logs (2026-08-07)
 
 Michelle drove the round-9 stack for ~32 minutes and reported fourteen
