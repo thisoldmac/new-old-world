@@ -431,11 +431,31 @@ public enum FinderItems {
     /// Falls back to the whole content rect when a window has no scrollbars —
     /// every Finder folder window has both, so this is the honest default
     /// rather than a case we have seen.
+    ///
+    /// **SCROLLBARS, and only scrollbars.** This used to read every visible
+    /// control and call a wide-and-short one a bottom scrollbar. A folder
+    /// window in ICON view has exactly two controls and the shape held; a
+    /// window in LIST view also has its COLUMN HEADERS — "Name", "Date
+    /// Modified", "Size", "Kind" — which are wide, short, and at the TOP, so
+    /// each one pulled the icon field's bottom up to its own top. Measured
+    /// 2026-08-07 on mac99 / OS 9.1: Macintosh HD in `name` view produced an
+    /// icon field of `0,41,389,21` — a bottom ABOVE its top — so every one of
+    /// the ten rows had no click point, every click fell through to bare
+    /// window content, and list view was, in Michelle's words, "completely
+    /// not selectable". The rows' geometry was right the whole time; nothing
+    /// would aim at it.
+    ///
+    /// The rule the doc comment above always stated is the rule now: the
+    /// field is bounded by the window's own SCROLL BARS. A window whose
+    /// scrollbars this side could not classify bounds nothing and claims the
+    /// whole content — which over-claims into the chrome, and is the milder
+    /// error: the hit test resolves a control before an item, so a point on a
+    /// scrollbar is still a scrollbar.
     public static func iconArea(_ win: Scene.Window) -> Rect {
         let w = win.rect.r - win.rect.l
         let h = win.rect.b - (win.rect.t + SceneBuilder.titleBarHeight)
         var area = Rect(l: 0, t: 0, r: w, b: h)
-        for ctl in win.controls where ctl.visible {
+        for ctl in win.controls where ctl.visible && ctl.role == "scrollbar" {
             guard let r = ctl.rect else { continue }
             let vertical = (r.b - r.t) > (r.r - r.l)
             if vertical {

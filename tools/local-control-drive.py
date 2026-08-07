@@ -151,6 +151,28 @@ def controls_of(scene, want_title, kinds):
     return out
 
 
+def axtree_content_origins(g):
+    """Window title -> the GLOBAL top-left of its content port.
+
+    `axtree` reports a window's `bounds` as the content rect in global
+    coordinates - the same frame `ctlact` takes its point in - which is the
+    one number the scene document does not carry. Titles are the join, and a
+    duplicated title is dropped rather than resolved: aiming at the wrong
+    window of two with the same name is the failure this whole tool exists to
+    avoid, and it would look exactly like a working drive.
+    """
+    reply = g.command("axtree", quiet=True)
+    out, seen = {}, {}
+    for proc in ((reply.get("output") or {}).get("axtree") or {}) \
+            .get("processes", []):
+        for w in proc.get("windows", []):
+            title = w.get("title", "")
+            bounds = w.get("bounds") or {}
+            seen[title] = seen.get(title, 0) + 1
+            out[title] = (bounds.get("left", 0), bounds.get("top", 0))
+    return {t: o for t, o in out.items() if seen.get(t) == 1}
+
+
 def screendump(qmp_sock, out):
     ppm = out + ".ppm"
     lab = os.environ.get("NOW_LAB_ROOT", "/Users/michelle/Lab/Code/timbottu")
@@ -223,6 +245,7 @@ def main():
         return 0
 
     kinds = [k for k in a.drive.split(",") if k]
+    content_origins = axtree_content_origins(g)
     scene = g.scene()
     targets = controls_of(scene, a.target, kinds)
     print(f"\n== drive: {len(targets)} control(s) of kind {kinds} ==",
@@ -232,8 +255,31 @@ def main():
         win = w.get("rect", {})
         # The scene reports a control rect CONTENT-relative; ctlact's point
         # is GLOBAL, which is the window's content origin plus that.
+        #
+        # AND THE SCENE'S OWN WINDOW RECT IS NOT THAT ORIGIN. `windows[].rect`
+        # is the STRUCTURE box - the content port grown UP by the title bar -
+        # while `controls[].rect` is content-relative, so adding the two puts
+        # every point one title bar too HIGH. Measured 2026-08-07 on mac99 /
+        # OS 9.1: Extensions Manager reported `windows[].rect.t = 51` in the
+        # scene and `bounds.top = 71` in `axtree`, and the Finder's own "Name"
+        # column header (content t=21..42) lands at global 124..145 with the
+        # axtree origin and at 104..125 - the info bar above it - with this
+        # one. Twenty points, and nothing in either document says so.
+        #
+        # So the origin comes from `axtree`, whose window bounds ARE the
+        # global content rect, rather than from a constant 20 written here.
+        # A tall control absorbed the error and the drives that found this
+        # instrument useful were the tall ones; a list ROW is 16 px, which is
+        # smaller than the error.
         ox = win.get("l", 0)
         oy = win.get("t", 0)
+        origin = content_origins.get(w.get("title", ""))
+        if origin is not None:
+            ox, oy = origin
+        else:
+            print("  [warn] axtree named no content origin for "
+                  f"{w.get('title')!r}; using the structure rect, which is "
+                  "a title bar too high", flush=True)
         gh = ox + (rect.get("l", 0) + rect.get("r", 0)) // 2
         gv = oy + (rect.get("t", 0) + rect.get("b", 0)) // 2
         print(f"\n-- {s.get('kind')} {c.get('title')!r} rect={rect} "
