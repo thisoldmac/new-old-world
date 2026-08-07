@@ -248,11 +248,19 @@ a shared bake over. The rules that must not be restated anywhere else:
   the fingerprint the **guest itself** reported, the image sha256, a
   passing `qemu-img check`, a guest-clean shutdown, and a cleanly
   unmounted **volume**, which is a different question from the other four.
-- **Deferring is a written decision, never silence.** `TBT_DEFER_EXT_BAKE=1`
-  with `TBT_DEFER_EXT_BAKE_REASON="…"` allows the commit and writes the
-  reason into `ext/stage-receipts.json`, so it lands in the same commit as
-  the work it excuses. As with `TBT_ALLOW_MAIN=1`, the enforcement is the
-  floor and not the rule.
+- **Deferring is a written decision, never silence — and it comes due at
+  `main`.** `TBT_DEFER_EXT_BAKE=1` with `TBT_DEFER_EXT_BAKE_REASON="…"`
+  allows the *commit* and writes the reason into `ext/stage-receipts.json`,
+  so it lands in the same commit as the work it excuses. It does not allow
+  the *landing*: `merge-check` refuses on `main` when the resident source
+  arriving is covered by no bake, quoting the deferral's own reason back.
+  Lane-to-lane merges are untouched. As with `TBT_ALLOW_MAIN=1`, the
+  enforcement is the floor and not the rule.
+- **A note is not a bake.** An image can reach the oracle's path by hand —
+  that is how the current one got there. `tools/ext-bake-gate note-image
+  --reason "…"` records who put it there and why, and says in its own
+  verdict that it certifies provenance only: nobody asked a guest what
+  resident is inside. It never satisfies the commit gate.
 - **The image is shared and the last bake wins**, so a receipt cannot say
   the file still holds what it describes. That check is no longer yours to
   remember: `tools/ext-bake-gate verify-image` runs the `shasum`, the

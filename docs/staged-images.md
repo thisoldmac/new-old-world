@@ -104,6 +104,7 @@ more than the gates themselves.
 | `ext-bake-gate verify-image` | the bytes at the oracle's path hash to what the newest receipt claims | **no, on the commit path** — a fact about a shared file any lane can invalidate a second later. It warns, loudly. `--require` refuses for a caller who has asked for it |
 | the staged-receipt check | a receipt being *written* is true when written | **yes, in one case** — see below |
 | `ext-bake-gate merge-check` | a merge did not silently combine two branches' claims | **yes** — via `pre-merge-commit` |
+| `merge-check` on **main** | the resident source being landed is covered by a bake | **yes** — `TBT_DEFER_EXT_BAKE=1` with a reason still overrides |
 | `tools/image-provenance` | these bytes are (or are not) claimed by a receipt | nothing; it only speaks |
 
 The staged-receipt case is the subtle one, and it was found by its own
@@ -118,6 +119,36 @@ test. A receipt whose `imageSha256` does not match the file it names has
 - the file was written **before** it — the file at that path has not
   changed since before this bake claims to have installed it, so this bake
   did not install it. That was never true. **Refuse.**
+
+### A deferral is a promise, and it comes due at `main`
+
+`TBT_DEFER_EXT_BAKE=1` with a written reason lets a resident change be
+**committed** without a bake. That is right, and it is used honestly: on
+2026-08-06 the at-arm census lane deferred twice with reasons that said
+plainly the bake was sequenced rather than skipped.
+
+It does not let the change **land**. On a branch, a deferral is a
+sequencing decision with a name on it; merged to `main` it is an unbaked
+resident that the oracle every session clones disagrees with, excused by a
+note nobody will read again. So `merge-check` refuses on `main` — and only
+on `main`, because lane-to-lane merges are how thirteen concurrent branches
+share work and gating those would cost more than the drift it prevents.
+The same written override applies: `TBT_DEFER_EXT_BAKE=1` with a reason.
+
+### A note is not a bake
+
+An image can arrive at the oracle's path without a bake — that is what
+happened at 01:58 on 2026-08-06, when the last known volume-clean file was
+cloned back over it by hand after three bakes installed dirty volumes. A
+good decision, written up in `docs/open-issues.md`, and invisible to every
+gate: the file then matched no receipt and read as a mystery.
+
+`tools/ext-bake-gate note-image --reason "…"` records who put those bytes
+there and why. The verdict it produces says in words what it is: *placed by
+hand and recorded — no bake, nobody asked a guest what resident is inside.*
+A note never satisfies the commit gate, and there is a test asserting that,
+because the 01:19 receipt is this project's standing reminder that **a
+check adjacent to the question reads exactly like an answer to it**.
 
 And what none of them can assert: that a receipt is *true*. A receipt is a
 record another session wrote about a bake it ran. The gates check that the
