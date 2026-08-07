@@ -14,123 +14,73 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
-## BROKEN: the first watch of the INTEGRATED render, and what it shows (2026-08-07, `claude/018-integration`)
+## EMULATOR-VERIFIED: the drag vehicle fires, and the resident lets go by itself (2026-08-07, slice 10 of plan 018)
 
-Seventeen plan-018 lanes merged into one tree, then the tree was
-**watched composing real windows** — five targets, guest pixels beside
-the host's own composition path, on emulated mac99/OS 9.1. Pairs and
-crops: `~/Lab/Assets/now-mirror-assets/018-integration/` (out of git).
-Nothing here is metal-verified.
+**Driven on a guest, watched, and measured.** P7 — a mouse button that
+stays down across a gesture, and a resident that releases it whether or
+not anybody asks. Design in [docs/mirror-act-plane.md](mirror-act-plane.md)
+> "Drag"; driver is `tools/local-drag-vehicle.py`.
 
-**The integrated render is better than what sweep A saw, and it is not
-uniformly better.** Date & Time, the Finder in icon view and NOW's own
-Workshop compose recognisably — every group box framed and labelled,
-every button titled, radio and check states right, the selected Finder
-row correctly inverted, the desktop pattern drawn rather than hatched,
-and **no hatching anywhere in five targets**. Appearance is worse than
-recognisable and is the one target a person would call broken.
+Private bake `now-stage-drag.qcow2`, resident `active`, capabilities
+**255** (bit 7 = `kNowPeekTableCapDrag`, published only when the Time
+Manager task installed), table length 6072. Both numbers are unique to
+this build and are the run's `requireTheBuildUnderTest()`.
 
-Six defects, all seen in more than one target unless said otherwise:
+What was watched:
 
-1. **THE FRONT TAB IS DESTROYED, and only the front one** (Appearance).
-   The guest draws six tabs; the render draws four — `Fonts`, `Desktop`,
-   `Sound`, `Options` — correctly capped. Where `Themes` (front) and
-   `Appearance` should be there are two stray diagonal strokes with no
-   label and no cap. So the procedural tab strip works for every tab
-   whose label box arrived and fails exactly on the one whose geometry
-   differs. `crop-appearance-tabs.png`. **This is the highest-value
-   thing here: the chrome lane's fix survives integration for 4 of 6
-   tabs and inverts on the front one**, which is the tab a person is
-   always looking at.
-2. **Icons are drawn as blank grey plates, silently.** All nine Finder
-   folder icons, all thirteen of NOW's sidebar icons, and both `?` help
-   buttons render as identical featureless squares where the machine drew
-   distinct art (`crop-finder-icons.png`). The plate is the honest
-   untyped answer for a blit whose pixels never crossed — but a plate
-   *claims something is there*, and the ladder's own unknown ground
-   (`UnknownVisual`) is what would say "this is a rectangle nobody can
-   name". Today a missing icon and a real grey square are the same
-   pixels.
-3. **Group-box frames are drawn through their own labels.** The guest
-   interrupts the frame line behind the label; the render strikes the
-   rule straight through the glyphs of `Current Date`, `Current Time`,
-   `Time Zone`, `Use a Network Time Server`
-   (`crop-datetime-groupbox.png`). Same shape as the tab-cap defect —
-   art drawn without the label's clip — and wrong in every window that
-   has a group box.
-4. **Static text is truncated 2-4 characters early**, consistently:
-   "Set Daylight-Saving Time Automa", "…Time is in effe", "Use a Network
-   Time Serve", "…in the following sect…". The runs are being clipped to
-   a box narrower than the one the machine used.
-5. **Framed rectangles the machine drew go missing.** NOW's screenshot
-   preview box — a large bordered rect with "No screenshot yet." inside
-   — renders as the text alone, no box, in every capture that contains
-   it. Popup-menu arrows, scroll arrows, stepper arrows and the `«` back
-   button are absent the same way; the trough and thumb render, the
-   arrows do not.
-6. **The render carries text the machine did not draw.** NOW's sidebar
-   truncates on the guest ("Capture and stre…"); the render prints it in
-   full ("Capture and stream"). It is reading the semantic title rather
-   than replaying the drawn run — a fidelity divergence in the direction
-   nobody checks, because it looks like an improvement.
+| Claim | Evidence |
+|---|---|
+| The Time Manager task fires | `ticks_served` 2 → 31 → 59 → 66 across one gesture, ~16 ms apart, which is the cadence it was primed at |
+| A press holds the button | `State=held`, `Button=down`, and it stayed so across seconds of wire traffic |
+| Motion is applied | `moves_applied` 0 → 1 → 2; `at` followed 143,175 → 300,200 → 380,260 |
+| **The dead-man fires without being told** | `idle=60` ticks, **nothing sent**, the drag ended by itself in **~1.0 s** |
+| The cell recovers | a fresh press succeeded immediately afterwards |
+| A stale session is refused | a move after the release answered `conflict` |
+| An untrustworthy press point is refused | `unsupported`, naming the missing rectangle |
 
-Also absent from every render: **the desktop's own icons and the Control
-Strip**, both of which the machine draws on all five captures.
+### The one thing that does NOT work: the drag is invisible
 
-**Two things a reader should not conclude from this page.** The
-`script` verb answered `osaErr -1753` to every AppleScript tried through
-it on this rig, including `get name of front window`, so the Finder's
-list view could not be reached that way and **no list-view pair was
-captured** — the listview lane's work is unwatched, not disproved. And
-`menuact` refused with `no-such-process` against a PSN `axtree` had just
-reported, which is the known anchor-bind failure on the staging path
-rather than a new defect. `cycle` itself worked and reported honestly
-(`armed`, `complete`, `restored`, 8 considered, 6 `backgroundOnly` —
-the headless lane's classification, live).
-## UNVERIFIED: the drag vehicle exists and has never fired (2026-08-07, slice 10 of plan 018)
+`CrsrNew`/`CrsrCouple` do not move the drawn cursor on QEMU/mac99. Two
+QMP screendumps either side of a 143,175 → 620,450 drag differ by **zero
+pixels** — and moving the emulated pointing device changes 22, so the
+screendump does capture the sprite and the sprite simply did not follow.
 
-**Built, gate-green, never run on a Macintosh.** P7 — a mouse button that
-stays down across a gesture, and a resident that lets go whether or not
-anybody asks. The design, the dead-man and the Time Manager argument are
-in [docs/mirror-act-plane.md](mirror-act-plane.md) > "Drag".
+**Everything the Toolbox reads did follow.** The guest's own `mouseloc`
+reported 143,175, then 400,350, then 620,450 — exactly the points the
+vehicle was given. So the vehicle drives `GetMouse` and `StillDown`,
+which is what a tracking loop consults and therefore what a drag needs;
+it does not drive the picture.
 
-What IS proven: `scripts/test-native` drives the dead-man's decision
-layer and five mutations were watched failing, each naming a distinct
-case; `scripts/build-guests` cross-compiles the resident;
-`scripts/test-all` is green.
+That split matters in two directions and neither is settled:
 
-**What is not proven is everything above that**, and the list is short
-and load-bearing:
+- **For the mechanism it is probably fine** — `DragGrayRgn` reads the
+  globals, not the sprite.
+- **For a person it is not** — a drag nobody can see is a drag nobody
+  can verify by looking, and the Mirror is a human-facing product. Why
+  the documented technique does not work here is **not known**.
 
-- **Whether the Finder's `DragGrayRgn` actually tracks these writes.**
-  The whole design rests on it and nobody has looked. `StillDown` and
-  `GetMouse` read the globals the vehicle writes — that is documented —
-  but a tracking loop that also polls something else, or that latches on
-  entry, would make the gesture a no-op and it would look identical to a
-  vehicle that never fired.
-- **Whether the cursor visibly moves.** The `CrsrNew`/`CrsrCouple` redraw
-  is reasoned from Inside Macintosh, not seen. If it does not work, a
-  drag is invisible on a screendump — which does not break the gesture
-  but does remove the only way to watch one.
-- **Whether `PPostEvent` from the jGNE pass settles the owed `mouseUp`
-  where an application wants it.** A stray `mouseUp` with no preceding
-  `mouseDown` is ignored by most event loops; "most" is not a measurement.
-- **The dead-man on a real interrupt.** The logic is tested. The Time
-  Manager task carrying it has never been primed.
+### Still not proven: whether the Finder tracks it
 
-### Two things block the live proof, and both were held deliberately
+Nothing in this run aimed at a Finder item, so `DragGrayRgn` remains
+untested. The evidence is now *favourable* — the globals it reads are
+the globals the vehicle demonstrably sets — but favourable is not
+measured, and this is the claim the whole design rests on.
 
-1. **Three wire verbs the contract does not declare.** A drag needs
-   `dragpress` / `dragmove` / `dragrelease` on both faces, which is an
-   `x-commands` change to `contract/asyncapi.yaml`. Contract changes
-   serialise through Michelle and this lane did not make one. Until they
-   exist there is no way to reach the vehicle from a host at all — so the
-   vehicle is unreachable code in a shipped resident, which is the honest
-   state and is why the capability bit is published only when the Time
-   Manager install succeeded.
-2. **A bake.** `ext/` changed, so the resident under test is whatever was
-   baked, and `scripts/bake-ext-image` is private-by-default and was not
-   run.
+### Two defects the DRIVING found that no gate did
+
+1. **The v2 identity guard refused every press.** Its check switches on
+   `operation_kind`, and a new op with no case falls through to a
+   refusal. Fixed by `kNowPeekActKindDrag`, which binds to the session
+   nonce rather than the point.
+2. **The press landed at 0,0.** The guest's resolver leaves
+   `detail.control` zeroed for controls the scene walk reports with real
+   bounds. Harmless for `ctlact`, whose patch answers for the handle;
+   fatal for a drag, where the point is the operation. `dragpress` now
+   takes the point from the caller and refuses rather than guessing.
+
+**That second one is a live finding for the geometry lane**, and it is
+larger than this plane: `handle.detail.control` and the scene walk
+disagree about where a control is, and only one of them is right.
 
 ### And the presentation half was blocked on geometry — that half is CLOSED
 

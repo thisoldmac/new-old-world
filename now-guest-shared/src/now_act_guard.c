@@ -110,6 +110,15 @@ static int v2_identity_matches(const NowPeekTable *table)
         if (cell->op != kNowPeekActOpVisibility) return 0;
         object = (NowPeekU32)cell->item_index;
         break;
+    case kNowPeekActKindDrag:
+        if (cell->op != kNowPeekActOpDragPress) return 0;
+        /* The session nonce, which the application minted for this one
+           gesture. A drag press names a POINT, and a point is not an
+           identity - two presses at the same place are two gestures, and
+           binding to the point would let a stale request match a live
+           one. The nonce is the only thing here that cannot repeat. */
+        object = cell->control_handle;
+        break;
     case kNowPeekActKindNone:
         /* The ABI selftest has no guest object, but still has an exact op. */
         if (cell->op != kNowPeekActOpSelfTest) return 0;

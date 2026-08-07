@@ -43,6 +43,16 @@ void now_act_run_ditemact(const char *request_json, long id,
                           char *out, long cap);
 void now_act_run_menuact(const char *request_json, long id,
                          char *out, long cap);
+/* P7. Three verbs for one gesture, because the press is an act request
+   and the other two cannot be: once the button is down the target is
+   inside its own tracking loop and the filter that serves act requests
+   is never entered again. See act_cmds.c. */
+void now_act_run_dragpress(const char *request_json, long id,
+                           char *out, long cap);
+void now_act_run_dragmove(const char *request_json, long id,
+                          char *out, long cap);
+void now_act_run_dragrelease(const char *request_json, long id,
+                             char *out, long cap);
 
 /* The application installs its bounded menu queue here. A menu act aimed at
    this process is accepted during the wire callback, then the application

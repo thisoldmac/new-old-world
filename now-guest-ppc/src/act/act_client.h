@@ -174,4 +174,46 @@ const char *now_act_error_message(unsigned long plane_error);
 const char *now_act_status_code(NowActStatus status);
 const char *now_act_status_message(NowActStatus status);
 
+/* ---- P7, the drag session ---------------------------------------------
+ *
+ * A drag is NOT an act request after its first instant, and this API's
+ * shape says so. `now_act_drag_press` goes through the act cell like
+ * everything else - it needs the target's context and its identity
+ * check. Move and release do not and CANNOT: from the press until the
+ * release the target is inside its own tracking loop and is not calling
+ * GetNextEvent, so the jGNE filter that serves act requests is never
+ * entered. They write the drag cell directly and the resident's Time
+ * Manager task consumes them.
+ *
+ * THE HEARTBEAT IS THE HOST'S, RELAYED. Every function below stamps it
+ * from the arriving message, never from this application's idle loop. An
+ * application that refreshed it from its own event loop would keep a
+ * dead host's drag alive forever and the resident's dead-man would be
+ * measuring this guest's health instead of the host's. */
+
+/* The drag cell, or NULL when the resident predates P7 or shipped it
+   dark. Callers refuse rather than write. */
+NowPeekDragCell *now_act_drag_cell(void);
+
+/* Whether this resident advertises a drag vehicle at all - separate
+   from the cell being present, because a table long enough to hold the
+   cell says nothing about a Time Manager task having installed. */
+int now_act_drag_available(void);
+
+/* A session nonce nothing else will mint. Never 0: zero is the drag
+   cell's "no session" value, so a session numbered 0 could be released
+   by a caller that named nothing. */
+NowPeekU32 now_act_drag_next_session(void);
+
+/* Move: publish a new want, commit it, and relay the host's liveness.
+   Returns 0 when no drag is held or the nonce names a different one. */
+int now_act_drag_move(NowPeekU32 session, long h, long v);
+
+/* Release: ask. The RESIDENT performs it, on its next tick, through the
+   same code path its dead-man uses - which is why this returns "asked"
+   and never "released". A caller that wants the outcome re-reads the
+   cell's end_reason, and it may legitimately say the deadline got there
+   first. */
+int now_act_drag_release(NowPeekU32 session);
+
 #endif /* NOW_ACT_CLIENT_H */

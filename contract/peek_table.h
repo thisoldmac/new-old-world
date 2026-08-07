@@ -263,7 +263,12 @@ enum {
     kNowPeekActKindMenu = 6,
     kNowPeekActKindActivation = 7,
     kNowPeekActKindVisibility = 8,
-    kNowPeekActKindWindow = 9
+    kNowPeekActKindWindow = 9,
+    /* P7. A drag press has no guest OBJECT the way a control or a dialog
+       item does - it names a point, and the point is not an identity.
+       What it binds instead is the SESSION nonce, which is unique to one
+       gesture and is exactly what a stale request must not match. */
+    kNowPeekActKindDrag = 10
 };
 
 /* What a request asks for. */
