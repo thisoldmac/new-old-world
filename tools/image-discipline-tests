@@ -857,8 +857,14 @@ def _(tmp):
                     body = fh.read()
             except OSError:
                 continue
+            # WHAT THIS CAN SEE, said plainly, because a scan that
+            # overstates its reach is worse than none: the shell idioms
+            # this tree actually clones with. A future site that clones an
+            # image from PYTHON — shutil.copy of a .qcow2, say — would
+            # pass this scan while breaking the rule it enforces. If you
+            # write one, add its idiom here in the same commit.
             if not any(k in body for k in ("tbt_clone_disk ", "clone_disk \"$BASE\"",
-                                           "cp -c \"$BASE")):
+                                           "cp -c \"$BASE", "qemu-img create -b")):
                 continue
             clones.append(name)
             if "base-image" not in body:
