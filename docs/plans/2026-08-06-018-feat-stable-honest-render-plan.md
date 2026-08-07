@@ -729,6 +729,87 @@ drawing — which became **slice 11**. Title bars remain out of scope
 here; when slice 11's method is proven on the tab, they are the natural
 next application of it, in 016 or its successor.
 
+### Slice 16 — What the integrated tree actually looked like (added 2026-08-07)
+
+The first time anyone watched the **integrated** tree compose a window.
+Five targets, guest pixels beside the host's own composition path; pairs
+in `~/Lab/Assets/now-mirror-assets/018-integration/`.
+
+**Better, and worth recording as the baseline moved:** Date & Time,
+Finder icon view and NOW's Workshop all compose recognisably — group
+boxes framed and labelled, buttons titled, radio and check states right,
+the selected Finder row correctly inverted, desktop pattern drawn.
+**No hatching in any of the five.** Michelle, driving it: *"its looking
+and feeling much much better."*
+
+Five defects, ordered by what a wrong answer costs:
+
+1. **Appearance's front tab is destroyed.** Slice 11's fix survives for
+   four of six tabs and **inverts on the two a person always looks at** —
+   `Themes` (front) and `Appearance` render as stray diagonals. A
+   regression on the most-looked-at element is worse than an untouched
+   gap.
+2. **Icons render as blank grey plates** — 9 Finder folders, 13 NOW
+   sidebar rows, both `?` buttons. **A plate claims something is
+   there**; `UnknownVisual`'s honest ground is what rung 4 exists to
+   draw. This is the arc's own rule broken by the arc's own renderer.
+3. **The render prints text the machine truncated.** The sidebar reads
+   "Capture and stream" where the guest drew "Capture and stre…" — the
+   semantic title is being drawn instead of the run being replayed.
+   **A ladder inversion**: rung 2 winning where rung 1 has ink. It looks
+   like an improvement and is a divergence, which makes it the most
+   dangerous kind.
+4. **Group-box frames stroked through their own labels** — same shape as
+   the tab-cap defect.
+5. **Framed rects and every arrow widget go missing** — NOW's screenshot
+   preview box, popup/scroll/stepper arrows, the `«` button.
+
+**Two gaps named rather than glossed:** no list-view pair, because
+`script` answered `osaErr -1753` to *every* AppleScript on that rig
+including `get name of front window`, and `menuact` hit the known
+anchor-bind `no-such-process`. **The list-view lane is unwatched, not
+disproved.**
+
+**And a merge hazard nobody had named.** `tools/ext-bake-gate` and
+`tools/image-provenance` conflicted because two lanes made *the same
+change on divergent bases*; a keep-both merge produced **six duplicate
+function definitions that still parsed as valid Python**. Caught by a
+duplicate-`def` check, aborted, re-merged whole-file. That is the
+keep-both truncation hazard wearing a language where the damage compiles.
+
+Both derived doc counts were **wrong on arrival** (registry 44 not 43,
+PPC verbs 41 not 40, message types 49 not 48), and `mcp-coverage.md`
+reproduced the 2026-08-05 defect exactly: the "unnoticed rows, named
+together" list had become **two** lists, one naming `desktop`, the other
+`cycle`, neither naming both.
+
+### Slice 17 — Sweep B, and the cadence after it (added 2026-08-07)
+
+Supersedes the original slice 6 sweep, and changes how it is run.
+
+**Sweep B waits for the load-bearing work to land** rather than being
+taken the moment the merge is green — a sweep of a tree still moving
+underneath it measures nothing durable.
+
+**It is driven in parallel by a person.** Michelle: *"ill drive a
+parallel build while the agent runs."* Two independent readings of the
+same tree, one instrumented and one human, is a stronger result than
+either — and the human one catches what a rubric has no row for, which
+is how every defect in slice 16 was found.
+
+Its job is not only to score. **It identifies the pain points to be
+addressed during ongoing work and resolved before Sweep C**, so the
+A/B/C sequence measures a tree that is being deliberately steered rather
+than one that happens to have changed.
+
+**Perf is a named concern now, not just a recorded column.** Michelle,
+after driving the integrated build: *"perf is still meh. but most things
+are at least landing on the first or second try which is better than the
+wedge generator we had this afternoon."* So **reliability improved and
+latency did not**, and the two must be reported separately — an average
+that mixes them hides both. Sweep B records latency per action beside
+the attempts-to-land count.
+
 ### Slice 6 — Sweep B and the verdict
 
 Re-run the sweep, same spec, same targets, same machine-shape. Output:
