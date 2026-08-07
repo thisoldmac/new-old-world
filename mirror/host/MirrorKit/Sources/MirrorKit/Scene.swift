@@ -464,6 +464,24 @@ public struct Scene: Codable, Equatable, Sendable {
         public var alias: Bool
         public var invisible: Bool
 
+        /// What an alias POINTS AT, when the producer could ask.
+        ///
+        /// An alias file's own `kind`, `type` and `creator` describe the
+        /// alias and never its target, so an alias to an application and
+        /// an alias to a folder are indistinguishable from the fields
+        /// above — which is why every alias used to be unclassifiable,
+        /// and why opening one predicted a Finder window that never
+        /// appeared. Measured 2026-08-07: the desktop's `Mail` is an
+        /// alias whose original is an `APPL` named `Mail`, and opening
+        /// it launches a process named `Mail`.
+        ///
+        /// **Optional because "we did not ask" and "it points at
+        /// nothing" are different facts.** A broken alias, a producer
+        /// with no scripting, or a target on an unmounted volume all
+        /// leave this nil, and nil must keep the old prediction rather
+        /// than acquire a new way to be wrong.
+        public var aliasTarget: AliasTarget?
+
         /// Public because a HOST may know icons the guest's own walk
         /// cannot: NOW reads the Toolbox's windows, controls and menus,
         /// and a Finder icon is none of those - it is a file the Finder
@@ -471,11 +489,32 @@ public struct Scene: Codable, Equatable, Sendable {
         /// AppleScript and are merged into the scene on this side.
         public init(name: String, kind: String, type: String?,
                     creator: String?, x: Int, y: Int, placed: Bool,
-                    alias: Bool, invisible: Bool) {
+                    alias: Bool, invisible: Bool,
+                    aliasTarget: AliasTarget? = nil) {
             self.name = name; self.kind = kind; self.type = type
             self.creator = creator; self.x = x; self.y = y
             self.placed = placed; self.alias = alias
             self.invisible = invisible
+            self.aliasTarget = aliasTarget
+        }
+
+        /// The item an alias resolves to. Same three fields the alias
+        /// itself carries, so a consumer classifies a target exactly the
+        /// way it classifies any other item — one rule, not two.
+        public struct AliasTarget: Codable, Equatable, Sendable {
+            /// The TARGET's name, which is what a launched process is
+            /// named after. An alias may be renamed freely and often is,
+            /// so this is not the same string as the item's `name`.
+            public var name: String
+            public var kind: String
+            public var type: String?
+            public var creator: String?
+
+            public init(name: String, kind: String,
+                        type: String?, creator: String?) {
+                self.name = name; self.kind = kind
+                self.type = type; self.creator = creator
+            }
         }
     }
 

@@ -1168,6 +1168,51 @@ final class NOWMirrorIconParsingTests: XCTestCase {
         XCTAssertNil(items.first { $0.name == "Trash" }?.type)
     }
 
+    /// **What an alias points at, which its own fields never say.**
+    /// Measured on the emulator 2026-08-07: the desktop's `Mail` is an
+    /// alias whose original is an `APPL` named `Mail`, and opening it
+    /// puts a process named `Mail` at the front. Without this join every
+    /// alias was unclassifiable and opening one predicted a Finder window
+    /// that no Finder ever makes — the 18-second false negative sweep A
+    /// priced.
+    func testAnAliasCarriesWhatItPointsAt() {
+        let items = NOWMirrorSource.parseIcons(sample)
+        let targets = Dictionary(
+            NOWMirrorSource.parseAliasTargets(
+                "\"A\tBrowse the Internet\tBrowse the Internet\t"
+                + "«class APPL»\t«class aplt»\tapplication program\r"
+                + "A\tFrom Claude.txt\tGone\t«class APPL»\t«class aplt»\t"
+                + "application program\r\""),
+            uniquingKeysWith: { first, _ in first })
+        let joined = NOWMirrorSource.applyingArt(items, types: [:],
+                                                 aliasTargets: targets)
+
+        let alias = joined.first { $0.name == "Browse the Internet" }
+        XCTAssertEqual(alias?.aliasTarget?.name, "Browse the Internet")
+        XCTAssertEqual(alias?.aliasTarget?.type, "APPL")
+        XCTAssertEqual(alias?.aliasTarget?.kind, "application")
+
+        /* A row for a name the ROSTER did not call an alias is not
+           joined: the two passes are separate scripts and a name
+           collision must not hand a document a target. */
+        XCTAssertNil(joined.first { $0.name == "From Claude.txt" }?
+            .aliasTarget)
+        /* An alias the pass could not resolve stays unresolved rather
+           than acquiring a guess - `try` drops its row and nothing else
+           invents one. */
+        XCTAssertNil(joined.first { $0.name == "Trash" }?.aliasTarget)
+    }
+
+    /// The alias pass wraps every resolution, because `original item`
+    /// raises for a broken alias and AppleScript fails a script whole.
+    func testTheAliasScriptSurvivesOneBrokenAlias() {
+        let script = NOWMirrorSource.aliasTargetsScript(container: "desktop")
+        XCTAssertTrue(script.contains("every alias file of desktop"))
+        XCTAssertTrue(script.contains("try"),
+                      "one stale alias must not cost the whole pass")
+        XCTAssertTrue(script.contains("original item of a"))
+    }
+
     /// A row the script could not complete is dropped, not guessed at.
     func testShortAndUnparseableRowsAreDropped() {
         let ragged = "\"I\tGood\t10\t20\tfolder\rI\tBad\tnope\t5\tfolder\r"
