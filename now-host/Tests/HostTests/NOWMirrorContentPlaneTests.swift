@@ -408,6 +408,61 @@ final class NOWMirrorContentPlaneTests: XCTestCase {
                        "an untouched colour is not restored")
     }
 
+    /// **A world born away from the origin lands where it was born.**
+    ///
+    /// The Appearance panel composes each theme thumbnail into a GWorld
+    /// made with the thumbnail's rect in WINDOW coordinates —
+    /// `worldborn [36,57,213,182]` — so the world's own origin reads
+    /// `[36,57]`, every op it draws is stated in that frame, and so is
+    /// the `src` of the blit that reveals it. `dst - src` therefore
+    /// already carries the whole translation.
+    ///
+    /// Before 2026-08-07 the join counted the origin a second time and
+    /// dropped both thumbnails, opening white erase included, at the
+    /// content's top-left corner — which is exactly where the panel's
+    /// `Themes` and `Appearance` tabs are. The tabs rendered as bare end
+    /// caps with nothing between them, and slice 16 ranked it first.
+    ///
+    /// Asserted as the effective window-local rectangle of the world's
+    /// own opening erase, because that is the pixel claim: replay the
+    /// published origin state the way `DisplayReplay` does and the erase
+    /// must cover the thumbnail, not the tab strip.
+    func testAWorldBornAwayFromTheOriginIsNotShiftedTwice() throws {
+        let url = try XCTUnwrap(Bundle.module.url(
+            forResource: "qdtrace-drain-sweep-appearance",
+            withExtension: "json", subdirectory: "Fixtures"))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: url)) as? [String: Any])
+        let capture = try XCTUnwrap(QDTraceDecode.drain(object))
+        var value = try scene(address: 0x1ea880b0)
+        value.windows[0].psn = "0.35520514"
+        value.windows[0].title = "Appearance"
+        let ops = try XCTUnwrap(
+            plane().apply(capture, to: value).scene.windows[0].display)
+
+        var origin = [0, 0]
+        var placed: [[Int]] = []
+        for op in ops {
+            if op.op == "state", op.kind == "origin",
+               let o = op.origin, o.count == 2 { origin = o }
+            guard op.op == "rect", op.verb == 2, let r = op.rect,
+                  r.count == 4, r[2] - r[0] == 177, r[3] - r[1] == 125
+            else { continue }
+            placed.append([r[0] - origin[0], r[1] - origin[1],
+                           r[2] - origin[0], r[3] - origin[1]])
+        }
+
+        XCTAssertFalse(placed.isEmpty,
+                       "the thumbnail worlds' opening erases reach the window")
+        for rect in placed {
+            XCTAssertTrue(rect == [36, 57, 213, 182]
+                          || rect == [232, 57, 409, 182],
+                          "a thumbnail erase landed at \(rect); the two "
+                          + "thumbnails are at [36,57] and [232,57] and "
+                          + "[0,0] is the tab strip")
+        }
+    }
+
     /// The control run's own drain, captured live off a mac99 guest on
     /// 2026-08-06 (tools/gwprobe.py, label control-join-3): one rebuild
     /// burst of the loop applet's GWorld — six 'offscreen row' texts at

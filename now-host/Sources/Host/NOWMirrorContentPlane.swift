@@ -97,6 +97,12 @@ final class NOWMirrorContentPlane {
     /// places that list at the window's top-left instead of inside the
     /// list area, and the render says so plainly.
     private var portStates: [UInt32: PortState] = [:]
+    /// Where each offscreen world was BORN. A `NewGWorld` rect is often
+    /// stated in the destination window's coordinates rather than at the
+    /// origin, and that rect is the frame the world's own ops — and the
+    /// `src` of the blit that reveals them — are expressed in. See
+    /// `rehome`, which double-counted it until 2026-08-07.
+    private var sourceBirth: [SourceKey: [Int]] = [:]
     private var evictedSourceCount = 0
 
     /* ── ONE CLOCK (plan 018 slice 1) ──────────────────────────────────
@@ -472,6 +478,17 @@ final class NOWMirrorContentPlane {
                 }
                 if record.op.op == "worldborn" {
                     born += 1
+                    /* THE FRAME THE WORLD'S OWN COORDINATES ARE IN. A
+                       GWorld made with a rect in its destination's space
+                       reports that rect at birth and every op it draws —
+                       and the `src` of the blit that reveals it — is
+                       stated in it. `rehome` needs it to avoid counting
+                       the shift twice; see the note there. */
+                    if let r = record.op.rect, r.count == 4 {
+                        sourceBirth[SourceKey(port: address,
+                                              generation: record.generation)]
+                            = [r[0], r[1]]
+                    }
                     continue
                 }
                 let destKey = SourceKey(port: address,
@@ -496,7 +513,10 @@ final class NOWMirrorContentPlane {
                    let rehomed = Self.rehome(
                        heldOps, bits: record.op,
                        restoring: portStates[address] ?? PortState(),
-                       into: portStates[address] ?? PortState()) {
+                       into: portStates[address] ?? PortState(),
+                       bornAt: sourceBirth[SourceKey(
+                           port: inner,
+                           generation: record.generation)] ?? [0, 0]) {
                     appendSource(destKey, rehomed)
                     /* Composition nests, so lineage must too: this world's
                        pixels now depend on the inner world's life as well
@@ -579,8 +599,10 @@ final class NOWMirrorContentPlane {
                 let key = SourceKey(port: source,
                                     generation: record.generation)
                 if let heldOps = sourceOperations[key], !heldOps.isEmpty,
-                   let rehomed = Self.rehome(heldOps, bits: record.op,
-                                             restoring: portStates[address] ?? PortState()) {
+                   let rehomed = Self.rehome(
+                       heldOps, bits: record.op,
+                       restoring: portStates[address] ?? PortState(),
+                       bornAt: sourceBirth[key] ?? [0, 0]) {
                     toAppend = rehomed
                     contributingSources[identity, default: []].insert(key)
                     contributingSources[identity, default: []]
@@ -832,7 +854,8 @@ final class NOWMirrorContentPlane {
     /// degradation.
     static func rehome(_ heldOps: [DisplayOp], bits: DisplayOp,
                        restoring state: PortState,
-                       into destination: PortState? = nil) -> [DisplayOp]? {
+                       into destination: PortState? = nil,
+                       bornAt birth: [Int] = [0, 0]) -> [DisplayOp]? {
         guard let src = bits.src, src.count == 4,
               let dst = bits.dst, dst.count == 4 else { return nil }
         /* THE DESTINATION'S ORIGIN IS PART OF THE TRANSLATION, and
@@ -849,31 +872,33 @@ final class NOWMirrorContentPlane {
         let dx = dst[0] - src[0] - (into.count == 2 ? into[0] : 0)
         let dy = dst[1] - src[1] - (into.count == 2 ? into[1] : 0)
 
-        /* A SOURCE THAT SET ITS OWN ORIGIN HAS ALREADY BEEN COUNTED, and
-           counting it twice is what put the Appearance panel's two theme
-           thumbnails — and the white erase that opens each of them — on
-           top of its `Themes` and `Appearance` tabs (2026-08-07).
+        /* A WORLD IS NOT ALWAYS BORN AT (0,0), and assuming it was put
+           the Appearance panel's two theme thumbnails — and the white
+           erase that opens each of them — on top of its `Themes` and
+           `Appearance` tabs (2026-08-07).
 
-           `src` is read off the blit, so it is expressed in whatever
-           coordinate system the source port was in AT THE BLIT. When the
-           world called `SetOrigin(36,57)` to match its destination, both
-           `src` and every held op are in that shifted frame, and the two
-           terms cancel: a held coordinate `c` lands at `c + dst - src`
-           whatever the origin was. The rehome translated the held origin
-           op by `dx` and left the shift in, so every op was moved a
-           second time by the origin's full value and the world landed at
-           the content's top-left corner.
+           `NewGWorld` takes a rect, and an application composing a piece
+           of its own window commonly passes that piece's rect in WINDOW
+           coordinates: Appearance's thumbnail worlds are born
+           `[36,57,213,182]`, so their portRect starts there, their origin
+           reads `[36,57]`, every op they draw is stated in that frame,
+           and so is the `src` of the blit that reveals them. `dst - src`
+           already carries the whole translation; re-applying the origin
+           on top of it moved each world a second time by its full value
+           and dropped it at the content's top-left corner.
 
-           So the frame the whole run is expressed in is the source's
-           origin AT THE BLIT — the last one it set — and every replay
-           origin inside the run is stated relative to it. `oBlit` is
-           `[0,0]` for a world that never called `SetOrigin`, which is
-           every case this join was built against, so the arithmetic below
-           is unchanged for all of them. */
-        var oBlit = [0, 0]
-        for op in heldOps where op.op == "state" && op.kind == "origin" {
-            if let o = op.origin, o.count == 2 { oBlit = o }
-        }
+           So the run is stated relative to the world's BIRTH frame, not
+           to (0,0). It is deliberately the birth rect and not the last
+           origin the world set: Sherlock 2 shifts its composite's origin
+           per element (`[-234,-316]` for the last one) and never restores
+           it, while the `src` of its window blit stays in the birth frame
+           — reading the frame off the live origin instead moves its whole
+           interior by that leftover, which is what `DrawnCellGridTests`
+           says when you try it.
+
+           `[0,0]` for a world born at the origin, which is every case
+           this join was built against, so nothing else moves. */
+        let oBirth = birth.count == 2 ? birth : [0, 0]
 
         func stateOp(_ kind: String, _ build: (inout DisplayOp) -> Void)
             -> DisplayOp {
@@ -888,10 +913,10 @@ final class NOWMirrorContentPlane {
            prologue states that frame relative to `oBlit`, and the clip is
            `src` carried into it. */
         var out: [DisplayOp] = [
-            stateOp("origin") { $0.origin = [-oBlit[0] - dx, -oBlit[1] - dy] },
+            stateOp("origin") { $0.origin = [-oBirth[0] - dx, -oBirth[1] - dy] },
             stateOp("clip") {
-                $0.rect = [src[0] - oBlit[0], src[1] - oBlit[1],
-                           src[2] - oBlit[0], src[3] - oBlit[1]]
+                $0.rect = [src[0] - oBirth[0], src[1] - oBirth[1],
+                           src[2] - oBirth[0], src[3] - oBirth[1]]
             },
         ]
         var touchedFg = false
@@ -901,8 +926,8 @@ final class NOWMirrorContentPlane {
                 switch op.kind {
                 case "origin":
                     if let o = op.origin, o.count == 2 {
-                        op.origin = [o[0] - oBlit[0] - dx,
-                                     o[1] - oBlit[1] - dy]
+                        op.origin = [o[0] - oBirth[0] - dx,
+                                     o[1] - oBirth[1] - dy]
                     }
                 case "fg": touchedFg = true
                 case "bg": touchedBg = true
