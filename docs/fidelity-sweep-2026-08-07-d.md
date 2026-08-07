@@ -182,11 +182,174 @@ recorded here before the after was taken.
 Capture pass 1 was running when this checkpoint was written. See
 "Targets reached" below.
 
+## How I know these captures are steady-state, and where the warm-up went
+
+Three things, and the first is the one the spec asks for by name:
+
+- **`tools/fidelity-sweep.py` is the instrument, not
+  `tools/local-pair-capture.py`.** It issues `qdtrace start` per target
+  window with that window's address and PSN and aborts the row with
+  status `arm-refused` if the arm does not take, so an unarmed row cannot
+  reach the summary as an `ok` row. Checked in the artefact rather than
+  in the intent: every `ok` row in `sweep-summary.json` carries a
+  non-zero `records` count, and a drain cannot produce records without
+  an arm.
+- **The first row of the pass is a declared warm-up.** The planes arm as
+  a result of the first `scene.request` on a connection, so `New Old
+  World` was placed first deliberately and is captured again in pass 2
+  from a warmed connection. Where the two disagree, pass 2 is the row.
+- **Every target is fronted and then front/back-cycled with the drain
+  pumping continuously** before its screendump, so the screendump and the
+  drain describe a window that has just repainted, not one that has been
+  sitting.
+
+**Two things this rig cannot see, stated rather than left implied.** The
+render pass draws every target in ONE process in list order, and the
+`ImageRenderer` backing-store fix is not in this tree (see the regression
+above) — so a per-target render difference of a few pixels is not
+attributable to the target. And nothing here observes the guest while it
+is undriven; see REST.
+
+## The AFTER — claims 1, 2 and 3, per rectangle
+
+`rects.py --sweep p1 --renders r1`, nine targets, this tree's guest and
+this tree's render of the same instant.
+
+| target | window kind | guest's black rows | render's black rows | rows agreeing | close | collapse | zoom |
+|---|---|---|---|---|---|---|---|
+| new-old-world | 8 | `-2, +19, +20` | `-2, +19, +20` | **24/24** | 121/121 | 121/121 | **1/121** |
+| appearance | 2000 | `-2, +19` | `-2, +19` | 23/24 | 121/121 | 121/121 | 121/121 |
+| date-and-time | 2 | `-2, +19` | `-2, +19` | **24/24** | 121/121 | 121/121 | 121/121 |
+| memory | 2 | `-2, +19` | `-2, +19` | **24/24** | 121/121 | 121/121 | 121/121 |
+| extensions-manager | 2 | `-2, +19` | `-2, +19` | **24/24** | 121/121 | 121/121 | **1/121** |
+| general-controls | 2 | `-2, +19` | `-2, +19` | **24/24** | 121/121 | 121/121 | 121/121 |
+| apple-system-profiler | 8 | `-1, +19` | `0, +19` | 19/24 | 121/121 | 121/121 | **1/121** |
+| simpletext | 8 | `-1, +19` | `0, +19` | 21/24 | 121/121 | 121/121 | **1/121** |
+| finder (`Macintosh HD`) | 20 | `-2, +19` | `-2, +19` | **24/24** | 121/121 | 121/121 | **1/121** |
+
+### Claim 1 — title-bar widgets per window class: **CONFIRMED, and it is 100%**
+
+**The close box and the collapse box are 121 of 121 pixels, on nine
+windows out of nine, across five distinct window kinds** (2, 8, 20, 2000).
+Sweep C's store, same instrument, same boxes: 33 to 49 of 363. The four
+`kind == 2` control panels are the class that used to get no widgets at
+all, and they are now among the exact ones.
+
+### Claim 2 — `contentTop` 22 → 20: **CONFIRMED, and every window moved**
+
+Six of nine windows now agree on **every one of the 24 sampled rows**,
+where sweep C agreed on 2. The guest's `-2` outer frame and `+19` content
+frame are reproduced exactly, which is the whole content of the claim:
+the interior no longer sits two rows low.
+
+The three that do not reach 24/24 are worth naming rather than rounding
+away:
+
+- **apple-system-profiler and simpletext, 19/24 and 21/24.** Both sit at
+  `t = 20`, directly under a 20-pixel menu bar, so rows `t-2` and `t-1`
+  fall *inside the menu bar*. The guest reports its black row at `-1` and
+  the render puts it at `0`. **The residual is a one-row disagreement in
+  the two rows the menu bar owns, and it appears only on windows flush to
+  the top of the screen** — a real and small divergence, not the old
+  two-pixel offset.
+- **appearance, 23/24** — one row, and the band's known Chicago/Charcoal
+  residual is in that band; not chased, per the brief.
+
+### Claim 3 — the zoom box: **the absence is honest, and it costs five windows**
+
+The zoom column splits perfectly and it splits on the line
+`WindowChrome.zoomBox`'s own doc comment predicted:
+
+- **121/121 on the four windows the machine draws no zoom box on**
+  (Appearance, Date & Time, Memory, General Controls). The guest shows
+  three colours in that box — plain title-bar band — and so does the
+  render. Nothing invented. **This is the fix working.**
+- **1/121 on the five windows the machine DOES draw one on** (NOW's own
+  Workshop, Extensions Manager, Apple System Profiler, SimpleText, the
+  Finder's `Macintosh HD`). The guest shows **nine** colours there, the
+  render three. The render draws nothing where the machine drew a widget.
+
+**So it is honest and it is not free.** Of the eleven windows the doc
+comment reasoned about, this run's nine split 4/5 rather than 7/4 — a
+majority of windows now MISS a widget they have, where before a minority
+had one invented. Trading a fabricated affordance for a missing one is
+the right trade and the report should not pretend the cost is zero. And
+Extensions Manager (`kind == 2`, **with** a zoom box) beside Memory
+(`kind == 2`, **without**) is reproduced here in pixels, so the reason
+`kind` cannot stand in is now measured rather than argued.
+
+## ✗ AND THE REGRESSION HAS A SECOND HALF: the render is ORDER-DEPENDENT ON REAL WINDOWS
+
+The unmerged `ImageRenderer` fix is not an abstract debt. Posed directly:
+render this sweep's nine captures **twice from identical input**, once in
+list order and once with the list reversed, in two cold processes.
+
+| target | pixels differing / 480,000 | worst channel | bbox of the difference |
+|---|---|---|---|
+| appearance | **338** | **65** | 202,296 – 569,592 |
+| new-old-world | 19 | **157** | 163,96 – 757,592 |
+| apple-system-profiler | 15 | **157** | 624,40 – 641,570 |
+| finder | 5 | 65 | 62,152 – 589,592 |
+| date-and-time, extensions-manager, general-controls, memory, simpletext | 0 | 0 | — |
+
+Two renders of the same list in the same order are **byte-identical** for
+all nine — which is why nobody has noticed. Change only the order and
+**four of nine renders change**, by up to 338 pixels and by up to 157 of
+255 in a channel.
+
+The commit that fixes this measured *"eight pixels … one by 15/255"* on a
+two-button fixture. **On this project's real windows it is 338 pixels and
+157/255.** That is the size of the thing sitting on an unmerged branch,
+and it is the reason no per-target render finding in this report is quoted
+below a few pixels.
+
+## Claim 5 — CDEF classification: **CONFIRMED, derived here, and the brief's numbers check out**
+
+Classified means `semantic.kind` is non-null. Counted from the two
+sweeps' own scene files, front window only:
+
+| target | controls | refs | classified in C | classified in D | `pushButton` in C | `pushButton` in D |
+|---|---|---|---|---|---|---|
+| Memory | 44 | 44 | 33 | **23** | 10 | **0** |
+| Date & Time | 21 | 21 | 19 | **10** | 10 | **1** |
+| General Controls | 28 | 28 | 20 | **14** | 7 | **1** |
+| Appearance | 73 | 73 | 71 | **61** | 16 | **6** |
+| Extensions Manager | 6 | 6 | 6 | **3** | 3 | **0** |
+
+Memory 33 → 23 of 44 and Date & Time 19 → 10 of 21 are exactly the numbers
+the brief stated, re-derived rather than repeated. **Control totals and
+reference totals are unchanged on every row** — nothing was lost; the
+identical set of controls stopped being called push buttons. Scored as
+the fix it is.
+
+## Claim 6 — `controlsState`: **CONFIRMED, and it is answering in the field**
+
+Not a code reading: three of the four words appear in this run's own
+scenes.
+
+- `empty` — the Finder's `Desktop` window, and one of Apple System
+  Profiler's unopened dialogs. A proven zero.
+- `notFetched` — **Date & Time's main window, in the Apple System
+  Profiler scene**, carrying 0 controls while the same window carries 21
+  in its own capture. That is the field earning its place: a walk that
+  did not happen, said out loud, instead of an empty array that reads as
+  "this window has no controls".
+- absent beside a non-empty array — every other window, which rule 1 reads
+  as `complete`.
+
 ## Targets reached / not reached
 
 | Target | Captured | Scored | Note |
 |---|---|---|---|
-| — | — | — | capture pass 1 in flight |
+| New Old World (Workshop) | ✓ | ✓ | also the declared warm-up row |
+| Appearance | ✓ | ✓ | |
+| Date & Time | ✓ | ✓ | |
+| Memory | ✓ | ✓ | |
+| Extensions Manager | ✓ | ✓ | |
+| General Controls | ✓ | ✓ | |
+| **Apple System Profiler** | ✓ | ✓ | the rotated slot |
+| SimpleText | ✓ | ✓ | |
+| Finder — `Macintosh HD` folder | ✓ | ✓ | **not the Desktop**: `find_window` took the front Finder window and a folder window was open, so this row is not comparable with sweep C's Finder row |
 
 ## Rotated new target
 
