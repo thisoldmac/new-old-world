@@ -147,6 +147,32 @@ final class PlatinumTabTests: XCTestCase {
                        "and a non-front tab's is one step lighter than CCCCCC")
     }
 
+    /// A SECOND PANEL, and it is the reason to believe the first.
+    ///
+    /// Energy Saver is a different control panel with four tabs of
+    /// different widths, captured in the same sweep. Same signature, same
+    /// 21/24 heights, same three bevel colours per state — and its three
+    /// gaps are 24 as well, so the caps width falls out at 12 again from
+    /// drawing that has nothing to do with Appearance's. One panel would
+    /// only have shown that a rule can be fitted to it.
+    func testEnergySaversFourTabsReadTheSameWay() throws {
+        var ops: [DisplayOp] = [
+            state("fg", grey(0xEEEE)), rect(1, [-1, 31, 451, 173]),
+            state("fg", grey(0)), rect(0, [-1, 31, 451, 173]),
+        ]
+        ops += tab(16, 90, front: true, title: "Sleep Setup")
+        ops += tab(114, 172, front: false, title: "Schedule")
+        ops += tab(196, 269, front: false, title: "Notification")
+        ops += tab(293, 410, front: false, title: "Advanced Settings")
+
+        let strip = try XCTUnwrap(DrawnTabStrip.derive(from: ops).first)
+        XCTAssertEqual(strip.tabs.count, 4)
+        XCTAssertEqual(strip.capsWidth, 12)
+        XCTAssertEqual(strip.tabHeight, 21)
+        XCTAssertEqual(strip.paneTop, 31)
+        XCTAssertEqual(strip.tabs.map(\.isFront), [true, false, false, false])
+    }
+
     // MARK: - The refusals
 
     /// A grid of same-height boxes is a common shape and calling it a tab
