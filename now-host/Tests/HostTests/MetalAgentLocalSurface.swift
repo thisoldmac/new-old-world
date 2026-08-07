@@ -275,7 +275,15 @@ final class MetalAgentLocalSurface {
                 exemption would be a fourth reading of "which acts are
                 safe", and this rig is not where that question is
                 answered. */
-             .windowAct, .controlAct, .menuAct, .textGet, .textSet:
+             .windowAct, .controlAct, .menuAct, .textGet, .textSet,
+             /* And the walk that mints what those five address. It changes
+                nothing — so it is here for the OTHER reason in this list
+                rather than the safety one: it is unserved by this rig, and
+                a gate that let it through would be measuring nothing. It
+                also costs the machine real work, binding a process through
+                the anchor oracle and reading foreign memory window by
+                window, which is not what a capture/addressing rig is for. */
+             .observeElements:
             /* Every operation that could CHANGE the machine, refused by
                this rig rather than served. A capture gate has no business
                being able to move a file on somebody's PowerBook, and the

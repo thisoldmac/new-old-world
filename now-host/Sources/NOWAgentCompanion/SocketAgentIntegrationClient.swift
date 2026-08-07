@@ -150,6 +150,27 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    /* THE MIRROR'S MUTATION HALF, missing here from the day `mirror_drive`
+       landed until 2026-08-07. `mirrorRead` above was written and this was
+       not, so `now_mirror_drive` answered the protocol default — "This
+       client cannot drive the host Mirror" — from a host whose socket had
+       served the operation the whole time. A sentence about a missing lane,
+       standing in for a missing forwarder, is the worst shape a refusal can
+       take: it sends the reader one layer down to look for something that
+       is there. `SocketClientForwardingTests` is now what would have said
+       so. */
+    func mirrorDrive(_ request: AgentIntegrationMirrorDriveRequest) async
+        -> AgentIntegrationMirrorDriveResult {
+        guard let client else {
+            return .init(unavailable: unavailable(for: startupError))
+        }
+        do {
+            return try await client.mirrorDrive(request)
+        } catch {
+            return .init(unavailable: unavailable(for: error))
+        }
+    }
+
     /* THE ACT LANE, overriding the five protocol defaults that answered
        `noActLane`. That sentence — "this host carries no act lane yet" — was
        true of every client that could reach them and stopped being true the
@@ -221,6 +242,28 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         do {
             return try await client.setElementText(
                 element: element, text: text)
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
+    /* THE WALK, and the one of the three 2026-08-07 restorations that was
+       not a forwarder at all. `mirrorDrive` and `tailGuestLog` had lanes
+       under them the whole time; this had none — no `observe_elements`
+       operation, no adapter method, nothing on the socket. The audit read
+       the projection default and reported all three as missing forwarders,
+       which was right about the symptom and wrong about this one's depth:
+       `tools/now-agent` could not reach the walk either, because it speaks
+       this same socket. So the "developer road is fine" consolation did not
+       hold here, and the act plane's four addressed rows had no argument
+       producer on ANY face of this host. */
+    func observeElements(process: AgentIntegrationProcessSerial?) async
+        -> AgentIntegrationElementObservationResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.observeElements(process: process)
         } catch {
             return .unavailable(unavailable(for: error))
         }
@@ -308,6 +351,27 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
         do {
             return try await client.machineFacts()
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
+    /// The end of the guest's own log. `lines` is passed through as it
+    /// arrived, absent included: absent means the guest's own default and is
+    /// a COMPLETE request, so substituting a number here would send a
+    /// Macintosh a count nobody wrote.
+    ///
+    /// Missing until 2026-08-07, with the same consequence as `mirrorDrive`
+    /// above: `now_guest_log_tail` answered `.hostUnavailable` — "New Old
+    /// World host is unavailable" — while the host was up and the
+    /// `guest_log_tail` operation was being served.
+    func tailGuestLog(lines: Int?) async
+        -> AgentIntegrationGuestRowReportResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.tailGuestLog(lines: lines)
         } catch {
             return .unavailable(unavailable(for: error))
         }

@@ -719,6 +719,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     return .textSet(
                         await agentIntegration.setElementText(
                             element: element, text: text))
+                case .observeElements:
+                    /* THE SHORTEST BRANCH ON THE ACT PLANE, and the only
+                       one with no refusal this side can compose: an
+                       observation that names no process is a COMPLETE
+                       request meaning the frontmost application, and the
+                       pair rule that makes half a serial number unspellable
+                       was enforced where the caller's keys were first read.
+                       So the field is forwarded exactly as it arrived,
+                       absence included — a host that resolved "frontmost"
+                       itself would be naming a process from a sample taken
+                       at a different moment than the walk. */
+                    return .observeElements(
+                        await agentIntegration.observeElements(
+                            process: request.observeProcess))
                 case .transferCancel:
                     /* Says only its own name, and the codec has already
                        refused a request carrying anything else. There is

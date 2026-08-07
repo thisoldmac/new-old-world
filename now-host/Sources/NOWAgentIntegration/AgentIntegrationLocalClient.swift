@@ -302,6 +302,16 @@ public struct AgentIntegrationLocalClient: Sendable {
                shaped to make unspellable, so there is no bare form of any
                of the five to fall through to here. */
             preconditionFailure("An act names what it acts on")
+        case .observeElements:
+            /* The walk HAS a bare form — no serial means the frontmost
+               application — and it is deliberately not spelled here. This
+               switch is the sender for operations that take nothing at all;
+               routing the observation through it would make "the frontmost"
+               the shape a caller gets by not thinking, when it is the one
+               choice on this lane that should be typed out. */
+            preconditionFailure(
+                "An observation says which process it walks, or says "
+                    + "frontmost by passing nil")
         }
     }
 
@@ -557,6 +567,19 @@ public struct AgentIntegrationLocalClient: Sendable {
         return result
     }
 
+    /// The walk that mints what the five acts above address. Nil aims it at
+    /// the frontmost application — a default for the WALK, never for an act.
+    public func observeElements(
+        process: AgentIntegrationProcessSerial?
+    ) async throws -> AgentIntegrationElementObservationResult {
+        let response = try await send(.observeElements(process: process))
+        guard let result = response.observeElementsResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no element observation")
+        }
+        return result
+    }
+
     /// A copy of this client that says which machine it is asking about.
     ///
     /// A machine id (`pb1400c`) means "whatever is connected to that Mac
@@ -616,6 +639,20 @@ public struct AgentIntegrationLocalClient: Sendable {
                    normally. This window outlives the host adapter's own
                    15 s bound, so the caller reads a typed refusal rather
                    than a broken socket. */
+                timeout = launchReceiveTimeout
+            case .observeElements:
+                /* THE WALK, and it gets the act lane's window rather than
+                   the read-only one — for a different reason than the acts
+                   next door, which is why it is its own case.
+                   An act waits on the target application to pump; a walk
+                   waits on nothing and returns from the guest's own code.
+                   What it spends instead is WORK: it binds a process
+                   through the anchor oracle and reads foreign memory
+                   window by window, control by control, minting a
+                   reference for each, and `all` scope does that for every
+                   process on the machine. On a 68030 that is seconds of a
+                   guest working exactly as intended, and the two-second
+                   idle bound would report it as a broken socket. */
                 timeout = launchReceiveTimeout
             case .bringToFront, .guestFileMutation,
                  .transferCancel, .guestLogTail, .machineFacts,

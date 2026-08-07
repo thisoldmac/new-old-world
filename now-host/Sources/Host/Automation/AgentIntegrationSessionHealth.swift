@@ -339,6 +339,16 @@ final class AgentIntegrationHostAdapter {
         await actControl.setElementText(element: element, text: text)
     }
 
+    /// Walk one process's on-screen elements and mint a reference for each.
+    /// The act plane's argument producer: nothing else on this side makes a
+    /// `now-element-…`, so the five above are unreachable without it. Nil
+    /// walks the frontmost application — a default for the WALK, and there
+    /// is no spelling downstream for "act on whatever is frontmost".
+    func observeElements(process: AgentIntegrationProcessSerial?) async
+        -> AgentIntegrationElementObservationResult {
+        await actControl.observeElements(process: process)
+    }
+
     /// The end of the connected machine's own log for this launch. It names
     /// no file and cannot be pointed at one; `AgentIntegrationGuestLogTail`
     /// carries the whole of why, and what a log line can still disclose.
