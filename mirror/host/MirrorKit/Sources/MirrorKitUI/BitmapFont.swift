@@ -154,6 +154,8 @@ public enum FontBook {
     /// shape of the defect this rounding exists to cure.
     public static let bundledSizes: [String: [Int]] = [
         "chicago": [12],
+        "charcoal": [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+                     23, 24],
         "geneva": [9, 10, 12, 14, 18, 20, 24],
     ]
 
@@ -172,6 +174,13 @@ public enum FontBook {
     /// Chicago is the case that bites: the pack carries ONE strike, at
     /// 12, so any Chicago request answers at 12 and the caller is not
     /// told. That is honest rounding, not a claim the size was honoured.
+    ///
+    /// Charcoal is the opposite case and the reason the rounding exists at
+    /// all. It has no bitmap strike on the guest either, so the pack
+    /// rasterises it from its own TrueType outlines at every ppem Apple's
+    /// `hdmx` table carries device metrics for — 9 through 24, which is
+    /// every size the corpus has ever seen the system font drawn at. A
+    /// request outside that range still rounds, and rounds small.
     public static func nearest(face: String, size: Int) -> BitmapFont? {
         if let exact = font("\(face)-\(size)") { return exact }
         guard let sizes = bundledSizes[face], !sizes.isEmpty else {
@@ -183,8 +192,25 @@ public enum FontBook {
         return font("\(face)-\(pick)")
     }
 
-    /// Chicago 12 — the system font (menus, window titles, buttons).
-    public static var system: BitmapFont? { font("chicago-12") }
+    /// The system font at 12 — menus, window titles, buttons, group-box
+    /// labels: everything the guest draws as font id 0.
+    ///
+    /// **That is Charcoal, not Chicago**, on every Mac OS 8.5 and later
+    /// system, and this line reading `chicago-12` was the largest
+    /// text-fidelity gap in the product. Chicago is the System 7 system
+    /// font and is a few percent wider per glyph, so every run the guest
+    /// had already MEASURED in Charcoal — the clip it set around a
+    /// checkbox label, the band it erased out of a group-box frame to put
+    /// a title in — came back too long: "Use a Network Time Server" lost
+    /// its "r" to the clip, and group titles met the frame line the guest
+    /// had deliberately left standing on either side of the band. Two
+    /// symptoms, one substitution.
+    ///
+    /// Falls back to Chicago 12 for a pack extracted before 2026-08-07,
+    /// which is the substitution again — but a named one.
+    public static var system: BitmapFont? {
+        font("charcoal-12") ?? font("chicago-12")
+    }
     /// Geneva 10 — the app/content font (Finder labels, item text).
     public static var app: BitmapFont? { font("geneva-10") }
     /// Geneva 9 — the smallest UI text (shelf, generic labels). Falls back

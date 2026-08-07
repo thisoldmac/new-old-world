@@ -78,7 +78,11 @@ FACES = ("Chicago", "Charcoal", "Geneva")
 STYLE_SUFFIX = {0: "", 1: "-bold", 2: "-italic", 3: "-bolditalic"}
 # The strikes FontBook.swift names outright. A pack without these draws its
 # procedural fallback face, which is the failure this refuses to ship.
-REQUIRED_SHEETS = ("chicago-12", "geneva-9", "geneva-10", "geneva-12")
+# `charcoal-12` joined on 2026-08-07: it is the SYSTEM font, so its absence
+# was not a fallback face in one panel but Chicago standing in for every
+# menu, window title, button and group box on the screen.
+REQUIRED_SHEETS = ("chicago-12", "geneva-9", "geneva-10", "geneva-12",
+                   "charcoal-12")
 
 # The generic Finder icons the renderer asks for by name. Resource ids are
 # the System file's own; see IconAtlas.swift, which names the same five.
@@ -586,11 +590,20 @@ def extract_fonts(mnt: str, out: str, prov: list) -> dict:
     about a glyph box), and each `sfnt` is carried out verbatim as a
     `.ttf` — an 'sfnt' resource IS the TrueType file image.
 
-    CHARCOAL HAS NO STRIKE TO EXTRACT, and that is a finding rather than
-    an omission: on this image its suitcase holds one `sfnt` and a `FOND`
-    whose association table has a single size-0 (scalable) row, so Mac OS
-    rasterises the system font from TrueType at run time. The face's note
-    says so in the manifest instead of the pack quietly lacking it.
+    CHARCOAL HAS NO STRIKE TO EXTRACT: on this image its suitcase holds one
+    `sfnt` and a `FOND` whose association table has a single size-0
+    (scalable) row, so Mac OS rasterises the system font from TrueType at
+    run time. Until 2026-08-07 that was recorded as a note and left there,
+    and the consequence was not a missing font but a WRONG one — `font 0`
+    means "the system font", the pack had no Charcoal, and the renderer
+    answered Chicago for every menu, window title, button and group-box
+    label on screen. Chicago is wider, so runs the guest had already
+    measured in Charcoal overran the boxes it drew for them.
+
+    So a face with no strike is now RASTERISED from its own `sfnt`, at every
+    ppem its `hdmx` table carries device metrics for, and at no other size —
+    see `fonts.render_truetype_strike`. A size with no `hdmx` row keeps
+    substituting and the manifest names it.
     """
     d = os.path.join(out, "fonts")
     ttf_dir = os.path.join(d, "ttf")
@@ -628,10 +641,40 @@ def extract_fonts(mnt: str, out: str, prov: list) -> dict:
 
         strikes = fork.of_type("NFNT")
         if not strikes:
+            if face not in summary["ttf"]:
+                summary["notes"][face] = (
+                    "no NFNT bitmap strike and no sfnt either "
+                    f"({fork.census()}); nothing to lift and nothing to "
+                    "rasterise")
+                continue
+            ttf = fonts.sfnt_to_ttf(fork.of_type("sfnt")[0].data)
+            sizes = fonts.hdmx_sizes(ttf)
+            for ppem in sizes:
+                label = f"{face.lower()}-{ppem}"
+                sheet, metrics, notes = fonts.render_truetype_strike(ttf, ppem)
+                metrics["face"] = face
+                metrics["pointSize"] = ppem
+                metrics["style"] = 0
+                sheet.save(os.path.join(d, f"{label}.png"))
+                with open(os.path.join(d, f"{label}.json"), "w") as fh:
+                    json.dump(metrics, fh, indent=1, sort_keys=True)
+                summary["sheets"][label] = {
+                    "glyphs": len(metrics["glyphs"]), "size": ppem,
+                    "style": 0, "source": "sfnt+hdmx",
+                    "ascent": metrics["ascent"],
+                    "descent": metrics["descent"],
+                    "grewToFitInk": notes["grewToFitInk"]}
+                for ext in ("png", "json"):
+                    prov.append({"asset": f"fonts/{label}.{ext}",
+                                 "source": rel, "type": "sfnt+hdmx",
+                                 "id": sfnts[0].id, "ppem": ppem})
             summary["notes"][face] = (
                 "TrueType-only face: no NFNT bitmap strike in the suitcase "
                 f"({fork.census()}). Mac OS rasterises it from the sfnt at "
-                "run time; there is no strike on this image to lift")
+                f"run time and so does this — {len(sizes)} strikes at the "
+                f"ppem sizes 'hdmx' carries device metrics for "
+                f"({sizes[0]}-{sizes[-1]}); no other size is answerable and "
+                "none is guessed")
             continue
         for res in strikes:
             size, style = size_by_id.get(res.id, (0, 0))
@@ -1250,9 +1293,14 @@ def main() -> None:
                  if desktop_sum.get("w") else "")
               + f" — {desktop_sum['confidence']}")
         print(f"  pictures: {pictures_sum['count']} PICT (unconverted)")
-        print(f"  fonts:    {len(fonts_sum['sheets'])} NFNT sheets, "
+        lifted = sum(1 for s in fonts_sum["sheets"].values()
+                     if s.get("source") != "sfnt+hdmx")
+        raster = len(fonts_sum["sheets"]) - lifted
+        print(f"  fonts:    {lifted} NFNT sheets lifted, "
+              f"{raster} rasterised from sfnt+hdmx, "
               f"{len(fonts_sum['ttf'])} TTF"
-              + (f" (no strike: {', '.join(sorted(fonts_sum['notes']))})"
+              + (f" (rasterised, no NFNT: "
+                 f"{', '.join(sorted(fonts_sum['notes']))})"
                  if fonts_sum["notes"] else ""))
         print(f"  appicons: {apps_sum['count']} for {apps_sum['creators']} creators "
               f"({apps_sum['forks_scanned']} forks scanned)")

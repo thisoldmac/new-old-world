@@ -196,6 +196,17 @@ class NoDeviceMetrics(Exception):
     """The face has no 'hdmx' row for this ppem, so its widths are unknown."""
 
 
+def hdmx_sizes(ttf: bytes) -> list[int]:
+    """The ppem sizes this face carries device metrics for — i.e. exactly the
+    sizes `render_truetype_strike` can answer honestly."""
+    tables = _sfnt_tables(ttf)
+    if "hdmx" not in tables:
+        return []
+    off, _ = tables["hdmx"]
+    _ver, n_rec, rec_size = struct.unpack_from(">HhL", ttf, off)
+    return sorted(ttf[off + 8 + i * rec_size] for i in range(n_rec))
+
+
 def _sfnt_tables(ttf: bytes) -> dict:
     """{tag: (offset, length)} from the sfnt table directory."""
     num = struct.unpack_from(">H", ttf, 4)[0]
