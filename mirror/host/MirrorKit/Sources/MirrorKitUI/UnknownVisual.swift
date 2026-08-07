@@ -109,29 +109,47 @@ public enum UnknownVisual {
         guard frame.width > 1, frame.height > 1 else { return }
         var clipped = ctx
         clipped.clip(to: Path(frame))
-        clipped.fill(Path(frame), with: .color(ground))
-
-        /* The lattice as dashed horizontal hairlines: one stroke per even
-           row with a [1,1] dash phased onto even columns. A per-pixel fill
-           would be tens of thousands of rects for a full-window unknown;
-           this is height/2 strokes and lands on the same pixels. */
-        let firstRow = (frame.minY / stipplePeriod).rounded(.up) * stipplePeriod
-        let startX = frame.minX.rounded(.down)
-        let phase = startX.truncatingRemainder(dividingBy: stipplePeriod)
-        var y = firstRow
-        while y < frame.maxY {
-            var row = Path()
-            row.move(to: CGPoint(x: frame.minX, y: y + 0.5))
-            row.addLine(to: CGPoint(x: frame.maxX, y: y + 0.5))
-            clipped.stroke(row, with: .color(stipple),
-                           style: StrokeStyle(lineWidth: 1, dash: [1, 1],
-                                              dashPhase: phase))
-            y += stipplePeriod
-        }
-
+        clipped.fill(Path(frame), with: .tiledImage(tile))
         clipped.stroke(Path(frame.insetBy(dx: 0.5, dy: 0.5)),
                        with: .color(edge), lineWidth: 1)
     }
+
+    /// The 2x2 lattice cell: one stipple dot, three ground.
+    ///
+    /// Built as an image and tiled rather than drawn. The first attempt
+    /// stroked hairlines on even rows with a `[1, 1]` dash to get the same
+    /// lattice in `height/2` strokes — and `GraphicsContext` DREW THE DASH
+    /// SOLID, which the render test caught by counting: 8 dots in a 4x4
+    /// block instead of 4. The result was 1px horizontal rulings at 50%
+    /// coverage, which is not merely twice as loud as intended but
+    /// specifically wrong, because Platinum's own title bars are horizontal
+    /// pinstripes and an unknown must not wear the machine's own texture.
+    ///
+    /// Tiling also gets what the strokes could not promise: the lattice is
+    /// anchored to the CONTEXT's origin, not to the rectangle, so a
+    /// rectangle that moves a pixel between frames does not make its
+    /// texture crawl and two adjacent unknowns share one field.
+    private static let tile: Image = {
+        let cell = 2
+        var bytes = [UInt8](repeating: 0, count: cell * cell * 4)
+        func put(_ i: Int, _ hex: UInt32) {
+            bytes[i * 4 + 0] = UInt8((hex >> 16) & 0xFF)
+            bytes[i * 4 + 1] = UInt8((hex >> 8) & 0xFF)
+            bytes[i * 4 + 2] = UInt8(hex & 0xFF)
+            bytes[i * 4 + 3] = 0xFF
+        }
+        put(0, 0xDCDCDC); put(1, 0xEFEFEF)
+        put(2, 0xEFEFEF); put(3, 0xEFEFEF)
+        let provider = CGDataProvider(data: Data(bytes) as CFData)!
+        let cg = CGImage(
+            width: cell, height: cell, bitsPerComponent: 8, bitsPerPixel: 32,
+            bytesPerRow: cell * 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue:
+                CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: provider, decode: nil, shouldInterpolate: false,
+            intent: .defaultIntent)!
+        return Image(decorative: cg, scale: 1)
+    }()
 
     /// Where the caption's baseline goes, or nil if the rectangle is too
     /// small to carry one honestly.
