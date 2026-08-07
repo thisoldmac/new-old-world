@@ -539,3 +539,52 @@ own dispatch is the authority; verify by re-reading.
   request armed, only 1 of 4–6 `FindWindow` entries per trial was
   answered. But **nobody has armed a window act and then clicked
   elsewhere.**
+
+## Drag: there is no sustained-press vehicle, and this is what one costs
+
+Assessed 2026-08-07 for plan 018's slice 1.5 (drag between targets inside
+the mirrored guest). **Nothing here can hold the mouse button down.**
+
+`ext/src/now_ext_act.c :: act_post_click` is the whole input vehicle, and
+it queues a `mouseDown` and its matching `mouseUp` in one call, from
+inside the target's context, before it returns. Every op that needs a
+click — control, dialog item, menu — goes through it. There is no op that
+presses without releasing, no motion between the two, and no separate
+release. `kNowPeekActOp*` (contract/peek_table.h) has no case for one.
+
+So a drag is not an application-side feature that can be built on the
+existing plane. It needs, in the resident:
+
+1. **A press that does not queue its release.** `act_post_click` split in
+   two, with the button state left down (`LMSetMouseButtonState(0x00)`)
+   rather than restored.
+2. **A motion path.** The Finder's own drag loop reads `StillDown`,
+   `GetMouse` and `WaitMouseUp`, all of which read the mouse low-memory
+   globals — so motion is a sequence of `LMSetMouseLocation` /
+   `LMSetRawMouseLocation` writes serviced while the button is down, which
+   means the resident must be re-entered repeatedly during a gesture the
+   application is inside. Today a request is served once and completes.
+3. **A release**, as its own op.
+4. **A DEAD-MAN RELEASE, which is the part that must not be optional.**
+   A guest left with the button down and no `mouseUp` queued sits in the
+   Finder's tracking loop forever, and the host has no lever to undo it —
+   its only channel is the same cell the wedged application is no longer
+   reading. So the press must carry a deadline the RESIDENT enforces:
+   if no motion or release arrives before it expires, the resident
+   releases the button itself and reports that it did. A drag that dies
+   because the host process was killed between press and release must
+   still end with the button up.
+
+That is new operations, new cell fields, a new liveness rule in the
+resident, and therefore `contract/peek_table.h` plus `ext/` — which
+triggers the bake gate. It is its own slice, not an increment on this
+one, and this file records the shape so the next person does not have to
+re-derive it.
+
+**The presentation half is independent and can be built first**, because
+it is honest without the vehicle: show the dragged item moving with the
+pointer immediately, marked as PROVISIONAL until a select confirms, and
+snap it home on release-before-confirm or on a failed select. Snap-back
+needs a defensible "home", so an item whose position we cannot trust
+(unplaced, or from a view whose geometry we cannot read) must refuse the
+drag before it starts rather than guess a return address.
