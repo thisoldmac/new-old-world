@@ -909,8 +909,9 @@ public struct SceneRenderer {
     ///   than as documents. That is the whole of Michelle's complaint #5,
     ///   and "arrows or a marked unknown, never a page" is the exit
     ///   criterion it became.
-    static func ladder(for win: MirrorKit.Scene.Window, content: CGRect,
-                       owning: [CGRect]) -> ProvenanceLadder {
+    public static func ladder(for win: MirrorKit.Scene.Window,
+                              content: CGRect,
+                              owning: [CGRect]) -> ProvenanceLadder {
         func place(_ r: MirrorKit.Rect) -> CGRect {
             CGRect(x: content.minX + CGFloat(r.l), y: content.minY + CGFloat(r.t),
                    width: CGFloat(max(0, r.r - r.l)),
