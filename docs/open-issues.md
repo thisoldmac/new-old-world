@@ -66,6 +66,31 @@ Both fixed. `part 0` now watches THE CONTROL, stopping the moment it
 moves, and reports the settlement vocabulary — `confirmed - the control
 moved` or `dispatched-but-unconfirmed` — never `click posted`.
 
+**EMULATOR-VERIFIED**, both directions, on one guest, with the old and
+the new build A/B'd on the same machine and the same control (rig:
+`os91-runner` clone, this tree's build restaged in place; the A/B is what
+the accident of staging a stale binary bought). Each row confirmed twice
+as sweep spec v3 requires — the machine's own re-read value **and** the
+rectangle a person would look at, in the guest's own framebuffer:
+
+| | old build | new, tab switched | new, same tab pressed |
+|---|---|---|---|
+| `Dispatch` | `click posted` | `confirmed - the control moved` | `dispatched-but-unconfirmed` |
+| `Settlement` | **`timed-out`** | `confirmed` | `dispatched-but-unconfirmed` |
+| `Re-read value` | *the anchor plane is absent or not armed* | 1 → 4 | 4 → 4 |
+| value, from the scene | 4 → 1 | 1 → 4 | 4 → 4 |
+| strip pixels | 1949 / 9320 | 1949 / 9320 | **0** / 9320 |
+| pane pixels | 79146 / 130946 | 79146 / 130946 | **0** / 130946 |
+| dispatch | 6092 ms | **721 ms** | 2066 ms |
+
+The first column is the defect in one line: **the tab switched and the
+verb said `timed-out`.** The last two columns are the same verb, the same
+control and the same point, telling its two outcomes apart — which is the
+whole of what slice 8 asked for. The 2066 ms in the last column is the
+120-tick watch being spent in full, which is the only case that pays it.
+
+Evidence, screendumps and the rig table: `docs/local/ctlact-settlement/`.
+
 ### STILL OPEN, from the same audit
 
 - **`part 0` arms a patch that would suppress the click it posts.**

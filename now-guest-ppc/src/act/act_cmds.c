@@ -1053,12 +1053,14 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
                 "armed, and the application never called TrackControl");
             return;
         }
-        moved = await_control_moved(ref, (long)handle.detail.control.value,
-                                    &after, 0);
-    } else {
-        moved = await_control_moved(ref, (long)handle.detail.control.value,
-                                    &after, kCtlactSettleTicks);
     }
+    /* THE SAME WATCH FOR BOTH FORMS, and it costs a named part nothing:
+       a control with no range answers on the first reading, and one that
+       moved answers on the first reading too. Only a control that CAN
+       move and did not pays the budget - which is exactly the case worth
+       being sure about before saying so. */
+    moved = await_control_moved(ref, (long)handle.detail.control.value,
+                                &after, kCtlactSettleTicks);
     now_act_withdraw();
     now_act_note_observed(moved == kCtlMoved);
 
