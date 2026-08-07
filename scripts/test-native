@@ -423,6 +423,12 @@ run_c now-guest-ppc control_cdef_test.c      ""  src/scene/control_cdef.c
 # requires an element - an asymmetry CommandParityTests cannot see,
 # because the verb is present on both faces and merely broken on one.
 run_c now-guest-ppc ctlact_line_test.c       ""  src/act/ctlact_line.c
+# ctlact's VERDICT, which is a different thing from its grammar and was
+# wrong in the direction that costs the most: `part 11` inferred "the act
+# was not taken" from one silent trap patch and said so over a press that
+# opened Mac Help (sweep D, SEQ-A step 4). An agent that believes a
+# refusal presses again. Source-read because act_cmds.c includes Carbon.
+run_py now-guest-ppc ctlact_verdict_source_test.py
 # Where a scene's time went, and the three properties its honesty rests
 # on: nested phases must not double-count their parents, a producer with
 # no clock must report NOTHING rather than eight zeroes, and a span that

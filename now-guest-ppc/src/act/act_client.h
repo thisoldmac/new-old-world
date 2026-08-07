@@ -171,8 +171,22 @@ long now_act_encode_settlements(char *out, long cap);
    a classic PPC binary. This is the one place the port diverges in
    design rather than in spelling. */
 
-/* Wait for the armed patch to answer, then snapshot. */
-NowActStatus now_act_await_fired(NowPeekActCell *snapshot);
+/* Wait for the armed patch to answer, then snapshot.
+ *
+ * `timeout_is_terminal` says what the CALLER will do if the patch never
+ * answers, and it decides only what the settlement records - never the
+ * status returned.
+ *
+ *   1 - the caller ends the act here, so the expiry is the verdict and
+ *       the settlement is `timed-out` (a latched, terminal word).
+ *   0 - the caller goes on to look for other evidence, so the expiry
+ *       settles nothing and the settlement is
+ *       `dispatched-but-unconfirmed`.
+ *
+ * It exists because `ctlact part 11` passed 1 while behaving like 0, and
+ * a landed press came back `timed-out`. See act_cmds.c. */
+NowActStatus now_act_await_fired(NowPeekActCell *snapshot,
+                                 int timeout_is_terminal);
 
 /* Put the cell back to idle and disarm, ALWAYS, on every path out. A
    request left armed is a patch waiting to fire on somebody else's
