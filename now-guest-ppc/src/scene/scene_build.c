@@ -613,6 +613,24 @@ void now_scene_set_control_definition(NowScene *s, int window, int index,
     s->controls[w->first_control + index].definition = origin;
 }
 
+void now_scene_set_control_cdef(NowScene *s, int window, int index,
+                                short state, short id, short variant)
+{
+    NowSceneWindow *w = window_at(s, window);
+    NowSceneControl *c;
+
+    if (w == NULL || !w->controls_present) {
+        return;
+    }
+    if (index < 0 || index >= (int)w->control_count) {
+        return;
+    }
+    c = &s->controls[w->first_control + index];
+    c->cdef_state = state;
+    c->cdef_id = id;
+    c->cdef_variant = variant;
+}
+
 void now_scene_set_control_semantic_value(NowScene *s, int window, int index,
                                           const char *value)
 {

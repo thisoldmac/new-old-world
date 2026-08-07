@@ -118,6 +118,8 @@ add_application(now-guest-ppc
     src/scene/scene_self.c
     src/workshop/control_kind.c
     src/scene/scene_walk.c
+    src/scene/control_cdef.c
+    src/scene/cdef_resolver.c
     src/scene/dialog_text.c
     # The foreign-memory walk, ported from this project's own prototype
     # (timbottu/mirror). Pure parsers plus one Toolbox binding; see
@@ -153,6 +155,7 @@ add_application(now-guest-ppc
     src/act/act_settlement.c
     src/act/act_client.c
     src/act/act_cmds.c
+    src/act/ctlact_line.c
     src/act/act_menu_probe.c
     src/act/act_menu_identity.c
     ../now-guest-shared/src/now_act_guard.c

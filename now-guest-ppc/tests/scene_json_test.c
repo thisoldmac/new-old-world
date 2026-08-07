@@ -40,6 +40,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "control_cdef.h"
 #include "scene.h"
 
 static int g_failures;
@@ -67,6 +68,23 @@ static void check_present(const char *json, const char *fragment)
         fprintf(stderr, "FAIL: missing %s\n", fragment);
         ++g_failures;
     }
+}
+
+/* How many times a fragment appears. Presence is not enough where the
+   claim is "exactly one of these controls reached that word": a test
+   that only asked whether `known` appeared would pass with all five
+   promoted. */
+static int count_of(const char *json, const char *fragment)
+{
+    int n = 0;
+    const char *p = json;
+    size_t len = strlen(fragment);
+
+    while ((p = strstr(p, fragment)) != NULL) {
+        ++n;
+        p += len;
+    }
+    return n;
 }
 
 /* Brackets balance outside strings, and no string is left open. Not a
@@ -931,7 +949,13 @@ static void test_proven_control_roles_keep_their_semantics(void)
                        "\"value\":\"8-bit\"");
     check_present(out, "\"kind\":\"progressIndicator\","
                        "\"value\":\"35\"");
-    check_present(out, "\"kind\":\"listBox\",\"value\":\"Rome\","
+    /* `action` is here as of 2026-08-07 and its absence was most of why
+       a list "rendered and could not be used": with no action,
+       `authorizesAction` is false and every driver declines before it
+       ever reaches the act plane. A list row answers to a click at a
+       POINT, which is what `ctlact`'s h and v now carry. */
+    check_present(out, "\"kind\":\"listBox\",\"action\":\"press\","
+                       "\"value\":\"Rome\","
                        "\"listCells\":[{\"row\":1,\"column\":0,"
                        "\"text\":\"Rome\",\"selected\":true},"
                        "{\"row\":1,\"column\":1,\"text\":\"Italy\","
@@ -1071,6 +1095,99 @@ static void test_an_unknown_kind_carries_the_reason_it_is_unknown(void)
     /* The identified control took the role path instead, so its reason
        rides beside a real kind exactly as it did before. */
     check_present(out, "\"knowledge\":\"known\",\"kind\":\"pushButton\"");
+}
+
+/* THE CDEF ROUTE, and the three states it must keep apart.
+ *
+ * The Control Manager will not name a control it did not build through a
+ * Create*Control call, which is every control in every OS 9 control
+ * panel: measured 2026-08-07, Appearance answered 2 of 73 and Date &
+ * Time 0 of 21. The Resource Manager will still name the CDEF that draws
+ * one, and that is a THIRD thing - stronger than "the definition came
+ * from the system heap", weaker than the control's own word.
+ *
+ * What is pinned here:
+ *
+ * - A named, attributable CDEF produces `knowledge":"derived` with its
+ *   own provenance, an action, and a kind. Not `known`: laundering it
+ *   would leave a reader unable to tell which of the two it received,
+ *   and the whole point of the split is that a caller can decline.
+ * - A named CDEF this guest will not attribute produces NOTHING - the
+ *   control stays unknown, exactly as if the lookup had failed. This is
+ *   the "it is probably the scroll bar one" line, and it is the one a
+ *   future edit is most likely to cross.
+ * - An unattempted lookup and a failed one both stay unknown, and the
+ *   reason plane is untouched by any of it.
+ *
+ * `role` outranks all of it: a control that told us what it is is not
+ * re-decided from the identity of the code that draws it. */
+static void test_a_cdef_id_is_derived_and_not_known(void)
+{
+    NowScene s;
+    char out[8192];
+    int p;
+
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    p = now_scene_add_process(&s, 0, 9, "Appearance", 0x61706370UL, 1,
+                              kNowSceneAnchorOk, 0);
+    (void)now_scene_add_window(&s, p, "Appearance", 30, 40, 200, 400, 1);
+
+    (void)now_scene_add_control(&s, 0, "", 85, 70, 101, 152, 1, 1, 7, 0, 100);
+    (void)now_scene_add_control(&s, 0, "", 105, 70, 121, 152, 1, 1, 2, 0, 8);
+    (void)now_scene_add_control(&s, 0, "", 125, 70, 141, 152, 1, 1, 0, 0, 1);
+    (void)now_scene_add_control(&s, 0, "", 145, 70, 161, 152, 1, 1, 0, 0, 1);
+    (void)now_scene_add_control(&s, 0, "Set Desktop", 165, 70, 181, 152,
+                                1, 1, 0, 0, 1);
+    now_scene_set_control_definition(&s, 0, 0, 1);   /* System, all five */
+    now_scene_set_control_definition(&s, 0, 1, 1);
+    now_scene_set_control_definition(&s, 0, 2, 1);
+    now_scene_set_control_definition(&s, 0, 3, 1);
+    now_scene_set_control_definition(&s, 0, 4, 1);
+
+    /* 0: CDEF 24 variant 0 - kControlScrollBarProc, procID 384. */
+    now_scene_set_control_cdef(&s, 0, 0, kNowCdefNamed, 24, 0);
+    /* 1: CDEF 8 variant 1 - kControlTabSmallProc, procID 129. */
+    now_scene_set_control_cdef(&s, 0, 1, kNowCdefNamed, 8, 1);
+    /* 2: CDEF 15 - the clock. DOCUMENTED, and deliberately unmapped:
+       this product has no honest role for it, so the answer is nothing
+       rather than something nearby. */
+    now_scene_set_control_cdef(&s, 0, 2, kNowCdefNamed, 15, 0);
+    /* 3: asked, and the handle is in no resource map. */
+    now_scene_set_control_cdef(&s, 0, 3, kNowCdefUnnamed, 0, 0);
+    now_scene_set_control_semantic_value(&s, 0, 3,
+                                         "Unsupported custom control");
+    /* 4: a CDEF id AND a role. The role wins, whole. */
+    now_scene_set_control_cdef(&s, 0, 4, kNowCdefNamed, 24, 0);
+    now_scene_set_control_role(&s, 0, 4, "button");
+
+    check(now_scene_encode(&s, out, sizeof out, NULL) == kNowSceneEncodeOk,
+          "the panel encodes");
+
+    check_present(out, "\"knowledge\":\"derived\",\"kind\":\"scrollBar\","
+                       "\"action\":\"scroll\",\"value\":\"7\","
+                       "\"provenance\":\"guest-cdef-resource\","
+                       "\"completeness\":\"complete\"");
+    check_present(out, "\"knowledge\":\"derived\",\"kind\":\"tab\","
+                       "\"action\":\"press\"");
+    /* The legacy role field carries it too - it is documented as the
+       approximation a v1 renderer draws from, and "the Toolbox runs the
+       scroll bar CDEF for this" is a better approximation than the word
+       unknown. */
+    check_present(out, "{\"role\":\"scrollbar\"");
+    check_present(out, "{\"role\":\"tab\"");
+
+    /* THE LINE. A documented id with no honest role says nothing, and it
+       must not quietly become the nearest thing. */
+    check_absent(out, "\"kind\":\"clock\"");
+    check_present(out, "\"knowledge\":\"unknown\",\"definition\":\"system\","
+                       "\"provenance\"");
+    /* And a derived kind is never spelled `known`: exactly one control
+       here reached that word, and it is the one that carried a role. */
+    check(count_of(out, "\"knowledge\":\"known\"") == 1,
+          "only the control with a role is known");
+    check_present(out, "\"knowledge\":\"known\",\"kind\":\"pushButton\"");
+    /* The unnamed lookup keeps the reason plane exactly as it was. */
+    check_present(out, "\"value\":\"Unsupported custom control\"");
 }
 
 /* `definition` says WHERE a control's definition function came from, and
@@ -1305,6 +1422,7 @@ int main(void)
     test_proven_control_roles_keep_their_semantics();
     test_unproven_controls_are_unknown_and_unactionable();
     test_an_unknown_kind_carries_the_reason_it_is_unknown();
+    test_a_cdef_id_is_derived_and_not_known();
     test_definition_is_not_a_kind();
     test_dialog_items_carry_v2_semantics();
     test_a_control_without_a_reference_still_carries_the_key();

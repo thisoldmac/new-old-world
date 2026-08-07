@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "axwalk.h"    /* NowAxDefProcOrigin: scene.h stores one as a short */
+#include "control_cdef.h"  /* NowCdefState, and the documented CDEF table */
 #include "json.h"
 #include "scene_digest.h"
 #include "scene_phase.h"
@@ -465,6 +466,19 @@ static const char *control_definition(short origin)
     }
 }
 
+/* The role the CDEF route supports for a control the Control Manager
+   would not name, or NULL. It is consulted ONLY where `role` is empty:
+   a control that told us what it is outranks the identity of the code
+   that draws it, and averaging the two would be the laundering this
+   whole split exists to prevent. */
+static const char *derived_role(const NowSceneControl *c)
+{
+    if (c->cdef_state != (short)kNowCdefNamed) {
+        return NULL;
+    }
+    return now_cdef_role(c->cdef_id, c->cdef_variant);
+}
+
 static const char *control_kind(const char *role)
 {
     if (strcmp(role, "button") == 0) return "pushButton";
@@ -483,6 +497,7 @@ static const char *control_kind(const char *role)
     if (strcmp(role, "userPane") == 0) return "userPane";
     if (strcmp(role, "imageWell") == 0) return "imageWell";
     if (strcmp(role, "systemControl") == 0) return "systemControl";
+    if (strcmp(role, "tab") == 0) return "tab";
     return "unknown";
 }
 
@@ -496,6 +511,17 @@ static const char *control_action(const char *role)
     }
     if (strcmp(role, "popup") == 0) return "choose";
     if (strcmp(role, "scrollbar") == 0) return "scroll";
+    /* A TAB and a LIST BOX both answer to a click at a POINT, and until
+       2026-08-07 neither had an action at all - so `authorizesAction` was
+       false and every driver declined them, which is most of what
+       "lists, scrollbars and tabs render now but they cant be used"
+       named. `press` is the honest word for both: the act is a mouse
+       click the owning application routes through its own handler, the
+       same mechanism a push button uses. Which tab, and which row, is
+       decided by WHERE - so a caller sends `ctlact` a point, and the
+       point is what makes these two rows worth having. */
+    if (strcmp(role, "tab") == 0) return "press";
+    if (strcmp(role, "listBox") == 0) return "press";
     return NULL;
 }
 
@@ -561,7 +587,16 @@ static void put_controls(Sink *k, const NowScene *s, const NowSceneWindow *w)
         /* IR v2 keeps the legacy role only so v1-era renderers can draw an
            approximation. Unknown is explicit: geometry and a value range
            never become an action-bearing type. */
-        put_str(k, c->role[0] != '\0' ? c->role : "unknown");
+        /* A derived role rides here too. This field is documented as the
+           APPROXIMATION a v1-era renderer draws from, and "the Toolbox
+           runs the scroll bar CDEF for this control" is a strictly better
+           approximation than the word `unknown` - which is what every
+           OS 9 control panel's controls carried before the CDEF route
+           existed. The semantic object below still says which of the two
+           it was. */
+        put_str(k, c->role[0] != '\0' ? c->role
+                                      : (derived_role(c) != NULL
+                                         ? derived_role(c) : "unknown"));
         put(k, ",\"title\":");
         put_str(k, c->title);
         snprintf(rect, sizeof rect, ",\"rect\":{\"l\":%d,\"t\":%d,\"r\":%d,"
@@ -580,6 +615,43 @@ static void put_controls(Sink *k, const NowScene *s, const NowSceneWindow *w)
         put_num(k, c->max);
         put_ref_required(k, c->ref);
         put(k, ",\"semantic\":{\"knowledge\":");
+        if (c->role[0] == '\0' && derived_role(c) != NULL) {
+            /* THE THIRD STATE, and it is deliberately not `known`.
+               `known` is the control answering about itself through
+               `kControlKindTag`; this is the Resource Manager naming the
+               CDEF that draws it and this guest looking the id up in a
+               header. That is the machine stating something rather than
+               us guessing - which is why it may carry an action at all -
+               and it is still one remove from the control's own word,
+               which is why it may not be spelled the same. A reader that
+               cannot tell them apart is reading a document that no longer
+               says which it got. */
+            const char *role = derived_role(c);
+            const char *action = control_action(role);
+
+            put_str(k, "derived");
+            put(k, ",\"kind\":");
+            put_str(k, control_kind(role));
+            if (action != NULL) {
+                put(k, ",\"action\":");
+                put_str(k, action);
+            }
+            if (control_has_state(role)) {
+                put(k, ",\"state\":");
+                put_str(k, c->value != 0 ? "on" : "off");
+            }
+            if (control_has_value(role)) {
+                char derived_value[16];
+
+                put(k, ",\"value\":");
+                snprintf(derived_value, sizeof derived_value, "%d",
+                         (int)c->value);
+                put_str(k, derived_value);
+            }
+            put(k, ",\"provenance\":\"guest-cdef-resource\","
+                   "\"completeness\":\"complete\"}}");
+            continue;
+        }
         if (c->role[0] == '\0') {
             const char *definition = control_definition(c->definition);
 
