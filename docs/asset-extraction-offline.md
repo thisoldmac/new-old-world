@@ -158,8 +158,18 @@ bitmaps.** Not a title bar, not a scroll arrow, not a button — nothing
 in the file is window furniture. The only 32×32 icon in it is the
 document icon the Finder shows for the theme file itself. The Appearance
 Manager draws Platinum chrome procedurally, and the host renderer must
-keep drawing it from the ported specification;
+keep drawing it;
 [mirror-assets.md](mirror-assets.md) needed no correction.
+
+**"From the ported specification" was the wrong second half of that
+sentence, and 2026-08-07 corrected it.** The Appearance Manager draws
+procedurally *through the QuickDraw bottlenecks*, so most of a themed
+element's parameters — its boxes, its state colours, its bevel greys,
+and metrics nothing reports — are already in any capture of a window
+that draws it. The host draws chrome, but the numbers come from the
+guest, per capture, not from constants anyone chose. The method is
+[deriving-a-drawn-procedure.md](deriving-a-drawn-procedure.md) and the
+first element done that way is the tab.
 
 What the file *does* contain that is worth having is **specification,
 not art**: the 21 accent ramps are the exact eight-step colour tables the

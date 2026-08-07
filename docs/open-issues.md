@@ -14,6 +14,59 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## FIXED: tabs had no edges, and the reason was that nobody read the drain (2026-08-07)
+
+Appearance and Energy Saver rendered their tab labels on flat grey — no
+outline, no selected-tab join, no pane edge — reproduced on three VMs and
+four guest builds ([fidelity sweep A](fidelity-sweep-2026-08-07-a.md)
+verdict 4). It read as an extraction problem, and
+[asset-extraction-offline.md](asset-extraction-offline.md) had confirmed
+there is no tab bitmap anywhere to extract.
+
+**The parameters were in a capture this project had already taken.**
+`DrawThemeTab` paints its label box, strokes three lines across the top
+and draws the title as ordinary QDPeek ops carrying the machine's own
+colours; only the slanted end caps go by a route the bottlenecks miss.
+`MirrorKit.DrawnTabStrip` reads what arrived — boxes, front tab, pane
+top, face and bevel colours, titles, and `kThemeMetricLargeTabCapsWidth`
+recovered as half the gap between neighbouring tabs — and
+`MirrorKitUI.PlatinumTab` draws the caps and the join. Measured against
+the guest's own screendump: the front tab's left slant lands on the
+machine's own column on 13 of 19 rows and is one pixel out on the other
+six.
+
+The method, so the next element costs an hour rather than an afternoon:
+[deriving-a-drawn-procedure.md](deriving-a-drawn-procedure.md).
+
+**Still open on that panel, and not addressed here:** Appearance
+publishes `controls = 0` and `dialogItems = 0` — six tabs and not one of
+them enumerable — so the tabs are now visible and still not addressable,
+and its DRIVABILITY is unchanged at 0. Deriving `Scene.Control` rows
+from the strip (as `DrawnCellGrid` does for Sherlock, marked
+`drawing-derivation`, claiming no action) is the obvious next slice and
+was deliberately not taken, to keep this one to a single element.
+
+## FIXED: every 1-pixel line in every window was two rows of mid grey (2026-08-07)
+
+Found while measuring the tab, and much larger than it. QuickDraw's 1x1
+pen inks the PIXEL whose top-left corner is `(h,v)`; Core Graphics
+strokes a line CENTRED on the coordinate. `DisplayReplay` stroked at
+integer coordinates, so every frame, bevel and separator the replay has
+ever drawn landed half in each of two rows. Measured on the Appearance
+panel's pane frame: `#D9D9D9` where the machine draws `#000000`, and its
+bevel rows `#EEEEEE`/`#F7F7F7` against `#CCCCCC`/`#FFFFFF`.
+
+`DisplayReplay.pixelCentre` plus an inset on the frame verb. It moved one
+measured region's exact-pixel agreement from 55.6 % to 69.5 % on its own.
+
+**Why it survived the renderer's whole life:** nothing ever compared
+pixels to the machine at 1:1 and looked at WHERE an edge was. Every
+fidelity instrument this project has built is a similarity score over a
+whole window, and a systematic one-pixel offset is exactly the error a
+similarity score cannot see — it degrades every number a little and names
+nothing. What found it was cropping thirty rows and printing them as
+characters.
+
 ## FIXED: the live render was worse than every fixture render, and no gate could see it (2026-08-06, evening)
 
 Reported against a running session: the Mirror "looks largely regressed"

@@ -237,3 +237,37 @@ unmeasured, the cheapest true thing to add is usually not the data — it
 is the one number that says whether the approximation is right. Paint
 the doubt only where a capture exists to grade it against; the replay's
 worst habits all came from placeholders graded against nothing.
+
+## A derived element that draws what the stream withheld (2026-08-07)
+
+`DrawnCellGrid`'s move has a second instance, and it stretches the rule
+in a direction worth naming.
+
+Sherlock's grid derived SEMANTICS from drawing. `DrawnTabStrip` derives
+**a procedure**: the Appearance Manager's tab, whose label box, three-row
+top bevel, colours and title all arrive as ordinary ops and whose slanted
+end caps do not. `PlatinumTab` draws the caps and the join where the
+front tab interrupts the pane's frame line — and clips the label box OUT
+before it fills anything, so the guest's own bevel and title survive.
+
+Same rule, said again because it is the one that keeps this honest:
+**draw only the difference between what P3 said and what you know.** The
+method for finding that difference for the next element is
+[deriving-a-drawn-procedure.md](deriving-a-drawn-procedure.md).
+
+Two things it adds to this page:
+
+- **A derived PROCEDURE is parameterised by the capture, not by a
+  constant table.** Every colour and distance the tab drawer uses comes
+  out of the stream it was derived from, including a metric nothing
+  reports (`kThemeMetricLargeTabCapsWidth`, recovered as half the gap
+  between neighbouring tabs). `Appearance.h`'s constants appear only as
+  an acceptance test — a run of equal-height boxes is a common shape and
+  calling it a tab strip needs a reason.
+- **A one-pixel systematic error is invisible to a similarity score.**
+  The replay stroked every 1px line centred on an integer coordinate, so
+  each landed half in two rows; every frame and bevel in every window was
+  two rows of mid grey where the machine draws one row of black. It
+  survived the entire life of the renderer and was found by cropping
+  thirty rows and printing them as characters. Grade an edge by WHERE it
+  is, per row, not by how much of the picture matches.
