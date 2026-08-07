@@ -42,7 +42,8 @@ final class MCPClientConformanceTests: XCTestCase {
     // MARK: The gate
 
     func testEveryAdvertisedToolAnswersARealClient() throws {
-        let client = try MCPClient(executable: Self.companionExecutable())
+        let client = try MCPClient(executable: Self.companionExecutable(),
+                                   environment: Self.environment())
         defer { client.shutDown() }
 
         let initialize = try client.handshake()
@@ -329,6 +330,32 @@ final class MCPClientConformanceTests: XCTestCase {
             .joined(separator: ", ")
         out += "\n\(summary)\n"
         return out
+    }
+
+    // MARK: The environment the companion runs in
+
+    /// **The default run reaches NOTHING, on purpose.**
+    ///
+    /// Without this, running the gate on a developer's Mac silently
+    /// reaches whichever host happens to hold the per-uid socket — which
+    /// on this desk is routinely a different session's host, driving a
+    /// different branch's Macintosh. Watched: the "no host" run came back
+    /// with `now_session_health` served, from a stack this run had never
+    /// heard of.
+    ///
+    /// So the default points the companion at an endpoint nothing binds,
+    /// which is what CI's shape actually is and what the gate is meant to
+    /// assert: the transport, the handshake, the dispatch and every
+    /// tool's argument validation, against a client holding the pipe
+    /// open. Going live is a deliberate act — `NOW_MCP_CONFORMANCE_LIVE=1`
+    /// — and then the caller's own `NOW_AGENT_SOCKET_SUFFIX` decides
+    /// which host it means.
+    private static func environment() -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        if !live {
+            environment["NOW_AGENT_SOCKET_SUFFIX"] = "conformance"
+        }
+        return environment
     }
 
     // MARK: The binary
