@@ -635,17 +635,23 @@ So find what populates it on the Toolbox end — most likely the Process
 Manager's `GetNextProcess`/`GetProcessInformation` enumeration filtered
 on `processMode` — and hook that.
 
-**An open question that must be answered before any "corroboration"
-claim is made:** is the switcher's population rule the **same bit** as
-`modeOnlyBackground`, or a different one? If the same, the two are **not
-independent signals** — one truth observed at two removes — and any
-claim of independent confirmation here is false. A manufactured
-confidence is worse than a single honest source. If the rule is wider
-(there are other mode bits, and OS 8.5+ has both the Application menu
-and the Switcher palette, which may not agree), the second signal is
-real and the rule itself is the finding. Either answer is good; carrying
-"two signals agree" forward without establishing whether they *could*
-disagree is not.
+**ANSWERED, 2026-08-07, and the answer kills the corroboration claim.**
+The question was whether the switcher's population rule is the **same
+bit** as `modeOnlyBackground`. It is. Measured on the emulator: the
+Application menu offered exactly the two non-`backgroundOnly` processes,
+both runs. So switcher membership and the declaration are **one truth
+observed at two removes**, and any claim of independent confirmation
+here would have been arithmetic dressed as evidence. Struck.
+
+The sharper reason came free: an earlier run caught **the Application
+Switcher itself running as a faceless process.** A design that read the
+switcher to learn what a process is would have been blind to the thing
+doing the reading.
+
+So the discriminator is the declaration alone —
+`ProcessInfoRec.processMode & modeOnlyBackground`, read in the same
+breath as the process's name — and never inferred from an empty window
+list.
 
 Rendering anything for headless processes is explicitly out of scope;
 so is any change to the ladder.
