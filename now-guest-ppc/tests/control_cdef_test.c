@@ -53,38 +53,22 @@ static void is_role(short id, short variant, const char *want,
 
 int main(void)
 {
-    /* THE TWO BUTTON FAMILIES ATTRIBUTE NOTHING, INCLUDING VARIANT 0.
-     *
-     * This is the whole of what changed on 2026-08-07 and the reason is
-     * a measurement, not a scruple: the variation code cannot be read
-     * for a control another process owns. Every button-family control
-     * in Memory and Date & Time - check boxes and radio buttons among
-     * them - reported `contrlDefProc` 0x00002EC8 with a ZERO high byte,
-     * and `GetControlVariant` answered 0 for all 65 while answering
-     * correctly for controls the guest itself created.
-     *
-     * So variant 0 here is not a push button. It is the absence of a
-     * variant, wearing the push button's number, and mapping it to
-     * "button" named every check box and radio button in OS 9's own
-     * control panels a push button at knowledge `derived`.
-     *
-     * The rows for variants 1 to 7 stay, and they are the guard that
-     * matters: a later reader who "restores" the family table will
-     * reintroduce exactly the shipped bug, so each variant says NULL by
-     * name rather than the loop saying nothing about any of them. */
-    is_role(0, 0, NULL, "procID 0 - reads as push button, is unreadable");
-    is_role(0, 1, NULL, "procID 1 checkBoxProc - the variant never arrives");
-    is_role(0, 2, NULL, "procID 2 radioButProc - the variant never arrives");
+    /* The classic family, procIDs 0/1/2. Three kinds, one CDEF. */
+    is_role(0, 0, "button", "procID 0 pushButProc");
+    is_role(0, 1, "checkbox", "procID 1 checkBoxProc");
+    is_role(0, 2, "radio", "procID 2 radioButProc");
     is_role(0, 3, NULL, "procID 3 - no such classic variant");
 
-    is_role(23, 0, NULL, "procID 368 - reads as push button, is unreadable");
-    is_role(23, 1, NULL, "procID 369 kControlCheckBoxProc");
-    is_role(23, 2, NULL, "procID 370 kControlRadioButtonProc");
-    is_role(23, 3, NULL, "procID 371 check box auto-toggle");
-    is_role(23, 4, NULL, "procID 372 radio button auto-toggle");
+    /* The Appearance family, procIDs 368-375, and its two auto-toggles.
+       375 is a push button with an icon; 373 is declared by nobody. */
+    is_role(23, 0, "button", "procID 368 kControlPushButtonProc");
+    is_role(23, 1, "checkbox", "procID 369 kControlCheckBoxProc");
+    is_role(23, 2, "radio", "procID 370 kControlRadioButtonProc");
+    is_role(23, 3, "checkbox", "procID 371 check box auto-toggle");
+    is_role(23, 4, "radio", "procID 372 radio button auto-toggle");
     is_role(23, 5, NULL, "procID 373 - undeclared");
-    is_role(23, 6, NULL, "procID 374 push button, left icon");
-    is_role(23, 7, NULL, "procID 375 push button, right icon");
+    is_role(23, 6, "button", "procID 374 push button, left icon");
+    is_role(23, 7, "button", "procID 375 push button, right icon");
 
     /* The three the product came here for. */
     is_role(1, 0, "scrollbar", "procID 16 scrollBarProc");

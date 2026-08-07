@@ -139,35 +139,6 @@ def tally(scene, want_title=None):
     return rows
 
 
-def detail(scene, want_title=None):
-    """Every control, one line each, with the three fields that tell the
-    two CDEF failures apart.
-
-    `knowledge` says whether anybody could classify it; `definition` says
-    whether the walk classed its `contrlDefProc` as living in the SYSTEM
-    heap - and that is the field that matters, because the resolver is
-    only ASKED for a system-heap definition function. A control reading
-    `unknown` + `indeterminate` was never looked up at all, which is a
-    different bug from one that was looked up and came back unattributed,
-    and a report of "CDEF 0, variant 0" cannot distinguish them: zero is
-    what the resolver's out-parameters carry when it declines to ask. */
-    """
-    for w in scene.get("windows", []):
-        title = w.get("title", "")
-        if want_title and want_title.lower() not in title.lower():
-            continue
-        print(f"\n-- {w.get('app','?')} / {title!r}: "
-              f"{len(w.get('controls', []))} controls", flush=True)
-        for i, c in enumerate(w.get("controls", [])):
-            sem = c.get("semantic") or {}
-            print("   %2d %-22.22s role=%-11.11s know=%-8.8s kind=%-14.14s "
-                  "def=%-13.13s val=%s rect=%s"
-                  % (i, c.get("title", ""), c.get("role", ""),
-                     sem.get("knowledge", "-"), sem.get("kind", "-"),
-                     sem.get("definition", "-"), c.get("value"),
-                     c.get("rect")), flush=True)
-
-
 def controls_of(scene, want_title, kinds):
     out = []
     for w in scene.get("windows", []):
@@ -202,8 +173,6 @@ def main():
     ap.add_argument("--passes", type=int, default=3)
     ap.add_argument("--qmp", default=None)
     ap.add_argument("--shots", default="/tmp")
-    ap.add_argument("--detail", action="store_true",
-                    help="one line per control: knowledge, kind, definition")
     ap.add_argument("--drive", default="",
                     help="comma-separated kinds to drive, e.g. tab,listBox")
     a = ap.parse_args()
@@ -249,11 +218,6 @@ def main():
     if len(seen) > 1:
         print("  steady: %s" % ("yes" if all(r == seen[0] for r in seen)
                                 else "NO - passes disagree"), flush=True)
-
-    if a.detail:
-        s = g.scene()
-        if s is not None:
-            detail(s, a.target)
 
     if not a.drive:
         return 0

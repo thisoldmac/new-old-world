@@ -20,15 +20,10 @@ const char *now_cdef_role(short cdef_id, short variant)
     case 0:
         /* ControlDefinitions.h:147-149 - pushButProc 0, checkBoxProc 1,
            radioButProc 2. The classic family, and the reason a family id
-           alone is not an answer.
-
-           NOTHING IS ATTRIBUTED HERE, INCLUDING VARIANT 0. See the
-           header: the variation code cannot be read from a control this
-           application does not own, so `variant == 0` is what an
-           UNREADABLE variant looks like and is indistinguishable from a
-           push button. Returning "button" for it named every check box
-           and radio button in OS 9's own control panels a push button,
-           at knowledge `derived`, with `action: press` and no `state`. */
+           alone is not an answer. */
+        if (variant == 0) return "button";
+        if (variant == 1) return "checkbox";
+        if (variant == 2) return "radio";
         return 0;
     case 1:
         /* :150 scrollBarProc = 16. Only variant 0 is declared. */
@@ -74,13 +69,13 @@ const char *now_cdef_role(short cdef_id, short variant)
         /* :2238-2239 list box, and its auto-size variant. */
         return (variant == 0 || variant == 1) ? "listBox" : 0;
     case 23:
-        /* :2311-2321 the Appearance button family - 0 push, 1 check,
+        /* :2311-2321 the Appearance button family. 0 push, 1 check,
            2 radio, 3 check auto-toggle, 4 radio auto-toggle, 6 and 7 the
-           icon-bearing push buttons - and it is the same three kinds
-           behind one id as CDEF 0. It gets the same answer for the same
-           reason, and it must: a route that refused CDEF 0 and attributed
-           CDEF 23 would be honest about one control panel's buttons and
-           confidently wrong about the next one's. */
+           icon-bearing push buttons. 5 is declared by nobody and gets
+           nothing. */
+        if (variant == 0 || variant == 6 || variant == 7) return "button";
+        if (variant == 1 || variant == 3) return "checkbox";
+        if (variant == 2 || variant == 4) return "radio";
         return 0;
     case 24:
         /* :2424-2425 scroll bar, and the live-scrolling variant. */

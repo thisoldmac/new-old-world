@@ -663,28 +663,6 @@ static void put_controls(Sink *k, const NowScene *s, const NowSceneWindow *w)
                 put(k, ",\"definition\":");
                 put_str(k, definition);
             }
-            /* WHICH definition function, when the Resource Manager named
-               it and the table still would not attribute a kind. That is
-               not the same gap as "we could not even ask", and after
-               2026-08-07 it is the COMMON gap: CDEF 0 and CDEF 23 are
-               named for most of a control panel's controls and attribute
-               nothing, because the variation code that separates a push
-               button from a check box is not readable from outside the
-               owning process. Without this key those controls arrive as
-               a bare `unknown` beside `definition: system` - which is
-               exactly the flattening the reason field below was added to
-               stop, arriving by a different route.
-
-               IT IS A FACT, NOT A KIND. A receiver that maps id 0 to
-               "push button" has re-invented the bug this key exists to
-               record; `knowledge` is still `unknown` and is the only
-               load-bearing word here. */
-            if (c->cdef_state == (short)kNowCdefNamed) {
-                char cdef[16];
-
-                snprintf(cdef, sizeof cdef, ",\"cdef\":%d", (int)c->cdef_id);
-                put(k, cdef);
-            }
             /* WHY nobody could say, when the guest knows. The semantic
                client computes exactly this - "Unsupported custom
                control", "Control kind undetermined", "Semantic
