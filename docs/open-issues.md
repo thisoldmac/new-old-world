@@ -7591,6 +7591,88 @@ Same class as `probe-oracles-were-blind` and the `hello`-probe trap in
 instrument that talks to the subject on the channel it is measuring is
 not a passive observer of that channel. The real host, which pings
 nothing by contract, was the only observer quiet enough to see it.
+## A refusal that outlives the thing it was about (2026-08-07)
+
+The lane was pointed at the guest's `handle` verb, on a report that an
+`ok` reply carried a leftover reason. **`handle` did not have that
+defect** — obsresolve.c's resolver sets the verdict and the reason as a
+pair and a native test already pinned Ok ⇒ no reason. Saying so is the
+useful half: the report was about a real class and named the wrong
+instance of it, and the reason it was believable is that `handle` is the
+only reply in either guest that states a reason inside an `ok:true`
+frame. That is by design (the refusal is the product) and it makes the
+one place where the two could ever disagree.
+
+### Fixed
+
+Derived rather than remembered — the sweep is one command and it belongs
+beside the claim:
+
+```
+# every reply builder carrying BOTH ok:true and a reason-shaped key
+python3 - <<'EOF'
+import re, pathlib
+for sub in ("now-guest-ppc/src", "now-guest-68k/src", "ext"):
+    for p in sorted(pathlib.Path(sub).rglob("*.c")):
+        t = p.read_text(errors="replace")
+        for m in re.finditer(r'(snprintf|append|fmt_append_str)\s*\(.*?\);', t, re.S):
+            s = m.group(0)
+            if r'ok\":true' in s and re.search(r'\\"(reason|note|detail|message|why|error)\\"', s):
+                print(f"{p}:{t[:m.start()].count(chr(10))+1}")
+EOF
+```
+
+One hit: `observe.c`'s handle emitter. It read verdict, reason and
+`resolved` off three independent expressions; all three now derive from
+`handle.why` through the mapping obsresolve.c already owned
+(`now_obs_verdict_for_why`). Not a bug fixed — a bug made
+unrepresentable, in a file that has **no host test at all**, which is why
+it also got `handle_reason_source_test.py` beside
+`one_minter_source_test.py`.
+
+Two reachable instances of the actual class, found by asking the general
+question:
+
+- **`now-guest-ppc/src/files/files_browser_view.c`** — `g_note`, the
+  status placard, was written only on failure paths and never reset by a
+  successful listing. Step into a refused folder, then into one that
+  lists: twelve items under "that path leaves the shared folder". Now
+  cleared where the question is ASKED, so it also covers an answer that
+  never arrives.
+- **`now-host/Sources/Host/MirrorModuleModel.swift`** — `contentNote`
+  survived `show(document:)`, which is the door the live watch loop comes
+  through. One refused content join drew its sentence under every healthy
+  window that arrived afterwards. `clearScene()` and `guestLeft(_:)` both
+  already stated the rule this door broke.
+
+### Unverified, and the sharper of the two
+
+- **The guest half is Builds, not Tested.** `files_browser_view.c` is
+  Carbon and has no host test; nobody has watched the placard clear on a
+  machine. The reasoning is from the source and from two sibling
+  browsers that get it right, not from a screen.
+- **`handle` was never driven end to end this lane.** A VM was staged
+  (extension + app, cold-booted, both verified present after the reboot)
+  and the guest did not dial the listener within 180 s. So the reply's
+  shape is argued from the emitter and pinned by two gates; no one has
+  read a real `handle` frame off a wire here. The host change is Tested
+  — two XCTests watched failing first, each naming the leftover
+  sentence.
+- **The brief's rig names do not exist in this tree.** `tools/lane-ports`
+  and `tools/shutdown-guest.py` are not here; the parent checkout has
+  `tools/shutdown-guest`, and `scripts/spin-up-ppc` cold-boots by QMP
+  `quit` on purpose (an INIT loads at boot only). Worth knowing before
+  the next lane spends time looking for them.
+
+### Not fixed, and deliberately
+
+`now-guest-ppc/src/screenshots/screenshots_module.c` has the same shape
+in a weaker form: `set_status(err)` on failure, nothing on success, so a
+prior "Failed: …" can sit over a successful send. It is overwritten in
+practice by `conn_set_shot_note` arriving shortly after — which makes it
+correct by **timing** rather than by structure. Left alone rather than
+folded into an unrelated fix, and named here so it is a decision instead
+of an oversight.
 
 ## The folding sidebar, both halves (2026-08-05)
 
