@@ -380,6 +380,28 @@ static const char *const d_mirror[] = {
     "  page are read-only views over the same guest-observed facts.",
     NULL
 };
+static const char *const d_cycle[] = {
+    "  Brings each application forward in turn, with the anchor plane",
+    "  armed, so it pumps its event loop once and the plane captures it.",
+    "  The application that was front is restored afterwards.",
+    "",
+    "  THIS DISTURBS THE MACHINE ON PURPOSE. Windows come forward and",
+    "  flash past. It is never automatic; run it once on a fresh boot,",
+    "  or when what the Mirror shows has gone stale.",
+    "",
+    "  Why it is needed: the plane captures a process only while THAT",
+    "  process is executing GetNextEvent, and on a Mac nobody has driven",
+    "  nothing else is ever scheduled inside an armed window. Processes",
+    "  it can reach without fronting them are woken invisibly first.",
+    "",
+    "  Faceless background processes have no window to bring forward and",
+    "  are reported as background-only rather than as failures. They are",
+    "  outside what this can reach.",
+    "",
+    "  Believe the counters, not the flashing: passes rising without",
+    "  scans rising means it fronted things and captured nothing.",
+    NULL
+};
 static const char *const d_axsnap[] = {
     "  Who is front, whether the reference layer can see it, and how",
     "  many references are live. No walk, so no minting - the one call",
@@ -584,6 +606,8 @@ const NowCommandDoc kNowCommandDocs[] = {
       "axsnap", d_axsnap },
     { "mirror", 1, "NOW Extension lifecycle and P1-P4 plane facts",
       "mirror", d_mirror },
+    { "cycle", 1, "bring each application forward once so the Mirror can "
+      "see it", "cycle", d_cycle },
     { "help", 1, "list commands (\"help <cmd>\" for one)",
       "help [command]", d_help },
     { "clear", 0, "clear the console scrollback",

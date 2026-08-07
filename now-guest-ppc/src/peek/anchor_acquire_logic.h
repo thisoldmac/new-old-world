@@ -65,4 +65,10 @@ int now_acquire_seen_add(NowAcquireSeen *seen, NowPeekU32 hi, NowPeekU32 lo);
 int now_acquire_keep_waiting(short candidates, short landed,
                              NowPeekU32 now_ticks, NowPeekU32 deadline);
 
+/* Has `deadline` arrived or gone by? The bare half of the rule above,
+   for the callers that have no candidates to count — the acquisition
+   cycle's total budget and each application's turn. One implementation,
+   so the two bounded waits on this path cannot disagree about a wrap. */
+int now_acquire_deadline_passed(NowPeekU32 now_ticks, NowPeekU32 deadline);
+
 #endif /* NOW_ANCHOR_ACQUIRE_LOGIC_H */

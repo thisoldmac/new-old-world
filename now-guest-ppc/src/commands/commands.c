@@ -25,6 +25,7 @@
 #include "fileshare.h"
 #include "wire.h"
 #include "wirestat_cmd.h"
+#include "anchor_cycle.h"
 #include "mirror_json.h"
 #include "mirror_probe.h"
 #include "net_layout.h"
@@ -796,6 +797,53 @@ static void run_wirestat(const char *request_json, long id,
    `note` is left alone deliberately. It is the last button-press's
    outcome and belongs to the page a person is looking at; a caller over
    the wire pressed nothing, so there is nothing for it to say. */
+/* `cycle` - the acquisition cycle's wire face. One implementation
+   (now_peek_anchor_cycle), two renderers; the console's is in
+   console_model.c and prints the same numbers in the same order.
+
+   THE COUNTERS ARE THE RESULT, not decoration. A cycle reports its own
+   before/after `count`, `slotScans` and `eventPasses` because a control
+   that says "done" is not evidence: a cycle that raised eventPasses and
+   not slotScans fronted every application on the machine and captured
+   none of them, which is exactly the failure this whole slice exists
+   because of. An agent reading this can tell the two apart. */
+static void run_cycle(long id, char *out, long cap)
+{
+    NowAnchorCycleReport rep;
+    int ran = now_peek_anchor_cycle(&rep);
+
+    if (!ran) {
+        snprintf(out, cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                 "\"error\":{\"code\":\"cycle-refused\","
+                 "\"message\":\"%s\"}}",
+                 id, rep.note);
+        return;
+    }
+    snprintf(out, cap,
+             "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+             "\"output\":{\"cycle\":{"
+             "\"armed\":%s,\"complete\":%s,\"restored\":%s,"
+             "\"considered\":%d,\"alreadyAnchored\":%d,\"woken\":%d,"
+             "\"fronted\":%d,\"acquired\":%d,\"refused\":%d,"
+             "\"vanished\":%d,\"backgroundOnly\":%d,"
+             "\"before\":{\"count\":%lu,\"slotScans\":%lu,"
+             "\"eventPasses\":%lu},"
+             "\"after\":{\"count\":%lu,\"slotScans\":%lu,"
+             "\"eventPasses\":%lu},"
+             "\"note\":\"%s\"}}}",
+             id,
+             rep.armed ? "true" : "false",
+             rep.complete ? "true" : "false",
+             rep.restored ? "true" : "false",
+             (int)rep.considered, (int)rep.already, (int)rep.woken,
+             (int)rep.fronted, (int)rep.acquired, (int)rep.refused,
+             (int)rep.vanished, (int)rep.background_only,
+             rep.before_count, rep.before_slot_scans, rep.before_event_passes,
+             rep.after_count, rep.after_slot_scans, rep.after_event_passes,
+             rep.note);
+}
+
 static void run_mirror(long id, char *out, long cap)
 {
     MirrorFacts facts;
@@ -1520,6 +1568,10 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "mirror") == 0) {
         run_mirror(id, out, cap);
+        return;
+    }
+    if (strcmp(name, "cycle") == 0) {
+        run_cycle(id, out, cap);
         return;
     }
     if (strcmp(name, "wirestat") == 0) {

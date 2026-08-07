@@ -489,7 +489,7 @@ run_c now-guest-ppc mirror_layout_test.c     ""  src/mirror/mirror_layout.c
 # quietly invent - a version for an extension that published nothing, and
 # a port number for a listener that does not exist.
 run_c now-guest-ppc mirror_json_test.c       ""  src/mirror/mirror_json.c \
-      src/mirror/mirror_layout.c src/core/json.c
+      src/mirror/mirror_layout.c src/mirror/mirror_anchor.c src/core/json.c
 # The other end of that same fact, and the end that lives off the guest.
 # A staged Mirror agent learns its port from a file beside it; a guest
 # that inherited the base image's copy ran an agent nothing could reach

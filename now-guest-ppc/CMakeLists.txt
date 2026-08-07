@@ -91,6 +91,7 @@ add_application(now-guest-ppc
     src/peek/event_read.c
     src/peek/arm_target.c
     src/peek/anchor_acquire.c
+    src/peek/anchor_cycle.c
     src/peek/anchor_acquire_logic.c
     src/peek/transitions_logic.c
     src/peek/transitions_cmd.c

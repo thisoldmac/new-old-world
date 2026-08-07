@@ -72,3 +72,14 @@ int now_acquire_keep_waiting(short candidates, short landed,
     remaining = (NowPeekU32)(deadline - now_ticks);
     return remaining != 0 && remaining < 0x80000000UL;
 }
+
+int now_acquire_deadline_passed(NowPeekU32 now_ticks, NowPeekU32 deadline)
+{
+    /* Same wrap-safe distance as now_acquire_keep_waiting, and the SAME
+       arithmetic on purpose: the cycle and the sweep must agree about
+       what "still ahead" means, and two copies of a tick comparison is
+       how two bounded waits come to disagree across a TickCount wrap. */
+    NowPeekU32 remaining = (NowPeekU32)(deadline - now_ticks);
+
+    return remaining == 0 || remaining >= 0x80000000UL;
+}
