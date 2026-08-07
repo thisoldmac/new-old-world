@@ -12226,3 +12226,50 @@ for its live handle. So the cost is dominated by the number of
 cross-boundary reads, not by anything per-byte. If someone takes perf,
 that is where to look first — and they should measure before believing
 this paragraph.
+## UNVERIFIED: the host render never settles, and nobody knows if it reaches pixels (2026-08-07)
+
+Measured live, on the unmodified tree, by `tools/fidelity-live.py`:
+[fidelity-live-2026-08-07-a.md](fidelity-live-2026-08-07-a.md). Four
+traces, 2,099 frames, one boot, one guest.
+
+**The render did not settle in any of them** — at a five-second quiet
+threshold, in up to 72 seconds — including the run where **nothing was
+provoked at all**. All 122 flicker events are one oscillation: the
+`process-visibility` coverage claim flipping `stale ↔ partial` with a
+3.28 s median return, a ~0.3 Hz square wave whose rate barely moves
+between a run that opened a Finder window and a run that did nothing
+(0.50–0.62 events/s). `baseComplete` was `false` in all 2,099 frames,
+across `sceneGeneration` 1→5 and `contentGeneration` 2→6.
+
+What is NOT known, and is the whole of why this is parked as unverified
+rather than filed as broken: **whether any of it reaches a pixel.** The
+instrument reads the scene documents the renderer draws from, and
+`SceneRenderer.draw` is a pure function of those, so a document change is
+a frame change — but a coverage claim flipping may or may not alter what
+is painted. Nobody has watched the live window while this oscillation
+runs.
+
+The companion absence is worth as much: **zero window-level flicker on
+this tree** — no hatch flips, no content dropouts, no rectangle owner
+flips — through a Finder window opening and a Finder view switch. So
+Michelle's flicker complaint is bounded rather than explained. Three
+candidates remain, in the report; the cheapest to test is whether the
+`process-visibility` oscillation reaches the picture.
+
+Two smaller things found on the way, both closed:
+
+- Sweep A drove **macOS accessibility scripting** to open the Mirror and
+  recorded it as a hard floor for a headless agent. It is only half a
+  floor: `--open-mirror` on argv already does it, and every trace on that
+  page used it. What is genuinely missing is opening the Mirror in a host
+  that is **already running** — no agent verb, no menu item, no
+  preference. Adding the verb is a 17-place edit across the protocol,
+  registry, docs and six tests, so it is written down rather than done in
+  passing.
+- A sweep target's leftover modal can no longer void the next target's
+  row. `tools/fidelity-sweep.py` now fingerprints the world per target,
+  cancels-first on dialog items before trying `winact close`, quits only
+  once the windows are gone, and names a dirty exit on **both** the row
+  that made it and the row that inherited it. Sweep A lost Date & Time's
+  whole stability row to exactly this, and `--quit-after` read as success
+  the entire time, because an application holding a modal ignores a quit.
