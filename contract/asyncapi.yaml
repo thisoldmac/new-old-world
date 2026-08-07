@@ -3293,6 +3293,20 @@ components:
     # means a documented answer exists somewhere, never that this is a push
     # button. It can never authorise an act, and a receiver that promotes it
     # to a kind is reading a key that does not say that.
+    # IR v2 also carries `semantic.cdef` — an integer — and, like
+    # `definition`, ONLY where `semantic.kind` is absent. It is the resource
+    # id of the control definition function the Resource Manager named, and
+    # it says that the lookup SUCCEEDED and still did not settle a kind.
+    # The common case is ids 0 and 23, the classic and Appearance button
+    # FAMILIES: push button, check box and radio button share one id, and
+    # the variation code that separates them is not readable from outside
+    # the owning process (measured 2026-08-07 — every button-family control
+    # in Memory and Date & Time reports contrlDefProc 0x00002EC8 with a zero
+    # high byte, and GetControlVariant answers 0 for all of them while
+    # answering correctly for controls the guest itself created). It sizes
+    # and names an undetermined population; it is never a kind, and a
+    # receiver that maps an id to one has re-created the defect this key
+    # exists to record.
     SceneRequest:
       type: object
       required: [type, id]

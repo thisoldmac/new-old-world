@@ -15804,3 +15804,194 @@ see this: the verb is present on both faces and merely broken on one.
 The raw rest-of-line now becomes `line`, the field the contract already
 declares, read by the grammar in `cmd_line.h` that was always waiting for
 it.
+
+## 2026-08-07 — the CDEF route classified a check box as a push button, and the variant that would have said so is not readable
+
+Slice A of plan 019, and it does not close what it was sent to close. It
+corrects the record instead, which is worth more: the slice's brief said
+Memory's radio buttons came back CDEF 0, variant 0 and **drew as bare
+labels**. The first half is nearly right and the second is wrong, and the
+difference is the finding.
+
+They did not come back unclassified. They came back **classified as push
+buttons** — `knowledge: derived`, `kind: pushButton`, `action: press`,
+no `state` — and so did every check box and radio button in every OS 9
+control panel measured. A wrong kind reads exactly like a right one, so
+this shipped in slice 18's 71-of-73 and was counted as a success.
+
+**Verification level: emulator-verified.** A session-private clone of
+`os91-runner.qcow2` (sha256 `f34f7e5d…`) with this tree's ext and app
+staged; lane block 356, anchor 14848 / wire 14849; guest builds
+`217050dea748` (before) and `774b6fa7acea` (after); warm-up scene
+discarded on every capture. Nothing here touched metal.
+
+### What was measured
+
+Memory (44 controls) and Date & Time (21), every control:
+
+- **Every button-family control reports `contrlDefProc` = 0x00002EC8**,
+  which the Resource Manager names `CDEF` **23** — the Appearance button
+  family — with a **zero high byte**. Memory's "Save contents to" (a
+  check box), its three On/Off pairs and its Custom/Default setting pair
+  (radio buttons) are byte-identical in that field to "Use Defaults" (a
+  push button).
+- **`GetControlVariant` answered 0 for all 65.**
+
+The classic packing of the variation code into that high byte — which
+`cdef_resolver.c`'s mask path exists to undo — is not what Mac OS 9 does
+with these controls.
+
+**The second line proves nothing on its own**, because 0 is also what a
+declined call returns. So it was asked of controls **this application
+created**, whose variants are in this repository's own source: NOW's two
+`checkBoxProc` boxes answered **1**, its `kControlScrollBarLiveProc` bar
+and its auto-toggle triangle answered **2**, its push buttons and popup
+**0**. The accessor works on this runtime and is right every time about a
+control we own. It is FOREIGN controls it cannot answer for. (A probe's
+control must be code you own; a negative without one is void.)
+
+### What changed
+
+`CDEF` 0 and `CDEF` 23 now attribute **nothing**, variant 0 included.
+Reading zero from a field that is zero for all three kinds is not
+evidence of a push button; it is the absence of evidence wearing the push
+button's number.
+
+| | before | after |
+|---|--:|--:|
+| Memory, classified of 44 | 33 | **23** |
+| Date & Time, classified of 21 | 19 | **10** |
+
+Nothing else moved. Date & Time's one bevel button (`CDEF` 2) still reads
+`pushButton`: a bevel button's three variants are three bevel depths, so
+the family IS the answer there.
+
+**The cost is real.** `Semantics.authorizesAction` requires `known` or
+`derived`, so a driver that honours it will now decline these where it
+used to press them. `ctlact` with an explicit point still reaches them —
+the guest checks the point against the rect the resolver proved and never
+consults the kind — so what is lost is semantic authority, not the
+mechanism. The trade: an `unknown` a driver declines is a gap someone can
+close; a `pushButton` that is really a check box is a gap nobody will
+ever look for, and its state is never reported at all.
+
+### And the refusal is now diagnosable
+
+IR v2 gains **`semantic.cdef`** — the resource id the Resource Manager
+named, beside `unknown`, only where `kind` is absent. Contract first,
+then the guest emitter and MirrorKit's `Semantics`. Without it these
+controls arrive as bare `unknown`, which is the flattening the reason
+field was added to stop, arriving by a different route.
+
+It paid for itself on the first capture. Memory's 21 unknown controls are
+no longer anonymous: `cdef: 23` × 8 (the button family), `cdef: 20` × 4
+(icon), `cdef: 9` × 4 (separator line), `cdef: 6` × 2 ("Cache Up/Down
+Controls", "VM Up/Down Control" — little arrows), `cdef: 3` × 1 ("RAM
+Disk Slider"). Every one matches the control's own title. Those are ids
+this product deliberately has no role for, and now they can be counted
+rather than guessed at.
+
+**It is a fact, not a kind.** A receiver that maps id 23 to "push button"
+has re-created the defect it records.
+
+### What this does NOT fix, named so nobody searches here again
+
+The bare-label rendering symptom is a **separate defect and this change
+makes its population larger, not smaller.** Memory, General Controls and
+Date & Time were all classified *identically* before this change — every
+button-family control `pushButton` — and only Date & Time drew its check
+boxes. Identical input, different output, so the divergence was never in
+classification. It is downstream, in what the renderer has to draw an
+`unknown` control from.
+
+### Still open
+
+- **Why `GetControlVariant` cannot answer for a foreign control** is not
+  established — only that it cannot. It may be reading a field the
+  Appearance-era Control Manager no longer fills, or CarbonLib may be
+  declining a ControlRef it did not mint. The two have the same
+  consequence here and different consequences for anything that wants the
+  variant by another route.
+- **Whether ANY route reaches a foreign control's variant.**
+  `GetControlData(kControlKindTag)` was already measured at 0 of 21 for
+  Date & Time, `GetControlKind` is Mac OS X only, and the two routes
+  above are now closed. If one exists it is in the Appearance Manager's
+  private per-control data, and nothing here has looked.
+- **Appearance's own numbers were not re-measured after the change.** The
+  reference registry holds 96 and three panels open at once exhausted it,
+  so Appearance walked with zero controls. Its before-figures (16
+  `pushButton` of 71 classified) come from slice 18.
+
+## 2026-08-07 — three bare-widget symptoms, told apart, and only one of them is classification
+
+Follow-up to the entry above, prompted by two coordination reports whose
+evidence pointed AWAY from where this slice was sent. They were right to,
+and separating the three is the useful result.
+
+**Verification level: emulator-verified.** Same rig discipline as above;
+second machine, lane block 350, anchor 14800 / wire 14801, guest build
+`23fb3bc8f88b`, warm-up scene discarded. Extensions Manager and General
+Controls captured for the first time.
+
+### The refutation first
+
+Memory, General Controls and Date & Time were classified **identically**
+before this slice's change — every button-family control `derived` /
+`pushButton` — and only Date & Time drew its check boxes. **Identical
+input, different output.** Classification cannot be the cause of a
+divergence it does not contain, and this slice's change makes the
+`unknown` population LARGER rather than smaller.
+
+### The three symptoms, and where each one lives
+
+**1. Widget absent — Memory, General Controls.** The radio buttons and
+check boxes are real controls, walked, and now honestly `unknown` with
+`cdef: 23`. What the renderer does with an `unknown` control is
+downstream of this slice and is where this symptom lives.
+
+**2. Widget drawn, state missing — Extensions Manager's rows.** Not this
+route, and not reachable by it. That window's whole control chain is
+**six** controls: 2 scroll bars, 3 push buttons (`cdef: 0`) and 1 popup.
+There is no list control and there are no per-row controls. The rows sit
+inside **dialog item 4**, a `userItem` spanning (14,65)-(458,265) — a
+rectangle the application draws itself. So a per-row check box has no
+ControlRecord and no DITL row, and its state cannot come from the control
+plane or the dialog plane. It can only come from the display plane, and
+nothing reads it today.
+
+**3. Widgets "missing from the walk" — Extensions Manager's help button.**
+This one is a reading error rather than a gap. The help button IS in the
+scene: `dialogItems[1]`, title `?`, `knowledge: unknown`,
+`definition: system`, with a ref. Extensions Manager is a **DLOG**, so it
+publishes 28 dialog items beside its 6 controls, and a consumer that
+reads `controls` alone sees 6 widgets where the window has more. "5
+walked against ~8 on screen" is that consumer, not that walk.
+
+### And a mitigation the cost estimate above did not account for
+
+Extensions Manager's three push buttons appear **twice** — as controls
+(now `unknown`, `cdef: 0`) and as dialog items 6/7/8, where the DITL
+route already reports them `knowledge: known`, `kind: pushButton`,
+`action: press`, provenance `guest-ditl`. **For dialog windows the
+stronger answer was never coming from the CDEF route at all**, so this
+slice costs those windows nothing. The cost lands on non-dialog windows
+and on controls no DITL row covers — which is what Memory and General
+Controls are.
+
+### One corroboration worth keeping
+
+Extensions Manager's buttons are `cdef: 0` (the CLASSIC family) while
+Memory, General Controls and Date & Time are `cdef: 23` (the Appearance
+family). Both are live on the same System at the same moment. A change
+that refused one family and kept attributing the other would have been
+honest about one control panel and confidently wrong about the next.
+
+The ids the route DOES resolve are worth reading as its own validation.
+Every one matches the control's own title without ever having seen it:
+General Controls' "Insertion Point Slider" and "Menu Blink Slider" are
+`cdef: 3` (slider), its "Launcher Picture" and "Hide Desktop Picture" are
+`cdef: 19` (picture); Memory's "RAM Disk Slider" is `cdef: 3`, its three
+"… Separator" controls are `cdef: 9` (separator line), and its "Cache
+Up/Down Controls" and "VM Up/Down Control" are `cdef: 6` (little arrows).
+All are ids this product deliberately has no role for — so they stay
+`unknown`, and are now countable rather than anonymous.

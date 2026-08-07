@@ -50,7 +50,7 @@ final class IRFreezeTests: XCTestCase {
             checked: false,
             semantic: .init(
                 knowledge: .known, kind: "scrollBar",
-                definition: "system", action: "scroll",
+                definition: "system", cdef: 23, action: "scroll",
                 state: "on", value: "1",
                 listCells: [.init(row: 1, column: 0, text: "Cell",
                                        selected: true)],
