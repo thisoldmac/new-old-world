@@ -60,7 +60,7 @@ final class DisplayReplayInvertTests: XCTestCase {
     /// plus the mirror-space origin of its content area.
     private let frame = Rect(l: 100, t: 100, r: 400, b: 340)
     private var contentOrigin: (x: Int, y: Int) {
-        (frame.l + 1, frame.t + Int(Platinum.contentTop))
+        (frame.l, frame.t + Int(Platinum.contentTop))
     }
 
     /// Invert over black gives white and over white gives black — the

@@ -13,8 +13,9 @@ public enum WindowChrome {
     /// The scene's window rect is the content port grown UP by this much
     /// (SceneBuilder.titleBarHeight); the title bar occupies that band.
     public static let titlebarHeight = SceneBuilder.titleBarHeight
-    /// Close/zoom/collapse box side length.
-    public static let widgetSize = 11
+    /// Close/zoom/collapse box side length. Confirmed against the machine —
+    /// `PlatinumTitleBar.widgetSize`, eleven windows, always 11.
+    public static let widgetSize = PlatinumTitleBar.widgetSize
     /// Grow-box catch span at the bottom-right corner.
     public static let growBoxSpan = 15
 
@@ -28,27 +29,67 @@ public enum WindowChrome {
              r: win.rect.r, b: win.rect.t + titlebarHeight)
     }
 
+    /// Does this window have a title bar at all?
+    ///
+    /// The same discriminator `SceneRenderer` uses, and for the same stated
+    /// reason: `kind` says who OWNS the window, not what it looks like, so a
+    /// modal alert and a titled control panel are both `kind == 2`. A modal
+    /// alert has no title; anything the Window Manager gives a title bar has
+    /// one to put in it.
+    ///
+    /// **This used to read `win.kind != 2`, and that was wrong on the machine.**
+    /// Date & Time, General Controls, Memory, Extensions Manager and Mouse are
+    /// all `kind == 2` and all draw a close box and a collapse box — so the
+    /// hit-tester refused to find a widget the guest was plainly showing, and
+    /// no control panel in the corpus could be closed from the mirror.
+    public static func hasTitleBar(_ win: Scene.Window) -> Bool {
+        !(win.kind == 2 && win.title.isEmpty)
+    }
+
     /// A title-bar widget's box, or nil when the window has no chrome for it
     /// (dialogs, or non-front windows — inactive windows hide their widgets).
     ///
-    /// Offsets calibrated against the guest framebuffer (SimpleText + a Finder
-    /// window, 2026-07-16): the box top sits `r.t + 2`, close hugs the left
-    /// (`r.l + 1`), collapse is `r.r - 3 - size` (rightmost), zoom sits
-    /// `r.r - 18 - size` (left of collapse). Both the renderer and the
-    /// hit-tester use these, so the drawn box, the click zone, and the guest's
-    /// real box all coincide — a mismatch here means device clicks miss.
+    /// **Offsets MEASURED against the guest's own pixels**, eleven front
+    /// windows across three sweeps — see `PlatinumTitleBar`, which owns them
+    /// and carries the evidence. The three that changed here, and by how much:
+    /// close `l+1` → `l-1`, collapse `r-14` → `r-10`, top `t+2` → `t+3`. The
+    /// old numbers were calibrated by eye in July against two windows and were
+    /// two to four pixels out on every one of them, which is more than the
+    /// widget's own bevel is wide.
+    ///
+    /// Both the renderer and the hit-tester use this, so the drawn box, the
+    /// click zone and the guest's real box coincide — a mismatch means device
+    /// clicks miss.
     public static func widgetBox(_ win: Scene.Window, _ widget: Widget) -> Rect? {
-        guard win.kind != 2, win.front else { return nil }
-        let r = win.rect
-        let y = r.t + 2
-        let x: Int
+        guard hasTitleBar(win), win.front else { return nil }
         switch widget {
-        case .close:    x = r.l + 1
-        case .collapse: x = r.r - 3 - widgetSize
-        case .zoom:     x = r.r - 18 - widgetSize
+        case .close:    return PlatinumTitleBar.closeBox(win.rect)
+        case .collapse: return PlatinumTitleBar.collapseBox(win.rect)
+        case .zoom:     return zoomBox(win)
         }
-        return Rect(l: x, t: y, r: x + widgetSize, b: y + widgetSize)
     }
+
+    /// The zoom box — **and today the honest answer is always "we cannot say".**
+    ///
+    /// A zoom box exists only for some WDEF variants, and IR v1 does not carry
+    /// the variant. `kind` cannot stand in for it and the corpus proves so with
+    /// a single pair: **Extensions Manager is `kind == 2` and HAS a zoom box;
+    /// Memory is `kind == 2` and has none.** Seven control panels in the corpus
+    /// show close + collapse only; four windows (a Finder folder, a SimpleText
+    /// document, Extensions Manager, NOW's own Workshop) show all three.
+    ///
+    /// So this returned a fabricated box on seven of eleven windows, and the
+    /// fabrication was not only cosmetic: `HitTester` reported a zoom target
+    /// there and `Serve`/`Battery` would send a click into the racing stripes,
+    /// which the Window Manager reads as the start of a DRAG. An affordance the
+    /// machine does not offer is worse than a missing one.
+    ///
+    /// **What fills this in:** the WindowRecord already carries it —
+    /// `spareFlag` is the zoom flag and `goAwayFlag` the close flag, both one
+    /// byte, both beside the `windowKind` the walk already reads
+    /// (`scene_walk.c`). It is a contract field and a guest read, in that
+    /// order, and it is written up in docs/open-issues.md.
+    private static func zoomBox(_ win: Scene.Window) -> Rect? { nil }
 
     /// The grow box at the bottom-right corner (front, non-dialog only).
     public static func growBox(_ win: Scene.Window) -> Rect? {
