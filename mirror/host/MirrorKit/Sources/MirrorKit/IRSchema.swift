@@ -340,9 +340,29 @@ public enum IRSchema {
         "windows[].dialogItems[].semantic.isDefault",
         "windows[].dialogItems[].semantic.provenance",
         "windows[].dialogItems[].semantic.completeness",
+
+        /* 2026-08-07. What colour the machine draws with, read from the
+           live Appearance Manager rather than assumed by the renderer.
+           Additive: a reader that has never heard of it falls back to the
+           constants it was already using, which is exactly as correct as
+           yesterday - and no more, which was the problem. An absent KEY
+           means the guest asked and the brush refused; an absent `theme`
+           means the producer did not ask. */
+        "meta.theme",
+        "meta.theme.dialogBackground",
+        "meta.theme.alertBackground",
+        "meta.theme.documentBackground",
+        "meta.theme.highlight",
+        "meta.theme.depth",
     ]
 
     public static let v2AdditionalProperties: Set<String> = [
+        // See meta.theme in v2Additions.
+        "Scene.Meta.theme",
+        "Scene.Theme.dialogBackground", "Scene.Theme.alertBackground",
+        "Scene.Theme.documentBackground", "Scene.Theme.highlight",
+        "Scene.Theme.depth",
+
         // See apps[].backgroundOnly in v2Additions.
         "Scene.AppRef.backgroundOnly",
         "Scene.ProcessRef.backgroundOnly",
