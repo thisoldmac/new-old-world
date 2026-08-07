@@ -380,7 +380,40 @@ while resting, and whether the plane is genuinely at rest.
 | **P3** content | ten UPPs; **~64 KiB system-heap block, unconditionally**; *no port hooked, no trap patched* | `now_content_gne`: two low-memory reads, eight block loads, the verdict call, `content_uninstall_context` (which loops zero times when `gPortCount == 0`) | **yes for hooks; no for memory** |
 | **P4** act | nothing | one not-taken bit test | **yes** — patches go in on the first *armed* pass only |
 | **P5** events | small system-heap block | `now_event_pass`: three low-memory reads, the should-record call, three stores | **yes** |
-| **P6** liveness | **Time Manager task, primed at 5 s, unconditionally and forever** | `now_liveness_probe_transport` — and on the first pass ever, `PBOpenSync(".IPP")` **plus** `TCPCreate` with a receive buffer | **no** |
+| **P6** liveness | *was*: Time Manager task primed at 5 s unconditionally and forever; `.IPP` opened and a stream created on the first pass of every boot. *Now*: the task is queued and **not primed**, and no transport is touched | one call that returns on the endpoint check | **yes, since 2026-08-07** |
+
+### The measurement
+
+Emulator, private bake of this checkout's resident, cold-booted so the
+INIT loads, guest asked for itself with no plane armed. The guest's own
+`buildFingerprint` equalled this tree's build, so it is this build
+answering and not another lane's VM — the rule from AGENTS.md's metal
+section applies to the emulator for the same reason.
+
+| | reading | what it proves |
+|---|---|---|
+| `gnePasses` | **1174** | the filter ran, continuously, across the whole window |
+| `livenessTicks` | **0** | the Time Manager vehicle never ticked once |
+| `transportProbe` | **0** (untried) | MacTCP's `.IPP` was never opened |
+| `restState` | **9** | `kNowPeekRestGNEFilter | kNowPeekRestContentBlock` — the event hook and the block, nothing else |
+| `requested` / `active` | **0 / 0** | every plane inactive; every anchor and content counter zero |
+
+**The denominator is the whole point.** A resting resident and an
+extension that never loaded produce identical readings on every other
+counter in this table, and that indistinguishability is the exact
+negative this project refuses to accept as proof. 1174 passes beside a
+column of zeroes is a resident *proven to be running* and *proven to be
+doing nothing*, which is a different and much stronger claim than a
+screenful of zeroes.
+
+The control is the previous build of the same code: over the same
+~57-second window it would have opened the driver on the first pass and
+accumulated roughly eleven liveness ticks. It accumulated none.
+
+What this does **not** measure is the cost of the filter body itself in
+microseconds. That needs a 33 MHz 68030 and `NOW_METAL`, and it is
+recorded as unmeasured in [open-issues.md](open-issues.md) rather than
+estimated here.
 
 ### The premise, corrected
 
@@ -417,34 +450,103 @@ application publishes an endpoint, so a resting machine's tick reaches
 5-second interrupt are unconditional. That is the real cost, and it is
 the one that touches a shared system resource rather than only CPU.
 
-### What follows, per plane
+### The verdict, per plane
 
-- **P1, P2, P5 — already resting.** Nothing to do. Their resting cost is
-  a bit test inside a filter that has to run anyway.
-- **P3 hooks — already resting. P3 memory — is not.** ~64 KiB of system
-  heap is held for the life of the machine so that arming never has to
-  allocate inside a foreign process. The trade is deliberate and
-  documented in `now_content_boot`; what makes it defensible is that the
-  first event-loop pass *is* non-interrupt time, which is where P6
-  already does its own allocation. Lazy allocation is therefore possible
-  and is a real option, not a foreclosed one.
-- **P4 — dynamic bypass already achieved; removal is restart-only, and
-  correctly so.** The six trap patches go in on the first armed pass and
-  never come out, because a patch that vanishes while a caller is inside
-  it is a jump into freed code, and because another extension may have
-  patched the same trap after us — removing ours from the middle of the
-  chain is unsafe on this OS. But **a patch that returns immediately is
-  not the same as a patch that is absent, and here it is good enough**:
-  the arm bit is the plane's bypass switch, the lease force-clears it,
-  and a disarmed patch chains straight through. The residual cost of a
-  machine that once armed P4 is six trap dispatches that fall through —
-  paid only by a machine that has actually used the plane, never by one
-  that has not.
-- **P6 — not resting, and the one to fix.** Unlike a trap patch, a Time
-  Manager task has a sanctioned removal (`RmvTime`), so this plane is
-  not subject to the constraint that pins P4. And the driver open and
-  stream creation have no reason to precede the application publishing
-  an endpoint.
+The question was whether each plane can be switched off dynamically, or
+whether it needs a restart to apply. **No plane needs the restart to
+stand down.** One needs it to fully *undo* itself, and that one is
+genuinely forced rather than merely difficult.
+
+| plane | verdict | why |
+|---|---|---|
+| P1 anchors | **already resting** | arm-gated and lease-gated; costs one not-taken bit test |
+| P2 tree | **already resting** | same |
+| P5 events | **already resting** | same, plus a small block held from boot |
+| P3 hooks | **already resting** | nothing is installed into any port until armed for a named A5 *and* window |
+| P3 memory | **restart-free, deferred** | ~64 KiB held from boot; lazy allocation is possible and specified below, not foreclosed |
+| P4 act | **dynamic bypass; removal is restart-only** | the one genuinely forced case — see below |
+| P6 liveness | **dynamic, and now implemented** | a Time Manager task has a sanctioned stop that a trap patch does not |
+
+### Why P4 is the one that cannot fully undo, and why that is acceptable
+
+This is the case the brief asked to be ruled out rather than assumed, so
+the reasoning is here where a reviewer can check it.
+
+**The constraint is real and it is not about difficulty.** `NSetTrapAddress`
+puts our address in the dispatch table and we keep the incumbent to chain
+to. If another extension patches the same trap *after* us, its saved
+"previous" is our shim. Restoring the incumbent over the top then removes
+the middle link of a chain whose next link still points at us — and any
+caller already inside our shim returns into code we have just orphaned.
+Neither hazard is detectable from inside our patch: there is no way to
+ask the Trap Manager who is chained behind you, and no way to know
+whether a call is in flight.
+
+**But un-patching is not what standing down requires.** The arm bit is
+the plane's bypass switch, the writer lease force-clears it within three
+seconds of the application going away, and a disarmed trampoline chains
+straight through. So the machine behaves exactly as it would with no
+extension present; what remains is six trap dispatches that fall through,
+paid only by a machine that has actually armed the plane, and never by
+one that has not.
+
+**A patch that returns immediately is not the same as a patch that is
+absent — and here it is good enough.** What it is not is *invisible*,
+which is why `kNowPeekRestActPatched` exists and never clears until
+reboot. A person deciding whether to keep this extension installed is
+owed the fact that their trap table has been modified, and that fact
+should not live only in a source comment.
+
+**The contrast with P6 is the useful half.** P6 sits in the Time Manager
+queue, and nothing is chained behind our entry there — so declining to
+re-prime genuinely stops it, with no orphaning and no in-flight problem.
+The two planes differ in what they can undo because of *which OS
+structure each lives in*, not because of how hard anyone tried. That is
+the general rule to carry into the next plane: ask what is chained behind
+you before assuming a hook can be withdrawn.
+
+### How P6 stands down, and why not with `RmvTime`
+
+The obvious mechanism is `RmvTime`, and it is the wrong one. This task
+re-primes itself at the end of every tick, so an `RmvTime` called from
+the filter can land between a tick's body and its own `PrimeTime` and
+re-arm an entry that has just been pulled out of the queue.
+
+So the task is `InsTime`'d at boot and **never primed there**; starting
+it is a bare `PrimeTime` from the jGNE filter; and stopping it is the
+tick *declining to re-prime*. Exactly one context touches the Time
+Manager queue after install, which means the race cannot be constructed
+rather than being merely unlikely.
+
+Note what the decision deliberately does **not** consult: the
+three-second writer lease. P6 exists because a modal starved the
+application for ninety seconds, and a starved application cannot renew a
+lease — gating the vehicle on it would retire the vehicle at the exact
+moment it became the only thing still running. Ten minutes of silence
+stands it down instead, which is eight minutes after the host has already
+declared the guest gone, so it costs nothing real while still stopping a
+*crashed* application from leaving an interrupt behind forever. Both
+facts are pinned by tests in `now_ext_core_logic_test.c`, because the
+lease is an inviting simplification.
+
+### P3's block: the deferral, decided rather than forgotten
+
+~64 KiB of system heap is held from boot so that arming never has to
+allocate inside a foreign process, where allocation is illegal. The
+lazy version is possible and this is what it would take, recorded so
+nobody has to rediscover it:
+
+allocate on the first filter pass that sees a valid writer lease — which
+is non-interrupt time, and is exactly where P6 already does its own
+allocation — and publish `content_block` only once it exists. The cost is
+not the allocation: it is that `content_block` and the capability bit
+stop arriving together, so the application has to gate on the pointer
+rather than the bit, and that is a two-step discovery on the other side
+of the contract.
+
+**Deferred**, because 64 KiB is not what the landing question was about
+and the contract change is larger than the saving. `kNowPeekRestContentBlock`
+reports the block so the cost is visible while it stands.
 
 ## Charter amendment
 
