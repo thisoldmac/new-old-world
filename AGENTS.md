@@ -314,8 +314,13 @@ agents branch in their own worktrees — so the shared checkout stays on
   continuing, not off main. `main` receives finished work by
   fast-forward or merge; it is never where work is typed. This is
   enforced (`.githooks/pre-commit`, plus a PreToolUse hook on
-  `Write`/`Edit`/`Bash`) — **run `tools/setup-hooks` once per clone** to
-  point git at it, which every worktree off that checkout then inherits.
+  `Write`/`Edit`/`Bash` — `.claude/hooks/guard-main.sh`) — **run
+  `tools/setup-hooks` once per clone** to point git at it, which every
+  worktree off that checkout then inherits. Neither half reaches a
+  worktree cut off `main`, because `.githooks` and the `tools/` it
+  invokes are **not on `main`** and never have been; that outage, and
+  where every rule in this repository ought to live, is
+  [docs/rule-scopes.md](docs/rule-scopes.md).
   The enforcement is the floor, not the
   rule: don't reach for `TBT_ALLOW_MAIN=1` to get past a block you
   should have avoided by branching. The namespaces in use are

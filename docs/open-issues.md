@@ -14,6 +14,54 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## BROKEN: every rule in this repository is scoped by accident, and three of them are scoped wrong (2026-08-07, `claude/019-scope-hooks`)
+
+**Tested** (mutation, six states, on the guardrail only; no metal). The
+inventory, the scope assignment for every hook/gate/tool/skill, and the
+ordered landing plan are [docs/rule-scopes.md](rule-scopes.md). Three
+findings that were not previously written down:
+
+**Fault C — the PreToolUse main guardrail did not exist here.**
+`AGENTS.md:316` has claimed since before `.githooks` landed that main is
+enforced by "a PreToolUse hook on `Write`/`Edit`/`Bash`". It is not. That
+hook lives in the parent TimBotTu checkout, `now/` is excluded from that
+repository (`.git/info/exclude:22`), so a NOW session's
+`$CLAUDE_PROJECT_DIR` is this tree and the parent's `.claude/` is never
+loaded. This is the *same* shape as the note already at the top of
+`.githooks/pre-commit` — the guard lived only in the parent, so a `now`
+worktree had documentation for enforcement it did not have — except that
+fix moved only the git-hook half and left the sentence claiming both.
+**Fixed on this branch:** `.claude/hooks/guard-main.sh` ported and wired,
+verified by mutation in all six states (main + in-repo Write → refused;
+main + `git commit` → refused; `TBT_ALLOW_MAIN=1` prefix → allowed; main +
+`ls` → allowed; main + write outside the repo → allowed; on a branch →
+allowed). It refuses nothing any lane is doing.
+
+**The mis-scoping is the mechanism, not a tidiness complaint.**
+`.githooks` never reaching `main` is one instance; the shared checkout
+being parked on `claude/mirror-subproject` — a *subsystem's* branch —
+is what made it a repository-wide outage. Meanwhile the two things that
+did reach 54 of 55 arc branches through `.claude/settings.json` are the
+Mirror drive loop and one research arc's Stop gate, and the coordination
+rules meant for the whole fleet (`tools/arc-status`,
+`docs/arc-coordination.md`) reach 25 and 27 of 55 and zero of `main`.
+**The subsystem-specific rules propagated; the repository-wide ones did
+not.**
+
+**25 MB of dead agent worktrees are tracked.** `mirror/.claude/worktrees/`
+holds 3789 files across five expired agent worktrees, landed in `0443ab2b`
+("vendor Mirror whole as a subproject"). Neither `.gitignore` excludes
+`.claude/worktrees`. Not removed here — deleting 3789 files during a
+seven-round integration would cost more in conflicts than it saves — but
+it should go with a `.gitignore` rule the moment the arc is quiet.
+
+**Still open, and joint with Michelle:** the landing plan's steps 1-6 in
+[docs/rule-scopes.md](rule-scopes.md). Steps 2 and 3 must be minutes
+apart: once the gate arc is on `main`, `test-all` refuses rather than
+warns in the ~48 override-carrying worktrees until `hooks-doctor --fix`
+runs, and `TBT_ALLOW_UNARMED_HOOKS=1` is the deliberate override for that
+window.
+
 ## FIXED: the drive loop's own instrument armed every plane except the one that draws interiors (2026-08-07, `claude/019-instrument-arms-content`)
 
 **Verification level: EMULATOR-VERIFIED, by mutation.** Own VM, lane block
