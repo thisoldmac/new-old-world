@@ -242,6 +242,106 @@ verb and no shape, and inventing the shape is the region defect one
 family over. An erase is exempt, for the same reason `Coverage` does not
 count one.
 
+## The arbitration is asked on BOTH planes, or it is not asked (2026-08-07, sweep B)
+
+Sweep B found the Memory panel unreadable — every string printed twice a
+few points apart, and a vertical stroke merged into the first glyph of
+every static label ("Ⅱirtual Memory"). Integration round 4 found two more
+the same day. **None of the four was a renderer regression**: sweep A's
+capture through the same renderer is clean. What moved was the SCENE.
+Dialog-item titles became real strings and the CDEF route began naming 71
+of 73 controls, and the arbitration had never been exercised while one
+side of it was garbage.
+
+Four symptoms, and they are worth stating as **two mechanisms**, because
+fixing them as four local rules is how four rules come to disagree.
+
+### Mechanism one: rung 2 drew over rung 1 because nothing asked
+
+- **`drawControl` had never consulted `Coverage` at all.**
+  `drawDialogItem` has yielded to ink since 2026-08-06 and its twin did
+  not, so the two planes answered the same question differently. That is
+  R2's second half, round 4's user-pane plate, and the pills that landed
+  on Memory's own radios the moment the classification reached the
+  renderer.
+- **`mostlyCovers` asks the RECTANGLE's question, and a label asks the
+  TEXT's.** A DITL row is a slack box sized by whoever wrote the
+  resource; the run inside it is as wide as the words. Memory's "Disk
+  Cache" row is 102 points holding a 48-point run — 47%, so the test
+  said no and the row drew its own copy beside the machine's. A
+  multi-line row never reaches half at all: the paragraph is covered by
+  three runs and no single one of them is close.
+  `Coverage.textCovers` asks instead whether a replayed run and the
+  rectangle **substantially coincide** — half the area of whichever is
+  smaller — over TEXT ink only. A run on the line above, overlapping by
+  a pixel, is 1/12 of itself and does not count.
+- **Per PIECE, not per row, and this is the second time that
+  distinction has cost check boxes.** A choice control's label arrives
+  as a text op and its mark box arrives as no op at all, so a row-wide
+  yield takes both; NOW's own Workshop lost the tick beside "Compress on
+  wire (PackBits)" the first time the gate was written whole.
+
+### Mechanism two: `derived` is a knowledge level and was read as two other things
+
+- **A CDEF id names a KIND and says nothing about CONTENTS.** The route
+  reported `GetControlValue` in `semantic.value`, which this renderer
+  reads as the string a control DISPLAYS — so every static label arrived
+  carrying "0" and drew it against the machine's own first glyph, and
+  Memory's disk popup drew the menu index over "Macintosh HD". The
+  producer stopped emitting it (`scene_json.c`); `SceneRenderer.semanticText`
+  is the receiver's half and is not redundant, because every committed
+  capture still carries the field and the 68K guest is a separate
+  producer.
+- **A DITL row and its ControlRecord are one object seen twice, so the
+  tie is a COMPARISON.** It used to be broken by asking the control
+  alone for `knowledge == .known`; `derived` failed that, so twenty of
+  Date & Time's twenty-one controls lost to dialog items carrying
+  `kind: null` — which is why that panel has had no group boxes in any
+  sweep, and why the Charcoal strike could not be seen in their titles
+  even after the string began arriving whole. `semanticOutranks` asks
+  which side knows more. `scene-ie-error-alert` has the opposite shape
+  (`unknown` controls beside `known pushButton` items) and still loses,
+  which is the point of asking rather than thresholding.
+
+### And ground is ground on the control plane too
+
+Slice 16 moved the four background DITL kinds under the replay. A
+`userPane` is the control-plane spelling of a `userItem` — a region an
+application draws into, which fills a rectangle and says nothing about
+what is in it — and Appearance's is the WHOLE content rect and LAST in
+the chain, so its plate was painted after the six tabs and erased every
+one of them.
+
+Three clauses, each bought by a re-render:
+
+- **Ground goes down first.** Same rule, arriving at a control.
+- **Only where there is no drawing to be ground under.** A window whose
+  interior the replay owns has already been answered by rung 1, and a
+  pane drawn ahead of it put "Structured content unavailable" beneath
+  Date & Time's own Time Zone group.
+- **A pane that WRAPS the chain draws nothing even then.** Rung 4 is
+  "nobody can account for it", and eighteen classified controls account
+  for it; marking the whole interior unreachable while the renderer is
+  about to draw most of it is `isBackgroundKind`'s own rule — a
+  background names nothing — arriving at the marker instead of at the
+  blit. A pane with nothing inside it still marks. Monitors has one of
+  each, and that is what measured the clause.
+
+### A `^1` is a template, and only the machine holds the substitution
+
+`ParamText` fills `^0`–`^3` at draw time; the DITL resource keeps the
+template forever, so a walk reads the template and never the sentence a
+person saw. `displayableTitle` refuses it for the same reason and
+through the same gate as a title that came back as a pointer: both are
+strings this host was handed, and neither is a string the machine put on
+screen. Refusing it there refuses it twice — the row may no longer
+silence the drawing beneath it, and it may no longer draw itself — which
+leaves the only producer that has the substituted value. Deliberately
+not "substitute something plausible".
+
+`LadderArbitrationTests` holds all six, each watched failing by its own
+mutation, against sweep B's own Memory capture and scene.
+
 ## What is still disjointed, and named rather than hidden
 
 - **The system font substitution has a second symptom, and it reads as a
