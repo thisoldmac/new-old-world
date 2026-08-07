@@ -1179,8 +1179,11 @@ static void test_a_cdef_id_is_derived_and_not_known(void)
     /* THE LINE. A documented id with no honest role says nothing, and it
        must not quietly become the nearest thing. */
     check_absent(out, "\"kind\":\"clock\"");
+    /* It says nothing, and it says WHICH id said nothing: the lookup
+       succeeded, so `cdef` rides beside the unknown as the fact that
+       sizes the gap. `knowledge` is still the only load-bearing word. */
     check_present(out, "\"knowledge\":\"unknown\",\"definition\":\"system\","
-                       "\"provenance\"");
+                       "\"cdef\":15,\"provenance\"");
     /* And a derived kind is never spelled `known`: exactly one control
        here reached that word, and it is the one that carried a role. */
     check(count_of(out, "\"knowledge\":\"known\"") == 1,
