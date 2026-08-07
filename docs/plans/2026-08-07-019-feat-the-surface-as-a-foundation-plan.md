@@ -268,6 +268,44 @@ A screenshot with one live interior and the rest hatched may be the
 product working exactly as built. Decide whether that is the product, and
 if not, the contract changes first.
 
+#### 2026-08-07 — measured, and RESERVED for a decision
+
+`claude/019-multi-window-content`. The full options table, the readings
+and the rig live in [docs/open-issues.md](../open-issues.md) under
+*"RESERVED FOR A DECISION … one window interior at a time"*. In brief,
+and every number from one lane-private clone (guest build `113f1b176035`,
+this checkout's ext, Finder front with two windows), never metal:
+
+- **The limit is not the resident's hook.** Every ring record already
+  carries its `port` as the window identity key; the port table already
+  holds several ports of one A5; the host's accumulator is keyed
+  `psn:addr` throughout. **One word in the block and one verb parameter
+  are the whole limit.**
+- **The handshake was never the cost.** A second arm into an
+  already-armed process is 69–117 ms — cheaper than the first (203 ms).
+  The plan's "~57 ms census × N" framing was the wrong model.
+- **The cost is the forced repaint.** Every arm issues an
+  `InvalWindowRect`. Round-robin over two windows at 2 s dwell writes
+  **4,011 ring bytes/s**; one standing arm over the same application for
+  the same duration writes **33**. 122×, and 1.3 whole 64 KiB rings in
+  21 seconds.
+- **A background process still never arms**, reproduced today with a
+  control: not armed in 10 s, then **204 ms** after being brought
+  forward with no re-request. So every option is capped at the front
+  process's windows.
+
+Four shapes, costed: (a) one arm carrying a bounded window LIST — the
+only one that scales, and the one that needs the in-memory contract
+change and a bake; (b) round-robin — refused on the measurement; (c)
+arm-on-demand — what already ships, and extending it is (b) renamed;
+(d) accept one at a time and make the rest honest.
+
+**Nothing was implemented except (d)'s honesty half**, which is owed
+under every option: a window P3 never armed and a window P3 armed and
+found nothing were rendering identically. `Scene.Window.contentPlane`
+now separates them. The choice between (a) and (d)-as-final is
+Michelle's, and the contract does not move until it is made.
+
 ### Slice D — slice 9's live verb is wired into nothing
 
 Guest-side `GetTheme`/`kThemeDesktopPatternTag` exists; the contract
