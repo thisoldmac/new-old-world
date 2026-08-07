@@ -187,9 +187,10 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `agent.access` | ❌ | ❌ | neither guest HANDLES one — it is guest-to-host only, and a host never sends it. PPC SENDS it when its consent tier changes; 68K has no tier to change |
 | `cloud.report` / `cloud.listing` / `cloud.card` / `cloud.refuse` | ✅ | ❌ | the ASKER's half: the PPC guest consumes these as answers for its iCloud page and SENDS `cloud.services` / `cloud.list` / `cloud.detail` / `cloud.get` / `cloud.preview`. No guest serves the family — its subject is the host's own iCloud (contract `guestAsksCloud`), so these rows can never grow guest ticks |
 | `chat.catalog` / `chat.delta` / `chat.status` / `chat.result` | ✅ | ❌ | the ASKER's half of the chat family (contract `guestAsksChat`): the PPC guest SENDS `chat.models` / `chat.send` / `chat.cancel` / `chat.reset` — from its Chat page and its console-only `chat` verb — and consumes these as answers; the host serves the family from its harness (`ChatWireService`). `chat.models` is TWO asks in one message and `chat.catalog` two answer shapes: without a provider it lists providers; with one it pages that provider's models (cursor/more, asked lazily on selection), each row carrying a HOST-MINTED `ref` that `chat.send` returns — a provider's model name never crosses the wire. Like cloud, its subject is the host's own model harness, so this row can never grow guest-SERVING ticks. 68K never asks, deliberately: the page is PPC-only and the family is a luxury a 384 KB partition does not buy |
+| `host.shown` | ✅ | ❌ | the ASKER's half of the host-surface family (contract `guestAsksHostSurface`): the PPC guest SENDS `host.show` — from the Mirror page's button and its console-only `showmirror` verb — and consumes this as the answer; the host serves it (`HostSurfaceService.swift`), opening its own Mirror window. Like cloud and chat, the subject is a surface on the HOST, so this row can never grow guest-SERVING ticks. **NOW-68K neither asks nor serves, and that is out of scope rather than decided** — nothing about a 68030 makes the ask impossible, and a NOW-68K that grew a Mirror page would want it |
 | `preview.begin` / `preview.end` | ✅ | ❌ | the photo preview's transfer bracket, answering the PPC guest's own `cloud.preview`: raw indexed rows the HOST already dithered, landed in the iCloud page's pane by one CopyBits. Asker's half again — no guest will ever serve it |
 
-PPC handles **48** inbound types; NOW-68K handles **23**. **That count
+PPC handles **49** inbound types; NOW-68K handles **23**. **That count
 understates the difference** — see the next two sections, where two of
 these rows open into 42 command verbs and 14 hardware probes.
 
@@ -972,10 +973,10 @@ are today:
 
 | | Derived | Was |
 |---|---|---|
-| PowerPC inbound message types | **48** | 42 |
+| PowerPC inbound message types | **49** | 48 |
 | NOW-68K inbound message types | **23** | 23 |
-| `x-commands` registry | **42** | 39 |
-| PowerPC verbs served | **39** | 36 |
+| `x-commands` registry | **42** | 42 |
+| PowerPC verbs served | **39** | 39 |
 | NOW-68K verbs served | **13** | 13 |
 
 **The tables were right and the counts at the foot were stale**, which is
@@ -991,3 +992,19 @@ next to it, so it is the part most worth re-running.
 `qdtrace` is now expanded as a subsystem above, per this file's own rule.
 It was ticked as one row while its record vocabulary had grown by three
 and its `status` by a whole object.
+
+### Re-derived again, later on 2026-08-06
+
+Every command re-run after the `host.show` / `host.shown` family landed.
+Only the first row moved, by one: `host.shown` is the PPC guest's 49th
+inbound type. The registry and both verb counts are unchanged, because
+`showmirror` is a CONSOLE verb rather than an x-command — the same
+console-only shape as `chat`, and for the same reason (the host reaches
+its own Mirror from its Window menu and the `mirror_open` agent verb, so
+there is nothing for it to type at the guest).
+
+**The declared asymmetry this adds: NOW-68K does not ask.** It is out of
+scope for the arc that added the family, not a decision about the
+machine — a 68030 could send `host.show` as easily as the PowerPC guest
+does. Written down here rather than left as an absent row, because an
+absence nobody declared is how `process.list` shipped wire-only.
